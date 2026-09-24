@@ -102,7 +102,7 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
-fn edit(path: &Path, from: &str, to: &str) {
+pub(crate) fn edit(path: &Path, from: &str, to: &str) {
     let text = std::fs::read_to_string(path).expect("read bundle file");
     assert!(
         text.contains(from),
@@ -114,7 +114,7 @@ fn edit(path: &Path, from: &str, to: &str) {
 
 /// The architecture bundle, copied and edited as the module docs describe,
 /// then `extra` applied to the copy.
-fn architecture_bundle(extra: impl FnOnce(&Path)) -> tempfile::TempDir {
+pub(crate) fn architecture_bundle(extra: impl FnOnce(&Path)) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let source = fcd_fixtures_dir().join("architecture");
     copy_tree(&source.join("spec"), &dir.path().join("spec"));
@@ -147,6 +147,11 @@ fn lift(bundle: &Path) -> (Vec<u8>, [u8; 32]) {
 /// FR-154 admission, `read_records` and FR-152 classification over the
 /// lifted bundle, selected under its own identity, version and digest.
 fn admitted(bundle: &Path) -> AdmittedPackage {
+    admitted_with_bytes(bundle).0
+}
+
+/// [`admitted`], with the lifted document bytes the package was admitted from.
+pub(crate) fn admitted_with_bytes(bundle: &Path) -> (AdmittedPackage, Vec<u8>) {
     let (bytes, digest) = lift(bundle);
     let document: serde_json::Value = serde_json::from_slice(&bytes).expect("lifted JSON");
     let offered = DomainPackageRef {
@@ -163,16 +168,17 @@ fn admitted(bundle: &Path) -> AdmittedPackage {
     let (selection, document) = admit(
         &offered,
         SHA256_JCS_DIGEST_DOMAIN,
-        &BTreeMap::from([(digest, bytes)]),
+        &BTreeMap::from([(digest, bytes.clone())]),
     )
     .expect("the selection matches the lifted package");
     let records = read_records(&selection.identity, &document)
         .expect("every IR node of the edited bundle reads with no refusal");
-    AdmittedPackage::admit(
+    let package = AdmittedPackage::admit(
         DomainPackage::new(selection, records),
         &mut Meter::new(ModelNormalizationLimits::default()),
     )
-    .expect("every declaration classifies with no refusal")
+    .expect("every declaration classifies with no refusal");
+    (package, bytes)
 }
 
 fn key(artifact: &str) -> DeclarationKey {
@@ -182,7 +188,7 @@ fn key(artifact: &str) -> DeclarationKey {
     }
 }
 
-fn hex(digest: &[u8; 32]) -> String {
+pub(crate) fn hex(digest: &[u8; 32]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
@@ -674,15 +680,20 @@ fn two_same_shaped_packages_keep_keys_under_their_selection() {
     });
 }
 
-/// The composed type checker reads only native models. A declaration whose
-/// parameter is typed by a domain declaration refuses there as an upstream
-/// binding even when its body never uses the parameter, rather than being
-/// accepted as typed.
-#[trace("TC-148", "FR-036-AC-9")]
+/// The composed type checker types domain declarations (FR-042-AC-11's
+/// checking prerequisite): a parameter typed by a domain object type,
+/// Interface or record value type is typed, and a field access reads the
+/// field's value type. A field whose value type has no native type here
+/// (`Count.value` is an `Integer`), a field the type does not declare, and
+/// equality of domain values each refuse with their own cause, while
+/// `Unrelated` stays typed.
+#[trace("TC-148", "FR-036-AC-9", "FR-042-AC-11")]
 #[test]
-fn unused_domain_typed_parameter_refuses_at_the_type_checker() {
-    use quire_spec_language::checking::composed::{self, CauseKind, TypeDisposition, TypeLimits};
-    use quire_spec_language::linking::composed::binding::Disposition;
+fn domain_typed_declarations_type_check() {
+    use quire_spec_language::checking::composed::{
+        self, CauseKind, Prerequisite, TypeDisposition, TypeLimits,
+    };
+    use quire_spec_language::checking::NativeType;
     use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 
     let bundle = architecture_bundle(|_| {});
@@ -693,7 +704,12 @@ fn unused_domain_typed_parameter_refuses_at_the_type_checker() {
         "language \"ix:native\" edition \"1-draft\";\n\
          profile S = \"{}\" version \"{}\" digest \"{}\";\n\
          model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
-         predicate PumpRule using S (pump: M::Pump): Boolean {{ true }}\n\
+         predicate PumpUp using S (pump: M::Pump): Boolean {{ pump.id }}\n\
+         predicate Flowing using S (flow: M::Flow, tally: M::Count): Boolean {{ true }}\n\
+         predicate CountValue using S (tally: M::Count): Boolean {{ tally.value = tally.value }}\n\
+         predicate Missing using S (pump: M::Pump): Boolean {{ pump.speed }}\n\
+         predicate SamePump using S (a: M::Pump, b: M::Pump): Boolean {{ a = b }}\n\
+         predicate Mixed using S (pump: M::Pump, tally: M::Count): Boolean {{ pump = tally }}\n\
          predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n",
         profile.identity,
         profile.revision,
@@ -723,25 +739,54 @@ fn unused_domain_typed_parameter_refuses_at_the_type_checker() {
         BindingLimits::default(),
         |binding| {
             let namespace = binding.namespace();
-            let pump_rule = namespace.lookup("PumpRule")[0];
-            let unrelated = namespace.lookup("Unrelated")[0];
-            assert_eq!(
-                binding.disposition(pump_rule),
-                Some(Disposition::NamesResolved)
-            );
             let report = composed::admit_types(binding, &formal, TypeLimits::default());
             assert!(report.exhaustion().is_none(), "{:?}", report.exhaustion());
-            assert_eq!(
-                report.disposition(pump_rule),
-                Some(TypeDisposition::Refused)
-            );
-            assert!(report
-                .declaration(pump_rule)
-                .expect("typed record")
-                .causes()
+            let id = |name: &str| namespace.lookup(name)[0];
+            let causes = |name: &str| -> Vec<CauseKind> {
+                report
+                    .declaration(id(name))
+                    .expect("typed record")
+                    .causes()
+                    .iter()
+                    .map(|cause| cause.kind.clone())
+                    .collect()
+            };
+            for name in ["PumpUp", "Flowing", "Unrelated"] {
+                assert_eq!(
+                    report.disposition(id(name)),
+                    Some(TypeDisposition::Typed),
+                    "{name}: {:?}",
+                    causes(name)
+                );
+            }
+            // `pump` is typed by the `Pump` declaration under the admitted
+            // selection, and `pump.id` by the field's `Boolean`.
+            let pump_up = report.declaration(id("PumpUp")).expect("typed record");
+            let Some(NativeType::Domain(pump)) = &pump_up.binders()[0].ty else {
+                panic!("pump is a domain type: {:?}", pump_up.binders()[0].ty)
+            };
+            assert_eq!(pump.declaration.key, &key("Pump"));
+            assert_eq!(pump.package.selection(), &selection);
+            assert!(pump_up
+                .nodes()
                 .iter()
-                .any(|cause| cause.kind == CauseKind::UpstreamBinding));
-            assert_eq!(report.disposition(unrelated), Some(TypeDisposition::Typed));
+                .any(|node| node.ty == Some(NativeType::Boolean)));
+            for (name, cause) in [
+                (
+                    "CountValue",
+                    CauseKind::UnsupportedPrerequisite(Prerequisite::DomainRepresentation),
+                ),
+                ("Missing", CauseKind::InvalidField),
+                ("SamePump", CauseKind::ForbiddenOperator),
+                ("Mixed", CauseKind::TypeMismatch),
+            ] {
+                assert_eq!(
+                    report.disposition(id(name)),
+                    Some(TypeDisposition::Refused),
+                    "{name}"
+                );
+                assert!(causes(name).contains(&cause), "{name}: {:?}", causes(name));
+            }
         },
     );
 }

@@ -63,7 +63,7 @@ pub struct AdmittedPackage {
     // Present only on the reader path, which admits an independently selected
     // artifact identity. Compiler emission has no published identity yet.
     pub(super) artifact: Option<ArtifactRef>,
-    pub(crate) model_schema: Vec<crate::native_model::NativeModel>,
+    pub(crate) model_schema: Vec<Option<crate::native_model::NativeModel>>,
 }
 
 impl AdmittedPackage {
@@ -84,7 +84,9 @@ impl AdmittedPackage {
 
     /// Independently admitted model schema retained for this model-table entry.
     pub fn schema_model(&self, index: u32) -> Option<&crate::native_model::NativeModel> {
-        self.model_schema.get(usize::try_from(index).ok()?)
+        self.model_schema
+            .get(usize::try_from(index).ok()?)?
+            .as_ref()
     }
 
     /// Independently selected compiled artifact identity admitted by the reader.

@@ -141,6 +141,8 @@ fn native_type(ty: &NativeType<'_>, features: &mut Features) -> Result<(), Box<P
             features.insert("sequence");
             native_type(element, features)?;
         }
+        // Defensive: historical type checking reads only native models.
+        NativeType::Domain(_) => return Err(invalid_model()),
     }
     Ok(())
 }

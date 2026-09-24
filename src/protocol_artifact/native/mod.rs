@@ -47,6 +47,8 @@ pub struct Selections<'a> {
     pub dependencies: &'a [SuppliedDependency<'a>],
     /// Actual admitted models already consumed by the binding report.
     pub models: &'a [AdmittedModel<'a>],
+    /// Admitted domain packages already consumed by the binding report.
+    pub domain_packages: &'a [super::AdmittedDomainPackage<'a>],
     /// Namespace for registered semantic revisions, separate from source artifacts.
     pub definition_revision_namespace: &'a str,
     /// Namespace for the exact authored requirement's numeric IR revision.

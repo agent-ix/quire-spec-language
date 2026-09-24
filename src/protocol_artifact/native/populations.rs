@@ -127,6 +127,11 @@ impl<'s, 'm> Collector<'s, 'm> {
                     break (*model, &role.record)
                 }
                 NativeType::Record { model, declaration } => break (*model, declaration.name()),
+                // A domain object type's population input has no export yet;
+                // a record value type needs none unless it reaches one.
+                NativeType::Domain(domain) => {
+                    return crate::protocol_artifact::domain::require_no_population(domain, work)
+                }
                 NativeType::Boolean
                 | NativeType::Scalar { .. }
                 | NativeType::Enumeration { .. } => return Ok(()),
@@ -161,7 +166,8 @@ impl<'s, 'm> Collector<'s, 'm> {
                 | NativeType::Scalar { .. }
                 | NativeType::Enumeration { .. }
                 | NativeType::Option(_)
-                | NativeType::Sequence { .. } => return Err(Error::Invalid(Invalid::Model)),
+                | NativeType::Sequence { .. }
+                | NativeType::Domain(_) => return Err(Error::Invalid(Invalid::Model)),
             };
             let key = (model.environment().owner(), record, anchor_index);
             if self.visited.contains(&key) {

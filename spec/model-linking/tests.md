@@ -93,7 +93,7 @@ per-group counts before moving this row to Passed.
 | FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 QSL handoff passed; Protocol #11 pending |
-| FR-042 | FR-042-AC-11 | TC-121 | 🚧 Refusal half passed (`tests/it/protocol_artifact.rs`); the positive half waits on the composed type checker and protocol emission reading domain declarations (the linker binds them, FR-036-AC-9) |
+| FR-042 | FR-042-AC-11 | TC-121 | ✅ Passed locally (`tests/it/protocol_artifact.rs`, `tests/it/domain_protocol_emission.rs`); a declaration over a domain object type refuses emission as unsupported until its population input has an export |
 | FR-042 | FR-042-AC-12 | TC-121 | ✅ Passed |
 | FR-046 | FR-046-AC-1 | TC-126 | ✅ Passed |
 | FR-046 | FR-046-AC-2 | TC-126 | ✅ Passed |
@@ -148,7 +148,7 @@ per-group counts before moving this row to Passed.
 | FR-056 | FR-056-AC-5 | TC-145 | 🚧 Planned; #131 -- the refusal pair (no declared name, no source span) and all-or-nothing node ordering are covered, but a `relationship` export carries no name or span yet (same root cause as AC-1, `RelationshipRecord` holds only `key`/`source`/`target`/`direction`), and no `missing_declaration`/`missing-name` refusal exists for a relationship member or reference naming a node absent from the package (`validate_references` skips `Relationship`/`Allocation` outright; `systems::classify` reports `dangling_reference`/`unknown-endpoint` instead, and only for non-navigation relationships). Filed as Linear QSL-134 together with AC-1's record-shape gap. |
 | FR-056 | FR-056-AC-6 | TC-147 | ✅ Passed locally (`tests/model_intake.rs`: `charges_normalize_record_once_per_intake_declaration` -- the `normalize.record` charge itself is `crate::model::normalize`'s existing, shared `charge_all` mechanism; this proves it over this crate's own intake pipeline) |
 | FR-056 | FR-056-AC-7 | TC-145, TC-147 | 🚧 Planned; #131 -- the digest-domain-slot restriction is covered (FR-056-AC-2's tests), but no test yet compares the bundle entry point's and the intake seam's results for byte-identity |
-| FR-056 | FR-056-AC-8 | TC-148, IT-012 | 🚧 Ports, the connection and the linker's binding pass locally over the edited fixture bundle (`tests/it/composed_domain_models.rs`); the unedited bundle does not admit whole (PLAT-836 `UUID`, FCD relationship identity form, no record-value-type reader), so IT-012 stays open |
+| FR-056 | FR-056-AC-8 | TC-148, IT-012 | 🚧 Ports, the connection and the linker's binding pass locally over the edited fixture bundle (`tests/it/composed_domain_models.rs`); the unedited bundle does not admit whole (PLAT-836 `UUID`, PLAT-1064 relationship identity form), so IT-012 stays open |
 
 FR-017-AC-2 uses Inspection rather than a Test Case. SR-083 records the executed
 structural ownership inspection and its PASS disposition; no test symbol is
@@ -199,7 +199,7 @@ invented for that criterion.
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | ✅ Passed locally (tests/composed_types.rs, tests/composed_type_pipeline.rs, tests/composed_proofs.rs, tests/composed_query_proofs.rs, tests/native_query_emission.rs) |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | ✅ Passed locally (tests/native_model_profiles.rs, src/checking/types.rs, src/linking.rs) |
 | TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
-| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-12 | 🚧 QSL `/1` publication and strict read passed locally (`tests/published_protocol_v1.rs`, `src/protocol_artifact/handoff.rs`); Protocol #11 consumer acceptance pending; FR-042-AC-11/AC-12 planned under #132 |
+| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-12 | 🚧 QSL `/1` publication and strict read passed locally (`tests/published_protocol_v1.rs`, `src/protocol_artifact/handoff.rs`); Protocol #11 consumer acceptance pending; FR-042-AC-11/AC-12 passed locally (`tests/it/domain_protocol_emission.rs`, `tests/it/native_protocol_emission.rs`) |
 | TC-126 | Preserve exact predicate meaning at cross-family calls | Integration | P1 | FR-046-AC-1, FR-046-AC-2, FR-046-AC-8 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-127 | Evaluate ordered query values against independent expected results | Integration | P1 | FR-046-AC-3, FR-046-AC-4, FR-046-AC-5, FR-046-AC-8 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-128 | Keep incomplete query inputs and exhausted work distinct from values | Integration | P1 | FR-046-AC-6, FR-046-AC-7 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
@@ -268,21 +268,23 @@ model references against it (FR-036-AC-9).
 
 TC-148 runs in `tests/it/composed_domain_models.rs` over a copy of the fixture
 bundle taken from the pinned `agent-ix-extraction-frontend` checkout at test
-time. The copy retypes `Pump`/`Sys`/`Tank.id` and `Flow.rate` as `Boolean` and
-drops `Count` and `Flow2`, because the unedited bundle does not admit whole at
-this pin: `UUID` is not a QSL native value type (PLAT-836), FCD identifies
-`Flow2`'s inline relationship as `.../relationship/Flow2-specializes-Flow`
-rather than `<owner>/<name>` (FCD `crates/extraction-frontend/src/identity.rs:223`),
-and `Count`'s record value type has no QSL reader yet. Every part, port,
-connection and allocation stays as authored. Step 1 over the unedited bundle,
-and IT-012, stay open for those three reasons. The linker binds a native
-reference to a domain declaration by its FR-154 key and kind
-(`ModelTarget::Declaration`). A type site binds an object, interface or value
-type; a protocol role also binds a Part or Port; a protocol relationship binds a
-Connection or navigation relationship; any other kind refuses at the linker. The
-composed type checker does not read domain declarations yet, so a declaration
-with a domain-typed parameter refuses there as an upstream binding, even when
-its body never uses the parameter.
+time. The copy retypes `Pump`/`Sys`/`Tank.id` as `Boolean` and drops `Flow2`,
+because the unedited bundle does not admit whole at this pin: `UUID` is not a
+QSL native value type (PLAT-836), and FCD identifies `Flow2`'s inline
+relationship as `.../relationship/Flow2-specializes-Flow` rather than
+`<owner>/<name>` (FCD `crates/extraction-frontend/src/identity.rs:223`,
+PLAT-1064). `Count`, a record value type (FR-208), admits as authored. Every
+part, port, connection and allocation stays as authored. Step 1 over the
+unedited bundle, and IT-012, stay open for those two reasons. The linker binds
+a native reference to a domain declaration by its FR-154 key and kind
+(`ModelTarget::Declaration`). A type site binds an object, interface, record
+value or value type; a protocol role also binds a Part or Port; a protocol
+relationship binds a Connection or navigation relationship; any other kind
+refuses at the linker. The composed type checker types a domain object type,
+Interface or record value type, and a field read by the field's value type
+(`Boolean`, or another such domain type, under multiplicity `1`, `0..1` or
+`0..n`); any other field type, and a domain value type, refuses as an
+unsupported prerequisite.
 
 TC-120's public rational-model controls are implemented and pass locally through
 the real frontend, admission and composed exports; all seven FR-041 criteria are
@@ -399,11 +401,11 @@ FR-042-AC-1 through FR-042-AC-10 each carry
 `#[trace("TC-121", "FR-042-AC-n")]` tags on executed Rust tests, and `quire
 coverage --scope . --json` reports those minted targets as backed. AC-10's QSL
 test proves only the compiler-owned publication and strict-reader leg; the
-cross-repository Protocol leg remains open. FR-042-AC-11's tag backs only
-its refusal half. The linker binds native references to a domain package
-(FR-036-AC-9), but the composed type checker and protocol emission read only
-native models, so no emitted `Model` names a domain package yet. One module carrying each
-criterion's tag:
+cross-repository Protocol leg remains open. FR-042-AC-11's positive half runs
+over the architecture bundle: a domain-typed declaration checks, emits a
+`Model` naming its domain package, and reads back. A domain object type still
+refuses emission, because its population input has no compiled-protocol export
+yet. One module carrying each criterion's tag:
 
 | Criterion | Module carrying the tag |
 | --- | --- |
@@ -417,7 +419,7 @@ criterion's tag:
 | FR-042-AC-8 | `tests/native_choice_emission.rs` |
 | FR-042-AC-9 | `tests/native_domain_event_boundaries.rs` |
 | FR-042-AC-10 | `tests/published_protocol_v1.rs`; Protocol #11 remains below |
-| FR-042-AC-11 | `tests/it/protocol_artifact.rs` (refusal half) |
+| FR-042-AC-11 | `tests/it/protocol_artifact.rs`, `tests/it/domain_protocol_emission.rs` |
 | FR-042-AC-12 | `tests/it/protocol_artifact.rs`, `tests/it/native_protocol_emission.rs` |
 
 Per-criterion backing comes from those minted criterion targets and not from the
@@ -449,7 +451,7 @@ consumer side. TC-135 records the separate D-owned campaign gate.
 | FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 QSL handoff passed; Protocol #11 pending |
-| FR-042 | FR-042-AC-11 | TC-121 | 🚧 Refusal half passed (`tests/it/protocol_artifact.rs`); the positive half waits on the composed type checker and protocol emission reading domain declarations (the linker binds them, FR-036-AC-9) |
+| FR-042 | FR-042-AC-11 | TC-121 | ✅ Passed locally (`tests/it/protocol_artifact.rs`, `tests/it/domain_protocol_emission.rs`); a declaration over a domain object type refuses emission as unsupported until its population input has an export |
 | FR-042 | FR-042-AC-12 | TC-121 | ✅ Passed |
 
 ## Authenticated temporal artifact selections (L5/L6)

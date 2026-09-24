@@ -13,6 +13,7 @@ mod checked_handoff;
 pub mod checked_predicate;
 mod content_identity;
 mod decode;
+mod domain;
 mod encoding;
 pub mod handoff;
 mod intake;
@@ -35,6 +36,7 @@ pub use number::{
     NUMERIC_PROFILE,
 };
 
+pub use domain::{AdmittedDomainPackage, DOMAIN_PACKAGE_PROFILE, DOMAIN_PACKAGE_VERSION_NAMESPACE};
 pub use encoding::encode_candidate;
 pub use intake::read;
 pub use occurrence::{
@@ -143,6 +145,8 @@ pub struct Expected<'a> {
     pub dependencies: &'a [SuppliedDependency<'a>],
     /// Actual admitted native views for every model dependency retained as a model.
     pub models: &'a [AdmittedModel<'a>],
+    /// Admitted domain packages for every model dependency that names one.
+    pub domain_packages: &'a [AdmittedDomainPackage<'a>],
 }
 
 /// A recognized authority or feature lacking a supported artifact interpretation.
@@ -488,7 +492,8 @@ pub struct AdmittedPackage {
     artifact: wire::ArtifactRef,
     // Owned copies of the independently admitted models retain the field/type
     // schema needed by state evaluation after the reader's borrowed inputs end.
-    model_schema: Vec<NativeModel>,
+    // `None` for a domain-package model, which state evaluation cannot read.
+    model_schema: Vec<Option<NativeModel>>,
 }
 
 impl AdmittedPackage {
@@ -502,7 +507,9 @@ impl AdmittedPackage {
     }
 
     pub(crate) fn schema_model(&self, index: u32) -> Option<&NativeModel> {
-        self.model_schema.get(usize::try_from(index).ok()?)
+        self.model_schema
+            .get(usize::try_from(index).ok()?)?
+            .as_ref()
     }
 
     /// Independently selected compiled artifact identity admitted by the reader.

@@ -162,6 +162,12 @@ enum Key<'a> {
     // read context additionally separates pre/post and distinct capture roots.
     Binder(usize, u8),
     Field(ValueKey, &'a ir::RequirementRef, &'a str, String),
+    /// A field of a domain-package type, keyed by the type's FR-154 key.
+    DomainField(
+        ValueKey,
+        &'a qsl_semantics::model::key::DeclarationKey,
+        String,
+    ),
     Unwrap(ValueKey),
     Deref(ValueKey),
     Expression(usize),
@@ -301,7 +307,11 @@ impl<'s, 'a> Builder<'s, 'a> {
         self.work.charge(D::Types, 1, self.site(at))?;
         let context = match key {
             Key::Expression(_) | Key::Capture(_) | Key::Element(..) => self.context,
-            Key::Binder(..) | Key::Field(..) | Key::Unwrap(_) | Key::Deref(_) => 0,
+            Key::Binder(..)
+            | Key::Field(..)
+            | Key::DomainField(..)
+            | Key::Unwrap(_)
+            | Key::Deref(_) => 0,
         };
         let key = (context, key);
         if let Some(&key) = self.keys.get(&key) {
@@ -400,7 +410,8 @@ impl<'s, 'a> Builder<'s, 'a> {
             | NativeType::Enumeration { .. }
             | NativeType::Record { .. }
             | NativeType::Object { .. }
-            | NativeType::Reference { .. } => {}
+            | NativeType::Reference { .. }
+            | NativeType::Domain(_) => {}
         }
         Ok(())
     }

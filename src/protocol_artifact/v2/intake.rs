@@ -494,6 +494,7 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         let model_schema = artifact::models::validate(
             &package.inherited,
             expected.inherited.models,
+            expected.inherited.domain_packages,
             expected.inherited.dependencies,
             &mut work,
         )?;

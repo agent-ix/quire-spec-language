@@ -7,9 +7,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_ir as ir;
 
+use super::domain::{self, DomainTarget};
 use super::{
-    wire as w, work::Work, AdmittedModel, Dimension, Error, Invalid, SuppliedDependency,
-    Unsupported,
+    wire as w, work::Work, AdmittedDomainPackage, AdmittedModel, Dimension, Error, Invalid,
+    SuppliedDependency, Unsupported, DOMAIN_PACKAGE_PROFILE,
 };
 use crate::checking::{Catalog, NativeType};
 use crate::native_model::{
@@ -38,6 +39,8 @@ enum Target<'a> {
     Population(&'a ObjectRole),
     Field(&'a ir::RecordDeclaration, &'a ir::RecordFieldDeclaration),
     Operation(&'a OperationRole),
+    /// An export of a domain-package model.
+    Domain(DomainTarget<'a>),
 }
 
 impl<'a> Target<'a> {
@@ -50,25 +53,47 @@ impl<'a> Target<'a> {
             Self::Object(role, _) | Self::Reference(role) | Self::Population(role) => &role.source,
             Self::Field(_, value) => value.source(),
             Self::Operation(value) => &value.source,
+            Self::Domain(_) => return None,
         })
     }
 }
 
+/// One selected model's exports: a native model's catalog, or none for a
+/// domain package, whose targets carry their own declarations.
 struct View<'a> {
-    catalog: Catalog<'a>,
+    catalog: Option<Catalog<'a>>,
     targets: Vec<Target<'a>>,
 }
 
+impl<'a> View<'a> {
+    /// The native catalog; a domain-package model has none.
+    fn catalog(&self) -> Result<&Catalog<'a>, Error> {
+        self.catalog.as_ref().ok_or(Error::Invalid(Invalid::Model))
+    }
+
+    /// The native model; a domain-package model has none.
+    fn model(&self) -> Result<&'a NativeModel, Error> {
+        Ok(self.catalog()?.model)
+    }
+}
+
+/// Checks every wire `Model` against its independently admitted native model
+/// or domain package. Returns, per wire model, an owned copy of each native
+/// model's schema, `None` for a domain-package model.
 pub(super) fn validate(
     package: &w::Package,
     expected_models: &[AdmittedModel<'_>],
+    expected_domains: &[AdmittedDomainPackage<'_>],
     expected_dependencies: &[SuppliedDependency<'_>],
     work: &mut Work,
-) -> Result<Vec<NativeModel>, Error> {
-    if package.models.len() != expected_models.len() {
+) -> Result<Vec<Option<NativeModel>>, Error> {
+    if package.models.len() != expected_models.len().saturating_add(expected_domains.len()) {
         return Err(Error::Invalid(Invalid::Inventory));
     }
-    work.charge(Dimension::Models, expected_models.len())?;
+    work.charge(
+        Dimension::Models,
+        expected_models.len().saturating_add(expected_domains.len()),
+    )?;
     let mut supplied = BTreeMap::new();
     let mut model_pointers = BTreeSet::new();
     let mut owners = BTreeMap::new();
@@ -110,6 +135,20 @@ pub(super) fn validate(
             return Err(Error::Invalid(Invalid::ForeignLocus));
         }
     }
+    let mut domains = BTreeMap::new();
+    let mut domain_pointers = BTreeSet::new();
+    for domain in expected_domains {
+        work.visit()?;
+        charge_ref(domain.artifact, work)?;
+        work.charge(Dimension::Entries, 2)?;
+        let key = ref_key(domain.artifact);
+        if supplied.contains_key(&key)
+            || domains.insert(key, domain).is_some()
+            || !domain_pointers.insert(std::ptr::from_ref(domain.package))
+        {
+            return Err(Error::Invalid(Invalid::Duplicate));
+        }
+    }
     let mut dependencies = BTreeMap::new();
     for dependency in expected_dependencies {
         work.visit()?;
@@ -125,7 +164,7 @@ pub(super) fn validate(
     let mut views = Vec::new();
     let mut retained = Vec::new();
     retained
-        .try_reserve(expected_models.len())
+        .try_reserve(package.models.len())
         .map_err(|_| Error::Allocation)?;
     let mut previous_model = None;
     for model in &package.models {
@@ -140,6 +179,16 @@ pub(super) fn validate(
             .ok_or(Error::Invalid(Invalid::Reference))?
             .artifact;
         charge_ref(artifact, work)?;
+        if let Some(domain) = domains.get(&ref_key(artifact)) {
+            let targets = domain_model(model, artifact, domain, &dependencies, work)?;
+            work.charge(Dimension::Entries, 1)?;
+            views.push(View {
+                catalog: None,
+                targets,
+            });
+            retained.push(None);
+            continue;
+        }
         let selected = supplied
             .get(&ref_key(artifact))
             .ok_or(Error::Invalid(Invalid::Model))?;
@@ -208,8 +257,11 @@ pub(super) fn validate(
             targets.push(target);
         }
         work.charge(Dimension::Entries, 1)?;
-        views.push(View { catalog, targets });
-        retained.push(selected.model.clone());
+        views.push(View {
+            catalog: Some(catalog),
+            targets,
+        });
+        retained.push(Some(selected.model.clone()));
     }
     for ty in &package.types {
         work.visit()?;
@@ -232,6 +284,12 @@ pub(super) fn validate(
             match &value.operation {
                 w::ValueOperation::Field { base, field } => {
                     let (view, member) = target(&views, field, work)?;
+                    if let Target::Domain(DomainTarget::Field(owner, name)) = member {
+                        let native =
+                            domain_field(package, &views, declaration, base, owner, name, work)?;
+                        matches_native(package, &views, value.value_type, &native, work)?;
+                        continue;
+                    }
                     let Target::Field(record, field) = member else {
                         return Err(Error::Invalid(Invalid::Type));
                     };
@@ -249,7 +307,7 @@ pub(super) fn validate(
                         Target::Record(record) | Target::Object(_, record) => record,
                         _ => return Err(Error::Invalid(Invalid::Type)),
                     };
-                    if !same_model(view.catalog.model, base_view.catalog.model)
+                    if !same_model(view.model()?, base_view.model()?)
                         || base_record.name() != record.name()
                     {
                         return Err(Error::Invalid(Invalid::Type));
@@ -263,7 +321,7 @@ pub(super) fn validate(
                     };
                     reserve_formal(field.value_type(), work)?;
                     let native = view
-                        .catalog
+                        .catalog()?
                         .formal(field.value_type(), &site)
                         .ok_or(Error::Invalid(Invalid::Type))?;
                     matches_native(package, &views, value.value_type, &native, work)?;
@@ -274,7 +332,7 @@ pub(super) fn validate(
                         return Err(Error::Invalid(Invalid::Type));
                     };
                     let native = NativeType::Enumeration {
-                        model: view.catalog.model,
+                        model: view.model()?,
                         declaration: enumeration,
                     };
                     matches_native(package, &views, value.value_type, &native, work)?;
@@ -305,6 +363,78 @@ pub(super) fn validate(
         }
     }
     Ok(retained)
+}
+
+/// FR-042-AC-11: a wire `Model` selecting a domain package names exactly the
+/// package FR-056 admitted at linking, selects that package's document
+/// dependency, and carries only exports of that package, each located at
+/// the whole document. Returns its export targets.
+fn domain_model<'a>(
+    model: &w::Model,
+    artifact: &w::ArtifactRef,
+    domain: &AdmittedDomainPackage<'a>,
+    dependencies: &BTreeMap<RefKey<'_>, &SuppliedDependency<'_>>,
+    work: &mut Work,
+) -> Result<Vec<Target<'a>>, Error> {
+    same_ref(artifact, domain.artifact, work)?;
+    work.bytes(model.profile.len())?;
+    let selection = domain.package.selection();
+    let Some(naming) = &model.domain_package.0 else {
+        return Err(Error::Invalid(Invalid::Model));
+    };
+    work.bytes(naming.identity.len().saturating_add(naming.version.len()))?;
+    if artifact.kind != w::ArtifactKind::ModelPackage
+        || model.profile != DOMAIN_PACKAGE_PROFILE
+        || naming.identity != selection.identity
+        || naming.version != selection.version
+        || naming.digest.0 != selection.digest
+    {
+        return Err(Error::Invalid(Invalid::Model));
+    }
+    let dependency = dependencies
+        .get(&ref_key(artifact))
+        .ok_or(Error::Invalid(Invalid::Dependency))?;
+    same_ref(artifact, dependency.artifact, work)?;
+    domain::verify_document(selection, dependency.bytes, work)?;
+    let locus = domain::locus(domain, dependency.bytes.len(), work)?;
+    let mut exports = BTreeMap::new();
+    for export in domain::exports(domain.package, work)? {
+        let mut path = vec![export.owner.to_owned()];
+        path.extend(export.member.map(str::to_owned));
+        exports.insert((export.kind.as_str().to_owned(), path), export.target);
+    }
+    let mut targets = Vec::new();
+    let mut previous_export: Option<ExportKey> = None;
+    for export in &model.exports {
+        work.visit()?;
+        let key = export_key(export, work)?;
+        if let Some(previous) = previous_export.as_ref() {
+            work.visit()?;
+            if previous >= &key {
+                return Err(Error::Invalid(Invalid::Order));
+            }
+        }
+        previous_export = Some(key.clone());
+        let target = exports
+            .get(&key)
+            .copied()
+            .ok_or(Error::Invalid(Invalid::Model))?;
+        charge_ref(&export.locus.source, work)?;
+        work.bytes(
+            export
+                .locus
+                .formal
+                .document
+                .len()
+                .saturating_add(export.locus.formal.revision.value.len()),
+        )?;
+        if export.locus != locus {
+            return Err(Error::Invalid(Invalid::ForeignLocus));
+        }
+        work.charge(Dimension::Entries, 1)?;
+        targets.push(Target::Domain(target));
+    }
+    Ok(targets)
 }
 
 // No admitted model carries a relationship authority; any event occurrence
@@ -794,8 +924,16 @@ fn validate_type(ty: &w::Type, views: &[View<'_>], work: &mut Work) -> Result<()
             scalar(role, actual, unit.0.as_deref(), representation, work)?
         }
         w::Type::Enum { export } => matches!(target(views, export, work)?.1, Target::Enum(_)),
-        w::Type::Record { export } => matches!(target(views, export, work)?.1, Target::Record(_)),
-        w::Type::Object { export } => matches!(target(views, export, work)?.1, Target::Object(..)),
+        w::Type::Record { export } => match target(views, export, work)?.1 {
+            Target::Record(_) => true,
+            Target::Domain(DomainTarget::Type(ty)) => !ty.is_object(),
+            _ => false,
+        },
+        w::Type::Object { export } => match target(views, export, work)?.1 {
+            Target::Object(..) => true,
+            Target::Domain(DomainTarget::Type(ty)) => ty.is_object(),
+            _ => false,
+        },
         w::Type::Reference {
             export,
             object,
@@ -882,6 +1020,59 @@ fn reserve_formal(mut ty: &ir::ValueType, work: &mut Work) -> Result<(), Error> 
     }
 }
 
+/// Whether two domain types are one declaration under one selection.
+fn same_domain_type(
+    left: &crate::checking::DomainType<'_>,
+    right: &crate::checking::DomainType<'_>,
+    work: &mut Work,
+) -> Result<bool, Error> {
+    work.bytes(
+        left.declaration
+            .key
+            .node
+            .len()
+            .saturating_add(right.declaration.key.node.len()),
+    )?;
+    Ok(left.package.selection() == right.package.selection()
+        && left.declaration.key == right.declaration.key)
+}
+
+/// The type of domain field `name` of `owner`, read through `base`, whose
+/// wire type must be that same domain type.
+fn domain_field<'a>(
+    package: &w::Package,
+    views: &[View<'a>],
+    declaration: &w::Declaration,
+    base: &w::Handle,
+    owner: crate::checking::DomainType<'a>,
+    name: &str,
+    work: &mut Work,
+) -> Result<NativeType<'a>, Error> {
+    let base = local_value(package, declaration, base)?;
+    let base_export = match package
+        .types
+        .get(base.value_type as usize)
+        .ok_or(Error::Invalid(Invalid::Reference))?
+    {
+        w::Type::Record { export } | w::Type::Object { export } => export,
+        _ => return Err(Error::Invalid(Invalid::Type)),
+    };
+    let (_, Target::Domain(DomainTarget::Type(base_type))) = target(views, base_export, work)?
+    else {
+        return Err(Error::Invalid(Invalid::Type));
+    };
+    if !same_domain_type(&base_type, &owner, work)? {
+        return Err(Error::Invalid(Invalid::Type));
+    }
+    work.bytes(name.len())?;
+    work.charge(Dimension::Entries, 1)?;
+    match owner.field(name) {
+        crate::checking::DomainField::Typed(native) => Ok(native),
+        crate::checking::DomainField::Unrepresented => Err(Error::Unsupported(Unsupported::Export)),
+        crate::checking::DomainField::Missing => Err(Error::Invalid(Invalid::Type)),
+    }
+}
+
 fn same_model(left: &NativeModel, right: &NativeModel) -> bool {
     left.environment().owner() == right.environment().owner() && left.digest() == right.digest()
 }
@@ -925,19 +1116,28 @@ fn matches_native(
             (w::Type::Boolean {}, NativeType::Boolean) => true,
             (w::Type::Scalar { export, .. }, NativeType::Scalar { model, role, .. }) => {
                 let (view, selected) = target(views, export, work)?;
-                matches!(selected, Target::Scalar(actual, _) if same_model(view.catalog.model, model) && actual.name == role.name)
+                matches!(selected, Target::Scalar(actual, _) if same_model(view.model()?, model) && actual.name == role.name)
             }
             (w::Type::Enum { export }, NativeType::Enumeration { model, declaration }) => {
                 let (view, selected) = target(views, export, work)?;
-                matches!(selected, Target::Enum(actual) if same_model(view.catalog.model, model) && actual.name() == declaration.name())
+                matches!(selected, Target::Enum(actual) if same_model(view.model()?, model) && actual.name() == declaration.name())
             }
             (w::Type::Record { export }, NativeType::Record { model, declaration }) => {
                 let (view, selected) = target(views, export, work)?;
-                matches!(selected, Target::Record(actual) if same_model(view.catalog.model, model) && actual.name() == declaration.name())
+                matches!(selected, Target::Record(actual) if same_model(view.model()?, model) && actual.name() == declaration.name())
             }
             (w::Type::Object { export }, NativeType::Object { model, role }) => {
                 let (view, selected) = target(views, export, work)?;
-                matches!(selected, Target::Object(actual, _) if same_model(view.catalog.model, model) && actual == *role)
+                matches!(selected, Target::Object(actual, _) if same_model(view.model()?, model) && actual == *role)
+            }
+            (
+                w::Type::Record { export } | w::Type::Object { export },
+                NativeType::Domain(expected),
+            ) => {
+                let (_, selected) = target(views, export, work)?;
+                matches!(wire, w::Type::Object { .. }) == expected.is_object()
+                    && matches!(selected, Target::Domain(DomainTarget::Type(actual))
+                        if same_domain_type(&actual, expected, work)?)
             }
             (
                 w::Type::Reference {
@@ -948,7 +1148,7 @@ fn matches_native(
                 NativeType::Reference { model, role },
             ) => {
                 let (view, actual) = reference_target(views, export, object, universe, work)?;
-                same_model(view.catalog.model, model) && actual == *role
+                same_model(view.model()?, model) && actual == *role
             }
             _ => false,
         };
@@ -987,8 +1187,13 @@ fn validate_operations(
     work.locus = Some(declaration.locus.clone());
     match &declaration.execution {
         w::Execution::Pre { operation } | w::Execution::Post { operation } => {
-            if !matches!(target(views, operation, work)?.1, Target::Operation(_)) {
-                return Err(Error::Invalid(Invalid::Type));
+            match target(views, operation, work)?.1 {
+                Target::Operation(_) => {}
+                // A domain operation has no execution authority here yet.
+                Target::Domain(DomainTarget::Operation) => {
+                    return Err(Error::Unsupported(Unsupported::Export))
+                }
+                _ => return Err(Error::Invalid(Invalid::Type)),
             }
         }
         w::Execution::Initialization { .. } | w::Execution::Handler { .. } => {}
@@ -1012,6 +1217,7 @@ fn validate_operations(
                 work.locus = Some(role.locus.clone());
                 match target(views, &role.model, work)?.1 {
                     Target::Object(..) => {}
+                    Target::Domain(DomainTarget::Type(ty)) if ty.is_object() => {}
                     _ => return Err(Error::Invalid(Invalid::Type)),
                 }
             }
@@ -1080,12 +1286,16 @@ fn operation_context(
 ) -> Result<(), Error> {
     let (context_model, context) = target(views, context, work)?;
     let (operation_model, operation) = target(views, operation, work)?;
+    if let Target::Domain(DomainTarget::Operation) = operation {
+        // A domain operation has no attempt or compensation authority yet.
+        return Err(Error::Unsupported(Unsupported::Export));
+    }
     let (Target::Object(_, context), Target::Operation(operation)) = (context, operation) else {
         return Err(Error::Invalid(Invalid::Type));
     };
     work.bytes(context.name().as_str().len())?;
     work.bytes(operation.context.as_str().len())?;
-    if !same_model(context_model.catalog.model, operation_model.catalog.model)
+    if !same_model(context_model.model()?, operation_model.model()?)
         || context.name() != &operation.context
     {
         return Err(Error::Invalid(Invalid::Type));

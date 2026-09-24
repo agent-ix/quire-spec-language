@@ -128,11 +128,42 @@ impl<'s, 'a> Builder<'s, 'a> {
                 ExprKind::Name(_) | ExprKind::SelfValue | ExprKind::ResultValue => self.read(at)?,
                 ExprKind::Field { base, name: field } => {
                     let value = self.visit(*base, path, depth + 1)?;
-                    let (model, record) = match self.ty(*base)? {
+                    let key = match self.ty(*base)? {
                         NativeType::Record { model, declaration } => {
-                            (*model, declaration.name().as_str())
+                            let record = declaration.name().as_str();
+                            let owner = model.environment().owner();
+                            self.work.charge(
+                                D::Bytes,
+                                field.value.len()
+                                    + record.len()
+                                    + owner.package().as_str().len()
+                                    + owner.requirement().as_str().len(),
+                                self.site(at),
+                            )?;
+                            Key::Field(value.key, owner, record, field.value.clone())
                         }
-                        NativeType::Object { model, role } => (*model, role.record.as_str()),
+                        NativeType::Object { model, role } => {
+                            let record = role.record.as_str();
+                            let owner = model.environment().owner();
+                            self.work.charge(
+                                D::Bytes,
+                                field.value.len()
+                                    + record.len()
+                                    + owner.package().as_str().len()
+                                    + owner.requirement().as_str().len(),
+                                self.site(at),
+                            )?;
+                            Key::Field(value.key, owner, record, field.value.clone())
+                        }
+                        NativeType::Domain(domain) => {
+                            let key = domain.declaration.key;
+                            self.work.charge(
+                                D::Bytes,
+                                field.value.len() + key.package.len() + key.node.len(),
+                                self.site(at),
+                            )?;
+                            Key::DomainField(value.key, key, field.value.clone())
+                        }
                         NativeType::Boolean
                         | NativeType::Scalar { .. }
                         | NativeType::Enumeration { .. }
@@ -142,25 +173,7 @@ impl<'s, 'a> Builder<'s, 'a> {
                             return Err(self.unsupported(at, Unsupported::ValueRepresentation))
                         }
                     };
-                    self.work.charge(
-                        D::Bytes,
-                        field.value.len()
-                            + record.len()
-                            + model.environment().owner().package().as_str().len()
-                            + model.environment().owner().requirement().as_str().len(),
-                        self.site(at),
-                    )?;
-                    self.symbolic(
-                        Key::Field(
-                            value.key,
-                            model.environment().owner(),
-                            record,
-                            field.value.clone(),
-                        ),
-                        at,
-                        self.ty(at)?,
-                        value.stable,
-                    )?
+                    self.symbolic(key, at, self.ty(at)?, value.stable)?
                 }
                 ExprKind::Unary { op, argument } => {
                     // The authored signed minimum is one checked literal, not a

@@ -48,6 +48,10 @@ pub enum Prerequisite {
     FormalSource,
     /// The existing IR literal normalizer cannot represent the raw components.
     RationalNormalization,
+    /// A domain-package type has no native representation here: a value type,
+    /// or a field typed by a native value type other than `Boolean` or with a
+    /// multiplicity other than `1`, `0..1` or `0..n`.
+    DomainRepresentation,
 }
 
 /// A typed refusal; source regions and original selections remain in the report.

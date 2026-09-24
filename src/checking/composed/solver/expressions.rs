@@ -215,14 +215,9 @@ impl<'a> Solver<'_, 'a, '_, '_> {
                                     for occurrence in &exports.occurrences {
                                         self.work.charge(D::Constraints, 1, self.site(at))?;
                                         if occurrence.span == span {
-                                            if let ModelTarget::Type(bound) = &occurrence.target {
-                                                charge_type(
-                                                    bound.native(),
-                                                    self.work,
-                                                    self.site(at),
-                                                    1,
-                                                )?;
-                                                found = Some(bound.native().clone());
+                                            if let Some(ty) = occurrence.target.value_type() {
+                                                charge_type(&ty, self.work, self.site(at), 1)?;
+                                                found = Some(ty);
                                                 break;
                                             }
                                         }
@@ -412,6 +407,36 @@ impl<'a> Solver<'_, 'a, '_, '_> {
 }
 
 impl<'a> Solver<'_, 'a, '_, '_> {
+    /// A field of a domain-package type: its member of that name, typed from
+    /// the field's value type and multiplicity.
+    fn domain_field(
+        &mut self,
+        domain: &DomainType<'a>,
+        name: &qsl_foundation::Spanned<String>,
+        at: ExprId,
+    ) -> Result<Option<NativeType<'a>>> {
+        self.work.charge(D::Constraints, 1, self.site(at))?;
+        self.work
+            .charge(D::Bytes, name.value.len(), self.site(at))?;
+        match domain.field(&name.value) {
+            DomainField::Typed(ty) => {
+                charge_type(&ty, self.work, self.site(at), 1)?;
+                Ok(Some(ty))
+            }
+            DomainField::Missing => {
+                self.cause(at, CauseKind::InvalidField)?;
+                Ok(None)
+            }
+            DomainField::Unrepresented => {
+                self.cause(
+                    at,
+                    CauseKind::UnsupportedPrerequisite(Prerequisite::DomainRepresentation),
+                )?;
+                Ok(None)
+            }
+        }
+    }
+
     pub(super) fn field_inner(
         &mut self,
         receiver: &NativeType<'a>,
@@ -421,6 +446,7 @@ impl<'a> Solver<'_, 'a, '_, '_> {
         let (model, record) = match receiver {
             NativeType::Record { model, declaration } => (*model, declaration.name()),
             NativeType::Object { model, role } => (*model, &role.record),
+            NativeType::Domain(domain) => return self.domain_field(domain, name, at),
             NativeType::Boolean
             | NativeType::Scalar { .. }
             | NativeType::Enumeration { .. }

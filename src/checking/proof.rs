@@ -256,7 +256,8 @@ pub(super) fn representation(
         | NativeType::Enumeration { .. }
         | NativeType::Record { .. }
         | NativeType::Object { .. }
-        | NativeType::Reference { .. } => ir::ValueType::Boolean,
+        | NativeType::Reference { .. }
+        | NativeType::Domain(_) => ir::ValueType::Boolean,
     })
 }
 

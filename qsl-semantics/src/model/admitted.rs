@@ -234,6 +234,17 @@ impl AdmittedPackage {
         self.nodes.get(artifact_id).map(|index| self.at(*index))
     }
 
+    /// The type-definition or population node keyed `key`, if the package
+    /// declares one: `key` must name this package and have the
+    /// `ix://<package>/<artifact id>` form.
+    pub fn declaration_by_key(&self, key: &DeclarationKey) -> Option<Declaration<'_>> {
+        let identity = &self.package.model_selection.identity;
+        if &key.package != identity {
+            return None;
+        }
+        self.declaration(type_identity_segment(identity, &key.node)?)
+    }
+
     /// The member `name` of the declaration keyed `owner`, if the package
     /// declares one.
     pub fn member(&self, owner: &DeclarationKey, name: &str) -> Option<Declaration<'_>> {
@@ -244,6 +255,11 @@ impl AdmittedPackage {
             .get(owner.node.as_str())
             .and_then(|members| members.get(name))
             .map(|index| self.at(*index))
+    }
+
+    /// Every admitted declaration, in the package's record order.
+    pub fn declarations(&self) -> impl Iterator<Item = Declaration<'_>> {
+        (0..self.package.records.len()).map(|index| self.at(index))
     }
 
     fn at(&self, index: usize) -> Declaration<'_> {

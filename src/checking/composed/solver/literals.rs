@@ -65,9 +65,8 @@ impl Solver<'_, '_, '_, '_> {
                             | NativeType::Object { .. }
                             | NativeType::Reference { .. }
                             | NativeType::Option(_)
-                            | NativeType::Sequence { .. } => {
-                                self.cause(at, CauseKind::TypeMismatch)?
-                            }
+                            | NativeType::Sequence { .. }
+                            | NativeType::Domain(_) => self.cause(at, CauseKind::TypeMismatch)?,
                         }
                     }
                 }
