@@ -46,7 +46,6 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
     )
     .unwrap();
     let start = SOURCE.find("if true then").unwrap() + 3;
-    let before = parsed.cst().stable_node_ids();
     let edited = complete::apply_edit(
         &parsed,
         "r1",
@@ -68,20 +67,22 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
         edited.diagnostics()
     );
     assert_ne!(parsed.source().digest(), edited.source().digest());
-    assert!(before
-        .intersection(&edited.cst().stable_node_ids())
-        .next()
-        .is_some());
-    assert!(!edited.cst().stable_node_ids().contains(
-        parsed
-            .cst()
-            .node_covering(Span {
-                start,
-                end: start + 4
-            })
-            .unwrap()
-            .stable_id()
-    ));
+    assert!(parsed
+        .cst()
+        .nodes()
+        .iter()
+        .any(|node| parsed.cst().reuse_candidate(node, edited.cst()).is_some()));
+    let replaced = parsed
+        .cst()
+        .node_covering(Span {
+            start,
+            end: start + 4,
+        })
+        .unwrap();
+    assert!(parsed
+        .cst()
+        .reuse_candidate(replaced, edited.cst())
+        .is_none());
 }
 
 #[trace("TC-222", "FR-302-AC-3")]
@@ -125,11 +126,11 @@ fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
         })
         .unwrap();
     assert_eq!(original.production(), unchanged.production());
-    assert_eq!(original.stable_id(), unchanged.stable_id());
-    assert_eq!(
-        original.identity().ancestor_productions,
-        unchanged.identity().ancestor_productions
-    );
+    assert!(parsed.cst().may_reuse(original, inserted.cst(), unchanged));
+    assert!(parsed
+        .cst()
+        .ancestor_productions(original)
+        .eq(inserted.cst().ancestor_productions(unchanged)));
 }
 
 #[trace("TC-222", "FR-302-AC-3")]
@@ -173,7 +174,7 @@ fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
         })
         .unwrap();
     assert_eq!(original.production(), unchanged.production());
-    assert_eq!(original.stable_id(), unchanged.stable_id());
+    assert!(parsed.cst().may_reuse(original, edited.cst(), unchanged));
 }
 
 #[trace("Task-047")]

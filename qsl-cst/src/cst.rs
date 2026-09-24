@@ -2,8 +2,6 @@
 //! The lossless complete-V1 concrete syntax tree: the recovering node/token
 //! tree and incremental whitespace-only editing. The definition/model
 //! selection values the parser recovers are `qsl_foundation::selection`'s.
-use std::collections::BTreeSet;
-
 use qsl_foundation::{ByteDigest, Source, Span};
 
 /// Public lossless leaf classification; token spellings remain exact bytes.
@@ -146,21 +144,22 @@ productions! {
     VerificationPlan, VerificationStep,
 }
 
-/// Stable within unchanged exact bytes and ancestor-production path.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct StableNodeId(String);
-
-/// Revision-bound CST identity required when exchanging a node.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Revision-bound CST identity required when exchanging a node (FR-302 "CST
+/// identity contract"): the source revision digest, the node's byte range and
+/// its structural path. The path is not copied into the identity: within one
+/// revision a node's arena index determines it, and
+/// [`LosslessCst::structural_path`] derives the child ordinals from parent
+/// links on request. Every field is fixed-size, so building identities costs
+/// constant work per node.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NodeIdentity {
     /// Digest of the caller-selected source revision label.
     pub source_revision_digest: ByteDigest,
     /// Exact node byte range in that revision.
     pub span: Span,
-    /// Child-node ordinals from the root production.
-    pub structural_path: Vec<u32>,
-    /// Production kinds from the root parent through this node's parent.
-    pub ancestor_productions: Vec<Production>,
+    /// Index into [`LosslessCst::nodes`] of that revision; resolves the
+    /// structural path through [`LosslessCst::structural_path`].
+    pub node: usize,
 }
 
 /// Ordered CST child reference.
@@ -207,7 +206,10 @@ pub struct CstNode {
     span: Span,
     children: Vec<CstElement>,
     identity: NodeIdentity,
-    stable_id: StableNodeId,
+    /// Parent node index; `None` only for the root.
+    parent: Option<usize>,
+    /// Ordinal among the parent's node children.
+    ordinal: u32,
 }
 
 impl CstNode {
@@ -226,10 +228,6 @@ impl CstNode {
     /// Revision-bound exchange identity.
     pub fn identity(&self) -> &NodeIdentity {
         &self.identity
-    }
-    /// Revision-independent reuse identity for unchanged byte-correspondent regions.
-    pub fn stable_id(&self) -> &StableNodeId {
-        &self.stable_id
     }
 }
 
@@ -253,26 +251,6 @@ pub struct Recovery {
     pub expected: String,
 }
 
-/// Byte counts of the SHA-256 preimages a [`LosslessCst`] hashed to build
-/// its revision and node identities, counted as the preimages are built.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct IdentityPreimageBytes {
-    /// Every preimage byte hashed: the document-revision preimage and every
-    /// node preimage.
-    pub total: u64,
-    /// The node preimages' source-slice bytes, summed over nodes: a source
-    /// byte inside `d` nested nodes is hashed `d` times.
-    pub source_slices: u64,
-    /// The node preimages' ancestor production-name bytes, summed over nodes.
-    pub ancestor_paths: u64,
-}
-
-impl IdentityPreimageBytes {
-    fn widen(bytes: usize) -> u64 {
-        u64::try_from(bytes).unwrap_or(u64::MAX)
-    }
-}
-
 /// Exact CST plus a separate non-mutating recovery stream.
 #[derive(Clone, Debug)]
 pub struct LosslessCst {
@@ -281,7 +259,7 @@ pub struct LosslessCst {
     nodes: Vec<CstNode>,
     root: usize,
     recoveries: Vec<Recovery>,
-    identity_preimage_bytes: IdentityPreimageBytes,
+    identity_hashed_bytes: usize,
 }
 
 impl LosslessCst {
@@ -304,58 +282,37 @@ impl LosslessCst {
                 .extend_from_slice(&u64::try_from(value.len()).unwrap_or(u64::MAX).to_be_bytes());
             revision_preimage.extend_from_slice(value);
         }
+        // The one identity hash of a parse: over the revision labels, never
+        // over per-node data (QSL-200).
         let revision_digest = ByteDigest::of(&revision_preimage);
-        let mut hashed = IdentityPreimageBytes {
-            total: IdentityPreimageBytes::widen(revision_preimage.len()),
-            ..IdentityPreimageBytes::default()
-        };
-        let mut paths = vec![Vec::new(); nodes.len()];
-        let mut ancestors = vec![Vec::new(); nodes.len()];
-        let mut stable_occurrences = vec![0_u32; nodes.len()];
-        IdentityTraversal {
-            nodes: &nodes,
-            source: &source,
-            paths: &mut paths,
-            ancestors: &mut ancestors,
-            stable_occurrences: &mut stable_occurrences,
-            occurrences: std::collections::BTreeMap::new(),
+        let identity_hashed_bytes = revision_preimage.len();
+        let mut links = vec![(None, 0_u32); nodes.len()];
+        for (index, node) in nodes.iter().enumerate() {
+            let children = node.children.iter().filter_map(|child| match child {
+                CstElement::Node(child) => Some(*child),
+                CstElement::Token(_) => None,
+            });
+            for (ordinal, child) in children.enumerate() {
+                if let Some(link) = links.get_mut(child) {
+                    *link = (Some(index), u32::try_from(ordinal).unwrap_or(u32::MAX));
+                }
+            }
         }
-        .assign(root, &[], &[]);
         let nodes = nodes
-            .drain(..)
+            .into_iter()
+            .zip(links)
             .enumerate()
-            .map(|(index, node)| {
-                let path = std::mem::take(&mut paths[index]);
-                let ancestor_productions = std::mem::take(&mut ancestors[index]);
-                let occurrence = stable_occurrences[index];
-                let mut stable = b"quire.complete.cst-node/1\0".to_vec();
-                stable.extend_from_slice(source.identity().identity.as_bytes());
-                stable.extend_from_slice(format!("|{:?}|", node.production).as_bytes());
-                let slice = source.slice(node.span).unwrap_or_default().as_bytes();
-                stable.extend_from_slice(slice);
-                stable.extend_from_slice(b"|");
-                let ancestors_start = stable.len();
-                for production in &ancestor_productions {
-                    stable.extend_from_slice(format!("{production:?}/").as_bytes());
-                }
-                let ancestors = stable.len() - ancestors_start;
-                stable.extend_from_slice(b"|");
-                stable.extend_from_slice(&occurrence.to_be_bytes());
-                hashed.total += IdentityPreimageBytes::widen(stable.len());
-                hashed.source_slices += IdentityPreimageBytes::widen(slice.len());
-                hashed.ancestor_paths += IdentityPreimageBytes::widen(ancestors);
-                CstNode {
-                    production: node.production,
+            .map(|(index, (node, (parent, ordinal)))| CstNode {
+                production: node.production,
+                span: node.span,
+                children: node.children,
+                identity: NodeIdentity {
+                    source_revision_digest: revision_digest,
                     span: node.span,
-                    children: node.children,
-                    identity: NodeIdentity {
-                        source_revision_digest: revision_digest,
-                        span: node.span,
-                        structural_path: path,
-                        ancestor_productions,
-                    },
-                    stable_id: StableNodeId(ByteDigest::of(&stable).to_string()),
-                }
+                    node: index,
+                },
+                parent,
+                ordinal,
             })
             .collect();
         Self {
@@ -364,17 +321,8 @@ impl LosslessCst {
             nodes,
             root,
             recoveries,
-            identity_preimage_bytes: hashed,
+            identity_hashed_bytes,
         }
-    }
-
-    /// Bytes hashed to build this CST's identities, counted by the preimage
-    /// builder itself. Read by QSL-196's CST identity-hashing benchmark.
-    /// Temporary: QSL-200 removes the eager per-node digest, after which
-    /// this counts only the document-revision preimage (or goes away with
-    /// the bench's `cst` rows).
-    pub fn identity_preimage_bytes(&self) -> IdentityPreimageBytes {
-        self.identity_preimage_bytes
     }
 
     /// Immutable source backing every token and node span.
@@ -406,11 +354,7 @@ impl LosslessCst {
     }
     /// Render one node through its ordered token/node children.
     pub fn render_node(&self, node: &CstNode) -> Result<Vec<u8>, Box<super::CompleteDiagnostic>> {
-        let Some(index) = self
-            .nodes
-            .iter()
-            .position(|candidate| candidate.identity() == node.identity())
-        else {
+        let Some(own) = self.resolve(node.identity()) else {
             return Err(super::diagnostic::error(
                 &self.source,
                 super::CompleteCode::InvalidSourceIdentity,
@@ -421,29 +365,95 @@ impl LosslessCst {
                 "CST node belongs to a different parsed source",
             ));
         };
-        fn append(cst: &LosslessCst, element: CstElement, output: &mut Vec<u8>) {
+        // Explicit stack of pending children, rightmost on the bottom, so a
+        // deep node never recurses.
+        let mut output = Vec::new();
+        let mut pending: Vec<CstElement> = own.children.iter().rev().copied().collect();
+        while let Some(element) = pending.pop() {
             match element {
-                CstElement::Token(token) => output.extend_from_slice(cst.tokens[token].spelling()),
-                CstElement::Node(node) => {
-                    for child in &cst.nodes[node].children {
-                        append(cst, *child, output);
+                CstElement::Token(token) => {
+                    if let Some(token) = self.tokens.get(token) {
+                        output.extend_from_slice(token.spelling());
+                    }
+                }
+                CstElement::Node(child) => {
+                    if let Some(child) = self.nodes.get(child) {
+                        pending.extend(child.children.iter().rev().copied());
                     }
                 }
             }
         }
-
-        let mut output = Vec::new();
-        for child in &self.nodes[index].children {
-            append(self, *child, &mut output);
-        }
         Ok(output)
     }
-    /// Stable reuse identities for comparison with a reparsed revision.
-    pub fn stable_node_ids(&self) -> BTreeSet<StableNodeId> {
+    /// The node `identity` names in this revision, if it names one here.
+    pub fn resolve(&self, identity: &NodeIdentity) -> Option<&CstNode> {
         self.nodes
-            .iter()
-            .map(|node| node.stable_id.clone())
-            .collect()
+            .get(identity.node)
+            .filter(|node| node.identity == *identity)
+    }
+    /// Child-node ordinals from the root to `node`, derived from parent
+    /// links on request (FR-302 structural path).
+    pub fn structural_path(&self, node: &CstNode) -> Vec<u32> {
+        let mut path: Vec<u32> = self
+            .ancestry(node)
+            .filter(|step| step.parent.is_some())
+            .map(|step| step.ordinal)
+            .collect();
+        path.reverse();
+        path
+    }
+    /// Productions of `node`'s ancestors, nearest parent first.
+    pub fn ancestor_productions<'s>(
+        &'s self,
+        node: &'s CstNode,
+    ) -> impl Iterator<Item = Production> + 's {
+        self.ancestry(node).skip(1).map(CstNode::production)
+    }
+    /// `node` followed by each of its ancestors up to the root.
+    fn ancestry<'s>(&'s self, node: &'s CstNode) -> impl Iterator<Item = &'s CstNode> + 's {
+        std::iter::successors(Some(node), |step| {
+            step.parent.and_then(|parent| self.nodes.get(parent))
+        })
+    }
+    /// Exact source bytes of `node` in this revision.
+    fn node_bytes(&self, node: &CstNode) -> &[u8] {
+        self.source
+            .text()
+            .as_bytes()
+            .get(node.span.start..node.span.end)
+            .unwrap_or_default()
+    }
+    /// FR-302 reuse rule: whether `node` of this revision may keep its
+    /// identity as `candidate` of `successor`. Reuse requires the same
+    /// production, byte-identical source slices and the same ancestor
+    /// production path. The comparison is typed (`Production` equality and
+    /// byte slices) and decided on request; nothing is hashed or
+    /// precomputed per node.
+    pub fn may_reuse(&self, node: &CstNode, successor: &LosslessCst, candidate: &CstNode) -> bool {
+        node.production == candidate.production
+            && self.node_bytes(node) == successor.node_bytes(candidate)
+            && self
+                .ancestor_productions(node)
+                .eq(successor.ancestor_productions(candidate))
+    }
+    /// The first node of `successor`, in arena order, that `node` may be
+    /// reused as under [`Self::may_reuse`].
+    pub fn reuse_candidate<'s>(
+        &self,
+        node: &CstNode,
+        successor: &'s LosslessCst,
+    ) -> Option<&'s CstNode> {
+        let length = node.span.end.saturating_sub(node.span.start);
+        successor.nodes.iter().find(|candidate| {
+            candidate.production == node.production
+                && candidate.span.end.saturating_sub(candidate.span.start) == length
+                && self.may_reuse(node, successor, candidate)
+        })
+    }
+    /// Bytes hashed to build this CST's identities: the revision label
+    /// preimage only, independent of how many nodes the parse produced.
+    pub fn identity_hashed_bytes(&self) -> usize {
+        self.identity_hashed_bytes
     }
     /// Smallest named node that completely contains the requested range.
     pub fn node_covering(&self, span: Span) -> Option<&CstNode> {
@@ -533,83 +543,6 @@ pub(crate) fn token(class: TokenClass, kind: TokenKind, span: Span, spelling: &[
         kind,
         span,
         spelling: spelling.into(),
-    }
-}
-
-struct IdentityTraversal<'a> {
-    nodes: &'a [RawNode],
-    source: &'a Source,
-    paths: &'a mut [Vec<u32>],
-    ancestors: &'a mut [Vec<Production>],
-    stable_occurrences: &'a mut [u32],
-    occurrences: std::collections::BTreeMap<(Vec<Production>, Production, Vec<u8>), u32>,
-}
-
-impl IdentityTraversal<'_> {
-    /// Pre-order depth-first assignment of structural paths, ancestor
-    /// productions and stable occurrence numbers. An explicit work stack,
-    /// not Rust recursion: a `let … in`/`if … else`/right-associative
-    /// `implies` chain admitted up to the token/node ceilings (NFR-001) can
-    /// be thousands of productions deep even though its *nesting* depth is
-    /// 0, and this walks the same flat `nodes` arena `lower_tree` already
-    /// builds iteratively for exactly that reason (QSL-197).
-    fn assign(&mut self, index: usize, path: &[u32], ancestor_path: &[Production]) {
-        struct Pending {
-            index: usize,
-            path: Vec<u32>,
-            ancestor_path: Vec<Production>,
-        }
-        let mut stack = vec![Pending {
-            index,
-            path: path.to_vec(),
-            ancestor_path: ancestor_path.to_vec(),
-        }];
-        while let Some(Pending {
-            index,
-            path,
-            ancestor_path,
-        }) = stack.pop()
-        {
-            self.paths[index] = path.clone();
-            self.ancestors[index] = ancestor_path.clone();
-            let occurrence = self
-                .occurrences
-                .entry((
-                    ancestor_path.clone(),
-                    self.nodes[index].production,
-                    self.source
-                        .slice(self.nodes[index].span)
-                        .unwrap_or_default()
-                        .as_bytes()
-                        .to_vec(),
-                ))
-                .or_insert(0);
-            self.stable_occurrences[index] = *occurrence;
-            *occurrence = occurrence.saturating_add(1);
-            let child_nodes: Vec<_> = self.nodes[index]
-                .children
-                .iter()
-                .filter_map(|child| match child {
-                    CstElement::Node(node) => Some(*node),
-                    CstElement::Token(_) => None,
-                })
-                .collect();
-            // Push in reverse so the leftmost child is popped (and its
-            // whole subtree completed) next, reproducing the original
-            // recursive traversal's left-to-right pre-order visitation
-            // exactly -- `occurrences` numbers repeats in visitation order.
-            for (child_index, node) in child_nodes.into_iter().enumerate().rev() {
-                let mut child_path = path.clone();
-                child_path.push(u32::try_from(child_index).unwrap_or(u32::MAX));
-                let mut child_ancestors = ancestor_path.clone();
-                child_ancestors.push(self.nodes[index].production);
-                stack.push(Pending {
-                    index: node,
-                    path: child_path,
-                    ancestor_path: child_ancestors,
-                });
-            }
-        }
     }
 }
 

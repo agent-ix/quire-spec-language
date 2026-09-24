@@ -168,24 +168,22 @@ The smaller sizes were measured once each by the probe:
 
 ### CST identity hashing (`benches/cst.rs`)
 
-`qsl_cst::parse` gives every CST node a `StableNodeId`. The ID is a SHA-256
-digest over a preimage that holds the node's whole source slice and every
-ancestor's production name (`LosslessCst::new`).
+**QSL-200 has landed.** A parse no longer hashes per-node data. A node's
+identity is the revision digest, its span and its arena index; the structural
+path is derived from parent links on request, and reuse is decided on request
+by comparing productions, byte slices and ancestor paths. The only identity
+hash is the document-revision preimage, once per parse.
+`LosslessCst::identity_hashed_bytes` reports that count: 141 bytes for every
+input below, whatever its node count.
 
 - `cst/parse/<input>` times the whole parse.
-- `cst/sha256/<input>` times SHA-256 alone over a buffer the size of that
-  input's hashed bytes, split into one message per node.
+- `cst/sha256/<input>` times one SHA-256 over a buffer of
+  `identity_hashed_bytes` bytes.
 
-The hashed-byte counts come from `LosslessCst::identity_preimage_bytes`, which
-qsl-cst's own preimage builder counts as it hashes. They were printed by
-`qsl-bench-probe cst`.
-
-**This axis is temporary.** QSL-200, folded into QSL-197, removes the eager
-per-node digest. After it lands, parsing hashes no per-node data, and
-`identity_preimage_bytes` reports the document-revision preimage alone, or
-nothing. The `cst/sha256` rows then time a buffer of that size. The drop to
-near zero is the expected effect of QSL-200, not a regression or a measurement
-fault. Whichever of QSL-197 and this PR lands second updates the bench.
+The tables below were measured at 89326999, before QSL-200, when every node
+carried a SHA-256 `StableNodeId` over its whole source slice and every
+ancestor's production name. They are kept as the record of what QSL-200
+removed; the PR #380 A/B run is the comparison against them.
 
 | Input | Source bytes | CST nodes | Bytes hashed | Hashed per source byte | Of which: source slices / ancestor names |
 | --- | --- | --- | --- | --- | --- |

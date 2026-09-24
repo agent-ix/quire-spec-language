@@ -57,11 +57,26 @@ fn complete_source_builds_a_byte_exact_trivia_preserving_cst() {
     assert!(parsed.is_admissible());
     assert_eq!(parsed.cst().render(), SOURCE.as_bytes());
     assert_eq!(parsed.source().text(), SOURCE);
-    assert_eq!(
-        parsed.cst().stable_node_ids().len(),
-        parsed.cst().nodes().len(),
-        "distinct CST occurrences must never collapse to one stable identity"
-    );
+    // Distinct occurrences never collapse to one identity: nodes that share
+    // one exact span (an `Expression` wrapping an `Implication` wrapping ...)
+    // each resolve to themselves alone.
+    let nodes = parsed.cst().nodes();
+    let shared_span = nodes
+        .iter()
+        .enumerate()
+        .find_map(|(index, node)| {
+            nodes[index + 1..]
+                .iter()
+                .find(|other| other.span() == node.span())
+                .map(|other| (node, other))
+        })
+        .expect("a production chain shares one span");
+    assert_ne!(shared_span.0.identity(), shared_span.1.identity());
+    for node in nodes {
+        let resolved = parsed.cst().resolve(node.identity()).expect("own identity");
+        assert_eq!(resolved.production(), node.production());
+        assert_eq!(resolved.identity(), node.identity());
+    }
     assert!(parsed
         .cst()
         .tokens()

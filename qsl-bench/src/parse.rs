@@ -137,10 +137,13 @@ mod tests {
     }
 
     #[test]
-    fn identity_preimage_bytes_count_the_revision_and_every_node() {
-        let parsed = parse(&nested_source(1)).expect("depth 1 parses");
-        let hashed = parsed.cst().identity_preimage_bytes();
-        assert!(hashed.source_slices > 0 && hashed.ancestor_paths > 0);
-        assert!(hashed.total > hashed.source_slices + hashed.ancestor_paths);
+    fn identity_hashing_is_independent_of_the_node_count() {
+        let small = parse(&nested_source(0)).expect("depth 0 parses");
+        let large = parse(&volume_source(100)).expect("volume 100 parses");
+        assert!(large.cst().nodes().len() > small.cst().nodes().len());
+        assert_eq!(
+            small.cst().identity_hashed_bytes(),
+            large.cst().identity_hashed_bytes()
+        );
     }
 }

@@ -35,21 +35,18 @@ fn identity_hashing(c: &mut Criterion) {
     for (label, text) in inputs() {
         let parsed = parse(&text).expect("every CST bench input parses at 89326999");
         assert!(parsed.is_admissible(), "{label} is admissible");
-        let hashed = parsed.cst().identity_preimage_bytes();
-        let nodes = parsed.cst().nodes().len().max(1);
-        group.throughput(Throughput::Bytes(hashed.total));
+        // Since QSL-200 a parse hashes only the document-revision preimage,
+        // once, whatever the node count.
+        let hashed = parsed.cst().identity_hashed_bytes();
+        group.throughput(Throughput::Bytes(
+            u64::try_from(hashed).expect("hashed bytes fit in u64"),
+        ));
         group.bench_with_input(BenchmarkId::new("parse", &label), &text, |b, text| {
             b.iter(|| parse(black_box(text)));
         });
-        let total = usize::try_from(hashed.total).expect("hashed bytes fit in memory");
-        let buffer = vec![0x5a_u8; total];
-        let chunk = total.div_ceil(nodes).max(1);
+        let buffer = vec![0x5a_u8; hashed];
         group.bench_with_input(BenchmarkId::new("sha256", &label), &buffer, |b, buffer| {
-            b.iter(|| {
-                for message in black_box(buffer).chunks(chunk) {
-                    black_box(Sha256::digest(message));
-                }
-            });
+            b.iter(|| black_box(Sha256::digest(black_box(buffer))));
         });
     }
     group.finish();
