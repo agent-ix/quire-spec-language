@@ -187,16 +187,17 @@ leaf needs a law that the lock evidence does not supply refuses with
 `missing_declaration`/`missing-selection` naming the law role and the node's
 region, and yields no node. `check` writes no law from a constant.
 
-The `Pre` row is the node of a checked `Pre`, which only an operation
-postcondition holds (`ClauseKind::Postcondition`). A postcondition is a
-`ProtocolClause` subnode (ADR-012 §3, §4.3), not a `Value` declaration: the
-declarations this lowering keys are function bodies and measures and
-FR-094's clause functions, whose `DeclaredClauseKind` is an invariant, a
-precondition or a body. `ProtocolClause` lowers an operation's
-postconditions with its checked operation header and gives each its node,
-owner and clause binding (#218, designed in #223). It builds each `Pre` read
-inside a postcondition by this row, so a `Pre` node keys to one id
-whichever family lowers the clause that holds it.
+The `Pre` row is the node of a checked `Pre`. `pre(...)` is legal only in
+an operation postcondition (`ClauseKind::Postcondition`), and ADR-012 §4.3
+moves `Pre` with the `ProtocolClause` lowering (#218, designed in #223).
+`check` checks a postcondition through `check_postcondition_expression` and
+keys no node for it, and `DeclaredClauseKind`, the clause kind of the
+declarations this lowering keys (function bodies and measures, and FR-094's
+invariant, precondition and body clause functions), has no postcondition
+arm. `ProtocolClause` lowers an operation's postconditions with its checked
+operation header and gives each its node, owner and clause binding. It
+builds each `Pre` read inside a postcondition by this row, so a `Pre` node
+keys to one id whichever family lowers the clause that holds it.
 
 ### Text leaves
 
@@ -235,13 +236,17 @@ and an omitted or `null` slot is a literal of it (Non-application nodes).
 So `f?: V` and `f: Option<V>`, which hold one set of values, have one leaf
 path.
 
-A recursion leaf stands for every text leaf below its path. The value at
-its path `q` has the type of the value at the prefix `r` of `q` of `d`
-segments, the composite `C` both open. Each text leaf at a path `r` + `s`
-therefore has a counterpart at `q` + `s` with the same laws and mode. The
-**expanded leaf set** of a list is the least set that holds each of the
-list's text leaves and, for each of its recursion leaves and each member of
-the set at a path `r` + `s`, that member re-rooted at `q` + `s`.
+A recursion leaf stands for every text leaf below its path. For a
+recursion leaf whose path is `q` + `recursion:d`, let `r` be the first `d`
+segments of `q`. The value at `q` has the type of the value at `r`: the
+composite `C`, entered at `r` and reentered at `q`. Each text leaf at a path
+`r` + `s` therefore has a counterpart at `q` + `s` with the same laws and
+mode. The **expanded leaf set** of a list is the least set that holds each
+of the list's text leaves and, for each of its recursion leaves and each
+text leaf in the set at a path `r` + `s`, that leaf re-rooted at `q` + `s`.
+Every text leaf of the type's unfolding is in the set: a path through a
+reentry at `q` is `q` + `s`, and `r` + `s` is a shorter path to a leaf of the
+same type, so induction on path length ends at a text leaf of the list.
 
 The list has these properties:
 
@@ -252,15 +257,15 @@ The list has these properties:
   refuses past the check stage's depth limit as every FR-092 walk does.
   Because rule 3 ends each path at its first reentry, a recursive type's
   walk is as deep as its composites' nesting, not as deep as the limit.
-- **Injective.** The expanded leaf set is computed from the list alone, so
+- **Lossless.** The expanded leaf set is computed from the list alone, so
   the list determines every text leaf of the type's unfolding, with its path
   and profile. Two types whose text leaves differ in any path or profile
   therefore have different lists.
-- **Unchanged for a type with no recursion.** A walk that never reaches an
-  open composite appends no recursion leaf, so rules 1, 2, 4 and 5 give one
-  text leaf per text leaf of the type, as FR-322 lists them. A recursive
-  composite that reaches no `Text` type, such as FR-092's `List`, adds no
-  leaf.
+- **Without recursion.** A walk that reaches no open composite appends no
+  recursion leaf. Its leaves are FR-322's text leaves, except that an
+  optional field's path passes through `inner` (a QSL proposal, ADR-013
+  QC-24). A recursive composite that reaches no `Text` type, such as
+  FR-092's `List`, adds no leaf.
 - **Independent of keys and group order.** `d` counts path segments. It is
   not a FR-092 group ordinal, and the list names no node, so an application
   node's leaves do not depend on its operand types' recursion group order or
@@ -271,6 +276,15 @@ own. A type from which a `Text` type is reachable has at least one text leaf
 in its list, because the shortest walk from the type to a `Text` type
 enters no composite twice. The `missing-selection` refusal of a node whose
 leaf needs the text-profile law therefore holds for recursive types too.
+
+Each appended leaf, text or recursion, costs one unit of the check stage's
+node limit (`CheckingLimits`), because the list is bounded per path but not
+in width: `n` records that each hold a text field and an optional field of
+every other record give on the order of `(n - 1)!` leaves. A walk that would
+pass the limit refuses with `resource_exhausted`/`insufficient-next-charge`
+naming the node limit, and yields no node. `check` completes the walk, or
+refuses on a limit, before it reads any leaf's law, so a resource refusal
+comes before `missing-selection`.
 
 For `record Node { label: Text[0, 8; binary-utf8]; next?: Node; }`, the list
 is `field:label`, a text leaf with mode `binary-utf8`, then
@@ -349,6 +363,7 @@ fix the leaf spelling.
 | E15 | `contains(s, b)` over `Sequence<Node>[0, 3]` | `711360736369b8de6c907d1c961b8cff04cd2c79b6fc768fb9f4efb05b42710e` |
 | E16 | `x = y` over `A` | `a75b4fe5ff706e7100dc5b177565ac3b4a5383f70d3eab4f1320c665ccc11ce4` |
 | E17 | `a = b` over `Option<Node>` | `c51fd9a2d78d5682b27d7dc90020825e9e26a112e7b186386946fc28e18d623a` |
+
 **T13**: `Text[0, 8; binary-utf8]`
 
 ```json
@@ -554,7 +569,7 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
 | FR-093-AC-8 | In functions over a `Population<M::Order>[3]` parameter `p` and a `Reference<M::Order>` parameter `r` (FR-094 vectors E4 to E9), and in a clause function (FR-094) that holds a dispatched call (QSpec FR-151, QSpec TC-196 D06), a checked `Attribute`, `AllInstances`, `Lookup` and `Dispatch` node each lowers to the operation, member, mode and arguments its row gives, and a `Lookup` with `absent empty` carries mode `absence` = `empty`. | Test (TC-415) |
 | FR-093-AC-9 | Every node of the checked package of AC-7 has at least one occurrence: `a`'s parameter node has an `anchor` occurrence over `a: Boolean` and one `expression` occurrence per read, and the `Integer` and text scalar nodes that type P1's body literals have a `generated` occurrence. | Test (TC-416) |
 | FR-093-AC-10 | With lock evidence that selects the text definition the Recursive text-leaf vectors name, `eq`, `has`, `eqa` and `eqo` of those vectors check with no refusal. Their `a = b`, `contains(s, b)`, `x = y` and `a = b` nodes key to E14, E15, E16 and E17 with those vectors' preimage bytes, whose leaves are the lists the vectors give, and the type, group and parameter nodes they name key to T13, T14, G16 to G21, S4, S5 and P10 to P16. Declaring `B` before `A` gives the same keys. | Test (TC-415) |
-| FR-093-AC-11 | Structural equality over `record R { t?: Text[0, 64; nfc]; }` and over `record S { t: Option<Text[0, 64; nfc]>; }` each carries one leaf, path `field:t`, `inner`; over `record W { t: Text[0, 64; nfc]; }` one leaf, path `field:t`. Structural equality and `contains` over FR-092's recursive `List`, which reaches no `Text` type, carry no leaves. `eq` of the Recursive text-leaf vectors, lowered with lock evidence that supplies no text-profile definition, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node. | Test (TC-415) |
+| FR-093-AC-11 | Structural equality over `record R { t?: Text[0, 64; nfc]; }` and over `record S { t: Option<Text[0, 64; nfc]>; }` each carries one leaf, path `field:t`, `inner`; over `record W { t: Text[0, 64; nfc]; }` one leaf, path `field:t`. Structural equality and `contains` over FR-092's recursive `List`, which reaches no `Text` type, carry no leaves. Structural equality over `record Tree2 { label: Text[0, 8; binary-utf8]; kids: Sequence<Tree2>[0, 3]; }` carries `field:label`, then `field:kids`, `inner`, `recursion:0`; over `record Two { x: Node; y: Node; }` it carries `field:x`, `field:label`; `field:x`, `field:next`, `inner`, `recursion:1`; `field:y`, `field:label`; `field:y`, `field:next`, `inner`, `recursion:1`. `eq` of the Recursive text-leaf vectors, lowered with lock evidence that supplies no text-profile definition, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node; lowered with a node limit (`CheckingLimits`) that admits every node of its package but not also its two leaves, it refuses with `resource_exhausted`/`insufficient-next-charge` naming the node limit, and yields no node. | Test (TC-415) |
 
 ## Dependencies
 
@@ -589,12 +604,15 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
 - The `recursion:d` leaf segment and an optional field's `inner` segment:
   FR-322's `LeafSegment` admits `field:<name>`, `position:<n>` and `inner`,
   and names no leaf form for a recursive composite. Both are QSL proposals
-  (ADR-013 QC-24).
+  (ADR-013 QC-24). Until QSpec adopts QC-24, a v2 reader that validates
+  against the published `LeafSegment` pattern refuses a package holding a
+  recursion leaf, and a reader that derives an optional field's leaf
+  without `inner` refuses its leaves.
 
 ## Status
 
-Specified under QSL-208; the text-leaf walk, its recursion leaf and the
-`Pre` row's owner specified under QSL-212. Implemented on the QSL-156 slice
+Specified under QSL-208; the text-leaf walk and its recursion leaf
+specified under QSL-212. Implemented on the QSL-156 slice
 A4b branch, pending merge: `check` lowers each checked node in
 `qsl-semantics/src/check/lowering.rs` and keys it by FR-092, and TC-415
 backs AC-1 to AC-3, AC-5, AC-6, AC-8 and CON-1 there, and AC-4 except its
@@ -609,5 +627,5 @@ QSL-156 A4b. The emission half is QSL-6 S1b: `qsl-package/src/emit.rs`
 refuses every non-empty graph (`ProjectionNotYetImplemented`), so AC-7, AC-9
 and CON-2 (TC-416) are unbacked. Ownership, decided here: QSL-156 A4b builds
 the lowering and the keys in `check`; QSL-6 S1b serializes the lowered nodes
-and does not lower. The `ProtocolClause` family lowers postconditions and
-the `Pre` reads inside them (#218).
+and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
+postcondition lowering backs it. Remaining work: #218.

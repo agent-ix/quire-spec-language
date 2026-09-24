@@ -61,10 +61,12 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
    `a = b`, `contains(s, b)`, `x = y` and `a = b` nodes, and of the type,
    group and parameter nodes they name. Check again with `B` declared before
    `A`.
-9. Check structural equality over `R`, `S` and `W` of FR-093-AC-11, and
-   structural equality and `contains` over FR-092's `List`, and read each
-   operation's `leaves`. Check `eq` of step 8 with lock evidence that
-   supplies no text-profile definition.
+9. Check structural equality over `R`, `S`, `W`, `Tree2` and `Two` of
+   FR-093-AC-11, and structural equality and `contains` over FR-092's
+   `List`, and read each operation's `leaves`. Check `eq` of step 8 with
+   lock evidence that supplies no text-profile definition, and again with a
+   node limit that admits every node of its package but not also its two
+   leaves.
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
@@ -88,9 +90,11 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
   vectors' preimage bytes, the others to T13, T14, G16 to G21, S4, S5 and
   P10 to P16; declaring `B` first gives the same keys.
 - Step 9: `R` and `S` each give one leaf at `field:t`, `inner`, and `W` one
-  at `field:t`; `List` gives `[]` for both operations; `eq` refuses with
-  `missing_declaration`/`missing-selection` naming role `text_profile` and
-  yields no node.
+  at `field:t`; `Tree2` and `Two` give the lists FR-093-AC-11 states;
+  `List` gives `[]` for both operations; `eq` refuses with
+  `missing_declaration`/`missing-selection` naming role `text_profile`, and
+  under the node limit with `resource_exhausted`/`insufficient-next-charge`
+  naming that limit, each time yielding no node.
 
 ## Status
 

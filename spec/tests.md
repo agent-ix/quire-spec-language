@@ -505,7 +505,8 @@ composite in a recursion leaf (QSL-212), with vectors T13, T14, G16 to G21,
 S4, S5, P10 to P16 and E14 to E17. TC-415 backs AC-1 to AC-6, AC-8, AC-10
 and AC-11, and TC-416 AC-7 and AC-9. TC-413 to TC-415 are implemented on the
 QSL-156 A4b branch, pending merge, except TC-415 steps 8 and 9; TC-416 is
-planned for QSL-6 S1b.
+planned for QSL-6 S1b. No FR-093 AC backs the `Pre` row; the
+`ProtocolClause` postcondition lowering backs it. Remaining work: #218.
 [FR-094](functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
 keys the nodes those two leave to the model layer: model declaration nodes
 and clause functions under QSpec's `ModelOwner`, the `Reference<T>` and
