@@ -245,7 +245,7 @@ impl RegisteredDefinition {
                 rule!("proposals/shared-reference-2-draft/schema.json"),
                 rule!("proposals/shared-reference-2-draft/README.md"),
             ]),
-            Self::Diagnostics => definition!("native-diagnostics", "quire.native.diagnostics/v1", "1-draft.1", [], [
+            Self::Diagnostics => definition!("native-diagnostics", "quire.native.diagnostics/v1", "1-draft.6", [], [
                 rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs"),
                 rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md"),
             ]),

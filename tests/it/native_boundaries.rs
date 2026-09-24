@@ -55,7 +55,9 @@ fn formatter_byte_ceiling_is_inclusive_and_counts_final_newline() {
             matches!(refusal, FormatRefusal::OutputBudgetExhausted(_)),
             "limit {limit}"
         );
-        assert_eq!(refusal.code(), Code::ResourceExhausted, "limit {limit}");
+        // QSL-236: the output byte ceiling is `SyntaxLimit::SourceBytes`,
+        // one of the four kinds that map onto `stage_limit_exceeded`.
+        assert_eq!(refusal.code(), Code::StageLimitExceeded, "limit {limit}");
         let diagnostic = refusal.diagnostic();
         assert_eq!(diagnostic.phase, Phase::Format);
         assert_eq!(&diagnostic.source, parsed.source().identity());
@@ -90,10 +92,13 @@ fn formatter_cannot_raise_the_hard_content_ceiling() {
     assert_eq!(parsed.source().text().len(), OUTPUT_BYTE_CEILING);
     for limit in [OUTPUT_BYTE_CEILING, usize::MAX] {
         let refusal = format_with_limit(&parsed, limit).unwrap_err();
-        assert_eq!(refusal.code(), Code::ResourceExhausted);
+        assert_eq!(refusal.code(), Code::StageLimitExceeded);
         assert_eq!(refusal.diagnostic().phase, Phase::Format);
     }
-    assert_eq!(format(&parsed).unwrap_err().code(), Code::ResourceExhausted);
+    assert_eq!(
+        format(&parsed).unwrap_err().code(),
+        Code::StageLimitExceeded
+    );
 }
 
 /// Everything in `src/format.rs` except its `mod tests` block and comment
@@ -296,19 +301,20 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
             code.exit_code()
         );
     }
-    // Counted directly against `Code::all()` on this branch (46 pre-existing
+    // Counted directly against `Code::all()` on this branch (47 pre-existing
     // variants from `main` after #143/#144/#149's FR-153 codes
     // (`ForeignReference`, `CardinalityOutOfBound`), QSL#213 S-2's
-    // `DuplicateSelection`, ADR-013 O-01/QC-5), plus QSL-6's own
-    // `UnsupportedDependencySelections`) rather than derived by arithmetic —
-    // `Code::all()` lists exactly 47 entries, one per `pub enum Code`
-    // variant, none missing and none duplicated. FR-322 I2's own envelope-
-    // shape refusals (`UnknownContractVersion`, `MalformedWire`,
-    // `DuplicateMember`, `UnknownMember`, `NoncanonicalWire`,
-    // `DigestDomainMismatch`) are not mirrored here at all: they collapse
-    // onto the existing `Code::InvalidPackage`, exactly like
+    // `DuplicateSelection`, ADR-013 O-01/QC-5), QSL-6's own
+    // `UnsupportedDependencySelections`, plus QSL-236's `StageLimitExceeded`)
+    // rather than derived by arithmetic — `Code::all()` lists exactly 48
+    // entries, one per `pub enum Code` variant, none missing and none
+    // duplicated. FR-322 I2's own envelope-shape refusals
+    // (`UnknownContractVersion`, `MalformedWire`, `DuplicateMember`,
+    // `UnknownMember`, `NoncanonicalWire`, `DigestDomainMismatch`) are not
+    // mirrored here at all: they collapse onto the existing
+    // `Code::InvalidPackage`, exactly like
     // `UnsupportedNodeTag`/`InvalidSemanticGraph` already do (no-copy rule).
-    assert_eq!(seen.len(), 47);
+    assert_eq!(seen.len(), 48);
     assert_eq!(Code::InvalidRuntimeInput.as_str(), "invalid_runtime_input");
     assert_eq!(
         Code::from_code("invalid_runtime_input"),

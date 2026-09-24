@@ -131,7 +131,9 @@ fn tc_036_matches_independent_coordinates_and_source_boundary() {
         MAX_SOURCE_BYTES,
     )
     .unwrap_err();
-    assert_eq!(error.code, Code::ResourceExhausted);
+    // QSL-236: the source's own byte ceiling is a `SyntaxLimit` kind the
+    // catalog admits, so it now reports `stage_limit_exceeded`.
+    assert_eq!(error.code, Code::StageLimitExceeded);
     assert_eq!(error.phase, Phase::Source);
 }
 

@@ -68,7 +68,7 @@ use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, StageFailure, Staged}
 use super::check::{bind_parameters, Signature, Signatures, Typer};
 use super::facts::{CallSite, Definedness};
 use super::ir::Node;
-use super::refusal::{CheckCause, CheckRefusal, Location as CheckLocation};
+use super::refusal::{CheckCause, CheckRefusal, CheckingLimitKind, Location as CheckLocation};
 use super::{CheckingLimits, DispatchTable, Scope};
 use crate::value::declaration::CompositeShape;
 use quire_exact::IeeeWidth;
@@ -1313,7 +1313,27 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // paired `enter`/`leave` calls, with the `?` moved after both, so
         // every return path -- success or refusal -- balances the scope
         // stack and the nesting depth identically.
-        let body = checked_body.map_err(StageFailure::Refused)?;
+        // QSL-236 (M1), FR-062-AC-7: the Typer's own nesting-depth limit is
+        // the one `CheckCause::ResourceExhausted` cause AC-7 requires a
+        // `StageFailure::Limit` for, not a typed `Refused` -- the contract's
+        // other checking limits (nodes, work budget, input bytes) reach
+        // `Typer::enter` through `CheckContext`, already `Limit`-mapped
+        // above (this function's own `cx.enter_nesting()` and
+        // `check_declaration_body`'s meter charges); only the Typer's
+        // unrelated, pre-existing `CheckingLimits.depth` bound was still
+        // surfacing as a typed refusal.
+        let body = checked_body.map_err(|refusal| match refusal.cause {
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.kind == CheckingLimitKind::Depth =>
+            {
+                StageFailure::Limit(LimitExceeded::new(
+                    LimitKind::NestingDepth,
+                    exceeded.limit,
+                    exceeded.actual,
+                ))
+            }
+            _ => StageFailure::Refused(refusal),
+        })?;
         Ok(Staged::new(CheckedDeclaration { body }))
     }
 }
@@ -1615,7 +1635,6 @@ pub(crate) mod checking_tests {
         empty_scope, limits, measure_resolved, root_location,
     };
     use super::*;
-    use crate::check::CheckingLimitKind;
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
     use ix_trace_rs::trace;
     use quire_exact::Meter;
@@ -2324,36 +2343,22 @@ pub(crate) mod checking_tests {
     /// FR-062-AC-7's fixture-at-depth-D requirement, backed against
     /// `Typer`'s own pre-existing, already-correct
     /// [`crate::check::CheckingLimits`] depth bound -- not the contract's
-    /// own `StageLimits.nesting_depth` (see this test's "Untagged" note
-    /// below for why those are different mechanisms). A body nested to
-    /// depth D (`Not(Not(Not(true)))`, four levels deep counting the
-    /// `Boolean` leaf) checked through `ValueFunctionFamily::check` --
-    /// reachable now that QSL-148 makes `check` call
-    /// `check_declaration_body`, which drives the real `Typer` -- refuses
-    /// at a configured depth of D-1 and admits at D, varying only the
-    /// limit by exactly one.
+    /// own `StageLimits.nesting_depth`. A body nested to depth D
+    /// (`Not(Not(Not(true)))`, four levels deep counting the `Boolean`
+    /// leaf) checked through `ValueFunctionFamily::check` -- reachable now
+    /// that QSL-148 makes `check` call `check_declaration_body`, which
+    /// drives the real `Typer` -- refuses at a configured depth of D-1 and
+    /// admits at D, varying only the limit by exactly one.
     ///
-    /// **Untagged for FR-062-AC-7 (PR #303 review, findings 4/5).** This
-    /// replaces `real_recursive_descent_is_nesting_depth_bounded`, which
-    /// backed FR-062-AC-7/TC-378 against a redundant contract-level walk
-    /// (`check::family::charge_recursive_nesting`, deleted): that walk
-    /// duplicated `check_declaration_body`'s own real recursion just to
-    /// charge `CheckContext::enter_nesting`, and lost the real path's
-    /// location and early-return behavior in the process (finding 5).
-    /// AC-7's own text requires `check` to return a `Limit` outcome
-    /// specifically; this test's refusal is `StageFailure::Refused
-    /// (CheckRefusal { cause: ResourceExhausted { kind: Depth, .. }, .. })`
-    /// -- a typed refusal through `Typer`'s pre-existing, unrelated
-    /// `CheckingLimits.depth` bound, not a `StageFailure::Limit` naming the
-    /// contract's own nesting-depth limit. Wiring the contract's own
-    /// `CheckContext::enter_nesting` into every
-    /// nesting step of the typer (not just the one top-level entry charge
-    /// `check` already makes) would require threading `&mut CheckContext`
-    /// through the general engine's every step -- the same
-    /// class of `Typer` entanglement QSL-148's own open question raises,
-    /// reported here (see `check::family::Application`'s own doc)
-    /// rather than routed around by re-tagging this test onto AC-7.
+    /// **Tagged for FR-062-AC-7 (QSL-236, M1).** AC-7's own text requires
+    /// `check` to return a `Limit` outcome specifically; `check` now maps a
+    /// Typer `CheckCause::ResourceExhausted` whose kind is `Depth` onto
+    /// `StageFailure::Limit(LimitExceeded::new(LimitKind::NestingDepth,
+    /// ..))`, so this test's refusal is that `Limit` outcome, carrying the
+    /// configured bound and the actual depth the refused entry would have
+    /// reached, with no `Locus` (FR-062-AC-7's own text).
     #[test]
+    #[trace("FR-062-AC-7")]
     fn real_checker_depth_limit_is_the_proximate_cause() {
         let scope = empty_scope();
         let location = root_location();
@@ -2380,17 +2385,12 @@ pub(crate) mod checking_tests {
         let refused = ValueFunctionFamily::check(&form, &mut cx)
             .expect_err("a depth limit of 3 must refuse a body nested 4 deep");
         match refused {
-            StageFailure::Refused(refusal) => assert!(
-                matches!(
-                    refusal.cause,
-                    CheckCause::ResourceExhausted {
-                        kind: CheckingLimitKind::Depth,
-                        ..
-                    }
-                ),
-                "expected a Depth resource-exhausted refusal, got {refusal:?}"
-            ),
-            other => panic!("expected StageFailure::Refused, got {other:?}"),
+            StageFailure::Limit(exceeded) => {
+                assert_eq!(exceeded.kind(), LimitKind::NestingDepth);
+                assert_eq!(exceeded.configured_bound(), 3);
+                assert_eq!(exceeded.actual(), 4);
+            }
+            other => panic!("expected StageFailure::Limit, got {other:?}"),
         }
 
         let wide = CheckingLimits::new(u64::MAX, 4).expect("4 is within MAX_CHECKING_DEPTH");

@@ -504,15 +504,13 @@ fn a_leaf_walk_charges_the_node_limit_before_the_law_is_read() {
         assert!(
             matches!(
                 refusals[0].cause,
-                CheckCause::ResourceExhausted {
-                    kind: CheckingLimitKind::Nodes,
-                    limit: named,
-                    ..
-                } if named == limit
+                CheckCause::ResourceExhausted(ref exceeded)
+                    if exceeded.kind == CheckingLimitKind::Nodes && exceeded.limit == limit
             ),
             "{refusals:?}"
         );
-        assert_eq!(refusals[0].cause.cause(), Some("insufficient-next-charge"));
+        assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
+        assert_eq!(refusals[0].cause.cause(), Some("node-count-exceeded"));
     };
     for limit in [admitted - 1, typed] {
         exhausted(
@@ -567,13 +565,15 @@ fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
     .expect_err("the nine-record cluster's leaves pass the default node ceiling");
     assert_eq!(
         refusals[0].cause,
-        CheckCause::ResourceExhausted {
+        CheckCause::ResourceExhausted(Box::new(StageLimitCause {
             stage: CheckingStage::Typing,
             kind: CheckingLimitKind::Nodes,
             limit: 100_000,
-        }
+            actual: 100_001,
+        }))
     );
-    assert_eq!(refusals[0].cause.cause(), Some("insufficient-next-charge"));
+    assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
+    assert_eq!(refusals[0].cause.cause(), Some("node-count-exceeded"));
     eq_over(
         text_cluster(6),
         "R0",
@@ -694,14 +694,19 @@ fn long_leaf_paths_refuse_on_the_default_work_budget() {
         CheckingLimits::default(),
     )
     .expect_err("the leaves' key bytes pass the default work budget");
-    assert_eq!(
-        refusals[0].cause,
-        CheckCause::ResourceExhausted {
-            stage: CheckingStage::Typing,
-            kind: CheckingLimitKind::WorkBudget,
-            limit: 16_777_216,
-        }
+    assert!(
+        matches!(
+            refusals[0].cause,
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.stage == CheckingStage::Typing
+                    && exceeded.kind == CheckingLimitKind::WorkBudget
+                    && exceeded.limit == 16_777_216
+        ),
+        "{:?}",
+        refusals[0]
     );
+    assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
+    assert_eq!(refusals[0].cause.cause(), Some("work-budget-exceeded"));
     // The same shape with one-letter names and a shorter tree fits.
     eq_over(
         deep_wide(4, 5, "n"),

@@ -10,7 +10,7 @@
 use qsl_foundation::absence::AbsenceMode;
 
 use super::*;
-use crate::check::refusal::{CheckingLimitKind, CheckingStage};
+use crate::check::refusal::{CheckingLimitKind, CheckingStage, StageLimitCause};
 use crate::check::MAX_CHECKING_DEPTH;
 
 const STACK: usize = 2 * 1024 * 1024;
@@ -205,11 +205,12 @@ fn assert_depth_refusals(form: ModelForm, refusals: &[CheckRefusal], limit: u64)
     for refusal in refusals {
         assert_eq!(
             refusal.cause,
-            CheckCause::ResourceExhausted {
+            CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                 stage: CheckingStage::Typing,
                 kind: CheckingLimitKind::Depth,
                 limit,
-            },
+                actual: u128::from(limit) + 1,
+            })),
             "{form:?}: {refusal:?}"
         );
     }

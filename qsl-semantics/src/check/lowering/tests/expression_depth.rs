@@ -444,11 +444,12 @@ fn assert_depth_refusals(form: Form, refusals: &[CheckRefusal], limit: u64) {
     for refusal in refusals {
         assert_eq!(
             refusal.cause,
-            CheckCause::ResourceExhausted {
+            CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                 stage: CheckingStage::Typing,
                 kind: CheckingLimitKind::Depth,
                 limit,
-            },
+                actual: u128::from(limit) + 1,
+            })),
             "{form:?}: {refusal:?}"
         );
     }
@@ -573,10 +574,11 @@ fn a_postcondition_pre_over_1000_levels_refuses_on_a_small_stack() {
     );
     assert_eq!(
         bound.expect_err("1,000 `let`s pass the depth limit").cause,
-        CheckCause::ResourceExhausted {
+        CheckCause::ResourceExhausted(Box::new(StageLimitCause {
             stage: CheckingStage::Typing,
             kind: CheckingLimitKind::Depth,
             limit: MAX_CHECKING_DEPTH,
-        }
+            actual: u128::from(MAX_CHECKING_DEPTH) + 1,
+        }))
     );
 }

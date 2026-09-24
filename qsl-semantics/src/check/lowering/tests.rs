@@ -11,8 +11,8 @@ use qsl_forms::{
     BinaryOperator, BinderQuery, BuiltinType, Expression, FunctionDeclaration, TypeForm,
 };
 use quire_exact::{
-    CardinalityBound, CollectionType, DecimalType, IntegerInterval, Presence, RationalDomain,
-    RoundingMode, TextType,
+    CardinalityBound, CollectionType, DecimalType, IntegerInterval, LimitKind as MeterLimitKind,
+    Meter, Presence, RationalDomain, RoundingMode, ScalarLimits, TextType,
 };
 use serde_json::{json, Value as Json};
 
@@ -360,16 +360,13 @@ fn a_type_nested_past_the_depth_limit_refuses() {
     assert!(
         refusals.iter().any(|refusal| matches!(
             refusal.cause,
-            CheckCause::ResourceExhausted {
-                kind: CheckingLimitKind::Depth,
-                limit: 4,
-                ..
-            }
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.kind == CheckingLimitKind::Depth && exceeded.limit == 4
         )),
         "{refusals:?}"
     );
-    assert_eq!(refusals[0].cause.code().as_str(), "resource_exhausted");
-    assert_eq!(refusals[0].cause.cause(), Some("insufficient-next-charge"));
+    assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
+    assert_eq!(refusals[0].cause.cause(), Some("nesting-depth-exceeded"));
 }
 
 /// `function name(x: Int[0, 9]): Boolean decreases(x) { if x > 0 then
@@ -695,11 +692,8 @@ fn keying_a_recursion_group_is_charged_to_the_work_budget() {
     assert!(
         refusals.iter().any(|refusal| matches!(
             refusal.cause,
-            CheckCause::ResourceExhausted {
-                kind: CheckingLimitKind::WorkBudget,
-                limit,
-                ..
-            } if limit == declared
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.kind == CheckingLimitKind::WorkBudget && exceeded.limit == declared
         )),
         "{refusals:?}"
     );
@@ -718,6 +712,30 @@ fn keying_a_recursion_group_is_charged_to_the_work_budget() {
     let keying = admitted - declared;
     let members = u64::try_from(3 * k).unwrap();
     assert!(keying > members * members, "keying charged {keying}");
+}
+
+/// QSL-236 (L1): `charge_work`'s refusal reports `actual` as exactly the
+/// meter's already-consumed work plus this one denied charge, not the
+/// configured bound. Mutating `charge_work` to report `limit` as `actual`
+/// (the bug this guards) fails this assertion, since the budget here is
+/// configured strictly below `consumed + charge`.
+#[test]
+fn charge_work_refusal_names_consumed_plus_this_charge_as_actual() {
+    let limits = ScalarLimits {
+        work_units: 100,
+        ..crate::check::family::SCALAR_LIMITS_UNLIMITED
+    };
+    let mut meter = Meter::new(limits);
+    charge_work(&mut meter, 40).expect("40 of 100 work units is well within budget");
+    let consumed = meter.consumed(MeterLimitKind::WorkUnits);
+    let refusal = charge_work(&mut meter, 90).expect_err("40 already consumed plus 90 exceeds 100");
+    match refusal {
+        NodeKeyRefusal::WorkBudget { limit, actual } => {
+            assert_eq!(limit, 100);
+            assert_eq!(actual, u128::from(consumed) + 90);
+        }
+        other => panic!("expected NodeKeyRefusal::WorkBudget, got {other:?}"),
+    }
 }
 
 /// TC-413 step 5 (FR-092-AC-7): `f` and the same declaration named `g`

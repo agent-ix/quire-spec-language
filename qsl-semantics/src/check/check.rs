@@ -5,7 +5,7 @@
 //!
 //! Every refusal here is made before any charge. Typing nesting is bounded
 //! by the declared [`CheckingLimits`] depth; reaching a declared limit is
-//! `resource_exhausted`, never an admission verdict. The typer itself
+//! `stage_limit_exceeded` (QSL-236), never an admission verdict. The typer itself
 //! (`typing`) walks an expression over an explicit heap stack (QSL-228), so
 //! its host stack use does not grow with nesting.
 //!
@@ -52,6 +52,7 @@ use super::ir::{
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
+    StageLimitCause,
 };
 use crate::value::declaration::{
     admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
@@ -1076,21 +1077,33 @@ impl<'a> Typer<'a> {
     }
 
     fn enter(&mut self, location: &Location) -> Result<(), CheckRefusal> {
-        let exhausted = |kind, limit| {
+        // The refused entry would have taken the counter one past the
+        // current one (QSL-236: the actual counter a rendered diagnostic
+        // names, not folded into the bound).
+        let exhausted = |kind, limit: u64, actual: u64| {
             refuse(
                 location,
-                CheckCause::ResourceExhausted {
+                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                     stage: CheckingStage::Typing,
                     kind,
                     limit,
-                },
+                    actual: u128::from(actual),
+                })),
             )
         };
         if *self.nodes >= self.limits.nodes {
-            return Err(exhausted(CheckingLimitKind::Nodes, self.limits.nodes));
+            return Err(exhausted(
+                CheckingLimitKind::Nodes,
+                self.limits.nodes,
+                self.nodes.saturating_add(1),
+            ));
         }
         if self.depth >= self.limits.depth {
-            return Err(exhausted(CheckingLimitKind::Depth, self.limits.depth));
+            return Err(exhausted(
+                CheckingLimitKind::Depth,
+                self.limits.depth,
+                self.depth.saturating_add(1),
+            ));
         }
         *self.nodes = self.nodes.saturating_add(1);
         self.depth = self.depth.saturating_add(1);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Located checking refusals and their closed codes and causes.
 
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Code, LimitKind};
 use quire_exact::EffectiveId;
 use quire_exact::Integer;
 use quire_exact::{IllTyped, IllTypedCause};
@@ -138,6 +138,41 @@ pub enum CheckingLimitKind {
     WorkBudget,
 }
 
+impl CheckingLimitKind {
+    /// The T-4 [`LimitKind`] this crate-local kind names (QSL-236): the one
+    /// bijection every construction site in this crate already assumed
+    /// (`check::mod`'s own reverse mapping), now named once.
+    pub(crate) const fn foundation_kind(self) -> LimitKind {
+        match self {
+            Self::Nodes => LimitKind::NodeCount,
+            Self::Depth => LimitKind::NestingDepth,
+            Self::InputBytes => LimitKind::InputBytes,
+            Self::WorkBudget => LimitKind::WorkBudget,
+        }
+    }
+}
+
+impl From<LimitKind> for CheckingLimitKind {
+    /// The reverse of `CheckingLimitKind::foundation_kind` (QSL-236, L6):
+    /// `check::mod`'s `StageFailure::Limit` arm named this bijection inline
+    /// as a `match`, matched exhaustively rather than a `_` catch-all (PR
+    /// #262 review, coordinator round 3, finding 4) so a `LimitKind` this
+    /// crate does not yet expect forces a real decision here, not a guess.
+    /// `NodeCount` maps onto the pre-existing `Self::Nodes` (both name "how
+    /// many expression nodes"); `InputBytes` and `WorkBudget` have no
+    /// pre-existing counterpart in this older `Typer`-era enum, so QSL-153
+    /// added one each. Named once here rather than duplicated at that call
+    /// site.
+    fn from(kind: LimitKind) -> Self {
+        match kind {
+            LimitKind::NestingDepth => Self::Depth,
+            LimitKind::NodeCount => Self::Nodes,
+            LimitKind::InputBytes => Self::InputBytes,
+            LimitKind::WorkBudget => Self::WorkBudget,
+        }
+    }
+}
+
 /// FR-272's closed `wrong_snapshot` cause list this crate decides for
 /// `pre(...)` (native-diagnostics.md: `wrong-observation`, `wrong-invocation`,
 /// `wrong-anchor` or `forbidden-pre-read`). Only the two causes `pre(...)`
@@ -195,6 +230,21 @@ impl WrongSnapshotCause {
     }
 }
 
+/// [`CheckCause::ResourceExhausted`]'s payload (QSL-236): the checking
+/// stage, the limit kind reached, its declared bound and the counter value
+/// the refused step would have reached.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct StageLimitCause {
+    /// The checking stage.
+    pub stage: CheckingStage,
+    /// The limit reached.
+    pub kind: CheckingLimitKind,
+    /// The declared limit.
+    pub limit: u64,
+    /// The counter value the refused step would have reached.
+    pub actual: u128,
+}
+
 /// The typed cause of a checking refusal.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CheckCause {
@@ -224,16 +274,12 @@ pub enum CheckCause {
         /// The failed obligation.
         obligation: MeasureObligation,
     },
-    /// `resource_exhausted` / `insufficient-next-charge`: a declared checking
-    /// limit was reached at this node.
-    ResourceExhausted {
-        /// The checking stage.
-        stage: CheckingStage,
-        /// The limit reached.
-        kind: CheckingLimitKind,
-        /// The declared limit.
-        limit: u64,
-    },
+    /// `stage_limit_exceeded`/`<kind>-exceeded` (QSL-236): a declared
+    /// checking limit was reached at this node. Boxed: `actual`'s `u128`
+    /// would otherwise make every `CheckCause` pay for this one variant's
+    /// widest field (clippy `result_large_err` on `CheckRefusal`), the same
+    /// reason `InternalFault` below is boxed.
+    ResourceExhausted(Box<StageLimitCause>),
     /// An IEEE conversion or arithmetic in a package with no admitted IEEE
     /// profile:
     /// `invalid_package`.
@@ -257,8 +303,13 @@ pub enum CheckCause {
     /// [`super::PackageDeclarations::check`], before any node is typed, so
     /// `facts`'s own call-graph walk can treat every table index it
     /// reads as already valid; reuses the already-catalogued `invalid-value`
-    /// tag rather than minting a new one.
-    InvalidDispatchDeclaration(InvalidDispatchDeclaration),
+    /// tag rather than minting a new one. Boxed (QSL-236): this was already
+    /// `CheckCause`'s widest variant at 56 bytes; adding `ResourceExhausted`'s
+    /// `StageLimitCause` payload cost `CheckCause` its niche-packed
+    /// discriminant, so `CheckRefusal` crossed clippy's `result_large_err`
+    /// threshold. Boxing this pre-existing variant (not `ResourceExhausted`,
+    /// already boxed) is the fix, same precedent as `InternalFault` below.
+    InvalidDispatchDeclaration(Box<InvalidDispatchDeclaration>),
     /// `missing_declaration` / `missing-selection` (FR-093): a lowered
     /// operation or leaf needs a profile law whose `DefinitionRef` the
     /// package's lock evidence does not supply. `check` writes no law from a
@@ -460,7 +511,7 @@ impl CheckCause {
             Self::MissingName(_) => Code::MissingDeclaration,
             Self::AmbiguousName { .. } => Code::AmbiguousDeclaration,
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
-            Self::ResourceExhausted { .. } => Code::ResourceExhausted,
+            Self::ResourceExhausted(_) => Code::StageLimitExceeded,
             Self::IeeeProfileNotAdmitted
             | Self::DefinitionCycle { .. }
             | Self::InvalidDispatchDeclaration(_)
@@ -487,7 +538,7 @@ impl CheckCause {
                 | Obligation::NonemptyReduction { .. },
             ) => Some("unproved-range"),
             Self::UnprovedDecrease { .. } => Some("unproved-decrease"),
-            Self::ResourceExhausted { .. } => Some("insufficient-next-charge"),
+            Self::ResourceExhausted(cause) => Some(cause.kind.foundation_kind().catalog_cause()),
             Self::DefinitionCycle { .. } => Some("definition-cycle"),
             Self::InvalidDispatchDeclaration(_) => Some("invalid-value"),
             Self::MissingSelection { .. } => Some("missing-selection"),
@@ -537,5 +588,39 @@ impl CheckRefusal {
             | IllTypedCause::IeeeToNonRationalExact => IllTypedCause::TypeMismatch,
         };
         Self::ill_typed(location, cause)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CheckCause, CheckingLimitKind, CheckingStage, StageLimitCause};
+    use qsl_foundation::diagnostic::Code;
+
+    /// QSL-236: every `CheckingLimitKind` reports `stage_limit_exceeded`
+    /// with its own `<kind>-exceeded` cause, and carries the bound and
+    /// actual counter it was built with.
+    #[test]
+    fn resource_exhausted_reports_stage_limit_exceeded_per_kind() {
+        let cases = [
+            (CheckingLimitKind::Nodes, "node-count-exceeded"),
+            (CheckingLimitKind::Depth, "nesting-depth-exceeded"),
+            (CheckingLimitKind::InputBytes, "input-bytes-exceeded"),
+            (CheckingLimitKind::WorkBudget, "work-budget-exceeded"),
+        ];
+        for (kind, cause) in cases {
+            let refused = CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+                stage: CheckingStage::Typing,
+                kind,
+                limit: 10,
+                actual: 11,
+            }));
+            assert_eq!(refused.code(), Code::StageLimitExceeded, "{kind:?}");
+            assert_eq!(refused.cause(), Some(cause), "{kind:?}");
+            let CheckCause::ResourceExhausted(exceeded) = refused else {
+                unreachable!()
+            };
+            assert_eq!(exceeded.limit, 10);
+            assert_eq!(exceeded.actual, 11);
+        }
     }
 }

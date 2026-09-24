@@ -8,9 +8,12 @@
 //! No type here carries a `Locus` yet. T-4 asks `LimitExceeded` to name the
 //! `Locus` where the limit was reached, but no current producer reaches a
 //! limit at a position it can turn into one (Remaining work: QSL-233).
-//! `LimitExceeded` has no catalog code yet: its code, `stage_limit_exceeded`,
-//! is catalog revision `1-draft.6`, and this build claims `1-draft.3`
-//! (Remaining work: QSL-236).
+//! `LimitExceeded`'s catalog code (QSL-236): `stage_limit_exceeded`, catalog
+//! revision `1-draft.6`, which this build now claims. [`LimitExceeded::catalog_code`]
+//! pairs it with the kind's own `<kind>-exceeded` cause tag
+//! ([`LimitKind::catalog_cause`]).
+
+use super::{CatalogCode, CatalogCoded};
 
 /// ADR-013 T-4's closed limit kind: the four stage-entry limits a compiler
 /// stage, the I2 reader, a family `check`, `replay` or `route` can reach.
@@ -27,6 +30,20 @@ pub enum LimitKind {
     NodeCount,
     /// Work budget: a stage's cumulative work units.
     WorkBudget,
+}
+
+impl LimitKind {
+    /// The catalog's own cause tag for this kind, exactly
+    /// `stage_limit_exceeded/<kind>-exceeded` (QSL-236, catalog revision
+    /// `1-draft.6`).
+    pub const fn catalog_cause(self) -> &'static str {
+        match self {
+            Self::InputBytes => "input-bytes-exceeded",
+            Self::NestingDepth => "nesting-depth-exceeded",
+            Self::NodeCount => "node-count-exceeded",
+            Self::WorkBudget => "work-budget-exceeded",
+        }
+    }
 }
 
 /// ADR-013 T-4: a stage limit was reached. It is a stage outcome of its
@@ -71,6 +88,42 @@ impl LimitExceeded {
     /// The counter value the refused step would have reached.
     pub const fn actual(&self) -> u128 {
         self.actual
+    }
+}
+
+impl CatalogCoded for LimitExceeded {
+    /// `stage_limit_exceeded/<kind>-exceeded` (QSL-236): the kind alone
+    /// decides the cause; `configured_bound`/`actual` are carried by this
+    /// value itself, not folded into the tag.
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("stage_limit_exceeded", self.kind.catalog_cause())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CatalogCoded, LimitExceeded, LimitKind};
+    use crate::diagnostic::{category_of, CatalogCode, Category};
+
+    /// QSL-236: every kind's `LimitExceeded` reports the catalog's
+    /// `stage_limit_exceeded/<kind>-exceeded`, with the bound and actual
+    /// counter this value was built with (not folded into the cause tag).
+    #[test]
+    fn limit_exceeded_reports_stage_limit_exceeded_per_kind() {
+        let cases = [
+            (LimitKind::InputBytes, "input-bytes-exceeded"),
+            (LimitKind::NestingDepth, "nesting-depth-exceeded"),
+            (LimitKind::NodeCount, "node-count-exceeded"),
+            (LimitKind::WorkBudget, "work-budget-exceeded"),
+        ];
+        for (kind, cause) in cases {
+            let exceeded = LimitExceeded::new(kind, 10, 11);
+            let code = exceeded.catalog_code();
+            assert_eq!(code, CatalogCode::new("stage_limit_exceeded", cause));
+            assert_eq!(category_of(&code), Some(Category::Refusal));
+            assert_eq!(exceeded.configured_bound(), 10);
+            assert_eq!(exceeded.actual(), 11);
+        }
     }
 }
 

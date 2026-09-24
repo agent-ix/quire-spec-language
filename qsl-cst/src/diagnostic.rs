@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Located complete-source diagnostics over the crate's existing code type.
 
+use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::source::provenance::SourceRegion;
 use qsl_foundation::source::SourceReadCause;
 use qsl_foundation::{Phase, Source, SourceIdentity, SyntaxLimit};
@@ -11,7 +12,7 @@ pub type CompleteCode = qsl_foundation::Code;
 
 /// The closed typed cause of a complete-source diagnostic, selected by its
 /// producer at the failing operation under `quire.native.diagnostics/v1`
-/// revision `1-draft.3`.
+/// revision `1-draft.6`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CompleteCause {
     /// `invalid_syntax`: a token the grammar does not admit at its position.
@@ -65,6 +66,11 @@ pub enum CompleteCause {
     EstablishedInvariantBroken,
     /// A retained host or source code with its original structured cause.
     Host(HostCause),
+    /// `stage_limit_exceeded` (QSL-236, catalog revision `1-draft.6`): a
+    /// [`SyntaxLimit`] whose kind the catalog already admits a cause for.
+    /// [`SyntaxLimit::Tokens`] has no catalog cause yet (STD-95) and stays
+    /// [`Self::InsufficientNextCharge`].
+    StageLimit(LimitKind),
 }
 
 /// The original structured cause of a retained host or source code.
@@ -121,6 +127,7 @@ impl CompleteCause {
             Self::CorrespondenceLoss => "correspondence-loss",
             Self::EstablishedInvariantBroken => "established-invariant-broken",
             Self::Host(cause) => cause.code().as_str(),
+            Self::StageLimit(kind) => kind.catalog_cause(),
         }
     }
 
@@ -160,6 +167,7 @@ impl CompleteCause {
             Self::CorrespondenceLoss => code == CompleteCode::InvalidProjectionCorrespondence,
             Self::EstablishedInvariantBroken => code == CompleteCode::RuntimeInvariant,
             Self::Host(cause) => cause.code() == code,
+            Self::StageLimit(_) => code == CompleteCode::StageLimitExceeded,
         }
     }
 }
@@ -251,9 +259,11 @@ pub fn read_source(
                 CompleteCode::InvalidSourceIdentity,
                 CompleteCause::Host(HostCause::UnnamedSource),
             ),
+            // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
+            // one of the four kinds the catalog admits.
             SourceReadCause::ByteBudget => (
-                CompleteCode::ResourceExhausted,
-                CompleteCause::InsufficientNextCharge,
+                CompleteCode::StageLimitExceeded,
+                CompleteCause::StageLimit(LimitKind::InputBytes),
             ),
             SourceReadCause::InvalidUtf8 => (
                 CompleteCode::InvalidUtf8,
@@ -310,19 +320,32 @@ pub fn error(
     })
 }
 
-/// The one constructor for a complete-V1 syntax-ceiling refusal: code
-/// `resource_exhausted`, cause [`CompleteCause::InsufficientNextCharge`],
-/// the typed [`SyntaxLimit`] and a message rendered from it, at `span`.
+/// The one constructor for a complete-V1 syntax-ceiling refusal, at `span`:
+/// `stage_limit_exceeded`/[`CompleteCause::StageLimit`] for every
+/// [`SyntaxLimit`] kind the catalog admits (QSL-236), `resource_exhausted`/
+/// [`CompleteCause::InsufficientNextCharge`] for [`SyntaxLimit::Tokens`] (no
+/// catalog cause yet, STD-95), and a message rendered from `limit` either
+/// way.
 pub fn resource_exhausted(
     source: &Source,
     phase: Phase,
     span: qsl_foundation::Span,
     limit: SyntaxLimit,
 ) -> Box<CompleteDiagnostic> {
+    let (code, cause) = match limit.stage_kind() {
+        Some(kind) => (
+            CompleteCode::StageLimitExceeded,
+            CompleteCause::StageLimit(kind),
+        ),
+        None => (
+            CompleteCode::ResourceExhausted,
+            CompleteCause::InsufficientNextCharge,
+        ),
+    };
     let mut diagnostic = error(
         source,
-        CompleteCode::ResourceExhausted,
-        CompleteCause::InsufficientNextCharge,
+        code,
+        cause,
         phase,
         span.start,
         span.end,
@@ -330,4 +353,74 @@ pub fn resource_exhausted(
     );
     diagnostic.limit = Some(limit);
     diagnostic
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resource_exhausted, CompleteCause, CompleteCode};
+    use qsl_foundation::{Phase, Source, SourceIdentity, Span, SyntaxLimit};
+
+    fn source() -> Source {
+        Source::read(
+            SourceIdentity::new("agent-ix", "test:diagnostic", "git", "1"),
+            "diagnostic.native",
+            b"x",
+            qsl_foundation::source::MAX_SOURCE_BYTES,
+        )
+        .expect("test source")
+    }
+
+    /// QSL-236: every `SyntaxLimit` kind but `Tokens` reports
+    /// `stage_limit_exceeded/<kind>-exceeded`; `Tokens` keeps
+    /// `resource_exhausted/insufficient-next-charge` (no catalog cause yet,
+    /// STD-95).
+    #[test]
+    fn resource_exhausted_reports_the_kind_that_maps_to_the_catalog() {
+        let source = source();
+        let span = Span { start: 0, end: 1 };
+        let cases = [
+            (
+                SyntaxLimit::NestingDepth { bound: 4 },
+                CompleteCode::StageLimitExceeded,
+                "nesting-depth-exceeded",
+            ),
+            (
+                SyntaxLimit::Nodes { bound: 4 },
+                CompleteCode::StageLimitExceeded,
+                "node-count-exceeded",
+            ),
+            (
+                SyntaxLimit::Work { bound: 4 },
+                CompleteCode::StageLimitExceeded,
+                "work-budget-exceeded",
+            ),
+            (
+                SyntaxLimit::SourceBytes { bound: 4 },
+                CompleteCode::StageLimitExceeded,
+                "input-bytes-exceeded",
+            ),
+            (
+                SyntaxLimit::Tokens { bound: 4 },
+                CompleteCode::ResourceExhausted,
+                "insufficient-next-charge",
+            ),
+        ];
+        for (limit, code, cause) in cases {
+            let diagnostic = resource_exhausted(&source, Phase::Parse, span, limit);
+            assert_eq!(diagnostic.code, code, "{limit:?}");
+            assert_eq!(diagnostic.cause.as_str(), cause, "{limit:?}");
+            assert!(diagnostic.cause.is_cause_of(diagnostic.code), "{limit:?}");
+            assert_eq!(diagnostic.limit(), Some(limit));
+        }
+        assert!(matches!(
+            resource_exhausted(
+                &source,
+                Phase::Parse,
+                span,
+                SyntaxLimit::Tokens { bound: 4 }
+            )
+            .cause,
+            CompleteCause::InsufficientNextCharge
+        ));
+    }
 }

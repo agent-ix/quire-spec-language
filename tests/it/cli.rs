@@ -53,11 +53,14 @@ fn cli_usage_io_and_resource_outcomes_are_distinct() {
         .arg(&oversized)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(22));
+    // QSL-236: the source's own byte ceiling is a stage limit
+    // (`stage_limit_exceeded`), a refusal category (20), not incomplete
+    // work (22).
+    assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
     let value: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(value["status"], "incomplete");
-    assert_eq!(value["code"], "resource_exhausted");
+    assert_eq!(value["status"], "refused");
+    assert_eq!(value["code"], "stage_limit_exceeded");
     assert_eq!(value["phase"], "source");
     assert_eq!(value["source"]["authority"], "agent-ix");
     assert_eq!(value["source"]["identity"], "id");

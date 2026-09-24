@@ -495,13 +495,17 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
     };
     assert_eq!(parsed.declarations().len(), 1);
     assert_eq!(parsed.expressions().len(), 1);
-    for (limits, phase) in [
+    // QSL-236: `source_bytes`/`nodes`/`nesting` are `SyntaxLimit` kinds the
+    // catalog admits, so they report `stage_limit_exceeded`; `tokens` has
+    // no catalog cause yet (STD-95) and stays `resource_exhausted`.
+    for (limits, phase, code) in [
         (
             Limits {
                 source_bytes: text.len() - 1,
                 ..exact
             },
             Phase::Source,
+            Code::StageLimitExceeded,
         ),
         (
             Limits {
@@ -509,8 +513,13 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
                 ..exact
             },
             Phase::Lex,
+            Code::ResourceExhausted,
         ),
-        (Limits { nodes: 2, ..exact }, Phase::Parse),
+        (
+            Limits { nodes: 2, ..exact },
+            Phase::Parse,
+            Code::StageLimitExceeded,
+        ),
         // The lexer's own delimiter-nesting check (`qsl_cst::lexer::recognize`)
         // refuses the predicate's `(` before the parser ever runs, since a
         // ceiling of 0 admits no bracket at all.
@@ -520,10 +529,11 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
                 ..exact
             },
             Phase::Lex,
+            Code::StageLimitExceeded,
         ),
     ] {
         let error = read(text, limits).unwrap_err();
-        assert_eq!(error.code, Code::ResourceExhausted);
+        assert_eq!(error.code, code);
         assert_eq!(error.phase, phase);
     }
     let unary = text.replace("{ true }", "{ not true }");
@@ -537,7 +547,7 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
         )
         .unwrap_err()
         .code,
-        Code::ResourceExhausted
+        Code::StageLimitExceeded
     );
     let NativeUnit::Composed(parsed) = read(
         &unary,

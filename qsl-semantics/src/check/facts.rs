@@ -942,11 +942,11 @@ impl<'a> Definedness<'a> {
                 let Some(declared_operation) = self.dispatch_operations.get(operation_index) else {
                     return Err(CheckRefusal {
                         location: node.location.clone(),
-                        cause: CheckCause::InvalidDispatchDeclaration(
+                        cause: CheckCause::InvalidDispatchDeclaration(Box::new(
                             InvalidDispatchDeclaration::OperationOutOfRange {
                                 operation: operation_index,
                             },
-                        ),
+                        )),
                     });
                 };
                 let callees = self
@@ -955,12 +955,12 @@ impl<'a> Definedness<'a> {
                     .map(DispatchTable::callees)
                     .ok_or_else(|| CheckRefusal {
                         location: node.location.clone(),
-                        cause: CheckCause::InvalidDispatchDeclaration(
+                        cause: CheckCause::InvalidDispatchDeclaration(Box::new(
                             InvalidDispatchDeclaration::TableOutOfRange {
                                 member: declared_operation.member.clone(),
                                 table: table_index,
                             },
-                        ),
+                        )),
                     })?;
                 for callee in callees {
                     self.calls.push(CallSite {
