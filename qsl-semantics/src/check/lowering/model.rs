@@ -40,13 +40,14 @@ pub struct AdmittedModel {
 
 /// Why an [`AdmittedModel`] cannot be formed: the effective view was
 /// normalized under another model selection than the domain package's.
+/// Both selections are boxed, keeping the error small.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("the effective view's model selection {view:?} is not the domain package's {package:?}")]
 pub struct ForeignView {
     /// The domain package's own selection.
-    pub package: DomainPackageRef,
+    pub package: Box<DomainPackageRef>,
     /// The view's selection.
-    pub view: DomainPackageRef,
+    pub view: Box<DomainPackageRef>,
 }
 
 impl AdmittedModel {
@@ -54,8 +55,8 @@ impl AdmittedModel {
     pub fn new(domain_package: &DomainPackage, view: &EffectiveView) -> Result<Self, ForeignView> {
         if view.model_selection() != &domain_package.model_selection {
             return Err(ForeignView {
-                package: domain_package.model_selection.clone(),
-                view: view.model_selection().clone(),
+                package: Box::new(domain_package.model_selection.clone()),
+                view: Box::new(view.model_selection().clone()),
             });
         }
         Ok(Self {
@@ -112,7 +113,7 @@ pub struct ModelClause {
 }
 
 fn fault(location: &Location, fault: KeyFault) -> CheckRefusal {
-    refuse(location, CheckCause::InternalFault(fault))
+    refuse(location, CheckCause::InternalFault(Box::new(fault)))
 }
 
 /// FR-094's `clause` binding value. No postcondition arm:
@@ -322,7 +323,10 @@ impl<'a> Lowering<'a> {
     ) -> Result<(Owner, SemanticTerm), CheckRefusal> {
         let (owner, _) = self.model_owner(&clause.declaration, location)?;
         let spelling = self.text_literal(clause_spelling(clause.kind), location)?;
-        Ok((Owner::Model(owner), SemanticTerm::binding("clause", spelling)))
+        Ok((
+            Owner::Model(owner),
+            SemanticTerm::binding("clause", spelling),
+        ))
     }
 }
 
@@ -342,3 +346,6 @@ pub(super) fn correspondence_entries(
         .map(|(declaration, key)| (key, declaration))
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

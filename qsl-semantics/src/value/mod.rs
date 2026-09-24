@@ -127,7 +127,7 @@ pub mod model_query;
 pub mod quantity;
 pub(crate) mod semantic_node;
 pub mod stop;
-mod unit;
+pub(crate) mod unit;
 
 // QSL-166: `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
 // `Meter`, `ScalarLimits`, `Charge` and `length_amount` were this module's

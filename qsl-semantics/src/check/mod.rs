@@ -117,7 +117,7 @@ pub use lowering::{
     AdmittedModel, ForeignView, LockEvidence, ModelClause, SemanticGraph, SemanticNode,
 };
 pub use node_key::{
-    InvalidModelOwner, InvalidSourceOwner, IntegerSite, LawRole, LeafSegment, LiteralValue,
+    IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment, LiteralValue,
     ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf,
     OperationMode, Operator, Owner, SemanticTerm, SourceOwner,
 };

@@ -278,8 +278,9 @@ pub enum CheckCause {
     /// "Refusals", ADR-013 T-4): keying a node needed a fact that type
     /// admission, intake or the check stage's own unit scope guarantees, and
     /// it was not there. A fault in `check`, not in the input; the node gets
-    /// no key.
-    InternalFault(KeyFault),
+    /// no key. Boxed: a fault names a `DeclarationKey` or a `UnitId`, larger
+    /// than every other cause.
+    InternalFault(Box<KeyFault>),
     /// `invalid_package`: a node preimage that cannot be encoded (an empty
     /// or non-identifier name, a number RFC 8785 cannot render exactly, a
     /// body nested past the preimage depth bound).

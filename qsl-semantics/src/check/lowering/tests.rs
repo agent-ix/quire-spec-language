@@ -7,7 +7,9 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_forms::{BinaryOperator, BinderQuery, BuiltinType, Expression, FunctionDeclaration, TypeForm};
+use qsl_forms::{
+    BinaryOperator, BinderQuery, BuiltinType, Expression, FunctionDeclaration, TypeForm,
+};
 use quire_exact::{
     CardinalityBound, CollectionType, DecimalType, IntegerInterval, Presence, RationalDomain,
     RoundingMode, TextType,
@@ -21,9 +23,8 @@ use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvi
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
-const FR_092: &str = include_str!(
-    "../../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md"
-);
+const FR_092: &str =
+    include_str!("../../../../spec/functional/FR-092-key-type-parameter-and-declared-nodes.md");
 
 /// FR-092's golden vectors by name: `(key, preimage)`.
 fn vectors() -> BTreeMap<String, (String, String)> {
@@ -132,7 +133,11 @@ fn type_nodes(
     );
     let keys = value_types
         .iter()
-        .map(|value_type| lowering.type_node(value_type, &location).expect("the type keys"))
+        .map(|value_type| {
+            lowering
+                .type_node(value_type, &location)
+                .expect("the type keys")
+        })
         .collect();
     (lowering.finish(&location).0, keys)
 }
@@ -154,7 +159,10 @@ fn builtin_and_anonymous_type_nodes_match_t1_to_t8() {
     let (graph, keys) = type_nodes(
         &empty_scope(),
         &fixture_owner(),
-        &cases.iter().map(|(_, value_type)| value_type.clone()).collect::<Vec<_>>(),
+        &cases
+            .iter()
+            .map(|(_, value_type)| value_type.clone())
+            .collect::<Vec<_>>(),
     );
     for ((name, _), key) in cases.iter().zip(&keys) {
         assert_vector(&graph, *key, name);
@@ -187,7 +195,11 @@ fn rational_decimal_and_declared_composite_nodes_match_their_vectors() {
     let mut scope = empty_scope();
     scope.types = TypeEnvironment::new(
         [
-            CompositeDeclaration::new(pair, "Pair", CompositeShape::Tuple(vec![int(0, 9), int(0, 9)])),
+            CompositeDeclaration::new(
+                pair,
+                "Pair",
+                CompositeShape::Tuple(vec![int(0, 9), int(0, 9)]),
+            ),
             CompositeDeclaration::new(
                 optional,
                 "Opt",
@@ -351,10 +363,18 @@ fn recursion_groups_refuse_naming_their_members() {
             boolean(),
             Some(name_expr("x")),
             Expression::If {
-                condition: Box::new(binary(BinaryOperator::Greater, name_expr("x"), integer_expr(0))),
+                condition: Box::new(binary(
+                    BinaryOperator::Greater,
+                    name_expr("x"),
+                    integer_expr(0),
+                )),
                 then: Box::new(Expression::Call {
                     name: name.to_owned(),
-                    arguments: vec![binary(BinaryOperator::Subtract, name_expr("x"), integer_expr(1))],
+                    arguments: vec![binary(
+                        BinaryOperator::Subtract,
+                        name_expr("x"),
+                        integer_expr(1),
+                    )],
                 }),
                 otherwise: Box::new(Expression::Boolean(true)),
             },
@@ -369,10 +389,21 @@ fn recursion_groups_refuse_naming_their_members() {
         })
         .collect();
     assert_eq!(loci.len(), 2, "{refusals:?}");
-    let named: Vec<&Origin> = loci.iter().flatten().map(|location| &location.origin).collect();
-    assert!(named.iter().any(|origin| matches!(origin, Origin::Body { function, .. } if function == "f")));
-    assert!(named.iter().any(|origin| matches!(origin, Origin::Body { function, .. } if function == "g")));
-    assert_eq!(refusals[0].cause.code().as_str(), "unknown_required_feature");
+    let named: Vec<&Origin> = loci
+        .iter()
+        .flatten()
+        .map(|location| &location.origin)
+        .collect();
+    assert!(named
+        .iter()
+        .any(|origin| matches!(origin, Origin::Body { function, .. } if function == "f")));
+    assert!(named
+        .iter()
+        .any(|origin| matches!(origin, Origin::Body { function, .. } if function == "g")));
+    assert_eq!(
+        refusals[0].cause.code().as_str(),
+        "unknown_required_feature"
+    );
     assert_eq!(refusals[0].cause.cause(), Some("unsupported-feature"));
 }
 
@@ -435,7 +466,8 @@ fn boolean() -> TypeForm {
 }
 
 fn int_form(lower: i64, upper: i64) -> TypeForm {
-    TypeForm::builtin(BuiltinType::Int, SPAN).with_bounds(vec![lower.to_string(), upper.to_string()])
+    TypeForm::builtin(BuiltinType::Int, SPAN)
+        .with_bounds(vec![lower.to_string(), upper.to_string()])
 }
 
 fn name_expr(name: &str) -> Expression {
@@ -581,7 +613,11 @@ fn parameter_literal_and_function_nodes_match_their_vectors() {
         Some(vector_key("F1"))
     );
     let l2 = preimage(node_by_key(semantic, &vector_key("L2")));
-    assert_eq!(l2["body"]["value"], json!("7"), "an integer literal is a string");
+    assert_eq!(
+        l2["body"]["value"],
+        json!("7"),
+        "an integer literal is a string"
+    );
 }
 
 /// TC-414 step 2 (FR-092-AC-5): a function lists every parameter in order,
@@ -607,7 +643,12 @@ fn unread_parameters_keep_the_arity_and_parameter_nodes_are_shared() {
             .as_array()
             .expect("a parameters aggregate")
             .iter()
-            .map(|member| member["target"]["digest"].as_str().expect("a reference").to_owned())
+            .map(|member| {
+                member["target"]["digest"]
+                    .as_str()
+                    .expect("a reference")
+                    .to_owned()
+            })
             .collect::<Vec<_>>()
     };
     let expected = vec![vector_key("P1"), vector_key("P2")];
@@ -672,10 +713,17 @@ fn a_measure_is_a_decreases_reference() {
     let semantic = graph.semantic_graph();
     let f3 = graph.function_identity("m").expect("declared");
     assert_vector(semantic, f3, "F3");
-    assert_vector(semantic, node_by_key(semantic, &vector_key("P4")).key(), "P4");
+    assert_vector(
+        semantic,
+        node_by_key(semantic, &vector_key("P4")).key(),
+        "P4",
+    );
     let decreases = &preimage(semantic.node(f3).unwrap())["body"]["members"][2];
     assert_eq!(decreases["name"], "decreases");
-    assert_eq!(decreases["value"]["target"]["digest"], json!(vector_key("P4")));
+    assert_eq!(
+        decreases["value"]["target"]["digest"],
+        json!(vector_key("P4"))
+    );
 }
 
 /// TC-415 step 1 (FR-093-AC-1): three equal literals are one node with
@@ -699,9 +747,18 @@ fn equal_literals_are_one_node_with_one_occurrence_each() {
         .collect();
     assert_eq!(conditionals.len(), 1);
     let conditional = preimage(conditionals[0]);
-    assert_eq!(conditional["body"]["operation"]["identity"], "quire.op.control.if");
-    assert_eq!(conditional["semantic_type"]["digest"], json!(vector_key("T1")));
-    assert_eq!(conditional["body"]["result_type"]["digest"], json!(vector_key("T1")));
+    assert_eq!(
+        conditional["body"]["operation"]["identity"],
+        "quire.op.control.if"
+    );
+    assert_eq!(
+        conditional["semantic_type"]["digest"],
+        json!(vector_key("T1"))
+    );
+    assert_eq!(
+        conditional["body"]["result_type"]["digest"],
+        json!(vector_key("T1"))
+    );
     let arguments = conditional["body"]["arguments"].as_array().unwrap();
     assert_eq!(arguments.len(), 3);
     for argument in arguments {
@@ -710,15 +767,24 @@ fn equal_literals_are_one_node_with_one_occurrence_each() {
     let occurrences: Vec<Location> = (0..3)
         .map(|ordinal| {
             graph
-                .occurrence(literal, &quire_exact::Origin::new(quire_exact::Role::new("expression"), ordinal))
+                .occurrence(
+                    literal,
+                    &quire_exact::Origin::new(quire_exact::Role::new("expression"), ordinal),
+                )
                 .expect("an expression occurrence")
                 .clone()
         })
         .collect();
-    let paths: Vec<Vec<usize>> = occurrences.into_iter().map(|location| location.path).collect();
+    let paths: Vec<Vec<usize>> = occurrences
+        .into_iter()
+        .map(|location| location.path)
+        .collect();
     assert_eq!(paths, vec![vec![0], vec![1], vec![2]], "source order");
     assert!(graph
-        .occurrence(literal, &quire_exact::Origin::new(quire_exact::Role::new("expression"), 3))
+        .occurrence(
+            literal,
+            &quire_exact::Origin::new(quire_exact::Role::new("expression"), 3)
+        )
         .is_none());
 }
 
@@ -730,21 +796,33 @@ fn applications_match_e1_to_e3_and_local_reads_build_no_node() {
     let graph = check(vec![both(), nb(), h()]).expect("the fixtures check");
     let semantic = graph.semantic_graph();
     for name in ["E1", "E2", "E3"] {
-        assert_vector(semantic, node_by_key(semantic, &vector_key(name)).key(), name);
+        assert_vector(
+            semantic,
+            node_by_key(semantic, &vector_key(name)).key(),
+            name,
+        );
     }
-    let parameters: Vec<String> = ["P1", "P2", "P3"].iter().map(|name| vector_key(name)).collect();
+    let parameters: Vec<String> = ["P1", "P2", "P3"]
+        .iter()
+        .map(|name| vector_key(name))
+        .collect();
     for node in semantic.nodes() {
         let json = preimage(node);
         assert!(
             !(json["body"]["term"] == "reference"
-                && parameters.contains(&json["body"]["target"]["digest"].as_str().unwrap_or("").to_owned())),
+                && parameters.contains(
+                    &json["body"]["target"]["digest"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_owned()
+                )),
             "no node's body is a bare local read"
         );
     }
 }
 
 /// The node whose body's operation identity is `identity`.
-fn application<'g>(graph: &'g SemanticGraph, identity: &str) -> Json {
+fn application(graph: &SemanticGraph, identity: &str) -> Json {
     let found: Vec<Json> = graph
         .nodes()
         .map(preimage)
@@ -760,17 +838,31 @@ fn application<'g>(graph: &'g SemanticGraph, identity: &str) -> Json {
 #[trace("FR-093-AC-4", "TC-415")]
 #[test]
 fn conversions_are_classified_and_flat_map_builds_one_node() {
-    let c1 = function("c1", &[("x", int_form(0, 9))], int_form(0, 10), None, name_expr("x"));
+    let c1 = function(
+        "c1",
+        &[("x", int_form(0, 9))],
+        int_form(0, 10),
+        None,
+        name_expr("x"),
+    );
     let c2 = function("c2", &[], int_form(0, 9), None, integer_expr(3));
     let c3 = function(
         "c3",
         &[("x", int_form(0, 9))],
-        TypeForm::builtin(BuiltinType::Rational, SPAN)
-            .with_bounds(vec!["0".into(), "9".into(), "1".into(), "1".into()]),
+        TypeForm::builtin(BuiltinType::Rational, SPAN).with_bounds(vec![
+            "0".into(),
+            "9".into(),
+            "1".into(),
+            "1".into(),
+        ]),
         None,
         Expression::Convert {
-            target: TypeForm::builtin(BuiltinType::Rational, SPAN)
-                .with_bounds(vec!["0".into(), "9".into(), "1".into(), "1".into()]),
+            target: TypeForm::builtin(BuiltinType::Rational, SPAN).with_bounds(vec![
+                "0".into(),
+                "9".into(),
+                "1".into(),
+                "1".into(),
+            ]),
             operand: Box::new(name_expr("x")),
         },
     );
@@ -797,16 +889,31 @@ fn conversions_are_classified_and_flat_map_builds_one_node() {
 
     let graph = check(vec![c1]).expect("c1 checks");
     let semantic = graph.semantic_graph();
-    let c1_node = preimage(semantic.node(graph.function_identity("c1").unwrap()).unwrap());
+    let c1_node = preimage(
+        semantic
+            .node(graph.function_identity("c1").unwrap())
+            .unwrap(),
+    );
     let x = parameter_named(semantic, "x").key();
-    assert_eq!(c1_node["body"]["members"][1]["value"]["target"]["digest"], json!(x.to_string()));
-    assert!(semantic.nodes().all(|node| node.semantic_form() != "conversion"));
+    assert_eq!(
+        c1_node["body"]["members"][1]["value"]["target"]["digest"],
+        json!(x.to_string())
+    );
+    assert!(semantic
+        .nodes()
+        .all(|node| node.semantic_form() != "conversion"));
 
     let graph = check(vec![c2]).expect("c2 checks");
     let narrow = application(graph.semantic_graph(), "quire.op.numeric.narrow");
     let t4 = vector_key("T4");
-    assert_eq!(narrow["body"]["operation"]["member"]["kind"], "type_argument");
-    assert_eq!(narrow["body"]["operation"]["member"]["declaration"]["digest"], json!(t4));
+    assert_eq!(
+        narrow["body"]["operation"]["member"]["kind"],
+        "type_argument"
+    );
+    assert_eq!(
+        narrow["body"]["operation"]["member"]["declaration"]["digest"],
+        json!(t4)
+    );
     assert_eq!(narrow["semantic_form"], "conversion");
 
     let graph = check(vec![c3]).expect("c3 checks");
@@ -814,9 +921,11 @@ fn conversions_are_classified_and_flat_map_builds_one_node() {
 
     let graph = check(vec![flat]).expect("flat checks");
     application(graph.semantic_graph(), "quire.op.collection.flat_map");
-    assert!(graph.semantic_graph().nodes().map(preimage).all(|json| json["body"]["operation"]
-        ["identity"]
-        != "quire.op.collection.map"));
+    assert!(graph
+        .semantic_graph()
+        .nodes()
+        .map(preimage)
+        .all(|json| json["body"]["operation"]["identity"] != "quire.op.collection.map"));
 }
 
 /// TC-415 step 5 (FR-093-AC-5): binder levels count the binders in scope;
@@ -855,7 +964,9 @@ fn binder_levels_count_enclosing_binders() {
     );
     let graph = check(vec![q]).expect("q checks");
     let semantic = graph.semantic_graph();
-    let level = |name: &str| preimage(parameter_named(semantic, name))["body"]["members"][1]["value"]["value"].clone();
+    let level = |name: &str| {
+        preimage(parameter_named(semantic, name))["body"]["members"][1]["value"]["value"].clone()
+    };
     assert_eq!(level("x"), json!("1"));
     assert_eq!(level("y"), json!("2"));
     assert_eq!(level("z"), json!("1"));
@@ -880,7 +991,10 @@ fn binder_levels_count_enclosing_binders() {
         .find(|node| preimage(node) == exists)
         .unwrap()
         .key();
-    assert_eq!(arguments[1]["value"]["target"]["digest"], json!(exists_key.to_string()));
+    assert_eq!(
+        arguments[1]["value"]["target"]["digest"],
+        json!(exists_key.to_string())
+    );
 }
 
 /// TC-415 step 6 (FR-093-AC-6): a text equality carries the lock
@@ -891,8 +1005,11 @@ fn binder_levels_count_enclosing_binders() {
 #[test]
 fn a_law_comes_only_from_the_lock_evidence() {
     let text = || {
-        TypeForm::builtin(BuiltinType::Text, SPAN)
-            .with_bounds(vec!["0".into(), "8".into(), "nfc".into()])
+        TypeForm::builtin(BuiltinType::Text, SPAN).with_bounds(vec![
+            "0".into(),
+            "8".into(),
+            "nfc".into(),
+        ])
     };
     let te = function(
         "te",
@@ -936,7 +1053,10 @@ fn a_law_comes_only_from_the_lock_evidence() {
         operation["laws"][0]["definition"],
         serde_json::to_value(&definition).unwrap()
     );
-    assert_eq!(operation["mode"], json!({"kind": "text_profile", "value": "nfc"}));
+    assert_eq!(
+        operation["mode"],
+        json!({"kind": "text_profile", "value": "nfc"})
+    );
 }
 
 /// TC-415 step 3 (FR-093-AC-3): one fixture per `Value`-family row. Each
@@ -956,117 +1076,314 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
             .with_arguments(vec![int_form(0, 9)])
             .with_bounds(vec!["0".into(), "5".into()])
     };
-    let option = || TypeForm::builtin(BuiltinType::Option, SPAN).with_arguments(vec![int_form(0, 9)]);
+    let option =
+        || TypeForm::builtin(BuiltinType::Option, SPAN).with_arguments(vec![int_form(0, 9)]);
     // (fixture, operation identity, operator, semantic form, arguments)
     let rows: Vec<(FunctionDeclaration, &str, &str, &str, usize)> = vec![
         (
-            function("add", &[("x", integer()), ("y", integer())], integer(), None,
-                binary(BinaryOperator::Add, name_expr("x"), name_expr("y"))),
-            "quire.op.integer.add", "binary", "binary", 2,
+            function(
+                "add",
+                &[("x", integer()), ("y", integer())],
+                integer(),
+                None,
+                binary(BinaryOperator::Add, name_expr("x"), name_expr("y")),
+            ),
+            "quire.op.integer.add",
+            "binary",
+            "binary",
+            2,
         ),
         (
-            function("sub", &[("x", integer()), ("y", integer())], integer(), None,
-                binary(BinaryOperator::Subtract, name_expr("x"), name_expr("y"))),
-            "quire.op.integer.sub", "binary", "binary", 2,
+            function(
+                "sub",
+                &[("x", integer()), ("y", integer())],
+                integer(),
+                None,
+                binary(BinaryOperator::Subtract, name_expr("x"), name_expr("y")),
+            ),
+            "quire.op.integer.sub",
+            "binary",
+            "binary",
+            2,
         ),
         (
-            function("mul", &[("x", integer()), ("y", integer())], integer(), None,
-                binary(BinaryOperator::Multiply, name_expr("x"), name_expr("y"))),
-            "quire.op.integer.mul", "binary", "binary", 2,
+            function(
+                "mul",
+                &[("x", integer()), ("y", integer())],
+                integer(),
+                None,
+                binary(BinaryOperator::Multiply, name_expr("x"), name_expr("y")),
+            ),
+            "quire.op.integer.mul",
+            "binary",
+            "binary",
+            2,
         ),
         (
-            function("neg", &[("x", integer())], integer(), None,
-                Expression::Negate(Box::new(name_expr("x")))),
-            "quire.op.integer.negate", "unary", "unary", 1,
+            function(
+                "neg",
+                &[("x", integer())],
+                integer(),
+                None,
+                Expression::Negate(Box::new(name_expr("x"))),
+            ),
+            "quire.op.integer.negate",
+            "unary",
+            "unary",
+            1,
         ),
         (
-            function("lt", &[("x", integer()), ("y", integer())], boolean(), None,
-                binary(BinaryOperator::Less, name_expr("x"), name_expr("y"))),
-            "quire.op.integer.lt", "binary", "binary", 2,
+            function(
+                "lt",
+                &[("x", integer()), ("y", integer())],
+                boolean(),
+                None,
+                binary(BinaryOperator::Less, name_expr("x"), name_expr("y")),
+            ),
+            "quire.op.integer.lt",
+            "binary",
+            "binary",
+            2,
         ),
         (
-            function("ge", &[("x", integer()), ("y", integer())], boolean(), None,
-                binary(BinaryOperator::GreaterOrEqual, name_expr("x"), name_expr("y"))),
-            "quire.op.integer.ge", "binary", "binary", 2,
+            function(
+                "ge",
+                &[("x", integer()), ("y", integer())],
+                boolean(),
+                None,
+                binary(
+                    BinaryOperator::GreaterOrEqual,
+                    name_expr("x"),
+                    name_expr("y"),
+                ),
+            ),
+            "quire.op.integer.ge",
+            "binary",
+            "binary",
+            2,
         ),
         (
-            function("ieq", &[("x", integer()), ("y", integer())], boolean(), None,
-                binary(BinaryOperator::Equal, name_expr("x"), name_expr("y"))),
-            "quire.op.integer.eq", "binary", "binary", 2,
+            function(
+                "ieq",
+                &[("x", integer()), ("y", integer())],
+                boolean(),
+                None,
+                binary(BinaryOperator::Equal, name_expr("x"), name_expr("y")),
+            ),
+            "quire.op.integer.eq",
+            "binary",
+            "binary",
+            2,
         ),
         (
-            function("bne", &[("a", boolean()), ("b", boolean())], boolean(), None,
-                binary(BinaryOperator::NotEqual, name_expr("a"), name_expr("b"))),
-            "quire.op.boolean.ne", "binary", "binary", 2,
+            function(
+                "bne",
+                &[("a", boolean()), ("b", boolean())],
+                boolean(),
+                None,
+                binary(BinaryOperator::NotEqual, name_expr("a"), name_expr("b")),
+            ),
+            "quire.op.boolean.ne",
+            "binary",
+            "binary",
+            2,
         ),
         (
-            function("seq", &[("s", s()), ("r", s())], boolean(), None,
-                binary(BinaryOperator::Equal, name_expr("s"), name_expr("r"))),
-            "quire.op.structural.eq", "binary", "binary", 2,
+            function(
+                "seq",
+                &[("s", s()), ("r", s())],
+                boolean(),
+                None,
+                binary(BinaryOperator::Equal, name_expr("s"), name_expr("r")),
+            ),
+            "quire.op.structural.eq",
+            "binary",
+            "binary",
+            2,
         ),
         (
-            function("or", &[("a", boolean()), ("b", boolean())], boolean(), None,
-                binary(BinaryOperator::Or, name_expr("a"), name_expr("b"))),
-            "quire.op.boolean.or", "binary", "binary", 2,
+            function(
+                "or",
+                &[("a", boolean()), ("b", boolean())],
+                boolean(),
+                None,
+                binary(BinaryOperator::Or, name_expr("a"), name_expr("b")),
+            ),
+            "quire.op.boolean.or",
+            "binary",
+            "binary",
+            2,
         ),
         (
-            function("imp", &[("a", boolean()), ("b", boolean())], boolean(), None,
-                binary(BinaryOperator::Implies, name_expr("a"), name_expr("b"))),
-            "quire.op.boolean.implies", "binary", "binary", 2,
+            function(
+                "imp",
+                &[("a", boolean()), ("b", boolean())],
+                boolean(),
+                None,
+                binary(BinaryOperator::Implies, name_expr("a"), name_expr("b")),
+            ),
+            "quire.op.boolean.implies",
+            "binary",
+            "binary",
+            2,
         ),
         (
-            function("not", &[("a", boolean())], boolean(), None,
-                Expression::Not(Box::new(name_expr("a")))),
-            "quire.op.boolean.not", "unary", "unary", 1,
+            function(
+                "not",
+                &[("a", boolean())],
+                boolean(),
+                None,
+                Expression::Not(Box::new(name_expr("a"))),
+            ),
+            "quire.op.boolean.not",
+            "unary",
+            "unary",
+            1,
         ),
         (
-            function("pres", &[("o", option())], boolean(), None,
-                Expression::Present(Box::new(name_expr("o")))),
-            "quire.op.option.present", "present", "presence_read", 1,
+            function(
+                "pres",
+                &[("o", option())],
+                boolean(),
+                None,
+                Expression::Present(Box::new(name_expr("o"))),
+            ),
+            "quire.op.option.present",
+            "present",
+            "presence_read",
+            1,
         ),
         (
-            function("val", &[("o", option())], int_form(0, 9), None,
+            function(
+                "val",
+                &[("o", option())],
+                int_form(0, 9),
+                None,
                 Expression::If {
                     condition: Box::new(Expression::Present(Box::new(name_expr("o")))),
                     then: Box::new(Expression::Value(Box::new(name_expr("o")))),
                     otherwise: Box::new(integer_expr(0)),
-                }),
-            "quire.op.option.value", "value", "value_read", 1,
+                },
+            ),
+            "quire.op.option.value",
+            "value",
+            "value_read",
+            1,
         ),
         (
-            function("mk", &[("x", int_form(0, 9))], s(), None,
-                Expression::Collection { kind: CollectionKind::Sequence, elements: vec![name_expr("x"), name_expr("x")] }),
-            "quire.op.collection.sequence", "collection", "collection", 2,
+            function(
+                "mk",
+                &[("x", int_form(0, 9))],
+                s(),
+                None,
+                Expression::Collection {
+                    kind: CollectionKind::Sequence,
+                    elements: vec![name_expr("x"), name_expr("x")],
+                },
+            ),
+            "quire.op.collection.sequence",
+            "collection",
+            "collection",
+            2,
         ),
         (
-            function("mkset", &[("x", int_form(0, 9))], set(), None,
-                Expression::Collection { kind: CollectionKind::Set, elements: vec![name_expr("x")] }),
-            "quire.op.collection.set", "collection", "collection", 1,
+            function(
+                "mkset",
+                &[("x", int_form(0, 9))],
+                set(),
+                None,
+                Expression::Collection {
+                    kind: CollectionKind::Set,
+                    elements: vec![name_expr("x")],
+                },
+            ),
+            "quire.op.collection.set",
+            "collection",
+            "collection",
+            1,
         ),
         (
-            function("map", &[("s", s())], s(), None,
-                Expression::Query { query: BinderQuery::Map, binder: "x".into(), source: Box::new(name_expr("s")), body: Box::new(name_expr("x")) }),
-            "quire.op.collection.map", "collection", "collection", 2,
+            function(
+                "map",
+                &[("s", s())],
+                s(),
+                None,
+                Expression::Query {
+                    query: BinderQuery::Map,
+                    binder: "x".into(),
+                    source: Box::new(name_expr("s")),
+                    body: Box::new(name_expr("x")),
+                },
+            ),
+            "quire.op.collection.map",
+            "collection",
+            "collection",
+            2,
         ),
         (
-            function("filter", &[("s", s())], s(), None,
-                Expression::Query { query: BinderQuery::Filter, binder: "x".into(), source: Box::new(name_expr("s")), body: Box::new(Expression::Boolean(true)) }),
-            "quire.op.collection.filter", "collection", "collection", 2,
+            function(
+                "filter",
+                &[("s", s())],
+                s(),
+                None,
+                Expression::Query {
+                    query: BinderQuery::Filter,
+                    binder: "x".into(),
+                    source: Box::new(name_expr("s")),
+                    body: Box::new(Expression::Boolean(true)),
+                },
+            ),
+            "quire.op.collection.filter",
+            "collection",
+            "collection",
+            2,
         ),
         (
-            function("exists", &[("s", s())], boolean(), None,
-                Expression::Query { query: BinderQuery::Exists, binder: "x".into(), source: Box::new(name_expr("s")), body: Box::new(Expression::Boolean(true)) }),
-            "quire.op.collection.exists", "quantify", "quantify", 2,
+            function(
+                "exists",
+                &[("s", s())],
+                boolean(),
+                None,
+                Expression::Query {
+                    query: BinderQuery::Exists,
+                    binder: "x".into(),
+                    source: Box::new(name_expr("s")),
+                    body: Box::new(Expression::Boolean(true)),
+                },
+            ),
+            "quire.op.collection.exists",
+            "quantify",
+            "quantify",
+            2,
         ),
         (
-            function("size", &[("s", s())], integer(), None,
-                Expression::Size(Box::new(name_expr("s")))),
-            "quire.op.collection.size", "collection", "collection", 1,
+            function(
+                "size",
+                &[("s", s())],
+                integer(),
+                None,
+                Expression::Size(Box::new(name_expr("s"))),
+            ),
+            "quire.op.collection.size",
+            "collection",
+            "collection",
+            1,
         ),
         (
-            function("has", &[("s", s()), ("x", int_form(0, 9))], boolean(), None,
-                Expression::Contains { collection: Box::new(name_expr("s")), item: Box::new(name_expr("x")) }),
-            "quire.op.collection.contains", "collection", "collection", 2,
+            function(
+                "has",
+                &[("s", s()), ("x", int_form(0, 9))],
+                boolean(),
+                None,
+                Expression::Contains {
+                    collection: Box::new(name_expr("s")),
+                    item: Box::new(name_expr("x")),
+                },
+            ),
+            "quire.op.collection.contains",
+            "collection",
+            "collection",
+            2,
         ),
     ];
     for (fixture, identity, operator, form, arity) in rows {
@@ -1121,7 +1438,10 @@ fn record_projection_and_record_values_name_their_record_node() {
         None,
         Expression::Record {
             name: "Point".to_owned(),
-            fields: vec![("x".to_owned(), qsl_forms::FieldInitializer::Value(name_expr("x")))],
+            fields: vec![(
+                "x".to_owned(),
+                qsl_forms::FieldInitializer::Value(name_expr("x")),
+            )],
         },
     );
     let graph = PackageDeclarations {

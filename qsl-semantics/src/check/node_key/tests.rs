@@ -378,7 +378,9 @@ fn a_body_without_an_application_is_refused() {
 #[trace("FR-092-AC-4", "TC-414")]
 #[test]
 fn integer_and_rational_literals_are_spelled_as_strings() {
-    let huge: Integer = "123456789012345678901234567890".parse().expect("canonical integer");
+    let huge: Integer = "123456789012345678901234567890"
+        .parse()
+        .expect("canonical integer");
     let body = add(vec![
         SemanticTerm::literal(key(4), LiteralValue::Integer(huge)),
         SemanticTerm::literal(key(4), LiteralValue::Integer(Integer::from(-7_i64))),
@@ -391,7 +393,10 @@ fn integer_and_rational_literals_are_spelled_as_strings() {
     ]);
     let preimage = preimage_json(&node(&body));
     let arguments = &preimage["body"]["arguments"];
-    assert_eq!(arguments[0]["value"], json!("123456789012345678901234567890"));
+    assert_eq!(
+        arguments[0]["value"],
+        json!("123456789012345678901234567890")
+    );
     assert_eq!(arguments[1]["value"], json!("-7"));
     assert_eq!(arguments[2]["value"], json!("-1/2"));
     assert_eq!(arguments[2]["value_kind"], json!("rational"));
@@ -399,7 +404,7 @@ fn integer_and_rational_literals_are_spelled_as_strings() {
 
 #[test]
 fn a_member_position_outside_the_exact_range_is_refused() {
-    let safe = u64::try_from(JCS_SAFE_INTEGER).expect("2^53 - 1 fits u64");
+    let safe = JCS_SAFE_INTEGER;
     let positioned = |position: u64| {
         let SemanticTerm::Application {
             operator,
@@ -783,9 +788,12 @@ fn an_owner_enters_a_declared_structural_key_only() {
         json!({"kind": "source", "authority": "a", "identity": "u"})
     );
     assert_ne!(under_u.key, declared(&w).key);
-    let bare: Value =
-        serde_json::from_slice(&node_key(&structural(&body)).expect("keys").preimage).expect("JSON");
-    assert!(bare.get("owner").is_none(), "an undeclared node has no owner member");
+    let bare: Value = serde_json::from_slice(&node_key(&structural(&body)).expect("keys").preimage)
+        .expect("JSON");
+    assert!(
+        bare.get("owner").is_none(),
+        "an undeclared node has no owner member"
+    );
 
     assert_eq!(
         node_key(&NodeInput {
@@ -882,7 +890,10 @@ fn conformance_fr092_nominal_enum_keys_match_qspec_vectors() {
     assert_eq!(Some(hex(&member_key).as_str()), member["sha256"].as_str());
     let minted = mint_variant_id(NodeKey::from_digest(declaration_key), "READY");
     assert_eq!(minted.as_bytes(), &member_key);
-    println!("conformance: 2 nominal enum vectors match ({})", path.display());
+    println!(
+        "conformance: 2 nominal enum vectors match ({})",
+        path.display()
+    );
 }
 
 fn hex(bytes: &[u8; 32]) -> String {

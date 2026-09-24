@@ -405,6 +405,9 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "value::containment",
     "value::semantic_node",
     "value::declaration",
+    // ADR-013 O-06's structured member identity, which the FR-093
+    // lowering's operation members name (ADR-011 §6.2: 3 `semantic_value`).
+    "value::member",
     "model",
     "value::model_query",
     "library",
@@ -1095,7 +1098,7 @@ mod tests {
     /// A minimal `qsl-semantics`-shaped fixture tree: a bare marker file for
     /// each of its real top-level modules (so [`is_real_crate_module`] can
     /// tell each apart from an external crate) and each of its real `value`
-    /// submodules. `complete` and `value::member` are real modules of the
+    /// submodules. `complete` and `value::stop` are real modules of the
     /// crate that the permitted list leaves off, so an import of either is
     /// unlisted. Later-layer modules are not faked: they are in other
     /// crates, and Cargo refuses an import of them.
@@ -1113,6 +1116,7 @@ mod tests {
             "semantic_node",
             "model_query",
             "member",
+            "stop",
         ] {
             write(
                 dir.path(),
@@ -1183,7 +1187,7 @@ mod tests {
 
     /// TC-175 (QSL-181): the scanned crate is `qsl-semantics`, so a path
     /// rooted at its own name is classified exactly as a `crate::` one would
-    /// be, not skipped as an external crate: `qsl_semantics::value::member`
+    /// be, not skipped as an external crate: `qsl_semantics::value::stop`
     /// is unlisted, a flat `qsl_semantics::value::UnitTable` names no
     /// submodule, `qsl_semantics::value::quantity` is permitted, and an
     /// inline `qsl_semantics::complete::..` path is unlisted.
@@ -1199,7 +1203,7 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use qsl_semantics::value::member::SomeThing;\n\
+            "use qsl_semantics::value::stop::SomeThing;\n\
              use qsl_semantics::value::UnitTable;\n\
              use qsl_semantics::value::quantity::QuantityUnit;\n\
              pub fn f(_: qsl_semantics::complete::ReaderAuthority) {}\n",
@@ -1212,7 +1216,7 @@ mod tests {
         assert_eq!(
             summary,
             vec![
-                (1, "value::member", true),
+                (1, "value::stop", true),
                 (2, "value::quantity", true),
                 (3, "value::quantity", false),
                 (4, "complete", true),
@@ -1242,7 +1246,7 @@ mod tests {
         assert!(edges[0].is_violation());
     }
 
-    /// TC-175 step 6: a shipped inline path `crate::value::member::Member`
+    /// TC-175 step 6: a shipped inline path `crate::value::stop::Stop`
     /// with no `use` line fails -- an inline path into an unlisted module
     /// is the same edge a `use` line would be.
     #[trace("TC-175", "FR-068-AC-6")]
@@ -1252,11 +1256,11 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "pub fn f() -> crate::value::member::Member {\n    todo!()\n}\n",
+            "pub fn f() -> crate::value::stop::Stop {\n    todo!()\n}\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "value::member");
+        assert_eq!(edges[0].module, "value::stop");
         assert_eq!(edges[0].class, LayerClass::Unlisted);
         assert!(edges[0].is_violation());
     }
@@ -1314,9 +1318,9 @@ mod tests {
     }
 
     /// TC-175 step 6 / Behavior ("A `value` submodule this section does not
-    /// name (today `value::member`) is unlisted"): a shipped
-    /// `use crate::value::member::SomeThing;` fails as unlisted, even
-    /// though `value::member` is a real, submodule-qualified import (not a
+    /// name (today `value::stop`) is unlisted"): a shipped
+    /// `use crate::value::stop::SomeThing;` fails as unlisted, even
+    /// though `value::stop` is a real, submodule-qualified import (not a
     /// flat one) -- being on neither list is its own failure.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
@@ -1325,11 +1329,11 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use crate::value::member::SomeThing;\n",
+            "use crate::value::stop::SomeThing;\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "value::member");
+        assert_eq!(edges[0].module, "value::stop");
         assert_eq!(edges[0].class, LayerClass::Unlisted);
         assert!(edges[0].submodule_qualified);
         assert!(edges[0].is_violation());
@@ -1434,7 +1438,7 @@ mod tests {
     }
 
     /// TC-175 step 6: a `use` that binds an unlisted module by name --
-    /// `use crate::complete;`, `use crate::{value::member, complete as c};`,
+    /// `use crate::complete;`, `use crate::{value::stop, complete as c};`,
     /// `use super::super::complete as d;` -- fails on that module.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
@@ -1443,13 +1447,13 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use crate::complete;\nuse crate::{value::member, complete as c};\nuse super::super::complete as d;\n",
+            "use crate::complete;\nuse crate::{value::stop, complete as c};\nuse super::super::complete as d;\n",
         );
         assert_eq!(
             violations_of(dir.path()),
             vec![
                 ("complete".to_owned(), 1),
-                ("value::member".to_owned(), 2),
+                ("value::stop".to_owned(), 2),
                 ("complete".to_owned(), 2),
                 ("complete".to_owned(), 3),
             ]
@@ -1536,13 +1540,13 @@ mod tests {
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
             "pub fn f() {\n    use crate::complete::ReaderAuthority;\n}\n\
-             #[cfg(test)]\nfn t() {\n    use crate::value::member::Member;\n}\n",
+             #[cfg(test)]\nfn t() {\n    use crate::value::stop::Stop;\n}\n",
         );
         assert_eq!(violations_of(dir.path()), vec![("complete".to_owned(), 2)]);
     }
 
     /// TC-175 step 6: a `crate::` path inside a macro invocation's arguments
-    /// (`vec![crate::complete::X]`, `format!("{}", crate::value::member::M)`) is
+    /// (`vec![crate::complete::X]`, `format!("{}", crate::value::stop::M)`) is
     /// scanned from the macro's tokens.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
@@ -1551,11 +1555,11 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "pub fn f() {\n    let _ = vec![crate::complete::X];\n    let _ = format!(\"{}\", crate::value::member::M);\n}\n",
+            "pub fn f() {\n    let _ = vec![crate::complete::X];\n    let _ = format!(\"{}\", crate::value::stop::M);\n}\n",
         );
         assert_eq!(
             violations_of(dir.path()),
-            vec![("complete".to_owned(), 2), ("value::member".to_owned(), 3)]
+            vec![("complete".to_owned(), 2), ("value::stop".to_owned(), 3)]
         );
     }
 

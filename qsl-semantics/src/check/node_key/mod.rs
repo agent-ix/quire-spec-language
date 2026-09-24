@@ -75,7 +75,7 @@ pub(crate) const APPLICATION_NODE_VERSION: &str = "quire.application-node/v1";
 pub(crate) const STRUCTURAL_NODE_VERSION: &str = "quire.structural-node/v1";
 
 /// The largest integer magnitude RFC 8785 renders exactly (2^53 - 1).
-const JCS_SAFE_INTEGER: i128 = (1 << 53) - 1;
+const JCS_SAFE_INTEGER: u64 = (1 << 53) - 1;
 
 /// The owner of a declared node (ADR-013 O-04): the declaring source unit's
 /// `SourceOwner{kind: "source", authority, identity}`, a required E3 input
@@ -661,7 +661,13 @@ impl<'a> RecursionGroup<'a> {
     /// The group `members` (graph order) with this node at `ordinal`.
     // Only the tests build a group: `check` refuses every recursion group
     // (FR-092-AC-7, FR-092-OQ-1) before it would key a member.
-    #[cfg_attr(not(test), expect(dead_code, reason = "FR-092-OQ-1: check refuses recursion groups until QSpec decides their key"))]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "FR-092-OQ-1: check refuses recursion groups until QSpec decides their key"
+        )
+    )]
     pub(crate) fn new(
         members: &'a [NodeKey],
         ordinal: usize,
@@ -775,7 +781,7 @@ pub enum NodeKeyRefusal {
         /// Where the number sits.
         site: IntegerSite,
         /// The offending value.
-        value: i128,
+        value: u64,
     },
     /// The body nests deeper than [`MAX_CHECKING_DEPTH`] terms.
     #[error("the body nests deeper than {limit} terms")]
@@ -795,8 +801,8 @@ pub enum NodeKeyRefusal {
 }
 
 /// Refuse `value` at `site` when RFC 8785 cannot render it exactly.
-fn exact_integer(site: IntegerSite, value: i128) -> Result<(), NodeKeyRefusal> {
-    if (-JCS_SAFE_INTEGER..=JCS_SAFE_INTEGER).contains(&value) {
+fn exact_integer(site: IntegerSite, value: u64) -> Result<(), NodeKeyRefusal> {
+    if value <= JCS_SAFE_INTEGER {
         Ok(())
     } else {
         Err(NodeKeyRefusal::UnsafeInteger { site, value })
@@ -839,7 +845,7 @@ pub(crate) fn node_key(node: &NodeInput<'_>) -> Result<KeyedPreimage, NodeKeyRef
         return Err(NodeKeyRefusal::EmptyQualifiedName);
     }
     if let Some(group) = node.recursion {
-        let size = i128::try_from(group.members.len()).unwrap_or(i128::MAX);
+        let size = u64::try_from(group.members.len()).unwrap_or(u64::MAX);
         exact_integer(IntegerSite::RecursionSize, size)?;
     }
     let group = node.recursion.map_or(&[][..], |group| group.members);
@@ -879,10 +885,9 @@ pub(crate) fn node_key(node: &NodeInput<'_>) -> Result<KeyedPreimage, NodeKeyRef
         }),
         body,
     };
-    let canonical =
-        serde_json::to_value(&preimage).map_err(|error| NodeKeyRefusal::Serialize {
-            reason: error.to_string(),
-        })?;
+    let canonical = serde_json::to_value(&preimage).map_err(|error| NodeKeyRefusal::Serialize {
+        reason: error.to_string(),
+    })?;
     let bytes = canonical.to_string().into_bytes();
     let key = NodeKey::from_digest(Sha256::digest(&bytes).into());
     Ok(KeyedPreimage {
@@ -978,7 +983,9 @@ impl Walk<'_> {
             )
         };
         Ok(match term {
-            SemanticTerm::Literal { ty, value } => (PreimageTerm::Literal { ty: *ty, value }, false),
+            SemanticTerm::Literal { ty, value } => {
+                (PreimageTerm::Literal { ty: *ty, value }, false)
+            }
             SemanticTerm::Reference { target } => {
                 let preimage = match self.group.iter().position(|member| *member == target.0) {
                     Some(ordinal) => PreimageTerm::GroupReference { ordinal },
@@ -993,7 +1000,7 @@ impl Walk<'_> {
                 arguments,
             } => {
                 if let Some(Member::Position { position, .. }) = &operation.member {
-                    exact_integer(IntegerSite::MemberPosition, i128::from(*position))?;
+                    exact_integer(IntegerSite::MemberPosition, *position)?;
                 }
                 let (arguments, _) = terms(arguments)?;
                 let preimage = PreimageTerm::Application {

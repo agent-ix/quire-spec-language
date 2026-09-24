@@ -234,7 +234,7 @@ fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
 }
 
 fn fault(location: &Location, fault: KeyFault) -> CheckRefusal {
-    refuse(location, CheckCause::InternalFault(fault))
+    refuse(location, CheckCause::InternalFault(Box::new(fault)))
 }
 
 fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusal {
@@ -340,7 +340,10 @@ impl<'a> Lowering<'a> {
                 self.occurrences.record(*key, "generated", root.clone());
             }
         }
-        (self.graph, model::correspondence_entries(self.correspondence))
+        (
+            self.graph,
+            model::correspondence_entries(self.correspondence),
+        )
     }
 
     /// Key an unowned or source-declared node and add it to the graph: a
@@ -355,7 +358,15 @@ impl<'a> Lowering<'a> {
         body: SemanticTerm,
     ) -> Result<NodeKey, CheckRefusal> {
         let owner = declaration.as_ref().map(|_| self.owner.clone());
-        self.insert_node(location, node_tag, semantic_form, semantic_type, declaration, owner, body)
+        self.insert_node(
+            location,
+            node_tag,
+            semantic_form,
+            semantic_type,
+            declaration,
+            owner,
+            body,
+        )
     }
 
     /// Key a model-owned node (FR-094): `owner`, no `declaration`.
@@ -368,7 +379,15 @@ impl<'a> Lowering<'a> {
         owner: Owner,
         body: SemanticTerm,
     ) -> Result<NodeKey, CheckRefusal> {
-        self.insert_node(location, node_tag, semantic_form, semantic_type, None, Some(owner), body)
+        self.insert_node(
+            location,
+            node_tag,
+            semantic_form,
+            semantic_type,
+            None,
+            Some(owner),
+            body,
+        )
     }
 
     /// Key a node from every preimage member and add it to the graph.
@@ -456,7 +475,10 @@ impl<'a> Lowering<'a> {
         location: &Location,
     ) -> Result<SemanticTerm, CheckRefusal> {
         let text = self.scalar("text", location)?;
-        Ok(SemanticTerm::literal(text, LiteralValue::Text(value.to_owned())))
+        Ok(SemanticTerm::literal(
+            text,
+            LiteralValue::Text(value.to_owned()),
+        ))
     }
 
     /// A `bounded_domain` node over `base` with `bindings`.
@@ -504,12 +526,19 @@ impl<'a> Lowering<'a> {
                 let base = self.scalar("integer", location)?;
                 let min = self.integer_literal(interval.lower().clone(), location)?;
                 let max = self.integer_literal(interval.upper().clone(), location)?;
-                self.bounded("integer_range", base, vec![("min", min), ("max", max)], location)
+                self.bounded(
+                    "integer_range",
+                    base,
+                    vec![("min", min), ("max", max)],
+                    location,
+                )
             }
             ValueType::Rational(domain) => {
                 let base = self.scalar("rational", location)?;
-                let numerator_min = self.integer_literal(domain.numerator().lower().clone(), location)?;
-                let numerator_max = self.integer_literal(domain.numerator().upper().clone(), location)?;
+                let numerator_min =
+                    self.integer_literal(domain.numerator().lower().clone(), location)?;
+                let numerator_max =
+                    self.integer_literal(domain.numerator().upper().clone(), location)?;
                 let denominator_min =
                     self.integer_literal(domain.denominator().lower().clone(), location)?;
                 let denominator_max =
@@ -556,8 +585,14 @@ impl<'a> Lowering<'a> {
                 let base = self.scalar(form, location)?;
                 // The checker admits only the omitted, strict `exact`
                 // rounding spelling (`NodeKind::Ieee`'s own doc).
-                let rounding = self.text_literal(quire_exact::RoundingMode::Exact.as_str(), location)?;
-                self.bounded("float_rounding", base, vec![("rounding", rounding)], location)
+                let rounding =
+                    self.text_literal(quire_exact::RoundingMode::Exact.as_str(), location)?;
+                self.bounded(
+                    "float_rounding",
+                    base,
+                    vec![("rounding", rounding)],
+                    location,
+                )
             }
             ValueType::Text(text) => {
                 let base = self.scalar("text", location)?;
@@ -615,7 +650,12 @@ impl<'a> Lowering<'a> {
                 let bound = collection.bound();
                 let min = self.integer_literal(Integer::from(bound.minimum()), location)?;
                 let max = self.integer_literal(Integer::from(bound.maximum()), location)?;
-                self.bounded("collection_bounds", base, vec![("min", min), ("max", max)], location)
+                self.bounded(
+                    "collection_bounds",
+                    base,
+                    vec![("min", min), ("max", max)],
+                    location,
+                )
             }
             ValueType::Composite(declaration) => self.composite(*declaration, location, depth),
             ValueType::Quantity(unit) => self.quantity_type(*unit, location),
@@ -690,9 +730,11 @@ impl<'a> Lowering<'a> {
                             let option = ValueType::option(field.value_type().clone());
                             SemanticTerm::binding(
                                 "optional",
-                                SemanticTerm::reference(
-                                    self.type_node_at(&option, location, depth + 1)?,
-                                ),
+                                SemanticTerm::reference(self.type_node_at(
+                                    &option,
+                                    location,
+                                    depth + 1,
+                                )?),
                             )
                         }
                     };
@@ -703,9 +745,11 @@ impl<'a> Lowering<'a> {
             CompositeShape::Tuple(positions) => {
                 let mut members = Vec::with_capacity(positions.len());
                 for position in positions {
-                    members.push(SemanticTerm::reference(
-                        self.type_node_at(position, location, depth + 1)?,
-                    ));
+                    members.push(SemanticTerm::reference(self.type_node_at(
+                        position,
+                        location,
+                        depth + 1,
+                    )?));
                 }
                 Ok(("tuple", SemanticTerm::Aggregate { members }))
             }
@@ -749,7 +793,13 @@ impl<'a> Lowering<'a> {
                                 )
                             })?;
                             path.push(LeafSegment::Field(name));
-                            self.text_leaves(field.value_type(), path, leaves, location, depth + 1)?;
+                            self.text_leaves(
+                                field.value_type(),
+                                path,
+                                leaves,
+                                location,
+                                depth + 1,
+                            )?;
                             path.pop();
                         }
                     }
@@ -796,7 +846,9 @@ impl<'a> Lowering<'a> {
         let compared = match source {
             LeafSource::Compared(value_type) => Some(value_type),
             LeafSource::ResultInner(value_type) => match value_type {
-                ValueType::Collection(collection) if collection.kind() != CollectionKind::Sequence => {
+                ValueType::Collection(collection)
+                    if collection.kind() != CollectionKind::Sequence =>
+                {
                     Some(collection.element())
                 }
                 _ => None,
@@ -878,7 +930,8 @@ impl<'a> Lowering<'a> {
             let target = function.population_targets.get(level).copied().flatten();
             let type_key = self.binder_type(value_type, target, function.location)?;
             let key = self.parameter(name, level, type_key, function.location)?;
-            self.occurrences.record(type_key, "type", function.location.clone());
+            self.occurrences
+                .record(type_key, "type", function.location.clone());
             parameters.push(Binder {
                 slot: level,
                 parameter: key,
@@ -886,7 +939,8 @@ impl<'a> Lowering<'a> {
             });
         }
         let result = self.type_node(function.result, function.location)?;
-        self.occurrences.record(result, "type", function.location.clone());
+        self.occurrences
+            .record(result, "type", function.location.clone());
         let mut members = vec![SemanticTerm::binding(
             "parameters",
             SemanticTerm::Aggregate {
@@ -985,7 +1039,12 @@ impl<'a> Lowering<'a> {
         binders: &Binders<'_>,
     ) -> Result<NodeKey, CheckRefusal> {
         if let NodeKind::Local(slot) = &node.kind {
-            if let Some(binder) = binders.scope.iter().rev().find(|binder| binder.slot == *slot) {
+            if let Some(binder) = binders
+                .scope
+                .iter()
+                .rev()
+                .find(|binder| binder.slot == *slot)
+            {
                 return Ok(binder.semantic_type);
             }
         }
@@ -1135,7 +1194,8 @@ impl<'a> Lowering<'a> {
                         return self.expression(operand, binders, depth + 1);
                     }
                 }
-                let member = self.type_argument(&ValueType::Int(interval.clone()), &node.location)?;
+                let member =
+                    self.type_argument(&ValueType::Int(interval.clone()), &node.location)?;
                 let arguments = self.operands(&[operand], binders, depth)?;
                 self.application(
                     node,
@@ -1166,7 +1226,12 @@ impl<'a> Lowering<'a> {
                 otherwise,
             } => {
                 let arguments = self.operands(&[condition, then, otherwise], binders, depth)?;
-                self.application(node, Operator::Conditional, plain("quire.op.control.if"), arguments)
+                self.application(
+                    node,
+                    Operator::Conditional,
+                    plain("quire.op.control.if"),
+                    arguments,
+                )
             }
             NodeKind::Arithmetic(operator, left, right) => {
                 let identity = match operator {
@@ -1179,11 +1244,21 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::Negate(operand) => {
                 let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(node, Operator::Unary, plain("quire.op.integer.negate"), arguments)
+                self.application(
+                    node,
+                    Operator::Unary,
+                    plain("quire.op.integer.negate"),
+                    arguments,
+                )
             }
             NodeKind::Divide { left, right, .. } => {
                 let arguments = self.operands(&[left, right], binders, depth)?;
-                self.application(node, Operator::Binary, plain("quire.op.rational.div"), arguments)
+                self.application(
+                    node,
+                    Operator::Binary,
+                    plain("quire.op.rational.div"),
+                    arguments,
+                )
             }
             NodeKind::Rational {
                 operator,
@@ -1197,7 +1272,12 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::RationalNegate(operand, _) => {
                 let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(node, Operator::Unary, plain("quire.op.rational.negate"), arguments)
+                self.application(
+                    node,
+                    Operator::Unary,
+                    plain("quire.op.rational.negate"),
+                    arguments,
+                )
             }
             NodeKind::Decimal {
                 operator,
@@ -1219,7 +1299,12 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::DecimalNegate(operand, _) => {
                 let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(node, Operator::Unary, plain("quire.op.decimal.negate"), arguments)
+                self.application(
+                    node,
+                    Operator::Unary,
+                    plain("quire.op.decimal.negate"),
+                    arguments,
+                )
             }
             NodeKind::Quantity(operator, left, right) => {
                 let identity = format!("quire.op.quantity.{}", arithmetic_suffix(*operator));
@@ -1227,11 +1312,12 @@ impl<'a> Lowering<'a> {
                 self.application(node, Operator::Binary, plain(&identity), arguments)
             }
             NodeKind::Ieee(operator, left, right) => {
-                let width = if let ValueType::Float(quire_exact::IeeeWidth::Binary32) = &left.value_type {
-                    "float32"
-                } else {
-                    "float64"
-                };
+                let width =
+                    if let ValueType::Float(quire_exact::IeeeWidth::Binary32) = &left.value_type {
+                        "float32"
+                    } else {
+                        "float64"
+                    };
                 let law = self.law(LawRole::IeeeProfile, &node.location)?;
                 let identity = format!("quire.op.ieee.{width}.{}", arithmetic_suffix(*operator));
                 let arguments = self.operands(&[left, right], binders, depth)?;
@@ -1282,7 +1368,8 @@ impl<'a> Lowering<'a> {
                     OrderedKind::Texts => "text",
                     OrderedKind::Quantities => "quantity",
                 };
-                let mut operation = plain(&format!("quire.op.{family}.{}", ordering_suffix(*operator)));
+                let mut operation =
+                    plain(&format!("quire.op.{family}.{}", ordering_suffix(*operator)));
                 if let OrderedKind::Texts = kind {
                     operation.laws = vec![self.law(LawRole::TextProfile, &node.location)?];
                     operation.mode = text_profile(&left.value_type).map(OperationMode::TextProfile);
@@ -1310,7 +1397,12 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::Not(operand) => {
                 let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(node, Operator::Unary, plain("quire.op.boolean.not"), arguments)
+                self.application(
+                    node,
+                    Operator::Unary,
+                    plain("quire.op.boolean.not"),
+                    arguments,
+                )
             }
             NodeKind::Field { operand, index, .. } => {
                 let member = self.field_member(&operand.value_type, *index, &node.location)?;
@@ -1361,11 +1453,21 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::Present(operand) => {
                 let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(node, Operator::Present, plain("quire.op.option.present"), arguments)
+                self.application(
+                    node,
+                    Operator::Present,
+                    plain("quire.op.option.present"),
+                    arguments,
+                )
             }
             NodeKind::Value(operand) => {
                 let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(node, Operator::Value, plain("quire.op.option.value"), arguments)
+                self.application(
+                    node,
+                    Operator::Value,
+                    plain("quire.op.option.value"),
+                    arguments,
+                )
             }
             NodeKind::Call {
                 function,
@@ -1388,7 +1490,12 @@ impl<'a> Lowering<'a> {
                 for argument in arguments {
                     operands.push(self.expression(argument, binders, depth + 1)?);
                 }
-                self.application(node, Operator::Call, plain("quire.op.function.call"), operands)
+                self.application(
+                    node,
+                    Operator::Call,
+                    plain("quire.op.function.call"),
+                    operands,
+                )
             }
             NodeKind::Tuple {
                 declaration,
@@ -1399,12 +1506,20 @@ impl<'a> Lowering<'a> {
                 for argument in arguments {
                     members.push(self.expression(argument, binders, depth + 1)?);
                 }
-                self.value_node(node, "tuple_value", semantic_type, SemanticTerm::Aggregate { members })
+                self.value_node(
+                    node,
+                    "tuple_value",
+                    semantic_type,
+                    SemanticTerm::Aggregate { members },
+                )
             }
             NodeKind::Record { declaration, slots } => {
                 let semantic_type = self.composite(*declaration, &node.location, 0)?;
-                let Some(CompositeShape::Record(fields)) =
-                    self.scope.types.composite(*declaration).map(|c| c.shape().clone())
+                let Some(CompositeShape::Record(fields)) = self
+                    .scope
+                    .types
+                    .composite(*declaration)
+                    .map(|c| c.shape().clone())
                 else {
                     return Err(refuse(
                         &node.location,
@@ -1423,14 +1538,23 @@ impl<'a> Lowering<'a> {
                     };
                     members.push(SemanticTerm::binding(field.name(), value));
                 }
-                self.value_node(node, "record_value", semantic_type, SemanticTerm::Aggregate { members })
+                self.value_node(
+                    node,
+                    "record_value",
+                    semantic_type,
+                    SemanticTerm::Aggregate { members },
+                )
             }
             NodeKind::Collection {
                 collection_type,
                 elements,
             } => {
-                let identity = format!("quire.op.collection.{}", collection_form(collection_type.kind()));
-                let leaves = self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
+                let identity = format!(
+                    "quire.op.collection.{}",
+                    collection_form(collection_type.kind())
+                );
+                let leaves =
+                    self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
                 let mut operands = Vec::with_capacity(elements.len());
                 for element in elements {
                     operands.push(self.expression(element, binders, depth + 1)?);
@@ -1446,8 +1570,10 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::ConvertCollection { target, operand } => {
-                let member = self.type_argument(&ValueType::collection(target.clone()), &node.location)?;
-                let leaves = self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
+                let member =
+                    self.type_argument(&ValueType::collection(target.clone()), &node.location)?;
+                let leaves =
+                    self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
                 let arguments = self.operands(&[operand], binders, depth)?;
                 self.application(
                     node,
@@ -1497,7 +1623,8 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::IeeeToRational(operand, domain) => {
                 let law = self.law(LawRole::IeeeProfile, &node.location)?;
-                let member = self.type_argument(&ValueType::Rational(domain.clone()), &node.location)?;
+                let member =
+                    self.type_argument(&ValueType::Rational(domain.clone()), &node.location)?;
                 let arguments = self.operands(&[operand], binders, depth)?;
                 self.application(
                     node,
@@ -1520,7 +1647,10 @@ impl<'a> Lowering<'a> {
                     Visit::Map => (
                         Operator::Collection,
                         Operation {
-                            leaves: self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?,
+                            leaves: self.leaves(
+                                LeafSource::ResultInner(&node.value_type),
+                                &node.location,
+                            )?,
                             ..plain("quire.op.collection.map")
                         },
                     ),
@@ -1546,7 +1676,8 @@ impl<'a> Lowering<'a> {
                 self.application(node, operator, operation, arguments)
             }
             NodeKind::Flatten(operand) => {
-                let leaves = self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
+                let leaves =
+                    self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
                 if let NodeKind::Query {
                     visit: Visit::Map,
                     slot,
@@ -1556,7 +1687,8 @@ impl<'a> Lowering<'a> {
                 {
                     // FR-093: `flatMap`, and `flatten(map(..))`, is one
                     // `flat_map` node; no node is built for the inner map.
-                    let arguments = self.binder_operands(node, *slot, source, body, binders, depth)?;
+                    let arguments =
+                        self.binder_operands(node, *slot, source, body, binders, depth)?;
                     return self.application(
                         node,
                         Operator::Collection,
@@ -1645,8 +1777,12 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::Contains(collection, item) => {
-                let leaves = if let ValueType::Collection(collection_type) = &collection.value_type {
-                    self.leaves(LeafSource::Compared(collection_type.element()), &node.location)?
+                let leaves = if let ValueType::Collection(collection_type) = &collection.value_type
+                {
+                    self.leaves(
+                        LeafSource::Compared(collection_type.element()),
+                        &node.location,
+                    )?
                 } else {
                     Vec::new()
                 };
@@ -1924,7 +2060,10 @@ pub(crate) fn lowering_order(
             .filter_map(|&member| locations.get(member).cloned())
             .collect();
         if let Some(first) = loci.first() {
-            refusals.push(refuse(first, CheckCause::UnsupportedFeature { loci: loci.clone() }));
+            refusals.push(refuse(
+                first,
+                CheckCause::UnsupportedFeature { loci: loci.clone() },
+            ));
         }
     }
     if !refusals.is_empty() {

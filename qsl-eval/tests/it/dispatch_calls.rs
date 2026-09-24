@@ -1107,11 +1107,17 @@ fn ab_bridge_declarations(
         key: root_key,
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &clauses, qsl_semantics::check::fixture_owner(), &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     let types = TypeEnvironment::new(
         [],
         [
@@ -1710,11 +1716,17 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         key: b.clone(),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &clauses, qsl_semantics::check::fixture_owner(), &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     declarations.types = TypeEnvironment::new(
         [],
         [
@@ -1961,11 +1973,17 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &clauses, qsl_semantics::check::fixture_owner(), &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
     // The bridge is pure and builds no `TypeEnvironment` of its own (see its
     // module docs): the caller declares the object types its own clauses'
     // parameter/result `ValueType`s name.
@@ -2080,11 +2098,17 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations =
-        checked_dispatch_operation(&domain_package, &view, &root, &clauses, qsl_semantics::check::fixture_owner(), &mut meter)
-            .unwrap_or_else(|refusal| {
-                panic!("expected a linked, checked dispatch family, got {refusal:?}")
-            });
+    let mut declarations = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("expected a linked, checked dispatch family, got {refusal:?}")
+    });
 
     let mut receiver_types: Vec<EffectiveId> = declarations
         .dispatch_operations
@@ -2171,8 +2195,15 @@ fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal 
         key: DeclarationKey::fixture("model.A.size"),
         closure: GeneralizationClosure::Closed,
     };
-    checked_dispatch_operation(domain_package, &view, &root, &clauses, qsl_semantics::check::fixture_owner(), &mut meter)
-        .expect_err("a non-query dispatch target must refuse, not link")
+    checked_dispatch_operation(
+        domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .expect_err("a non-query dispatch target must refuse, not link")
 }
 
 /// #174 (FR-151, `quire.model.dispatch.single/v1`): "Only query operations,
@@ -2297,8 +2328,15 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
         key: a.clone(),
         closure: GeneralizationClosure::Closed,
     };
-    let refusal = checked_dispatch_operation(&domain_package, &view, &root, &clauses, qsl_semantics::check::fixture_owner(), &mut meter)
-        .expect_err("neither candidate declares a result: the family must refuse, not link");
+    let refusal = checked_dispatch_operation(
+        &domain_package,
+        &view,
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_owner(),
+        &mut meter,
+    )
+    .expect_err("neither candidate declares a result: the family must refuse, not link");
     match refusal {
         DispatchBridgeRefusal::NotAQuery(refusal) => {
             assert!(

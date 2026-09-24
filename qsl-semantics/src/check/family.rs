@@ -1396,9 +1396,12 @@ mod tests {
             result: ValueType::Integer,
             callable_by_name: true,
         };
-        let refusal =
-            measure_declaration(&declaration, &signature, &TargetTypes::new(&scope, &location))
-                .unwrap_err();
+        let refusal = measure_declaration(
+            &declaration,
+            &signature,
+            &TargetTypes::new(&scope, &location),
+        )
+        .unwrap_err();
         assert!(matches!(refusal.cause, CheckCause::MissingName(name) if name == "Nowhere"));
     }
 }
@@ -1435,7 +1438,10 @@ pub mod fixtures {
 
     /// `declaration`'s [`DeclarationMetrics`] as `ValueFunctionFamily::check`
     /// measures it: over its signature resolved against `scope`.
-    pub fn measure_resolved(scope: &Scope, declaration: &FunctionDeclaration) -> DeclarationMetrics {
+    pub fn measure_resolved(
+        scope: &Scope,
+        declaration: &FunctionDeclaration,
+    ) -> DeclarationMetrics {
         let location = root_location();
         let (parameters, result) = crate::check::resolve_signature(scope, declaration, &location)
             .expect("the fixture's signature resolves");
@@ -2215,14 +2221,7 @@ pub(crate) mod checking_tests {
         let own_signature = declaration_signature("f");
 
         let tight = CheckingLimits::new(u64::MAX, 3).expect("3 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(
-            &scope,
-            &[],
-            &own_signature,
-            &[],
-            tight,
-            &location,
-        );
+        let declarations = declarations_for(&scope, &[], &own_signature, &[], tight, &location);
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
@@ -2250,14 +2249,7 @@ pub(crate) mod checking_tests {
         }
 
         let wide = CheckingLimits::new(u64::MAX, 4).expect("4 is within MAX_CHECKING_DEPTH");
-        let declarations = declarations_for(
-            &scope,
-            &[],
-            &own_signature,
-            &[],
-            wide,
-            &location,
-        );
+        let declarations = declarations_for(&scope, &[], &own_signature, &[], wide, &location);
         let mut cx = CheckContext::new(
             &declarations,
             limits(),

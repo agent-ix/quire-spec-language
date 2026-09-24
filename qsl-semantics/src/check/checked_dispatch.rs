@@ -100,8 +100,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::check::{DispatchOperation, PackageDeclarations};
-use super::lowering::{AdmittedModel, ForeignView, ModelClause};
 use super::ir::{DispatchCandidate, DispatchTable};
+use super::lowering::{AdmittedModel, ForeignView, ModelClause};
 use crate::model::accounting::Meter;
 use crate::model::dispatch::{
     link_dispatch, DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome,
@@ -832,7 +832,8 @@ pub fn checked_dispatch_operation(
     meter: &mut Meter,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
     let family_steps = meter.limits().family_steps;
-    let model = AdmittedModel::new(domain_package, view).map_err(|refusal| DispatchBridgeRefusal::ForeignView(Box::new(refusal)))?;
+    let model = AdmittedModel::new(domain_package, view)
+        .map_err(|refusal| DispatchBridgeRefusal::ForeignView(Box::new(refusal)))?;
     let outcome = link_dispatch(domain_package, view, &root.key, root.closure, meter);
     let type_identities = view.type_identities();
     let table = match outcome {
