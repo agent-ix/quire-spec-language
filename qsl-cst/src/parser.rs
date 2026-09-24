@@ -1499,7 +1499,7 @@ mod tests {
     // A caller may raise the nesting ceiling far past the default; brackets
     // nested that deep still never recurse, and are refused by the token or
     // node ceiling (or parse). `parse` here is the engine entry below the
-    // public clamp in `Limits::bounded`.
+    // public entry points' own ceiling.
     #[test]
     fn brackets_under_a_raised_nesting_ceiling_never_overflow_the_stack() {
         on_bounded_stack(|| {
@@ -1529,11 +1529,11 @@ mod tests {
                     Err(refusal) => {
                         let defaults = Limits::default();
                         assert!(
-                            refusal.limit
+                            refusal.limit()
                                 == Some(SyntaxLimit::Nodes {
                                     bound: defaults.nodes
                                 })
-                                || refusal.limit
+                                || refusal.limit()
                                     == Some(SyntaxLimit::Tokens {
                                         bound: defaults.tokens
                                     }),

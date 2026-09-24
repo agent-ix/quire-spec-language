@@ -197,10 +197,17 @@ pub struct CompleteDiagnostic {
     pub related: Vec<LocatedSpan>,
     /// Human-readable detail; never used to recover the code.
     pub message: String,
-    /// The syntax ceiling a `resource_exhausted` refusal names (NFR-001);
-    /// `None` for every other diagnostic. Set only by
-    /// [`resource_exhausted`].
-    pub limit: Option<SyntaxLimit>,
+    /// Set only by [`resource_exhausted`], so it never disagrees with
+    /// `code`; read through [`CompleteDiagnostic::limit`].
+    limit: Option<SyntaxLimit>,
+}
+
+impl CompleteDiagnostic {
+    /// The resource ceiling a `resource_exhausted` refusal names; `None`
+    /// for every other diagnostic.
+    pub fn limit(&self) -> Option<SyntaxLimit> {
+        self.limit
+    }
 }
 
 impl std::fmt::Display for CompleteDiagnostic {

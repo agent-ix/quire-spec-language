@@ -75,7 +75,7 @@ fn on_bounded_stack<F: FnOnce() + Send + 'static>(run: F) {
 fn refused_limit(error: &Diagnostic) -> SyntaxLimit {
     assert_eq!(error.code, Code::ResourceExhausted, "{error}");
     let limit = error
-        .limit
+        .limit()
         .expect("a syntax refusal carries its typed limit");
     assert_eq!(error.message, limit.to_string());
     limit

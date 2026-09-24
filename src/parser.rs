@@ -26,13 +26,13 @@ pub fn parse(
 pub fn parse_source(source: Source, limits: Limits) -> Result<ParsedUnit, Box<Diagnostic>> {
     let limits = limits.bounded();
     if source.text().len() > limits.source_bytes {
-        return Err(qsl_foundation::diagnostic::error(
+        return Err(qsl_foundation::diagnostic::resource_exhausted(
             &source,
-            Code::ResourceExhausted,
             Phase::Source,
-            0,
-            0,
-            "source byte budget exhausted",
+            Span { start: 0, end: 0 },
+            SyntaxLimit::SourceBytes {
+                bound: limits.source_bytes,
+            },
         ));
     }
     let tokens = lexer::lex(&source, lexer_limits(limits))?;
@@ -72,13 +72,13 @@ pub fn parse_native_source(
 ) -> Result<c::NativeUnit, Box<Diagnostic>> {
     let limits = limits.bounded();
     if source.text().len() > limits.source_bytes {
-        return Err(qsl_foundation::diagnostic::error(
+        return Err(qsl_foundation::diagnostic::resource_exhausted(
             &source,
-            Code::ResourceExhausted,
             Phase::Source,
-            0,
-            0,
-            "source byte budget exhausted",
+            Span { start: 0, end: 0 },
+            SyntaxLimit::SourceBytes {
+                bound: limits.source_bytes,
+            },
         ));
     }
     let tokens = lexer::recognize(&source, lexer_limits(limits))?;
@@ -165,15 +165,7 @@ impl Parser {
         span: Span,
         message: impl Into<String>,
     ) -> Box<Diagnostic> {
-        Box::new(Diagnostic {
-            code,
-            phase,
-            source: self.source.identity().clone(),
-            path: self.source.path().into(),
-            span: self.source.locate(span).expect("parser span"),
-            message: message.into(),
-            limit: None,
-        })
+        qsl_foundation::diagnostic::error(&self.source, code, phase, span.start, span.end, message)
     }
     /// Refuse at `span` because the next operation would exceed `limit`.
     fn exhausted(&self, span: Span, limit: SyntaxLimit) -> Box<Diagnostic> {
@@ -426,7 +418,7 @@ mod tests {
 
     // A caller may raise the nesting ceiling far past the default; brackets
     // nested that deep still never recurse. `Parser` here sits below the
-    // public clamp in `Limits::bounded`.
+    // public entry points' own ceiling.
     #[test]
     fn brackets_under_a_raised_nesting_ceiling_never_overflow_the_stack() {
         std::thread::Builder::new()

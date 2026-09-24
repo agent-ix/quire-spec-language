@@ -3,7 +3,7 @@ use qsl_cst::{
     parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, ParsedSource,
 };
 use qsl_foundation::selection::ProfileCatalog;
-use qsl_foundation::{Phase, SourceIdentity, Span};
+use qsl_foundation::{Phase, SourceIdentity, Span, SyntaxLimit};
 
 /// One UTF-8-boundary-preserving source replacement.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -150,19 +150,23 @@ fn apply_edits_selected(
         .and_then(|removed| source.text().len().checked_sub(removed))
         .and_then(|retained| replacement_bytes.and_then(|added| retained.checked_add(added)));
     let Some(output_len) = output_len else {
-        return Err(failure(
-            CompleteCode::ResourceExhausted,
-            CompleteCause::InsufficientNextCharge,
+        return Err(qsl_cst::diagnostic::resource_exhausted(
+            source,
+            Phase::SourceMap,
             Span { start: 0, end: 0 },
-            "incremental edit output length overflowed",
+            SyntaxLimit::SourceBytes {
+                bound: limits.source_bytes,
+            },
         ));
     };
     if output_len > limits.source_bytes {
-        return Err(failure(
-            CompleteCode::ResourceExhausted,
-            CompleteCause::InsufficientNextCharge,
+        return Err(qsl_cst::diagnostic::resource_exhausted(
+            source,
+            Phase::SourceMap,
             Span { start: 0, end: 0 },
-            "incremental edit exceeds the source byte budget",
+            SyntaxLimit::SourceBytes {
+                bound: limits.source_bytes,
+            },
         ));
     }
     let mut bytes = Vec::with_capacity(output_len);

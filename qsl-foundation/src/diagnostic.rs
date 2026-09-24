@@ -330,10 +330,9 @@ pub struct Diagnostic {
     pub span: LocatedSpan,
     /// Contextual human-readable explanation; code carries stable classification.
     pub message: String,
-    /// The syntax ceiling a `resource_exhausted` refusal names (NFR-001);
-    /// `None` for every other diagnostic. Set only by
-    /// [`resource_exhausted`], so it never disagrees with `code`.
-    pub limit: Option<SyntaxLimit>,
+    /// Set only by [`resource_exhausted`], so it never disagrees with
+    /// `code`; read through [`Diagnostic::limit`].
+    limit: Option<SyntaxLimit>,
 }
 
 /// The syntax resource ceiling a `resource_exhausted` refusal names
@@ -361,7 +360,13 @@ pub enum SyntaxLimit {
     },
     /// Parser work budget, in interpreter steps.
     Work {
-        /// Step budget derived from the selected token and node ceilings.
+        /// Step budget: a fixed number of steps per significant token of
+        /// the unit, plus one token's worth for the end of input.
+        bound: usize,
+    },
+    /// Source or output byte ceiling.
+    SourceBytes {
+        /// Selected byte ceiling.
         bound: usize,
     },
 }
@@ -375,6 +380,9 @@ impl std::fmt::Display for SyntaxLimit {
             Self::Tokens { bound } => write!(f, "token ceiling of {bound} tokens exhausted"),
             Self::Nodes { bound } => write!(f, "syntax node ceiling of {bound} nodes exhausted"),
             Self::Work { bound } => write!(f, "parser work budget of {bound} steps exhausted"),
+            Self::SourceBytes { bound } => {
+                write!(f, "source byte ceiling of {bound} bytes exhausted")
+            }
         }
     }
 }
@@ -411,6 +419,11 @@ impl std::fmt::Display for Diagnostic {
 impl std::error::Error for Diagnostic {}
 
 impl Diagnostic {
+    /// The resource ceiling a `resource_exhausted` refusal names; `None`
+    /// for every other diagnostic.
+    pub fn limit(&self) -> Option<SyntaxLimit> {
+        self.limit
+    }
     /// Whether incomplete work, rather than invalid input, caused this diagnostic.
     pub fn is_incomplete(&self) -> bool {
         self.code.is_incomplete()
