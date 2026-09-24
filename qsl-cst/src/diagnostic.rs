@@ -2,7 +2,7 @@
 //! Located complete-source diagnostics over the crate's existing code type.
 
 use qsl_foundation::source::SourceReadCause;
-use qsl_foundation::{LocatedSpan, Phase, Source, SourceIdentity};
+use qsl_foundation::{LocatedSpan, Phase, Source, SourceIdentity, SyntaxLimit};
 
 /// Compatibility name for the crate's pre-existing diagnostic code type. The
 /// authority-bound complete-V1 catalog is deliberately not selected here.
@@ -197,6 +197,10 @@ pub struct CompleteDiagnostic {
     pub related: Vec<LocatedSpan>,
     /// Human-readable detail; never used to recover the code.
     pub message: String,
+    /// The syntax ceiling a `resource_exhausted` refusal names (NFR-001);
+    /// `None` for every other diagnostic. Set only by
+    /// [`resource_exhausted`].
+    pub limit: Option<SyntaxLimit>,
 }
 
 impl std::fmt::Display for CompleteDiagnostic {
@@ -249,6 +253,7 @@ pub fn read_source(
             span: refusal.error.span,
             related: Vec::new(),
             message: refusal.error.message,
+            limit: None,
         })
     })
 }
@@ -276,5 +281,28 @@ pub fn error(
             .expect("internal offsets are UTF-8 boundaries"),
         related: Vec::new(),
         message: message.into(),
+        limit: None,
     })
+}
+
+/// The one constructor for a complete-V1 syntax-ceiling refusal: code
+/// `resource_exhausted`, cause [`CompleteCause::InsufficientNextCharge`],
+/// the typed [`SyntaxLimit`] and a message rendered from it, at `span`.
+pub fn resource_exhausted(
+    source: &Source,
+    phase: Phase,
+    span: qsl_foundation::Span,
+    limit: SyntaxLimit,
+) -> Box<CompleteDiagnostic> {
+    let mut diagnostic = error(
+        source,
+        CompleteCode::ResourceExhausted,
+        CompleteCause::InsufficientNextCharge,
+        phase,
+        span.start,
+        span.end,
+        limit.to_string(),
+    );
+    diagnostic.limit = Some(limit);
+    diagnostic
 }

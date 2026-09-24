@@ -6,8 +6,8 @@
 use crate::token::Kind;
 use crate::token::LexError;
 use logos::Logos;
-use qsl_foundation::diagnostic::error;
-use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
+use qsl_foundation::diagnostic::{error, resource_exhausted};
+use qsl_foundation::{Code, Diagnostic, Phase, Source, Span, SyntaxLimit};
 
 /// Layer-1 parse limits: the lexer's own recognizer bounds and the
 /// complete-V1 CST bounds built on it. Caller limits may lower these
@@ -24,10 +24,11 @@ pub struct Limits {
     /// Maximum CST nodes, clamped to 50,000: complete-V1 parsing counts one
     /// node per matched grammar production.
     pub nodes: usize,
-    /// Maximum bracket-pair nesting depth -- `(…)`, `[…]`, `{…}`, or a
-    /// type-argument `<…>` -- clamped to 64 (NFR-001 "Nesting level").
-    /// Operator, prefix, `let … in` and `if … else` chains add no depth
-    /// regardless of length.
+    /// Maximum bracket-pair nesting depth (NFR-001 "Nesting level"): one
+    /// level is one `(…)`, `[…]`, `{…}` or type-argument `<…>` pair;
+    /// operator, prefix, `let … in` and `if … else` chains add none. The
+    /// default is NFR-001's 64. [`Limits::bounded`] caps a larger request at
+    /// that default; the cap is an implementation ceiling, not a domain bound.
     pub nesting: usize,
 }
 
@@ -126,13 +127,13 @@ pub fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diag
             continue;
         }
         if tokens.len() >= limits.tokens {
-            return Err(error(
+            return Err(resource_exhausted(
                 source,
-                Code::ResourceExhausted,
                 Phase::Lex,
-                span.start,
-                span.end,
-                "token budget exhausted",
+                span,
+                SyntaxLimit::Tokens {
+                    bound: limits.tokens,
+                },
             ));
         }
         if kind == Kind::BadExponent {
@@ -150,23 +151,16 @@ pub fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diag
         match kind {
             Kind::OpenParen | Kind::OpenBrace | Kind::OpenBracket => {
                 if delimiters.len() >= limits.nesting {
-                    // NFR-001 "Nesting level": name nesting depth, the
-                    // ceiling and this opening bracket's own span (`span`
-                    // here, not some farther token). This lexer-level check
-                    // covers only `(`/`[`/`{`; the complete-V1 parser also
-                    // charges type-argument `<…>` toward the same combined
-                    // ceiling, so it may refuse first on a unit this check
-                    // alone would admit.
-                    return Err(error(
+                    // The opening bracket of pair `nesting + 1`, at its own
+                    // span. This check covers `(`/`[`/`{`; the native parser
+                    // charges a composed type-argument `<` itself.
+                    return Err(resource_exhausted(
                         source,
-                        Code::ResourceExhausted,
                         Phase::Lex,
-                        span.start,
-                        span.end,
-                        format!(
-                            "nesting depth exceeds the ceiling of {} levels",
-                            limits.nesting
-                        ),
+                        span,
+                        SyntaxLimit::NestingDepth {
+                            bound: limits.nesting,
+                        },
                     ));
                 }
                 delimiters.push((kind.clone(), span));

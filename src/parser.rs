@@ -171,6 +171,7 @@ impl Parser {
             path: self.source.path().into(),
             span: self.source.locate(span).expect("parser span"),
             message: message.into(),
+            limit: None,
         })
     }
     fn unexpected(&self, expected: &str) -> Box<Diagnostic> {

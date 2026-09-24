@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-197: NFR-001 "Nesting level" for the complete-V1 (lossless CST) S1
-//! parser -- bracket-pair nesting depth (never grammar-production depth),
-//! work-vs-nesting resource_exhausted classification, no `Rule` clone on the
-//! production path, and long-chain stack safety (TC-012).
+//! Nesting levels, chain lengths, work budget and stack safety for the
+//! complete-V1 parser. Every parse runs on a 512 KiB thread at the default
+//! ceilings; see `tests/it/nesting_levels.rs` in the root crate for the
+//! native parser.
 use ix_trace_rs::trace;
 use qsl_cst::{CompleteCode, CompleteDiagnostic, Limits, ParsedSource};
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{Phase, SourceIdentity, SyntaxLimit};
 
 fn identity(id: &str) -> SourceIdentity {
     SourceIdentity {
@@ -16,371 +16,346 @@ fn identity(id: &str) -> SourceIdentity {
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
 
-/// The fixed text preceding a function body expression: `header()` plus the
-/// `function f using Complete (): Boolean pure { ` opener. Callers that need
-/// an exact byte offset into the body build `text` as
-/// `format!("{}{body} }}\n", function_prefix())` and locate offsets relative
-/// to `function_prefix().len()`.
+/// Everything before a function body expression. The body's `{` is one
+/// bracket pair; the parameter list's `()` closes before it.
 fn function_prefix() -> String {
-    format!("{HEADER}function f using Complete (): Boolean pure {{ ")
+    format!("{HEADER}function f using Complete (x: Integer): Boolean pure {{ ")
 }
 
-fn wrap_body(body: &str) -> String {
+fn function(body: &str) -> String {
     format!("{}{body} }}\n", function_prefix())
 }
 
-fn parse(id: &str, text: &str, limits: Limits) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    qsl_cst::parse(
-        identity(id),
-        format!("{id}.native"),
-        text.as_bytes(),
-        limits,
+fn temporal(formula: &str) -> String {
+    format!(
+        "{HEADER}temporal W using Complete over (s: Integer) clock \"t\" on origin {{ {formula} }}\n"
     )
 }
 
-fn parse_body(
-    id: &str,
-    body: &str,
-    limits: Limits,
-) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    parse(id, &wrap_body(body), limits)
+fn parse(text: &str) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
+    qsl_cst::parse(
+        identity("nesting"),
+        "nesting.native",
+        text.as_bytes(),
+        Limits::default(),
+    )
 }
 
-/// Run `run` on a thread with the 512 KiB stack NFR-001 "Verification"
-/// specifies for the five named *chains* (flat `+`, `implies`, prefix
-/// `not`, `let … in`, `if … else`), so a stack-depth regression in the
-/// hand-written chain parsers actually crashes this test rather than
-/// merely working by accident on a generous default thread stack. Each
-/// chain element costs O(1) native stack frames by construction (an
-/// explicit loop, not Rust recursion per element -- see
-/// `Engine::parse_implication`/`parse_unary`/`parse_expression`), so this
-/// is the tight bound NFR-001 verifies them against.
+/// Parse `text`, which must be admitted without diagnostics.
+fn admitted(text: &str) -> ParsedSource {
+    let parsed = parse(text).expect("within the default ceilings");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    parsed
+}
+
+/// Run `run` on a 512 KiB thread, the stack the verification procedure
+/// names. Overflowing it aborts the test process.
 fn on_bounded_stack<F: FnOnce() + Send + 'static>(run: F) {
     std::thread::Builder::new()
         .stack_size(512 * 1024)
         .spawn(run)
-        .expect("spawn bounded-stack thread")
+        .expect("spawn a 512 KiB thread")
         .join()
-        .expect("parser must not overflow a 512 KiB stack (NFR-001 Verification)");
+        .expect("the parser must not overflow a 512 KiB stack");
 }
 
-/// Run `run` on a thread with a generous (16 MiB) stack. Unlike the five
-/// named chains, real bracket nesting to the ceiling recurses through the
-/// full ten-level declarative expression ladder once per nesting level
-/// (`Engine::production` -> `Engine::rule` -> ... for Disjunction,
-/// Conjunction, Comparison, Sum, Product, Postfix and Primary, each a real
-/// Rust stack frame): an unavoidable cost of interpreting a declarative
-/// grammar table rather than a hand-written parser for those levels. In an
-/// unoptimized (`cargo test`, no `--release`) build that cost is large
-/// enough that even the *default* new-thread stack (2 MiB) overflows at
-/// exactly the default nesting ceiling of 64 -- confirmed empirically
-/// while writing this test, and confirmed safe in a `--release` build at
-/// the same 2 MiB. These nesting-boundary tests use a generous stack so
-/// they check the boundary's *correctness* even under `cargo test`,
-/// independent of that debug-build interpreter-depth cost; see this
-/// worktree's final report for that finding.
-fn on_generous_stack<F: FnOnce() + Send + 'static>(run: F) {
-    std::thread::Builder::new()
-        .stack_size(16 * 1024 * 1024)
-        .spawn(run)
-        .expect("spawn generous-stack thread")
-        .join()
-        .expect("parser must not overflow a 16 MiB stack");
+/// The limit a refusal names, asserting it is a resource refusal whose
+/// message renders that same limit.
+fn refused_limit(error: &CompleteDiagnostic) -> SyntaxLimit {
+    assert_eq!(error.code, CompleteCode::ResourceExhausted, "{error}");
+    let limit = error
+        .limit
+        .expect("a syntax refusal carries its typed limit");
+    assert_eq!(error.message, limit.to_string());
+    limit
 }
 
-// --- AC-1: one paren pair costs one nesting level, not one per grammar
-// production it happens to be matched under. ------------------------------
+fn repeat_join(item: &str, separator: &str, count: usize) -> String {
+    std::iter::repeat_n(item, count)
+        .collect::<Vec<_>>()
+        .join(separator)
+}
+
+// One chain per shape. `elements` counts operators, prefixes, `let`s or
+// `if`s.
+fn sum_chain(elements: usize) -> String {
+    function(&repeat_join("x", " + ", elements + 1))
+}
+fn implies_chain(elements: usize) -> String {
+    function(&repeat_join("true", " implies ", elements + 1))
+}
+fn not_chain(elements: usize) -> String {
+    function(&format!("{}true", "not ".repeat(elements)))
+}
+fn let_chain(elements: usize) -> String {
+    function(&format!("{}x", "let v = x in ".repeat(elements)))
+}
+fn if_chain(elements: usize) -> String {
+    function(&format!("{}x", "if true then x else ".repeat(elements)))
+}
+fn let_value_chain(elements: usize) -> String {
+    function(&format!(
+        "{}x{}",
+        "let v = ".repeat(elements),
+        " in x".repeat(elements)
+    ))
+}
+fn always_chain(elements: usize) -> String {
+    temporal(&format!("{}true", "always [0,1] ".repeat(elements)))
+}
+fn temporal_implies_chain(elements: usize) -> String {
+    temporal(&repeat_join("true", " implies ", elements + 1))
+}
+fn temporal_not_chain(elements: usize) -> String {
+    temporal(&format!("{}true", "not ".repeat(elements)))
+}
+
+/// `elements` parses, and `elements + 1` is refused naming the token or
+/// syntax-node ceiling.
+fn assert_longest_chain(name: &str, elements: usize, build: fn(usize) -> String) {
+    if let Err(error) = parse(&build(elements)) {
+        panic!("{name}: the {elements}-element chain must parse: {error}");
+    }
+    let error = parse(&build(elements + 1)).expect_err("one element longer exceeds a ceiling");
+    let limit = refused_limit(&error);
+    let defaults = Limits::default();
+    assert!(
+        limit
+            == SyntaxLimit::Tokens {
+                bound: defaults.tokens
+            }
+            || limit
+                == SyntaxLimit::Nodes {
+                    bound: defaults.nodes
+                },
+        "{name}: one element longer must name the token or node ceiling, got {limit:?}"
+    );
+}
 
 #[trace("TC-012", "NFR-001-M-4")]
 #[test]
-fn deeply_parenthesized_flat_sum_parses_at_default_limits() {
-    on_generous_stack(|| {
-        let parsed = parse_body("ac1", "(((((x + x) + x) + x) + x) + x)", Limits::default())
-            .expect("bracket nesting of 5 is far under the default ceiling of 64");
-        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+fn parenthesized_sum_five_deep_parses() {
+    on_bounded_stack(|| {
+        admitted(&function("(((((x + x) + x) + x) + x) + x)"));
     });
 }
 
-// --- AC-2: nesting to exactly the configured bound parses; one level past
-// is refused naming nesting depth, the bound, and the opening bracket's
-// span. -----------------------------------------------------------------
+#[trace("TC-012", "NFR-001-M-4")]
+#[test]
+fn paren_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused() {
+    on_bounded_stack(|| {
+        let bound = Limits::default().nesting;
+        // The body's `{` is the first pair.
+        let inner = bound - 1;
+        admitted(&function(&format!(
+            "{}x{}",
+            "(".repeat(inner),
+            ")".repeat(inner)
+        )));
+
+        let opens = "(".repeat(inner + 1);
+        let error = parse(&function(&format!("{opens}x{}", ")".repeat(inner + 1))))
+            .expect_err("one pair deeper is refused");
+        assert_eq!(refused_limit(&error), SyntaxLimit::NestingDepth { bound });
+        assert_eq!(error.phase, Phase::Parse);
+        let offending = function_prefix().len() + opens.len() - 1;
+        assert_eq!(
+            (error.span.start.byte, error.span.end.byte),
+            (offending, offending + 1)
+        );
+    });
+}
 
 #[trace("TC-012", "NFR-001-M-4")]
 #[test]
-fn paren_nesting_to_exactly_the_ceiling_parses_one_deeper_refuses() {
-    on_generous_stack(|| {
-        let limits = Limits::default();
-        let bound = limits.nesting;
-        // `wrap_body`'s function `{ … }` block is itself one bracket pair,
-        // so the body needs one fewer parenthesis than `bound` for the
-        // deepest token's total nesting depth to land exactly on the
-        // ceiling.
-        let body_bound = bound - 1;
+fn option_type_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused() {
+    on_bounded_stack(|| {
+        let bound = Limits::default().nesting;
+        let alias = |depth: usize| {
+            let prefix = format!("{HEADER}type T = {}", "Option<".repeat(depth));
+            let text = format!("{prefix}Integer{};\n", ">".repeat(depth));
+            (prefix, text)
+        };
+        admitted(&alias(bound).1);
 
-        let at_bound = format!("{}x{}", "(".repeat(body_bound), ")".repeat(body_bound));
-        let parsed =
-            parse_body("ac2-at-bound", &at_bound, limits).expect("exactly the ceiling must parse");
-        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let (prefix, text) = alias(bound + 1);
+        let error = parse(&text).expect_err("one pair deeper is refused");
+        assert_eq!(refused_limit(&error), SyntaxLimit::NestingDepth { bound });
+        let angle = prefix.len() - 1;
+        assert_eq!(
+            (error.span.start.byte, error.span.end.byte),
+            (angle, angle + 1)
+        );
+    });
+}
 
-        let prefix = function_prefix();
-        let opens = "(".repeat(body_bound + 1);
-        let closes = ")".repeat(body_bound + 1);
-        let text = format!("{prefix}{opens}x{closes} }}\n");
-        let last_open_offset = prefix.len() + opens.len() - 1;
-
-        let error = parse("ac2-over-bound", &text, limits).expect_err("one level past must refuse");
-        assert_eq!(error.code, CompleteCode::ResourceExhausted);
+// Each value in `f(f(...f(x,)...,),)` fails as a tuple and is parsed again
+// as a call argument list, so the work doubles with every level: far more
+// than the linear budget allows, and refused naming the work limit.
+#[trace("TC-012")]
+#[test]
+fn exponential_backtracking_is_refused_naming_the_work_limit() {
+    on_bounded_stack(|| {
+        let depth = 24;
+        let body = format!("{}x{}", "f(".repeat(depth), ",)".repeat(depth));
+        let error = parse(&function(&body)).expect_err("the work budget is exhausted");
         assert!(
-            error.message.contains("nesting depth") && error.message.contains(&bound.to_string()),
-            "expected a nesting-depth refusal naming the bound {bound}, got: {}",
-            error.message
+            matches!(refused_limit(&error), SyntaxLimit::Work { .. }),
+            "{error:?}"
         );
-        assert_eq!(error.span.start.byte, last_open_offset);
-        assert_eq!(error.span.end.byte, last_open_offset + 1);
+        assert_eq!(error.phase, Phase::Parse);
     });
 }
-
-// --- AC-7: `Option<...>` type-argument nesting counts the same combined
-// ceiling as bracket pairs, since the lexer cannot itself tell a
-// type-argument `<` from a comparison operator. --------------------------
-
-#[trace("TC-012", "NFR-001-M-4")]
-#[test]
-fn option_type_argument_nesting_to_exactly_the_ceiling_parses_one_deeper_refuses() {
-    on_generous_stack(|| {
-        let limits = Limits::default();
-        let bound = limits.nesting;
-
-        let at_bound = format!(
-            "type T = {}Integer{};\n",
-            "Option<".repeat(bound),
-            ">".repeat(bound)
-        );
-        let text = format!("{HEADER}{at_bound}");
-        let parsed = parse("ac7-at-bound", &text, limits).expect("exactly the ceiling must parse");
-        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-
-        let opens = "Option<".repeat(bound + 1);
-        let prefix = format!("{HEADER}type T = ");
-        let text = format!("{prefix}{opens}Integer{};\n", ">".repeat(bound + 1));
-        let last_open_offset = prefix.len() + opens.len() - 1;
-
-        let error = parse("ac7-over-bound", &text, limits).expect_err("one level past must refuse");
-        assert_eq!(error.code, CompleteCode::ResourceExhausted);
-        assert!(
-            error.message.contains("nesting depth") && error.message.contains(&bound.to_string()),
-            "expected a nesting-depth refusal naming the bound {bound}, got: {}",
-            error.message
-        );
-        assert_eq!(error.span.start.byte, last_open_offset);
-        assert_eq!(error.span.end.byte, last_open_offset + 1);
-    });
-}
-
-// --- AC-3: exhausting the work (syntax-node) budget names the work limit,
-// never nesting. -----------------------------------------------------------
 
 #[trace("TC-012", "NFR-001-M-3")]
 #[test]
-fn exhausting_the_node_budget_names_the_work_limit_not_nesting() {
+fn exhausting_the_node_ceiling_names_the_node_ceiling() {
     let limits = Limits {
-        nodes: 5,
+        nodes: 20,
         ..Limits::default()
     };
-    let error = parse_body("ac3", "x + x + x + x + x + x + x + x", limits)
-        .expect_err("5 retained syntax nodes cannot hold this unit");
-    assert_eq!(error.code, CompleteCode::ResourceExhausted);
-    assert!(
-        error.message.contains("syntax node budget exhausted")
-            && error.message.contains("bound 5 nodes"),
-        "expected a node-budget refusal naming its bound, got: {}",
-        error.message
-    );
-    assert!(
-        !error.message.contains("nesting"),
-        "a work/node-budget refusal must not name nesting: {}",
-        error.message
-    );
+    let error = qsl_cst::parse(
+        identity("nodes"),
+        "nodes.native",
+        function("x + x + x + x").as_bytes(),
+        limits,
+    )
+    .expect_err("20 nodes cannot hold the unit");
+    assert_eq!(refused_limit(&error), SyntaxLimit::Nodes { bound: 20 });
 }
 
-// --- AC-4: the production dispatch path borrows `&Rule`; it never clones
-// one. A clone on this path is invisible to any behavioral test (the parse
-// result is identical either way), so this is the source-inspection last
-// resort the rust-review checklist sanctions for such properties. ---------
-
-#[trace("TC-012")]
+#[trace("TC-012", "NFR-001-M-2")]
 #[test]
-fn production_lookup_never_clones_the_grammar_rule() {
-    let source = include_str!("../../src/parser.rs");
-    assert!(
-        source.contains("let grammar = self.grammar;")
-            && source.contains("grammar.get(&production)")
-            && !source.contains("grammar.get(&production).cloned()")
-            && !source.contains(".get(&production).cloned()"),
-        "Engine::production must borrow &Rule from the grammar map, never clone it (QSL-197 AC-4)"
-    );
+fn exhausting_the_token_ceiling_names_the_token_ceiling() {
+    let limits = Limits {
+        tokens: 40,
+        ..Limits::default()
+    };
+    let error = qsl_cst::parse(
+        identity("tokens"),
+        "tokens.native",
+        function("x + x + x + x").as_bytes(),
+        limits,
+    )
+    .expect_err("40 leaves cannot hold the unit");
+    assert_eq!(refused_limit(&error), SyntaxLimit::Tokens { bound: 40 });
+    assert_eq!(error.phase, Phase::Lex);
 }
 
-// --- AC-5: a flat 3,000-term sum and 3,000 one-line functions both parse at
-// default limits. -----------------------------------------------------------
-
+// The longest chain of each shape the default ceilings admit parses, and
+// one element more names the ceiling it hits.
 #[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
 #[test]
-fn flat_3000_term_sum_parses_at_default_limits() {
-    let body = std::iter::repeat_n("x", 3000)
-        .collect::<Vec<_>>()
-        .join(" + ");
-    let parsed = parse_body("ac5-sum", &body, Limits::default())
-        .expect("a flat 3,000-term chain has nesting depth 0 and fits the default ceilings");
-    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-}
-
-#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
-#[test]
-fn flat_3000_one_line_functions_parse_at_default_limits() {
-    let mut text = HEADER.to_string();
-    for index in 0..3000 {
-        text.push_str(&format!(
-            "function f{index} using Complete (): Boolean pure {{ true }}\n"
-        ));
-    }
-    let parsed = parse("ac5-functions", &text, Limits::default())
-        .expect("3,000 one-line functions fit the default token/node ceilings");
-    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-}
-
-// --- AC-6: NFR-001 "Verification" chains -- right-associative `implies`,
-// prefix `not`, `let … in` and `if … else` -- have nesting depth 0 and
-// parse at whatever length the token/node ceilings admit; one element
-// longer names the token or node ceiling, never nesting. A generous custom
-// ceiling (rather than the 100,000-token default) keeps these fixtures
-// small while exercising the identical boundary mechanism, per NFR-001:
-// "an implementation ceiling is not a domain bound". -----------------------
-
-/// Probe increasing chain lengths built by `build` until parsing first
-/// fails, then assert: the longest length that parsed is at least
-/// `minimum_admitted` real chain elements (so the probe did not degenerate
-/// on an unrelated early failure), and the first refusal names the token or
-/// node ceiling, never nesting.
-fn assert_chain_boundary_never_cites_nesting(
-    id: &str,
-    limits: Limits,
-    minimum_admitted: usize,
-    build: impl Fn(usize) -> String,
-) {
-    let mut admitted = 0;
-    loop {
-        let next = admitted + 1;
-        let text = wrap_body(&build(next));
-        match parse(&format!("{id}-{next}"), &text, limits) {
-            Ok(parsed) if parsed.is_admissible() => admitted = next,
-            Ok(parsed) => panic!(
-                "{id}: unexpected diagnostics at length {next}: {:?}",
-                parsed.diagnostics()
-            ),
-            Err(error) => {
-                assert_eq!(
-                    error.code,
-                    CompleteCode::ResourceExhausted,
-                    "{id}: refusal at length {next} was not resource_exhausted: {error}"
-                );
-                assert!(
-                    !error.message.contains("nesting"),
-                    "{id}: a chain of depth 0 must never be refused for nesting: {}",
-                    error.message
-                );
-                break;
-            }
-        }
-        assert!(next < 100_000, "{id}: chain never hit a ceiling");
-    }
-    assert!(
-        admitted >= minimum_admitted,
-        "{id}: only {admitted} elements admitted, expected at least {minimum_admitted}"
-    );
-}
-
-#[trace("TC-012")]
-#[test]
-fn implies_chain_at_the_ceiling_parses_one_longer_names_token_or_node() {
-    let limits = Limits {
-        tokens: 300,
-        nodes: 300,
-        ..Limits::default()
-    };
-    assert_chain_boundary_never_cites_nesting("implies", limits, 10, |n| {
-        std::iter::repeat_n("x", n + 1)
-            .collect::<Vec<_>>()
-            .join(" implies ")
-    });
-}
-
-#[trace("TC-012")]
-#[test]
-fn prefix_not_chain_at_the_ceiling_parses_one_longer_names_token_or_node() {
-    let limits = Limits {
-        tokens: 300,
-        nodes: 300,
-        ..Limits::default()
-    };
-    assert_chain_boundary_never_cites_nesting("not", limits, 10, |n| {
-        format!("{}x", "not ".repeat(n))
-    });
-}
-
-#[trace("TC-012")]
-#[test]
-fn let_in_chain_at_the_ceiling_parses_one_longer_names_token_or_node() {
-    let limits = Limits {
-        tokens: 600,
-        nodes: 600,
-        ..Limits::default()
-    };
-    assert_chain_boundary_never_cites_nesting("let-in", limits, 10, |n| {
-        let mut body = String::new();
-        for index in 0..n {
-            body.push_str(&format!("let v{index} = {index} in "));
-        }
-        body.push('0');
-        body
-    });
-}
-
-#[trace("TC-012")]
-#[test]
-fn if_else_chain_at_the_ceiling_parses_one_longer_names_token_or_node() {
-    let limits = Limits {
-        tokens: 900,
-        nodes: 900,
-        ..Limits::default()
-    };
-    assert_chain_boundary_never_cites_nesting("if-else", limits, 10, |n| {
-        let mut body = String::new();
-        for _ in 0..n {
-            body.push_str("if true then 1 else ");
-        }
-        body.push('0');
-        body
-    });
-}
-
-/// No source within the token/node ceilings may overflow a 512 KiB stack
-/// (NFR-001). A right-associative `implies` chain is the one of the five
-/// named chains whose old (production-recursive) parse recursed one native
-/// stack frame per element; 3,000 elements is comfortably beyond where that
-/// old recursion would have crashed a 512 KiB stack, and fits within the
-/// default 50,000-node ceiling (each operand's `Disjunction` subtree costs
-/// several wrapper nodes, so this chain is node-bound before it is
-/// token-bound).
-#[trace("TC-012")]
-#[test]
-fn long_implies_chain_parses_without_overflowing_a_bounded_stack() {
+fn longest_chains_parse_and_one_longer_names_a_ceiling() {
     on_bounded_stack(|| {
-        let body = std::iter::repeat_n("x", 3000)
-            .collect::<Vec<_>>()
-            .join(" implies ");
-        let parsed = parse_body("implies-bounded-stack", &body, Limits::default())
-            .expect("a 3,000-element implies chain fits the default ceilings");
-        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        assert_longest_chain("+", 9_995, sum_chain);
+        assert_longest_chain("implies", 5_553, implies_chain);
+        assert_longest_chain("not", 49_974, not_chain);
+        assert_longest_chain("let", 4_164, let_chain);
+        assert_longest_chain("if", 2_271, if_chain);
+        assert_longest_chain("let value", 4_164, let_value_chain);
+    });
+}
+
+#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
+#[test]
+fn longest_temporal_chains_parse_and_one_longer_names_a_ceiling() {
+    on_bounded_stack(|| {
+        assert_longest_chain("always", 12_492, always_chain);
+        assert_longest_chain("temporal implies", 8_330, temporal_implies_chain);
+        assert_longest_chain("temporal not", 49_971, temporal_not_chain);
+    });
+}
+
+// A failed parse discards the matches of a deep chain without recursing.
+#[trace("TC-012")]
+#[test]
+fn a_deep_chain_that_fails_to_parse_is_discarded_on_a_bounded_stack() {
+    on_bounded_stack(|| {
+        let parsed = parse(&function(&format!("{}x true", "not ".repeat(20_000))))
+            .expect("a syntax error is a recovered parse, not a refusal");
+        assert!(!parsed.is_admissible());
+        assert!(!parsed.cst().recoveries().is_empty());
+    });
+}
+
+// A long chain yields a deep CST; rendering and identity work stay
+// iterative on it.
+#[trace("TC-012", "TC-222", "FR-302-AC-1")]
+#[test]
+fn a_deep_cst_renders_and_resolves_identities_on_a_bounded_stack() {
+    on_bounded_stack(|| {
+        let text = not_chain(20_000);
+        let parsed = admitted(&text);
+        let cst = parsed.cst();
+        assert_eq!(cst.render(), text.as_bytes());
+        let root = cst.root();
+        assert_eq!(cst.render_node(root).expect("own node"), text.as_bytes());
+        let deepest = cst
+            .nodes()
+            .iter()
+            .max_by_key(|node| cst.structural_path(node).len())
+            .expect("nodes");
+        assert!(cst.structural_path(deepest).len() > 20_000);
+    });
+}
+
+fn longest_admitted(build: fn(usize) -> String) -> usize {
+    let (mut low, mut high) = (0_usize, 60_000_usize);
+    while low + 1 < high {
+        let middle = (low + high) / 2;
+        if parse(&build(middle)).is_ok() {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    low
+}
+
+// Re-derives the lengths `assert_longest_chain` uses:
+// `cargo test -p qsl-cst --test it nesting_levels::probe -- --ignored --nocapture`.
+#[test]
+#[ignore = "probe: prints the longest chain of each shape the default ceilings admit"]
+fn probe_longest_chains_at_default_ceilings() {
+    on_bounded_stack(|| {
+        for (name, build) in [
+            ("+", sum_chain as fn(usize) -> String),
+            ("implies", implies_chain),
+            ("not", not_chain),
+            ("let", let_chain),
+            ("if", if_chain),
+            ("let value", let_value_chain),
+            ("always", always_chain),
+            ("temporal implies", temporal_implies_chain),
+            ("temporal not", temporal_not_chain),
+        ] {
+            println!("{name}: {}", longest_admitted(build));
+        }
+    });
+}
+
+// Chains parse in time and memory linear in their length:
+// `cargo test --release -p qsl-cst --test it nesting_levels::probe_chain -- --ignored --nocapture`.
+#[test]
+#[ignore = "probe: wall-clock timings belong outside the default test run"]
+fn probe_chain_parse_time() {
+    on_bounded_stack(|| {
+        for (name, text) in [
+            ("not x 20000", not_chain(20_000)),
+            ("always x 10000", always_chain(10_000)),
+            ("not x 10000", not_chain(10_000)),
+            ("always x 5000", always_chain(5_000)),
+        ] {
+            let started = std::time::Instant::now();
+            let parsed = admitted(&text);
+            let elapsed = started.elapsed();
+            println!(
+                "{name}: {elapsed:?}, {} nodes, {} tokens",
+                parsed.cst().nodes().len(),
+                parsed.cst().tokens().len()
+            );
+            assert!(elapsed < std::time::Duration::from_secs(1), "{name}");
+        }
     });
 }

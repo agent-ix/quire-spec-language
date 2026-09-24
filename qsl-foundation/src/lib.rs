@@ -28,8 +28,8 @@ pub mod source_map;
 pub mod wire_format;
 
 pub use diagnostic::{
-    CatalogCode, CatalogCoded, Category, Code, Diagnostic, InternalFault, Phase, UndefinedCoded,
-    UndefinedReason, UndefinedRecord,
+    CatalogCode, CatalogCoded, Category, Code, Diagnostic, InternalFault, Phase, SyntaxLimit,
+    UndefinedCoded, UndefinedReason, UndefinedRecord,
 };
 pub use digest::ByteDigest;
 pub use source::{LocatedSpan, Position, Source, SourceIdentity, Span, Spanned};

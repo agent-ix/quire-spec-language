@@ -24,7 +24,10 @@ pub(super) enum Terminal {
     End,
 }
 
-#[derive(Clone, Debug)]
+/// One declarative grammar rule. Deliberately not `Clone`: the interpreter
+/// only ever borrows rules from the grammar table, and a shared sub-rule
+/// is built by calling its builder again (`list`, `bound_parameter`).
+#[derive(Debug)]
 pub(super) enum Rule {
     Terminal(Terminal),
     Production(P),
@@ -163,10 +166,14 @@ fn plus(rule: Rule) -> Rule {
         commit_on_progress: true,
     }
 }
-fn list(item: Rule) -> Rule {
+fn list(item: impl Fn() -> Rule) -> Rule {
     // The caller may admit one trailing comma after this list. Retain the
     // delimiter when it is not followed by an item so that outer grammar owns it.
-    s(vec![item.clone(), backtracking_star(s(vec![x(","), item]))])
+    s(vec![item(), backtracking_star(s(vec![x(","), item()]))])
+}
+/// `( <parameter> )`: one bracket pair around a single bound parameter.
+fn bound_parameter() -> Rule {
+    s(vec![open("("), r(P::Parameter), close(")")])
 }
 
 pub(super) fn complete_v1() -> Grammar {
@@ -475,7 +482,7 @@ fn source_and_types(g: &mut Grammar) {
             x("enum"),
             ident(),
             open("{"),
-            list(r(P::EnumMember)),
+            list(|| r(P::EnumMember)),
             opt(x(",")),
             close("}"),
         ]),
@@ -506,7 +513,7 @@ fn source_and_types(g: &mut Grammar) {
             x("tuple"),
             ident(),
             open("("),
-            list(r(P::TypeReference)),
+            list(|| r(P::TypeReference)),
             close(")"),
             x(";"),
         ]),
@@ -522,7 +529,7 @@ fn source_and_types(g: &mut Grammar) {
         ]),
     );
     g.insert(P::Parameter, s(vec![ident(), x(":"), r(P::ParameterType)]));
-    let parameters = s(vec![open("("), opt(list(r(P::Parameter))), close(")")]);
+    let parameters = || s(vec![open("("), opt(list(|| r(P::Parameter))), close(")")]);
     g.insert(
         P::FunctionDeclaration,
         s(vec![
@@ -530,7 +537,7 @@ fn source_and_types(g: &mut Grammar) {
             ident(),
             x("using"),
             ident(),
-            parameters.clone(),
+            parameters(),
             x(":"),
             r(P::TypeReference),
             x("pure"),
@@ -550,7 +557,7 @@ fn source_and_types(g: &mut Grammar) {
             ident(),
             x("using"),
             ident(),
-            parameters,
+            parameters(),
             x(":"),
             x("Boolean"),
             r(P::Block),
@@ -618,22 +625,6 @@ fn expressions(g: &mut Grammar) {
             .chain((0..16).map(|_| r(P::HexDigit)))
             .collect()),
     );
-    // `Expression`, `Implication` and `Unary` are transcribed here only as the
-    // authoritative inventory of their terminal spellings ("let", "if",
-    // "implies", "not", …) for `complete_reserved_words`/
-    // `base_reserved_spellings`. The engine (`parser.rs`) never executes
-    // these three `Rule`s: a right-recursive `Choice`/`Optional` interpreted
-    // by plain Rust recursion would grow one native stack frame per chain
-    // element, and NFR-001 requires arbitrarily long `implies`, prefix and
-    // `let … in`/`if … else` chains (bounded only by the token/node
-    // ceilings) to parse without overflowing the stack. `Engine::production`
-    // intercepts these three productions and dispatches to
-    // `Engine::parse_expression`/`parse_implication`/`parse_unary`, which
-    // build the identical node shape iteratively. Disjunction, Conjunction,
-    // Comparison, Sum, Product, Postfix and Primary below remain genuinely
-    // declarative: their repetition is already `star`-driven (iterative) or
-    // bounded to one optional operand, so plain recursion over this table is
-    // already stack-safe for them.
     g.insert(
         P::Expression,
         c(vec![
@@ -782,7 +773,7 @@ fn expressions(g: &mut Grammar) {
                 literal("orderedSet"),
             ]),
             open("["),
-            opt(list(r(P::Expression))),
+            opt(list(|| r(P::Expression))),
             close("]"),
         ]),
     );
@@ -862,7 +853,7 @@ fn expressions(g: &mut Grammar) {
             ]),
         ]),
     );
-    let args = s(vec![open("("), opt(list(r(P::Expression))), close(")")]);
+    let args = s(vec![open("("), opt(list(|| r(P::Expression))), close(")")]);
     g.insert(
         P::Primary,
         c(vec![
@@ -929,7 +920,6 @@ fn expressions(g: &mut Grammar) {
 }
 
 fn temporal(g: &mut Grammar) {
-    let bound_parameter = s(vec![open("("), r(P::Parameter), close(")")]);
     g.insert(
         P::Activation,
         c(vec![
@@ -937,7 +927,7 @@ fn temporal(g: &mut Grammar) {
             s(vec![
                 x("on"),
                 x("each"),
-                bound_parameter.clone(),
+                bound_parameter(),
                 opt(s(vec![x("when"), open("("), r(P::Expression), close(")")])),
             ]),
         ]),
@@ -970,7 +960,7 @@ fn temporal(g: &mut Grammar) {
             x("using"),
             ident(),
             x("over"),
-            bound_parameter.clone(),
+            bound_parameter(),
             x("clock"),
             text(),
             r(P::Activation),
@@ -1042,7 +1032,6 @@ fn temporal(g: &mut Grammar) {
 }
 
 fn protocol(g: &mut Grammar) {
-    let bound_parameter = s(vec![open("("), r(P::Parameter), close(")")]);
     g.insert(
         P::RoleLifetime,
         c(vec![
@@ -1090,12 +1079,7 @@ fn protocol(g: &mut Grammar) {
         P::Ordering,
         c(vec![
             x("unordered"),
-            s(vec![
-                x("fifo"),
-                x("by"),
-                bound_parameter.clone(),
-                r(P::Block),
-            ]),
+            s(vec![x("fifo"), x("by"), bound_parameter(), r(P::Block)]),
         ]),
     );
     g.insert(
@@ -1156,7 +1140,7 @@ fn protocol(g: &mut Grammar) {
             x("for"),
             r(P::NodeReference),
             x("as"),
-            bound_parameter.clone(),
+            bound_parameter(),
             x("by"),
             ident(),
             x("on"),
@@ -1169,7 +1153,7 @@ fn protocol(g: &mut Grammar) {
             star(r(P::Capture)),
             x("activate"),
             x("first"),
-            bound_parameter.clone(),
+            bound_parameter(),
             x("when"),
             r(P::Block),
             open("{"),
@@ -1195,7 +1179,7 @@ fn protocol(g: &mut Grammar) {
             c(vec![r(P::NodeReference), x("never")]),
             x(";"),
             x("recover"),
-            bound_parameter.clone(),
+            bound_parameter(),
             r(P::Block),
             x(";"),
             close("}"),
@@ -1206,7 +1190,7 @@ fn protocol(g: &mut Grammar) {
         s(vec![
             x("visible"),
             open("("),
-            opt(list(r(P::Expression))),
+            opt(list(|| r(P::Expression))),
             close(")"),
         ]),
     );
@@ -1268,7 +1252,7 @@ fn protocol(g: &mut Grammar) {
             x("join"),
             r(P::JoinPolicy),
             open("["),
-            list(ident()),
+            list(ident),
             close("]"),
             opt(s(vec![
                 x("outstanding"),
@@ -1332,23 +1316,19 @@ fn protocol(g: &mut Grammar) {
             close(")"),
         ]),
     );
-    let event_tail = s(vec![
-        x("as"),
-        bound_parameter.clone(),
-        star(r(P::Related)),
-        r(P::Block),
-        x(";"),
-    ]);
+    let event_tail = || {
+        s(vec![
+            x("as"),
+            bound_parameter(),
+            star(r(P::Related)),
+            r(P::Block),
+            x(";"),
+        ])
+    };
     g.insert(
         P::EventNode,
         c(vec![
-            s(vec![
-                x("send"),
-                ident(),
-                x("via"),
-                ident(),
-                event_tail.clone(),
-            ]),
+            s(vec![x("send"), ident(), x("via"), ident(), event_tail()]),
             s(vec![
                 x("receive"),
                 ident(),
@@ -1356,7 +1336,7 @@ fn protocol(g: &mut Grammar) {
                 ident(),
                 x("of"),
                 r(P::NodeReference),
-                event_tail.clone(),
+                event_tail(),
             ]),
             s(vec![
                 x("attempt"),
@@ -1367,16 +1347,16 @@ fn protocol(g: &mut Grammar) {
                 r(P::OperationName),
                 x("contracts"),
                 open("["),
-                opt(list(ident())),
+                opt(list(ident)),
                 close("]"),
-                event_tail.clone(),
+                event_tail(),
             ]),
             s(vec![
                 x("effect"),
                 ident(),
                 x("of"),
                 r(P::NodeReference),
-                event_tail.clone(),
+                event_tail(),
             ]),
             s(vec![
                 x("event"),
@@ -1384,7 +1364,7 @@ fn protocol(g: &mut Grammar) {
                 x("by"),
                 ident(),
                 opt(s(vec![x("for"), r(P::NodeReference)])),
-                event_tail,
+                event_tail(),
             ]),
         ]),
     );
@@ -1407,7 +1387,7 @@ fn protocol(g: &mut Grammar) {
             x("by"),
             ident(),
             x("as"),
-            bound_parameter.clone(),
+            bound_parameter(),
             r(P::Block),
             x(";"),
         ]),
@@ -1431,7 +1411,7 @@ fn protocol(g: &mut Grammar) {
             x("finish"),
             ident(),
             x("as"),
-            bound_parameter.clone(),
+            bound_parameter(),
             r(P::Block),
             x(";"),
         ]),
@@ -1444,7 +1424,7 @@ fn protocol(g: &mut Grammar) {
             x("using"),
             ident(),
             x("over"),
-            bound_parameter,
+            bound_parameter(),
             r(P::Activation),
             open("{"),
             star(r(P::Capture)),
@@ -1581,7 +1561,7 @@ fn analysis(g: &mut Grammar) {
             r(P::QualifiedName),
             x("domain"),
             r(P::QualifiedName),
-            opt(s(vec![x("depends"), open("["), list(ident()), close("]")])),
+            opt(s(vec![x("depends"), open("["), list(ident), close("]")])),
             opt(s(vec![x("bound"), uint()])),
             x(";"),
         ]),
@@ -1679,6 +1659,61 @@ mod tests {
                 prefix.len(),
                 "reserved word `{word}` refused at the wrong token"
             );
+        }
+    }
+
+    // The engine tracks bracket depth inside one sequence: it adds a level
+    // after an `Open` element and removes it after a `Close`. That is exact
+    // only if every bracket is a direct element of a sequence and each
+    // sequence closes, in order, every bracket it opens.
+    #[trace("TC-012", "NFR-001-M-4")]
+    #[test]
+    fn brackets_are_balanced_direct_sequence_elements() {
+        use super::{Rule, Terminal};
+
+        fn is_bracket(rule: &Rule) -> bool {
+            matches!(rule, Rule::Terminal(Terminal::Open(_) | Terminal::Close(_)))
+        }
+        fn check(rule: &Rule) {
+            match rule {
+                Rule::Sequence(rules) => {
+                    let mut open = Vec::new();
+                    for element in rules {
+                        match element {
+                            Rule::Terminal(Terminal::Open(spelling)) => open.push(*spelling),
+                            Rule::Terminal(Terminal::Close(spelling)) => {
+                                let opener = open.pop().expect("a close follows its open");
+                                let expected = match opener {
+                                    "(" => ")",
+                                    "[" => "]",
+                                    "{" => "}",
+                                    "<" => ">",
+                                    other => panic!("unknown bracket {other}"),
+                                };
+                                assert_eq!(*spelling, expected);
+                            }
+                            other => check(other),
+                        }
+                    }
+                    assert!(open.is_empty(), "unclosed {open:?}");
+                }
+                Rule::Choice(rules) => {
+                    for alternative in rules {
+                        assert!(!is_bracket(alternative), "bracket as a choice alternative");
+                        check(alternative);
+                    }
+                }
+                Rule::Optional(inner) | Rule::Repeat { rule: inner, .. } => {
+                    assert!(!is_bracket(inner), "bracket outside a sequence");
+                    check(inner);
+                }
+                Rule::Terminal(_) | Rule::Production(_) => {}
+            }
+        }
+
+        for rule in complete_v1().values() {
+            assert!(!is_bracket(rule), "a production that is only a bracket");
+            check(rule);
         }
     }
 }
