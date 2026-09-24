@@ -277,9 +277,12 @@ and `Count`'s record value type has no QSL reader yet. Every part, port,
 connection and allocation stays as authored. Step 1 over the unedited bundle,
 and IT-012, stay open for those three reasons. The linker binds a native
 reference to a domain declaration by its FR-154 key and kind
-(`ModelTarget::Declaration`); the composed type checker does not read domain
-declarations yet, so a declaration using one refuses there as an upstream
-binding.
+(`ModelTarget::Declaration`). A type site binds an object, interface or value
+type; a protocol role also binds a Part or Port; a protocol relationship binds a
+Connection or navigation relationship; any other kind refuses at the linker. The
+composed type checker does not read domain declarations yet, so a declaration
+with a domain-typed parameter refuses there as an upstream binding, even when
+its body never uses the parameter.
 
 TC-120's public rational-model controls are implemented and pass locally through
 the real frontend, admission and composed exports; all seven FR-041 criteria are

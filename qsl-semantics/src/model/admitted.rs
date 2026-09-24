@@ -80,8 +80,8 @@ pub struct AdmittedPackage {
     systems: SystemsClassification,
     /// Artifact id of each type-definition or population node -> record index.
     nodes: BTreeMap<String, usize>,
-    /// (owner node identity, member name) -> record index.
-    members: BTreeMap<(String, String), usize>,
+    /// Owner node identity -> member name -> record index.
+    members: BTreeMap<String, BTreeMap<String, usize>>,
 }
 
 fn identity_refusal(key: &DeclarationKey, detail: String) -> ModelRefusal {
@@ -101,13 +101,15 @@ impl AdmittedPackage {
     ///
     /// Refuses when two records share one key (`conflicting-binding`), when
     /// a record's key names another package or has neither FR-154 identity
-    /// form (`malformed-declaration`), or when the kind mapping reports any
-    /// refusal. All refusals are reported; none of the package is admitted.
+    /// form (`malformed-declaration`), when a member's owner is not a type
+    /// node of the package (`unknown-owner`), or when the kind mapping
+    /// reports any refusal. All refusals are reported; none of the package is
+    /// admitted.
     pub fn admit(package: DomainPackage, meter: &mut Meter) -> Result<Self, AdmitFailure> {
         let identity = package.model_selection.identity.clone();
         let mut refusals = Vec::new();
         let mut nodes = BTreeMap::new();
-        let mut members = BTreeMap::new();
+        let mut member_records = Vec::new();
         let mut seen = BTreeSet::new();
         for (index, record) in package.records.iter().enumerate() {
             let key = record.key();
@@ -117,9 +119,7 @@ impl AdmittedPackage {
                     cause: ModelRefusalCause::ConflictingBinding { key: key.clone() },
                     detail: format!("{} is declared more than once", key.node),
                 });
-                continue;
-            }
-            if key.package != identity {
+            } else if key.package != identity {
                 refusals.push(identity_refusal(
                     key,
                     format!(
@@ -127,27 +127,70 @@ impl AdmittedPackage {
                         key.node, key.package
                     ),
                 ));
-                continue;
-            }
-            if let Some(artifact) = type_identity_segment(&identity, &key.node) {
+            } else if let Some(artifact) = type_identity_segment(&identity, &key.node) {
                 nodes.insert(artifact.to_owned(), index);
-                continue;
+            } else {
+                member_records.push(index);
             }
-            let member = key.node.rsplit_once('/').and_then(|(owner, _)| {
-                member_identity_name(owner, &key.node).map(|name| (owner.to_owned(), name))
-            });
-            match member {
-                Some((owner, name)) => {
-                    members.insert((owner, name.to_owned()), index);
+        }
+        // Members index under their owner once every type node is known. A
+        // field or operation names its owner; any other member-form record
+        // (an inline relationship) is owned by its identity's prefix. Either
+        // way the owner must be an indexed type node of this package.
+        let owners: BTreeSet<&str> = nodes
+            .values()
+            .map(|index: &usize| package.records[*index].key().node.as_str())
+            .collect();
+        let mut members: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+        for index in member_records {
+            let record = &package.records[index];
+            let key = record.key();
+            let owner = match record {
+                DomainPackageRecord::FieldMember(member) => Some(member.owner.node.as_str()),
+                DomainPackageRecord::OperationMember(member) => Some(member.owner.node.as_str()),
+                DomainPackageRecord::ObjectType(_)
+                | DomainPackageRecord::ScalarType(_)
+                | DomainPackageRecord::Component(_)
+                | DomainPackageRecord::Endpoint(_)
+                | DomainPackageRecord::Relationship(_)
+                | DomainPackageRecord::Allocation(_)
+                | DomainPackageRecord::Population(_) => {
+                    key.node.rsplit_once('/').map(|(owner, _)| owner)
                 }
-                None => refusals.push(identity_refusal(
+            };
+            let Some((owner, name)) = owner
+                .and_then(|owner| member_identity_name(owner, &key.node).map(|name| (owner, name)))
+            else {
+                refusals.push(identity_refusal(
                     key,
                     format!(
                         "{} is neither ix://{identity}/<artifact id> nor <owner>/<name>",
                         key.node
                     ),
-                )),
+                ));
+                continue;
+            };
+            if !owners.contains(owner) {
+                refusals.push(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownOwner {
+                        member: key.clone(),
+                        owner: DeclarationKey {
+                            package: identity.clone(),
+                            node: owner.to_owned(),
+                        },
+                    },
+                    detail: format!(
+                        "member {} names owner {owner}, which is not a declaration of this package",
+                        key.node
+                    ),
+                });
+                continue;
             }
+            members
+                .entry(owner.to_owned())
+                .or_default()
+                .insert(name.to_owned(), index);
         }
         let systems = classify(&package, meter).map_err(AdmitFailure::Incomplete)?;
         refusals.extend(systems.refusals.iter().cloned());
@@ -195,7 +238,8 @@ impl AdmittedPackage {
             return None;
         }
         self.members
-            .get(&(owner.node.clone(), name.to_owned()))
+            .get(owner.node.as_str())
+            .and_then(|members| members.get(name))
             .map(|index| self.at(*index))
     }
 
@@ -314,7 +358,7 @@ mod tests {
 
     /// A duplicate key, a record keyed under another package and a node in
     /// neither identity form each refuse, all reported, none admitted.
-    #[trace("TC-148", "FR-036-AC-9")]
+    #[trace("TC-145", "FR-056-AC-5")]
     #[test]
     fn refuses_duplicate_foreign_and_malformed_keys_together() {
         let foreign = DeclarationKey {
@@ -342,5 +386,36 @@ mod tests {
             ]
         );
         assert!(refusals[1].detail.contains("test/other"));
+    }
+
+    /// A member is indexed under the owner its record names, which must be a
+    /// type node of the package: a field naming an undeclared owner refuses
+    /// `unknown-owner`, and a field whose key is not `<named owner>/<name>`
+    /// refuses `malformed-declaration`, even when the key's prefix is a
+    /// declared type.
+    #[trace("TC-145", "FR-056-AC-5")]
+    #[test]
+    fn members_index_under_their_named_owner_only() {
+        let Err(AdmitFailure::Refused(refusals)) = admit(vec![
+            order(key("Order")),
+            order(key("Shipment")),
+            field(key("Ghost/paid"), key("Ghost")),
+            field(key("Shipment/paid"), key("Order")),
+        ]) else {
+            panic!("the package refuses")
+        };
+        let causes: Vec<&str> = refusals
+            .iter()
+            .map(|refusal| refusal.cause.as_str())
+            .collect();
+        assert_eq!(causes, ["unknown-owner", "malformed-declaration"]);
+        assert_eq!(refusals[0].code, Code::DanglingReference);
+
+        let package = admit(vec![
+            order(key("Order")),
+            field(key("Order/paid"), key("Order")),
+        ])
+        .expect("admits");
+        assert!(package.member(&key("Order"), "paid").is_some());
     }
 }

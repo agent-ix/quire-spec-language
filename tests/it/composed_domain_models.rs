@@ -200,16 +200,16 @@ fn hex(digest: &[u8; 32]) -> String {
 
 const DECLARATIONS: &str =
     "predicate FieldRule using S (): Boolean { M::Pump::id = M::Pump::id }\n\
-predicate PortRule using S (port: M::pump_out): Boolean { true }\n\
 protocol Plumbing using S over (view: M::Sys) on origin {\n\
     role Operator on M::Sys;\n\
+    role Outlet on M::pump_out;\n\
     relationship Pipe = M::pipe;\n\
     run sequence Main { check Valid using S { true }; }\n\
     finish Closed as (closed: M::Sys) { true };\n\
 }\n";
 
-/// One native unit importing `M` under `digest`, with the field, Port and
-/// Connection references of TC-148 step 3, plus `Unrelated`, which names no
+/// One native unit importing `M` under `digest`, with the field, Port (a
+/// role) and Connection references of TC-148 step 3, plus `Unrelated`, which names no
 /// model.
 fn program(identity: &str, version: &str, digest: &str) -> String {
     format!(
@@ -380,12 +380,9 @@ fn native_references_bind_to_domain_declaration_keys_and_kinds() {
                 vec![]
             )
         );
-        assert_eq!(
-            resolved(&bindings, namespace, "PortRule"),
-            (vec![(key("pump_out").node, DeclarationKind::Port)], vec![])
-        );
         let (plumbing, refusals) = resolved(&bindings, namespace, "Plumbing");
         assert!(refusals.is_empty(), "{refusals:?}");
+        assert!(plumbing.contains(&(key("pump_out").node, DeclarationKind::Port)));
         assert!(plumbing.contains(&(key("pipe").node, DeclarationKind::Connection)));
         assert!(plumbing.contains(&(key("Sys").node, DeclarationKind::ObjectType)));
         assert_eq!(
@@ -395,17 +392,22 @@ fn native_references_bind_to_domain_declaration_keys_and_kinds() {
 
         // Each bound occurrence carries the selection it was admitted under.
         let report = bindings
-            .resolve_declaration(namespace, namespace.lookup("PortRule")[0], &mut work())
+            .resolve_declaration(namespace, namespace.lookup("Plumbing")[0], &mut work())
             .expect("declaration handle");
-        let ModelTarget::Declaration(bound) = &report.occurrences[0].target else {
-            panic!("PortRule binds a domain declaration")
-        };
-        assert_eq!(bound.selection(), &selection);
+        assert!(!report.occurrences.is_empty());
+        for occurrence in &report.occurrences {
+            let ModelTarget::Declaration(bound) = &occurrence.target else {
+                panic!("Plumbing binds only domain declarations")
+            };
+            assert_eq!(bound.selection(), &selection);
+        }
     });
 }
 
 /// Refusals at the same reference sites: a name the package does not
-/// declare, a member that does not exist, and a kind the site cannot take.
+/// declare, a member that does not exist, and a kind the site cannot take --
+/// a member or a Port at a type site, a Connection as a role, a Port as a
+/// relationship.
 #[trace("TC-148", "FR-036-AC-9")]
 #[test]
 fn missing_and_wrong_kind_domain_references_refuse_located() {
@@ -420,6 +422,12 @@ fn missing_and_wrong_kind_domain_references_refuse_located() {
          predicate MissingType using S (port: M::drain_out): Boolean {{ true }}\n\
          predicate MissingField using S (): Boolean {{ M::Pump::speed = M::Pump::speed }}\n\
          predicate MemberAsType using S (): Boolean {{ M::pump_out::direction = M::pump_out::direction }}\n\
+         predicate PortAsType using S (port: M::pump_out): Boolean {{ true }}\n\
+         protocol ConnectionAsRole using S over (view: M::Sys) on origin {{\n\
+             role Operator on M::pipe;\n\
+             run sequence Main {{ check Valid using S {{ true }}; }}\n\
+             finish Closed as (closed: M::Sys) {{ true }};\n\
+         }}\n\
          protocol NotAConnection using S over (view: M::Sys) on origin {{\n\
              role Operator on M::Sys;\n\
              relationship Pipe = M::pump_out;\n\
@@ -436,6 +444,8 @@ fn missing_and_wrong_kind_domain_references_refuse_located() {
             ("MissingType", ModelErrorKind::MissingExport),
             ("MissingField", ModelErrorKind::MissingExport),
             ("MemberAsType", ModelErrorKind::WrongExportKind),
+            ("PortAsType", ModelErrorKind::WrongExportKind),
+            ("ConnectionAsRole", ModelErrorKind::WrongExportKind),
             ("NotAConnection", ModelErrorKind::WrongExportKind),
         ] {
             let (_, refusals) = resolved(&bindings, namespace, name);
@@ -495,7 +505,7 @@ fn substituted_package_or_changed_digest_refuses_only_dependents() {
         with_namespace(&text, |namespace| {
             let bindings = bind_models(namespace, &inputs, &mut work());
             assert_eq!(bindings.imports()[0].selection, Err(refusal.clone()));
-            for name in ["FieldRule", "PortRule", "Plumbing"] {
+            for name in ["FieldRule", "Plumbing"] {
                 let (declarations, refusals) = resolved(&bindings, namespace, name);
                 assert!(declarations.is_empty(), "{name}: {declarations:?}");
                 assert!(
@@ -544,7 +554,7 @@ fn changed_digest_refuses_dependents_in_the_package_report() {
              profile S = \"{}\" version \"{}\" digest \"{}\";\n\
              model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
              predicate FieldRule using S (): Boolean {{ M::Pump::id = M::Pump::id }}\n\
-             predicate PortRule using S (port: M::pump_out): Boolean {{ true }}\n\
+             predicate PumpRule using S (pump: M::Pump): Boolean {{ true }}\n\
              predicate Caller using S (): Boolean {{ FieldRule() }}\n\
              predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n",
             profile.identity,
@@ -563,7 +573,7 @@ fn changed_digest_refuses_dependents_in_the_package_report() {
             } else {
                 Disposition::Refused
             };
-            for name in ["FieldRule", "PortRule", "Caller"] {
+            for name in ["FieldRule", "PumpRule", "Caller"] {
                 assert_eq!(
                     disposition(name),
                     Some(expected),
@@ -584,4 +594,160 @@ fn changed_digest_refuses_dependents_in_the_package_report() {
             }
         });
     }
+}
+
+/// The reverse digest-domain substitution: a native model selected under a
+/// `sha256-jcs:` spelling of its own artifact digest refuses
+/// `DigestDomainMismatch` rather than binding.
+#[trace("TC-148", "FR-036-AC-9")]
+#[test]
+fn native_model_selected_in_the_jcs_domain_refuses() {
+    let model = crate::support::native_rule_model::parts().model();
+    let inputs = [ModelInput::Native(&model)];
+    let owner = model.environment().owner();
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
+         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{:x}\";\n\
+         predicate Rule using S (item: M::Node): Boolean {{ true }}\n",
+        owner.package().as_str(),
+        owner.revision().get(),
+        model.digest()
+    );
+    with_namespace(&text, |namespace| {
+        let bindings = bind_models(namespace, &inputs, &mut work());
+        assert_eq!(
+            bindings.imports()[0].selection,
+            Err(ImportRefusal::DigestDomainMismatch)
+        );
+        assert_eq!(
+            resolved(&bindings, namespace, "Rule").1,
+            [ModelErrorKind::RefusedImport { import: 0 }]
+        );
+    });
+}
+
+/// Both same-shaped packages supplied: each alias binds only its own
+/// selection, and every bound key stays under that selection's identity.
+#[trace("TC-148", "FR-036-AC-9")]
+#[test]
+fn two_same_shaped_packages_keep_keys_under_their_selection() {
+    let bundle = architecture_bundle(|_| {});
+    let package = admitted(bundle.path());
+    let other = architecture_bundle(|root| {
+        edit(
+            &root.join("spec/spec.md"),
+            "name: architecture",
+            "name: plumbing",
+        );
+    });
+    let other = admitted(other.path());
+    let inputs = [ModelInput::Domain(&other), ModelInput::Domain(&package)];
+    let (a, b) = (package.selection(), other.selection());
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile S = \"test:unresolved-definition\" version \"1\" digest \"unresolved\";\n\
+         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+         model N = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+         predicate FromM using S (): Boolean {{ M::Pump::id = M::Pump::id }}\n\
+         predicate FromN using S (): Boolean {{ N::Pump::id = N::Pump::id }}\n",
+        a.identity,
+        a.version,
+        hex(&a.digest),
+        b.identity,
+        b.version,
+        hex(&b.digest)
+    );
+    with_namespace(&text, |namespace| {
+        let bindings = bind_models(namespace, &inputs, &mut work());
+        assert_eq!(bindings.imports()[0].selection, Ok(1));
+        assert_eq!(bindings.imports()[1].selection, Ok(0));
+        for (name, identity) in [("FromM", &a.identity), ("FromN", &b.identity)] {
+            let report = bindings
+                .resolve_declaration(namespace, namespace.lookup(name)[0], &mut work())
+                .expect("declaration handle");
+            assert!(report.refusals.is_empty(), "{name}: {:?}", report.refusals);
+            assert_eq!(report.occurrences.len(), 2);
+            for occurrence in &report.occurrences {
+                let ModelTarget::Declaration(bound) = &occurrence.target else {
+                    panic!("{name} binds a domain declaration")
+                };
+                assert_eq!(&bound.key().package, identity);
+                assert_eq!(bound.key().node, format!("ix://{identity}/Pump/id"));
+                assert_eq!(&bound.selection().identity, identity);
+            }
+        }
+    });
+}
+
+/// The composed type checker reads only native models. A declaration whose
+/// parameter is typed by a domain declaration refuses there as an upstream
+/// binding even when its body never uses the parameter, rather than being
+/// accepted as typed.
+#[trace("TC-148", "FR-036-AC-9")]
+#[test]
+fn unused_domain_typed_parameter_refuses_at_the_type_checker() {
+    use quire_spec_language::checking::composed::{self, CauseKind, TypeDisposition, TypeLimits};
+    use quire_spec_language::linking::composed::binding::Disposition;
+    use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+
+    let bundle = architecture_bundle(|_| {});
+    let package = admitted(bundle.path());
+    let selection = package.selection().clone();
+    let profile = R::StateQueries.selection();
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile S = \"{}\" version \"{}\" digest \"{}\";\n\
+         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+         predicate PumpRule using S (pump: M::Pump): Boolean {{ true }}\n\
+         predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n",
+        profile.identity,
+        profile.revision,
+        profile.digest,
+        selection.identity,
+        selection.version,
+        hex(&selection.digest)
+    );
+    let source = Source::read(
+        SourceIdentity {
+            authority: "test".into(),
+            identity: "pumps".into(),
+            revision_namespace: "test".into(),
+            revision: "selected".into(),
+        },
+        "pumps.native".to_owned(),
+        text.as_bytes(),
+        Limits::default().source_bytes,
+    )
+    .expect("source reads");
+    let sources = [source];
+    let formal = crate::support::composed_types::formal_sources(&sources);
+    let inputs = [ModelInput::Domain(&package)];
+    crate::support::composed_types::with_binding_inputs(
+        &sources,
+        &inputs,
+        BindingLimits::default(),
+        |binding| {
+            let namespace = binding.namespace();
+            let pump_rule = namespace.lookup("PumpRule")[0];
+            let unrelated = namespace.lookup("Unrelated")[0];
+            assert_eq!(
+                binding.disposition(pump_rule),
+                Some(Disposition::NamesResolved)
+            );
+            let report = composed::admit_types(binding, &formal, TypeLimits::default());
+            assert!(report.exhaustion().is_none(), "{:?}", report.exhaustion());
+            assert_eq!(
+                report.disposition(pump_rule),
+                Some(TypeDisposition::Refused)
+            );
+            assert!(report
+                .declaration(pump_rule)
+                .expect("typed record")
+                .causes()
+                .iter()
+                .any(|cause| cause.kind == CauseKind::UpstreamBinding));
+            assert_eq!(report.disposition(unrelated), Some(TypeDisposition::Typed));
+        },
+    );
 }

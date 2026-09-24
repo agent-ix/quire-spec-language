@@ -246,6 +246,37 @@ impl<'a> BoundDeclaration<'a> {
     }
 }
 
+/// The declaration kinds a qualified-name site binds in a domain package.
+#[derive(Clone, Copy, Debug)]
+enum Site {
+    /// A parameter, capture, channel, state context or value type.
+    Type,
+    /// A protocol role: a type, or the FR-152 Part or Port it participates as.
+    Role,
+    /// A protocol relationship: a Connection or a navigation relationship.
+    Relationship,
+}
+
+impl Site {
+    fn admits(self, kind: DeclarationKind) -> bool {
+        match kind {
+            DeclarationKind::ObjectType
+            | DeclarationKind::Interface
+            | DeclarationKind::ValueType => {
+                matches!(self, Self::Type | Self::Role)
+            }
+            DeclarationKind::Part | DeclarationKind::Port => matches!(self, Self::Role),
+            DeclarationKind::Connection | DeclarationKind::Relationship => {
+                matches!(self, Self::Relationship)
+            }
+            DeclarationKind::Allocation
+            | DeclarationKind::Field
+            | DeclarationKind::Operation
+            | DeclarationKind::Population => false,
+        }
+    }
+}
+
 /// What a selected input exposes to qualified lookup.
 #[derive(Debug)]
 enum Selected<'a> {
@@ -670,15 +701,25 @@ impl<'a> ModelBindings<'a> {
         }
     }
 
-    /// Resolve `name` under its import: a native type as
-    /// [`ModelTarget::Type`], a domain-package type-definition node as
-    /// [`ModelTarget::Declaration`]. A domain declaration binds by its FR-154
-    /// key (`ix://<package>/<artifact id>`); a member or population
-    /// declaration is not a type.
+    /// Resolve `name` at a type site: a native type as [`ModelTarget::Type`],
+    /// a domain-package object, interface or value type as
+    /// [`ModelTarget::Declaration`], bound by its FR-154 key
+    /// (`ix://<package>/<artifact id>`). Any other domain declaration kind
+    /// refuses `WrongExportKind`.
     pub fn resolve_target(
         &self,
         unit: UnitId,
         name: &QualifiedName,
+        work: &mut Work,
+    ) -> Result<ModelTarget<'a>, ModelError> {
+        self.resolve_at(unit, name, Site::Type, work)
+    }
+
+    fn resolve_at(
+        &self,
+        unit: UnitId,
+        name: &QualifiedName,
+        site: Site,
         work: &mut Work,
     ) -> Result<ModelTarget<'a>, ModelError> {
         match self.alias(unit, &name.model, work)? {
@@ -687,22 +728,14 @@ impl<'a> ModelBindings<'a> {
             }
             Selected::Domain(package) => {
                 let bound = Self::domain_declaration(package, unit, &name.name, work)?;
-                match bound.kind() {
-                    DeclarationKind::ObjectType
-                    | DeclarationKind::Interface
-                    | DeclarationKind::ValueType
-                    | DeclarationKind::Part
-                    | DeclarationKind::Port
-                    | DeclarationKind::Connection
-                    | DeclarationKind::Relationship
-                    | DeclarationKind::Allocation => Ok(ModelTarget::Declaration(bound)),
-                    DeclarationKind::Field
-                    | DeclarationKind::Operation
-                    | DeclarationKind::Population => Err(failure(
+                if site.admits(bound.kind()) {
+                    Ok(ModelTarget::Declaration(bound))
+                } else {
+                    Err(failure(
                         unit,
                         name.name.span,
                         ModelErrorKind::WrongExportKind,
-                    )),
+                    ))
                 }
             }
         }
@@ -1336,7 +1369,7 @@ impl<'a> ModelBindings<'a> {
                     walk.activation(&protocol.activation)?;
                     walk.captures(&protocol.captures)?;
                     for role in &protocol.roles {
-                        walk.ty(&role.model)?;
+                        walk.role(&role.model)?;
                     }
                     for relation in &protocol.relationships {
                         walk.visit(relation.span)?;
@@ -1500,6 +1533,18 @@ impl<'a> ModelWalk<'_, 'a> {
         }
         Ok(())
     }
+    fn role(&mut self, name: &QualifiedName) -> Result<(), ModelError> {
+        let result = self
+            .models
+            .resolve_at(self.unit, name, Site::Role, self.work);
+        self.record(
+            result,
+            Span {
+                start: name.model.span.start,
+                end: name.name.span.end,
+            },
+        )
+    }
     fn ty(&mut self, name: &QualifiedName) -> Result<(), ModelError> {
         let result = self.models.resolve_target(self.unit, name, self.work);
         self.record(
@@ -1551,16 +1596,12 @@ impl<'a> ModelWalk<'_, 'a> {
             start: name.model.span.start,
             end: name.name.span.end,
         };
-        match self.models.resolve_target(self.unit, name, self.work) {
-            Ok(ModelTarget::Declaration(bound))
-                if matches!(
-                    bound.kind(),
-                    DeclarationKind::Connection | DeclarationKind::Relationship
-                ) =>
-            {
-                self.record(Ok(ModelTarget::Declaration(bound)), span)
-            }
-            Ok(ModelTarget::Declaration(_) | ModelTarget::Operation(_)) => self.record(
+        match self
+            .models
+            .resolve_at(self.unit, name, Site::Relationship, self.work)
+        {
+            Ok(target @ ModelTarget::Declaration(_)) => self.record(Ok(target), span),
+            Ok(ModelTarget::Operation(_)) => self.record(
                 Err(failure(
                     self.unit,
                     name.name.span,
