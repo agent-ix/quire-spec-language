@@ -153,7 +153,7 @@ impl CheckingLimitKind {
 }
 
 impl From<LimitKind> for CheckingLimitKind {
-    /// The reverse of [`CheckingLimitKind::foundation_kind`] (QSL-236, L6):
+    /// The reverse of `CheckingLimitKind::foundation_kind` (QSL-236, L6):
     /// `check::mod`'s `StageFailure::Limit` arm named this bijection inline
     /// as a `match`, matched exhaustively rather than a `_` catch-all (PR
     /// #262 review, coordinator round 3, finding 4) so a `LimitKind` this
