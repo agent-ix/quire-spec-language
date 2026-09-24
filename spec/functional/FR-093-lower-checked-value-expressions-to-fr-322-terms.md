@@ -307,6 +307,94 @@ label, the group digest as a lowercase hex string (FR-092), and the emission
 writes them in ordinal order, so FR-322's ordinal, which a reader derives
 from graph order, equals the ordinal each member's key hashes.
 
+### Node dependencies
+
+A node's `dependencies` list the nodes its definition is built from. A v2
+reader follows them, beside `semantic_type` and the body's own references,
+when it builds a node's closure and checks graph cycles, and it joins them
+exactly against the body of an application node, the nominal preimage of an
+enum, dimension or unit node, and the entries of a frame (QSpec FR-322,
+FR-340). They enter `package_id` through the `identity_projection`.
+
+The v2 emission arm SHALL write each node's `dependencies` as the node ids,
+unique and ascending by digest, that these rules name:
+
+1. each `reference` target in the node's wire body, at any depth: an
+   aggregate member, a binding's value or an application argument;
+2. each declaration an application's `operation.member` names (every FR-322
+   member kind that names a declaring node; QSL's rows use `field`,
+   `operation` and `type_argument`);
+3. for a `bounded_domain` node, its `semantic_type`, the type it bounds;
+4. for a node that carries a `nominal_identity_preimage`, the nodes FR-322's
+   nominal joins name: an `enum_value` node's enum declaration, a
+   dimension's term dimensions, and a unit's dimension and target unit;
+5. for a `state`/`frame` node, each entry of its `modifies`, `creates` and
+   `deletes` (QSpec FR-340).
+
+The five rules give the whole list. A literal's `type`, an application's
+`result_type` and the `semantic_type` of a node other than a
+`bounded_domain` are type annotations, which a reader reads through those
+members; one is in the list only when a rule names the same node, as rule 4
+does for an `enum_value` or a unit. A law's `definition` is a
+`DefinitionRef`, not a node. Each dependency names a node of the package's
+own graph: a `dependency_reference` (FR-322, ADR-013 QC-10) names a node of a
+dependency package, adds no entry, and a reader reaches it through
+`dependency_selections`.
+
+On the wire, a reference to a member of the node's own recursion group is a
+`reference` naming that member's `node_id`. `{term: "group_reference",
+ordinal}` is its spelling inside a key preimage only (FR-092, FR-322
+`application_node_preimage`). A group member is therefore a dependency by
+rule 1, and by rule 3 when it is a `bounded_domain` node's `semantic_type`.
+In FR-092's vectors, G6 `f(x - 1)` lists G4 and E13, and G9
+`Sequence<Tree>[0, 3]` lists G8.
+
+Rules 1 and 2 are FR-322's rule for an application node: "exactly the unique
+digest-ascending reference targets and member declarations of its body".
+Rule 4 is FR-322's nominal join and rule 5 FR-340's frame join. For every
+other node QSL applies rules 1 and 3, which QSpec's
+`positive-operation-identities.json` follows at each of its 58 nodes (ADR-013
+QC-27). No v2 reader joins the list of such a node, and the list enters
+`package_id`, so for these nodes `package_id` depends on the writer's rule
+until QSpec states one.
+
+| Node | `dependencies` |
+|---|---|
+| builtin `scalar_type` (`boolean`, `integer`, `rational`, `decimal`, `text`, `float32`, `float64`) | `[]`; the body is `aggregate{[]}` |
+| `bounded_domain` (FR-092's ranges, `text_bounds`, `float_rounding`, `collection_bounds`; FR-094's `model_population`) | its `semantic_type` |
+| `composite_type` `option`, a collection kind, `reference` | the node the body references |
+| declared `composite_type` `record` or `tuple` | each field or position type node; an optional field's `Option` node |
+| `value` `literal` or `parameter` | `[]`; the body holds literals only |
+| `value` `record_value` or `tuple_value` | each node a present slot references |
+| `scalar_type` `enum` (an enum declaration) | `[]`; its nominal preimage names no node |
+| `value` `enum_value` | its enum declaration node |
+| `expression` holding an application | rules 1 and 2 over the application |
+| `function`, a clause function included | its parameter nodes, its body's root node and its measure's node |
+| `model` or `relation` declaration node (FR-094) | `[]`; the body is `aggregate{[]}` |
+| declared unit or dimension node (FR-094) | rule 4 |
+| `scalar_type` `compound_unit` (FR-094) | each unit its terms reference |
+
+### Comparison with QSpec's v2 positive fixtures
+
+QSpec's v2 positive fixtures carry placeholders: the all-`1` `quire-edition`
+edition (ADR-011 §2.4), the diagnostics `catalog` reference, and a
+placeholder key for every node whose body holds no application. Each
+fixture application key hashes placeholder operand keys. The emission's
+`edition`, `definition_selections`, law `definition`s, `node_id`s, node keys
+in bodies and `dependencies`, `semantic_type`s, `identity_preimage`,
+`package_id`, `source_map` and `diagnostics` are therefore outside the
+comparison.
+
+The fixture test compares, for each application node of
+`positive-operation-identities.json` and `positive-control-operations.json`
+whose `operation.identity` a row of the application table lowers, the node
+QSL emits for a function whose body holds that operation: its `node_tag`,
+`semantic_form`, `operator`, `operation.identity`, law roles in order,
+`mode`, member `kind` and `name`, each leaf's `path` and `mode`, and each
+argument's term kind and binding name. IR's v2 reader admits each emitted
+package. The test reads the fixtures from the `QSPEC_DIR` checkout under
+`make conformance`.
+
 ### Recursive text-leaf vectors
 
 Each vector below is the exact preimage bytes and the key `check` SHALL mint
@@ -571,6 +659,8 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
 | FR-093-AC-9 | Every node of the checked package of AC-7 has at least one occurrence: `a`'s parameter node has an `anchor` occurrence over `a: Boolean` and one `expression` occurrence per read, and the `Integer` and text scalar nodes that type P1's body literals have a `generated` occurrence. | Test (TC-416) |
 | FR-093-AC-10 | With lock evidence that selects the text definition the Recursive text-leaf vectors name, `eq`, `has`, `eqa` and `eqo` of those vectors check with no refusal. Their `a = b`, `contains(s, b)`, `x = y` and `a = b` nodes key to E14, E15, E16 and E17 with those vectors' preimage bytes, whose leaves are the lists the vectors give, and the type, group and parameter nodes they name key to T13, T14, G16 to G21, S4, S5 and P10 to P16. Declaring `B` before `A` gives the same keys. | Test (TC-415) |
 | FR-093-AC-11 | Structural equality over `record R { t?: Text[0, 64; nfc]; }` and over `record S { t: Option<Text[0, 64; nfc]>; }` each carries one leaf, path `field:t`, `inner`; over `record W { t: Text[0, 64; nfc]; }` one leaf, path `field:t`. Structural equality and `contains` over FR-092's recursive `List`, which reaches no `Text` type, carry no leaves. Structural equality over `record Tree2 { label: Text[0, 8; binary-utf8]; kids: Sequence<Tree2>[0, 3]; }` carries `field:label`, then `field:kids`, `inner`, `recursion:0`; over `record Two { x: Node; y: Node; }` it carries `field:x`, `field:label`; `field:x`, `field:next`, `inner`, `recursion:1`; `field:y`, `field:label`; `field:y`, `field:next`, `inner`, `recursion:1`. `eq` of the Recursive text-leaf vectors, lowered with lock evidence that supplies no text-profile definition, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node; lowered with a node limit (`CheckingLimits`) that admits every node of its package but not also its two leaves, it refuses with `resource_exhausted`/`insufficient-next-charge` naming the node limit, and yields no node. | Test (TC-415) |
+| FR-093-AC-12 | For every node of the checked package of AC-7, of the package of the recursive `f` and of a package holding `record Tree { kids: Sequence<Tree>[0, 3]; }`, the emitted `dependencies` equal the list that rules 1 to 5 of Node dependencies rebuild from the node as written. In ascending digest order, E1 lists P2 and P1; F2 `both` lists P2, P1 and E1; E2 lists L1, F2 and P1; T1, L1 and P1 list none. In the package of the recursive `f`, T4 `Int[0, 9]` lists T2, G4 lists G5 and P4, G5 lists L1, E11 and G6, and G6 lists G4 and E13. In the `Tree` package, G7 lists G9, G8 lists G7 and G9 lists G8. | Test (TC-416) |
+| FR-093-AC-13 | For each application node of QSpec's `positive-operation-identities.json` and `positive-control-operations.json` whose `operation.identity` a row of the application table lowers, the node emitted for a function whose body holds that operation equals the fixture node in `node_tag`, `semantic_form`, `operator`, `operation.identity`, law roles in order, `mode`, member `kind` and `name`, leaf `path`s and modes, and argument term kinds and binding names, and IR's v2 reader admits the emitted package. The comparison reads none of the members Comparison with QSpec's v2 positive fixtures places outside it. | Test (TC-416) |
 
 ## Dependencies
 
@@ -590,6 +680,13 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
   published, a node whose operation needs a law refuses (AC-6); nodes
   without laws are keyed. The two-name `fold`/`reduce` binder and the
   `bound` of a nested binding are QSL proposals (ADR-013 QC-24).
+- QSpec FR-322 `dependencies`: FR-322 gives the rule for an application
+  node, a nominal node and (FR-340) a frame node. Rules 1 and 3 for every
+  other node are QSL's proposal (ADR-013 QC-27). The published
+  `positive-all-families.json` writes `dependencies: []` for the
+  `expression`/`reference` node `eeee…` and the `correspondence` node
+  `7070…`, whose bodies reference `dddd…`, and for the `bounded_domain`
+  node `cccc…`; QSL asks QSpec to correct them.
 - IR-242: the IR reader's recursion preimage. It derives an in-group
   ordinal from graph order, which the emission sets to FR-092's group
   order.
@@ -621,8 +718,10 @@ backs AC-1 to AC-6, AC-8, AC-10, AC-11 and CON-1 there. The text-leaf walk
 limit before any leaf's law is read, and keys the Recursive text-leaf
 vectors. A4b spells an integer literal as a decimal string and gives
 `quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is QSL-6 S1b: `qsl-package/src/emit.rs`
-refuses every non-empty graph (`ProjectionNotYetImplemented`), so AC-7, AC-9
-and CON-2 (TC-416) are unbacked. Ownership, decided here: QSL-156 A4b builds
+refuses every non-empty graph (`ProjectionNotYetImplemented`), so AC-7, AC-9,
+AC-12, AC-13 and CON-2 (TC-416) are unbacked. AC-13's IR admission also
+waits on IR reading the ADR-013 QC-24 and QC-25 node shapes. The `dependencies` rule and
+the fixture comparison are specified under QSL-225. Ownership, decided here: QSL-156 A4b builds
 the lowering and the keys in `check`; QSL-6 S1b serializes the lowered nodes
 and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
 postcondition lowering backs it. Remaining work: #218.
