@@ -117,7 +117,7 @@ ValueId; this envelope null does not add a native Null value.
 | Encoded object | Fields in emitted order |
 | --- | --- |
 | Envelope | version, kind, identity, body |
-| SourceIdentity | identity, revision (both exact strings) |
+| SourceIdentity | authority, identity, revision_namespace, revision (all exact, non-empty strings; FR-001, FR-018) |
 | RequirementRef | package, requirement, revision (existing IR serialization) |
 | Model binding | model (RequirementRef), digest (lowercase SHA-256 hex) |
 | Qualified name | model (RequirementRef), name (SymbolName string) |
@@ -150,7 +150,7 @@ and invalid arena references. Schema validation cannot recover precision that
 a caller's JSON parser already discarded. Artifact byte/work bounds and actual
 model-aware validation remain separate stages.
 
-Artifact construction checks nonempty identity/revision labels, bounded values,
+Artifact construction checks the four non-empty labels, bounded values,
 metadata entries, content and arena depth; duplicate fields/objects remain in
 their vectors for the model-aware validator to diagnose rather than disappear
 into a host map. Artifact construction alone establishes no population/type,
@@ -186,7 +186,7 @@ as a snapshot State declaration or addressed through a result-name bypass.
 
 SnapshotRef/InvocationRef contain exact SourceIdentity labels and ByteDigest;
 their Rust types prevent swapping roles. No path grants authority. Within the
-supplied inventory, one identity/revision may not name conflicting bytes or
+supplied inventory, one four-label identity may not name conflicting bytes or
 artifact kinds. Exact duplicate entries are ambiguous and refuse; they are not
 silently coalesced. The checker has no persistent history or external evidence
 store: correspondence to artifacts outside the inventory is supplied by explicit

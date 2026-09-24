@@ -16,7 +16,7 @@ label, and a declaration's key depends on the authority and identity but
 not on the revision. This catches a defaulted or path-derived label, and a
 revision that leaks into a node key.
 
-Scope: FR-001-AC-5, FR-001-AC-6, FR-001-AC-7.
+Scope: FR-001-AC-5 to FR-001-AC-10.
 
 ## Test Procedure
 
@@ -29,6 +29,10 @@ Scope: FR-001-AC-5, FR-001-AC-6, FR-001-AC-7.
    under the reference of `b'` as (`a`, `u`, `git`, `2`), and under the
    reference of `b` as (`c`, `u`, `git`, `1`), and under the reference of `b`
    as (`a`, `v`, `git`, `1`).
+4. Admit `a\xffb` and `ab\0c` as (`a`, `u`, `git`, `1`); admit `b` with an
+   empty revision namespace; admit five bytes under a four-byte ceiling;
+   admit `b` under verified intake with a different selected digest.
+5. Render the region `[4, 7)` of admitted source `ab\ncdéf`.
 
 Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 
@@ -41,6 +45,11 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 - Step 3: `Point` has the same key under the first two references, and
   the third and fourth references each give a key different from it and
   from each other.
+- Step 4: region `[1, 1)` under the `RawSourceRef` of `a\xffb`; region
+  `[2, 3)` under that of `ab\0c`; the last three refuse with no region, not a
+  region at byte 0. This checks the behaviour change FR-001 states.
+- Step 5: start line 2, column 2; end line 2, column 4. The region holds
+  only its reference, 4 and 7.
 
 ## Status
 

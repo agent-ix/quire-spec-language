@@ -27,7 +27,7 @@ An immutable LinkedPackage borrowing the selected environments and owning the
 original ParsedUnit, or the existing Box<Diagnostic> with a link phase and no
 package. Declaration identities retain RequirementRef ownership, declaration
 kind/path and original IR SourceSpan. Native occurrence spans retain exact source
-bytes and opaque identity/revision labels. No numeric revision cast occurs.
+bytes and the four source labels of FR-001 (authority, identity, revision namespace and revision value). No numeric revision cast occurs.
 
 ## Behavior
 

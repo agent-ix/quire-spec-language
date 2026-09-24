@@ -17,7 +17,8 @@ When a native-run/1 request selects program extraction in an enabled build, the 
 ## Inputs
 
 With the quire-extraction feature, program accepts an optional closed extraction
-record containing body: {identity, revision, document, formal_revision}. The
+record containing body: {authority, identity, revision_namespace, revision,
+document, formal_revision}. The
 ordinary program source selects the digest-verified original Markdown document;
 its identity must satisfy Quire's existing SourceLocus schema.
 The body record assigns distinct native and formal identities to its derived
@@ -26,6 +27,8 @@ clause. Omission preserves ordinary native-source execution. Supplied null or
 positional extraction/body records, duplicate and unknown fields refuse.
 The body and original-source records share one closed wire identity definition;
 the decoded native/formal pair is explicit and performs no revision conversion.
+That identity definition carries the four source labels of
+[FR-001](FR-001-read-exact-source.md) ([FR-026](FR-026-run-standalone-native-workflow.md)).
 
 This local clause-only mode constructs a validated Quire contract 1.0.0 /
 semantic-core 0.1.0 context for the explicitly selected binding's package and
@@ -69,8 +72,13 @@ The command shall preserve existing byte/file/runtime limits and fresh retries.
 | FR-031-AC-2 | Invalid/unsupported native bodies and unavailable extraction retain original identity, authored selection and actual producer/compiler failure data. | Test |
 | FR-031-AC-3 | Malformed extraction descriptors, multiple bindings, unsupported mode combinations, stale original bytes and disabled-feature requests refuse without successful execution; mode failures have distinct codes and clause-count details before file I/O. | Test |
 | FR-031-AC-4 | Original line and runtime limits return incomplete, a fresh request succeeds, and ordinary native command behavior remains unchanged. | Test |
+| FR-031-AC-5 | A native-run/1 extraction request whose body record names `authority` `agent-ix`, `identity` `b`, `revision_namespace` `git`, `revision` `1`, `document` and `formal_revision` runs; the same request without the body's `authority` refuses at the request stage with `invalid-request` and exits 20. | Test (TC-430) |
 
 ## Dependencies
 
 - [FR-026](FR-026-run-standalone-native-workflow.md): existing bounded command intake and runtime reports.
 - [FR-030](FR-030-consume-quire-extraction.md): actual optional Quire consumer.
+
+## Status
+
+FR-031-AC-5, the four-label identity, is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.

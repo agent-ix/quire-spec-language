@@ -22,7 +22,7 @@ SourceMap yielding original ranges or a map diagnostic.
 
 ## Behavior
 
-The map covers every body byte once and permits only selected layout deletion. Locations preserve discontiguous regions. Foreign source identity, revision, path or digest cannot be used with the map. The source-map API does not decode Markdown or prove fence ownership.
+The map covers every body byte once and permits only selected layout deletion. Locations preserve discontiguous regions. A foreign source label (any of the four source labels of FR-001 (authority, identity, revision namespace and revision value)), path or digest cannot be used with the map. The source-map API does not decode Markdown or prove fence ownership.
 
 ## Acceptance Criteria
 

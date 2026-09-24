@@ -15,6 +15,10 @@ When a native runtime draft is supplied, the input constructor shall produce an 
 ## Inputs
 
 SnapshotDraft or InvocationDraft, SourceIdentity labels and ArtifactLimits.
+The labels are the four of [FR-001](FR-001-read-exact-source.md): the caller
+names the artifact by authority, identity, revision namespace and revision
+value, as QSpec FR-004 requires of every immutable key. A runtime artifact is
+not a source read under FR-001; it only shares the label set.
 The complete variant inventory, fields and native-state-input/1 encoding are
 defined in [the input contract](../../docs/native-runtime-inputs.md). Flat arena
 nodes use typed local ValueIds; object references use exact model/type/universe/key
@@ -49,6 +53,7 @@ can select an exact digest. Limits and accounting follow
 | FR-018-AC-5 | Structural checks include unused nodes and preserve invalid model-dependent shapes for validation rather than manufacturing a successful runtime judgment. | Test |
 | FR-018-AC-6 | Byte, node, entry and depth limits admit exact work and refuse before the next unit, including zero/lowered ceilings and attempts to raise hard ceilings. | Test |
 | FR-018-AC-7 | Construction failures identify the actual draft path/labels and leave caller-retained input unchanged without a fabricated native source span. | Test |
+| FR-018-AC-8 | A snapshot constructed under (`agent-ix`, `s`, `git`, `1`) emits native-state-input/1 bytes naming all four labels, and its reference retains them; constructing it with an empty or blank authority or revision namespace refuses with `invalid_source_identity`, the code an empty identity or revision label refuses with today (FR-018-AC-4). Two snapshots that differ only in revision namespace have different bytes and digests. | Test (TC-431) |
 
 ## Dependencies
 
@@ -57,6 +62,8 @@ can select an exact digest. Limits and accounting follow
 - Existing SourceIdentity, ByteDigest, IR RequirementRef/SymbolName and serde_json/sha2 dependencies are reused.
 
 ## Status
+
+FR-018-AC-8 is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.
 
 Qualified construction API at c8fa41f, reviewed in SR-096. TC-055–057 pass with
 21 public API tests and a role-separation compile-fail doctest. Model-aware

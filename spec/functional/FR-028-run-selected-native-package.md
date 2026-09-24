@@ -63,3 +63,7 @@ The command shall preserve fresh budgets for subsequent requests.
 - [FR-026](FR-026-run-standalone-native-workflow.md): local run orchestration.
 - [FR-020](FR-020-read-and-rebind-native-packages.md): actual artifact reconstruction.
 - [FR-027](FR-027-export-compiled-native-package.md): standalone package producer.
+
+## Status
+
+The selected package's sources carry the four source labels of FR-001 (FR-020). Specified under QSL-233 (ADR-013 §7 S-4b), not implemented.

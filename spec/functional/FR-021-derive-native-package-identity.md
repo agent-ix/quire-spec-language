@@ -63,5 +63,7 @@ existing closed shared-reference schemas are not silently extended here.
 
 ## Status
 
+The manifest's source identity carries the four source labels of FR-001, so the independently authored hash vectors of FR-021-AC-1 change. Specified under QSL-233 (ADR-013 §7 S-4b), not implemented.
+
 Draft producer contract. Review, implementation, independent vectors and shared
 consumer adoption are required before their corresponding qualification claims.
