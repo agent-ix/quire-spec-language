@@ -88,8 +88,8 @@ The requirement carries testable criteria for decisions already taken:
   `node-identity-preimage.schema.json`: a nominal enum, dimension or unit
   node's preimage names its owner, and a source owner is
   `SourceOwner{kind: "source", authority, identity}`. The
-  `quire.application-node/v1` preimage of a `composite_type` or `function`
-  node has no owner member. Aliases within one source unit are unique
+  `quire.application-node/v1` preimage has no owner member. Aliases within
+  one source unit are unique
   (`shared-grammar.md`).
   `proposals/quire-v1/definitions/native-diagnostics.md` revision
   `1-draft.6`: the catalog codes and causes this requirement names.
@@ -355,10 +355,11 @@ function declarations over the unit's `SourceOwner{authority, identity}`
 and are not part of the preimage, so an unchanged declaration keeps its key
 across revisions of its source. The owner is a required E3 input, and
 `check` has no constant package identity:
-`DEFAULT_PACKAGE_IDENTITY` does not exist. QSpec publishes owner scope for
-nominal enum, dimension and unit nodes only; the owner member on the
-`composite_type` and `function` preimage is a proposed QSpec extension
-(Dependencies).
+`DEFAULT_PACKAGE_IDENTITY` does not exist. The record, tuple and function
+nodes are keyed by the `quire.structural-node/v1` preimage, which carries the
+owner ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). QSpec
+publishes owner scope for nominal enum, dimension and unit nodes; the
+structural-node preimage is a QSL proposal to QSpec (Dependencies).
 
 Type resolution is the E3 name-binding phase (ADR-011 §1; ADR-013 O-11).
 The resolution `match` has one explicit arm per type-form head:
@@ -501,12 +502,12 @@ for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
   whichever carrier holds them.
 - The unit's `SourceOwner` needs an `authority` on QSL's source identity,
   which #213 S-4 (QSL-159) owns.
-- Record, tuple and function keys over `SourceOwner` need QSpec to add the
-  owner member to the `quire.application-node/v1` preimage of
-  `composite_type` and `function` nodes. QSpec publishes it for nominal
-  enum, dimension and unit nodes only, and that preimage names a node by
-  `declaration: {qualified_name}` alone. The extension is proposed to
-  `ix://agent-ix/quire-specification` under ADR-013 QC-18.
+- Record, tuple and function keys over `SourceOwner` use QSL's
+  `quire.structural-node/v1` preimage
+  ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). QSpec
+  publishes an owner-bearing preimage for nominal enum, dimension and unit
+  nodes only; the structural-node preimage is proposed to
+  `ix://agent-ix/quire-specification` under ADR-013 QC-18 and QC-24.
 - An `enum`, `dimension` or `unit` entry needs `value::enumeration` and
   `value::unit` to leave the FB-13 debt list, which QSL-131 owns.
 - Resolving a selection's definition reference against the library lock is

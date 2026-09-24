@@ -117,13 +117,20 @@ source map SHALL carry the occurrence through E3 and E4 without re-minting
 any span.
 
 Each identity is an ADR-013 O-04 checked node id: the
-`quire.checked-semantic-node/v1` digest of the RFC 8785 encoding of the node's
-QSpec FR-322 preimage. A function declaration is keyed by the node-identity
-preimage, which names its `SourceOwner` (O-04), and a node whose body contains
-a call by the `quire.application-node/v1` preimage. Neither preimage names a
-`package_id` or any unrelated declaration, so the identity does not depend on
-their order (AC-2), and it equals the QSpec vector for the same node (AC-8).
-QSL-156 slice A4b switches the checker's minter to these preimages.
+`quire.checked-semantic-node/v1` digest of the RFC 8785 encoding of the
+node's preimage. A function declaration's node lists its parameter nodes and
+references its body's root expression node, so its body holds no
+application. It is keyed by QSL's `quire.structural-node/v1` preimage, which
+names its `SourceOwner` (O-04;
+[FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). A call is its own
+`expression` node, keyed by QSpec FR-322's `quire.application-node/v1`
+preimage, which has no owner member because an expression carries no
+declaration ([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)).
+Neither preimage names a `package_id` or any unrelated declaration, so the
+identity does not depend on their order (AC-2). The declaration's identity
+equals FR-092's golden vector, and the call's equals the FR-322
+application-node key of the same node (AC-8). QSL-156 slice A4b switches the
+checker's minter to these preimages.
 
 ### The composed function checker is deleted in this change
 
@@ -201,7 +208,7 @@ for the function family.
 | FR-065-AC-5 | After the implementation lands, the composed linker's pre-migration function-declaration and function-application checking entry points are absent from the compiled crate's symbols; a grep-equivalent test over the compiled crate's public and crate-internal symbols confirms their absence. Where the composed checker module is retained for its other `Value` forms, its input form-kind enum carries neither a function-declaration nor a function-application variant, and its dispatch `match` carries no `_` or catch-all arm; a test that reintroduces either variant into that enum without adding a matching arm fails to compile with `E0004`, and a test that instead adds a `_ => refuse(...)` arm to keep the match exhaustive while the variant stays fails this criterion, because a catch-all arm is disallowed by this requirement's own rule, not merely discouraged. A change that lands the S3 function checker while leaving either variant in the composed checker's input enum, with or without an arm for it, does not satisfy this criterion. | Test (TC-164) |
 | FR-065-AC-6 | The layer-6 `replay` facade's executor entry, given a replay request naming a function, resolves the function by a typed `QualifiedName` against the recompiled package's declarations; a test that attempts to call the entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a request naming an unresolvable `QualifiedName` returns a typed refusal rather than matching by display-name equality. | Test (TC-166) |
 | FR-065-AC-7 | Checking the declaration `g() -> Boolean = 1` (an `Integer` body against a declared `Boolean` result) through the `Value` family's contract `check` hook returns `StageFailure::Refused` whose cause is `ill_typed` / `type-mismatch`, and the diagnostic sink holds no entry afterwards. Checking the well-typed declaration `f() -> Boolean = true` through the same hook returns the checked declaration, whose identity equals the identity minted for `f`. | Test (TC-380) |
-| FR-065-AC-8 | For a fixture function declaration and a fixture node whose body contains a call, the checked identity equals the value QSpec's `node-identity-vectors.json` and FR-322 application-node vectors give for the same node in domain `quire.checked-semantic-node/v1`. | Test (TC-163) |
+| FR-065-AC-8 | Under source owner (`a`, `u`), the checked identity of `function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }` is FR-092 vector F2, a `quire.structural-node/v1` key whose preimage carries that owner, and the checked identity of the call `both(a, true)` in `function nb using v(a: Boolean): Boolean pure { both(a, true) }` is FR-092 vector E2, a `quire.application-node/v1` key whose preimage has no `owner` member. The application-node key builder reproduces every `operation_vectors` digest in QSpec's `node-identity-vectors.json`. | Test (TC-163) |
 
 ## Dependencies
 
@@ -227,6 +234,9 @@ for the function family.
   (qualified names), O-12 (source locations and provenance), O-15
   (typestate) own the canonical types this requirement's identity and
   provenance guarantees are built from.
+- [FR-092](FR-092-key-type-parameter-and-declared-nodes.md) and
+  [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md) define
+  the node shapes and preimages the declaration and call identities hash.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
 
 ## Status
@@ -370,7 +380,9 @@ delivered code today:
 - FR-065-AC-8: unbacked. The checker mints each identity from a
   length-prefixed preimage in `qsl-semantics/src/check/family.rs` that
   includes the package identity. Owner: QSL-156 slice A4b, which switches it
-  to the FR-322 preimages built by `qsl-semantics/src/value/application_key.rs`.
+  to the FR-092 and FR-093 keys. The application-node half's builder,
+  `qsl-semantics/src/value/application_key.rs`, reproduces QSpec's operation
+  vectors under the opt-in `make conformance` and has no production caller.
 
 Two of this requirement's eight Acceptance Criteria are backed (AC-2,
 identity/provenance; AC-7, the contract `check` hook's typing verdict); AC-4

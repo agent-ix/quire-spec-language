@@ -191,6 +191,10 @@ operational validation remains outside this audit-only plan.
 | TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 Planned; QSL-131 |
 | TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | ✅ Passed locally; step 3 runs under `make conformance` |
 | TC-412 | The assembler resolves each using alias to a declared profile selection and refuses an undeclared one | Unit | P1 | FR-091-AC-22 | 🚧 Planned; QSL-141 |
+| TC-413 | Type and declared record nodes key to the structural-node golden vectors, scoped only by owner | Unit | P1 | FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8 | 🚧 Planned; QSL-156 A4b |
+| TC-414 | Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner | Unit | P1 | FR-092-AC-4, FR-092-AC-5, FR-092-AC-6 | 🚧 Planned; QSL-156 A4b |
+| TC-415 | Each checked Value expression lowers to its FR-322 node with its catalogued operation | Unit | P1 | FR-093-AC-1, FR-093-AC-2, FR-093-AC-3, FR-093-AC-4, FR-093-AC-5, FR-093-AC-6 | 🚧 Planned; QSL-156 A4b; step 6 needs the QSpec lock accessor |
+| TC-416 | The v2 emission arm writes the nodes check lowered, and each emitted node recomputes to its node id | Integration | P1 | FR-093-AC-7 | 🚧 Planned; QSL-6 S1b after QSL-156 A4b |
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 
@@ -481,3 +485,15 @@ approach of TC-256, TC-170 and TC-390. TC-399 is the end-to-end case from
 source to `CheckedPackage::call`. TC-404 backs FR-003-AC-7
 and AC-8, the `format` input retargeted to the `qsl-cst` CST (ADR-011 §7.3
 M-6a), under QSL-8.
+
+## Value node keys and expression lowering (FR-092, FR-093) coverage
+
+[FR-092](functional/FR-092-key-type-parameter-and-declared-nodes.md) carries
+ADR-013 O-04 and OQ-G: QSL's `quire.structural-node/v1` preimage for type,
+value, parameter and declared function nodes, with golden vectors T1 to T8,
+D1, D2, P1 to P3, L1, L2, F1 and F2. TC-413 and TC-414 back its eight ACs.
+[FR-093](functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
+carries the lowering of checked expressions to FR-322 application nodes, with
+vectors E1 to E3 and the ownership split: QSL-156 A4b lowers and keys in
+`check`, and QSL-6 S1b serializes. TC-415 backs AC-1 to AC-6 and TC-416
+AC-7. All four are `🚧 Planned`.

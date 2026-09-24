@@ -830,7 +830,7 @@ Module table:
 | `package` | 4 `package` | `NativePackage` and the native-linked-package/1 submodules (`intake`, `reading`, `wire`, `encoding`, `features`, `view`) are SEAM-1 and stay in the root crate's module `package` until M-6 deletes them; the v2 emitter and the I2 byte reader are new in M-4. Layer-4 `package`'s content — `CheckedPackage`, `EmittedPackage`, the v2 emitter and the I2 byte reader — is the crate `qsl-package` (X-7, QSL-182), whose crate root is layer-4 `package`. Every rule this ADR states for layer-4 `package` applies to `qsl-package`. |
 | `value` kernel submodules: `numeric`, `integer`, `rational`, `decimal`, `ieee` and `division` (operations), `text`, `collection`, `comparison`, `equality`, `outcome`, `accounting`, `composite` | K `quire-exact` | only the types in the AD-016 Shared-type row as amended by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8), and the operations over them. QSL has no `value::` copy of any of these thirteen: every QSL caller imports the kernel item from `quire_exact`. |
 | `value` non-kernel submodules: `definition`, `enumeration`, `unit`, `quantity`, `declaration`, `stop`, `member` | 3 `semantic_value` | not in the AD-016 kernel row; used by `model`, `check` and S6a (QSL-165). `declaration` holds the FR-143 registry (`TypeEnvironment`, `ObjectTypeDeclaration`) and the FR-149 check-level equality layer; it imports only K and its `semantic_value` siblings `enumeration`, `quantity` and `stop`, and `check`, `model` (`value::model_query`) and S6a consume it. `stop` is the early-exit carrier that `declaration`, `enumeration`, `quantity`, `model_query` and S6a convert to and from the kernel `Outcome`; it imports only K, and its lowest consumers are `semantic_value` modules. `member` is ADR-013 O-06's structured checked member identity; it imports only F and K. |
-| `value::application_key` | 3 `check` | the FR-322 checked application-node key (QSL-156). It imports `check`'s `MAX_CHECKING_DEPTH` as its body-depth bound, so it cannot sit below `check` core. |
+| `value::application_key` | 3 `check` | the FR-322 checked application-node key (QSL-156). It imports `check`'s `MAX_CHECKING_DEPTH` as its body-depth bound, so it cannot sit below `check` core. The FR-093 lowering of checked expressions to FR-322 nodes and the FR-092 structural-node keys sit beside it in `check` (QSL-156 A4b); the `package` v2 emission arm serializes those nodes and lowers nothing (QSL-6 S1b). |
 | `value::semantic_node` | 3 `semantic_value` | the I04 node-identity preimage machinery (owner projection, JCS digest, `WireNodeId` lookup) shared by `enumeration` and `unit`; moved out of the deleted K-copy `value::node`, whose only kernel types, `NodeKey` and `NODE_KEY_DOMAIN`, are imported from `quire_exact` (QSL-131 K4) |
 | `value::division::negotiate_*`, `value::ieee::negotiate_*` | RT | AD-016 Shared-type row: the `negotiate_*` predicates stay in RT, and CG negotiates (arrow 3). AD-016 WP7 decides the predicate list (OBS-004). #213 S-1 (X-1) moved `division` and `ieee` into K but left the QSL copies of `negotiate_*` in place; QSL-131 Slice A (PR #290) removed them. Both modules are now gone entirely, not merely edited: QSL-131 K2 (#339) deleted `value::division` and QSL-131 O3 deleted `value::ieee`, so there is no file or line left to cite for either — every caller reaches the evaluation functions through `quire_exact` directly. |
 | `value::expression::syntax` | 2 `forms` | M-3a |
@@ -1191,11 +1191,13 @@ To QSpec (wire owner):
 - A published accessor for `proposals/quire-v1/definitions/complete-value-lock.json`,
   from which QSL reads every definition digest it writes (§2.4). QSL owns
   raising it; it blocks v2 emission.
-- A type-node arm of `node-identity-preimage.schema.json`, with vectors, for
-  builtin `scalar_type`, `bounded_domain` and anonymous `composite_type`
-  nodes: a content key with no owner (ADR-013 O-04, QC-18). Declared
-  records, tuples and functions carry their owner (QC-18's owner-member
-  request).
+- A preimage arm of `node-identity-preimage.schema.json`, with vectors, for
+  every node whose body holds no application: QSL's proposed
+  `quire.structural-node/v1` (FR-092). Builtin `scalar_type`,
+  `bounded_domain` and anonymous `composite_type` nodes get a content key
+  with no owner, and declared records, tuples and functions carry their owner
+  (ADR-013 O-04, QC-18). The parameter node form and the function node body
+  shape go with it (ADR-013 QC-24).
 - The `dependency_selections` item type in
   `proposals/checked-package-v2/schema.json`: the dependency's `package_id`,
   not a `Selection` (§2.4).
