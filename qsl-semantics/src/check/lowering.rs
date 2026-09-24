@@ -677,12 +677,24 @@ enum FoldStage {
 
 /// `name`'s `::`-separated segments, each an identifier.
 fn qualified_name(name: &str, location: &Location) -> Result<Vec<Identifier>, CheckRefusal> {
-    name.split("::")
+    identifiers(name.split("::"), location)
+}
+
+/// `segments` as a qualified name's identifiers, refusing the first segment
+/// that is not one.
+fn identifiers<'s>(
+    segments: impl IntoIterator<Item = &'s str>,
+    location: &Location,
+) -> Result<Vec<Identifier>, CheckRefusal> {
+    segments
+        .into_iter()
         .map(|segment| {
             Identifier::new(segment).map_err(|_| {
                 refuse(
                     location,
-                    CheckCause::NodePreimage(NodeKeyRefusal::EmptyQualifiedName),
+                    CheckCause::NodePreimage(NodeKeyRefusal::InvalidQualifiedNameSegment {
+                        segment: segment.to_owned(),
+                    }),
                 )
             })
         })
@@ -1808,22 +1820,14 @@ impl<'a> Lowering<'a> {
         let site = type_declaration(&binding.name);
         let declaration = binding.declaration.key();
         let preimage = binding.declaration.preimage();
-        let name = preimage
-            .qualified_declaration()
-            .iter()
-            .map(|segment| {
-                Identifier::new(segment.as_str()).map_err(|_| {
-                    refuse(
-                        &site,
-                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyQualifiedName),
-                    )
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let name = identifiers(
+            preimage.qualified_declaration().iter().map(String::as_str),
+            &site,
+        )?;
         let bytes = preimage
             .preimage_bytes()
             .map_err(|_| fault(&site, KeyFault::NonCanonicalNominal(declaration)))?;
-        self.insert_nominal(
+        let inserted = self.insert_nominal(
             &site,
             declaration,
             bytes,
@@ -1839,7 +1843,11 @@ impl<'a> Lowering<'a> {
             },
             NominalNode::EnumDeclaration(preimage.clone()),
         )?;
-        self.record(declaration, "declaration", site.clone());
+        // Two bindings of one admitted declaration are one node, declared
+        // once.
+        if inserted {
+            self.record(declaration, "declaration", site.clone());
+        }
         for member in &binding.members {
             let key = member.member();
             let bytes = member_preimage_bytes(declaration, member.case())
@@ -1869,8 +1877,9 @@ impl<'a> Lowering<'a> {
     }
 
     /// Add the nominal node `key`, whose preimage is `preimage` and whose
-    /// content is `content`, to the graph. A key already in the graph is
-    /// left as it is: admission ties each key to one preimage.
+    /// content is `content`, to the graph, and whether it was not there
+    /// yet. A key already in the graph is left as it is: admission ties each
+    /// key to one preimage.
     fn insert_nominal(
         &mut self,
         location: &Location,
@@ -1878,16 +1887,21 @@ impl<'a> Lowering<'a> {
         preimage: Vec<u8>,
         content: NodeContent,
         nominal: NominalNode,
-    ) -> Result<(), CheckRefusal> {
+    ) -> Result<bool, CheckRefusal> {
         self.charge(1, location)?;
-        self.graph.nodes.entry(key).or_insert_with(|| SemanticNode {
-            key,
-            preimage,
-            recursion: None,
-            content,
-            nominal: Some(nominal),
-        });
-        Ok(())
+        match self.graph.nodes.entry(key) {
+            btree_map::Entry::Occupied(_) => Ok(false),
+            btree_map::Entry::Vacant(slot) => {
+                slot.insert(SemanticNode {
+                    key,
+                    preimage,
+                    recursion: None,
+                    content,
+                    nominal: Some(nominal),
+                });
+                Ok(true)
+            }
+        }
     }
 
     /// The law of `role` the lock evidence selects, or the FR-093 refusal.

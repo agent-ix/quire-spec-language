@@ -764,6 +764,13 @@ pub enum NodeKeyRefusal {
     /// The `declaration.qualified_name` has no segment.
     #[error("the declaration's qualified name is empty")]
     EmptyQualifiedName,
+    /// A `declaration.qualified_name` segment is not an identifier
+    /// (`^[A-Za-z_][A-Za-z0-9_]*$`).
+    #[error("qualified name segment {segment:?} is not an identifier")]
+    InvalidQualifiedNameSegment {
+        /// The offending segment.
+        segment: String,
+    },
     /// A `binding` term's name is empty.
     #[error("a binding name is empty")]
     EmptyBindingName,
