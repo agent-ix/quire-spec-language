@@ -3473,4 +3473,309 @@ mod tests {
              exactly as its own identity string names"
         );
     }
+
+    // QSL-201: every shape the per-node reader once `expect`ed from the
+    // pinned `agent-ix-semantic-ir` validator now refuses instead. Each test
+    // below breaks one of those shapes in an otherwise clean document and
+    // checks two layers. Through `read_records`, the validator or the reader
+    // refuses with the stable `invalid_model_binding`/`malformed-declaration`
+    // code and nothing panics. Through `read_nodes` alone, which is what a
+    // pin bump that drops the validator's guarantee would leave, the reader's
+    // own refusal names the node and the broken member.
+
+    /// One object type (`Widget`) and one population (`Fleet`) of it, every
+    /// member the validator requires present, reading clean.
+    fn reader_base_document() -> Value {
+        let mut document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([
+                wire_construct(
+                    "acme/orders",
+                    "order",
+                    meaning::OBJECT_TYPE,
+                    serde_json::json!({}),
+                ),
+                wire_construct(
+                    "acme/orders",
+                    "fleet",
+                    meaning::POPULATION,
+                    serde_json::json!({}),
+                ),
+            ]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/Widget",
+                serde_json::json!({"module": "acme/orders", "name": "order"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            )]),
+        );
+        document["populations"] = serde_json::json!([{
+            "identity": "ix://acme/orders/Fleet",
+            "displayName": "Fleet",
+            "kind": {"module": "acme/orders", "name": "fleet"},
+            "members": ["ix://acme/orders/Widget"],
+            "extent": "closed",
+            "origin": {
+                "generated": {
+                    "generatorIdentity": "ix://acme/orders/Fleet",
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": ["ix://acme/orders/Fleet"],
+                }
+            },
+        }]);
+        document
+    }
+
+    /// Breaks `reader_base_document` with `mutate`, then checks both layers
+    /// (see the comment above `reader_base_document`).
+    fn assert_refuses_without_panicking(mutate: impl FnOnce(&mut Value), expected: ModelRefusal) {
+        let mut document = reader_base_document();
+        mutate(&mut document);
+        let package = parse_document(document.to_string().as_bytes());
+        let refusals = read_records("acme/orders", &package)
+            .expect_err("the broken shape refuses through read_records");
+        assert!(!refusals.is_empty());
+        for refusal in &refusals {
+            assert_eq!(refusal.code, Code::InvalidModelBinding, "{refusal:?}");
+            assert!(
+                matches!(
+                    refusal.cause,
+                    ModelRefusalCause::IntakeMalformedDeclaration { .. }
+                ),
+                "{refusal:?}"
+            );
+        }
+        assert_eq!(
+            read_nodes("acme/orders", package.tree()),
+            Err(vec![expected])
+        );
+    }
+
+    /// The expected reader refusal for a generated-origin node: no artifact,
+    /// no span.
+    fn malformed(node: &str, detail: &str) -> ModelRefusal {
+        malformed_declaration(node.to_owned(), None, None, detail.to_owned())
+    }
+
+    #[trace("TC-145", "FR-056-AC-1")]
+    #[test]
+    fn reader_base_document_reads_clean() {
+        let package = parse_document(reader_base_document().to_string().as_bytes());
+        let records = read_records("acme/orders", &package)
+            .expect("the base document the refusal tests break reads clean");
+        assert_eq!(records.len(), 2, "one object type and one population");
+    }
+
+    /// Was `identity_keys`'s `expect("... identity_list items are strings")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_non_string_identity_list_item() {
+        assert_refuses_without_panicking(
+            |document| document["types"][0]["supertypes"] = serde_json::json!([7]),
+            malformed(
+                "ix://acme/orders/Widget",
+                "$.types[0]: supertypes[0]: not a string",
+            ),
+        );
+    }
+
+    /// Was `read_object_type`'s `expect("... abstract is a boolean when present")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_non_boolean_abstract_in_the_reader() {
+        assert_refuses_without_panicking(
+            |document| document["types"][0]["abstract"] = serde_json::json!("yes"),
+            malformed(
+                "ix://acme/orders/Widget",
+                "$.types[0]: abstract: not a boolean",
+            ),
+        );
+    }
+
+    /// Was `read_population`'s `expect("... kind is present on a population")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_population_with_no_kind() {
+        assert_refuses_without_panicking(
+            |document| {
+                document["populations"][0]
+                    .as_object_mut()
+                    .expect("the base population is an object")
+                    .remove("kind");
+            },
+            malformed("ix://acme/orders/Fleet", "$.populations[0]: kind: missing"),
+        );
+    }
+
+    /// Was `read_population`'s `expect("... kind.module is a string")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_population_kind_module_that_is_not_a_string() {
+        assert_refuses_without_panicking(
+            |document| document["populations"][0]["kind"]["module"] = serde_json::json!(7),
+            malformed(
+                "ix://acme/orders/Fleet",
+                "$.populations[0]: kind.module: missing or not a string",
+            ),
+        );
+    }
+
+    /// Was `read_population`'s `expect("... kind.name is a string")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_population_kind_name_that_is_not_a_string() {
+        assert_refuses_without_panicking(
+            |document| document["populations"][0]["kind"]["name"] = serde_json::json!(7),
+            malformed(
+                "ix://acme/orders/Fleet",
+                "$.populations[0]: kind.name: missing or not a string",
+            ),
+        );
+    }
+
+    /// Was `meaning_index`'s `expect("... constructs is present and an array")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_document_with_no_constructs_array() {
+        assert_refuses_without_panicking(
+            |document| document["constructs"] = serde_json::json!({}),
+            malformed("$", "$: constructs: missing or not an array"),
+        );
+    }
+
+    /// Was `meaning_index`'s `expect("... kind is present on a constructs entry")`.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn refuses_a_constructs_entry_with_no_kind() {
+        assert_refuses_without_panicking(
+            |document| {
+                document["constructs"][0]
+                    .as_object_mut()
+                    .expect("the base constructs entry is an object")
+                    .remove("kind");
+            },
+            malformed("$.constructs[0]", "$.constructs[0]: kind: missing"),
+        );
+    }
+
+    /// Was `meaning_index`'s `expect("... kind.module is a string")`.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn refuses_a_constructs_kind_module_that_is_not_a_string() {
+        assert_refuses_without_panicking(
+            |document| document["constructs"][0]["kind"]["module"] = serde_json::json!(7),
+            malformed(
+                "$.constructs[0]",
+                "$.constructs[0]: kind.module: missing or not a string",
+            ),
+        );
+    }
+
+    /// Was `meaning_index`'s `expect("... kind.name is a string")`.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn refuses_a_constructs_kind_name_that_is_not_a_string() {
+        assert_refuses_without_panicking(
+            |document| document["constructs"][0]["kind"]["name"] = serde_json::json!(7),
+            malformed(
+                "$.constructs[0]",
+                "$.constructs[0]: kind.name: missing or not a string",
+            ),
+        );
+    }
+
+    /// Was `meaning_index`'s `expect("... construct.meaning is a string")`.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn refuses_a_construct_with_no_meaning_string() {
+        assert_refuses_without_panicking(
+            |document| document["constructs"][0]["construct"]["meaning"] = serde_json::json!(7),
+            malformed(
+                "$.constructs[0]",
+                "$.constructs[0]: construct.meaning: missing or not a string",
+            ),
+        );
+    }
+
+    /// Was `read_records`'s `expect("... types is present and an array")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_document_with_no_types_array() {
+        assert_refuses_without_panicking(
+            |document| {
+                document
+                    .as_object_mut()
+                    .expect("the base document is an object")
+                    .remove("types");
+            },
+            malformed("$", "$: types: missing or not an array"),
+        );
+    }
+
+    /// Was `read_records`'s `expect("... populations is an array when present")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_populations_member_that_is_not_an_array() {
+        assert_refuses_without_panicking(
+            |document| document["populations"] = serde_json::json!({}),
+            malformed("$", "$: populations: not an array"),
+        );
+    }
+
+    /// Was `read_records`'s re-parse `expect("validate_with_semantic_ir
+    /// already confirmed these bytes parse as JSON ...")`. The two parsers
+    /// disagreed on a number serde_json cannot represent: the validator's
+    /// reader accepted `1e400`, and the re-parse panicked on it. Intake now
+    /// parses once, and that parse refuses it.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_number_serde_json_cannot_represent_at_the_one_parse() {
+        let text = reader_base_document().to_string().replacen(
+            "\"extent\":\"closed\"",
+            "\"extent\":\"closed\",\"weight\":1e400",
+            1,
+        );
+        assert!(
+            text.contains("1e400"),
+            "the out-of-range number is in the document"
+        );
+        assert!(
+            agent_ix_semantic_ir::json::parse(&text).is_ok(),
+            "the validator's own reader accepts it, which is what made the re-parse panic"
+        );
+        assert_eq!(
+            PackageDocument::parse(text.as_bytes()).unwrap_err(),
+            malformed(
+                "$",
+                "package document number 1e400 has no serde_json representation"
+            )
+        );
+    }
+
+    /// AC-3 of QSL-201: the JCS digest check still runs over the one parse.
+    /// A document nested past serde_json's default recursion limit (128)
+    /// admits under its JCS digest, which the old `serde_json::from_slice`
+    /// in `admit` could not parse and so digested raw.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn admits_a_deeply_nested_document_under_its_jcs_digest() {
+        let mut nested = serde_json::json!(0);
+        for _ in 0..150 {
+            nested = serde_json::json!([nested]);
+        }
+        let document = serde_json::json!({
+            "package": {"identity": "acme/orders", "version": "1"},
+            "payload": nested,
+        });
+        let padded = format!("  {document}  ").into_bytes();
+        assert!(serde_json::from_slice::<Value>(&padded).is_err());
+        let digest = digest_of(&jcs_bytes(&document));
+        let mut map = BTreeMap::new();
+        map.insert(digest, padded);
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let (package_ref, admitted) = admit(&offered, &digest_domain, &map)
+            .expect("a document within the reader's 200-deep bound admits under its JCS digest");
+        assert_eq!(package_ref.digest, digest);
+        assert_eq!(admitted.tree(), &document);
+    }
 }
