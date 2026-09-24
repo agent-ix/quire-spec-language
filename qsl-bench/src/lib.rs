@@ -13,6 +13,7 @@
 //! - [`model`]: a Semantic IR 2.0.0 document with N object types and a
 //!   population, carried through model intake (`admit` -> `read_records` ->
 //!   `DomainPackage::new`), then normalization and population admission.
+//! - [`recursion`]: N self-recursive functions, N recursive components.
 //! - [`rss`]: the process's peak resident set size, for the probe.
 //!
 //! No generator panics on a refusal from the layer it feeds: a refusal is a
@@ -32,4 +33,5 @@ pub fn widen(count: usize) -> u64 {
 pub mod check;
 pub mod model;
 pub mod parse;
+pub mod recursion;
 pub mod rss;

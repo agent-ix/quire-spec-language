@@ -420,6 +420,110 @@ count is about 10^7 to 10^8, not 10^9.
 - **The fix belongs to FCD: PLAT-1051.** Hoist `document_features` out of the
   per-type loop in `decide`.
 
+## QSL-203: termination by Tarjan's SCC. Improvement on every chain size.
+
+QSL-203 replaced the termination check's per-function reachability sets and
+all-pairs component filter with an iterative Tarjan SCC
+(`qsl-semantics/src/check/termination.rs`). It was measured by the claim rule
+above, in one session on 2026-09-23, 21:12 to 21:27 (UTC-7):
+
+- A is `67f44989` (origin/main) and B is `59da8964` (the fix). Each side has
+  its own worktree and target directory.
+- The rounds ran A1, B1, A2, B2 … A5, B5. Each round ran one
+  `make bench-checker`, then `qsl-bench-probe check chain <n>` for 250, 1,000,
+  2,000, 4,000 and 8,000, one process per size.
+- Load average ranged from 4.2 to 16.5. A QSL-197 parser A/B session and other
+  QSL builds ran on the machine during the session.
+- The apparatus is unchanged: `benches/checker.rs`, `src/check.rs` and
+  `Cargo.toml` are byte-identical on both sides.
+
+What each figure counts:
+
+- **Wall time** is one `PackageDeclarations::check` over the whole package.
+  Criterion rows are criterion point estimates. Probe rows are one `check` per
+  process.
+- **Peak RSS** is `VmHWM` of the probe process, which builds and checks only
+  that chain.
+- **Margin** is max(the stated variance, the session's MAD/median).
+
+| Benchmark | A, 5 rounds | B, 5 rounds | A median | B median | Gain | Margin | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `checker/chain/250` | 5.56, 7.24, 5.71, 5.42, 4.75 ms | 1.32, 1.58, 1.34, 1.29, 1.40 ms | 5.56 ms | 1.34 ms | 76% | 12% | improvement |
+| `checker/chain/1000` | 99.7, 136, 99.2, 96.0, 94.6 ms | 15.8, 15.7, 13.9, 14.0, 19.7 ms | 99.2 ms | 15.7 ms | 84% | 13% | improvement |
+| `checker/chain/2000` | 458, 559, 541, 455, 544 ms | 45.4, 55.1, 45.4, 47.2, 49.5 ms | 541 ms | 47.2 ms | 91% | 12% | improvement |
+| `checker/independent/1000` | 9.32, 10.5, 12.0, 9.19, 9.55 ms | 9.31, 10.1, 8.71, 8.60, 8.75 ms | 9.55 ms | 8.75 ms | 8% | 15% | no change |
+| `checker/independent/5000` | 211, 218, 230, 204, 185 ms | 168, 171, 204, 167, 167 ms | 211 ms | 168 ms | 20% | 21% | no change |
+| probe chain of 250 | 7.2, 6.0, 8.8, 4.8, 4.9 ms | 1.6, 1.5, 1.7, 1.5, 1.7 ms | 6.0 ms | 1.6 ms | 73% | 20% | improvement |
+| probe chain of 1,000 | 136, 110, 183, 106, 90 ms | 18.0, 15.6, 16.0, 14.9, 14.6 ms | 110 ms | 15.6 ms | 86% | 19% | improvement |
+| probe chain of 2,000 | 606, 600, 820, 457, 469 ms | 41.3, 49.3, 48.0, 44.5, 47.1 ms | 600 ms | 47.1 ms | 92% | 22% | improvement |
+| probe chain of 4,000 | 6.65, 4.63, 6.24, 2.12, 2.13 s | 223, 225, 217, 195, 201 ms | 4.63 s | 217 ms | 95% | 44% | improvement |
+| probe chain of 8,000 | 23.4, 25.9, 29.9, 12.7, 9.70 s | 867, 1,084, 833, 869, 894 ms | 23.4 s | 869 ms | 96% | 28% | improvement |
+
+A's 4,000 and 8,000 rounds fell by more than half in rounds 4 and 5, as the
+load average dropped from about 9 to 5. That is why A's session noise is 44%
+at 4,000. B beats A by far more than that margin.
+
+Peak RSS, 5 rounds each. The RSS variance is below 2% on both sides.
+
+| Input | A median | B median | B / A |
+| --- | --- | --- | --- |
+| chain of 250 | 5,200 KiB | 4,540 KiB | 0.87 |
+| chain of 1,000 | 16,928 KiB | 7,108 KiB | 0.42 |
+| chain of 2,000 | 50,652 KiB | 10,452 KiB | 0.21 |
+| chain of 4,000 | 178,860 KiB | 17,016 KiB | 0.10 |
+| chain of 8,000 | 681,836 KiB | 30,892 KiB | 0.05 |
+
+After the fix, B's peak RSS grows linearly: 1.8 times for 2 times the size from
+4,000 to 8,000. **Check time is still superlinear.** B's probe medians grow 3.0,
+4.6 and 4.0 times for each doubling from 1,000 to 8,000. So the chain check is
+still quadratic, but the quadratic term is no longer termination. A
+`perf record --call-graph dwarf` profile of B's `qsl-bench-probe check chain
+8000` (1.19 s) attributes the samples, inclusive, as follows:
+
+- 45%: the duplicate-name check (`check/mod.rs:440-447`), with its `memcmp`;
+- 30%: `OccurrenceMap::record` (`check/family.rs:1164`);
+- 19%: `check_application`'s linear signature search;
+- 0.16%: the termination check.
+
+These are F7's lookup sites, which belong to QSL-205. The inclusive shares
+overlap, because `memcmp` samples unwind into more than one caller.
+
+The session is recorded as four collections under
+`spec/evidence/measurements/`, each holding every round and the load averages:
+
+- **Criterion rows (MP-002):** `qsl203-ab-a-checker-v2.json` and
+  `qsl203-ab-b-checker-v2.json`.
+- **Probe rows (MP-006):** `qsl203-ab-a-probe-v1.json` and
+  `qsl203-ab-b-probe-v1.json`. Wall time and peak RSS are separate
+  `quantity` dimensions.
+
+`quoin report --since 67f44989` compares A with B for both plans.
+
+### Per-component cost of the termination pass
+
+A review of the first fix found that `check` still did O(V) work per
+recursive component. It allocated a V-bit membership set per component and a
+V-length parent vector per refusal. So the pass was O(V × components) when
+every function is its own recursive component. The fix records one component
+id per member and shares one parent buffer.
+
+Informal timing only: `check` in `termination.rs` alone, on N self-recursive
+members with no measure, so N refused components. The command is
+`cargo test --release -p qsl-semantics termination_scaling -- --ignored
+--nocapture`.
+
+| N | Before (1 run) | After (3 runs) |
+| --- | --- | --- |
+| 5,000 | 10.1 ms | 2.2, 2.5, 2.3 ms |
+| 10,000 | 34.2 ms | 6.7, 4.4, 4.2 ms |
+| 20,000 | 138 ms | 10.5, 9.2, 8.5 ms |
+| 40,000 | 518 ms | 28.1, 18.6, 17.9 ms |
+
+Before, the time grew 3.4 to 4.1 times per doubling, which is quadratic. After,
+it grows about 2 times, which is linear. `qsl-bench-probe check
+self-recursive <n>` times the same shape through the whole check. There, the
+F7 lookup sites dominate, as they do on the chain.
+
 ## Engineering-assurance record
 
 The same benchmark set is recorded as engineering-assurance MeasurementPlans,
@@ -430,6 +534,10 @@ one per axis, at definition version `-v2`:
 - `spec/assurance/MP-003-cst-wall-time.md`
 - `spec/assurance/MP-004-model-wall-time.md`
 - `spec/assurance/MP-005-evaluator-wall-time.md`
+
+QSL-203 added `spec/assurance/MP-006-probe-check-wall-time-and-rss.md`, at
+`-v1`. It covers the probe's one-shot `check` runs, with wall time and peak
+RSS per input.
 
 MP-002 and MP-004 measure QSpec requirements that live in
 `agent-ix/quire-specification`, so they target
