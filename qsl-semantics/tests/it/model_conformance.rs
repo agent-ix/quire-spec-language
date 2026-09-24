@@ -1958,3 +1958,55 @@ fn an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses(
         other => panic!("expected Refused(AncestorSteps), got {other:?}"),
     }
 }
+
+/// QSL-199 AC-4, end to end: a model with more than 128 ancestors on one
+/// type normalizes at default (unlimited) limits, and the same model's
+/// redefinition then passes conformance. The removed fixed ceiling of 128
+/// on normalization's ancestor paths refused this before conformance ever
+/// ran.
+#[trace("TC-220", "FR-082-AC-3")]
+#[test]
+fn a_type_with_more_than_128_ancestors_normalizes_and_conforms_at_default_limits() {
+    const DEPTH: u64 = 130;
+    let domain_package = ancestor_chain_package(DEPTH);
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Completed(_) => {}
+        other => panic!("expected a completed effective view, got {other:?}"),
+    }
+    assert_eq!(
+        check_chain(DEPTH, ModelNormalizationLimits::UNLIMITED),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible),
+    );
+}
+
+/// TC-220 at normalization: an ancestor path of exactly `ancestor_steps`
+/// generalization steps normalizes, and one step longer refuses with
+/// `resource_exhausted` naming the configured bound.
+#[trace("TC-220", "FR-082-AC-3")]
+#[test]
+fn normalization_admits_an_ancestor_path_at_the_bound_and_refuses_one_longer() {
+    const BOUND: u64 = 40;
+    let limits = ModelNormalizationLimits {
+        ancestor_steps: BOUND,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    assert!(matches!(
+        normalize(&ancestor_chain_package(BOUND), limits),
+        NormalizeOutcome::Completed(_)
+    ));
+    match normalize(&ancestor_chain_package(BOUND + 1), limits) {
+        NormalizeOutcome::Refused(refusals) => {
+            assert_eq!(refusals.len(), 1);
+            let refusal = refusals.into_first();
+            assert_eq!(refusal.code, Code::ResourceExhausted);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::AncestorSteps {
+                    from: DeclarationKey::fixture("model.chain.0"),
+                    limit: BOUND,
+                }
+            );
+        }
+        other => panic!("expected Refused(AncestorSteps), got {other:?}"),
+    }
+}

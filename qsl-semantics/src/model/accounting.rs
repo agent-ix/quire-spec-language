@@ -24,11 +24,13 @@ pub struct ModelNormalizationLimits {
     pub hashed_bytes: u64,
     /// Cumulative work units.
     pub work_units: u64,
-    /// Ceiling on the types one conformance walk expands (the specific it
-    /// starts from included): a target `n` generalization steps up a chain
-    /// is reached at `ancestor_steps == n`. Read, not charged, by every
-    /// conformance, dispatch-applicability, dominance and systems-flow
-    /// check that owns a `Meter`. Reaching it refuses
+    /// Ceiling on generalization steps: the types one conformance walk
+    /// expands (the specific it starts from included), and the length of
+    /// any one ancestor path normalization enumerates. A target or ancestor
+    /// `n` generalization steps up a chain is reached at
+    /// `ancestor_steps == n`. Read, not charged, by normalization and by
+    /// every conformance, dispatch-applicability, dominance and
+    /// systems-flow check that owns a `Meter`. Reaching it refuses
     /// `ModelRefusalCause::AncestorSteps` naming this bound.
     pub ancestor_steps: u64,
     /// Ceiling on the `redefines` edges one dispatch-family walk follows,

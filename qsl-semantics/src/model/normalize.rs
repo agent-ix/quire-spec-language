@@ -586,21 +586,6 @@ impl ObjectUniverse {
     }
 }
 
-/// A generalization or field-member producer record is not visited more
-/// than this many times in one ancestor path before normalization refuses
-/// rather than recurse without bound.
-///
-/// #141 P2: this bounds a distinct recursion (the FR-150 generalization
-/// ancestor-path walk over a [`DomainPackage`]) from `crate::check::MAX_CHECKING_DEPTH`
-/// (Complete-V1 expression-checking recursion, `src/check/check.rs`).
-/// Both happen to be 128 because both were
-/// chosen as "a safe bound well inside the host stack" for their own
-/// recursion, not because one normatively constrains the other; nothing in
-/// FR-150 or FR-143 ties a model's generalization depth to an expression's
-/// checking depth. They are independent constants that coincide in value,
-/// not one limit duplicated.
-pub const MAX_GENERALIZATION_DEPTH: usize = 128;
-
 struct Index {
     /// Every declared object type, keyed by its own [`DeclarationKey`]
     /// (`package`/`node`). Under #131's flat key shape, two `ObjectType`
@@ -886,11 +871,18 @@ struct AncestorWalk {
 /// own cap, so closing extensions past that point are still discovered up
 /// to `cycle_budget`. Explicit stack, not native recursion: domain package
 /// data is caller-supplied and may describe a cycle.
+///
+/// `max_steps` is the caller's
+/// [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`],
+/// used as given: an ancestor path of `n` generalization steps is admitted
+/// at `max_steps == n`, and extending any path one step further refuses
+/// [`ModelRefusalCause::AncestorSteps`] naming `root_key` and the bound.
 fn ancestor_paths(
     root_key: &DeclarationKey,
     index: &Index,
     fact_budget: usize,
     cycle_budget: usize,
+    max_steps: u64,
 ) -> Result<AncestorWalk, ModelRefusal> {
     struct Frame {
         directs: Vec<DeclarationKey>,
@@ -917,14 +909,17 @@ fn ancestor_paths(
             stack.pop();
             continue;
         }
-        if stack_len >= MAX_GENERALIZATION_DEPTH {
+        // Extending this frame's path gives a path of `stack_len`
+        // generalization steps (the root frame's own path is empty).
+        if u64::try_from(stack_len).unwrap_or(u64::MAX) > max_steps {
             return Err(ModelRefusal {
                 code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::GeneralizationDepthExceeded {
-                    root: root_key.clone(),
+                cause: ModelRefusalCause::AncestorSteps {
+                    from: root_key.clone(),
+                    limit: max_steps,
                 },
                 detail: format!(
-                    "ancestor path from {} exceeds {MAX_GENERALIZATION_DEPTH} generalization records",
+                    "ancestor path from {} exceeded the ancestor_steps limit of {max_steps}",
                     root_key.node
                 ),
             });
@@ -1576,7 +1571,13 @@ fn build(
         // bookkeeping just below (the same F10 lesson applied there too).
         let fact_budget = remaining_fact_budget(limits, facts_so_far);
         let cycle_budget = remaining_cycle_budget(limits, facts_so_far);
-        let walk = ancestor_paths(type_key, &index, fact_budget, cycle_budget)?;
+        let walk = ancestor_paths(
+            type_key,
+            &index,
+            fact_budget,
+            cycle_budget,
+            limits.ancestor_steps,
+        )?;
         let paths = walk.paths;
         for ancestor in &paths {
             let inputs = ancestor.path.clone();

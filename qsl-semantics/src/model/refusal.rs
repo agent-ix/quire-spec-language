@@ -99,12 +99,6 @@ pub enum ModelRefusalCause {
         /// The effective identity at the out-of-order position.
         at: EffectiveId,
     },
-    /// An ancestor path exceeded [`crate::model::normalize::MAX_GENERALIZATION_DEPTH`]
-    /// generalization records.
-    GeneralizationDepthExceeded {
-        /// The ancestor path's root.
-        root: DeclarationKey,
-    },
     /// A type generalizes back to itself through its own ancestor path.
     SpecializationCycle {
         /// The ancestor that closes the cycle.
@@ -682,7 +676,6 @@ impl ModelRefusalCause {
             Self::NoApplicable => "no-applicable",
             Self::MultipleUndominated => "multiple-undominated",
             Self::UnsortedView { .. } => "unsorted-view",
-            Self::GeneralizationDepthExceeded { .. } => "generalization-depth-exceeded",
             Self::SpecializationCycle { .. } => "specialization-cycle",
             Self::UnknownOwner { .. } => "unknown-owner",
             Self::UnknownGeneral { .. } => "unknown-general",
@@ -790,7 +783,6 @@ impl ModelRefusalCause {
             | Self::ReservedPackageIdentity { .. }
             | Self::WrongModelSelection { .. } => "invalid_model_binding",
             Self::FamilySteps { .. }
-            | Self::GeneralizationDepthExceeded { .. }
             | Self::AncestorSteps { .. }
             | Self::IntakeLimitExceeded { .. } => "resource_exhausted",
             Self::UnclosedMethodSet
@@ -911,7 +903,6 @@ pub mod fixtures {
         NoApplicable => ModelRefusalCause::NoApplicable,
         MultipleUndominated => ModelRefusalCause::MultipleUndominated,
         UnsortedView => ModelRefusalCause::UnsortedView { at: effective_id() },
-        GeneralizationDepthExceeded => ModelRefusalCause::GeneralizationDepthExceeded { root: key("p") },
         SpecializationCycle => ModelRefusalCause::SpecializationCycle {
             ancestor: key("p"),
             via: key("p"),
@@ -1162,9 +1153,6 @@ pub(crate) mod tests {
             ModelRefusalCause::NoApplicable => "no-applicable",
             ModelRefusalCause::MultipleUndominated => "multiple-undominated",
             ModelRefusalCause::UnsortedView { .. } => "unsorted-view",
-            ModelRefusalCause::GeneralizationDepthExceeded { .. } => {
-                "generalization-depth-exceeded"
-            }
             ModelRefusalCause::SpecializationCycle { .. } => "specialization-cycle",
             ModelRefusalCause::UnknownOwner { .. } => "unknown-owner",
             ModelRefusalCause::UnknownGeneral { .. } => "unknown-general",
@@ -1270,7 +1258,6 @@ pub(crate) mod tests {
             ModelRefusalCause::WrongModelSelection { .. } => "invalid_model_binding",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "resource_exhausted",
             ModelRefusalCause::FamilySteps { .. } => "resource_exhausted",
-            ModelRefusalCause::GeneralizationDepthExceeded { .. } => "resource_exhausted",
             ModelRefusalCause::AncestorSteps { .. } => "resource_exhausted",
             ModelRefusalCause::UnclosedMethodSet => "incomplete_population",
             ModelRefusalCause::IncompleteScope { .. } => "incomplete_population",
