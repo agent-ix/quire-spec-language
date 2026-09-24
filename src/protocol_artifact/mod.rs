@@ -11,6 +11,7 @@
 
 mod checked_handoff;
 pub mod checked_predicate;
+mod content_identity;
 mod decode;
 mod encoding;
 pub mod handoff;

@@ -29,6 +29,10 @@ quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
 # not by this dependency edge itself -- every crate that depends on
 # `quire-exact` is in that check's scope, this one included as of this edit.
 quire-exact = { path = "quire-exact" }
+# ADR-013 §2 (ADR-013:113): the FR-051/FR-052 checked-handoff and
+# native-temporal document identities encode through the one RFC 8785
+# implementation (QSL-220).
+quire-canonical = { workspace = true }
 # ADR-011 §7.3 X-2 (QSL-177): layer F, extracted out of this crate.
 qsl-foundation = { path = "qsl-foundation" }
 # ADR-011 §7.3 X-3 (QSL-178): layer 1, extracted out of this crate.

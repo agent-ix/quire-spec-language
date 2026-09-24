@@ -21,8 +21,9 @@ object, a schema-valid object, or a caller assertion is never authority.
 
 Both documents use the same closed top-level order: `contract`, `identity`,
 `package`, `subject`, `source`, `clause`, `expression`, `bindings`, `type`,
-`profiles`, and `limits`. Their identity is SHA-256 over the contract domain,
-one zero byte, and the canonical document with the `identity` member omitted.
+`profiles`, and `limits`. Their identity is the `quire-canonical` SHA-256,
+under the contract label as digest domain, of the RFC 8785 encoding of the
+document with the `identity` member omitted (ADR-013 §2).
 The separate `Document::digest` is the raw SHA-256 of the complete bytes.
 
 `Limits::bounded` clamps caller ceilings to the owner maxima. Derivation and

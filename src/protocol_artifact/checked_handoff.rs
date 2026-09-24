@@ -7,9 +7,8 @@ use serde::{
     de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor},
     Serialize,
 };
-use sha2::{Digest as _, Sha256};
 
-use super::{v2, wire as w};
+use super::{content_identity, v2, wire as w};
 use qsl_foundation::ByteDigest;
 
 pub const MAX_INPUT_BYTES: usize = 8 * 1_048_576;
@@ -587,12 +586,20 @@ fn encode(value: &impl Serialize, limit: usize) -> Result<Vec<u8>, Error> {
     Ok(writer.finish())
 }
 
-fn hex_digest(domain: &str, bytes: &[u8]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(domain.as_bytes());
-    digest.update([0]);
-    digest.update(bytes);
-    format!("{:x}", digest.finalize())
+/// The FR-051 content identity: [`content_identity::of`] over the
+/// document's identity preimage under its contract label.
+fn identity(
+    contract: &str,
+    preimage: &IdentityPreimage<'_>,
+    limits: Limits,
+) -> Result<String, Error> {
+    content_identity::of(contract, preimage, limits.output_bytes, limits.json_depth).map_err(
+        |refusal| match refusal {
+            content_identity::Refusal::OutputBytes => exhausted("limits.output_bytes"),
+            content_identity::Refusal::JsonDepth => exhausted("limits.json_depth"),
+            content_identity::Refusal::NotEncodable => invalid_document("identity"),
+        },
+    )
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1666,8 +1673,7 @@ fn build(
         profiles: &wire.profiles,
         limits: &wire.limits,
     };
-    let preimage = encode(&preimage, limits.output_bytes)?;
-    wire.identity = hex_digest(contract, &preimage);
+    wire.identity = identity(contract, &preimage, limits)?;
     let bytes = encode(&wire, limits.output_bytes)?;
     if bytes.len() != wire.limits.measured.output_bytes {
         return Err(invalid_document("limits.measured.output_bytes"));

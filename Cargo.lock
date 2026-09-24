@@ -1601,6 +1601,7 @@ dependencies = [
  "qsl-route",
  "qsl-semantics",
  "qsl-source",
+ "quire-canonical",
  "quire-contract-codegen",
  "quire-contract-ir",
  "quire-contract-model",

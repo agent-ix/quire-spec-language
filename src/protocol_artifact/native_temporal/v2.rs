@@ -396,15 +396,13 @@ fn request_wire(
     };
     wire.identity = identity(
         REQUEST_CONTRACT,
-        &encode(
-            &RequestPreimage {
-                contract: &wire.contract,
-                trigger: &wire.trigger,
-                request: &wire.request,
-            },
-            limits,
-        )?,
-    );
+        &RequestPreimage {
+            contract: &wire.contract,
+            trigger: &wire.trigger,
+            request: &wire.request,
+        },
+        limits,
+    )?;
     Ok(wire)
 }
 
@@ -563,16 +561,14 @@ fn result_wire(
     };
     wire.identity = identity(
         RESULT_CONTRACT,
-        &encode(
-            &ResultPreimage {
-                contract: &wire.contract,
-                request_identity: &wire.request_identity,
-                trigger: &wire.trigger,
-                result: &wire.result,
-            },
-            limits,
-        )?,
-    );
+        &ResultPreimage {
+            contract: &wire.contract,
+            request_identity: &wire.request_identity,
+            trigger: &wire.trigger,
+            result: &wire.result,
+        },
+        limits,
+    )?;
     Ok(wire)
 }
 

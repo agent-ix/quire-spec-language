@@ -115,10 +115,6 @@ pub(crate) enum ExemptionKind {
     /// typed-record encoding, retiring with `NativePackage` at ADR-011 §7.3
     /// M-6c. It leaves this list in that change.
     SpecCarvedIdentity,
-    /// A canonical encoder of its own that predates QSL-194 and is outside
-    /// its scope: reported as debt on every run. It leaves this list in the
-    /// change that moves it to `quire-canonical`.
-    Debt,
 }
 
 /// One exemption: the file (its crate's source root and module path), the
@@ -205,19 +201,18 @@ pub(crate) const EXEMPT: &[Exemption] = &[
     Exemption {
         crate_src: "src",
         module: "protocol_artifact::checked_handoff",
-        functions: &["hex_digest", "build"],
-        kind: ExemptionKind::Debt,
-        reason: "the checked-handoff document identity hashes its `serde_json` struct-order \
-                 encoding, not RFC 8785; outside QSL-194's eight sites, moved by QSL-220",
+        functions: &["build"],
+        kind: ExemptionKind::NotAnIdentity,
+        reason: "the FR-051 `ByteDigest` of the checked-handoff document bytes it has just \
+                 emitted; the document's content identity is `quire-canonical`'s (QSL-220)",
     },
     Exemption {
         crate_src: "src",
         module: "protocol_artifact::native_temporal::common",
-        functions: &["identity", "raw_digest"],
-        kind: ExemptionKind::Debt,
-        reason: "the native-temporal request/result identities hash their `serde_json` \
-                 struct-order encoding, not RFC 8785; outside QSL-194's eight sites, moved \
-                 by QSL-220",
+        functions: &["raw_digest"],
+        kind: ExemptionKind::NotAnIdentity,
+        reason: "the FR-052 `ByteDigest` of native-temporal document bytes, emitted or \
+                 supplied; the documents' content identities are `quire-canonical`'s (QSL-220)",
     },
 ];
 
@@ -1069,7 +1064,6 @@ pub(crate) fn report(outcome: &Outcome) -> String {
         }
     }
     for (label, kind) in [
-        ("debt", ExemptionKind::Debt),
         ("spec-carved identity", ExemptionKind::SpecCarvedIdentity),
         ("exempt", ExemptionKind::NotAnIdentity),
     ] {
@@ -1372,7 +1366,6 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         let outcome = evaluate(dir.path()).unwrap();
         assert!(outcome.passed(), "{}", report(&outcome));
         for kind in [
-            ExemptionKind::Debt,
             ExemptionKind::SpecCarvedIdentity,
             ExemptionKind::NotAnIdentity,
         ] {

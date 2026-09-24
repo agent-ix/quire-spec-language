@@ -19,6 +19,7 @@ use quire_spec_language::{
 };
 use serde_json::Value;
 use setup::{Inputs, TemporalDefinitionExpectation, Unit};
+use sha2::{Digest as _, Sha256};
 
 #[derive(Clone, Copy)]
 enum FixtureProfile {
@@ -371,6 +372,71 @@ fn assert_schema(schema: &[u8], expected_digest: &str, bytes: &[u8]) {
         .expect("schema compiles");
     let value: Value = serde_json::from_slice(bytes).expect("canonical document JSON");
     assert!(validator.is_valid(&value));
+}
+
+/// QSL-220: the identity of `value` (a document or a position) under
+/// `domain`, recomputed from the parsed JSON rather than the producer's
+/// structs: `identity` removed, RFC 8785 text from `quire-canonical`, and
+/// the `u64be(len(domain)) || domain || text` frame hashed here by hand.
+fn assert_identity(value: &Value, domain: &str) {
+    let mut preimage = value.clone();
+    let identity = preimage
+        .as_object_mut()
+        .expect("identity-bearing object")
+        .remove("identity")
+        .expect("identity member");
+    let limits = quire_canonical::Limits::new(1 << 24, 64).expect("limits");
+    let text = quire_canonical::to_vec(&preimage, limits).expect("RFC 8785 preimage");
+    let mut digest = Sha256::new();
+    digest.update((domain.len() as u64).to_be_bytes());
+    digest.update(domain.as_bytes());
+    digest.update(&text);
+    assert_eq!(identity, format!("{:x}", digest.finalize()));
+}
+
+#[trace("TC-140", "FR-052-AC-4")]
+#[test]
+fn request_result_and_position_identities_are_rfc_8785_over_parsed_documents() {
+    with_package(
+        FixtureProfile::Event,
+        "holds(view.ready)",
+        |package, declaration| {
+            let subject = checked_subject(package, declaration);
+            let leaf = leaf(package, declaration);
+            let document = request::produce(
+                &subject,
+                input(leaf, true, "correspondence:1"),
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("produce request");
+            let value: Value = serde_json::from_slice(document.bytes()).expect("request JSON");
+            assert_identity(&value, native_temporal::REQUEST_CONTRACT);
+            assert_eq!(value["identity"], document.identity());
+            let positions = value["positions"].as_array().expect("positions");
+            assert!(!positions.is_empty());
+            for position in positions {
+                assert_identity(position, "quire.native-temporal-position/v1");
+            }
+            let request = request::read(
+                document.bytes(),
+                &subject,
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("strict-read request");
+            let document = result::evaluate(
+                &request,
+                result::Relation::Original,
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("evaluate formula-wide result");
+            let value: Value = serde_json::from_slice(document.bytes()).expect("result JSON");
+            assert_identity(&value, native_temporal::RESULT_CONTRACT);
+            assert_eq!(value["identity"], document.identity());
+        },
+    );
 }
 
 #[trace(

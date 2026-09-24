@@ -23,7 +23,7 @@ use qsl_foundation::ByteDigest;
 pub const SCHEMA_BYTES: &[u8] =
     include_bytes!("../../../schemas/native-temporal-request-v1.schema.json");
 /// SHA-256 digest of [`SCHEMA_BYTES`].
-pub const SCHEMA_SHA256: &str = "2539140ff1f6fb5e481e5ae658b81c325a284bfcd85cc5c048ea1d49c4dfdebe";
+pub const SCHEMA_SHA256: &str = "00299832fa452490f169adbada12985666e7e9232b0b6a53f0ac1686f69c514f";
 /// Exact request contract selection.
 pub const CONTRACT: &str = REQUEST_CONTRACT;
 
@@ -699,28 +699,25 @@ fn eviction_from_wire(value: &EvictionWire) -> Result<temporal::Eviction, Error>
     })
 }
 
-fn preimage(wire: &Wire, limits: Limits) -> Result<Vec<u8>, Error> {
-    encode(
-        &Preimage {
-            contract: &wire.contract,
-            subject: &wire.subject,
-            instance: &wire.instance,
-            anchor: &wire.anchor,
-            correspondence: &wire.correspondence,
-            definition: &wire.definition,
-            positions: &wire.positions,
-            triggers: &wire.triggers,
-            trigger_evidence: wire.trigger_evidence,
-            trigger_scope: wire.trigger_scope,
-            axes: &wire.axes,
-            execution: wire.execution,
-            completeness: &wire.completeness,
-            authoritative_origin: wire.authoritative_origin,
-            evicted: &wire.evicted,
-            limits: wire.limits,
-        },
-        limits,
-    )
+fn preimage(wire: &Wire) -> Preimage<'_> {
+    Preimage {
+        contract: &wire.contract,
+        subject: &wire.subject,
+        instance: &wire.instance,
+        anchor: &wire.anchor,
+        correspondence: &wire.correspondence,
+        definition: &wire.definition,
+        positions: &wire.positions,
+        triggers: &wire.triggers,
+        trigger_evidence: wire.trigger_evidence,
+        trigger_scope: wire.trigger_scope,
+        axes: &wire.axes,
+        execution: wire.execution,
+        completeness: &wire.completeness,
+        authoritative_origin: wire.authoritative_origin,
+        evicted: &wire.evicted,
+        limits: wire.limits,
+    }
 }
 
 fn required_leaves(subject: &ValidatedTemporalSubject) -> BTreeMap<u32, w::Handle> {
@@ -1082,16 +1079,14 @@ fn validate_wire(
             .ok_or_else(|| exhausted("limits.valuations"))?;
         let expected = identity(
             "quire.native-temporal-position/v1",
-            &encode(
-                &PositionPreimage {
-                    observation: &position.observation,
-                    coordinate: position.coordinate,
-                    order: &position.order,
-                    valuations: &position.valuations,
-                },
-                document_limits,
-            )?,
-        );
+            &PositionPreimage {
+                observation: &position.observation,
+                coordinate: position.coordinate,
+                order: &position.order,
+                valuations: &position.valuations,
+            },
+            document_limits,
+        )?;
         if position.identity != expected {
             return Err(invalid("positions.identity"));
         }
@@ -1282,16 +1277,14 @@ fn build_wire(
         });
         let position_identity = identity(
             "quire.native-temporal-position/v1",
-            &encode(
-                &PositionPreimage {
-                    observation: &observed.observation,
-                    coordinate: observed.position.coordinate,
-                    order: &order,
-                    valuations: &valuations,
-                },
-                limits,
-            )?,
-        );
+            &PositionPreimage {
+                observation: &observed.observation,
+                coordinate: observed.position.coordinate,
+                order: &order,
+                valuations: &valuations,
+            },
+            limits,
+        )?;
         positions.push(PositionWire {
             identity: position_identity,
             observation: observed.observation,
@@ -1379,7 +1372,7 @@ fn build_wire(
         evicted,
         limits: limits.try_into()?,
     };
-    wire.identity = identity(CONTRACT, &preimage(&wire, limits)?);
+    wire.identity = identity(CONTRACT, &preimage(&wire), limits)?;
     Ok(wire)
 }
 
@@ -1431,7 +1424,7 @@ pub fn read(
         if bytes.len() > document_limits.output_bytes {
             return Err(exhausted("limits.output_bytes"));
         }
-        if wire.identity != identity(CONTRACT, &preimage(&wire, limits)?) {
+        if wire.identity != identity(CONTRACT, &preimage(&wire), limits)? {
             return Err(invalid("identity"));
         }
         let canonical = encode(&wire, limits)?;

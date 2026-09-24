@@ -17,7 +17,7 @@ use qsl_foundation::ByteDigest;
 pub const SCHEMA_BYTES: &[u8] =
     include_bytes!("../../../schemas/native-temporal-result-v1.schema.json");
 /// SHA-256 digest of [`SCHEMA_BYTES`].
-pub const SCHEMA_SHA256: &str = "e55e15cc852f0145244d233ca5c88381e0969daf25f644e45a4da3362b611e28";
+pub const SCHEMA_SHA256: &str = "ba5310e484a7a16a11061e1072a4d2640485cc70b88ef4599d6ec2b5ae125683";
 /// Exact result contract selection.
 pub const CONTRACT: &str = RESULT_CONTRACT;
 
@@ -480,29 +480,26 @@ struct Preimage<'a> {
     lineage: u64,
 }
 
-fn preimage(wire: &Wire, limits: Limits) -> Result<Vec<u8>, Error> {
-    encode(
-        &Preimage {
-            contract: &wire.contract,
-            revision: wire.revision,
-            relation: &wire.relation,
-            request: &wire.request,
-            subject_identity: &wire.subject_identity,
-            instance: &wire.instance,
-            correspondence: &wire.correspondence,
-            activation: wire.activation,
-            execution: wire.execution,
-            truth: wire.truth,
-            non_value: &wire.non_value,
-            settlement: wire.settlement,
-            axes: &wire.axes,
-            completeness: &wire.completeness,
-            support: &wire.support,
-            limits: wire.limits,
-            lineage: wire.lineage,
-        },
-        limits,
-    )
+fn preimage(wire: &Wire) -> Preimage<'_> {
+    Preimage {
+        contract: &wire.contract,
+        revision: wire.revision,
+        relation: &wire.relation,
+        request: &wire.request,
+        subject_identity: &wire.subject_identity,
+        instance: &wire.instance,
+        correspondence: &wire.correspondence,
+        activation: wire.activation,
+        execution: wire.execution,
+        truth: wire.truth,
+        non_value: &wire.non_value,
+        settlement: wire.settlement,
+        axes: &wire.axes,
+        completeness: &wire.completeness,
+        support: &wire.support,
+        limits: wire.limits,
+        lineage: wire.lineage,
+    }
 }
 
 fn dimension(value: temporal::Dimension) -> &'static str {
@@ -828,7 +825,7 @@ fn build(
         limits: limits.try_into()?,
         lineage,
     };
-    wire.identity = identity(CONTRACT, &preimage(&wire, limits)?);
+    wire.identity = identity(CONTRACT, &preimage(&wire), limits)?;
     Ok(wire)
 }
 
@@ -873,7 +870,7 @@ pub fn read(
         validate_digest(&offered.identity, "identity")?;
         let expected = build(request, relation, limits, &mut usage)?;
         if offered != expected
-            || offered.identity != identity(CONTRACT, &preimage(&offered, limits)?)
+            || offered.identity != identity(CONTRACT, &preimage(&offered), limits)?
         {
             return Err(error(ErrorCode::NonCanonical, "document"));
         }
