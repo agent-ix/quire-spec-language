@@ -1084,7 +1084,11 @@ pub fn resolve_source_package(
     for len in resolved
         .values()
         .map(|definition| definition.exact_bytes.len())
-        .chain(resolved_models.values().map(|model| model.exact_bytes.len()))
+        .chain(
+            resolved_models
+                .values()
+                .map(|model| model.exact_bytes.len()),
+        )
     {
         limits
             .check_single_artifact(len)

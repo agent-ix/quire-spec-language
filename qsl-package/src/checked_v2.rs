@@ -102,8 +102,8 @@ mod tests;
 /// `strict_json_value` inherits because it never calls
 /// `disable_recursion_limit`: a wire nested deeper is refused as malformed
 /// before any depth ceiling is consulted, so no `depth` above this is
-/// actually enforced. An IR-side defect, not a bound of this reader; remove
-/// it once IR parses without the cap.
+/// actually enforced. An IR-side defect tracked by IR-279, not a bound of
+/// this reader; remove it once IR parses without the cap.
 const SERDE_JSON_RECURSION_LIMIT: usize = 128;
 
 /// Every ceiling of one [`read_checked_package_v2`] call (see the module

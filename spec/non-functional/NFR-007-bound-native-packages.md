@@ -20,20 +20,31 @@ If the next package operation exceeds its selected ceiling, then the native pack
 ## Scope
 
 One NativePackage construction or raw read/rebind request. Package limits are
-inclusive unsigned counts with defaults equal to hard ceilings; callers may
-lower each independently and elevated options clamp. Parse/link/check retain
+inclusive unsigned counts supplied by the caller. The values below are the
+default ceilings a caller gets when it configures none; a caller may set each
+independently above or below its default, the ceiling is used as given, and the
+ceilings a read was checked against are recorded with its result. An
+implementation ceiling is not a domain bound (NFR-001). Parse/link/check retain
 their existing independent limits and meanings. No budget becomes a domain,
 population or backend-fuel bound.
+
+Two current exceptions, both tracked rather than normative. The checked-package
+v2 reader parses through IR's `strict_json_value`, which inherits serde_json's
+fixed 128-container recursion cap; a deeper wire is refused as malformed before
+the caller's nesting ceiling is consulted, so the recorded nesting ceiling is at
+most 128 until IR-279 removes that cap. The native v1 package path (the root
+crate's `package`, SEAM-1) still clamps elevated options to the defaults until
+ADR-011 §7.3 M-6c retires it.
 
 ## Measurement and Evaluation
 
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
-| Offered package bytes | At most 16777216 bytes before hashing or decoding | 16777216 bytes | negative-abuse-testing |
-| Emitted package bytes | At most 16777216 bytes before each append | 16777216 bytes | negative-abuse-testing |
-| Inspected package string content | At most 16777216 decoded UTF-8 bytes per pass | 16777216 bytes | negative-abuse-testing |
-| Package entries | At most 100000 aggregate object members and array elements per pass | 100000 entries | negative-abuse-testing |
-| JSON nesting | At most 128 entered containers per pass | 128 containers | negative-abuse-testing |
+| Offered package bytes | At most the selected ceiling (default 16777216 bytes) before hashing or decoding | 16777216 bytes by default | negative-abuse-testing |
+| Emitted package bytes | At most the selected ceiling (default 16777216 bytes) before each append | 16777216 bytes by default | negative-abuse-testing |
+| Inspected package string content | At most the selected ceiling (default 16777216 decoded UTF-8 bytes) per pass | 16777216 bytes by default | negative-abuse-testing |
+| Package entries | At most the selected ceiling (default 100000 aggregate object members and array elements) per pass | 100000 entries by default | negative-abuse-testing |
+| JSON nesting | At most the selected ceiling (default 128 entered containers) per pass | 128 containers by default | negative-abuse-testing |
 
 ## Counter definitions
 
@@ -75,7 +86,7 @@ The bounds describe content/work, not caller allocations or allocator capacity.
 ## Verification
 
 Use generated closed records, long escaped/Unicode strings, ordered inventories
-and malformed nested payloads. Test zero, exact, one-below, elevated hard options
+and malformed nested payloads. Test zero, exact, one-below, elevated options
 and one-over input for each independent dimension. Delimiters inside strings
 must not count as containers. When an upstream or other content ceiling stops
 first, record that coupling and use a lowered isolated limit; do not claim an
