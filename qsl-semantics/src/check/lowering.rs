@@ -379,8 +379,7 @@ fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusa
     }
 }
 
-/// `name`'s `::`-separated segments, each an identifier.
-/// One step of [`Lowering::type_node_at`]'s loop.
+/// One step of [`Lowering::type_node`]'s loop.
 enum TypeStep<'v> {
     /// Build the node of this type at this nesting depth.
     Descend(&'v ValueType, u64),
@@ -439,6 +438,7 @@ enum OpenComposite<'v> {
     Open(CompositeFrame<'v>),
 }
 
+/// `name`'s `::`-separated segments, each an identifier.
 fn qualified_name(name: &str, location: &Location) -> Result<Vec<Identifier>, CheckRefusal> {
     name.split("::")
         .map(|segment| {
@@ -1003,33 +1003,22 @@ impl<'a> Lowering<'a> {
         )
     }
 
-    /// The FR-092 type node of `value_type`.
-    pub(crate) fn type_node(
-        &mut self,
-        value_type: &ValueType,
-        location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
-        self.type_node_at(value_type, location, 0)
-    }
-
-    /// The FR-092 type node of `value_type` at nesting `depth`, built
-    /// without native recursion (QSL-224): each `option`, collection and
-    /// declared composite still being built is a [`TypeFrame`] on an
-    /// explicit stack, so a long composite chain costs heap, not stack.
-    /// Nodes are built, charged and refused in the order a depth-first
-    /// recursive build would reach them, so every key is the recursive
-    /// build's key.
-    fn type_node_at<'v>(
+    /// The FR-092 type node of `value_type`, built without native
+    /// recursion (QSL-224): each `option`, collection and declared
+    /// composite still being built is a [`TypeFrame`] on an explicit stack,
+    /// so a long composite chain costs heap, not stack. Nodes are built,
+    /// charged and refused in the order a depth-first recursive build would
+    /// reach them, so every key is the recursive build's key.
+    pub(crate) fn type_node<'v>(
         &mut self,
         value_type: &'v ValueType,
         location: &Location,
-        depth: u64,
     ) -> Result<NodeKey, CheckRefusal>
     where
         'a: 'v,
     {
         let open = self.composites_in_progress.len();
-        let built = self.build_type_node(value_type, location, depth);
+        let built = self.build_type_node(value_type, location);
         if built.is_err() {
             // The composites a refusal left mid-build are no longer being
             // built.
@@ -1038,19 +1027,18 @@ impl<'a> Lowering<'a> {
         built
     }
 
-    /// [`Self::type_node_at`]'s loop: descend into a type, or hand a built
+    /// [`Self::type_node`]'s loop: descend into a type, or hand a built
     /// node's key to the frame waiting for it.
     fn build_type_node<'v>(
         &mut self,
         value_type: &'v ValueType,
         location: &Location,
-        depth: u64,
     ) -> Result<NodeKey, CheckRefusal>
     where
         'a: 'v,
     {
         let mut frames: Vec<TypeFrame<'v>> = Vec::new();
-        let mut step = TypeStep::Descend(value_type, depth);
+        let mut step = TypeStep::Descend(value_type, 0);
         loop {
             step = match step {
                 TypeStep::Descend(value_type, depth) => {
@@ -1386,7 +1374,7 @@ impl<'a> Lowering<'a> {
         declaration: NodeKey,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        self.type_node_at(&ValueType::Composite(declaration), location, 0)
+        self.type_node(&ValueType::Composite(declaration), location)
     }
 
     /// The node of the declared composite `declaration` (FR-092-AC-12): its
