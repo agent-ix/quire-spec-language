@@ -44,5 +44,6 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
 ## Status
 
-Planned; QSL-6 S1b, after QSL-156 A4b. Emission needs the edition lock
-evidence (ADR-011 §2.4).
+Planned; QSL-6 S1b, after QSL-156 A4b merges. `qsl-package/src/emit.rs`
+refuses every non-empty graph. Emission needs the edition lock evidence
+(ADR-011 §2.4).

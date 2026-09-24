@@ -258,6 +258,15 @@ node. A declared unit `u` and the
 single-term compound unit `u^1` are different `UnitId`s (ADR-013 OQ-B), so
 they have different type nodes.
 
+A function body that divides by a quantity refuses with
+`undefined_expression`/`unproved-nonzero`: a checked quantity type carries no
+value interval, so no guard proves a quantity divisor nonzero (QSpec FR-146;
+the `Quantity` divide arm of `check::facts`). A checked graph therefore
+holds a compound unit that a product forms, such as `metre^2` (U1), and
+holds no quotient unit. FR-094-AC-6 keys the quotient units U2 to U4 from
+the units `value::quantity::result_unit` forms, which is the forming `check`
+does while it types a quantity division.
+
 ### Refusals
 
 `check` SHALL treat each of these as an internal fault (ADR-013 T-4), and
@@ -325,9 +334,10 @@ from `node-identity-vectors.json`.
 | E9 | `r.size()` | `67f570ddfd532c675660a9de1905343e584ae1619e9c74da7841f814848c754a` |
 | C1 | precondition clause `true` of `Order.size`, owner (`acme/orders`, `1.0.0`, `ix://acme/orders/Order/size`) | `567f6e55089324764527c7cc661808e978d3fdd02b62cd3f1862f9d2459d6de5` |
 | C2 | body clause `7` of `Order.size`, same owner | `a2be10dad6258af275904e90773db5b79ccfe0ac0b2ffa9049fbc6e54953df2e` |
-| C3 | C1 under version `2.0.0` | `9643a1e286228c422b751190c7da7a416d592350e7b0866195a44a9e951d3f05` |
+| C3 | precondition clause `true` of `Order.size` under `2.0.0`, owner (`acme/orders`, `2.0.0`, `ix://acme/orders/Order/size`), over receiver P9 | `b7c63298353e64b91dd476034630bf49188ff08b150b32e1b5f0c28eb574eccb` |
 | C4 | precondition clause `true` of `Order.count`, version `1.0.0` | `74f04abba7588360c48d3ff9886ee7ea456f4c2974ca8c7ed16ba24c66bfc262` |
 | P8 | parameter `self: Reference<M::Sub>`, level 0 | `592fbbbb728689c375cbc2dd4fcaeb0a78eb2aded527f019e6a772779aff7de3` |
+| P9 | parameter `self: Reference<M::Order>` under `2.0.0` (R2), level 0 | `ec2534402cf059f30cdcec96215bf217293403905005752de0638147f32c8a7a` |
 | L4 | literal `false` | `8bb6712f3a140ad8734b07cd2c08a750b1cc60b224bc57507c4618dfd2b0b7ef` |
 | E10 | `false or true`, the effective precondition of `Sub.size` | `37f0058fabf962156a74b6a7047c8e0f7e73461f34b0ac425f027402a4e6bd8e` |
 | C5 | precondition clause `false` authored on `Sub.size`, owner (`acme/orders`, `1.0.0`, `ix://acme/orders/Sub/size`) | `07dab295bf40295ce4444eb2db80429ec1fe54b43db58a8b5b53947e45351c09` |
@@ -553,13 +563,13 @@ Key: `567f6e55089324764527c7cc661808e978d3fdd02b62cd3f1862f9d2459d6de5`
 
 Key: `a2be10dad6258af275904e90773db5b79ccfe0ac0b2ffa9049fbc6e54953df2e`
 
-**C3**: C1 under version `2.0.0`
+**C3**: precondition clause `true` of `Order.size` under `2.0.0`, owner (`acme/orders`, `2.0.0`, `ix://acme/orders/Order/size`), over receiver P9
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"19bc028b702b7a38bae66e7cc7db5e48876b564360ce0fd51eae50ff79e76060","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"clause","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"precondition","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"function","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/Order/size","version":"2.0.0"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ec2534402cf059f30cdcec96215bf217293403905005752de0638147f32c8a7a","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"clause","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"precondition","value_kind":"text"}}],"term":"aggregate"},"declaration":null,"node_tag":"function","owner":{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/Order/size","version":"2.0.0"},"recursion":null,"semantic_form":"pure_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `9643a1e286228c422b751190c7da7a416d592350e7b0866195a44a9e951d3f05`
+Key: `b7c63298353e64b91dd476034630bf49188ff08b150b32e1b5f0c28eb574eccb`
 
 **C4**: precondition clause `true` of `Order.count`, version `1.0.0`
 
@@ -576,6 +586,14 @@ Key: `74f04abba7588360c48d3ff9886ee7ea456f4c2974ca8c7ed16ba24c66bfc262`
 ```
 
 Key: `592fbbbb728689c375cbc2dd4fcaeb0a78eb2aded527f019e6a772779aff7de3`
+
+**P9**: parameter `self: Reference<M::Order>` under `2.0.0` (R2), level 0
+
+```json
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"self","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"a9f64ef00422a3f485c57c5a646e6996f3daf37981c70a4fbbf0dde7b82645e6","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `ec2534402cf059f30cdcec96215bf217293403905005752de0638147f32c8a7a`
 
 **L4**: literal `false`
 
@@ -656,8 +674,8 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 | FR-094-AC-2 | Checking `function g using v(r: Reference<M::Order>, s: Reference<M::Invoice>): Boolean pure { true }` records exactly two model correspondence entries, (M1, `ix://acme/orders/Order`'s `DeclarationKey`) and (M3, `ix://acme/orders/Invoice`'s), and no entry names a clause function or a type node. | Test (TC-417) |
 | FR-094-AC-3 | In functions over the parameters `p: Population<M::Order>[3]` and `r: Reference<M::Order>`, in that order, `p`'s parameter node keys to P5 over type node PO1, whose `semantic_type` is S1, and `r`'s to P6. `allInstances<M::Order>(p)` keys to E4 with `result_type` S2, `lookup<M::Order>(p, r) absent undefined` to E5 with `result_type` R1, and `lookup<M::Order>(p, r) absent empty` to E6 with `result_type` R3. `p: Population<M::Order>[5]` has type node PO2, and `Population<M::Invoice>[3]` has PO3, which differs from PO1. | Test (TC-417) |
 | FR-094-AC-4 | With `r: Reference<M::Order>` at level 1, `deref(r).total` lowers to E7 and E8, whose `field` member names M1 and `total`, and `r.size()` keys to E9, whose `operation` member names M1 and `size`. `deref(s).total` and `s.size()` over `s: Reference<M::Sub>` (R4) name `Sub`'s model node M5, not M1. | Test (TC-417) |
-| FR-094-AC-5 | `checked_dispatch_operation` for `Order.size` with the authored precondition `true` and the body `7`, and receiver parameter `self: Reference<M::Order>` (P7), builds clause functions keyed C1 and C2. Under `acme/orders` `2.0.0` the precondition keys to C3. The same precondition authored on `Order.count` keys to C4. When `Sub.size` redefines `Order.size` with the authored precondition `false` and receiver `self: Reference<M::Sub>` (P8), its authored precondition keys to C5 and its effective precondition `false or true` (E10) to C6, whose owner is `Sub.size`, while `Order.size`'s authored function keeps C1. Each preimage carries `ModelOwner` and `declaration` `null`. Rebuilding with a different synthesized label gives the same keys, and building `Sub.size`'s clauses from both dispatch operations gives one node each. | Test (TC-418) |
-| FR-094-AC-6 | With `a` a quantity of QSpec's declared unit `metre` and `t` one of `second`, `a`'s parameter has semantic type `79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4`, QSpec's `unit-metre` key, and the graph holds no `compound_unit` node for it. The result types of `a * a`, `a / t`, `a / a` and `a * a / a` key to U1, U2, U3 and U4. U2's first term names metre, and U4 differs from the `metre` unit key. | Test (TC-419) |
+| FR-094-AC-5 | `checked_dispatch_operation` for `Order.size` with the authored precondition `true` and the body `7`, and receiver parameter `self: Reference<M::Order>` (P7), builds clause functions keyed C1 and C2. Under `acme/orders` `2.0.0`, the receiver parameter keys to P9 over R2 and the precondition to C3, which references P9. The same precondition authored on `Order.count` keys to C4. When `Sub.size` redefines `Order.size` with the authored precondition `false` and receiver `self: Reference<M::Sub>` (P8), its authored precondition keys to C5 and its effective precondition `false or true` (E10) to C6, whose owner is `Sub.size`, while `Order.size`'s authored function keeps C1. Each preimage carries `ModelOwner` and `declaration` `null`. Rebuilding with a different synthesized label gives the same keys, and building `Sub.size`'s clauses from both dispatch operations gives one node each. | Test (TC-418) |
+| FR-094-AC-6 | With `a` a quantity of QSpec's declared unit `metre` and `t` one of `second`, `a`'s parameter has semantic type `79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4`, QSpec's `unit-metre` key, and the graph holds no `compound_unit` node for it. In a function body, the result type of `a * a` keys to U1. The compound units that `value::quantity::result_unit` forms for `a / t`, `a / a` and `(a * a) / a`, held in the check stage's unit scope, key to U2, U3 and U4. U2's first term names metre, and U4 differs from the `metre` unit key. | Test (TC-419) |
 | FR-094-AC-7 | Keying a `Reference` whose `EffectiveId` is no `type_identities` value, a `DeclarationKey` whose `package` is no admitted identity, a `DeclarationKey` whose `node` is empty, a compound `UnitId` the unit scope does not hold, and a field member record reaching the record-kind `match` each refuses as an internal fault naming that value, and yields no key. | Test (TC-417, TC-419) |
 
 ## Dependencies
@@ -689,22 +707,15 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 
 ## Status
 
-Specified under QSL-210. Not implemented. QSL-156 slice A4b implements it with
-FR-092 and FR-093. TC-417 to TC-419 are planned. What the code has today:
-
-- `check` mints no model declaration node key. `PackageDeclarations::
-  model_correspondence` is caller-supplied and every production caller leaves
-  it empty (`qsl-semantics/src/check/check.rs`).
-- The kernel `ValueType::Population(u64)` carries `N` only. `T` is in the type
-  form (`qsl-forms` `TypeForm`), so A4b builds the `Population` node from the
-  resolved form or extends the checked type to carry `T`.
-- `ValueType::Quantity(UnitId)` holds a compound unit's digest only; the terms
-  are in the `TypeEnvironment`'s unit table.
-- `checked_dispatch_operation` names its clause functions
-  `<member node>.precondition`, `<candidate node>.precondition.effective` and
-  `<candidate node>`, and builds no key for them. `FunctionDeclaration`
-  carries neither the owning `DeclarationKey` nor the `DomainPackageRef`, and
-  stores the four-variant `ClauseKind`; A4b supplies the owner and the
-  `DeclaredClauseKind` with each clause function.
-- The checker's formed compound units live in `UnitScope` only while an
-  expression is typed (`qsl-semantics/src/check/check.rs`).
+Specified under QSL-210; C3's receiver (P9) and AC-6's quotient units
+corrected under QSL-211. Implemented on the QSL-156 slice A4b branch
+(`task/156-a4b-application-key`), pending merge:
+`qsl-semantics/src/check/lowering/model.rs` keys the model declaration,
+`Reference`, `Population`, clause-function and quantity type nodes, `check`
+records the model correspondence, `check::checked_dispatch_operation` gives
+each clause function its `ModelOwner` and `DeclaredClauseKind`, and the unit
+scope keeps its formed units until lowering has keyed them. TC-417, TC-418
+and TC-419 back AC-1 to AC-7, CON-1 and CON-2 there. The A4b test of
+AC-5's `2.0.0` half asserts only the owner and a key other than C1, because
+the earlier C3 held the `1.0.0` receiver P7; the corrected C3, over P9, is
+the key it reaches.
