@@ -18,7 +18,8 @@ const PACKAGES: u64 = 192;
 /// each package, ascending by key: the key's 32 bytes, the preimage's length
 /// as a big-endian `u64`, then the preimage. Recorded from the lowering
 /// before QSL-221, which keyed every node in full on every build (at
-/// 0f7db2d6; the revision is informational). A change that means to change
+/// 0f7db2d6, and again at 4ba5c0ce after QSL-233's source owners; the
+/// revisions are informational). A change that means to change
 /// a key records the new digest with the vectors it changes.
 const CORPUS_DIGEST: &str = "3ea3f638522493bb559bb1194bffb03eface9d9b74c9de7795f3b78d42b4fa9a";
 
@@ -134,7 +135,7 @@ fn package(seed: u64) -> PackageDeclarations {
             )
         })
         .collect();
-    let mut declarations = PackageDeclarations::new(fixture_owner());
+    let mut declarations = PackageDeclarations::new(fixture_source());
     if seed.is_multiple_of(3) {
         let list = || TypeForm::name("List", SPAN);
         for name in ["eq_a", "eq_b"] {
@@ -202,7 +203,7 @@ fn built_types(
     value_types: &[ValueType],
     hash: fn(&NodeContent) -> u64,
 ) -> (Vec<NodeKey>, Vec<(NodeKey, Vec<u8>)>) {
-    let owner = fixture_owner();
+    let owner = SourceOwner::from(&fixture_source());
     let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
     let location = generated_location();
