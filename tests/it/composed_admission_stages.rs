@@ -539,6 +539,29 @@ fn deleting_either_requested_entry_fails_the_requested_inventory_check() {
     );
 }
 
+/// FR-057 "Kind applicability": each of the ten kinds applies to exactly
+/// the one family the table gives it.
+#[test]
+#[trace("TC-115", "FR-057-AC-11")]
+fn each_kind_applies_to_exactly_its_tabled_family() {
+    let expected = |kind: Capability| match kind {
+        Capability::ValueValidity => Family::Predicate,
+        Capability::OperationContract => Family::State,
+        Capability::TemporalSatisfaction => Family::Temporal,
+        Capability::FiniteReplay
+        | Capability::GlobalConformance
+        | Capability::Monitorability
+        | Capability::LocalProjection
+        | Capability::Refinement
+        | Capability::Realizability
+        | Capability::Composition => Family::Protocol,
+    };
+    assert_eq!(Capability::ALL.len(), 10);
+    for &kind in Capability::ALL {
+        assert_eq!(requests::families(kind), &[expected(kind)], "{kind:?}");
+    }
+}
+
 /// FR-077: `InapplicableCapability` survives the backend-disposition removal
 /// unchanged -- it is a structural check (does this capability kind apply to
 /// this declaration's family at all, per `requests::families`), independent

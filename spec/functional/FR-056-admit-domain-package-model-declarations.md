@@ -83,24 +83,31 @@ The compiler SHALL parse the selected bytes once, and SHALL take the package's
 `sha256-jcs` digest as SHA-256 over the RFC 8785 encoding of that one parsed
 document, computed by `quire-canonical`.
 
-If the selected bytes are not UTF-8, do not parse as JSON, carry a lone UTF-16
-surrogate escape (a `\uD800`-`\uDFFF` escape that is not a high surrogate
-followed by a low surrogate), or carry a number with no finite IEEE 754 double
-value (such as `1e400`), then the compiler SHALL refuse the package with
-`invalid_model_binding`/`malformed-declaration` at the document root `$` and
-SHALL admit no declaration. RFC 8785 encodes none of these inputs.
+A document does not parse when its bytes are not UTF-8 or not JSON, carry a
+lone UTF-16 surrogate escape (a `\uD800`-`\uDFFF` escape that is not a high
+surrogate followed by a low surrogate), or carry a number with no finite IEEE
+754 double value (such as `1e400`). RFC 8785 encodes none of these inputs, so
+such a document has no `sha256-jcs` digest.
+
+If the selected bytes do not parse, then the compiler SHALL take check 3's
+digest over the raw bytes, and SHALL read no package identity or version for
+check 4. Such bytes therefore refuse
+`stale_dependency`/`byte-digest-mismatch` under any `sha256-jcs` digest, and
+`invalid_model_binding`/`wrong-model-selection` when the selected digest
+happens to equal their raw digest. No declaration is admitted.
 
 When a document carries an integer whose magnitude exceeds 2^53, the compiler
 SHALL encode it for the digest as the IEEE 754 double nearest to it, ties to
 even, as RFC 8785 reads every number. Every spelling of one double therefore
 has one digest: `18446744073709551615` and `18446744073709551616` both digest
-as `18446744073709552000`. Declarations read the integer exactly as written;
-only the digest reads the double.
+as `18446744073709552000`. Declarations read an integer within the 64-bit
+signed or unsigned range exactly as written; only the digest reads the double.
 
-If the selected bytes exceed `agent-ix-semantic-ir`'s input-size limit, or nest
-arrays and objects to its depth limit, then the compiler SHALL refuse the
-package with `resource_exhausted`/`intake-limit-exceeded`, naming the limit and
-its bound.
+If the selected bytes exceed `agent-ix-semantic-ir`'s input-size limit, or
+carry a value enclosed by that reader's depth limit or more arrays and objects,
+then the compiler SHALL refuse the package with
+`resource_exhausted`/`intake-limit-exceeded`, naming the limit and its bound.
+This refusal comes after FR-154's check 2 and before its check 3.
 
 ### Admission
 
@@ -228,7 +235,7 @@ at the bundle entry point that lifts those bytes.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-056-AC-1 | Lifted bytes of a valid domain package passed to the intake seam are read by `agent-ix-semantic-ir` and yield exactly one original declaration per IR node, ascending by (domain package identity, IR node identity), each with its bound meaning, export records and artifact id and span. | Test (TC-145) |
-| FR-056-AC-2 | A wrong digest domain, a missing package, a stale digest and a package whose identity or version differs each refuse with FR-154's named cause, in FR-154's order, before any declaration; a reader-refused document retains every reader diagnostic and admits no declaration. A document carrying a lone surrogate escape (`"\ud800"`, `"\udc00"`, also in a member name) or the number `1e400` refuses `invalid_model_binding`/`malformed-declaration` at `$`; one over the reader's size or depth limit refuses `resource_exhausted`/`intake-limit-exceeded` naming the limit; a document carrying `18446744073709551615` or `18446744073709551616` admits under the digest of the same document carrying `18446744073709552000`, and not under the digest of its own exact digits. | Test (TC-145) |
+| FR-056-AC-2 | A wrong digest domain, a missing package, a stale digest and a package whose identity or version differs each refuse with FR-154's named cause, in FR-154's order, before any declaration; a reader-refused document retains every reader diagnostic and admits no declaration. The one parse refuses a lone high or low surrogate escape, a reversed pair, a lone surrogate in a member name, and `1e400`; a lone-surrogate document offered under the `sha256-jcs` digest of the same document with U+FFFD in its place refuses `stale_dependency`/`byte-digest-mismatch`; unparseable bytes offered under their own raw digest with an empty identity and version refuse `invalid_model_binding`/`wrong-model-selection`; bytes over the reader's size or depth limit refuse `resource_exhausted`/`intake-limit-exceeded` naming the limit; a document carrying `18446744073709551615` or `18446744073709551616` admits under the digest of the same document carrying `18446744073709552000`, and not under the digest of its own exact digits. | Test (TC-145) |
 | FR-056-AC-3 | An IR node whose kind names no `constructs` entry refuses `invalid_model_binding`/`malformed-declaration`, reported in FR-154's declaration refusal order; a construct with no meaning id or one outside FR-208 refuses each IR node of its kind with `invalid_model_binding`/`malformed-declaration`, naming meaning id, kind, node, artifact and span; a node not valid for its construct's meaning under FR-154 refuses `invalid_model_binding`/`malformed-declaration`; renaming a kind while keeping its meaning id changes no meaning or export. | Test (TC-146) |
 | FR-056-AC-4 | A type's key is its artifact id: changing only `title` or `displayName` leaves every key, export, ordering and binding unchanged, and two artifacts with equal titles stay distinct declarations; an artifact id matching FR-154's id rule, such as `sys_pump`, is admitted and named `M::sys_pump`, while one that does not, such as `sys-pump`, refuses `invalid_model_binding`/`malformed-declaration` with node, artifact and span, a reference to that node reports no `missing_declaration`/`missing-name`, and a second failing check on that node reports after the id refusal (FR-154-AC-8). | Test (TC-145) |
 | FR-056-AC-5 | Each relationship member yields one `relationship` export with its name and span; a relationship member missing either refuses `invalid_model_binding`/`malformed-declaration`; a relationship member or reference to a node absent from the package refuses `missing_declaration`/`missing-name`; any declaration refusal leaves the whole package unadmitted with every refusal reported in node order. | Test (TC-145) |

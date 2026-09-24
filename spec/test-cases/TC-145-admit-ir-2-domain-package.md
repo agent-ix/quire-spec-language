@@ -26,14 +26,15 @@ refusal), FR-056-CON-4.
    package input with no bytes under the selected digest; bytes whose recomputed
    digest differs; bytes whose own identity or version differs from the
    selection. Then offer a combination of the first and third faults.
-3. Offer bytes `agent-ix-semantic-ir` refuses. Then offer documents carrying a
-   lone high surrogate escape, a lone low surrogate escape, a reversed pair and
-   a lone surrogate in a member name; a document carrying `1e400`; documents
-   over the reader's input-size and depth limits; and documents carrying
-   `18446744073709551615`, `18446744073709551616`,
-   `123456789012345678901234567890` and `-9007199254740993`, each selected
-   first under the digest of its double form and then under the digest of its
-   exact digits.
+3. Offer bytes `agent-ix-semantic-ir` refuses. Then parse documents carrying
+   a lone high surrogate escape, a lone low surrogate escape, a reversed pair,
+   a lone surrogate in a member name, and `1e400`. Offer a lone-surrogate
+   document under the `sha256-jcs` digest of the same document with U+FFFD in
+   its place, and `not json` under its own raw digest with an empty identity
+   and version. Offer documents over the reader's input-size and depth limits.
+   Offer documents carrying `18446744073709551615`, `18446744073709551616`,
+   `123456789012345678901234567890` and `-9007199254740993`, each first under
+   the digest of its double form and then under the digest of its exact digits.
 4. Change only one artifact's `title` or `displayName` and re-run. Then give two
    artifacts equal titles. Then change the step 1 object-type artifact's id to
    `sys_pump` and name it from a clause as `M::sys_pump`, and separately to
@@ -63,13 +64,13 @@ refusal), FR-056-CON-4.
   declaration; the combined case reports `digest-domain-mismatch`, the first
   check in FR-154 order.
 - Step 3 admits no declaration and retains every reader diagnostic with its IR
-  node, artifact id and span. Each surrogate case and `1e400` refuses
-  `invalid_model_binding`/`malformed-declaration` at `$`; each limit case
-  refuses `resource_exhausted`/`intake-limit-exceeded` naming its limit. Each
-  large integer admits under the digest of its nearest double
-  (`18446744073709552000` for both 2^64 neighbours) and refuses
-  `stale_dependency`/`byte-digest-mismatch` under the digest of its exact
-  digits.
+  node, artifact id and span. The parse refuses each surrogate case and `1e400`.
+  The lone-surrogate document refuses `stale_dependency`/`byte-digest-mismatch`,
+  and `not json` refuses `invalid_model_binding`/`wrong-model-selection`. Each
+  limit case refuses `resource_exhausted`/`intake-limit-exceeded` naming its
+  limit. Each large integer admits under the digest of its nearest double
+  (`18446744073709552000` for both 2^64 neighbours) and does not admit under
+  the digest of its exact digits.
 - Step 4: the title and displayName runs leave every key, export, ordering and
   linker binding byte-identical; equal titles stay two distinct declarations.
   The id runs change the type's key and its members' keys (FR-154-AC-6): the

@@ -77,7 +77,7 @@ pub enum Family {
 /// QSL's [`Family`] has four members where FR-290 has five families: FR-290's
 /// `finite-replay` family applies to a QSL protocol declaration.
 ///
-/// A required request whose [`Capability`] is not in the requested
+/// A request whose [`Capability`] is not in the requested
 /// declaration's `families()` set becomes
 /// [`Disposition::InapplicableCapability`]: for example, a required
 /// `value-validity` request against a `State` or `Temporal` declaration.

@@ -32,6 +32,7 @@ disposition. These are compiler controls, not temporal-engine qualification.
    request index. Delete either entry in the consumer test input and require
    the requested-inventory check to fail. Then request `operation-contract`
    (required) and `finite-replay` (not required) on one state declaration.
+   Then read each of the ten kinds' applicable family.
 4. Have the family checker refuse one parsed declaration with
    `unsupported_construct`/`declaration-form`. Require its syntax to remain
    inspectable without presenting its body as checked or executable. Neither
@@ -49,5 +50,6 @@ Both requested pairs remain visible at their request indices, and the required
 `unsupported` pair makes complete aggregate success unavailable. On the state
 declaration, `operation-contract` is admitted and `finite-replay` is an
 inapplicable capability naming the state family (FR-057-AC-11); the declaration
-body is still admitted. The historical runner refuses incompatible
+body is still admitted. Each kind applies to exactly the family FR-057's
+applicability table gives it. The historical runner refuses incompatible
 composed input; its accepted fixture bytes and identities remain unchanged.

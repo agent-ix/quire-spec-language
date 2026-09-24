@@ -175,9 +175,8 @@ nested in a clause, such as a function application or a `case` expression:
 | Refinement between two protocols | `refinement` |
 | Other protocol analysis claim | its `protocol`-family kind |
 
-Which family records which `Requirements` is decided in
-[#210](https://github.com/agent-ix/quire-spec-language/issues/210); each
-recorded requirement names one kind from this table.
+Each recorded requirement names one kind from this table, and applies to the
+family the "Kind applicability" table below gives that kind.
 
 ### Kind applicability
 
@@ -229,10 +228,11 @@ the candidate sets it computes and the routing are implemented by
 [#185](https://github.com/agent-ix/quire-spec-language/issues/185), which
 consumes this type and defines no second capability vocabulary.
 
-QSL reads no provider-manifest bytes. The driver that reads a backend's FR-331
-provider manifest registers the backend with four values from it: the backend
-identity, the manifest digest, the pinned tool identity and the advertised
-(kind, mode) labels exactly as stated (ADR-013 C-28).
+QSL reads no provider-manifest bytes. The driver reads a backend's FR-331
+provider manifest, writes the FR-331 `manifest`, and registers the backend
+with four values from it: the backend identity, the manifest digest, the
+pinned tool identity and the advertised (kind, mode) labels exactly as stated
+(ADR-013 C-28).
 
 When a backend registers, the registry SHALL admit each advertised kind under
 the same rules as a requested pair.
@@ -252,7 +252,7 @@ quire-specification FR-331 request. The FR-331 envelope writer serializes it
 under FR-331's member layout, which agent-ix/quire-specification#134 owns (ADR-013
 QC-12, C-29); QSL defines no candidate-set wire of its own. A
 candidate is a registered backend's (identity, manifest digest); candidates are
-ordered bytewise by identity, then digest. The FR-331 `manifest` holds one
+ordered bytewise by identity, then digest. The FR-331 `manifest` the driver writes holds one
 descriptor per backend in that snapshot. The snapshot is retained as assessment
 provenance; a registration made during the request affects only later
 requests. Each item also carries its extent and the extent classification
@@ -373,7 +373,8 @@ checker's definition permissions. Their ownership is decided in #211.
   `unbounded-extent` case are #222's.
 - Where this requirement abbreviates FR-290 (diagnostic payloads, report
   order, `inconsistent-candidates` coverage), FR-290 at `55d2fcc` governs.
-- #210 decides which family records which requirements. #211 decides the QSL
+- #210 decides which family records which requirements, within this
+  requirement's "Kind applicability" table. #211 decides the QSL
   carrier member for the vocabulary identity and the ownership of the other QSL
   types named for capabilities.
 
