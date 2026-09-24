@@ -14,11 +14,14 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::digest::ByteDigest;
-use qsl_route::{BackendDescriptor, BackendId, CandidateOutcome, Mode, Registry, ToolIdentity};
+use qsl_route::{
+    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode, Registry,
+    ToolIdentity,
+};
 use qsl_semantics::check::Capability;
 
-fn digest(seed: &[u8]) -> ByteDigest {
-    ByteDigest::of(seed)
+fn digest(seed: &[u8]) -> ManifestDigest {
+    ManifestDigest::from_digest(ByteDigest::of(seed).as_bytes())
 }
 
 fn backend(
@@ -27,8 +30,7 @@ fn backend(
     advertises: impl IntoIterator<Item = (Capability, Mode)>,
 ) -> BackendDescriptor {
     BackendDescriptor::new(
-        BackendId::new(id),
-        digest(seed),
+        Candidate::new(BackendId::new(id), digest(seed)),
         ToolIdentity::new(format!("tool-for-{id}")),
         advertises,
     )
@@ -66,7 +68,7 @@ fn candidate_set_matches_registered_backends_advertising_the_requested_kind() {
         value_validity
             .candidates()
             .iter()
-            .map(|(id, _)| id.as_str())
+            .map(|candidate| candidate.id().as_str())
             .collect::<Vec<_>>(),
         ["backend-a"]
     );
@@ -80,7 +82,7 @@ fn candidate_set_matches_registered_backends_advertising_the_requested_kind() {
         operation_contract
             .candidates()
             .iter()
-            .map(|(id, _)| id.as_str())
+            .map(|candidate| candidate.id().as_str())
             .collect::<Vec<_>>(),
         ["backend-b"]
     );
@@ -120,7 +122,7 @@ fn candidate_set_matches_registered_backends_advertising_the_requested_kind() {
         finite_replay
             .candidates()
             .iter()
-            .map(|(id, _)| id.as_str())
+            .map(|candidate| candidate.id().as_str())
             .collect::<Vec<_>>(),
         ["backend-d"]
     );
@@ -205,7 +207,7 @@ fn duplicate_backend_identity_registration_is_refused_and_the_original_stands() 
         value_validity
             .candidates()
             .iter()
-            .map(|(id, _)| id.as_str())
+            .map(|candidate| candidate.id().as_str())
             .collect::<Vec<_>>(),
         ["backend-a"]
     );
@@ -541,7 +543,7 @@ mod permutation_equality {
         };
         set.candidates()
             .iter()
-            .map(|(id, _)| id.as_str().to_owned())
+            .map(|candidate| candidate.id().as_str().to_owned())
             .collect()
     }
 
