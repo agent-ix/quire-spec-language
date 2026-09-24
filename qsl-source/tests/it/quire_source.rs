@@ -9,6 +9,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
 use qsl_source::{
     extract, Cause, Limits, PreflightFailure, Selection, SemanticContext, MAX_LINES,
+    MAX_SOURCE_BYTES,
 };
 use quire_rs::semantic::{extract_clauses, read_semantic_block, BundleIndex};
 use serde_json::json;
@@ -30,7 +31,7 @@ fn identity() -> SourceIdentity {
 }
 
 fn source(text: &str) -> Source {
-    Source::read(identity(), "rules.md", text.as_bytes(), 1_048_576).unwrap()
+    Source::read(identity(), "rules.md", text.as_bytes(), text.len()).unwrap()
 }
 
 fn context() -> SemanticContext {
@@ -217,6 +218,33 @@ fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
     assert!(
         extract(many_lines, &ctx, selection(), raised).is_ok(),
         "a caller-raised line ceiling must be used as given"
+    );
+
+    // The same for bytes: past the 1 MiB default, refused by default and
+    // admitted under a caller-raised byte ceiling.
+    let large = source(&format!(
+        "{}\n{}",
+        "a".repeat(MAX_SOURCE_BYTES),
+        document("true", false).text()
+    ));
+    let error = extract(large.clone(), &ctx, selection(), Limits::default()).unwrap_err();
+    let Cause::Preflight(actual) = &error.cause else {
+        panic!("expected the default byte ceiling");
+    };
+    assert!(matches!(
+        **actual,
+        PreflightFailure::SourceBytes {
+            maximum: MAX_SOURCE_BYTES,
+            ..
+        }
+    ));
+    let raised = Limits {
+        source_bytes: large.text().len(),
+        ..Limits::default()
+    };
+    assert!(
+        extract(large, &ctx, selection(), raised).is_ok(),
+        "a caller-raised byte ceiling must be used as given"
     );
 }
 

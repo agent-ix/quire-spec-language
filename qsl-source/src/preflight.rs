@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-030: distinguish input ceilings, profile skew and foreign Quire context.
 
-use super::{
-    Limits, Selection, SemanticContext, Source, CONTRACT_VERSION, SEMANTIC_CORE_VERSION,
-};
+use super::{Limits, Selection, SemanticContext, Source, CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
 use qsl_foundation::Code;
 
 /// Failure before invoking Quire, with a typed discriminator and actual context.
