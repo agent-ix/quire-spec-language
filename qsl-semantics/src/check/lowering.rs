@@ -35,8 +35,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{
-    ArithmeticOperator, Charge, ChargePoint, CollectionKind, EffectiveId, Identifier, Integer,
-    Meter, NodeKey, OrderingOperator, Presence, TextProfile, Value, ValueType,
+    ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
+    Identifier, Integer, Meter, NodeKey, OrderingOperator, Presence, TextProfile, Value, ValueType,
 };
 
 use super::check::Scope;
@@ -51,7 +51,9 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, Location, Origin,
 };
 use crate::model::key::DeclarationKey;
-use crate::value::declaration::{CompositeShape, EqualityOperator, TypeEnvironment};
+use crate::value::declaration::{
+    CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
+};
 use crate::value::definition::DefinitionReference;
 use crate::value::member::Member;
 use crate::value::quantity::UnitTable;
@@ -375,6 +377,65 @@ fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusa
         ),
         refusal => refuse(location, CheckCause::NodePreimage(refusal)),
     }
+}
+
+/// One step of [`Lowering::type_node`]'s loop.
+enum TypeStep<'v> {
+    /// Build the node of this type at this nesting depth.
+    Descend(&'v ValueType, u64),
+    /// This node is built: hand its key to the frame waiting for it.
+    Built(NodeKey),
+}
+
+/// A type node waiting for the node of a type inside it.
+enum TypeFrame<'v> {
+    /// An `option` node, waiting for its payload's node.
+    Option,
+    /// A collection's nodes, waiting for its element's node.
+    Collection(&'v CollectionType),
+    /// A declared record or tuple, waiting for its next member's node.
+    Composite(CompositeFrame<'v>),
+}
+
+/// A declared record or tuple whose node is being built.
+struct CompositeFrame<'v> {
+    declaration: NodeKey,
+    /// The declaration's qualified name.
+    name: Vec<Identifier>,
+    shape: &'v CompositeShape,
+    /// The nesting depth the composite was reached at.
+    depth: u64,
+    /// The members built so far, in declaration order.
+    members: Vec<SemanticTerm>,
+    /// The record field whose type node is being built.
+    awaiting: Option<&'v FieldDeclaration>,
+}
+
+impl CompositeFrame<'_> {
+    /// Append the member whose type node is `key`: a record field's
+    /// binding (an optional one's through `optional`), or a tuple
+    /// position's reference.
+    fn accept(&mut self, key: NodeKey) {
+        let reference = SemanticTerm::reference(key);
+        self.members.push(match self.awaiting.take() {
+            None => reference,
+            Some(field) => SemanticTerm::binding(
+                field.name(),
+                match field.presence() {
+                    Presence::Required => reference,
+                    Presence::Optional => SemanticTerm::binding("optional", reference),
+                },
+            ),
+        });
+    }
+}
+
+/// How a declared composite's node starts.
+enum OpenComposite<'v> {
+    /// Its node, or the placeholder naming it while it is being built.
+    Built(NodeKey),
+    /// Its frame: its members are still to build.
+    Open(CompositeFrame<'v>),
 }
 
 /// `name`'s `::`-separated segments, each an identifier.
@@ -942,23 +1003,91 @@ impl<'a> Lowering<'a> {
         )
     }
 
-    /// The FR-092 type node of `value_type`.
-    pub(crate) fn type_node(
+    /// The FR-092 type node of `value_type`, built without native
+    /// recursion (QSL-224): each `option`, collection and declared
+    /// composite still being built is a [`TypeFrame`] on an explicit stack,
+    /// so a long composite chain costs heap, not stack. Nodes are built,
+    /// charged and refused in the order a depth-first recursive build would
+    /// reach them, so every key is the recursive build's key.
+    pub(crate) fn type_node<'v>(
         &mut self,
-        value_type: &ValueType,
+        value_type: &'v ValueType,
         location: &Location,
-    ) -> Result<NodeKey, CheckRefusal> {
-        self.type_node_at(value_type, location, 0)
+    ) -> Result<NodeKey, CheckRefusal>
+    where
+        'a: 'v,
+    {
+        let open = self.composites_in_progress.len();
+        let built = self.build_type_node(value_type, location);
+        if built.is_err() {
+            // The composites a refusal left mid-build are no longer being
+            // built.
+            self.composites_in_progress.truncate(open);
+        }
+        built
     }
 
-    fn type_node_at(
+    /// [`Self::type_node`]'s loop: descend into a type, or hand a built
+    /// node's key to the frame waiting for it.
+    fn build_type_node<'v>(
         &mut self,
-        value_type: &ValueType,
+        value_type: &'v ValueType,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal>
+    where
+        'a: 'v,
+    {
+        let mut frames: Vec<TypeFrame<'v>> = Vec::new();
+        let mut step = TypeStep::Descend(value_type, 0);
+        loop {
+            step = match step {
+                TypeStep::Descend(value_type, depth) => {
+                    self.descend(value_type, location, depth, &mut frames)?
+                }
+                TypeStep::Built(key) => match frames.pop() {
+                    None => return Ok(key),
+                    Some(TypeFrame::Option) => TypeStep::Built(self.option_type(key, location)?),
+                    Some(TypeFrame::Collection(collection)) => {
+                        TypeStep::Built(self.collection_type(collection, key, location)?)
+                    }
+                    Some(TypeFrame::Composite(mut composite)) => {
+                        composite.accept(key);
+                        self.advance(composite, location, &mut frames)?
+                    }
+                },
+            };
+        }
+    }
+
+    /// Start `value_type`'s node at `depth`: a type with no type inside it
+    /// is built now; an `option`, a collection or a composite not yet built
+    /// pushes its frame and descends into its first inner type.
+    fn descend<'v>(
+        &mut self,
+        value_type: &'v ValueType,
         location: &Location,
         depth: u64,
-    ) -> Result<NodeKey, CheckRefusal> {
+        frames: &mut Vec<TypeFrame<'v>>,
+    ) -> Result<TypeStep<'v>, CheckRefusal>
+    where
+        'a: 'v,
+    {
         self.check_depth(depth, location)?;
-        match value_type {
+        let key = match value_type {
+            ValueType::Option(payload) => {
+                frames.push(TypeFrame::Option);
+                return Ok(TypeStep::Descend(payload, depth + 1));
+            }
+            ValueType::Collection(collection) => {
+                frames.push(TypeFrame::Collection(collection));
+                return Ok(TypeStep::Descend(collection.element(), depth + 1));
+            }
+            ValueType::Composite(declaration) => {
+                return match self.open_composite(*declaration, location, depth)? {
+                    OpenComposite::Built(key) => Ok(TypeStep::Built(key)),
+                    OpenComposite::Open(composite) => self.advance(composite, location, frames),
+                };
+            }
             ValueType::Boolean => self.scalar("boolean", location),
             ValueType::Integer => self.scalar("integer", location),
             ValueType::Int(interval) => {
@@ -1059,64 +1188,79 @@ impl<'a> Lowering<'a> {
                     )
                 })
             }
-            ValueType::Option(payload) => {
-                let payload = self.type_node_at(payload, location, depth + 1)?;
-                self.insert(
-                    location,
-                    NodeTag::CompositeType,
-                    "option",
-                    None,
-                    None,
-                    SemanticTerm::Aggregate {
-                        members: vec![SemanticTerm::reference(payload)],
-                    },
-                )
-            }
-            ValueType::Collection(collection) => {
-                let element = self.type_node_at(collection.element(), location, depth + 1)?;
-                let base = self.insert(
-                    location,
-                    NodeTag::CompositeType,
-                    collection_form(collection.kind()),
-                    None,
-                    None,
-                    SemanticTerm::Aggregate {
-                        members: vec![SemanticTerm::reference(element)],
-                    },
-                )?;
-                let bound = collection.bound();
-                let min = self.integer_literal(Integer::from(bound.minimum()), location)?;
-                let max = self.integer_literal(Integer::from(bound.maximum()), location)?;
-                self.bounded(
-                    "collection_bounds",
-                    base,
-                    vec![("min", min), ("max", max)],
-                    location,
-                )
-            }
-            ValueType::Composite(declaration) => self.composite(*declaration, location, depth),
             ValueType::Quantity(unit) => self.quantity_type(*unit, location),
             ValueType::Reference(target) => self.reference_type(*target, location),
             // FR-094: a `Population<T>[N]` node is built from its binding's
             // resolved type form ([`Self::binder_type`]); the checked type
             // alone carries no `T`.
             ValueType::Population(_) => Err(fault(location, KeyFault::UntargetedPopulation)),
-        }
+        }?;
+        Ok(TypeStep::Built(key))
     }
 
-    /// A declared record or tuple's node: its `declaration` and the unit's
-    /// `owner`, one binding per field (record) or one reference per position
-    /// (tuple).
-    fn composite(
+    /// The `option` node over the payload node `payload`.
+    fn option_type(
+        &mut self,
+        payload: NodeKey,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        self.insert(
+            location,
+            NodeTag::CompositeType,
+            "option",
+            None,
+            None,
+            SemanticTerm::Aggregate {
+                members: vec![SemanticTerm::reference(payload)],
+            },
+        )
+    }
+
+    /// `collection`'s bounded node over the element node `element`.
+    fn collection_type(
+        &mut self,
+        collection: &CollectionType,
+        element: NodeKey,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let base = self.insert(
+            location,
+            NodeTag::CompositeType,
+            collection_form(collection.kind()),
+            None,
+            None,
+            SemanticTerm::Aggregate {
+                members: vec![SemanticTerm::reference(element)],
+            },
+        )?;
+        let bound = collection.bound();
+        let min = self.integer_literal(Integer::from(bound.minimum()), location)?;
+        let max = self.integer_literal(Integer::from(bound.maximum()), location)?;
+        self.bounded(
+            "collection_bounds",
+            base,
+            vec![("min", min), ("max", max)],
+            location,
+        )
+    }
+
+    /// Start the declared record or tuple `declaration` at `depth`: its node
+    /// if it is built, its placeholder if it is being built (it reached
+    /// itself), or its open frame.
+    fn open_composite<'v>(
         &mut self,
         declaration: NodeKey,
         location: &Location,
         depth: u64,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<OpenComposite<'v>, CheckRefusal>
+    where
+        'a: 'v,
+    {
         if let Some(key) = self.composites.get(&declaration) {
-            return Ok(*key);
+            return Ok(OpenComposite::Built(*key));
         }
-        let Some(composite) = self.scope.types().composite(declaration) else {
+        let scope: &'a Scope = self.scope;
+        let Some(composite) = scope.types().composite(declaration) else {
             return Err(refuse(
                 location,
                 CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
@@ -1126,25 +1270,90 @@ impl<'a> Lowering<'a> {
             // FR-092: a record reaching itself is in a recursion group; a
             // placeholder names it until its node is built.
             if let Some(placeholder) = self.composite_placeholders.get(&declaration) {
-                return Ok(*placeholder);
+                return Ok(OpenComposite::Built(*placeholder));
             }
             let placeholder = self.placeholder();
             self.composite_placeholders.insert(declaration, placeholder);
-            return Ok(placeholder);
+            return Ok(OpenComposite::Built(placeholder));
         }
         let name = qualified_name(composite.name(), location)?;
-        let shape = composite.shape().clone();
         self.composites_in_progress.push(declaration);
-        let body = self.composite_body(&shape, location, depth);
+        let shape = composite.shape();
+        let members = match shape {
+            CompositeShape::Record(fields) => fields.len(),
+            CompositeShape::Tuple(positions) => positions.len(),
+        };
+        Ok(OpenComposite::Open(CompositeFrame {
+            declaration,
+            name,
+            shape,
+            depth,
+            members: Vec::with_capacity(members),
+            awaiting: None,
+        }))
+    }
+
+    /// Descend into `composite`'s next field or position, or, when every
+    /// member is built, finish its node.
+    fn advance<'v>(
+        &mut self,
+        mut composite: CompositeFrame<'v>,
+        location: &Location,
+        frames: &mut Vec<TypeFrame<'v>>,
+    ) -> Result<TypeStep<'v>, CheckRefusal> {
+        let member = composite.depth + 1;
+        let at = composite.members.len();
+        let next = match composite.shape {
+            CompositeShape::Record(fields) => fields.get(at).map(|field| {
+                composite.awaiting = Some(field);
+                (field.value_type(), field.presence())
+            }),
+            CompositeShape::Tuple(positions) => positions
+                .get(at)
+                .map(|position| (position, Presence::Required)),
+        };
+        let Some((value_type, presence)) = next else {
+            return Ok(TypeStep::Built(self.close_composite(composite, location)?));
+        };
+        frames.push(TypeFrame::Composite(composite));
+        Ok(match presence {
+            Presence::Required => TypeStep::Descend(value_type, member),
+            // An optional field's member is the `option` node over its
+            // declared type, one level further down.
+            Presence::Optional => {
+                self.check_depth(member, location)?;
+                frames.push(TypeFrame::Option);
+                TypeStep::Descend(value_type, member + 1)
+            }
+        })
+    }
+
+    /// Key the composite whose every member is built, and settle once no
+    /// composite or function is still open.
+    fn close_composite(
+        &mut self,
+        composite: CompositeFrame<'_>,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let CompositeFrame {
+            declaration,
+            name,
+            shape,
+            members,
+            ..
+        } = composite;
         self.composites_in_progress.pop();
-        let (form, body) = body?;
+        let form = match shape {
+            CompositeShape::Record(_) => "record",
+            CompositeShape::Tuple(_) => "tuple",
+        };
         let key = self.insert(
             location,
             NodeTag::CompositeType,
             form,
             None,
             Some(name),
-            body,
+            SemanticTerm::Aggregate { members },
         )?;
         if let Some(placeholder) = self.composite_placeholders.remove(&declaration) {
             self.placeholders.insert(placeholder, Some(key));
@@ -1157,54 +1366,21 @@ impl<'a> Lowering<'a> {
         Ok(self.composites.get(&declaration).copied().unwrap_or(key))
     }
 
+    /// A declared record or tuple's node: its `declaration` and the unit's
+    /// `owner`, one binding per field (record) or one reference per position
+    /// (tuple).
+    fn composite(
+        &mut self,
+        declaration: NodeKey,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        self.type_node(&ValueType::Composite(declaration), location)
+    }
+
     /// The node of the declared composite `declaration` (FR-092-AC-12): its
     /// checked type node's id.
     pub(crate) fn composite_node(&mut self, declaration: NodeKey) -> Result<NodeKey, CheckRefusal> {
-        self.composite(declaration, &generated_location(), 0)
-    }
-
-    fn composite_body(
-        &mut self,
-        shape: &CompositeShape,
-        location: &Location,
-        depth: u64,
-    ) -> Result<(&'static str, SemanticTerm), CheckRefusal> {
-        match shape {
-            CompositeShape::Record(fields) => {
-                let mut members = Vec::with_capacity(fields.len());
-                for field in fields {
-                    let value = match field.presence() {
-                        quire_exact::Presence::Required => SemanticTerm::reference(
-                            self.type_node_at(field.value_type(), location, depth + 1)?,
-                        ),
-                        quire_exact::Presence::Optional => {
-                            let option = ValueType::option(field.value_type().clone());
-                            SemanticTerm::binding(
-                                "optional",
-                                SemanticTerm::reference(self.type_node_at(
-                                    &option,
-                                    location,
-                                    depth + 1,
-                                )?),
-                            )
-                        }
-                    };
-                    members.push(SemanticTerm::binding(field.name(), value));
-                }
-                Ok(("record", SemanticTerm::Aggregate { members }))
-            }
-            CompositeShape::Tuple(positions) => {
-                let mut members = Vec::with_capacity(positions.len());
-                for position in positions {
-                    members.push(SemanticTerm::reference(self.type_node_at(
-                        position,
-                        location,
-                        depth + 1,
-                    )?));
-                }
-                Ok(("tuple", SemanticTerm::Aggregate { members }))
-            }
-        }
+        self.composite(declaration, &generated_location())
     }
 
     /// The law of `role` the lock evidence selects, or the FR-093 refusal.
@@ -2198,7 +2374,7 @@ impl<'a> Lowering<'a> {
                 declaration,
                 arguments,
             } => {
-                let semantic_type = self.composite(*declaration, &node.location, 0)?;
+                let semantic_type = self.composite(*declaration, &node.location)?;
                 let mut members = Vec::with_capacity(arguments.len());
                 for argument in arguments {
                     members.push(self.expression(argument, binders, depth + 1)?);
@@ -2211,7 +2387,7 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::Record { declaration, slots } => {
-                let semantic_type = self.composite(*declaration, &node.location, 0)?;
+                let semantic_type = self.composite(*declaration, &node.location)?;
                 let Some(CompositeShape::Record(fields)) = self
                     .scope
                     .types()
@@ -2650,7 +2826,7 @@ impl<'a> Lowering<'a> {
             )
         })?;
         Ok(Member::Field {
-            declaration: self.composite(*declaration, location, 0)?,
+            declaration: self.composite(*declaration, location)?,
             name,
         })
     }
