@@ -40,7 +40,6 @@ use std::path::{Path, PathBuf};
 use agent_ix_extraction_frontend::lift::{lift, LiftOutcome, LiftRequest};
 use agent_ix_extraction_frontend::{Diagnostic, Refusal};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackageRecord, DomainPackageRef, EndpointRecord,
@@ -48,9 +47,10 @@ use crate::model::domain_package::{
     OperationMemberRecord, OperationParameterRecord, OperationResult, PopulationRecord,
     PortDirection, RelationshipDirection, RelationshipEnd, RelationshipRecord, ValueTypeRef,
 };
-use crate::model::key::{hex, jcs_bytes, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
+use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::refusal::IntakeLimit;
+use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::{LocatedSpan, Position};
 
@@ -243,11 +243,16 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// never as a malformed document. The derived view keeps the reader's
 /// last-wins resolution of a repeated member name, and each number is
 /// converted from the lexeme the document carried with `serde_json`'s own
-/// number parser, so it equals what `serde_json::from_slice` would have read.
-/// A number `serde_json` cannot represent (`1e400`) refuses. A lone UTF-16
+/// number parser, so it equals what `serde_json::from_slice` would have read,
+/// every integer exact. A number with no finite value (`1e400`) refuses. A lone UTF-16
 /// surrogate escape refuses too: RFC 8785 (via RFC 7493) admits none, and the
 /// reader would otherwise replace it with U+FFFD, so two different documents
 /// would share one tree and one JCS digest.
+///
+/// The `sha256-jcs` digest is taken here, once, by `quire-canonical` (ADR-013
+/// §2, ADR-013:113: the one RFC 8785 implementation) under
+/// `INTAKE_DIGEST_LIMITS`, reading an integer outside ±2^53 as the double RFC
+/// 8785 reads it as (`Rfc8785Numbers`), and [`admit`]'s check 3 compares it.
 #[derive(Debug, Clone)]
 pub struct PackageDocument {
     /// `{"ir": <document>}`: the bundle `agent_ix_semantic_ir::decide` reads
@@ -256,6 +261,9 @@ pub struct PackageDocument {
     /// The same document as a `serde_json::Value`, derived from `bundle`'s
     /// own `ir` member.
     tree: Value,
+    /// SHA-256 over `tree`'s RFC 8785 bytes: the package's `sha256-jcs`
+    /// digest.
+    jcs_digest: [u8; 32],
 }
 
 impl PackageDocument {
@@ -265,9 +273,9 @@ impl PackageDocument {
     /// `json::MAX_DEPTH` or more arrays and objects, refuses
     /// `resource_exhausted`/`intake-limit-exceeded` naming the limit and its
     /// bound. Bytes that are not UTF-8, do not parse as JSON, carry a lone
-    /// surrogate escape or carry a number `serde_json` cannot represent
-    /// refuse `invalid_model_binding`/`malformed-declaration` against the
-    /// document root `$`.
+    /// surrogate escape or carry a number with no finite value refuse
+    /// `invalid_model_binding`/`malformed-declaration` against the document
+    /// root `$`.
     pub fn parse(bytes: &[u8]) -> Result<Self, ModelRefusal> {
         use agent_ix_semantic_ir::json::{MAX_DEPTH, MAX_INPUT_BYTES};
         if bytes.len() > MAX_INPUT_BYTES {
@@ -297,9 +305,20 @@ impl PackageDocument {
                 "package document number {lexeme} has no serde_json representation"
             ))
         })?;
+        // Every tree `value_of` builds has an RFC 8785 encoding within
+        // `INTAKE_DIGEST_LIMITS`; the one refusal left is a failed heap
+        // reservation, reported against the root rather than aborting.
+        let jcs_digest = *quire_canonical::sha256(&Rfc8785Numbers(&tree), INTAKE_DIGEST_LIMITS)
+            .map_err(|err| {
+                root_malformed(format!(
+                    "package document could not be RFC 8785-encoded: {err}"
+                ))
+            })?
+            .as_bytes();
         Ok(Self {
             bundle: agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), ir)]),
             tree,
+            jcs_digest,
         })
     }
 
@@ -308,6 +327,28 @@ impl PackageDocument {
         &self.tree
     }
 }
+
+/// How many times longer a document's RFC 8785 text can be than the document
+/// itself. Only number spelling grows: `1e20` (4 bytes) canonicalizes to
+/// `100000000000000000000` (21 bytes), 5.25 times as long, and no shorter
+/// lexeme grows more (from `1e21` on the text is exponent form again).
+/// Whitespace, escapes and repeated member names only shrink. Rounded up to 6.
+const CANONICAL_GROWTH: u64 = 6;
+
+/// The limits intake's `sha256-jcs` digest encodes under: canonical text up
+/// to [`CANONICAL_GROWTH`] times the reader's `MAX_INPUT_BYTES` (384 MiB), a
+/// ceiling no admitted document reaches, and [`LIMITS`]'s depth, above the
+/// reader's own `MAX_DEPTH` (200).
+const INTAKE_DIGEST_LIMITS: quire_canonical::Limits = match quire_canonical::Limits::new(
+    // `usize` is at most 64 bits on every target Rust supports: lossless.
+    agent_ix_semantic_ir::json::MAX_INPUT_BYTES as u64 * CANONICAL_GROWTH,
+    LIMITS.max_depth(),
+) {
+    Ok(limits) => limits,
+    // `LIMITS.max_depth()` is within `Limits::MAX_DEPTH` by construction;
+    // evaluated at compile time.
+    Err(_) => panic!("LIMITS' depth is within Limits::MAX_DEPTH"),
+};
 
 /// ADR-011 Limits: a package document reached `limit`, whose bound is
 /// `bound`.
@@ -433,6 +474,61 @@ fn value_of(json: &agent_ix_semantic_ir::json::Json) -> Result<Value, &str> {
             Value::Object(object)
         }
     })
+}
+
+/// The magnitude up to which every integer is an IEEE 754 double exactly.
+const EXACT_DOUBLE_INTEGER: u64 = 1 << 53;
+
+/// `tree` as the `sha256-jcs` digest reads it (QSL-194): every value as is,
+/// except that an integer outside ±2^53 serializes as the IEEE 754 double
+/// nearest it. RFC 8785 §3.2.2.3 serializes the double a number parses to, so
+/// every spelling of one double -- `18446744073709551615`,
+/// `18446744073709551616` -- canonicalizes alike (`18446744073709552000`).
+///
+/// Only the digest reads through this view. The tree [`read_records`] reads
+/// keeps each integer exact, so a `u64` field above 2^53 reads as written.
+/// This is a number adapter, not an encoder: `quire-canonical` still orders,
+/// escapes and spells everything.
+struct Rfc8785Numbers<'a>(&'a Value);
+
+impl serde::Serialize for Rfc8785Numbers<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        match self.0 {
+            Value::Number(number) => {
+                // `as` rounds an integer to the nearest double, ties to even:
+                // the double RFC 8785 reads the integer's decimal text as.
+                #[allow(
+                    clippy::cast_precision_loss,
+                    reason = "rounding to the nearest double is what RFC 8785 does"
+                )]
+                match (number.as_u64(), number.as_i64()) {
+                    (Some(value), _) if value > EXACT_DOUBLE_INTEGER => {
+                        serializer.serialize_f64(value as f64)
+                    }
+                    (None, Some(value)) if value.unsigned_abs() > EXACT_DOUBLE_INTEGER => {
+                        serializer.serialize_f64(value as f64)
+                    }
+                    _ => number.serialize(serializer),
+                }
+            }
+            Value::Array(items) => {
+                let mut seq = serializer.serialize_seq(Some(items.len()))?;
+                for item in items {
+                    seq.serialize_element(&Rfc8785Numbers(item))?;
+                }
+                seq.end()
+            }
+            Value::Object(members) => {
+                let mut map = serializer.serialize_map(Some(members.len()))?;
+                for (name, member) in members {
+                    map.serialize_entry(name, &Rfc8785Numbers(member))?;
+                }
+                map.end()
+            }
+            Value::Null | Value::Bool(_) | Value::String(_) => self.0.serialize(serializer),
+        }
+    }
 }
 
 /// FR-154 Intake's four-check admission table (`model-complete.md:58-70`).
@@ -568,16 +664,16 @@ pub fn admit(
 /// unparseable bytes either, so this still reports the real mismatch rather
 /// than fabricating a match.
 ///
-/// The one place intake computes a package digest (QSL-194 replaces the JCS
-/// encoder behind it).
+/// The parsed document's digest is the one [`PackageDocument::parse`] took
+/// through `quire-canonical` (ADR-013 §2, ADR-013:113).
 fn check_package_digest(
     offered: &DomainPackageRef,
     bytes: &[u8],
     document: Option<&PackageDocument>,
 ) -> Result<(), ModelRefusal> {
     let actual_digest: [u8; 32] = match document {
-        Some(document) => Sha256::digest(jcs_bytes(&document.tree)).into(),
-        None => Sha256::digest(bytes).into(),
+        Some(document) => document.jcs_digest,
+        None => raw_bytes_digest(bytes),
     };
     if actual_digest == offered.digest {
         return Ok(());
@@ -1806,9 +1902,17 @@ fn read_nodes(
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+    use sha2::{Digest, Sha256};
 
     fn digest_of(bytes: &[u8]) -> [u8; 32] {
         Sha256::digest(bytes).into()
+    }
+
+    /// `value`'s RFC 8785 bytes as the `sha256-jcs` digest reads them: the
+    /// one encoder (ADR-013:113) over the `Rfc8785Numbers` view.
+    fn canonical(value: &Value) -> Vec<u8> {
+        quire_canonical::to_vec(&Rfc8785Numbers(value), LIMITS)
+            .expect("the test value has an RFC 8785 encoding")
     }
 
     /// Test document bytes through intake's one parse.
@@ -1868,7 +1972,7 @@ mod tests {
         // document (extra whitespace here) still admits under the digest
         // recorded for the compact encoding.
         let compact = package_bytes("acme/orders", "1");
-        let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&compact).unwrap()));
+        let digest = digest_of(&canonical(&serde_json::from_slice(&compact).unwrap()));
         let padded = b"  \n\t"
             .iter()
             .chain(compact.iter())
@@ -1971,7 +2075,7 @@ mod tests {
     fn refuses_byte_digest_mismatch() {
         let bytes = package_bytes("acme/orders", "1");
         let wrong_digest = digest_of(b"not the package");
-        let actual_digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
+        let actual_digest = digest_of(&canonical(&serde_json::from_slice(&bytes).unwrap()));
         let mut map = BTreeMap::new();
         map.insert(wrong_digest, bytes);
         let (offered, digest_domain) =
@@ -1998,7 +2102,7 @@ mod tests {
     #[test]
     fn refuses_wrong_package_identity() {
         let bytes = package_bytes("acme/other", "1");
-        let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
+        let digest = digest_of(&canonical(&serde_json::from_slice(&bytes).unwrap()));
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
         let (offered, digest_domain) =
@@ -2033,7 +2137,7 @@ mod tests {
     #[test]
     fn refuses_version_only_mismatch() {
         let bytes = package_bytes("acme/orders", "2");
-        let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
+        let digest = digest_of(&canonical(&serde_json::from_slice(&bytes).unwrap()));
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
         let (offered, digest_domain) =
@@ -2511,6 +2615,59 @@ mod tests {
         )
         .to_string()
         .into_bytes()
+    }
+
+    /// QSL-194 review: RFC 8785's rounding applies to the hashed bytes
+    /// only. A field whose multiplicity `upper` is 2^60 + 1 -- no double
+    /// equals it -- is admitted, intake's parsed tree holds the bound
+    /// exactly, and the
+    /// package digest is the RFC 8785 digest of the document with that
+    /// bound as the double RFC 8785 reads, 2^60, which ECMAScript spells
+    /// `1152921504606847000` (`JSON.stringify(JSON.parse("1152921504606846977"))`
+    /// in Node prints exactly that).
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn a_u64_bound_above_2_53_reads_exactly_and_digests_as_rfc_8785_does() {
+        const EXACT: u64 = (1 << 60) + 1;
+        let mut field = wire_field(
+            "ix://acme/orders/Widget/count",
+            "count",
+            "ix://quire/native/Integer",
+        );
+        field["multiplicity"] =
+            serde_json::json!({"lower": 0, "upper": EXACT, "ordered": false, "unique": true});
+        let bytes = document_with_one_field(field);
+
+        // The RFC 8785 text, the bound spelled as ECMAScript spells 2^60.
+        let mut rounded: Value = serde_json::from_slice(&bytes).unwrap();
+        rounded["types"][0]["fields"][0]["multiplicity"]["upper"] =
+            Value::Number(serde_json::Number::from_f64(1_152_921_504_606_846_976.0).unwrap());
+        let text = String::from_utf8(canonical(&rounded)).unwrap();
+        assert!(text.contains(r#""upper":1152921504606847000}"#), "{text}");
+        assert!(!text.contains(&EXACT.to_string()), "{text}");
+        let digest = digest_of(text.as_bytes());
+
+        let mut map = BTreeMap::new();
+        map.insert(digest, bytes);
+        let (offered, digest_domain) =
+            selection("acme/orders", "1.0.0", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let (_, document) = admit(&offered, &digest_domain, &map).expect("the document admits");
+        assert_eq!(
+            document.tree()["types"][0]["fields"][0]["multiplicity"]["upper"].as_u64(),
+            Some(EXACT),
+            "the parsed tree keeps the exact integer"
+        );
+        // The per-node reader then sees the exact integer too. Its FCD
+        // validator admits a bound below 2^53 only, on `main` as here, so
+        // the refusal names the bound -- a schema rule, not a rounded read.
+        let refusals = read_records("acme/orders", &document).unwrap_err();
+        assert_eq!(refusals.len(), 1, "{refusals:?}");
+        assert!(
+            refusals[0]
+                .detail
+                .contains("/fields/0/multiplicity/upper (agent-ix.semantic-ir.SCHEMA_VIOLATION)"),
+            "{refusals:?}"
+        );
     }
 
     // `agent-ix-semantic-ir` at the pinned rev resolves
@@ -3903,7 +4060,7 @@ mod tests {
         });
         let padded = format!("  {document}  ").into_bytes();
         assert!(serde_json::from_slice::<Value>(&padded).is_err());
-        let digest = digest_of(&jcs_bytes(&document));
+        let digest = digest_of(&canonical(&document));
         let mut map = BTreeMap::new();
         map.insert(digest, padded);
         let (offered, digest_domain) =
@@ -3990,7 +4147,7 @@ mod tests {
             "package": {"identity": "acme/orders", "version": "1"},
             "s": "\u{FFFD}",
         });
-        let digest = digest_of(&jcs_bytes(&replacement));
+        let digest = digest_of(&canonical(&replacement));
         let lone = br#"{"package":{"identity":"acme/orders","version":"1"},"s":"\ud800"}"#.to_vec();
         let mut map = BTreeMap::new();
         map.insert(digest, lone.clone());
@@ -4066,7 +4223,7 @@ mod tests {
             "payload": nested,
         });
         let bytes = document.to_string().into_bytes();
-        let digest = digest_of(&jcs_bytes(&document));
+        let digest = digest_of(&canonical(&document));
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
         let (offered, digest_domain) =
@@ -4094,7 +4251,7 @@ mod tests {
         let pad = max + 1 - head.len() - tail.len();
         let bytes = format!("{head}{}{tail}", "x".repeat(pad)).into_bytes();
         assert_eq!(bytes.len(), max + 1);
-        let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
+        let digest = digest_of(&canonical(&serde_json::from_slice(&bytes).unwrap()));
         let mut map = BTreeMap::new();
         map.insert(digest, bytes);
         let (offered, digest_domain) =
@@ -4188,7 +4345,7 @@ mod tests {
             match (PackageDocument::parse(text.as_bytes()), expected) {
                 (Ok(document), Ok(expected)) => {
                     assert_eq!(document.tree(), &expected, "{text}");
-                    assert_eq!(jcs_bytes(document.tree()), jcs_bytes(&expected), "{text}");
+                    assert_eq!(canonical(document.tree()), canonical(&expected), "{text}");
                 }
                 (Err(_), Err(_)) => assert!(text.ends_with("1e400"), "{text}: both refused"),
                 (parsed, expected) => {

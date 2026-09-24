@@ -6,9 +6,13 @@
 //! `arch-lint api-surface` is FR-060 (the reusable API-surface check).
 //! `arch-lint duplicate-revisions` is FR-061 (one revision per quire crate
 //! in QSL's own `Cargo.lock`).
+//! `arch-lint canonical-encoder` is ADR-013 §2's one-RFC-8785-encoder rule
+//! (ADR-013:113, QSL-194): no second canonical encoder beside
+//! `quire-canonical`.
 #![forbid(unsafe_code)]
 
 mod api_surface;
+mod canonical_encoder;
 mod duplicate_revisions;
 mod error;
 mod graph;
@@ -28,7 +32,8 @@ fn usage() -> Error {
         Code::Usage,
         "arch-lint direction --qsl <path> --ir <path> --rt <path> --cg <path> [--offline]\n\
          arch-lint api-surface --qsl <path> [--cg <path>]\n\
-         arch-lint duplicate-revisions --lockfile <path>",
+         arch-lint duplicate-revisions --lockfile <path>\n\
+         arch-lint canonical-encoder --qsl <path>",
     )
 }
 
@@ -304,6 +309,16 @@ fn run_duplicate_revisions(mut args: Vec<String>) -> Result<(String, bool)> {
     Ok((summary, duplicates.is_empty()))
 }
 
+fn run_canonical_encoder(mut args: Vec<String>) -> Result<(String, bool)> {
+    let qsl = require(&mut args, "--qsl")?;
+    if !args.is_empty() {
+        return Err(usage());
+    }
+    api_surface::assert_is_qsl_root(&qsl)?;
+    let outcome = canonical_encoder::evaluate(&qsl)?;
+    Ok((canonical_encoder::report(&outcome), outcome.passed()))
+}
+
 fn run(arguments: &[OsString]) -> Result<(String, bool)> {
     let mut args: Vec<String> = arguments
         .iter()
@@ -318,6 +333,7 @@ fn run(arguments: &[OsString]) -> Result<(String, bool)> {
         "direction" => run_direction(args),
         "api-surface" => run_api_surface(args),
         "duplicate-revisions" => run_duplicate_revisions(args),
+        "canonical-encoder" => run_canonical_encoder(args),
         _ => Err(usage()),
     }
 }

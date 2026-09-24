@@ -1372,6 +1372,7 @@ dependencies = [
  "qsl-foundation",
  "qsl-package",
  "qsl-semantics",
+ "quire-canonical",
  "quire-exact",
  "serde_json",
  "sha2",
@@ -1433,6 +1434,7 @@ dependencies = [
  "qsl-forms",
  "qsl-foundation",
  "qsl-semantics",
+ "quire-canonical",
  "quire-contract-model",
  "quire-exact",
  "serde_json",
@@ -1473,6 +1475,7 @@ dependencies = [
  "proc-macro2",
  "qsl-forms",
  "qsl-foundation",
+ "quire-canonical",
  "quire-exact",
  "serde",
  "serde_json",
@@ -1491,6 +1494,17 @@ dependencies = [
  "quire-rs",
  "serde",
  "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "quire-canonical"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-canonical?rev=0143a2b76be9a51941e95ee2613f2d5608d756fe#0143a2b76be9a51941e95ee2613f2d5608d756fe"
+dependencies = [
+ "ryu-js",
+ "serde",
+ "sha2",
  "thiserror",
 ]
 

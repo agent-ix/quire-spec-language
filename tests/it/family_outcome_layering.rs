@@ -369,13 +369,29 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "{crate_name} depends on layer-1 qsl-cst"
             );
             fcd_is_named_by_model_intake_only(&package.normal);
+            // QSL-194 (ADR-013 §2, ADR-013:113): shipped code encodes and
+            // hashes identities through `quire-canonical` and
+            // `qsl_foundation::ByteDigest`; `sha2` is a test-only
+            // dependency, so no shipped module can hash on its own.
+            assert!(
+                package
+                    .normal
+                    .iter()
+                    .any(|dependency| dependency == "quire-canonical"),
+                "{crate_name} does not depend on quire-canonical"
+            );
+            assert!(
+                !package.normal.iter().any(|dependency| dependency == "sha2"),
+                "{crate_name} has a normal dependency on sha2"
+            );
         }
         if crate_name == "qsl-package" {
             // Layer 4 (QSL-182): "3, F, K; `quire-contract-model` for v2 wire
             // constants and round-trip tests only". The whole shipped table
-            // is fixed: layer 3, F, the v2 wire contract and the two
-            // third-party crates the shipped code calls. K is used by its
-            // tests only.
+            // is fixed: layer 3, F, the v2 wire contract, `quire-canonical`
+            // (ADR-013 §2's one RFC 8785 encoder, for the `package_id`
+            // preimage, QSL-194) and `thiserror`. K, `serde_json` and `sha2`
+            // are used by its tests only.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(
@@ -383,8 +399,8 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 [
                     "qsl-foundation",
                     "qsl-semantics",
+                    "quire-canonical",
                     "quire-contract-model",
-                    "serde_json",
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"

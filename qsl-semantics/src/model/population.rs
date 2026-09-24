@@ -138,18 +138,18 @@ use std::sync::Arc;
 
 use crate::model::conformance::{generals_by_specific, type_conforms};
 use crate::model::dispatch::GeneralizationClosure;
+use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord,
     OperationEffect,
 };
-use crate::model::key::{hex, jcs_bytes, DeclarationKey, EffectiveId};
+use crate::model::key::{hex, sha256_and_len, DeclarationKey, DeclarationKeyWire, EffectiveId};
 use crate::model::normalize::{
     EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, ViewPopulation,
 };
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
-use serde_json::{Map, Value as JsonValue};
-use sha2::{Digest, Sha256};
+use serde::Serialize;
 
 use quire_exact::{
     length_amount, CardinalityBound, Charge as ScalarCharge, ChargePoint as ScalarChargePoint,
@@ -670,51 +670,52 @@ impl AdmissionRole {
 /// is the interim guard: it refuses a second, unequal binding recorded
 /// under an id already bound to a different one, rather than silently
 /// letting the later admission win.
-fn population_id_preimage(
-    domain_package: &DomainPackage,
-    population_key: &DeclarationKey,
+fn population_id_preimage<'a>(
+    domain_package: &'a DomainPackage,
+    population_key: &'a DeclarationKey,
     role: AdmissionRole,
-) -> JsonValue {
-    let mut object = Map::new();
-    object.insert(
-        "version".to_owned(),
-        JsonValue::String(POPULATION_ID_DOMAIN.to_owned()),
-    );
-    // The full `DomainPackageRef` header (identity, version, digest), not
-    // only `identity`: this module's own `admit_binding` doc already
-    // establishes that comparing bare `identity` alone misses a
-    // version-only or digest-only divergence between two otherwise
-    // same-named domain packages (its own `ForeignModelSelection` check
-    // compares the full header for exactly that reason), so "the domain
-    // package identity" a binding was admitted against is this header, not
-    // its `identity` field alone.
-    object.insert(
-        "domain_package_selection".to_owned(),
-        domain_package.model_selection.to_json(),
-    );
-    object.insert("population_key".to_owned(), population_key.to_json());
-    object.insert(
-        "admission_role".to_owned(),
-        JsonValue::String(role.as_str().to_owned()),
-    );
-    JsonValue::Object(object)
+) -> PopulationIdWire<'a> {
+    PopulationIdWire {
+        version: POPULATION_ID_DOMAIN,
+        // The full `DomainPackageRef` header (identity, version, digest), not
+        // only `identity`: this module's own `admit_binding` doc already
+        // establishes that comparing bare `identity` alone misses a
+        // version-only or digest-only divergence between two otherwise
+        // same-named domain packages (its own `ForeignModelSelection` check
+        // compares the full header for exactly that reason), so "the domain
+        // package identity" a binding was admitted against is this header,
+        // not its `identity` field alone.
+        domain_package_selection: domain_package.model_selection.wire(),
+        population_key: population_key.wire(),
+        admission_role: role.as_str(),
+    }
+}
+
+/// [`population_id_preimage`]'s typed form.
+#[derive(Serialize)]
+struct PopulationIdWire<'a> {
+    version: &'static str,
+    domain_package_selection: DomainPackageRefWire<'a>,
+    population_key: DeclarationKeyWire<'a>,
+    admission_role: &'static str,
 }
 
 /// Mints the [`PopulationId`] (ADR-013 O-13 Population row, QC-21,
 /// FR-089-AC-1) for a binding admitted against `domain_package`/
 /// `population_key` under `role`: this module's only call of the kernel's
-/// `PopulationId::from_digest` (T12-D).
+/// `PopulationId::from_digest` (T12-D). The preimage is RFC 8785-encoded by
+/// `quire-canonical` (ADR-013 §2, ADR-013:113: one RFC 8785 implementation).
 fn mint_population_id(
     domain_package: &DomainPackage,
     population_key: &DeclarationKey,
     role: AdmissionRole,
 ) -> PopulationId {
-    let bytes = jcs_bytes(&population_id_preimage(
+    let (digest, _) = sha256_and_len(&population_id_preimage(
         domain_package,
         population_key,
         role,
     ));
-    PopulationId::from_digest(Sha256::digest(&bytes).into())
+    PopulationId::from_digest(digest)
 }
 
 /// The outcome of one [`admit_binding`] attempt.
@@ -1949,6 +1950,8 @@ pub fn lookup(
 mod tests {
     use ix_trace_rs::trace;
 
+    use sha2::{Digest, Sha256};
+
     use super::*;
     use crate::model::accounting::ModelNormalizationLimits;
     use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
@@ -2077,5 +2080,33 @@ mod tests {
             before_invocation,
             "admit_invocation never builds, for either instant"
         );
+    }
+
+    /// QSL-194 golden vector: the `quire.population/v1` preimage's RFC 8785
+    /// text, written out by hand, and its SHA-256. The `serde_json` encoder
+    /// this site used before QSL-194 emitted the same text, so the minted
+    /// `PopulationId` is unchanged.
+    #[trace("TC-291", "FR-089-AC-1")]
+    #[test]
+    fn population_id_matches_its_golden_vector() {
+        const TEXT: &str = r#"{"admission_role":"direct","domain_package_selection":{"digest":"1111111111111111111111111111111111111111111111111111111111111111","digest_domain":"sha256-jcs","identity":"test/orders","version":"1"},"population_key":{"digest_domain":"sha256-jcs","node":"ix://test/orders/P1","package":"test/orders"},"version":"quire.population/v1"}"#;
+        const DIGEST: &str = "092fac4438533d9185c17106da06667b4745a3e49b0aacd3fa51ada86e215298";
+        let package = DomainPackage::new(
+            DomainPackageRef {
+                identity: "test/orders".to_owned(),
+                version: "1".to_owned(),
+                digest: [0x11; 32],
+            },
+            Vec::new(),
+        );
+        let key = DeclarationKey {
+            package: "test/orders".to_owned(),
+            node: "ix://test/orders/P1".to_owned(),
+        };
+        assert_eq!(hex(&Sha256::digest(TEXT.as_bytes())), DIGEST);
+        let id = mint_population_id(&package, &key, AdmissionRole::Direct);
+        assert_eq!(hex(id.as_bytes()), DIGEST);
+        let parsed: serde_json::Value = serde_json::from_str(TEXT).unwrap();
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), TEXT);
     }
 }

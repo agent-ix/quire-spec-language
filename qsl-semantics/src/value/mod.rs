@@ -201,7 +201,7 @@ pub use member::Member;
 // consumers outside the crate use).
 pub use semantic_node::{
     InvalidSemanticGraph, ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-    OwnerSubject, SemanticGraphCause,
+    OwnerSubject, SemanticGraphCause, IDENTITY_LIMITS,
 };
 // QSL-131 O3: `admit_text`, `compare_text`, `Text`, `TextPayload` and
 // `InvalidTextLiteral` were this module's own `text` submodule, a

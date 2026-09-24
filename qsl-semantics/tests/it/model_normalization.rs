@@ -2148,7 +2148,7 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
 /// normalize.hash)` pairs with JCS lengths 375 (A), 563 (B), 500 (A.x owned
 /// by A), 583 (A.x inherited by B); then `normalize.hash` of the universe
 /// (349) and of the view (2941) — 5311 hashed bytes and 19 work units total,
-/// verified against the running preimage's own `jcs_bytes()`, not just
+/// verified against the running preimage's own `canonical_len()`, not just
 /// against the meter's own bookkeeping.
 #[trace("TC-195", "FR-150-AC-1", "FR-150-AC-8")]
 #[test]
@@ -2189,16 +2189,16 @@ fn n01_charges_the_exact_ground_truth_sequence_in_order() {
     let type_b = find_type(&view, "ix://test/orders/B");
     let member_a_x = find_member(&view, &type_a.effective_id, "ix://test/orders/A/x");
     let member_b_x = find_member(&view, &type_b.effective_id, "ix://test/orders/A/x");
-    assert_eq!(type_a.preimage.jcs_bytes().len(), 375);
-    assert_eq!(type_b.preimage.jcs_bytes().len(), 563);
-    assert_eq!(member_a_x.preimage.jcs_bytes().len(), 500);
-    assert_eq!(member_b_x.preimage.jcs_bytes().len(), 583);
+    assert_eq!(type_a.preimage.canonical_len(), 375);
+    assert_eq!(type_b.preimage.canonical_len(), 563);
+    assert_eq!(member_a_x.preimage.canonical_len(), 500);
+    assert_eq!(member_b_x.preimage.canonical_len(), 583);
 
     let universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
         .object_universe()
         .clone();
-    assert_eq!(universe.jcs_bytes().len(), 349);
-    assert_eq!(view.jcs_bytes().len(), 2941);
+    assert_eq!(universe.canonical_len(), 349);
+    assert_eq!(view.canonical_len(), 2941);
 
     assert_eq!(meter.consumed(LimitKind::HashedBytes), 5311);
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 19);

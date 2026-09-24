@@ -34,8 +34,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use sha2::{Digest, Sha256};
-
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, EffectiveId, Identifier, Integer,
     Meter, NodeKey, OrderingOperator, Presence, TextProfile, Value, ValueType,
@@ -752,10 +750,9 @@ impl<'a> Lowering<'a> {
     /// begins with, so it equals no node key.
     fn placeholder(&mut self) -> NodeKey {
         self.placeholder_count += 1;
-        let mut hasher = Sha256::new();
-        hasher.update(b"qsl.check.lowering-placeholder\0");
-        hasher.update(self.placeholder_count.to_be_bytes());
-        let key = NodeKey::from_digest(hasher.finalize().into());
+        let label = b"qsl.check.lowering-placeholder\0";
+        let preimage = [&label[..], &self.placeholder_count.to_be_bytes()].concat();
+        let key = NodeKey::from_digest(qsl_foundation::ByteDigest::of(&preimage).as_bytes());
         self.placeholders.insert(key, None);
         key
     }

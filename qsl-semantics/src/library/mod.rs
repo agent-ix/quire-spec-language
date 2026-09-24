@@ -58,8 +58,6 @@
 
 use std::collections::BTreeMap;
 
-use sha2::{Digest, Sha256};
-
 use crate::value::semantic_node::is_qualified_name;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
@@ -131,7 +129,7 @@ impl PackageId {
     /// `verify_package` (crate-private) then requires it to equal whatever
     /// a caller separately claims.
     pub fn of_preimage(preimage: &[u8]) -> Self {
-        Self(Sha256::digest(preimage).into())
+        Self(qsl_foundation::ByteDigest::of(preimage).as_bytes())
     }
 
     /// Lowercase hex spelling of an already-constructed `PackageId`, for

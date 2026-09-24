@@ -18,7 +18,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+
+use quire_canonical::Limits;
 
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, NodeKey, NODE_KEY_DOMAIN};
@@ -221,10 +222,8 @@ impl RationalDocument {
     }
 }
 
-// RFC 8785 JCS: every key below is ASCII, so declaring fields in ascending
-// byte order is ascending UTF-16 order. `serde_json`'s compact string encoder
-// escapes exactly `"`, `\`, `\b`, `\f`, `\n`, `\r`, `\t` and other C0 controls
-// as lowercase `\u00xx`, which is the JCS string serialization.
+// RFC 8785 JCS: `preimage_digest` encodes these through `quire-canonical`,
+// which orders members itself, so field declaration order carries no meaning.
 #[derive(Serialize)]
 pub(crate) struct CanonicalOwner<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -289,11 +288,42 @@ pub trait NodeIdentityPreimage {
     fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph>;
 }
 
-/// The digest of a canonical (JCS field-ordered) preimage. QSL computes the
-/// SHA-256 digest here; `check` alone wraps it into a `NodeKey`.
+/// The limits every QSL identity preimage encodes under.
+///
+/// ADR-013 §2 (ADR-013:113, "One RFC 8785 JCS implementation produces every
+/// RFC 8785 encoding"): every QSL normalized identity -- checked node keys,
+/// nominal and unit preimages, `EffectiveId`, `UniverseId`, `PopulationId`,
+/// `package_id` and the domain-package `sha256-jcs` digest -- is encoded by
+/// the `quire-canonical` crate, called directly at each identity site. This
+/// constant is no encoder: it fixes only the limits those calls share, so the
+/// bound is stated once. It lives here, in the lowest identity-preimage
+/// module, so every layer-3 module may name it (FR-068-AC-6).
+///
+/// Depth is [`Limits::MAX_DEPTH`], the encoder's own ceiling. It is above the
+/// deepest preimage QSL builds: a typed preimage nests a fixed schema depth,
+/// a checked node body is already bounded by `check::MAX_CHECKING_DEPTH`,
+/// and an intake document by the intake reader's `MAX_DEPTH` (200).
+///
+/// The byte ceiling is `u64::MAX`, i.e. none of its own: every preimage is
+/// built from values an earlier stage already bounded (intake's
+/// `MAX_INPUT_BYTES`, the check stage's limits, a package reader's
+/// `artifact_bytes`), and a caller with a tighter byte budget of its own
+/// passes its own [`Limits`] instead (the v2 reader does).
+pub const IDENTITY_LIMITS: Limits = match Limits::new(u64::MAX, Limits::MAX_DEPTH) {
+    Ok(limits) => limits,
+    // `Limits::MAX_DEPTH` is by definition within `Limits::MAX_DEPTH`; this
+    // arm is evaluated at compile time and is unreachable.
+    Err(_) => panic!("Limits::MAX_DEPTH is within Limits::MAX_DEPTH"),
+};
+
+/// The SHA-256 digest of `value`'s RFC 8785 bytes, encoded and hashed by
+/// `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC 8785
+/// implementation). A value with no RFC 8785 encoding refuses as
+/// non-canonical. QSL computes the digest here; `check` alone wraps it into a
+/// `NodeKey`.
 pub(crate) fn preimage_digest(value: &impl Serialize) -> Result<[u8; 32], InvalidSemanticGraph> {
-    serde_json::to_vec(value)
-        .map(|bytes| Sha256::digest(bytes).into())
+    quire_canonical::sha256(value, IDENTITY_LIMITS)
+        .map(|digest| *digest.as_bytes())
         .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))
 }
 

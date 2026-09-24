@@ -1002,13 +1002,13 @@ fn admit_refuses_the_reserved_native_pseudo_package_identity() {
 fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
     // A minimal but genuinely admittable first selection, so the refusal
     // below is provably about the *second* selection's repeated identity,
-    // not a byte-level failure of the first (compact `Value::to_string()`
-    // is already RFC 8785 JCS bytes here: no `preserve_order` feature means
-    // `serde_json::Map` is a `BTreeMap`, and there is no whitespace to strip
-    // -- the same reasoning `model::key`'s own module docs give).
-    let document = serde_json::json!({"package": {"identity": "acme/orders", "version": "1"}})
-        .to_string()
-        .into_bytes();
+    // not a byte-level failure of the first: the document bytes are its
+    // RFC 8785 encoding, from the one encoder (ADR-013:113).
+    let document = quire_canonical::to_vec(
+        &serde_json::json!({"package": {"identity": "acme/orders", "version": "1"}}),
+        qsl_semantics::value::IDENTITY_LIMITS,
+    )
+    .expect("a document of strings encodes");
     let digest: [u8; 32] = Sha256::digest(&document).into();
     let mut bytes_by_digest = BTreeMap::new();
     bytes_by_digest.insert(digest, document);

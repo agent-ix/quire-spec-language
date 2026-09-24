@@ -2,7 +2,7 @@
 //! Closed complete-V1 package selection and canonical identity domains.
 use std::collections::{BTreeMap, BTreeSet};
 
-use sha2::{Digest as _, Sha256};
+use serde::Serialize;
 use std::sync::Arc;
 
 use qsl_foundation::selection::{
@@ -10,6 +10,8 @@ use qsl_foundation::selection::{
     ModelDigest, ModelRef, SourceSelections, MAX_SELECTED_DEFINITIONS,
 };
 use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
+
+use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 /// Unforgeable crate-issued proof that typed definition/model parts came from
 /// the owning reader boundary.
@@ -1148,62 +1150,7 @@ pub fn resolve_source_package(
         )
     })?;
     bundle.capabilities = capabilities;
-    let mut identity = SemanticIdentityBuilder::new(b"quire.complete.resolved-graph/1\0");
-    for definition in resolved.values() {
-        let digest = definition.exact.digest().digest().to_string();
-        for (name, value) in [
-            (
-                "definition-identity",
-                definition.exact.identity().as_bytes(),
-            ),
-            ("definition-version", definition.exact.version().as_bytes()),
-            ("definition-digest", digest.as_bytes()),
-            (
-                "definition-role",
-                definition.role.identity_name().as_bytes(),
-            ),
-        ] {
-            identity
-                .field(name, value)
-                .map_err(|cause| identity_refusal(&authority, Span { start: 0, end: 0 }, cause))?;
-        }
-        for dependency in &definition.dependencies {
-            let digest = dependency.digest().digest().to_string();
-            for (name, value) in [
-                ("dependency-identity", dependency.identity().as_bytes()),
-                ("dependency-version", dependency.version().as_bytes()),
-                ("dependency-digest", digest.as_bytes()),
-            ] {
-                identity.field(name, value).map_err(|cause| {
-                    identity_refusal(&authority, Span { start: 0, end: 0 }, cause)
-                })?;
-            }
-        }
-        for capability in &definition.capabilities {
-            identity
-                .field("definition-capability", capability.as_str().as_bytes())
-                .map_err(|cause| identity_refusal(&authority, Span { start: 0, end: 0 }, cause))?;
-        }
-    }
-    for model in resolved_models.values() {
-        let digest = model.exact.digest().digest().to_string();
-        for (name, value) in [
-            ("model-identity", model.exact.identity().as_bytes()),
-            ("model-version", model.exact.version().as_bytes()),
-            ("model-digest", digest.as_bytes()),
-        ] {
-            identity
-                .field(name, value)
-                .map_err(|cause| identity_refusal(&authority, Span { start: 0, end: 0 }, cause))?;
-        }
-    }
-    for capability in &bundle.capabilities {
-        identity
-            .field("capability", capability.as_str().as_bytes())
-            .map_err(|cause| identity_refusal(&authority, Span { start: 0, end: 0 }, cause))?;
-    }
-    bundle.identity = identity
-        .finish()
+    bundle.identity = resolved_graph_identity(&resolved, &resolved_models, &bundle.capabilities)
         .map_err(|cause| identity_refusal(&authority, Span { start: 0, end: 0 }, cause))?;
     Ok(ResolvedSourcePackage {
         authority,
@@ -1295,32 +1242,99 @@ fn field(output: &mut Vec<u8>, name: &str, value: &[u8]) -> Result<(), PackageEr
     Ok(())
 }
 
-struct SemanticIdentityBuilder(Sha256);
+/// The digest-domain label of a resolved package graph's identity.
+const RESOLVED_GRAPH_DOMAIN: &[u8] = b"quire.complete.resolved-graph/2";
 
-impl SemanticIdentityBuilder {
-    fn new(domain: &[u8]) -> Self {
-        let mut hasher = Sha256::new();
-        hasher.update(b"SemanticDigest\0");
-        hasher.update(domain);
-        Self(hasher)
-    }
+/// A resolved package graph's identity preimage: every resolved definition
+/// (its exact reference, role, dependencies and capabilities) and model, in
+/// their maps' key order, then the linked bundle's capabilities.
+#[derive(Serialize)]
+struct ResolvedGraphPreimage<'a> {
+    definitions: Vec<ResolvedDefinitionPreimage<'a>>,
+    models: Vec<ExactRefPreimage<'a>>,
+    capabilities: Vec<&'a str>,
+}
 
-    fn field(&mut self, name: &str, value: &[u8]) -> Result<(), PackageError> {
-        let name_len = u64::try_from(name.len()).map_err(|_| PackageError::CanonicalSize)?;
-        let value_len = u64::try_from(value.len()).map_err(|_| PackageError::CanonicalSize)?;
-        self.0.update(name_len.to_be_bytes());
-        self.0.update(name.as_bytes());
-        self.0.update(value_len.to_be_bytes());
-        self.0.update(value);
-        Ok(())
-    }
+#[derive(Serialize)]
+struct ResolvedDefinitionPreimage<'a> {
+    exact: ExactRefPreimage<'a>,
+    role: &'static str,
+    dependencies: Vec<ExactRefPreimage<'a>>,
+    capabilities: Vec<&'a str>,
+}
 
-    fn finish(self) -> Result<SemanticDigest, PackageError> {
-        let hex = format!("{:x}", self.0.finalize());
-        ByteDigest::from_hex(&hex)
-            .map(SemanticDigest)
-            .map_err(|_| PackageError::CanonicalSize)
+/// An exact `{identity, version, digest}` reference; the digest is spelled
+/// `sha256:<hex>`, as `ByteDigest` displays it.
+#[derive(Serialize)]
+struct ExactRefPreimage<'a> {
+    identity: &'a str,
+    version: &'a str,
+    digest: String,
+}
+
+impl<'a> From<&'a DefinitionRef> for ExactRefPreimage<'a> {
+    fn from(exact: &'a DefinitionRef) -> Self {
+        Self {
+            identity: exact.identity(),
+            version: exact.version(),
+            digest: exact.digest().digest().to_string(),
+        }
     }
+}
+
+impl<'a> From<&'a ModelRef> for ExactRefPreimage<'a> {
+    fn from(exact: &'a ModelRef) -> Self {
+        Self {
+            identity: exact.identity(),
+            version: exact.version(),
+            digest: exact.digest().digest().to_string(),
+        }
+    }
+}
+
+/// The [`SemanticDigest`] of a resolved package graph: SHA-256 over the
+/// `quire.complete.resolved-graph/2` domain label and the RFC 8785 bytes of
+/// its [`ResolvedGraphPreimage`], through `quire-canonical`'s named-domain
+/// digest (ADR-013 §2, ADR-013:113: the one RFC 8785 implementation).
+///
+/// A refusal of the encoder (only a failed heap reservation is reachable
+/// for a preimage of strings, which [`LIMITS`] bounds in depth alone) is
+/// [`PackageError::CanonicalSize`]: the graph's canonical form cannot be
+/// produced at its size.
+fn resolved_graph_identity(
+    definitions: &BTreeMap<DefinitionRef, Arc<Definition>>,
+    models: &BTreeMap<ModelRef, Arc<ModelArtifact>>,
+    capabilities: &BTreeSet<CapabilityId>,
+) -> Result<SemanticDigest, PackageError> {
+    let preimage = ResolvedGraphPreimage {
+        definitions: definitions
+            .values()
+            .map(|definition| ResolvedDefinitionPreimage {
+                exact: ExactRefPreimage::from(&definition.exact),
+                role: definition.role.identity_name(),
+                dependencies: definition
+                    .dependencies
+                    .iter()
+                    .map(ExactRefPreimage::from)
+                    .collect(),
+                capabilities: definition
+                    .capabilities
+                    .iter()
+                    .map(CapabilityId::as_str)
+                    .collect(),
+            })
+            .collect(),
+        models: models
+            .values()
+            .map(|model| ExactRefPreimage::from(&model.exact))
+            .collect(),
+        capabilities: capabilities.iter().map(CapabilityId::as_str).collect(),
+    };
+    let digest = quire_canonical::sha256_with_domain(RESOLVED_GRAPH_DOMAIN, &preimage, LIMITS)
+        .map_err(|_| PackageError::CanonicalSize)?;
+    ByteDigest::from_hex(&digest.to_string())
+        .map(SemanticDigest)
+        .map_err(|_| PackageError::CanonicalSize)
 }
 
 /// Typed complete-package refusal.
@@ -1427,4 +1441,43 @@ pub struct ModelConflict {
     pub first_span: Span,
     /// Conflicting later exact selection.
     pub second: ModelRef,
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use sha2::{Digest as _, Sha256};
+
+    use super::*;
+
+    /// QSL-194 golden vector for the resolved-graph identity's named
+    /// `quire-canonical` domain: SHA-256 over the label's big-endian `u64`
+    /// length, the label `quire.complete.resolved-graph/2`, and the
+    /// preimage's RFC 8785 text, all written out by hand. This domain
+    /// replaces the length-prefixed `SemanticIdentityBuilder` encoding
+    /// (label `quire.complete.resolved-graph/1`), so its digests are new.
+    #[trace("TC-180", "FR-131-AC-2")]
+    #[test]
+    fn resolved_graph_identity_matches_its_golden_vector() {
+        const TEXT: &str =
+            r#"{"capabilities":["V1-SRC-001","V1-TYPE-002"],"definitions":[],"models":[]}"#;
+        const DIGEST: &str = "0cf46736b80d36aafb61f77297f1d41debb0182c6d9c4b689912661f94282209";
+        let mut hasher = Sha256::new();
+        hasher.update(
+            u64::try_from(RESOLVED_GRAPH_DOMAIN.len())
+                .unwrap()
+                .to_be_bytes(),
+        );
+        hasher.update(RESOLVED_GRAPH_DOMAIN);
+        hasher.update(TEXT.as_bytes());
+        assert_eq!(format!("{:x}", hasher.finalize()), DIGEST);
+
+        let capabilities = ["V1-SRC-001", "V1-TYPE-002"]
+            .into_iter()
+            .map(|id| CapabilityId::complete(id).unwrap())
+            .collect();
+        let identity =
+            resolved_graph_identity(&BTreeMap::new(), &BTreeMap::new(), &capabilities).unwrap();
+        assert_eq!(format!("{:x}", identity.digest()), DIGEST);
+    }
 }
