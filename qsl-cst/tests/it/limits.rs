@@ -6,12 +6,13 @@
 //! through the public [`qsl_cst::parse`]/[`qsl_cst::parse_source`] entry
 //! points, so a ceiling clamped anywhere on that path turns it red.
 //!
-//! `nesting` is not raised here: raising it lets deep brackets reach the
-//! parser's per-bracket recursion, which QSL-197 makes stack-safe first.
+//! Raising `nesting` is safe because both the lexer and the parser keep
+//! explicit stacks (QSL-197); the nesting tests below run on a 512 KiB
+//! thread to prove a raised ceiling can never abort the process.
 use ix_trace_rs::trace;
 use qsl_cst::diagnostic::read_source;
-use qsl_cst::{CompleteCode, Limits, ParsedSource};
-use qsl_foundation::SourceIdentity;
+use qsl_cst::{CompleteCode, CompleteDiagnostic, Limits, ParsedSource};
+use qsl_foundation::{SourceIdentity, SyntaxLimit};
 
 /// The smallest admissible unit prefix these fixtures grow from: an edition
 /// line and the profile every function names.
@@ -98,9 +99,11 @@ fn a_caller_raised_source_byte_ceiling_admits_past_the_default() {
     )
     .unwrap_err();
     assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
-    assert!(
-        refusal.message.contains(&(text.len() - 1).to_string()),
-        "the refusal must name the caller's bound, got {refusal:?}"
+    assert_eq!(
+        refusal.limit(),
+        Some(SyntaxLimit::SourceBytes {
+            bound: text.len() - 1
+        })
     );
 }
 
@@ -142,9 +145,9 @@ fn a_caller_raised_token_ceiling_admits_past_the_default_and_refuses_one_less() 
     )
     .unwrap_err();
     assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
-    assert!(
-        refusal.message.contains("leaf") || refusal.message.contains("token"),
-        "the refusal must name the exhausted kind, got {refusal:?}"
+    assert_eq!(
+        refusal.limit(),
+        Some(SyntaxLimit::Tokens { bound: leaves - 1 })
     );
 }
 
@@ -187,17 +190,18 @@ fn a_caller_raised_node_ceiling_admits_past_the_default_and_refuses_one_less() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     assert_eq!(parsed.effective_limits(), raised);
 
+    let refusal = qsl_cst::parse_source(
+        source(),
+        Limits {
+            nodes: nodes - 1,
+            ..Limits::default()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
     assert_eq!(
-        qsl_cst::parse_source(
-            source(),
-            Limits {
-                nodes: nodes - 1,
-                ..Limits::default()
-            },
-        )
-        .unwrap_err()
-        .code,
-        CompleteCode::ResourceExhausted,
+        refusal.limit(),
+        Some(SyntaxLimit::Nodes { bound: nodes - 1 })
     );
 }
 
@@ -238,4 +242,130 @@ fn the_whitespace_fast_path_records_only_limits_it_enforced() {
         .expect("the predecessor's own limits take the fast path");
     assert_eq!(fast.effective_limits(), raised);
     assert_eq!(fast.source().text(), edited);
+}
+
+/// Run `run` on a 512 KiB thread. A stack overflow aborts the whole test
+/// process, so reaching `join` at all is the stack-safety evidence.
+fn on_bounded_stack<F: FnOnce() + Send + 'static>(run: F) {
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(run)
+        .expect("spawn a 512 KiB thread")
+        .join()
+        .expect("the parser must not overflow a 512 KiB stack");
+}
+
+/// A unit whose function body nests `depth` parenthesis pairs inside the
+/// body's own `{ }` pair: `depth + 1` levels in all.
+fn nested_parens(depth: usize) -> String {
+    let mut text = String::from(HEADER);
+    text.push_str("function f using Complete (x: Integer): Integer pure { ");
+    text.push_str(&"(".repeat(depth));
+    text.push('x');
+    text.push_str(&")".repeat(depth));
+    text.push_str(" }\n");
+    text
+}
+
+/// A unit whose type alias nests `depth` `Option<...>` pairs.
+fn nested_options(depth: usize) -> String {
+    format!(
+        "{HEADER}type T = {}Integer{};\n",
+        "Option<".repeat(depth),
+        ">".repeat(depth)
+    )
+}
+
+/// `outcome` is admitted, with exactly `limits` recorded.
+fn assert_admitted_under(outcome: Result<ParsedSource, Box<CompleteDiagnostic>>, limits: Limits) {
+    let parsed = outcome.unwrap_or_else(|refusal| panic!("expected admission, got {refusal:?}"));
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    assert_eq!(parsed.effective_limits(), limits);
+    assert_eq!(parsed.effective_limits().nesting, 100_000);
+}
+
+/// QSL-199 finding 1: raising `nesting` to 100,000 never crashes the
+/// parser. 6,000 nested parentheses (through [`qsl_cst::parse`]) and 6,000
+/// nested `Option<...>` (through [`qsl_cst::parse_source`]) on a 512 KiB
+/// thread are admitted with the raised limits recorded. Node and token
+/// ceilings are raised too, so the parse must succeed outright rather than
+/// stop at another ceiling.
+#[trace("TC-012", "NFR-001-M-4")]
+#[test]
+fn a_raised_nesting_ceiling_never_crashes_the_parser() {
+    on_bounded_stack(|| {
+        const DEPTH: usize = 6_000;
+        let limits = Limits {
+            nesting: 100_000,
+            tokens: 10_000_000,
+            nodes: 10_000_000,
+            ..Limits::default()
+        };
+
+        let parens = nested_parens(DEPTH);
+        let outcome = qsl_cst::parse(
+            identity("deep-parens"),
+            "limits.native",
+            parens.as_bytes(),
+            limits,
+        );
+        assert_admitted_under(outcome, limits);
+
+        let options = nested_options(DEPTH);
+        let source = read_source(
+            identity("deep-options"),
+            "limits.native",
+            options.as_bytes(),
+            limits.source_bytes,
+        )
+        .unwrap();
+        let outcome = qsl_cst::parse_source(source, limits);
+        assert_admitted_under(outcome, limits);
+    });
+}
+
+/// QSL-199 finding 1: a caller-raised `nesting` ceiling admits a unit the
+/// default of 64 refuses, and one pair past the raised ceiling refuses
+/// naming it.
+#[trace("TC-012", "NFR-001-M-4")]
+#[test]
+fn a_caller_raised_nesting_ceiling_admits_past_the_default() {
+    on_bounded_stack(|| {
+        let default = Limits::default().nesting;
+        // `default` parentheses inside the body's `{ }`: default + 1 levels.
+        let text = nested_parens(default);
+        let refusal = qsl_cst::parse(
+            identity("nesting-default"),
+            "limits.native",
+            text.as_bytes(),
+            Limits::default(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            refusal.limit(),
+            Some(SyntaxLimit::NestingDepth { bound: default })
+        );
+
+        let raised = Limits {
+            nesting: default + 1,
+            ..Limits::default()
+        };
+        let parsed = parse("nesting-raised", &text, raised)
+            .expect("a caller-raised nesting ceiling must admit a unit at it");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        assert_eq!(parsed.effective_limits(), raised);
+
+        let deeper = nested_parens(default + 1);
+        let refusal = qsl_cst::parse(
+            identity("nesting-past"),
+            "limits.native",
+            deeper.as_bytes(),
+            raised,
+        )
+        .unwrap_err();
+        assert_eq!(
+            refusal.limit(),
+            Some(SyntaxLimit::NestingDepth { bound: default + 1 })
+        );
+    });
 }

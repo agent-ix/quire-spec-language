@@ -397,7 +397,12 @@ pub fn resolve_root_field_redefinition(
         package: PACKAGE.to_owned(),
         node: format!("{}/flag", node(&chain_type(0))),
     };
-    resolve_redefinition_target(domain_package, &field).map_err(Box::new)
+    resolve_redefinition_target(
+        domain_package,
+        &field,
+        ModelNormalizationLimits::UNLIMITED.ancestor_steps,
+    )
+    .map_err(Box::new)
 }
 
 #[cfg(test)]

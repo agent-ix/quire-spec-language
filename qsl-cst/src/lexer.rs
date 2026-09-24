@@ -30,8 +30,9 @@ pub struct Limits {
     /// Maximum bracket-pair nesting depth (NFR-001 "Nesting level"): one
     /// level is one `(…)`, `[…]`, `{…}` or type-argument `<…>` pair;
     /// operator, prefix, `let … in` and `if … else` chains add none. The
-    /// default is NFR-001's 64. A ceiling the implementation imposes on a
-    /// larger request is not a domain bound.
+    /// default is NFR-001's 64, and a caller's value is used as given: the
+    /// lexer and parser keep explicit stacks, so a raised ceiling cannot
+    /// overflow the host stack.
     pub nesting: usize,
 }
 
