@@ -580,7 +580,17 @@ mod tests {
             body_stop.compiler.syntax.source_bytes -= 1;
             let mut package_stop = exact;
             package_stop.compiler.package.artifact_bytes = 0;
-            for limits in [body_stop, package_stop] {
+            // `body_stop` trips the S1 syntax source-bytes ceiling, which
+            // QSL-236 moved onto `stage_limit_exceeded`/`input-bytes-exceeded`
+            // (`LimitKind::InputBytes`). `package_stop` trips the
+            // complete-V1 package-graph artifact-bytes ceiling
+            // (`PackageLimitKind::ArtifactBytes`), which stays on
+            // `resource_exhausted`: only `PackageLimitKind::Depth` maps
+            // cleanly onto one of the four catalogued stage-limit kinds.
+            for (limits, expected) in [
+                (body_stop, Code::StageLimitExceeded),
+                (package_stop, Code::ResourceExhausted),
+            ] {
                 let error = extract_and_compile(
                     original.clone(),
                     &ctx,
@@ -590,12 +600,12 @@ mod tests {
                     limits,
                 )
                 .unwrap_err();
-                assert_eq!(error.code(), Code::ResourceExhausted);
+                assert_eq!(error.code(), expected);
                 assert_eq!(error.extraction(), Some(upstream.extraction()));
                 let JoinCause::Compile(native) = &error.cause else {
                     panic!("a native stage limit must refuse at compile, after extraction");
                 };
-                assert_eq!(native.code(), Code::ResourceExhausted);
+                assert_eq!(native.code(), expected);
             }
             for limits in [body_exact, exact] {
                 assert!(extract_and_compile(
