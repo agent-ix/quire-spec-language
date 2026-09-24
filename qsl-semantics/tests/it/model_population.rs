@@ -3179,3 +3179,55 @@ fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
     assert_ne!(id_direct, id_pre);
     assert_ne!(id_pre, id_post);
 }
+
+/// QSL-199: binding admission's member-type conformance walk uses the
+/// caller's own `PopulationAdmissionLimits::ancestor_steps`, not a fixed
+/// ceiling. A population declaring only `model.A` admits P1's `b1` (a
+/// `model.B`, one generalization step below `model.A`) at
+/// `ancestor_steps: 1`, and refuses it at `ancestor_steps: 0` with
+/// `resource_exhausted` naming that bound.
+#[test]
+#[trace("TC-220", "FR-082-AC-3")]
+fn binding_admission_walks_member_types_under_the_callers_ancestor_steps() {
+    let domain_package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.n01"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            population_record(P1_POPULATION, &["model.A"], Extent::Closed),
+        ],
+    );
+    let view = view_of(&domain_package);
+    let admit = |ancestor_steps: u64| {
+        admit_binding(
+            &domain_package,
+            &view,
+            &p1("test/orders"),
+            &p1_population_key(),
+            GeneralizationClosure::Closed,
+            Some(3),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits {
+                ancestor_steps,
+                ..PopulationAdmissionLimits::UNLIMITED
+            }),
+        )
+    };
+
+    assert!(
+        matches!(admit(1), AdmissionOutcome::Admitted(_)),
+        "one generalization step must be admitted at ancestor_steps 1"
+    );
+    match admit(0) {
+        AdmissionOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ResourceExhausted);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::AncestorSteps {
+                    from: DeclarationKey::fixture("model.B"),
+                    limit: 0,
+                }
+            );
+        }
+        other => panic!("expected Refused(AncestorSteps, limit 0), got {other:?}"),
+    }
+}
