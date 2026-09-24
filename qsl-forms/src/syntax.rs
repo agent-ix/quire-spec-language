@@ -497,7 +497,9 @@ impl Expression {
 
     /// Moves every direct subexpression that has children of its own onto
     /// `stack`, leaving a childless placeholder or an empty `Vec` behind.
-    /// Childless subexpressions stay in place: their own drop never recurses.
+    /// Childless subexpressions are never pushed, so a node whose operands
+    /// are all childless allocates nothing: a boxed one stays in place and a
+    /// list element is dropped as its `Vec` drains, neither drop recursing.
     fn detach_children(&mut self, stack: &mut Vec<Expression>) {
         fn take(boxed: &mut Expression, stack: &mut Vec<Expression>) {
             if !boxed.is_childless() {
@@ -582,14 +584,14 @@ impl Expression {
             | Self::Collection {
                 elements: arguments,
                 ..
-            } => stack.append(arguments),
+            } => stack.extend(arguments.drain(..).filter(|a| !a.is_childless())),
             Self::Dispatch {
                 receiver,
                 arguments,
                 ..
             } => {
                 take(receiver, stack);
-                stack.append(arguments);
+                stack.extend(arguments.drain(..).filter(|a| !a.is_childless()));
             }
             Self::Record { fields, .. } => {
                 stack.extend(
@@ -598,7 +600,8 @@ impl Expression {
                         .filter_map(|(_, initializer)| match initializer {
                             FieldInitializer::Value(expression) => Some(expression),
                             FieldInitializer::Null => None,
-                        }),
+                        })
+                        .filter(|e| !e.is_childless()),
                 );
             }
         }
