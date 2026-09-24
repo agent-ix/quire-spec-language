@@ -32,21 +32,15 @@
 //! canonical ten-label FR-290 type (ADR-013 O-19), not a local request-label
 //! enum: OBS-012 records that "the QSL four-variant request label enum is
 //! replaced by the #213 type." [`families`] maps each of the ten kinds onto
-//! the QSL declaration [`Family`] it applies to. This mapping is
-//! **provisional**: it is inferred from FR-057's admitted-vocabulary table
-//! (its "FR-290 family" column) plus the retired four-variant enum's own
-//! `FiniteReplay` -> Protocol case, not itself published by any FR. Which
-//! family records which `Requirements` is decided in #210
-//! (agent-ix/quire-spec-language#210); this mapping should be revisited once
-//! that lands.
+//! the QSL declaration [`Family`] it applies to, as FR-057's "Kind
+//! applicability" table fixes.
 //!
-//! The mapping already has a concrete effect: a *required* capability
-//! request whose kind is not in the requested declaration's `families()` set
-//! becomes [`Disposition::InapplicableCapability`], and a required
+//! A request whose kind is not in the requested declaration's `families()`
+//! set becomes [`Disposition::InapplicableCapability`], and a required
 //! inapplicable request makes the whole [`Report`] unavailable. For example,
-//! a required `value-validity` request against a `State` or `Temporal`
-//! declaration is `InapplicableCapability` under the current mapping, since
-//! [`Capability::ValueValidity`] names only [`Family::Predicate`].
+//! a `value-validity` request against a `State` or `Temporal` declaration is
+//! `InapplicableCapability`, since [`Capability::ValueValidity`] names only
+//! [`Family::Predicate`].
 //!
 //! Checking a declaration's body under its semantic family is language
 //! admission, not a capability kind (FR-057, "Family-body admission"): no
@@ -75,21 +69,13 @@ pub enum Family {
 /// Declaration [`Family`] values for which `capability` is defined at all,
 /// in stable order.
 ///
-/// **Provisional**, pending #210 (agent-ix/quire-spec-language#210), which
-/// owns which family records which `Requirements`: inferred from FR-057's
-/// admitted-vocabulary table (its "FR-290 family" column) plus the retired
-/// four-variant enum's own `FiniteReplay` -> Protocol case, not itself
-/// published by any FR. `value` -> [`Family::Predicate`] (a predicate is "a
-/// reusable Boolean declaration", exactly a value-validity claim's own
-/// family); `state-model` -> [`Family::State`]; `finite-replay` ->
+/// FR-057 "Kind applicability": `value-validity` -> [`Family::Predicate`];
+/// `operation-contract` -> [`Family::State`]; `finite-replay` ->
 /// [`Family::Protocol`] (only a choreography declaration is replayed);
-/// `temporal-trace` -> [`Family::Temporal`]; every other listed family is
-/// `protocol` -> [`Family::Protocol`]. No kind is defined for more than one
-/// [`Family`]: each of the ten [`Capability`] kinds names exactly one
-/// FR-290 family. QSL's [`Family`] has four members where FR-290 has five
-/// (`value`, `state-model`, `finite-replay`, `temporal-trace`, `protocol`
-/// collapse the two protocol-shaped rows into one [`Family::Protocol`]),
-/// so this is not a 1:1 mapping onto FR-290's own family set.
+/// `temporal-satisfaction` -> [`Family::Temporal`]; the six protocol-family
+/// kinds -> [`Family::Protocol`]. Each kind names exactly one [`Family`].
+/// QSL's [`Family`] has four members where FR-290 has five families: FR-290's
+/// `finite-replay` family applies to a QSL protocol declaration.
 ///
 /// A required request whose [`Capability`] is not in the requested
 /// declaration's `families()` set becomes

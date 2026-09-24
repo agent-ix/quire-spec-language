@@ -6,8 +6,8 @@
 //! and is not run here: its settlements are fixture records shaped like
 //! `negotiate_*` output (TC-155 Description).
 //!
-//! Steps 1, 2 (FR-057-AC-5) and 7 (FR-057-AC-9) are not here; see the
-//! QSL-46 PR for why.
+//! Steps 1 and 2 (FR-057-AC-5) exercise the composed linker, not `route`,
+//! and are planned under #213.
 
 use ix_trace_rs::trace;
 use qsl_route::routing::{route, Disposition};

@@ -195,7 +195,7 @@ invented for that criterion.
 | TC-054 | Exact decoded JSON occurrence provenance | Integration | P1 | FR-017-AC-1 | ✅ Passed |
 | TC-113 | Composed syntax and historical grammar | Integration | P1 | FR-035-AC-1..FR-035-AC-6 | ✅ Passed |
 | TC-114 | Composed dependencies and declaration-owned roles | Integration | P1 | FR-036-AC-1..FR-036-AC-4, FR-036-AC-7 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 (tests/composed_models.rs, tests/composed_namespace.rs, tests/composed_definitions.rs, tests/composed_definition_source.rs, tests/composed_linking.rs, tests/composed_scopes.rs, tests/composed_binding.rs, src/linking/composed/arena.rs) |
-| TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8 | 🚧 AC-5 and AC-8 passed locally (tests/composed_admission_stages.rs); AC-6 over FR-057 kinds planned, #213/#185 |
+| TC-115 | Static meaning and requested capabilities | Integration | P1 | FR-036-AC-5, FR-036-AC-6, FR-036-AC-8, FR-057-AC-11 | 🚧 AC-5, AC-8 and FR-057-AC-11 passed locally (tests/composed_admission_stages.rs); AC-6 over FR-057 kinds planned, #213/#185 |
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | ✅ Passed locally (tests/composed_types.rs, tests/composed_type_pipeline.rs, tests/composed_proofs.rs, tests/composed_query_proofs.rs, tests/native_query_emission.rs) |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | ✅ Passed locally (tests/native_model_profiles.rs, src/checking/types.rs, src/linking.rs) |
 | TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
@@ -222,7 +222,7 @@ invented for that criterion.
 | IT-012 | Admit a spec artifact bundle through quire-rs and the FCD semantic IR crates | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Planned; #131 |
 | TC-153 | Admit exactly the ten capability kinds and refuse every other label | Unit | P0 | FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7, FR-057-AC-10 | 🚧 AC-1, AC-2, AC-4 value-type portion ✅ Passed locally (`qsl-semantics/src/check/capability.rs`, QSL-173); admission portion, and AC-7/AC-10, stay 🚧 Planned; #213 |
 | TC-154 | Refuse a capability carrier with an unsupported vocabulary version | Unit | P0 | FR-057-AC-3 | 🚧 Planned; #211/#213 |
-| TC-155 | Keep admission backend-independent and route only supported items | Integration | P0 | FR-057-AC-5, FR-057-AC-6, FR-057-AC-8, FR-057-AC-9 | 🚧 Steps 3 to 6 (AC-6, AC-8) ✅ Passed locally (`qsl-route/tests/it/routing.rs`, QSL-46); AC-5 planned, #213; AC-9 (step 7) planned, QSL-226 |
+| TC-155 | Keep admission backend-independent and route only supported items | Integration | P0 | FR-057-AC-5, FR-057-AC-6, FR-057-AC-8 | 🚧 Steps 3 to 6 (AC-6, AC-8) ✅ Passed locally (`qsl-route/tests/it/routing.rs`, QSL-46); AC-5 planned, #213 |
 
 ## Composed language admission (L2)
 
@@ -307,8 +307,8 @@ acceptance; neither test set establishes complete compiler #35/#40.
 | FR-057 | FR-057-AC-6 | TC-155 | ✅ Passed locally (`qsl-route/tests/it/routing.rs`, QSL-46) |
 | FR-057 | FR-057-AC-7 | TC-153 | 🚧 Planned; #213 |
 | FR-057 | FR-057-AC-8 | TC-155 | ✅ Passed locally (`qsl-route/tests/it/routing.rs`, QSL-46) |
-| FR-057 | FR-057-AC-9 | TC-155 | 🚧 Planned; QSL-226 |
 | FR-057 | FR-057-AC-10 | TC-153 | 🚧 Planned; #213, #217, #191, #192 |
+| FR-057 | FR-057-AC-11 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
 | FR-040 | FR-040-AC-1 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
 | FR-040 | FR-040-AC-2 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
 | FR-040 | FR-040-AC-3 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |

@@ -548,7 +548,7 @@ fn deleting_either_requested_entry_fails_the_requested_inventory_check() {
 /// section is a distinct, unconditional rule tested separately below
 /// (`admitted_bodies` does not depend on either disposition here).
 #[test]
-#[trace("TC-115", "FR-036-AC-6")]
+#[trace("TC-115", "FR-036-AC-6", "FR-057-AC-11")]
 fn a_claim_inapplicable_to_a_family_is_inapplicable_while_an_applicable_one_is_admitted() {
     let model = setup::native_rule_model::parts().model();
     let sources = ecosystem(&model, R::StateGraph);

@@ -786,9 +786,9 @@ mod tests {
     }
 
     /// ADR-013 C-27: the O-19 `backend` member round-trips, identity kept
-    /// verbatim. No FR yet carries C-27 (QSL-46 comment, 2026-09-22), so
-    /// this test is untraced.
+    /// verbatim.
     #[test]
+    #[trace("TC-433", "FR-075-AC-6")]
     fn backend_member_round_trips_through_its_wire_parts() {
         let original = candidate(" Kani/1 ", 0xab);
         let record = original.manifest_digest().record();
@@ -806,6 +806,7 @@ mod tests {
     /// domain is checked before the digest bytes -- a malformed digest
     /// under a wrong domain still reports the domain.
     #[test]
+    #[trace("TC-433", "FR-075-AC-6")]
     fn backend_member_with_a_wrong_digest_domain_refuses_before_the_bytes() {
         let hex = "ab".repeat(32);
         let wrong = DigestDomain::SourceBytesV1;

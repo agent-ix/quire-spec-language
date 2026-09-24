@@ -179,6 +179,28 @@ Which family records which `Requirements` is decided in
 [#210](https://github.com/agent-ix/quire-spec-language/issues/210); each
 recorded requirement names one kind from this table.
 
+### Kind applicability
+
+A requested pair's kind applies to exactly one QSL declaration family:
+
+| Kind | QSL declaration family |
+| --- | --- |
+| `value-validity` | predicate |
+| `operation-contract` | state |
+| `finite-replay` | protocol |
+| `temporal-satisfaction` | temporal |
+| `global-conformance`, `monitorability`, `local-projection`, `refinement`, `realizability`, `composition` | protocol |
+
+QSL has four declaration families where FR-290 names five. FR-290's
+`finite-replay` family applies to a QSL protocol declaration, because only a
+choreography is replayed.
+
+If a requested pair's kind does not apply to its declaration's family, then the
+QSL composed linker SHALL record the pair as an inapplicable capability, naming
+the declaration's family. A required inapplicable pair makes complete admission
+unavailable. An inapplicable pair withholds no declaration body from its family
+checker.
+
 ### Family-body admission
 
 Checking a declaration's body under its semantic family is language admission,
@@ -207,6 +229,11 @@ the candidate sets it computes and the routing are implemented by
 [#185](https://github.com/agent-ix/quire-spec-language/issues/185), which
 consumes this type and defines no second capability vocabulary.
 
+QSL reads no provider-manifest bytes. The driver that reads a backend's FR-331
+provider manifest registers the backend with four values from it: the backend
+identity, the manifest digest, the pinned tool identity and the advertised
+(kind, mode) labels exactly as stated (ADR-013 C-28).
+
 When a backend registers, the registry SHALL admit each advertised kind under
 the same rules as a requested pair.
 
@@ -218,8 +245,12 @@ backend identity. The refused registration contributes nothing, and any
 registration already held under that identity stands.
 
 For each admitted item, the registry SHALL compute the candidate set under the
-FR-290 candidate-set rule from one immutable registry snapshot, and SHALL pass
-it as the item's `candidates` in the quire-specification FR-331 request. A
+FR-290 candidate-set rule from one immutable registry snapshot, and SHALL
+return it as one typed value: the ordered candidate list, or the unknown-backend
+mark carrying the named identity. That value is the item's `candidates` in the
+quire-specification FR-331 request. The FR-331 envelope writer serializes it
+under FR-331's member layout, which agent-ix/quire-specification#134 owns (ADR-013
+QC-12, C-29); QSL defines no candidate-set wire of its own. A
 candidate is a registered backend's (identity, manifest digest); candidates are
 ordered bytewise by identity, then digest. The FR-331 `manifest` holds one
 descriptor per backend in that snapshot. The snapshot is retained as assessment
@@ -278,12 +309,15 @@ and SHALL NOT delay any other item's routing because of it.
 
 The QSL composed linker SHALL NOT produce a refusal from backend state.
 
-The routing SHALL keep a tool-absence item's `supported` disposition, SHALL
-NOT re-route it to another candidate and SHALL NOT re-run it under another
-mode. A tool that changes after a passing probe records the FR-331 result
-`failed` with `unsupported_projection`/`tool-unavailable` (FR-290). Artifacts the item emitted before
-the probe are retained and carry no verdict. The probe's placement belongs to
-quire-contract-codegen.
+Routing takes settled dispositions and nothing else. A run result, including a
+timeout or a tool-absence result, is not a routing input, so no run result
+changes an item's disposition or route, and routing has nothing to re-route or
+re-run under another mode. Recording a tool-absence `unsupported` result, or a
+`failed` result for a tool that changes after a passing probe, with
+`unsupported_projection`/`tool-unavailable`, belongs to the FR-331 result
+producer (quire-specification FR-290-AC-8, FR-331-AC-6). Artifacts the item
+emitted before the probe are retained and carry no verdict. The probe's
+placement belongs to quire-contract-codegen.
 
 An `unsupported`, `requires-bound` or `invalid-request` item emits no substitute
 artifact. Complete aggregate success over settled dispositions is the FR-331
@@ -313,8 +347,8 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-6 | Given settled dispositions in which one item is `unsupported` for an empty candidate set and one is `supported`, routing routes only the `supported` item. The `unsupported` item gets no target and no artifact, and is not turned into a refusal or a hold. The other item routes without delay. | Test (TC-155) |
 | FR-057-AC-7 | The QSL source tree defines one type carrying capability-kind labels, and no other type parses or emits an FR-290 label. | Test (TC-153) |
 | FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode, or repeating a registered identity, is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
-| FR-057-AC-9 | Given a supplied run result that is a timeout, FR-331 `unsupported` with `unsupported_projection`/`tool-unavailable`, or FR-331 `failed` with that cause after a passing probe, routing keeps the item's `supported` disposition, reports it as neither a refusal nor a hold, and does not re-route it to another candidate or mode. Recording either tool result itself is quire-specification FR-290-AC-8's evidence. | Test (TC-155) |
 | FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item; a nested expression adds no kind; a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153) |
+| FR-057-AC-11 | Each kind is applicable to exactly the family this requirement's applicability table gives it. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration is an inapplicable capability naming the state family, and its declaration's body still reaches its family checker. | Test (TC-115) |
 
 ## Dependencies
 
@@ -360,13 +394,9 @@ canonical `crate::check::Capability`, and no other capability-kind type exists
 in `requests`. `requests::report` reads no backend; the layer-R `route`
 registry computes candidate sets over the same type (FR-075). `admitted_bodies`
 is every declaration whose names resolved, independent of capability requests,
-as "Family-body admission" states. `report` marks a request inapplicable when
-its kind is not defined for the requested declaration's family, using a
-provisional, non-normative kind-to-family mapping (`requests::families`). It
-follows this requirement's admitted-vocabulary table for every kind except
-`finite-replay`, which it maps to the protocol family as the retired
-four-member request enum did. Which family records which capability kind is
-open under QSL-29.
+as "Family-body admission" states. `report` marks a request inapplicable by
+this requirement's applicability table (`requests::families`); FR-057-AC-11 is
+backed by TC-115 (`tests/it/composed_admission_stages.rs`).
 
 QSL-46 adds registration from advertised labels
 (`qsl_route::BackendDescriptor::admit`, refusing `absent-kind`,
@@ -375,10 +405,8 @@ step (`qsl_route::routing`), which takes settled dispositions as data and
 gives a target only to a `supported` item. FR-057-AC-6 and FR-057-AC-8 are
 backed by TC-155 steps 3 to 6 (`qsl-route/tests/it/routing.rs`).
 
-FR-057-AC-3, FR-057-AC-5, FR-057-AC-7, FR-057-AC-9 and FR-057-AC-10 are not
-yet backed by tests traced to them. Remaining work: #213 lands the
-carrier-version refusal (AC-3) and composed-linker admission of a received
-clause/capability pair. AC-9 (TC-155 step 7) needs a run-result input to
-routing, which `route` does not take; it is owned by QSL-226. TC-154, the
-rest of TC-155, and the admission portion of TC-153 (including AC-7 and
-AC-10), are planned under those tickets.
+FR-057-AC-3, FR-057-AC-5, FR-057-AC-7 and FR-057-AC-10 are not yet backed by
+tests traced to them. Remaining work: #213 lands the carrier-version refusal
+(AC-3) and composed-linker admission of a received clause/capability pair.
+TC-154, the rest of TC-155, and the admission portion of TC-153 (including
+AC-7 and AC-10), are planned under that ticket.

@@ -65,6 +65,7 @@ operational validation remains outside this audit-only plan.
 | TC-194 | Registry candidate sets are invariant under registration-order permutation | Property | P1 | FR-075-AC-2, FR-080-AC-1 | ✅ Passed locally; QSL-46 (PR #305) |
 | TC-195 | An unregistered named backend yields a distinct unknown-backend marker | Unit | P1 | FR-075-AC-3 | ✅ Passed locally; QSL-46 (PR #305) |
 | TC-196 | A duplicate backend identity registration is refused and the original stands | Unit | P1 | FR-075-AC-4 | ✅ Passed locally; QSL-46 (PR #305) |
+| TC-433 | A backend member keeps its identity and checks its digest domain first | Unit | P1 | FR-075-AC-6 | ✅ Passed locally; QSL-46 (PR #395), `qsl-route/src/lib.rs` |
 | TC-197 | Empty candidate set carries the data an unsupported warning needs | Unit | P1 | FR-076-AC-1, FR-076-AC-2 | ✅ Passed locally; QSL-46 (PR #305), `qsl-route/tests/it/route_registry.rs` |
 | TC-198 | Backend absence never settles as a refusal or a hold at the registry | Unit | P1 | FR-076-AC-3 | ✅ Passed locally; QSL-46 (PR #305), `qsl-route/tests/it/route_registry.rs` |
 | TC-199 | requests::report takes no Backend parameter and has no capability/family disposition | Unit | P1 | FR-077-AC-1, FR-077-AC-2 | ✅ Passed locally; QSL-46 (PR #305), `compile_fail` doctests traced on `FR077Doctests` (`src/linking/composed/requests.rs`) |

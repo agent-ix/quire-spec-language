@@ -102,6 +102,22 @@ and the capability kind a requested item carries, from the one canonical
 registry module or elsewhere in `#185`'s scope, whose variants name FR-290's
 capability-kind labels.
 
+### Reading a `backend` member
+
+A candidate's wire form is ADR-013 O-19's `backend` member: an `identity`
+string and a `manifest_digest` digest record. When QSL reads one, it SHALL keep
+the identity verbatim, with no normalization, and SHALL check the digest's
+domain before its digest string (ADR-013 C-27).
+
+If the digest names no domain, a label FR-201 does not define, or an FR-201
+domain other than `quire.tool-manifest.jcs/v1`, then QSL SHALL refuse the
+member for that domain, whatever the digest string holds. If the domain is
+right and the digest string is not exactly 64 lowercase hexadecimal digits,
+then QSL SHALL refuse the member for its digest.
+
+Writing a candidate's identity, domain and digest string and reading them back
+SHALL give the same candidate.
+
 ### Registration is refused, not silently merged, on a repeated identity
 
 If a registration names a `BackendId` the registry already holds, then the
@@ -141,6 +157,7 @@ registrations were added.
 | FR-075-AC-3 | Given a request naming a `BackendId` the registry does not hold, the result is the unknown-backend marker carrying that identity, distinguishable from an empty candidate set (which arises only from a registered backend that does not advertise the item's kind, or from no registrant advertising the kind at all). | Test (TC-195) |
 | FR-075-AC-4 | Given a registration naming a `BackendId` already held by the registry, the registration is refused with `invalid_capability`/`duplicate-backend` naming the identity, and a subsequent candidate computation still reflects only the original registration's advertised kinds. | Test (TC-196) |
 | FR-075-AC-5 | The registry module's public and internal capability-kind matching uses only the canonical `Capability` type; no enum defined inside `#185`'s scope carries variants named for an FR-290 capability-kind label. | Test (TC-193) |
+| FR-075-AC-6 | A `backend` member written from a candidate and read back equals it, and an identity with leading and trailing spaces is kept verbatim. An absent domain, an unknown domain label and `quire.source.bytes/v1` each refuse for the domain, including with a digest string that is not hex; with the right domain, 64 uppercase hex digits and a 2-character string each refuse for the digest. | Test (TC-433) |
 
 ## Dependencies
 
@@ -206,3 +223,7 @@ By Acceptance Criterion:
   apart. Its second half, that no other enum in scope carries FR-290
   capability-kind variants, holds by inspection: `route` imports
   `qsl_semantics::check::Capability` and defines no capability-kind type.
+- FR-075-AC-6: backed (`TC-433`):
+  `backend_member_round_trips_through_its_wire_parts` and
+  `backend_member_with_a_wrong_digest_domain_refuses_before_the_bytes`
+  (`qsl-route/src/lib.rs`).
