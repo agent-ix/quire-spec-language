@@ -230,7 +230,7 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 ///
 /// [`PackageDocument::parse`] is the only place intake turns package bytes
 /// into a tree. It reads the bytes with `agent-ix-semantic-ir`'s own JSON
-/// reader, the one [`validate_with_semantic_ir`] must be handed (its
+/// reader, the one `validate_with_semantic_ir` must be handed (its
 /// `decide` accepts only that crate's own `Json`), and derives this crate's
 /// `serde_json::Value` view from that same tree rather than from the bytes
 /// again. [`admit`]'s JCS digest and [`read_records`]'s per-node reader both
@@ -316,7 +316,7 @@ fn value_of(json: &agent_ix_semantic_ir::json::Json) -> Result<Value, &str> {
 ///
 /// Runs the checks in table order and stops at the first failure: digest
 /// domain, then byte presence, then digest equality
-/// ([`check_package_digest`]), then the package's own declared
+/// (`check_package_digest`), then the package's own declared
 /// identity/version.
 ///
 /// The package bytes are parsed once, here, into the [`PackageDocument`]
