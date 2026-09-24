@@ -582,11 +582,9 @@ fn related_occurrences(
             .find(|relationship| relationship.name.span == symbol.name.span)
             .ok_or(Error::Invalid(Invalid::Reference))?;
     }
-    // Unsupported::Export, not ProducerCorrespondence: matches
-    // relationship_authority (runtime.rs) and the wire-read equivalent
-    // (protocol_artifact::models::validate_related) for the same
-    // unreachable-by-construction condition. ProducerCorrespondence stays
-    // reserved for a wire package that explicitly claims one.
+    // Unsupported::Export: matches relationship_authority (runtime.rs) and
+    // the wire-read equivalent (protocol_artifact::models::validate_related)
+    // for the same unreachable-by-construction condition.
     Err(Error::Unsupported(Unsupported::Export))
 }
 

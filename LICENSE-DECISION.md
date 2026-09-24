@@ -13,12 +13,12 @@ Relicense, 2026-09-13: the owner decided that every agent-ix repository licensed
 Frozen digest-bound data keeps its original `AGPL-3.0-only` bytes because the
 notice is part of pinned identities: published `schemas/` (SCHEMA_SHA256
 constants), authored model sources and `.native` inputs under `examples/` and
-`tests/fixtures/`, the Filament producer checkpoint and the committed
-`artifacts/compiled-protocol-v2/` handoff. Their next deliberate regeneration
-adopts `AGPL-3.0-or-later`.
+`tests/fixtures/` and the Filament producer checkpoint. Their next deliberate
+regeneration adopts `AGPL-3.0-or-later`.
 
-The committed `artifacts/compiled-protocol-v1/` handoff was generated after the
-relicense by the Rust producer under `AGPL-3.0-or-later`. Its selected original
+The committed `artifacts/compiled-protocol-v1/` and `artifacts/compiled-protocol-v2/`
+handoffs were generated after the relicense by the Rust producer under
+`AGPL-3.0-or-later`. Its selected original
 source members retain their pre-existing `AGPL-3.0-only` notices and exact bytes;
 the package, executable and checksum inventory do not relicense those inputs.
 

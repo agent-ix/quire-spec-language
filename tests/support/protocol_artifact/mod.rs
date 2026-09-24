@@ -476,7 +476,7 @@ impl Fixture {
                         },
                     },
                 ],
-                correspondence: w::Nullable(None),
+                domain_package: w::Nullable(None),
             }],
             types: vec![w::Type::Object { export: object }, w::Type::Boolean {}],
             declarations: vec![declaration],

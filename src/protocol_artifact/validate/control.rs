@@ -157,23 +157,13 @@ impl<'a> Graph<'a, '_> {
                 return Err(Error::Invalid(Invalid::Binding));
             }
         }
-        for relationship in relationships {
+        if let Some(relationship) = relationships.first() {
             self.locus(owner, &relationship.locus)?;
             self.export(&relationship.model, &[ExportKind::Relationship])?;
-            let binding =
-                self.binding(owner, relationship.binding, &[BindingKind::Relationship])?;
-            let relation = self
-                .package
-                .models
-                .get(relationship.model.model as usize)
-                .and_then(|model| model.correspondence.0.as_ref())
-                .map(|correspondence| correspondence.relation)
-                .ok_or(Error::Invalid(Invalid::Binding))?;
-            if binding.model.0.as_ref() != Some(&relationship.model)
-                || binding.relation.0 != Some(relation)
-            {
-                return Err(Error::Invalid(Invalid::Binding));
-            }
+            self.binding(owner, relationship.binding, &[BindingKind::Relationship])?;
+            // No `Model` carries a relation authority, so no relationship
+            // binding requirement can be established.
+            return Err(Error::Invalid(Invalid::Binding));
         }
         for channel in channels {
             self.locus(owner, &channel.locus)?;

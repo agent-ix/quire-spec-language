@@ -165,11 +165,11 @@ pub(super) fn validate(
         reserve_catalog(selected.model, work)?;
         let catalog = Catalog::composed(selected.model);
         let exports = exports(&catalog, work)?;
-        // No admitted correspondence can authorize a model export without
-        // the removed Producer 1.2 adapter (#131); a wire package claiming
-        // one is always refused as unsupported.
-        if model.correspondence.0.is_some() {
-            return Err(Error::Unsupported(Unsupported::ProducerCorrespondence));
+        // FR-042-AC-3/AC-12: a `NativeModel` selection is directly admitted
+        // and links no domain package, so its accepted naming is `null`; a
+        // payload naming one substitutes the selection.
+        if model.domain_package.0.is_some() {
+            return Err(Error::Invalid(Invalid::Model));
         }
         let mut targets = Vec::new();
         let mut previous_export: Option<ExportKey> = None;
@@ -307,17 +307,16 @@ pub(super) fn validate(
     Ok(retained)
 }
 
-// No admitted correspondence can authorize a relationship endpoint without
-// the removed Producer 1.2 adapter (#131); any event occurrence that names
-// a relationship is refused as unsupported, after confirming the name
-// itself resolves. The bounds check above is real and reachable from
+// No admitted model carries a relationship authority; any event occurrence
+// that names a relationship is refused as unsupported, after confirming the
+// name itself resolves. The bounds check above is real and reachable from
 // untrusted wire bytes (see the out-of-range `Related` mutant in
 // tests/protocol_artifact.rs); the `Unsupported::Export` refusal below it is
-// not, in this build: every model in `package.models` has already been
-// proven to carry no correspondence by the loop above this function's
-// caller, and `Graph::protocol` (validate/control.rs) independently refuses
-// any relationship whose model *lacks* one, so a `relationships[i]` entry
-// that resolves here can never exist. Kept, not deleted, because it is
+// not, in this build: a relationship export already refuses as
+// `Unsupported::Export` in the model loop above this function's caller, and
+// `Graph::protocol` (validate/control.rs) independently refuses every
+// relationship binding requirement, so a `relationships[i]` entry that
+// resolves here can never exist. Kept, not deleted, because it is
 // reachable data-in/data-out logic over the wire schema, not compiler
 // state, and a future relaxation of either check would change that.
 fn validate_related(package: &w::Package, work: &mut Work) -> Result<(), Error> {

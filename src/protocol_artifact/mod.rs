@@ -156,8 +156,6 @@ pub enum Unsupported {
     Definition,
     /// No supported profile matches the requested configuration.
     Profile,
-    /// A package claims a producer correspondence with no available adapter to honor it.
-    ProducerCorrespondence,
     /// A native family obligation has no supplied supported proof interpretation.
     FamilyProof,
     /// An export names a kind with no admitted correspondence to resolve it against.
@@ -342,7 +340,6 @@ const fn unsupported_code(unsupported: Unsupported) -> &'static str {
         Unsupported::Feature => "unsupported.feature",
         Unsupported::Definition => "unsupported.definition",
         Unsupported::Profile => "unsupported.profile",
-        Unsupported::ProducerCorrespondence => "unsupported.producer-correspondence",
         Unsupported::FamilyProof => "unsupported.family-proof",
         Unsupported::Export => "unsupported.export",
     }

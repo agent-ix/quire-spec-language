@@ -2339,7 +2339,6 @@ fn public_error_codes_are_injective_across_every_declared_axis() {
             Unsupported::Feature,
             Unsupported::Definition,
             Unsupported::Profile,
-            Unsupported::ProducerCorrespondence,
             Unsupported::FamilyProof,
             Unsupported::Export,
         ]
@@ -2470,10 +2469,8 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
         let v1_before = native::emit(&v1_before, Limits::default())
             .into_result()
             .expect("v1 emission");
-        let frozen_v1_digest =
-            include_str!("../fixtures/compiled-protocol-v1-v2-fixture.sha256").trim();
-        assert_eq!(v1_before.bytes().len(), 84_780);
-        assert_eq!(v1_before.digest().to_string(), frozen_v1_digest);
+        // FR-050-AC-4: `/1` stays readable by the strict `/1` reader. Its
+        // bytes are not frozen: FR-042 changes the shared `Model` in place.
         assert!(inputs.read(proofs, &v1_before).result().is_ok());
 
         assert!(inputs
@@ -3090,7 +3087,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // charged input bytes. `byte_work` includes the bytes of
             // `docs/compiled-protocol-v1.md`, the contract document the
             // fixture embeds, so an edit to that document moves it.
-            (4_814, 2_581, 1_169_464, 85_188)
+            (4_814, 2_581, 1_169_401, 85_188)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),

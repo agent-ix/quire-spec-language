@@ -145,6 +145,31 @@ impl Serialize for Integer {
     }
 }
 
+/// A `sha256-jcs` digest (FR-056-CON-4): 64 lowercase hex digits, with no
+/// `sha256:` prefix, so a raw-byte [`ByteDigest`] spelling cannot occupy it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JcsDigest(pub [u8; 32]);
+
+impl Serialize for JcsDigest {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use std::fmt::Write as _;
+        let mut text = String::with_capacity(64);
+        for byte in self.0 {
+            write!(text, "{byte:02x}").map_err(serde::ser::Error::custom)?;
+        }
+        serializer.serialize_str(&text)
+    }
+}
+
+impl<'de> Deserialize<'de> for JcsDigest {
+    fn deserialize<D: Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
+        // `from_hex` admits exactly 64 lowercase hex digits and no prefix.
+        ByteDigest::from_hex(&String::deserialize(decoder)?)
+            .map(|digest| Self(digest.as_bytes()))
+            .map_err(de::Error::custom)
+    }
+}
+
 // Exact shared raw-byte digest spelling; no new digest identity or algorithm.
 mod digest {
     use super::*;
@@ -318,18 +343,6 @@ record! { /// A declaration-owned table index; its expected table follows the fi
         index: u32
     }
 }
-record! { /// Exact selected producer digest domain, never implicitly rehashed here.
-    SelectedDigest {
-        /// The digest's identity domain, distinguishing what was hashed.
-        domain: String,
-        /// The digest domain's own version.
-        version: String,
-        /// The hash algorithm used to compute `value`.
-        algorithm: String,
-        /// The digest's own encoded bytes.
-        value: String
-    }
-}
 record! { /// Selected implementation and binary artifact, not an authenticity claim.
     Producer {
         /// The producer implementation's identity.
@@ -362,34 +375,6 @@ record! { /// Selected definition source, required rule sources and definition c
         requires: Vec<u32>
     }
 }
-record! { /// Original producer-domain identity, retaining its selected interface.
-    ProducerObject {
-        /// Index into the package's `models` table for the selected interface.
-        interface: u32,
-        /// The producer-domain object's own kind.
-        kind: String,
-        /// The authority that minted this object's identity.
-        authority: String,
-        /// The object's own identity string.
-        identity: String,
-        /// The object's selected revision.
-        revision: Revision,
-        /// The object's content digest.
-        digest: SelectedDigest
-    }
-}
-record! { /// Claims checked against the exact separately supplied relation artifact.
-    Correspondence {
-        /// The producer-domain object this correspondence claims about.
-        producer: ProducerObject,
-        /// Index into the package's `declarations` table for the native counterpart.
-        native: u32,
-        /// Index into the package's `sources` table for the relation artifact checked against.
-        relation: u32,
-        /// Indices into the package's `types`/`declarations` tables this correspondence exports.
-        exports: Vec<u32>
-    }
-}
 record! { /// Located producer export, whose kind/path must exist in its admitted view.
     Export {
         /// The exported member's closed kind.
@@ -400,16 +385,26 @@ record! { /// Located producer export, whose kind/path must exist in its admitte
         locus: ForeignLocus
     }
 }
-record! { /// Selected model artifact and exports, with explicit nullable correspondence.
+record! { /// FR-042/FR-056: the exact domain package a model was linked against.
+    DomainPackage {
+        /// The domain package's own identity.
+        identity: String,
+        /// The domain package's own version.
+        version: String,
+        /// The `sha256-jcs` digest of its Semantic IR 2.0.0 document.
+        digest: JcsDigest
+    }
+}
+record! { /// Selected model artifact and exports, naming its domain package directly.
     Model {
-        /// Index into the package's `sources` table for the model artifact.
+        /// Index into the package's `dependencies` table for the model artifact.
         artifact: u32,
         /// The selected model profile.
         profile: String,
-        /// The model's exports available for correspondence.
+        /// The model's exports.
         exports: Vec<Export>,
-        /// The model's correspondence claim, absent when none was supplied.
-        correspondence: Nullable<Correspondence>
+        /// The linked domain package; explicit null for a directly admitted native model.
+        domain_package: Nullable<DomainPackage>
     }
 }
 record! { /// Editable native authority labels; these are not formal revisions.
