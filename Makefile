@@ -150,6 +150,9 @@ CONFORMANCE_UNIT_TEST := quantities::tc_411_compound_unit_ids_match_qspec_vector
 # ADR-013 C-14 (TC-421, QSL-159): every source-map entry of QSpec's positive
 # v2 fixtures looks up to its wire regions, guarded the same way.
 CONFORMANCE_SOURCE_MAP_TEST := checked_v2::tests::conformance_c14_source_map_lookup_over_qspec_positive_fixtures
+# QSL-232: QSL's full I2 read over QSpec's checked-package-v2 fixtures --
+# every positive fixture admitted, every adverse mutation refused by cause.
+CONFORMANCE_I2_TEST := checked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures
 conformance:
 	@if [ -z "$(QSPEC_DIR)" ]; then \
 		echo "conformance: set QSPEC_DIR to a quire-specification checkout" >&2; \
@@ -175,6 +178,12 @@ conformance:
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* source-map entries over [1-9][0-9]* positive fixtures$$' || { echo "conformance: the source-map lookup check did not run" >&2; exit 1; }
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_I2_TEST) --nocapture 2>&1); \
+	status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -q '^conformance: [1-9][0-9]* positive fixtures through QSL.s full I2 read' || { echo "conformance: the I2 positive-fixture check did not run" >&2; exit 1; }; \
+	echo "$$out" | grep -q '^conformance: [1-9][0-9]* adverse mutations refused' || { echo "conformance: the I2 adverse-mutation check did not run" >&2; exit 1; }
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059

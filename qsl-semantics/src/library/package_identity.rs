@@ -83,11 +83,13 @@ pub enum PreimageDefect {
         /// What is malformed.
         defect: NodeDefect,
     },
-    /// Projection node `index` does not follow its predecessor in strictly
-    /// ascending node id order.
-    NodeOrder {
-        /// The node's index in `identity_projection`.
+    /// Projection node `index` repeats the node id of an earlier node. FR-322:
+    /// node identifiers are unique within the graph.
+    DuplicateNode {
+        /// The repeating node's index in `identity_projection`.
         index: usize,
+        /// The repeated wire node id.
+        node: WireNodeId,
     },
     /// Two projection nodes carry equal `declaration.qualified_name` values
     /// (`ambiguous-name`). `nodes` holds both wire node ids in ascending
@@ -400,25 +402,36 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
         .ok_or(PreimageDefect::EmptyProjection)?;
 
     // Pass 1 (native-diagnostics.md's refusal order, step 1): every node's
-    // own shape, and the projection's strictly ascending node-id order. This
-    // pass runs to completion across every node before pass 2 begins, so a
-    // schema refusal anywhere in the projection outranks a mismatch or an
-    // ambiguity found by scanning fewer nodes.
+    // own shape and node-id uniqueness, in projection order. This pass runs
+    // to completion across every node before pass 2 begins, so a schema
+    // refusal anywhere in the projection outranks a mismatch or an ambiguity
+    // found by scanning fewer nodes.
+    //
+    // The projection keeps the semantic graph's own node order, and that
+    // order is significant to `package_id` (FR-322-AC-14): it is not required
+    // to be ascending by node id.
     let mut shapes = Vec::with_capacity(nodes.len());
-    let mut previous: Option<WireNodeId> = None;
+    let mut seen_nodes = BTreeSet::new();
     for (index, node) in nodes.iter().enumerate() {
         let shape =
             projected_node(node).map_err(|defect| PreimageDefect::Node { index, defect })?;
-        if previous.is_some_and(|previous| previous >= shape.key) {
-            return Err(PreimageDefect::NodeOrder { index });
+        if !seen_nodes.insert(shape.key) {
+            return Err(PreimageDefect::DuplicateNode {
+                index,
+                node: shape.key,
+            });
         }
-        previous = Some(shape.key);
         shapes.push(shape);
     }
 
+    // Passes 2 and 3 visit nodes in ascending node-id digest order, the
+    // refusal order native-diagnostics.md and FR-322-AC-21 define. That is a
+    // visit order, independent of the projection's own order. Keys are
+    // unique after pass 1, so the order is total.
+    shapes.sort_unstable_by_key(|shape| shape.key);
+
     // Pass 2 (step 4): declaration-nominal-mismatch, in ascending node-id
-    // order (`shapes` is already ordered that way by pass 1's NodeOrder
-    // check). This pass runs to completion across every node before pass 3
+    // order. This pass runs to completion across every node before pass 3
     // begins, so a mismatch anywhere outranks an ambiguity at an earlier
     // node.
     for shape in &shapes {

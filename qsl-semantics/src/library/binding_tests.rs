@@ -248,11 +248,9 @@ fn a_resolved_library_lock_is_a_pinned_request() {
 }
 
 /// A preimage declaring `nodes` (seed, qualified name, node tag) with no
-/// nominal identity, in the ascending node-id order the reader requires.
+/// nominal identity, in the given order.
 fn preimage_declaring(nodes: &[(&str, &str, &str)]) -> Vec<u8> {
-    let mut sorted = nodes.to_vec();
-    sorted.sort_by_key(|(seed, _, _)| hex(seed.as_bytes()));
-    let projection: Vec<Value> = sorted
+    let projection: Vec<Value> = nodes
         .iter()
         .map(|(seed, name, tag)| {
             let reference =

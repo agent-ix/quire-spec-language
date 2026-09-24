@@ -30,9 +30,9 @@ Scope: FR-095-AC-3, FR-095-AC-4.
    serialized spelling.
 4. Read QSpec's published positive fixtures from
    `$QSPEC_DIR/proposals/checked-package-v2/fixtures/positive-*.json` through
-   IR's v2 reader, with each fixture's own locked artifacts as current and
-   its required features as supported, and look up every `source_map` entry
-   in the converted map.
+   QSL's whole I2 read, with each fixture's own locked artifacts as current
+   and its required features as supported, and look up every `source_map`
+   entry in the verified read's package source map.
 5. Resolve location tags for a mapped occurrence, a node the map does not
    hold and a mapped node at an unmapped ordinal.
 6. Read a wire whose `source_map` entry names a node absent from its graph.
@@ -57,7 +57,4 @@ Tag the tests `#[trace("TC-421", "FR-095-AC-n")]` with the AC each backs.
 
 Passed locally. `qsl-package/src/checked_v2/tests.rs` backs steps 1, 3, 4
 and 6, and `qsl-foundation/src/source/provenance.rs` steps 1, 2 and 5. Step
-4 runs under `make conformance`. It uses IR's reader rather than the whole
-I2 read because `library`'s identity-preimage check refuses three of the
-five fixtures for `identity_projection` order, which IR admits; step 1 covers
-the whole read.
+4 runs under `make conformance`, through the whole I2 read.
