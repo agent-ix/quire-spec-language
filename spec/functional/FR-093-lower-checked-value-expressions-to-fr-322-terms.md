@@ -219,7 +219,8 @@ walk entered it. At a type `U` and a path `p`:
 4. A declared record `C` that is not open: open `C` at the length of `p`;
    for each field in declaration order, walk a required field `f: V`'s `V`
    at `p` + `field:f` and an optional field `f?: V`'s `V` at `p` + `field:f`
-   + `inner`; then close `C`.
+   + `inner`; then close `C`. A record or tuple `C` from which no `Text`
+   type is reachable is not entered, here or in step 5, and appends nothing.
 5. A declared tuple `C` that is not open: open `C` at the length of `p`;
    walk each position `n`'s type, in position order, at `p` + `position:n`;
    then close `C`.

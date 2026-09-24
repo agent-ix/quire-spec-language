@@ -625,7 +625,7 @@ pub enum LeafSegment {
     Inner,
     /// `recursion:<d>`: the path reenters the composite it entered after
     /// `d` segments.
-    Recursion(u64),
+    Recursion(usize),
 }
 
 impl Serialize for LeafSegment {

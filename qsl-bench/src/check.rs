@@ -30,7 +30,7 @@ pub const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
 
 /// The source owner every benchmark package is declared under (FR-092:
 /// a package's declared nodes carry their unit's `SourceOwner`).
-fn owner() -> SourceOwner {
+pub(crate) fn owner() -> SourceOwner {
     SourceOwner::new("agent-ix", "qsl-bench").expect("a nonempty owner")
 }
 

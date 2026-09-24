@@ -6,7 +6,7 @@
 use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm};
 use qsl_semantics::check::PackageDeclarations;
 
-use crate::check::chain_name;
+use crate::check::{chain_name, owner};
 
 /// N self-recursive functions, `fI(x) = fI(x)`, with no `decreases`
 /// measure: N singleton recursive components, each refused
@@ -35,7 +35,7 @@ pub fn self_recursive(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::default()
+        ..PackageDeclarations::new(owner())
     }
 }
 

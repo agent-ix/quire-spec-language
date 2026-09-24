@@ -267,15 +267,158 @@ fn leaf_paths_follow_fr093_text_leaves() {
             "field:y/field:next/inner/recursion:1 (-)",
         ]
     );
-    // FR-092's `List`, which reaches no text type, carries no leaves.
-    assert!(equality_leaves(
-        vec![record(
+    // FR-092's `List`, which reaches no text type, carries no leaves, in
+    // equality and in `contains`.
+    let list = || {
+        record(
             "List",
-            vec![optional("next", ValueType::Composite(handle("List")))]
+            vec![optional("next", ValueType::Composite(handle("List")))],
+        )
+    };
+    assert!(equality_leaves(vec![list()], "List").is_empty());
+    let lists = TypeForm::collection(CollectionKind::Sequence, SPAN)
+        .with_arguments(vec![named("List")])
+        .with_bounds(vec!["0".into(), "3".into()]);
+    let has = function(
+        "has",
+        &[("s", lists), ("b", named("List"))],
+        boolean(),
+        None,
+        Expression::Contains {
+            collection: Box::new(name_expr("s")),
+            item: Box::new(name_expr("b")),
+        },
+    );
+    let checked = package(vec![list()], vec![has], vector_lock())
+        .check(CheckingLimits::default())
+        .expect("contains over List checks");
+    let contains = application(checked.semantic_graph(), "quire.op.collection.contains");
+    assert_eq!(contains["body"]["operation"]["leaves"], json!([]));
+}
+
+/// FR-092 "Recursion groups" (FR-093-AC-10's P15 and P16): `Option<Node>`
+/// is G17 wherever it is named, whichever function names it first, and
+/// the vectors key the same under every order of the functions.
+#[trace("FR-093-AC-10", "TC-415")]
+#[test]
+fn an_in_group_type_is_its_member_in_every_declaration_order() {
+    let keys_of = |functions: Vec<FunctionDeclaration>| {
+        let checked = package(
+            vec![node_record(), record_a(), record_b()],
+            functions,
+            vector_lock(),
+        )
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the functions check: {refusals:?}"));
+        let graph = checked.semantic_graph();
+        for vector in ["G17", "P15", "P16"] {
+            assert_fr093(graph, vector);
+        }
+        // P15 and P16 name their type by key, so their preimage bytes pin
+        // both parameters to G17; no second `Option<Node>` names G16.
+        let vectors = fr093_vectors();
+        let g17 = node_by_key(graph, &vectors["G17"].0).key();
+        let g16 = vectors["G16"].0.as_bytes();
+        let options = graph
+            .nodes()
+            .filter(|node| {
+                node.semantic_form() == "option"
+                    && (node.key() == g17 || node.preimage().windows(g16.len()).any(|w| w == g16))
+            })
+            .map(SemanticNode::key)
+            .collect::<Vec<_>>();
+        assert_eq!(options, [g17]);
+        graph.nodes().map(SemanticNode::key).collect::<Vec<_>>()
+    };
+    let eqo = || vector_functions().remove(3);
+    keys_of(vec![eqo()]);
+    keys_of(vec![eqo(), vector_functions().remove(0)]);
+    let forward = keys_of(vector_functions());
+    let mut reversed = vector_functions();
+    reversed.reverse();
+    assert_eq!(keys_of(reversed), forward);
+    let mut rotated = vector_functions();
+    rotated.rotate_left(2);
+    assert_eq!(keys_of(rotated), forward);
+}
+
+/// FR-092 G8: a `Sequence<Tree>` named after `Tree`'s group is keyed, with
+/// any bound, is over the group's `sequence` member, not a second
+/// `sequence` node.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn a_collection_over_a_recursive_record_reuses_the_group_base() {
+    let tree = record(
+        "Tree",
+        vec![required(
+            "kids",
+            sequence(ValueType::Composite(handle("Tree")), Some((0, 3))),
         )],
-        "List"
-    )
-    .is_empty());
+    );
+    let trees = TypeForm::collection(CollectionKind::Sequence, SPAN)
+        .with_arguments(vec![named("Tree")])
+        .with_bounds(vec!["0".into(), "5".into()]);
+    let wide = function(
+        "wide",
+        &[("s", trees)],
+        boolean(),
+        None,
+        Expression::Boolean(true),
+    );
+    let checked = package(vec![tree], vec![wide], vector_lock())
+        .check(CheckingLimits::default())
+        .expect("the parameter checks");
+    let graph = checked.semantic_graph();
+    let g8 = node_by_key(graph, &vector_key("G8")).key();
+    let sequences: Vec<NodeKey> = graph
+        .nodes()
+        .filter(|node| node.semantic_form() == "sequence")
+        .map(SemanticNode::key)
+        .collect();
+    assert_eq!(sequences, [g8]);
+    assert_eq!(
+        parameter_named(graph, "s")
+            .semantic_type()
+            .and_then(|bounds| graph.node(bounds))
+            .and_then(SemanticNode::semantic_type),
+        Some(g8)
+    );
+}
+
+/// FR-093 "Text leaves" rule 4: a composite from which no text type is
+/// reachable is not entered, so a cluster of twelve text-free records that
+/// each hold an optional field of every other adds no leaf and no walk, and
+/// the compared record's one text field is its only leaf.
+#[trace("FR-093-AC-11", "TC-415")]
+#[test]
+fn a_text_free_recursive_cluster_is_not_walked() {
+    let n = 12;
+    let cluster: Vec<CompositeDeclaration> = (0..n)
+        .map(|at| {
+            record(
+                &format!("R{at}"),
+                (0..n)
+                    .filter(|other| *other != at)
+                    .map(|other| {
+                        optional(
+                            &format!("r{other}"),
+                            ValueType::Composite(handle(&format!("R{other}"))),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    let mut records = cluster;
+    records.push(record(
+        "Top",
+        vec![
+            required("s", text(8, TextProfile::Nfc)),
+            required("r", ValueType::Composite(handle("R0"))),
+        ],
+    ));
+    // Under a small work budget too: each composite entered charges it.
+    assert_eq!(equality_leaves(records, "Top"), ["field:s (nfc)"]);
 }
 
 /// `eq` over `compared`, one of `records`.
