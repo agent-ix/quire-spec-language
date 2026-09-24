@@ -1047,6 +1047,14 @@ struct Engine<'a> {
     steps: usize,
     maximum_steps: usize,
     farthest: usize,
+    /// The farthest-position failure any attempt hit during the current
+    /// [`Self::production`] call, kept even where the frame that hit it
+    /// (`Optional`, a backtracking `Repeat`, a `Choice` that picks a
+    /// different alternative) goes on to discard its own copy because that
+    /// arm no longer needs it. Consulted only if the call's overall outcome
+    /// is [`Outcome::No`]: a successful parse never reports it, so this
+    /// never changes what a valid input produces.
+    farthest_failure: Option<Failure>,
 }
 
 impl<'a> Engine<'a> {
@@ -1070,6 +1078,7 @@ impl<'a> Engine<'a> {
                 .saturating_add(1)
                 .saturating_mul(WORK_PER_TOKEN),
             farthest: 0,
+            farthest_failure: None,
         }
     }
 
@@ -1077,6 +1086,20 @@ impl<'a> Engine<'a> {
         self.farthest = self.farthest.max(position.min(self.tokens.len()));
         self.steps = self.steps.saturating_add(1);
         self.steps <= self.maximum_steps
+    }
+
+    /// Record `failure` as a farthest-failure candidate, then return it as
+    /// an [`Outcome::No`]. Every fresh failure (a mismatched terminal, an
+    /// unmatched production or alternative) is created through this method,
+    /// so `farthest_failure` always holds the deepest position any attempt
+    /// reached this call, independent of which frame later discards its own
+    /// copy of the same failure.
+    fn fail(&mut self, failure: Failure) -> Outcome {
+        self.farthest_failure = Some(match self.farthest_failure.take() {
+            Some(farthest) => farthest.merge(failure.clone()),
+            None => failure.clone(),
+        });
+        Outcome::No(failure)
     }
 
     fn work_exhausted(&self) -> Outcome {
@@ -1126,9 +1149,22 @@ impl<'a> Engine<'a> {
     /// the same, so a memoized match stays valid, and every call charges the
     /// one work budget. Clearing them per call would cost O(tokens) each time
     /// `selection_prelude_nodes` reads one more declaration.
+    ///
+    /// `farthest_failure` is scoped to this one call: it is reset on entry
+    /// and, when the call's own outcome is [`Outcome::No`], consulted before
+    /// returning. It replaces the bubbled failure only when it sits strictly
+    /// farther, so the reported failure sits at the deepest position any
+    /// attempt reached rather than wherever the outermost frame happened to
+    /// be looking when the whole match gave up. A tie keeps the bubbled
+    /// failure exactly as it was (including its own `expected` set):
+    /// `farthest_failure` is a whole-call accumulator, so two rules that
+    /// happen to fail at the same position for unrelated reasons must not
+    /// blend their `expected` sets the way two alternatives of the same
+    /// `Choice` deliberately do.
     fn production(&mut self, production: Production, position: usize) -> Outcome {
         self.frames.clear();
         self.pending.clear();
+        self.farthest_failure = None;
         let mut step = Step::Production(production, position, 0);
         loop {
             step = match step {
@@ -1137,7 +1173,19 @@ impl<'a> Engine<'a> {
                 }
                 Step::Rule(rule, position, depth) => self.enter_rule(rule, position, depth),
                 Step::Return(outcome) => match self.frames.pop() {
-                    None => return outcome,
+                    None => {
+                        return match outcome {
+                            Outcome::No(failure) => {
+                                Outcome::No(match self.farthest_failure.take() {
+                                    Some(farthest) if farthest.position > failure.position => {
+                                        farthest
+                                    }
+                                    _ => failure,
+                                })
+                            }
+                            other => other,
+                        };
+                    }
                     Some(frame) => self.resume(frame, outcome),
                 },
             };
@@ -1190,10 +1238,7 @@ impl<'a> Engine<'a> {
         }
         let grammar = self.grammar;
         let Some(rule) = grammar.get(&production) else {
-            return Step::Return(Outcome::No(Failure::expected(
-                position,
-                format!("{production:?}"),
-            )));
+            return Step::Return(self.fail(Failure::expected(position, format!("{production:?}"))));
         };
         self.frames.push(Frame::Production {
             production,
@@ -1226,10 +1271,9 @@ impl<'a> Engine<'a> {
             }
             Rule::Choice(rules) => {
                 let Some(head) = rules.first() else {
-                    return Step::Return(Outcome::No(Failure::expected(
-                        position,
-                        "alternative".into(),
-                    )));
+                    return Step::Return(
+                        self.fail(Failure::expected(position, "alternative".into())),
+                    );
                 };
                 self.frames.push(Frame::Choice {
                     rules,
@@ -1429,26 +1473,27 @@ impl<'a> Engine<'a> {
                 if count >= minimum {
                     Step::Return(Outcome::Match(end))
                 } else {
-                    Step::Return(Outcome::No(failure.unwrap_or_else(|| {
-                        Failure::expected(end, "repeated production".into())
-                    })))
+                    Step::Return(match failure {
+                        Some(failure) => Outcome::No(failure),
+                        None => self.fail(Failure::expected(end, "repeated production".into())),
+                    })
                 }
             }
         }
     }
 
-    fn terminal(&self, terminal: &Terminal, position: usize, depth: usize) -> Outcome {
+    fn terminal(&mut self, terminal: &Terminal, position: usize, depth: usize) -> Outcome {
         let accepted = match terminal {
             Terminal::End => {
                 return if position == self.tokens.len() {
                     Outcome::Match(position)
                 } else {
-                    Outcome::No(Failure::expected(position, "end of source".into()))
+                    self.fail(Failure::expected(position, "end of source".into()))
                 };
             }
             _ => {
                 let Some(token) = self.tokens.get(position) else {
-                    return Outcome::No(Failure::expected(position, terminal.description()));
+                    return self.fail(Failure::expected(position, terminal.description()));
                 };
                 match terminal {
                     Terminal::Exact(value)
@@ -1470,7 +1515,7 @@ impl<'a> Engine<'a> {
             }
         };
         if !accepted {
-            return Outcome::No(Failure::expected(position, terminal.description()));
+            return self.fail(Failure::expected(position, terminal.description()));
         }
         // NFR-001 "Nesting level": the opening bracket of pair `nesting + 1`
         // is refused at its own span.
