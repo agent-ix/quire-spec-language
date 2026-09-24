@@ -152,7 +152,9 @@ begins with `language`, so each declaration is a construct of its own. The
 | `tuple` | `TupleDeclaration` | tuple form |
 
 Each entry makes exactly one call into the `Value` family's production
-function. FR-067-AC-3's shape test covers every entry in the table.
+function (FR-067-CON-4, verified by inspection). When this table lands, the
+`record` entry replaces the M-3a no-entry fixture token FR-067-AC-3's test
+uses, so that test moves to a spelling no family claims.
 
 When a declaration's leading token has no entry, S2 refuses the whole unit.
 The cause is `NoDispatchEntry`, and the refusal names the token spelling and

@@ -92,22 +92,22 @@ most likely to need this first.
 ## Removal condition
 
 [ADR-011](../spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md)
-§7.3's M-6e, in its own terms: **the family's old composed-checker path is
-deleted in the same pull request that lands that family's S3 family checker
-and S4 emission.** At no point does a change land where both the old path
-and the checked-family contract's replacement are reachable for the same
-family at once (FR-065-CON-2 states this for function declaration and
-application specifically; it is the general rule every later migration
-follows). Where the composed checker module is retained for other forms of
-the same family that have not yet migrated, its own dispatch `match` over
-its input form-kind enum carries no `_` or catch-all arm (the same rule
-FR-063 applies at S1-S4, stated directly for this one enum because FR-063's
-probe does not reach it -- it is the composed checker's own construct, not
-one of the four S1-S4 enums). This is what makes the arm deletion a compile
-error until the corresponding variant is also removed from the input
-enum: a `_ => refuse(...)` arm restores exhaustiveness without deleting the
-variant, and is itself a forbidden catch-all, so it does not satisfy the
-removal condition either.
+§7.3's M-6e, in its own terms: **the family's old composed-checker path
+(SEAM-2, `src/checking/composed/`) is deleted in the same pull request that
+lands that family's S3 family checker and S4 emission.** Each migrated form
+has exactly one S3 checker, the family's own check code (FR-065-CON-2 states
+this for function declaration and application; every later migration
+follows the same rule).
+
+The rule is verified by behaviour, never by a symbol-absence, file-location
+or code-shape test (testing-policy ruling, Peter, 2026-09-22): a migrated
+form's own family check gives the same verdict from every entry point that
+reaches it, nested forms are checked under that entry point's clause kind
+(FR-065's Behavior section), and the family's tests assert what that verdict
+admits and refuses.
+FR-065-AC-4 and FR-065-AC-5 are the worked example. A dispatch arm that
+calls the family's check holds no logic of its own (ADR-012 §4.3); that is
+a design constraint verified by inspection (FR-065-CON-3).
 
 Per [ADR-012](../spec/decisions/ADR-012-semantic-family-extension-contracts.md)
 §14.1, at least one implementing ticket for each remaining family:
@@ -119,7 +119,7 @@ Per [ADR-012](../spec/decisions/ADR-012-semantic-family-extension-contracts.md)
 | `TemporalTrace` | #188, #189 (via #222), including the FR-300 mapping |
 | `ProtocolClause` | #218 (via #223) |
 | `Relation` | #191, #192, #198 (via #223) |
-| Remaining `Value` forms (literals, operators, `let`, `if`, records, collections) | #120, #164, #170, #175 -- the last of which removes the composed checker module entirely |
+| Remaining `Value` forms (literals, operators, `let`, `if`, records, collections) | #120, #164, #170, #175; the last family ticket overall deletes the remainder of the composed checker (ADR-011 §7.3 M-6e) |
 
 ## Worked example: function declaration and application (#214/FR-065)
 

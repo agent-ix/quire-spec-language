@@ -147,7 +147,7 @@ pub fn build_form(cst: &LosslessCst) -> Result<ParsedForm, FormsRefusal> {
 /// The closed, family-keyed dispatch entry table (ADR-012 §3). Each entry
 /// makes exactly one call into its family's own production function and
 /// holds no other conditional, lookup or loop (ADR-012 §4.3 thin-dispatch
-/// rule; FR-067-AC-3). It has no production entry in M-3a (FR-067-CON-2):
+/// rule; FR-067-CON-4). It has no production entry in M-3a (FR-067-CON-2):
 /// [`LeadingTokenKind`] carries no production variant, so this `match` has
 /// no production arm either, and is still exhaustive.
 #[cfg_attr(not(test), allow(unused_variables))]
@@ -331,7 +331,6 @@ mod tests {
         // `compile_fail` doctest on `ParsedForm` itself.
     }
 
-    #[trace("TC-167", "FR-067-AC-3")]
     #[test]
     fn dispatch_entry_is_a_single_thin_call() {
         let source = include_str!("dispatch.rs");
@@ -451,7 +450,7 @@ mod tests {
         assert_eq!(form20.declared_extent(), Some("20"));
     }
 
-    #[trace("TC-167")]
+    #[trace("TC-167", "FR-067-AC-3")]
     #[test]
     fn no_dispatch_entry_refuses_a_clean_cst_with_no_matching_leading_token() {
         let cst = LosslessCst::fixture(

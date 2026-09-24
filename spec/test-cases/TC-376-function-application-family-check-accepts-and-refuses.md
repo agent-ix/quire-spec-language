@@ -10,28 +10,27 @@ relationships:
 
 ## Description
 
-Verify the behavior of `Value`'s function-application family check
-(`check::family::check_application`, the one call `infer_form`'s `Call` arm
-makes) directly: given a real signature and a real argument list, it accepts
-a well-typed call and produces a typed call node, and it refuses an
-ill-formed call (wrong arity, an unknown callee name, a mismatched argument
-type) with the crate's real, catalogued refusal cause. This test verifies
-accept/refuse behavior, not the arm's code shape or the presence/absence of
-any symbol; see this test case's own Status section for why.
+Verify the behavior of `Value`'s function-application check
+(`check::family::Application`, which `Typer::infer_form`'s `Call` arm calls):
+checking an `Expression::Call` through the S3 typer against a real signature
+admits a well-typed call as a typed call node, and refuses an ill-formed
+call (wrong arity, an unknown callee name, a mismatched argument type) with
+the crate's catalogued refusal cause. Scope: FR-065-AC-4.
 
 ## Test Procedure
 
 1. Build a one-parameter `Boolean -> Boolean` signature named `f` and check
    `f(true)`.
-2. Using the same signature, check `f(true, true)` (one argument too many).
-3. Using the same signature, check `nowhere(true)` (an undeclared name).
-4. Using the same signature, check `f(1)` (an `Integer` argument against a
-   declared `Boolean` parameter).
+2. Using the same signature, check `f(true, false)` (one argument too many).
+3. With no declared function or type, check `nowhere()` (an undeclared
+   name).
+4. Using the same signature as step 1, check `f(1)` (an `Integer` argument
+   against a declared `Boolean` parameter).
 
 ## Expected Results
 
 - Step 1: the call is accepted; the produced node's value type is `Boolean`
-  and its call identity resolves to signature index 0.
+  and its callee is signature index 0.
 - Step 2: the call is refused with a type-mismatch cause (arity does not
   match).
 - Step 3: the call is refused with a missing-name cause naming `nowhere`.
@@ -39,30 +38,16 @@ any symbol; see this test case's own Status section for why.
 
 ## Status
 
-**Backed for behavior; tagged for this test case only, not for FR-065-AC-4
-(PR #303 review, finding N2).** All four steps now have a test:
-`check_application_accepts_a_well_typed_call`,
+Backed, all four steps: `check_application_accepts_a_well_typed_call`,
 `check_application_refuses_wrong_arity`,
 `check_application_refuses_an_unknown_name` and
-`check_application_refuses_a_type_mismatched_argument` (step 4, added
-this round) (`qsl-semantics/src/check/family.rs`, `checking_tests`), all tagged
-`#[trace("TC-376")]`.
+`check_application_refuses_a_type_mismatched_argument`
+(`qsl-semantics/src/check/family.rs`, `checking_tests`), all tagged
+`#[trace("TC-376", "FR-065-AC-4")]`. Each builds an `Expression::Call` and checks it
+through `Typer::infer`, so each fails when `Application`'s callee
+resolution, arity check or parameter typing is removed.
 
-**Behavioral, not structural, per the
+FR-065-AC-4 is a behavioural criterion under the
 [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
-(Peter, QSL-148, 2026-09-22, relayed by the QSL team lead).** FR-065-AC-4
-is worded as a code-shape test ("an AST or line-count check against a
-fixed budget"). That structural fact is true of the delivered code --
-`infer_form`'s `Call` arm is exactly one call into
-`super::family::check_application` and holds no other conditional, lookup
-or loop -- but no test in the delivered code re-verifies it: TC-163's own
-step 6 is not implemented by a code-shape/AST test either (see TC-163's
-own Status section), on the same explicit instruction: test what the
-family check accepts and refuses, not the arm's structure or placement.
-These four tests exercise `check_application` itself (the function the
-arm's one call reaches) directly, showing that call performs real,
-adjudicated checking -- genuine, valuable coverage -- but none of them
-would catch a future change that reintroduced a conditional directly into
-`infer_form`'s `Call` arm while leaving `check_application` unchanged.
-That is why this test case is untagged for FR-065-AC-4 rather than
-claiming to back it; see FR-065's own Status section, AC-4 row.
+(Peter, 2026-09-22). The rule that the `Call` arm holds no logic of its own
+is FR-065-CON-3, verified by inspection, not by this test case.
