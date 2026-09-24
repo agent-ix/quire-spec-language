@@ -202,12 +202,14 @@ operational validation remains outside this audit-only plan.
 | TC-421 | The package source map carries the wire's source map, and a location resolves or refuses by cause | Integration | P1 | FR-095-AC-3, FR-095-AC-4 | ✅ Passed locally; step 4 (QSpec positive fixtures) under `make conformance` |
 | TC-422 | Each Locus variant resolves to regions by its own rule, and the artifact pointer is RFC 6901 | Unit | P1 | FR-095-AC-5, FR-095-AC-6 | ✅ Passed locally |
 | TC-423 | The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result | Unit | P1 | NFR-011-M-1 (node refusal: step 1), NFR-011-M-2 (step 3), NFR-011-M-3 (byte refusal before work: step 4), NFR-011-M-4 (work refusal: step 5; enum package admitted: step 4) | 🚧 Partly passed: ceilings bind and are recorded locally (QSL-214); the `stage_limit_exceeded` outcome is pending S-5b (QSL-160) |
-| TC-424 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7 | 🚧 Planned; QSL-233 (S-4b) |
+| TC-424 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7, FR-001-AC-8, FR-001-AC-9 | 🚧 Planned; QSL-233 (S-4b) |
 | TC-425 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | 🚧 Planned; QSL-233 (S-4b) |
 | TC-426 | A check location resolves to the region of the unit it was read from, or to none | Unit | P1 | FR-096-AC-1 | 🚧 Planned; QSL-160 (S-5b) |
 | TC-427 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5 | 🚧 Planned; QSL-160 (S-5b) |
 | TC-428 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8 | 🚧 Planned; QSL-160 (S-5b) |
 | TC-429 | The I2 reader locates its version refusal and its limits in the artifact | Integration | P1 | FR-096-AC-9, FR-096-AC-10 | 🚧 Planned; QSL-160 (S-5b); needs three IR reader changes |
+| TC-430 | Native run and compile requests and their outputs carry the four source labels | Integration | P1 | FR-026-AC-6, FR-027-AC-4 | 🚧 Planned; QSL-233 (S-4b) |
+| TC-431 | Runtime input artifacts carry the four labels, and two-label bytes refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | 🚧 Planned; QSL-233 (S-4b) |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

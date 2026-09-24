@@ -16,6 +16,12 @@ relationships:
 
 When an author invokes quire-spec compile with a native-compile/1 request file, the command shall emit the exact native linked package bytes produced from the selected model and program sources.
 
+Each selected source carries the four source labels of
+[FR-001](FR-001-read-exact-source.md) under the request identity
+[FR-026](FR-026-run-standalone-native-workflow.md) defines, and the
+native-linked-package/1 `source` renders all four. The package bytes, the
+schema and the golden vectors carry them.
+
 ## Inputs
 
 A closed format/request JSON envelope. The request contains only models and
@@ -61,9 +67,14 @@ typed failure without a successful artifact.
 | FR-027-AC-1 | CLI output matches the existing public static pipeline byte-for-byte and is accepted by the existing verified package reader with explicit bindings. | Test |
 | FR-027-AC-2 | A directory containing only selected sources and its compile request produces the package; native-run/1 and unexpected runtime fields refuse at the command boundary. | Test |
 | FR-027-AC-3 | Stale source and malformed syntax return original codes with empty stdout; file-count exhaustion identifies its category; compile arity errors precede I/O and exit 20; output failures exit 30; existing run and parse/format tests still pass. | Test |
+| FR-027-AC-4 | A native-compile/1 request whose program source names `authority` `agent-ix`, `identity` `p`, `revision_namespace` `git` and `revision` `1` emits package bytes whose `source` names those four labels, and the package validates against the native-linked-package/1 schema. The same request without `revision_namespace` refuses with `invalid-request` and exits 20. | Test (TC-430) |
 
 ## Dependencies
 
 - [FR-026](FR-026-run-standalone-native-workflow.md): bounded local command intake.
 - [FR-019](FR-019-package-checked-native-clauses.md): native package construction.
 - [FR-020](FR-020-read-and-rebind-native-packages.md): verified consumer intake.
+
+## Status
+
+FR-027-AC-4 is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.

@@ -327,8 +327,8 @@ enum, and each mapping fails to compile until it has an arm.
 | Validation and diagnostics | A tag naming no node in the package refuses at replay. A diagnostic names its position by the foundation `Locus` (T-5). |
 | Equality | lexical over (`RawSourceRef` digest, byte start, byte end) for a region. |
 
-IR `SourceSpan` used in native-v1 and the native-v1 `Source`/`Span` types are
-lane-private (§6).
+IR `SourceSpan` used in native-v1 and the native-v1 `LocatedSpan` rendering
+are lane-private (§6). Native-v1 admits source through the F `Source`.
 
 #### O-13 Semantic values, exact kernel and rational semantics (DA-06, DA-07, DA-16)
 
@@ -1017,7 +1017,7 @@ lane D converges.
 | Values | `runtime::input::ValueNode`, `state::input::Value` | O-13 |
 | Clause kind | `syntax::ClauseKind` | O-10 |
 | Names | native-v1 use of `ir::SymbolName` | O-11 |
-| Spans | native-v1 use of IR `SourceSpan`; native-v1 `Source`/`Span` | O-12 |
+| Spans | native-v1 use of IR `SourceSpan`; the native-v1 `LocatedSpan` rendering of the F-hosted native `Diagnostic`. The native-v1 lane admits source through the F `Source` and `SourceIdentity` and lexes with the spine's `qsl-cst` lexer: it has no source type of its own, so there is no lane-private source type to split off (FR-001) | O-12 |
 | Outcomes | runtime `ExecutionOutcome`/`EvaluationOutcome`, state `EvaluationOutcome`, simulation `Outcome` | O-16 |
 | Diagnostics | `Box<Diagnostic>` 45-variant `Code` | O-17 |
 | Budgets | `artifact-work/1`, `temporal-work/1`, `evaluation-work/1`, `native-ref-cost/1-draft` | O-21 |
@@ -1064,7 +1064,7 @@ direction is S-3's, not a gate on S-2 (Consequences).
 | S-2 | Identities and digests: O-01 single selection, O-02, O-03 rework, O-05, O-06, O-18 | S-1, #131 merged, QC-15 (adds `EffectiveId` and the reference identities to the kernel), QC-2, QC-3, QC-5 |
 | S-3 | Typestate, clause and type: O-08, O-09 clause id, O-10, O-11, O-14, O-15, T-1, T-3 | S-2, QC-10 |
 | S-4 | Provenance: O-07, O-12 occurrence-key-keyed source map (O-07), T-5 `Locus`. Landed (#399). | S-3 |
-| S-4b | Source references (QSL-233): FR-001's `RawSourceRef` for a source QSL reads itself, supplied by the caller and minted at S0; FR-010's `parse` and `format` grammar; package declarations checked under the unit's `RawSourceRef`, their `SourceOwner` taken from it; O-12's `LocatedSpan` replacement in the canonical S0 to S2 diagnostics; C-21. | S-4 |
+| S-4b | Source references (QSL-233): FR-001's four-label `SourceIdentity` for every source admission, spine and native-v1, and the `RawSourceRef` S0 mints from it; S0's refusal regions (FR-001-AC-8); FR-010's `parse` and `format` grammar; the native-v1 request wire, native-run-result/1, native-linked-package/1 and native-state-input/1 with their schemas and golden vectors, each carrying the four labels (FR-026, FR-027, FR-018, FR-024); package declarations and the `CheckedGraph` carrying the unit's `RawSourceRef`, their `SourceOwner` taken from it, for QSL-6 S1b to emit as the lock `sources` entry; O-12's `LocatedSpan` replacement in the canonical S0 to S2 diagnostics; C-21. The replay executor's recompilation under the reference's labels (FR-001) is TK-01's (ADR-011 E9), not S-4b's. | S-4 |
 | S-5a | Refusals: O-17 QSL `catalog_code()`, the `CatalogCode` and O-16 category types in F `diagnostic`, T-4's `InternalFault` — no `Locus`. Landed (#258, `0bfa4b9`). | S-1, QC-11 |
 | S-5b | Refusals and readers (FR-096): O-17 `RefusalRecord`, T-4's `LimitExceeded`/`LimitKind` and `Staged<T>`/`StageFailure<C>`, O-22's I2 reader — all carry `Locus` (T-5). The check-stage loci resolve through the unit's `RawSourceRef` (S-4b) and the forms' spans (FR-091-AC-10). The I2 reader's loci need `Locus::Artifact{digest, pointer}`'s O-18 digest record (S-2) and three IR reader changes (FR-096 Dependencies). | S-5a (landed, #258), S-4 (landed, #399), S-4b, FR-091-AC-10 (QSL-141), QC-11 (met: revision `1-draft.6`), QC-28, and QSL's diagnostic catalog claim at `1-draft.6` (a producer claiming `1-draft.5` or earlier emits no `stage_limit_exceeded`; Remaining work: QSL-236) |
 | S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, and the #222 bound types (O-21) | S-1, #222 accepted, agent-ix/quire-specification#134 |

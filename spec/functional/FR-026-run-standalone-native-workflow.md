@@ -23,8 +23,17 @@ When an author invokes quire-spec run with a native-run/1 request file, the comm
 A JSON object with format and request fields. The closed request names model
 sources with explicit native-rule-model/1 format, program source with complete
 authored clause bindings, snapshot/invocation file selections and an execution
-selection. Each source selects file, native identity/revision, SHA-256 digest and
-formal document/revision. Runtime selections use the existing typed references.
+selection. Each source selects file, the four source labels of
+[FR-001](FR-001-read-exact-source.md) (`authority`, `identity`,
+`revision_namespace` and `revision`), SHA-256 digest and formal
+document/revision. Every label is a required member. A request whose source
+identity lacks one, such as a request written with only `identity` and
+`revision`, refuses at the request stage with the native code
+`invalid-request` and exits 20; the catalog keeps that code as a retained
+host code with its broad meaning, malformed command
+(`quire.native.diagnostics/v1`, "Other retained host/source codes"). The
+wire is prerelease and carries no version change for this: a two-label
+request is simply malformed. Runtime selections use the existing typed references.
 Relative paths resolve against the request's directory; absolute paths remain
 valid local file operands. Source display paths retain the authored file string.
 Parent-relative components are also admitted local operands; the command does
@@ -39,7 +48,8 @@ uses the existing verified reader; omission retains source compilation.
 ## Outputs
 
 One native-run-result/1 JSON result on stdout with request digest, compiled
-package byte/static identities, original source/model/runtime identities,
+package byte/static identities, original source/model/runtime identities
+(each source and runtime artifact rendered with all four labels),
 selected authored clause, actual stage status, diagnostics, work counters and
 ordered implication events. Only completed execution has Boolean truth.
 On FR-301's six-code contract, exit 0 means completed true; 10 means completed
@@ -88,9 +98,14 @@ including incomplete native, model, package and runtime input failures.
 | FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage and catalogued code with available provenance; emitted outcomes conform to the native result schema. | Test |
 | FR-026-AC-4 | Request/file/read and caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test |
 | FR-026-AC-5 | Existing parse/format behavior remains, command-specific arity errors precede I/O, and relative and absolute file operands resolve independently of the working directory. | Test |
+| FR-026-AC-6 | A native-run/1 request whose program source names `authority` `agent-ix`, `identity` `p`, `revision_namespace` `git` and `revision` `1` runs and its result renders the program source with those four labels. The same request without `authority`, and again without `revision_namespace`, refuses at the request stage with `invalid-request` and exits 20. | Test (TC-430) |
 
 ## Dependencies
 
 - [FR-025](FR-025-compile-rule-model-source.md): public model source frontend.
 - [FR-024](FR-024-read-native-runtime-artifacts.md): selected runtime artifact intake.
 - [FR-023](FR-023-run-native-packages.md): native execution and retained outcomes.
+
+## Status
+
+FR-026-AC-6 is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.

@@ -353,7 +353,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 
 | Artifact | Type | Status |
 | --- | --- | --- |
-| [FR-001](functional/FR-001-read-exact-source.md) | FR | Draft; AC-5 to AC-7 (the caller-named `RawSourceRef`, TC-424) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
+| [FR-001](functional/FR-001-read-exact-source.md) | FR | Draft; AC-5 to AC-9 (the caller-named four-label `RawSourceRef` for every source admission, S0 refusal regions, render-time line and column; TC-424) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
 | [FR-002](functional/FR-002-parse-native-units.md) | FR | Draft |
 | [FR-003](functional/FR-003-format-native-source.md) | FR | Draft |
 | [FR-004](functional/FR-004-verify-source-maps.md) | FR | Draft |
@@ -387,7 +387,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-015](functional/FR-015-project-native-model-semantics.md) | FR | Planned native semantic roles |
 | [FR-016](functional/FR-016-check-native-clauses.md) | FR | Qualified type/definedness checker |
 | [FR-017](functional/FR-017-separate-qualification-stages.md) | FR | Qualified construction-stage repairs; SR-083 |
-| [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR | Planned LC03 byte-bound input construction |
+| [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR | Planned LC03 byte-bound input construction; FR-018-AC-8 (four source labels, TC-431) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
 | [FR-019](functional/FR-019-package-checked-native-clauses.md) | FR | Implemented; qualified in the native-packages test matrix |
@@ -395,10 +395,10 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-021](functional/FR-021-derive-native-package-identity.md) | FR | Implemented; qualified in the native-packages test matrix |
 | [FR-022](functional/FR-022-compile-mapped-native-clauses.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-023](functional/FR-023-run-native-packages.md) | FR | Implemented; tested in the native-workflow test matrix |
-| [FR-024](functional/FR-024-read-native-runtime-artifacts.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-024](functional/FR-024-read-native-runtime-artifacts.md) | FR | Implemented; tested in the native-workflow test matrix; FR-024-AC-6 (four source labels, TC-431) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
 | [FR-025](functional/FR-025-compile-rule-model-source.md) | FR | Implemented; tested in the native-workflow test matrix |
-| [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR | Implemented; tested in the native-workflow test matrix |
-| [FR-027](functional/FR-027-export-compiled-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR | Implemented; tested in the native-workflow test matrix; FR-026-AC-6 (four source labels, TC-430) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
+| [FR-027](functional/FR-027-export-compiled-native-package.md) | FR | Implemented; tested in the native-workflow test matrix; FR-027-AC-4 (four source labels, TC-430) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
 | [FR-028](functional/FR-028-run-selected-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-029](functional/FR-029-export-executable-projection.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-030](functional/FR-030-consume-quire-extraction.md) | FR | Implemented; tested in the native-workflow test matrix |

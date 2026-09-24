@@ -26,6 +26,8 @@ clause. Omission preserves ordinary native-source execution. Supplied null or
 positional extraction/body records, duplicate and unknown fields refuse.
 The body and original-source records share one closed wire identity definition;
 the decoded native/formal pair is explicit and performs no revision conversion.
+That identity definition carries the four source labels of
+[FR-001](FR-001-read-exact-source.md) ([FR-026](FR-026-run-standalone-native-workflow.md)).
 
 This local clause-only mode constructs a validated Quire contract 1.0.0 /
 semantic-core 0.1.0 context for the explicitly selected binding's package and
@@ -74,3 +76,7 @@ The command shall preserve existing byte/file/runtime limits and fresh retries.
 
 - [FR-026](FR-026-run-standalone-native-workflow.md): existing bounded command intake and runtime reports.
 - [FR-030](FR-030-consume-quire-extraction.md): actual optional Quire consumer.
+
+## Status
+
+The four-label identity is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.

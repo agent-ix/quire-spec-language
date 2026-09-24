@@ -33,6 +33,12 @@ The input ceiling is the caller's, used as given; it defaults to 1 MiB and may b
 
 ### The caller names the source it hands QSL
 
+This section governs every source admission, on the spine and in the
+native-v1 lane alike. Both admit source through the one F type
+`qsl_foundation::SourceIdentity` and the one F `Source`, which ADR-011 names
+as S0's input; the native-v1 parser reads through them and through the
+spine's lexer (ADR-013 §6 Spans row).
+
 A source QSL reads itself is named by the caller, never by QSL. The caller
 supplies four labels with the bytes: the **authority** that issues the
 source's identity, the **identity** within that authority, and the
@@ -46,6 +52,34 @@ its value.
 The source shall refuse with `invalid_source_identity` when the authority,
 identity, revision namespace or revision value is empty or only whitespace,
 or when the path is empty.
+
+### Where an S0 refusal is located
+
+An S0 refusal names its position by a `SourceRegion` when one exists, and by
+no region otherwise (`quire.native.diagnostics/v1` common structured
+context: "Unavailable context is explicitly unavailable; byte zero, an empty
+path or a name-search match cannot masquerade as a located failure"):
+
+- Invalid UTF-8 and NUL refuse at a region under the `RawSourceRef` of the
+  offered bytes: the four labels and the `quire.source.bytes/v1` digest of
+  the bytes offered. Invalid UTF-8 is the empty region at the end of the
+  longest valid prefix; NUL is the one-byte region of the first NUL.
+- An unnamed source (an empty or blank label or path) and input beyond the
+  byte ceiling refuse with no region. The first has no label set to name the
+  source by, and the second is refused without reading or hashing the bytes
+  past the ceiling.
+
+This changes current behaviour, which places both of the last two refusals
+at byte 0. The native-v1 `Diagnostic` hosted in F, which requires a span,
+keeps its own rendering: it is lane-private (ADR-013 §6) and this
+requirement neither fixes nor extends it.
+
+### Line and column are derived when rendered
+
+A `SourceRegion` holds bytes only. A renderer derives the one-based line and
+Unicode scalar column of each end from the admitted source bytes the
+region's `RawSourceRef` names, as FR-010's "original byte and scalar
+coordinates" require. No region stores them.
 
 ### Admission mints the source reference
 
@@ -71,7 +105,14 @@ identity gives every source-owned declaration a different key.
 ### Who supplies the labels
 
 - The command line supplies them as operands of `parse` and `format`
-  ([FR-010](FR-010-report-native-outcomes.md)).
+  ([FR-010](FR-010-report-native-outcomes.md)). `parse` reads native-v1
+  source and `format` complete-V1 source, under the same four-label grammar.
+- A native-v1 request supplies them in each source's wire identity: the
+  run, compile and lower requests
+  ([FR-026](FR-026-run-standalone-native-workflow.md),
+  [FR-027](FR-027-export-compiled-native-package.md)) and the extraction
+  body record ([FR-031](FR-031-run-extracted-native-source.md)), which share
+  one identity definition.
 - A library caller supplies them in the source identity it passes to the
   source reader and to S1's `parse`.
 - The replay executor recompiles each source under the `RawSourceRef` the
@@ -83,7 +124,17 @@ identity gives every source-owned declaration a different key.
   `quire.source.bytes/v1` digest to equal the reference's digest, as
   ADR-013 C-13 requires. The recompiled package therefore names each source
   exactly as the proving run did, which keeps its declaration keys and its
-  `package_id` (US-005).
+  `package_id` (US-005). The executor is ADR-013 TK-01 (ADR-011 E9); it
+  does not exist yet, and this behaviour is built with it.
+
+### Runtime artifacts are not sources
+
+A native runtime input artifact (a snapshot or an invocation,
+`native-state-input/1`) is not a source read under this requirement. Its
+caller names it with the same four labels, because QSpec FR-004 makes the
+revision namespace and value part of every immutable key
+([FR-018](FR-018-construct-native-runtime-inputs.md),
+[FR-024](FR-024-read-native-runtime-artifacts.md)).
 
 ## Acceptance Criteria
 
@@ -96,6 +147,8 @@ identity gives every source-owned declaration a different key.
 | FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire`, revision namespace `git`, revision value `3f2a` and bytes `b` carries a `RawSourceRef` whose authority, identity, revision namespace and value read exactly those labels and whose digest is the `quire.source.bytes/v1` digest of `b`. Admitting the same bytes under revision value `3f2b` gives a `RawSourceRef` that differs only in the revision value. | Test (TC-424) |
 | FR-001-AC-6 | Admission refuses with `invalid_source_identity`, and admits nothing, when exactly one of the authority, identity, revision namespace or revision value is empty, and again when it is a single space. | Test (TC-424) |
 | FR-001-AC-7 | Package declarations holding one record `Point` with field `x: Int[0, 9]`, checked under the source reference of bytes `b` admitted as authority `a`, identity `u`, revision (`git`, `1`), and again under the reference of bytes `b'` admitted as `a`, `u`, (`git`, `2`), give `Point` the same node key. Checked under the reference of `b` admitted as authority `c`, identity `u`, revision (`git`, `1`), they give `Point` a different key, and under the reference of `b` admitted as authority `a`, identity `v`, revision (`git`, `1`), a third key. | Test (TC-424) |
+| FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`, `git`, `1`) refuse with a region `[1, 1)` under the `RawSourceRef` of those three bytes, and bytes `ab\0c` with the region `[2, 3)` under theirs. Admission with an empty revision namespace, and admission of five bytes under a four-byte ceiling, each refuse with no region, not a region at byte 0. | Test (TC-424) |
+| FR-001-AC-9 | A renderer given the region `[4, 7)` of admitted source `ab\ncdéf` reports start line 2, column 2 and end line 2, column 4, derived from the admitted bytes; the region itself holds only its `RawSourceRef`, 4 and 7. | Test (TC-424) |
 
 ## Dependencies
 
