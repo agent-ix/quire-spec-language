@@ -147,9 +147,6 @@ pub use check::{
     CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
     ResolvedSignatures, MAX_CHECKING_DEPTH,
 };
-// `value::expression::evaluate::Machine` is the one consumer outside `check`
-// itself.
-pub use check::enum_member_index;
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
@@ -196,6 +193,68 @@ struct CheckedFunction {
     slots: usize,
 }
 
+/// Every checked function with its signature, index-aligned by construction
+/// (QSL-205): [`Self::new`] is the only way in, and it splits one list of
+/// pairs, so a position names the same function in both halves.
+#[derive(Debug)]
+struct CheckedFunctions {
+    /// Each function's signature, indexed by name once.
+    signatures: Signatures,
+    bodies: Vec<CheckedFunction>,
+    /// Each identity's first position, so a by-identity lookup is a map
+    /// lookup, not a scan.
+    by_identity: BTreeMap<quire_exact::NodeKey, usize>,
+}
+
+impl CheckedFunctions {
+    fn new(functions: Vec<(Signature, CheckedFunction)>) -> Self {
+        let mut by_identity = BTreeMap::new();
+        for (position, (_, function)) in functions.iter().enumerate() {
+            by_identity.entry(function.identity).or_insert(position);
+        }
+        let (signatures, bodies): (Vec<_>, Vec<_>) = functions.into_iter().unzip();
+        Self {
+            signatures: Signatures::new(signatures),
+            bodies,
+            by_identity,
+        }
+    }
+
+    fn get(&self, index: usize) -> Option<(&Signature, &CheckedFunction)> {
+        Some((
+            self.signatures.as_slice().get(index)?,
+            self.bodies.get(index)?,
+        ))
+    }
+
+    /// The first function named `name`.
+    fn named(&self, name: &str) -> Option<(&Signature, &CheckedFunction)> {
+        self.get(self.signatures.position(name)?)
+    }
+
+    /// The first function with this identity.
+    fn with_identity(
+        &self,
+        identity: quire_exact::NodeKey,
+    ) -> Option<(&Signature, &CheckedFunction)> {
+        self.get(*self.by_identity.get(&identity)?)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&Signature, &CheckedFunction)> {
+        self.signatures.iter().zip(&self.bodies)
+    }
+}
+
+fn function_state<'a>(
+    (signature, function): (&'a Signature, &'a CheckedFunction),
+) -> FunctionState<'a> {
+    FunctionState {
+        name: &signature.name,
+        body: &function.body,
+        slots: function.slots,
+    }
+}
+
 /// S3's stage output (ADR-013 T-1): a package whose every function is
 /// admitted. Its constructor and every field are private to this module
 /// (ADR-011 §4): `package`'s S4 link step (which builds the *different*
@@ -219,13 +278,7 @@ struct CheckedFunction {
 #[derive(Debug)]
 pub struct CheckedGraph {
     scope: Scope,
-    functions: Vec<CheckedFunction>,
-    /// Each function's signature, index-aligned with `functions`, indexed
-    /// by name once (QSL-205).
-    signatures: Signatures,
-    /// QSL-205: each identity's first position in `functions`, so a
-    /// by-identity lookup is a map lookup, not a scan.
-    by_identity: BTreeMap<quire_exact::NodeKey, usize>,
+    functions: CheckedFunctions,
     dispatch_tables: Vec<DispatchTable>,
     /// FR-062-AC-2/FR-065-AC-3: the occurrence-keyed source map (identity,
     /// role, ordinal) -> source [`Location`], for every function
@@ -453,9 +506,9 @@ impl PackageDeclarations {
                 .push(index);
         }
         for (index, function) in self.functions.iter().enumerate() {
-            let Some(group) = by_name.get(function.name.as_str()) else {
-                continue;
-            };
+            let group = by_name
+                .get(function.name.as_str())
+                .map_or(&[][..], Vec::as_slice);
             if group.len() > 1 {
                 let loci: Vec<Location> = group
                     .iter()
@@ -545,7 +598,7 @@ impl PackageDeclarations {
             };
             for (_, candidate) in table.entries() {
                 if let Err(refusal) = validate_dispatch_function(
-                    &signatures,
+                    signatures.as_slice(),
                     candidate.body,
                     &operation.parameters,
                     &operation.result,
@@ -555,7 +608,7 @@ impl PackageDeclarations {
                 }
                 if let Some(precondition) = candidate.precondition {
                     if let Err(refusal) = validate_dispatch_function(
-                        &signatures,
+                        signatures.as_slice(),
                         precondition,
                         &operation.parameters,
                         &ValueType::Boolean,
@@ -566,7 +619,7 @@ impl PackageDeclarations {
                 }
                 for &clause in &candidate.precondition_clauses {
                     if let Err(refusal) = validate_dispatch_function(
-                        &signatures,
+                        signatures.as_slice(),
                         clause,
                         &operation.parameters,
                         &ValueType::Boolean,
@@ -643,7 +696,7 @@ impl PackageDeclarations {
         // FR-092-AC-12: a declared composite's checked type node takes its
         // FR-092 key, which `check` mints below, not the caller's handle.
         let mut type_nodes = BTreeMap::new();
-        for enum_binding in &scope.enums {
+        for enum_binding in scope.enums() {
             let node = enum_binding.declaration.key();
             // Every case name here was already validated as
             // `^[A-Za-z_][A-Za-z0-9_]*$` and checked distinct from its
@@ -746,7 +799,7 @@ impl PackageDeclarations {
             let declarations = family::ValueDeclarations {
                 scope: &scope,
                 signatures: &signatures,
-                own_signature: &signatures[index],
+                own_signature: &signatures.as_slice()[index],
                 dispatch_tables: &dispatch_tables,
                 checking_limits: limits,
                 location: &location,
@@ -775,7 +828,7 @@ impl PackageDeclarations {
                     // declaration's `Typer` picks up where this one left
                     // off instead of restarting at zero.
                     nodes_used = checked.body.nodes_used;
-                    drafts.push((signatures[index].clone(), checked.body));
+                    drafts.push((signatures.as_slice()[index].clone(), checked.body));
                 }
                 Err(crate::family::StageFailure::Limit(limit)) => {
                     // PR #262 review (coordinator round 3, finding 4):
@@ -860,7 +913,7 @@ impl PackageDeclarations {
         let mut occurrences = family::OccurrenceMap::default();
         // FR-094: the package's units and every compound unit typing formed,
         // kept until lowering has keyed each one's type node.
-        let mut units = scope.types.units().clone();
+        let mut units = scope.types().units().clone();
         for (_, body) in &mut drafts {
             units.extend(std::mem::take(&mut body.formed_units));
         }
@@ -901,7 +954,7 @@ impl PackageDeclarations {
                 .collect();
             refusals.extend(lowering.function_group(group, &inputs));
         }
-        for composite in scope.types.composites() {
+        for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
                     type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
@@ -921,26 +974,25 @@ impl PackageDeclarations {
         for (node, declaration) in correspondence {
             model_correspondence.record(node, declaration);
         }
-        let mut functions = Vec::with_capacity(drafts.len());
-        let mut function_signatures = Vec::with_capacity(drafts.len());
-        let mut by_identity = BTreeMap::new();
-        for ((signature, body), identity) in drafts.into_iter().zip(identities) {
-            let Some(identity) = identity else {
-                continue;
-            };
-            by_identity.entry(identity).or_insert(functions.len());
-            functions.push(CheckedFunction {
-                identity,
-                body: body.body,
-                slots: body.slots,
-            });
-            function_signatures.push(signature);
-        }
+        let functions = CheckedFunctions::new(
+            drafts
+                .into_iter()
+                .zip(identities)
+                .filter_map(|((signature, body), identity)| {
+                    Some((
+                        signature,
+                        CheckedFunction {
+                            identity: identity?,
+                            body: body.body,
+                            slots: body.slots,
+                        },
+                    ))
+                })
+                .collect(),
+        );
         Ok(CheckedGraph {
             scope,
             functions,
-            signatures: Signatures::new(function_signatures),
-            by_identity,
             dispatch_tables,
             occurrences,
             model_correspondence,
@@ -1051,7 +1103,7 @@ impl CheckedGraph {
         let mut nodes = 0_u64;
         let mut typer = Typer::new(
             &self.scope,
-            &self.signatures,
+            &self.functions.signatures,
             limits,
             &mut nodes,
             clause_kind,
@@ -1082,11 +1134,7 @@ impl CheckedGraph {
 
     /// The first function named `name`, with its signature.
     fn function(&self, name: &str) -> Option<(&Signature, &CheckedFunction)> {
-        self.function_at(self.signatures.position(name)?)
-    }
-
-    fn function_at(&self, index: usize) -> Option<(&Signature, &CheckedFunction)> {
-        Some((self.signatures.get(index)?, self.functions.get(index)?))
+        self.functions.named(name)
     }
 
     /// The `deref(r).f` locations of a function body, or `None` for an
@@ -1128,12 +1176,7 @@ impl CheckedGraph {
     /// per-evaluation function list is built (QSL-205), and `check` never
     /// constructs a layer-5 type (FR-068-AC-3).
     pub fn function_state(&self, index: usize) -> Option<FunctionState<'_>> {
-        self.function_at(index)
-            .map(|(signature, function)| FunctionState {
-                name: &signature.name,
-                body: &function.body,
-                slots: function.slots,
-            })
+        self.functions.get(index).map(function_state)
     }
 
     /// One admitted function's evaluation-visible state, by its minted
@@ -1145,7 +1188,7 @@ impl CheckedGraph {
         &self,
         identity: quire_exact::NodeKey,
     ) -> Option<FunctionState<'_>> {
-        self.function_state(*self.by_identity.get(&identity)?)
+        self.functions.with_identity(identity).map(function_state)
     }
 
     /// `name`'s identity and declared parameters, filtered to functions a
@@ -1170,9 +1213,8 @@ impl CheckedGraph {
     /// are `value::expression::family` types this module must not import
     /// (FR-068-AC-3).
     pub fn function_identities(&self) -> impl Iterator<Item = (&str, quire_exact::NodeKey)> + '_ {
-        self.signatures
+        self.functions
             .iter()
-            .zip(&self.functions)
             .map(|(signature, function)| (signature.name.as_str(), function.identity))
     }
 

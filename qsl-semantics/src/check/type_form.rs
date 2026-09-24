@@ -184,10 +184,8 @@ fn resolve_builtin(
                 return Err(mismatch(location));
             };
             scope
-                .types
-                .object_types()
-                .find(|declaration| declaration.name() == name)
-                .map(|declaration| ValueType::Reference(declaration.key()))
+                .object_type_named(name)
+                .map(ValueType::Reference)
                 .ok_or_else(|| missing(name, location))
         }
     }

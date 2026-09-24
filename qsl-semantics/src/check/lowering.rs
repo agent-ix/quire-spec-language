@@ -1050,9 +1050,7 @@ impl<'a> Lowering<'a> {
                 // declaration node, `value::enumeration`'s key.
                 let declaration = self
                     .scope
-                    .enums
-                    .iter()
-                    .find(|binding| binding.shape() == *shape)
+                    .enum_binding_of(shape)
                     .map(|binding| binding.declaration.key());
                 declaration.ok_or_else(|| {
                     refuse(
@@ -1118,7 +1116,7 @@ impl<'a> Lowering<'a> {
         if let Some(key) = self.composites.get(&declaration) {
             return Ok(*key);
         }
-        let Some(composite) = self.scope.types.composite(declaration) else {
+        let Some(composite) = self.scope.types().composite(declaration) else {
             return Err(refuse(
                 location,
                 CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
@@ -1251,7 +1249,7 @@ impl<'a> Lowering<'a> {
         // The walk completes, or refuses on the node limit, before any
         // leaf's law is read (FR-093 "Text leaves").
         let mut walk = LeafWalk {
-            types: &self.scope.types,
+            types: self.scope.types(),
             depth_limit: self.depth_limit,
             meter: &mut *self.meter,
             reach: &mut self.text_reach,
@@ -2216,7 +2214,7 @@ impl<'a> Lowering<'a> {
                 let semantic_type = self.composite(*declaration, &node.location, 0)?;
                 let Some(CompositeShape::Record(fields)) = self
                     .scope
-                    .types
+                    .types()
                     .composite(*declaration)
                     .map(|c| c.shape().clone())
                 else {
@@ -2633,7 +2631,12 @@ impl<'a> Lowering<'a> {
         let ValueType::Composite(declaration) = record else {
             return Err(mismatch());
         };
-        let name = match self.scope.types.composite(*declaration).map(|c| c.shape()) {
+        let name = match self
+            .scope
+            .types()
+            .composite(*declaration)
+            .map(|c| c.shape())
+        {
             Some(CompositeShape::Record(fields)) => fields
                 .get(index)
                 .map(|field| field.name().to_owned())

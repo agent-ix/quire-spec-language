@@ -202,21 +202,6 @@ impl EnumBinding {
     }
 }
 
-/// ADR-013 T-6 (last sentence): build the checked `VariantId -> EnumValue`
-/// index `TypeEnvironment::check_equality_in`'s `Enum` schedule needs to
-/// evaluate a comparison later, and `value::expression::evaluate::Machine`
-/// needs for `OrderedKind::Enums` -- `TypeEnvironment` itself holds no enum
-/// declarations (those are `scope.enums`, ADR-011 §6.1's own module split).
-pub fn enum_member_index(scope: &Scope) -> EnumMemberIndex {
-    let mut index = EnumMemberIndex::default();
-    for binding in &scope.enums {
-        for member in &binding.members {
-            index.record(member.clone());
-        }
-    }
-    index
-}
-
 /// A function's resolved signature: its parameters' names paired with each
 /// one's resolved `ValueType`, and the resolved result type.
 pub(crate) type ResolvedSignature = (Vec<(String, ValueType)>, ValueType);
@@ -341,8 +326,10 @@ pub struct DispatchOperation {
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone, Debug)]
 pub struct Scope {
-    pub(crate) types: TypeEnvironment,
-    pub(crate) enums: Vec<EnumBinding>,
+    /// Fixed once built: [`Self::index`] is derived from it (QSL-205).
+    types: TypeEnvironment,
+    /// Fixed once built, like `types`.
+    enums: Vec<EnumBinding>,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// The by-name lookups over the declared types, enums, aliases and
@@ -365,6 +352,14 @@ struct ScopeIndex {
     enum_members: BTreeMap<String, BTreeMap<String, Vec<(usize, usize)>>>,
     /// Every declared model operation name.
     model_operations: BTreeSet<String>,
+    /// Each enum shape's first binding position in [`Scope::enums`].
+    enum_shapes: BTreeMap<EnumShape, usize>,
+    /// Each object type name's first declaration, in `object_types()`
+    /// order.
+    object_types: BTreeMap<String, EffectiveId>,
+    /// The checked `VariantId -> EnumValue` index over every binding's
+    /// members, in binding then member order (ADR-013 T-6).
+    enum_member_index: EnumMemberIndex,
 }
 
 impl ScopeIndex {
@@ -382,7 +377,12 @@ impl ScopeIndex {
             index.named_type(declaration.name(), ValueType::Composite(declaration.key()));
         }
         for (position, binding) in enums.iter().enumerate() {
-            index.named_type(&binding.name, ValueType::Enum(binding.shape()));
+            let shape = binding.shape();
+            index.enum_shapes.entry(shape.clone()).or_insert(position);
+            index.named_type(&binding.name, ValueType::Enum(shape));
+            for member in &binding.members {
+                index.enum_member_index.record(member.clone());
+            }
             let cases = index.enum_members.entry(binding.name.clone()).or_default();
             for (member, value) in binding.members.iter().enumerate() {
                 cases
@@ -393,6 +393,10 @@ impl ScopeIndex {
         }
         for declaration in types.object_types() {
             index.named_type(declaration.name(), ValueType::Reference(declaration.key()));
+            index
+                .object_types
+                .entry(declaration.name().to_owned())
+                .or_insert(declaration.key());
         }
         index.model_operations = model_operations.iter().cloned().collect();
         index
@@ -447,6 +451,31 @@ impl Scope {
                 let binding = self.enums.get(binding)?;
                 Some((binding, binding.members.get(member)?))
             })
+    }
+
+    /// The package's admitted enum declarations, in declaration order.
+    pub(crate) fn enums(&self) -> &[EnumBinding] {
+        &self.enums
+    }
+
+    /// The first enum binding whose shape is `shape`.
+    pub(crate) fn enum_binding_of(&self, shape: &EnumShape) -> Option<&EnumBinding> {
+        self.enums.get(*self.index.enum_shapes.get(shape)?)
+    }
+
+    /// The first object type named `name`, by its effective identity.
+    pub(crate) fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
+        self.index.object_types.get(name).copied()
+    }
+
+    /// ADR-013 T-6 (last sentence): the checked `VariantId -> EnumValue`
+    /// index `TypeEnvironment::check_equality_in`'s `Enum` schedule needs to
+    /// evaluate a comparison later, and `value::expression::evaluate::Machine`
+    /// needs for `OrderedKind::Enums` -- `TypeEnvironment` itself holds no
+    /// enum declarations (those are [`Self::enums`], ADR-011 §6.1's own
+    /// module split). Built once with the scope (QSL-205).
+    pub fn enum_member_index(&self) -> &EnumMemberIndex {
+        &self.index.enum_member_index
     }
 
     /// Whether `name` is a declared model operation.
@@ -526,19 +555,21 @@ impl Signatures {
     pub(crate) fn declares(&self, name: &str) -> bool {
         self.names.contains_key(name)
     }
+
+    /// Every signature, in declaration order.
+    pub fn as_slice(&self) -> &[Signature] {
+        &self.entries
+    }
+
+    /// Every signature, in declaration order.
+    pub fn iter(&self) -> std::slice::Iter<'_, Signature> {
+        self.entries.iter()
+    }
 }
 
 impl From<Vec<Signature>> for Signatures {
     fn from(entries: Vec<Signature>) -> Self {
         Self::new(entries)
-    }
-}
-
-impl std::ops::Deref for Signatures {
-    type Target = [Signature];
-
-    fn deref(&self) -> &[Signature] {
-        &self.entries
     }
 }
 
@@ -606,7 +637,7 @@ pub(crate) struct Typer<'a> {
     /// pass checks reads the same index rather than rebuilding it (M1,
     /// SR-511 review of PR #365), matching `value::expression::evaluate::
     /// Machine::new`'s equivalent one-time build.
-    enum_members: EnumMemberIndex,
+    enum_members: &'a EnumMemberIndex,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -739,7 +770,7 @@ impl<'a> Typer<'a> {
             slot_names: Vec::new(),
             clause_kind,
             units: UnitScope::new(scope.types.units()),
-            enum_members: enum_member_index(scope),
+            enum_members: scope.enum_member_index(),
         }
     }
 
@@ -988,12 +1019,7 @@ impl<'a> Typer<'a> {
                     // source can trigger today. The check stays here as
                     // defense in depth, matching `Composite`/`Reference`'s
                     // own (`TypeEnvironment`-level) declaration checks.
-                    if !self
-                        .scope
-                        .enums
-                        .iter()
-                        .any(|binding| binding.shape() == *shape)
-                    {
+                    if self.scope.enum_binding_of(shape).is_none() {
                         return Err(mismatch(location));
                     }
                 }
@@ -1408,7 +1434,7 @@ impl<'a> Typer<'a> {
                         EqualityOperator::Equal,
                         EqualityOperand::typed(element.clone()),
                         EqualityOperand::typed(element),
-                        &self.enum_members,
+                        self.enum_members,
                     )
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 Ok(node(
@@ -1656,7 +1682,7 @@ impl<'a> Typer<'a> {
                 operator,
                 left_operand,
                 right_operand,
-                &self.enum_members,
+                self.enum_members,
             )
             .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
         Ok(node(

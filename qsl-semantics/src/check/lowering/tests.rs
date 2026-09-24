@@ -135,7 +135,7 @@ fn type_nodes(
         scope,
         owner,
         &[],
-        scope.types.units().clone(),
+        scope.types().units().clone(),
         &lock,
         crate::check::MAX_CHECKING_DEPTH,
         0,

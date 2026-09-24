@@ -734,7 +734,7 @@ pub(crate) fn check_application(
         Some(ValueType::Composite(key)) => {
             let Some(CompositeShape::Tuple(positions)) = typer
                 .scope()
-                .types
+                .types()
                 .composite(key)
                 .map(|declaration| declaration.shape())
             else {
@@ -1700,7 +1700,7 @@ pub(crate) mod checking_tests {
         let input = declarations_for(
             &scope,
             &signatures,
-            &signatures[1],
+            &signatures.as_slice()[1],
             &dispatch_tables,
             CheckingLimits::default(),
             &location,
@@ -2340,9 +2340,32 @@ pub(crate) mod checking_tests {
         assert_eq!(map.resolve(keys[0], &past_the_end), None);
     }
 
+    /// QSL-205: a name's first signature and its first callable one are
+    /// kept apart: a named call resolves to the callable one, while
+    /// `position` names the first declared.
+    #[test]
+    fn signatures_keep_first_and_first_callable_positions() {
+        let signature = |callable_by_name| Signature {
+            name: "f".to_owned(),
+            parameters: Vec::new(),
+            result: ValueType::Boolean,
+            callable_by_name,
+        };
+        let signatures = Signatures::new(vec![signature(false), signature(true), signature(true)]);
+        assert_eq!(signatures.callable("f").map(|(index, _)| index), Some(1));
+        assert_eq!(signatures.position("f"), Some(0));
+        assert!(signatures.declares("f"));
+        assert_eq!(signatures.callable("g").map(|(index, _)| index), None);
+        assert_eq!(signatures.position("g"), None);
+        let hidden = Signatures::new(vec![signature(false)]);
+        assert!(hidden.callable("f").is_none());
+        assert!(hidden.declares("f"));
+    }
+
     /// QSL-205: grouping names in one pass refuses exactly the declarations
     /// whose name repeats, in declaration order, each with every locus of
     /// its name in declaration order -- the refusals the pairwise scan made.
+    #[trace("TC-191", "FR-146-AC-8")]
     #[test]
     fn duplicate_names_are_refused_with_every_locus_in_order() {
         use crate::check::refusal::{Location as BodyLocation, Origin as BodyOrigin};

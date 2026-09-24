@@ -16,8 +16,8 @@ use super::causes::{
 };
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::check::{
-    enum_member_index, Arithmetic, CheckedGraph, Connective, DispatchTable, Location, Node,
-    NodeKind, OrderedKind, RecordSlot, Scope, Slot, Visit, WrongSnapshotCause,
+    Arithmetic, CheckedGraph, Connective, DispatchTable, Location, Node, NodeKind, OrderedKind,
+    RecordSlot, Scope, Slot, Visit, WrongSnapshotCause,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
@@ -308,7 +308,7 @@ pub(crate) struct Machine<'a, 'm> {
     /// equality schedule and `OrderedKind::Enums` -- a bare kernel
     /// `Value::Enum` (O-14/OQ-D) carries no declaration, ordered flag or
     /// case name of its own.
-    enum_members: EnumMemberIndex,
+    enum_members: &'a EnumMemberIndex,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -319,7 +319,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
-        let enum_members = enum_member_index(scope);
+        let enum_members = scope.enum_member_index();
         Self {
             scope,
             graph,
