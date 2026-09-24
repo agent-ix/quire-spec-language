@@ -32,7 +32,8 @@ pub enum Disposition {
     /// `unsupported` (warned): for example an empty candidate set (backend
     /// absence) or an arm that does not discharge the item's IR form.
     Unsupported,
-    /// `invalid-request`, with its `invalid_capability` cause.
+    /// `invalid-request`. Its `invalid_capability` cause stays with the
+    /// settlement's own record; routing needs only the disposition.
     InvalidRequest,
 }
 

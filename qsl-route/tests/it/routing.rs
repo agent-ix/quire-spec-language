@@ -32,7 +32,7 @@ fn admit(
     BackendDescriptor::admit(
         candidate(id, digest_byte),
         ToolIdentity::new(format!("tool-for-{id}")),
-        advertised.iter().copied(),
+        advertised.iter().map(|&(kind, mode)| (kind, Some(mode))),
     )
 }
 
@@ -84,7 +84,7 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
     assert_eq!(unknown_mode.identity().as_str(), "unknown-mode");
     assert_eq!(
         unknown_mode.cause(),
-        &RegistrationCause::UnknownMode("finite".to_owned())
+        &RegistrationCause::UnknownMode(Some("finite".to_owned()))
     );
     assert_eq!(unknown_mode.catalog_code().cause(), "unknown-mode");
 
@@ -113,6 +113,52 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
         [(Capability::GlobalConformance, Mode::Bounded)]
     );
     assert!(set_ids(registry.candidates(Capability::ValueValidity, None)).is_empty());
+}
+
+/// FR-057-AC-8: an absent mode refuses `unknown-mode` with no bytes, and a
+/// pair whose kind and mode are both bad reports its kind (the documented
+/// first-failure rule: kind before mode within one pair).
+#[test]
+#[trace("TC-155", "FR-057-AC-8")]
+fn absent_mode_and_a_doubly_bad_pair_refuse_with_the_pinned_cause() {
+    let absent_mode = BackendDescriptor::admit(
+        candidate("absent-mode", 1),
+        ToolIdentity::new("tool"),
+        [(Some("value-validity"), None)],
+    )
+    .expect_err("an absent mode is never defaulted");
+    assert_eq!(absent_mode.cause(), &RegistrationCause::UnknownMode(None));
+    assert_eq!(absent_mode.catalog_code().cause(), "unknown-mode");
+
+    let both_bad = admit("both-bad", 2, &[(Some("Refinement"), "finite")])
+        .expect_err("neither label is admitted");
+    assert_eq!(
+        both_bad.cause(),
+        &RegistrationCause::UnknownKind("Refinement".to_owned())
+    );
+}
+
+/// FR-290 "Candidate set and negotiation": registration causes are reported
+/// ordered bytewise by backend identity, then manifest digest. Two refusals
+/// under one identity with different digests stay distinct and order by
+/// digest; a smaller identity orders first whatever its digest.
+#[test]
+#[trace("TC-155", "FR-057-AC-8")]
+fn refusals_order_by_identity_then_manifest_digest() {
+    let later_digest = admit("same", 9, &[(None, "bounded")]).unwrap_err();
+    let earlier_digest = admit("same", 1, &[(None, "bounded")]).unwrap_err();
+    let other_identity = admit("earlier", 200, &[(None, "bounded")]).unwrap_err();
+    assert_ne!(later_digest, earlier_digest);
+    assert_eq!(later_digest.identity(), earlier_digest.identity());
+    assert_eq!(earlier_digest.backend(), &candidate("same", 1));
+
+    let mut refusals = vec![
+        later_digest.clone(),
+        earlier_digest.clone(),
+        other_identity.clone(),
+    ];
+    refusals.sort();
+    assert_eq!(refusals, [other_identity, earlier_digest, later_digest]);
 }
 
 /// The TC-155 step 4 registry: two backends advertising

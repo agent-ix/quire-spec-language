@@ -379,6 +379,6 @@ FR-057-AC-3, FR-057-AC-5, FR-057-AC-7, FR-057-AC-9 and FR-057-AC-10 are not
 yet backed by tests traced to them. Remaining work: #213 lands the
 carrier-version refusal (AC-3) and composed-linker admission of a received
 clause/capability pair. AC-9 (TC-155 step 7) needs a run-result input to
-routing; `route` reads only settled dispositions and has none. TC-154, the
+routing, which `route` does not take; it is owned by QSL-226. TC-154, the
 rest of TC-155, and the admission portion of TC-153 (including AC-7 and
 AC-10), are planned under those tickets.

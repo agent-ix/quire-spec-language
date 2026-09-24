@@ -48,9 +48,7 @@ pub mod routing;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
-use qsl_foundation::digest::{
-    DigestDomain, DigestRecord, InvalidDigestRecord, UnknownDigestDomain,
-};
+use qsl_foundation::digest::{parse_lower_hex32, DigestDomain, DigestRecord, UnknownDigestDomain};
 use qsl_foundation::CatalogCode;
 use qsl_semantics::check::Capability;
 
@@ -186,9 +184,12 @@ impl ManifestDigest {
         if domain != Self::DOMAIN {
             return Err(InvalidManifestDigest::WrongDomain(domain));
         }
-        DigestRecord::from_wire(Some(label), digest_hex)
-            .map(Self)
-            .map_err(InvalidManifestDigest::Encoding)
+        if digest_hex.len() != 64 {
+            return Err(InvalidManifestDigest::WrongLength(digest_hex.len()));
+        }
+        parse_lower_hex32(digest_hex)
+            .map(Self::from_digest)
+            .ok_or(InvalidManifestDigest::NotLowerHex)
     }
 
     /// The domain-labelled digest record. Its domain is always
@@ -211,10 +212,14 @@ pub enum InvalidManifestDigest {
     /// `quire.tool-manifest.jcs/v1`.
     #[error("manifest digest domain {0} is not quire.tool-manifest.jcs/v1")]
     WrongDomain(DigestDomain),
-    /// The domain is right; the digest string is not 64 lowercase hex
-    /// digits.
-    #[error("{0}")]
-    Encoding(#[source] InvalidDigestRecord),
+    /// The domain is right; the digest string is not exactly 64
+    /// characters.
+    #[error("manifest digest is {0} characters, not exactly 64")]
+    WrongLength(usize),
+    /// The domain is right; the digest string is not lowercase hex (FR-201
+    /// admits no case folding).
+    #[error("manifest digest is not exactly 64 lowercase hexadecimal digits")]
+    NotLowerHex,
 }
 
 /// A candidate: the `(backend identity, manifest digest)` pair of a
@@ -304,25 +309,36 @@ impl BackendDescriptor {
     ///
     /// Each kind is admitted under the same rule as a requested pair: exact
     /// byte equality with one FR-290 label, no normalization or default.
-    /// Pairs are read in the order given, the kind before the mode, and the
-    /// first failure refuses the whole registration, keyed by `backend`'s
-    /// identity:
+    /// Any failing pair refuses the whole registration, keyed by
+    /// `backend` (identity, then manifest digest):
     ///
     /// - kind `None` (absent or `null`): `invalid_capability`/`absent-kind`;
     /// - kind not an FR-290 label: `invalid_capability`/`unknown-kind`,
     ///   carrying the received bytes;
-    /// - mode other than `bounded`/`unbounded`:
-    ///   `invalid_capability`/`unknown-mode`, carrying the received bytes.
+    /// - mode `None`, or other than `bounded`/`unbounded`:
+    ///   `invalid_capability`/`unknown-mode`, carrying the received bytes
+    ///   when there are any.
+    ///
+    /// **First-failure rule.** A refusal names one cause (FR-290: "refuse
+    /// that registration with `invalid_capability` (`absent-kind`,
+    /// `unknown-kind` or `unknown-mode`)"). When more than one pair fails,
+    /// the cause reported is the first failure in the order the pairs are
+    /// given, and within one pair the kind is checked before the mode, so a
+    /// pair whose kind and mode are both bad reports its kind. FR-290 treats
+    /// the advertised pairs as a set and does not rank causes; this order
+    /// is this function's own, stated here so it is deterministic for one
+    /// manifest. Whether the refusal is reported at all never depends on
+    /// order.
     ///
     /// A refused descriptor never exists, so it contributes nothing to any
     /// registry.
     pub fn admit<'a>(
         backend: Candidate,
         tool: ToolIdentity,
-        advertised: impl IntoIterator<Item = (Option<&'a str>, &'a str)>,
+        advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
     ) -> Result<Self, RegistrationRefusal> {
         let refuse = |cause| RegistrationRefusal {
-            identity: backend.id.clone(),
+            backend: backend.clone(),
             cause,
         };
         let mut advertises = HashSet::new();
@@ -333,8 +349,9 @@ impl BackendDescriptor {
                     unknown.received().to_owned(),
                 ))
             })?;
-            let mode = Mode::from_wire(mode)
-                .ok_or_else(|| refuse(RegistrationCause::UnknownMode(mode.to_owned())))?;
+            let mode = mode
+                .and_then(Mode::from_wire)
+                .ok_or_else(|| refuse(RegistrationCause::UnknownMode(mode.map(str::to_owned))))?;
             advertises.insert((kind, mode));
         }
         Ok(Self {
@@ -403,7 +420,10 @@ impl BackendDescriptor {
 
 /// Why a registration is refused: the FR-290 registration causes, all
 /// under code `invalid_capability` (FR-057-AC-8).
-#[derive(Clone, Debug, Eq, PartialEq)]
+///
+/// `Ord` exists only so [`RegistrationRefusal`] can order refusals under
+/// one backend deterministically; it ranks no cause above another.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RegistrationCause {
     /// The registration repeats an identity the registry already holds
     /// (ADR-012 §5.2 row 1; FR-075-AC-4).
@@ -413,9 +433,9 @@ pub enum RegistrationCause {
     /// An advertised kind is not byte-equal to an FR-290 label; carries the
     /// exact received bytes.
     UnknownKind(String),
-    /// An advertised mode is neither `bounded` nor `unbounded`; carries the
-    /// exact received bytes.
-    UnknownMode(String),
+    /// An advertised mode is absent, or neither `bounded` nor `unbounded`;
+    /// carries the exact received bytes, `None` when there were none.
+    UnknownMode(Option<String>),
 }
 
 impl RegistrationCause {
@@ -435,17 +455,27 @@ impl RegistrationCause {
 /// Structurally distinct from [`CandidateOutcome`] (FR-076-AC-3, TC-198) --
 /// a caller cannot mistake a registration refusal for an empty candidate
 /// set or an unknown-backend marker by pattern-matching alone.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("invalid_capability/{}: registration of {identity} refused", cause.as_str())]
+///
+/// Carries the refused registration's whole [`Candidate`], not only its
+/// identity, so refusals order as FR-290 reports them: bytewise by backend
+/// identity, then by manifest digest (`Ord` is derived over `(backend,
+/// cause)` in that field order).
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, thiserror::Error)]
+#[error("invalid_capability/{}: registration of {} refused", cause.as_str(), backend.id)]
 pub struct RegistrationRefusal {
-    identity: BackendId,
+    backend: Candidate,
     cause: RegistrationCause,
 }
 
 impl RegistrationRefusal {
     /// The identity whose registration was refused.
     pub fn identity(&self) -> &BackendId {
-        &self.identity
+        &self.backend.id
+    }
+
+    /// The refused registration's identity and manifest digest.
+    pub fn backend(&self) -> &Candidate {
+        &self.backend
     }
 
     /// Why it was refused.
@@ -551,7 +581,7 @@ impl Registry {
     pub fn register(&mut self, descriptor: BackendDescriptor) -> Result<(), RegistrationRefusal> {
         if self.0.contains_key(descriptor.id()) {
             return Err(RegistrationRefusal {
-                identity: descriptor.backend.id,
+                backend: descriptor.backend,
                 cause: RegistrationCause::DuplicateBackend,
             });
         }
@@ -796,8 +826,16 @@ mod tests {
             Err(InvalidManifestDigest::UnknownDomain(_))
         ));
         assert!(matches!(
-            Candidate::from_wire("kani", Some(ManifestDigest::DOMAIN.as_str()), "AB"),
-            Err(InvalidManifestDigest::Encoding(_))
+            Candidate::from_wire(
+                "kani",
+                Some(ManifestDigest::DOMAIN.as_str()),
+                &"AB".repeat(32)
+            ),
+            Err(InvalidManifestDigest::NotLowerHex)
+        ));
+        assert!(matches!(
+            Candidate::from_wire("kani", Some(ManifestDigest::DOMAIN.as_str()), "ab"),
+            Err(InvalidManifestDigest::WrongLength(2))
         ));
     }
 
