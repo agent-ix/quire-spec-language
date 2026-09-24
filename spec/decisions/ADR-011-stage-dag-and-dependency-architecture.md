@@ -1321,7 +1321,8 @@ sections it names.
   QSpec already scopes by owner; without the owner, two unrelated packages
   declaring `geo.Point` with the same fields would get equal `NodeKey`s in
   one check; builtin and anonymous types have no owner and stay shared
-  (ADR-013 OQ-G). Reopen if QSpec rejects the QC-18 owner-member request;
+  (ADR-013 OQ-G). Reopen if QSpec rejects the QC-18 request for an owner-bearing
+  preimage of declared nodes (FR-092's `quire.structural-node/v1`);
   QSL then conforms to QSpec and adds explicit collision handling.
 - **SG-2: `capability_report`.** It follows FR-322 and the fixtures: one
   `available` entry for `quire.value.complete/v1` (§2.2 E4).

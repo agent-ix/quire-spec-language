@@ -18,7 +18,7 @@ term and calls no key function.
 This catches a second lowering in `package` that drifts from the one `check`
 hashed, which a reader would refuse as `stale-node-key`.
 
-Scope: FR-093-AC-7, FR-093-CON-2.
+Scope: FR-093-AC-7, FR-093-AC-9, FR-093-CON-2.
 
 ## Test Procedure
 
@@ -27,15 +27,20 @@ Scope: FR-093-AC-7, FR-093-CON-2.
 2. For each emitted node, rebuild its preimage from the wire node (FR-322's
    application-node rule when its body holds an application, else FR-092's
    structural-node rule) and hash it.
-3. Scan the `package` crate's non-test code for a `SemanticTerm` constructor
-   and for a call to a preimage or key function.
+3. Scan the `package` crate's non-test code for a node body term
+   constructor, a node-identity preimage builder and a `NodeKey`
+   constructor call.
+4. List every emitted node's occurrences.
 
-Tag the tests `#[trace("FR-093-AC-7", "TC-416")]`.
+Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
 ## Expected Results
 
 - Step 2: every recomputed key equals the node's `node_id`.
 - Step 3: no match.
+- Step 4: every node has at least one occurrence; `a`'s parameter node has an
+  `anchor` occurrence and one `expression` occurrence per read; the scalar
+  nodes typing P1's body literals have a `generated` occurrence.
 
 ## Status
 

@@ -22,7 +22,7 @@ missing from a declared record (which merges two packages' `Point`), and a
 catch-all arm that silently keys a new type form.
 
 Scope: FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8,
-FR-092-CON-2.
+FR-092-AC-9, FR-092-CON-2.
 
 ## Test Procedure
 
@@ -41,12 +41,18 @@ selection whose alias is `v`.
 4. Check `type Digit = Int[0, 9];` with
    `function g using v(x: Digit): Boolean pure { true }`. Read the semantic
    type of `x`'s parameter node, and list every node's `declaration`.
-5. Key a type body nested `MAX_CHECKING_DEPTH` terms deep and one nested one
-   term deeper. Key a record declaration whose qualified name has no segment.
+5. With the depth limit set to 4, check a parameter typed with four nested
+   `Option`s around `Boolean`, and one with five. Check the recursive `f` and
+   `g` of FR-092-AC-7 in one unit.
 6. Key QSpec's `enum-status` and `enum-status-ready` preimages from
    `node-identity-vectors.json`, read at run time from `QSPEC_DIR` (the opt-in
    `make conformance` gate).
-7. Scan the preimage-selection and type-node `match` expressions for a `_`
+7. Build the type nodes of `Rational[-9, 9; 1, 9]`,
+   `Decimal[-100000, 100000; 2, 2; nearest-even]`,
+   `tuple Pair(Int[0, 9], Int[0, 9]);` and the two `record Opt` declarations
+   of FR-092-AC-9 under (`a`, `u`), and the literal nodes of `rational(1, 2)`
+   and `rational(2, 4)` typed `Rational[-9, 9; 1, 9]`.
+8. Scan the preimage-selection and type-node `match` expressions for a `_`
    arm.
 
 Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
@@ -58,11 +64,15 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
 - Step 3: both (`a`, `u`) keys equal D1 and the (`a`, `w`) key equals D2. D1's
   preimage has `owner` and `declaration`; T4's has neither member.
 - Step 4: the semantic type is T4, and no node's `declaration` is `Digit`.
-- Step 5: the body at the limit is keyed; the deeper body and the empty name
-  refuse and yield no key.
+- Step 5: four `Option`s are keyed; five refuse with
+  `resource_exhausted`/`insufficient-next-charge` naming the depth limit. The
+  `f`/`g` unit refuses with `unknown_required_feature`/`unsupported-feature`
+  naming both functions' in-group node regions.
 - Step 6: each key equals the recorded `sha256`, and each preimage's
   `version` is its nominal one.
-- Step 7: no `_` arm.
+- Step 7: T10 and T9, T12 and T11, D5, D3, D4 (differing from D3), and L3
+  for both literals, spelled `"1/2"`.
+- Step 8: no `_` arm.
 
 ## Status
 

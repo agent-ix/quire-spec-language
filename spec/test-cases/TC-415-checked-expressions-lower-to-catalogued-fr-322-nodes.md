@@ -21,7 +21,7 @@ This catches a lowering that inlines operands (losing occurrences), a
 catalog identity (for example `numeric.convert` for a narrowing), a law
 invented from a constant, and a `NodeKind` added without a lowering arm.
 
-Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-CON-1.
+Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8, FR-093-CON-1.
 
 ## Test Procedure
 
@@ -36,10 +36,13 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
    any node has a `Local` read as its own body.
 3. For each row of FR-093's application table, check a fixture function
    whose body holds that checked node. Read its node's `operator`,
-   `semantic_form`, `operation`, `result_type` and argument shape. Rows whose
-   checked node another family owns (`Attribute`, `AllInstances`, `Lookup`,
-   `Dispatch`, `Pre`) use the fixtures of that family's own tests.
-4. Check `c1` and `c2` of FR-093-AC-4 and read their body nodes' operations.
+   `semantic_form`, `operation`, `result_type` and argument shape, for every
+   row except `Attribute`, `AllInstances`, `Lookup`, `Dispatch` and `Pre`.
+   Lower the checked `Attribute`, `AllInstances`, `Lookup`, `Dispatch` and
+   `Pre` nodes of the FR-153 and FR-151 postcondition, invariant and dispatch
+   fixtures (TC-196) and read the same members.
+4. Check `c1`, `c2` and `c3` of FR-093-AC-4, and a function whose body is
+   `flatMap(x in s: sequence[x])`, and read their body nodes.
 5. Check `q` of FR-093-AC-5 and read the levels of `x`, `y` and `z` and the
    `forall` argument list.
 6. Check `function te using v(p: Text[0, 8; nfc], r: Text[0, 8; nfc]): Boolean pure { p = r }`
@@ -56,12 +59,14 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 - Step 2: keys E1, E2 and E3; no node for a `Local` read.
 - Step 3: each node matches its row, and its `result_type` is the type node
   of the checked node's `value_type`.
-- Step 4: `c1` gives `quire.op.numeric.convert` naming `Int[0, 10]`; `c2` gives
-  `quire.op.numeric.narrow`.
+- Step 4: `c1` has no convert node; `c2` gives `quire.op.numeric.narrow`
+  naming `Int[0, 9]`; `c3` gives `quire.op.numeric.convert`; the `flatMap`
+  body is one `quire.op.collection.flat_map` node with no map node.
 - Step 5: levels 1, 2 and 1; the `forall` arguments are as FR-093-AC-5 gives.
 - Step 6: the first carries law `text_profile` with the supplied
-  `DefinitionRef` and mode `nfc`; the second refuses naming role
-  `text_profile` and yields no node.
+  `DefinitionRef` and mode `nfc`; the second refuses with
+  `missing_declaration`/`missing-selection` naming role `text_profile` and
+  yields no node.
 - Step 7: no `_` arm.
 
 ## Status

@@ -19,7 +19,7 @@ This catches an arity lost when a parameter is never read, a parameter key
 that embeds its function (a cycle), an integer literal spelled as a JSON
 number, and a function node keyed by the application-node preimage.
 
-Scope: FR-092-AC-4, FR-092-AC-5, FR-092-AC-6.
+Scope: FR-092-AC-4, FR-092-AC-5, FR-092-AC-6, FR-092-AC-10.
 
 ## Test Procedure
 
@@ -40,6 +40,10 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
    `application` term, and read its preimage's `version` and `owner`. Read the
    preimage of the node of `a and b`.
 
+4. Check `function m using v(x: Int[0, 9]): Boolean pure decreases(x) { true }`
+   and read the keys of `x`'s parameter node and of `m`, and `m`'s
+   `decreases` binding.
+
 Tag the tests `#[trace("FR-092-AC-n", "TC-414")]` with the AC each backs.
 
 ## Expected Results
@@ -52,6 +56,7 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-414")]` with the AC each backs.
   `version` is `quire.structural-node/v1` with `owner` (`a`, `u`). The
   `a and b` preimage's `version` is `quire.application-node/v1`, it has no
   `owner` member, and its key is E1.
+- Step 4: `x` is P4 and `m` is F3; `decreases` references P4.
 
 ## Status
 
