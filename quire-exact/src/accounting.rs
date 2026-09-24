@@ -497,9 +497,11 @@ impl Charge {
 ///
 /// **A count, not a log (QSL-206).** A production meter holds only fixed-size
 /// state: the ten counters, the number of admitted charges and, for an
-/// injected denial, the number of admissions at the denied point. Admitting a
-/// charge never allocates, so the meter that bounds an evaluation's work does
-/// not itself grow with that work. The ordered charge log
+/// injected denial, the number of admissions at the denied point. It retains
+/// no heap state; the meter never grows with the charge count, so the meter
+/// that bounds an evaluation's work does not itself grow with that work. The
+/// const assertion below this type holds that in every production build. The
+/// ordered charge log
 /// ([`Meter::admitted_charges`]) exists only under the `test-support`
 /// feature, which only a dev-dependency may enable (TC-243's
 /// `no_shipped_dependency_enables_test_support`).
@@ -514,6 +516,12 @@ pub struct Meter {
     #[cfg(feature = "test-support")]
     admitted: Vec<ChargePoint>,
 }
+
+// QSL-206: a production `Meter` owns no heap memory. A type with no drop
+// glue holds no `Vec`, `Box` or `String`, so a heap-owning field added to it
+// fails the build rather than a test.
+#[cfg(not(feature = "test-support"))]
+const _: () = assert!(!std::mem::needs_drop::<Meter>());
 
 impl Meter {
     /// A fresh meter with nothing consumed.

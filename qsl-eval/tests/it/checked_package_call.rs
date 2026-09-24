@@ -286,6 +286,7 @@ fn call_to_an_unknown_function_is_refused() {
 /// charge, so each call adds exactly one `function.call` to `meter`, and two
 /// calls on one meter accumulate. Before QSL-206 the charge went to a meter
 /// `call` created and dropped, so `meter` stayed empty.
+#[trace("TC-191", "FR-146-AC-5")]
 #[test]
 fn call_charges_the_top_level_function_call_to_the_callers_meter() {
     let objects = ObjectEnvironment::default();
@@ -318,4 +319,53 @@ fn call_charges_the_top_level_function_call_to_the_callers_meter() {
         meter.admitted_charges(),
         [quire_exact::ChargePoint::FunctionCall; 2]
     );
+}
+
+/// QSL-206: the top-level charge carries over between calls on one meter.
+/// With one work unit, the first call of `one(5)` spends it and completes;
+/// the second call's own `function.call` is denied before any node runs, so
+/// its `Incomplete` names `FunctionCall` and carries no location.
+#[trace("TC-191", "FR-146-AC-5")]
+#[test]
+fn a_second_call_on_a_spent_meter_is_denied_at_its_function_call() {
+    let objects = ObjectEnvironment::default();
+    let package = link(
+        declarations(vec![function_one()])
+            .check(CheckingLimits::default())
+            .unwrap(),
+    );
+    let mut meter = Meter::new(ScalarLimits {
+        work_units: 1,
+        ..UNLIMITED
+    });
+    let mut call = || {
+        package
+            .call(
+                &QualifiedName::unqualified("one").unwrap(),
+                vec![Value::Integer(Integer::from(5_i64))],
+                &objects,
+                &mut meter,
+            )
+            .unwrap()
+    };
+    let first = call();
+    assert_eq!(first.location, None);
+    assert_eq!(
+        format!("{:?}", evaluated(first)),
+        format!(
+            "{:?}",
+            Outcome::Completed(Value::Integer(Integer::from(5_i64)))
+        )
+    );
+    let second = call();
+    assert_eq!(second.location, None, "no node ran, so nothing is located");
+    match evaluated(second) {
+        Outcome::Incomplete(record) => {
+            assert_eq!(record.charge_point, quire_exact::ChargePoint::FunctionCall);
+            assert_eq!(record.limit_kind, quire_exact::LimitKind::WorkUnits);
+            assert_eq!(record.limit, 1);
+            assert_eq!(record.consumed, 1, "the first call spent the one unit");
+        }
+        other => panic!("expected Outcome::Incomplete(_), got {other:?}"),
+    }
 }

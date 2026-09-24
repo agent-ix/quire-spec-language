@@ -20,6 +20,10 @@ architecture evaluation.
 `cargo bench --locked -p qsl-bench --bench <axis>`, and criterion options go
 through `BENCH_ARGS`.
 
+Run benches with `-p qsl-bench`, never `--workspace`. A workspace build turns
+on `quire-exact/test-support` through other crates' dev-dependencies, and the
+meter then logs every charge (QSL-206).
+
 Every input is built through the layers' public API. So a rewrite behind that
 API needs no bench change. A change to the API itself does, the way QSL-201's
 new `intake::admit` return type did. All model-intake calls go through
