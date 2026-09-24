@@ -749,14 +749,12 @@ pub(super) fn body(
     Ok((runtime.anchors, runtime.bindings, body))
 }
 
-// No admitted correspondence can authorize a relationship export without the
-// removed Producer 1.2 adapter (#131); the composed model layer already
+// No admitted model carries a relationship authority; the composed model layer already
 // refuses every `c::Relationship` occurrence as an unsupported
 // correspondence (`ModelWalk::relationship`), so native compilation reaches
 // this only defensively and refuses the same way. `Unsupported::Export`
 // matches the code every other unauthorized-export refusal in this module
-// uses (see line 293 above); `Unsupported::ProducerCorrespondence` stays
-// reserved for a wire package that explicitly claims a correspondence.
+// uses (see line 293 above).
 fn relationship_authority(
     _context: &Declaration<'_, '_>,
     _relationship: &c::Relationship,

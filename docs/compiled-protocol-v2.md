@@ -3,7 +3,8 @@
 Normative data contract owned by
 [FR-050](../spec/functional/FR-050-publish-authenticated-temporal-artifacts.md).
 Version 2 authenticates each temporal declaration's definition artifact and
-clock configuration. It does not change any version-1 field or temporal meaning.
+clock configuration. It embeds the version-1 package, including its shared
+`Model` records, and changes no temporal meaning.
 
 ## Version selection
 

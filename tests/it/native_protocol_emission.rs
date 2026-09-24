@@ -150,6 +150,38 @@ fn native_protocol_reaches_private_family_admission_and_independent_reader() {
 }
 
 #[test]
+#[trace("TC-121", "FR-042-AC-12")]
+fn directly_admitted_native_model_emits_an_explicit_null_domain_package() {
+    let inputs = Inputs::new(&[Unit {
+        name: "simple",
+        body: SIMPLE,
+        declarations: &["Simple"],
+    }]);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("supported native protocol");
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .unwrap();
+            let read = inputs.read(proofs, &emitted);
+            let models = &read.result().expect("reader admits").package().models;
+            assert!(!models.is_empty());
+            assert!(models.iter().all(|model| model.domain_package.0.is_none()));
+            let text = std::str::from_utf8(emitted.bytes()).unwrap();
+            assert_eq!(
+                text.matches("\"domain_package\":null").count(),
+                models.len()
+            );
+        },
+    );
+}
+
+#[test]
 #[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4", "FR-042-AC-7")]
 fn multi_unit_native_families_keep_callee_source_ids_and_lexical_provenance() {
     let inputs = Inputs::new(&[

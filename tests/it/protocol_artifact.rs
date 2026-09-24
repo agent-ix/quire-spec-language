@@ -89,7 +89,7 @@ fn complete_wire_candidate_binds_real_model_and_independent_original_inventory()
     assert_eq!(model.exports[1].kind, w::ExportKind::Population);
     assert_eq!(model.exports[1].path, ["Node", "nodes"]);
     assert_eq!(model.exports[1].locus, model.exports[0].locus);
-    assert!(model.correspondence.0.is_none());
+    assert!(model.domain_package.0.is_none());
     // Candidate and reader admission carry no native-emitter/family authority.
     assert_eq!(
         artifact::encode_candidate(package, Limits::default())
@@ -319,7 +319,7 @@ fn object_only_closed_shapes_refuse_missing_duplicate_unknown_and_wrong_fields()
     value["models"][0]
         .as_object_mut()
         .unwrap()
-        .remove("correspondence");
+        .remove("domain_package");
     invalid.push(value);
     let mut value = base.clone();
     value["types"][1]["surprise"] = json!(true);
@@ -533,7 +533,7 @@ fn actual_export_authority_cannot_be_replaced_by_a_tag_path_or_foreign_locus() {
 
 #[test]
 #[trace("TC-121", "FR-042-AC-3", "FR-042-AC-8")]
-fn profiles_and_unimplemented_producer_correspondence_cannot_borrow_admission() {
+fn profiles_and_a_substituted_domain_package_cannot_borrow_admission() {
     let fixture = Fixture::new();
     let mut offered = fixture.package.clone();
     offered.declarations[0].profile = offered.package_definition;
@@ -547,32 +547,99 @@ fn profiles_and_unimplemented_producer_correspondence_cannot_borrow_admission() 
         &fixture.offered(&offered),
         Error::Unsupported(Unsupported::Definition),
     );
+    // The accepted selection is a directly admitted native model, so its
+    // domain-package naming is null; a payload naming one substitutes it.
     let mut offered = fixture.package.clone();
-    let model = &mut offered.models[0];
-    // This is an offered claim, deliberately lacking an admitted correspondence
-    // producer. Matching native bytes cannot make its other digest domain true.
-    model.correspondence = w::Nullable(Some(w::Correspondence {
-        producer: w::ProducerObject {
-            interface: model.artifact,
-            kind: "unimplemented-producer-object".into(),
-            authority: "test:external-producer".into(),
-            identity: "claimed-object".into(),
-            revision: fixture.foreign_formal.revision.clone(),
-            digest: w::SelectedDigest {
-                domain: "test:separate-object-domain".into(),
-                version: "1".into(),
-                algorithm: "sha256".into(),
-                value: "offered-but-unproved".into(),
-            },
-        },
-        native: model.artifact,
-        relation: offered.package_definition,
-        exports: vec![0],
+    offered.models[0].domain_package = w::Nullable(Some(w::DomainPackage {
+        identity: "test/orders".into(),
+        version: "1.0.0".into(),
+        digest: w::JcsDigest([0xab; 32]),
     }));
-    failure(
-        &fixture.offered(&offered),
-        Error::Unsupported(Unsupported::ProducerCorrespondence),
+    failure(&fixture.offered(&offered), Error::Invalid(Invalid::Model));
+}
+
+#[test]
+#[trace("TC-121", "FR-042-AC-11", "FR-042-AC-12")]
+fn model_names_its_domain_package_directly_and_refuses_the_deleted_producer_shapes() {
+    let fixture = Fixture::new();
+    let candidate = fixture.candidate();
+    let text = std::str::from_utf8(candidate.bytes()).unwrap();
+    // Explicit null, distinguished by byte content from an omitted member.
+    assert_eq!(
+        text.matches("\"domain_package\":null").count(),
+        fixture.package.models.len()
     );
+    let admitted = fixture
+        .read(
+            candidate.bytes(),
+            &Fixture::seal(candidate.bytes()),
+            Limits::default(),
+        )
+        .result()
+        .expect("explicit null domain package admits")
+        .package()
+        .clone();
+    assert!(admitted
+        .models
+        .iter()
+        .all(|model| model.domain_package.0.is_none()));
+
+    let base = fixture.json();
+    let producer_object = json!({
+        "interface": 0, "kind": "object", "authority": "test:producer",
+        "identity": "claimed", "revision": {"namespace": "n", "value": "1"},
+        "digest": {"domain": "d", "version": "1", "algorithm": "sha256", "value": "v"},
+    });
+    let correspondence = json!({
+        "producer": producer_object, "native": 0, "relation": 0, "exports": [0],
+    });
+    let mut refused = Vec::new();
+    // Omission is never an implicit null.
+    let mut value = base.clone();
+    value["models"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("domain_package");
+    refused.push(value);
+    // Deleted members refuse as unrecognized, whatever their value.
+    for member in ["correspondence", "producer", "interface"] {
+        for extra in [json!(null), producer_object.clone(), correspondence.clone()] {
+            let mut value = base.clone();
+            value["models"][0][member] = extra;
+            refused.push(value);
+        }
+    }
+    // A deleted-shape value under the new key is not read into a naming.
+    for shaped in [producer_object.clone(), correspondence.clone()] {
+        let mut value = base.clone();
+        value["models"][0]["domain_package"] = shaped;
+        refused.push(value);
+    }
+    // FR-056-CON-4: only the sha256-jcs spelling occupies the digest slot.
+    let hex = "ab".repeat(32);
+    for digest in [
+        format!("sha256:{hex}"),
+        hex.to_uppercase(),
+        hex[..62].to_owned(),
+    ] {
+        let mut value = base.clone();
+        value["models"][0]["domain_package"] =
+            json!({"identity": "test/orders", "version": "1.0.0", "digest": digest});
+        refused.push(value);
+    }
+    for value in refused {
+        assert!(matches!(
+            fixture.raw(&value).result(),
+            Err(Error::Json { .. })
+        ));
+    }
+
+    // The well-formed naming decodes, and then refuses only as a substituted
+    // selection against this accepted inventory.
+    let mut value = base.clone();
+    value["models"][0]["domain_package"] =
+        json!({"identity": "test/orders", "version": "1.0.0", "digest": hex});
+    failure(&fixture.raw(&value), Error::Invalid(Invalid::Model));
 }
 
 #[test]

@@ -13,8 +13,8 @@ relationships:
 
 When an admitted protocol control can establish an event-triggered obligation,
 the compiler SHALL publish its exact authored control-to-temporal-activation
-mapping in a new strict `quire.compiled-protocol/3` artifact. The compiler SHALL
-leave the frozen `/1` and `/2` bytes, readers and semantics unchanged.
+mapping in a new strict `quire.compiled-protocol/3` artifact. The `/1` and `/2`
+wire identities and temporal semantics stay as FR-042 and FR-050 define them.
 
 ## Inputs
 

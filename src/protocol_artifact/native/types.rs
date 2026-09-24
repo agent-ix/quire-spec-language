@@ -58,9 +58,9 @@ impl<'a> ValueBuilder<'a> {
                 artifact: dependency,
                 profile,
                 exports,
-                // No admitted correspondence can populate this without the
-                // removed Producer 1.2 adapter (#131).
-                correspondence: w::Nullable(None),
+                // FR-042-AC-12: a `NativeModel` is directly admitted, never
+                // linked against an FR-056 domain package.
+                domain_package: w::Nullable(None),
             });
         }
         Ok(result)

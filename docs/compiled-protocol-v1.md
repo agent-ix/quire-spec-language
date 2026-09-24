@@ -76,15 +76,12 @@ Span = {start:U,end:U}
 Locus = {source:U,span:Span}
 ForeignLocus = {source:Ref,formal:Formal,span:Span}
 Handle = {declaration:U,index:U}
-SelectedDigest = {domain:Name,version:Name,algorithm:Name,value:Name}
 Producer = {implementation:Name,revision:Revision,binary:Ref}
 Dependency = {artifact:Ref,requires:[U]}
 Definition = {identity:Name,revision:Revision,artifact:U,rules:[U],requires:[U]}
-ProducerObject = {interface:U,kind:Name,authority:Name,identity:Name,
-                  revision:Revision,digest:SelectedDigest}
-Correspondence = {producer:ProducerObject,native:U,relation:U,exports:[U]}
+DomainPackage = {identity:Name,version:Name,digest:JcsDigest}
 Export = {kind:ExportKind,path:[Name],locus:ForeignLocus}
-Model = {artifact:U,profile:Name,exports:[Export],correspondence:Correspondence?}
+Model = {artifact:U,profile:Name,exports:[Export],domain_package:DomainPackage?}
 Source = {artifact:Ref,native:{authority:Name,identity:Name,revision_namespace:Name,revision:Name},path:Name,formal:Formal,text:String}
 Features = {declarations:[Name],required:[Name],optional:[Name]}
 CompiledProtocolPackage = {
@@ -128,18 +125,21 @@ missing or surplus pairs as `Invalid::Binding`. Derived binders retain initializ
 and selected values preserve their contributing origins. Nested record/reference
 traversal visits each key once, including cycles, under the declared work limits.
 Absent relationship/component/endpoint exports are not
-supplied by declaring their tags. A producer correspondence, when required
-by its interface, is mandatory and verified against its selected relation
-artifact; `null` is allowed only for a directly admitted native model without
-such a producer-domain mapping.
+supplied by declaring their tags. `Model.domain_package` names, directly, the
+domain package the model was linked against under FR-056: its identity, its
+version and the `sha256-jcs` digest of its Semantic IR 2.0.0 document.
+`JcsDigest` is exactly 64 lowercase hex digits with no algorithm prefix, so a
+raw-byte `ByteDigest` spelling cannot occupy it. The member is required: a
+directly admitted native model carries an explicit `null`, and an omitted
+member refuses. A `Model` carrying any other member, such as `correspondence`,
+`producer` or `interface`, refuses as an unrecognized field. The reader
+compares the naming with the accepted selection; a naming that differs from it,
+including one offered where the accepted model links no domain package, refuses
+as `Invalid::Model`.
 
 `package_definition` and every `profile` index `definitions`; `Definition.requires`
 indexes definitions, while its `artifact`/`rules` and `Dependency.requires` index
-dependencies. `Model.artifact`, `ProducerObject.interface`, `Correspondence.native`
-and `Correspondence.relation` also index dependencies; correspondence `native`
-equals that model's artifact index and its `exports` index that model's exports.
-Interface/relation bytes must admit that exact producer object, native model and
-export correspondence in their own domains; absent verification is unsupported.
+dependencies. `Model.artifact` also indexes dependencies.
 Dependency and definition closure is acyclic and complete under the selected
 package contract. Source/dependency revision or digest values are copied exactly
 from the selected producer reference, never regenerated in the artifact domain.
@@ -595,7 +595,7 @@ variants and fields, never `Display` text. It is not a serialized error protocol
 | `Error::Json { line, column }` | Closed JSON shape or syntax failed at the original byte-oriented position. |
 | `Error::Numeric(NumberError)` | `NonCanonicalDecimal` or `ComponentOutOfRange` identifies `Decimal`, `Numerator` or `Denominator`; `NonPositiveDenominator` and `UnreducedRational` retain the exact numeric refusal. |
 | `Error::Invalid(Invalid)` | Recognized data violates the selected contract; discriminants below identify the violated invariant. |
-| `Error::Unsupported(Unsupported)` | `Wire`, `Feature`, `Definition` or `Profile` lacks an interpretation; `ProducerCorrespondence` or `Export` lacks the required authoritative adapter; `FamilyProof` means the native family prerequisites are not established. |
+| `Error::Unsupported(Unsupported)` | `Wire`, `Feature`, `Definition` or `Profile` lacks an interpretation; `Export` lacks the required authoritative adapter; `FamilyProof` means the native family prerequisites are not established. |
 | `Error::Incomplete(Exhaustion)` | `dimension`, successful prior `used`, next `requested`, effective `limit` and available original `locus` identify the unaffordable operation. |
 
 `Invalid` distinguishes `Selection` (independent identity mismatch), `Seal`

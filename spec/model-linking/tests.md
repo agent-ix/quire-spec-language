@@ -93,8 +93,8 @@ per-group counts before moving this row to Passed.
 | FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 QSL handoff passed; Protocol #11 pending |
-| FR-042 | FR-042-AC-11 | TC-121 | 🚧 Planned; agent-ix/quire-spec-language#132 |
-| FR-042 | FR-042-AC-12 | TC-121 | 🚧 Planned; agent-ix/quire-spec-language#132 |
+| FR-042 | FR-042-AC-11 | TC-121 | 🚧 Refusal half passed (`tests/it/protocol_artifact.rs`); the positive half is blocked until the FR-036 linker consumes FR-056 intake (FR-036-AC-9, TC-148) |
+| FR-042 | FR-042-AC-12 | TC-121 | ✅ Passed |
 | FR-046 | FR-046-AC-1 | TC-126 | ✅ Passed |
 | FR-046 | FR-046-AC-2 | TC-126 | ✅ Passed |
 | FR-046 | FR-046-AC-3 | TC-127 | ✅ Passed |
@@ -384,10 +384,10 @@ FR-042-AC-1 through FR-042-AC-10 each carry
 `#[trace("TC-121", "FR-042-AC-n")]` tags on executed Rust tests, and `quire
 coverage --scope . --json` reports those minted targets as backed. AC-10's QSL
 test proves only the compiler-owned publication and strict-reader leg; the
-cross-repository Protocol leg remains open. FR-042-AC-11 and FR-042-AC-12
-(the domain-package `Model` shape, agent-ix/quire-spec-language#132) carry no
-tag yet: both are planned, not backed. One module carrying each criterion's
-tag:
+cross-repository Protocol leg remains open. FR-042-AC-11's tag backs only
+its refusal half: no native package can yet import a domain package, so no
+emitted `Model` names one until FR-036-AC-9 lands. One module carrying each
+criterion's tag:
 
 | Criterion | Module carrying the tag |
 | --- | --- |
@@ -401,8 +401,8 @@ tag:
 | FR-042-AC-8 | `tests/native_choice_emission.rs` |
 | FR-042-AC-9 | `tests/native_domain_event_boundaries.rs` |
 | FR-042-AC-10 | `tests/published_protocol_v1.rs`; Protocol #11 remains below |
-| FR-042-AC-11 | None yet; planned under agent-ix/quire-spec-language#132 |
-| FR-042-AC-12 | None yet; planned under agent-ix/quire-spec-language#132 |
+| FR-042-AC-11 | `tests/it/protocol_artifact.rs` (refusal half) |
+| FR-042-AC-12 | `tests/it/protocol_artifact.rs`, `tests/it/native_protocol_emission.rs` |
 
 Per-criterion backing comes from those minted criterion targets and not from the
 row status: the `functional-coverage` declaration classifies a row by its
@@ -433,8 +433,8 @@ consumer side. TC-135 records the separate D-owned campaign gate.
 | FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 QSL handoff passed; Protocol #11 pending |
-| FR-042 | FR-042-AC-11 | TC-121 | 🚧 Planned; agent-ix/quire-spec-language#132 |
-| FR-042 | FR-042-AC-12 | TC-121 | 🚧 Planned; agent-ix/quire-spec-language#132 |
+| FR-042 | FR-042-AC-11 | TC-121 | 🚧 Refusal half passed (`tests/it/protocol_artifact.rs`); the positive half is blocked until the FR-036 linker consumes FR-056 intake (FR-036-AC-9, TC-148) |
+| FR-042 | FR-042-AC-12 | TC-121 | ✅ Passed |
 
 ## Authenticated temporal artifact selections (L5/L6)
 

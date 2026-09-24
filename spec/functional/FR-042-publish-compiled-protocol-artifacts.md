@@ -455,7 +455,5 @@ the wire contract doc FR-050 owns, and it becomes false too.
 Description points an implementer at, defines the exact `ProducerObject`,
 `Correspondence` and `Model` shapes this requirement deletes and replaces,
 the dependency-index rules that mention them, and `ProducerCorrespondence` as
-an `Unsupported` reason; it needs the matching rewrite. This requirement does
-not amend FR-050, FR-054 or either wire-contract doc itself: their owners
-need to re-verify FR-050-AC-4, restate FR-054's SHALL and rewrite the two
-docs once this lands.
+an `Unsupported` reason. The implementation (#132) amends FR-050-AC-4,
+FR-054's Description and both wire-contract docs to the in-place `Model`.

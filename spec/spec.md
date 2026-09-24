@@ -412,7 +412,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented |
 | [IT-010](integration/IT-010-config-version-numeric-backends.md) | IT | Locally tested ConfigVersion numeric backend parity |
 | [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
-| [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Native emission, strict reader and immutable `/1`/`/2` owner handoffs implemented; external Protocol acceptance remains under quire-protocol#11; `Model` domain-package identity/version/digest naming and removal of `ProducerObject`/`Correspondence` specified under #132 (FR-042-AC-11, FR-042-AC-12), not yet implemented |
+| [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Native emission, strict reader and immutable `/1`/`/2` owner handoffs implemented; external Protocol acceptance remains under quire-protocol#11; `Model.domain_package` member landed and `ProducerObject`/`Correspondence` removed under #132 (FR-042-AC-12; FR-042-AC-11 refusal half); a non-null naming waits on FR-036-AC-9 |
 | [FR-043](functional/FR-043-evaluate-bounded-native-temporal.md) | FR | Planned bounded temporal evaluation; compiler #38 |
 | [FR-044](functional/FR-044-activate-temporal-obligations.md) | FR | Planned temporal activation and immutable captures; compiler #38 |
 | [FR-045](functional/FR-045-classify-temporal-mapping-support.md) | FR | Native-to-TL mapping support classification, including the `/2` authenticated selection; bridge emission blocked on quire-contract-ir #63/#64; compiler #38 |
