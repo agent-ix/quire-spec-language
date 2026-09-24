@@ -82,8 +82,7 @@ a second error envelope or alter the audit target's derived errors.
 
 ## Status
 
-Draft. FR-010-AC-11 is specified under QSL-233 and not implemented: the
-grammar (`src/cli.rs`) takes `<source-id> <source-revision> <file>`. ADR-013
-§7 slice S-4b builds it.
+Draft. FR-010-AC-11 is implemented under QSL-233 (ADR-013 §7 slice S-4b):
+`src/cli.rs` takes the four labels before the file, and TC-425 backs it.
 
 Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

@@ -66,4 +66,4 @@ The command shall preserve fresh budgets for subsequent requests.
 
 ## Status
 
-The selected package's sources carry the four source labels of FR-001 (FR-020). Specified under QSL-233 (ADR-013 §7 S-4b), not implemented.
+The selected package's sources carry the four source labels of FR-001 (FR-020). Implemented under QSL-233 (ADR-013 §7 S-4b) through FR-020's reader.

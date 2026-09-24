@@ -77,4 +77,4 @@ typed failure without a successful artifact.
 
 ## Status
 
-FR-027-AC-4 is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.
+FR-027-AC-4 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-430.

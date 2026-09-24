@@ -46,4 +46,4 @@ Tag the tests `#[trace("TC-431", "FR-018-AC-8")]` and
 
 ## Status
 
-Planned. ADR-013 §7 slice S-4b (QSL-233).
+Passed locally. ADR-013 §7 slice S-4b (QSL-233).
