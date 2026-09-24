@@ -47,7 +47,7 @@ use std::sync::OnceLock;
 use ix_trace_rs::trace;
 use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef};
-use qsl_semantics::model::intake::{admit, lift_document, meaning, read_records};
+use qsl_semantics::model::intake::{admit, lift_document, meaning, read_records, PackageDocument};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
 use qsl_semantics::model::systems::{
@@ -56,6 +56,11 @@ use qsl_semantics::model::systems::{
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+
+/// Parses test document bytes through intake's one parse.
+fn parse_document(bytes: &[u8]) -> PackageDocument {
+    PackageDocument::parse(bytes).expect("the test document parses as JSON")
+}
 
 /// Resolves to the checked-out `agent-ix-extraction-frontend` git
 /// dependency's own `fixtures` directory
@@ -158,13 +163,13 @@ fn lifts_the_architecture_bundle_and_admits_it() {
         version: version.clone(),
         digest: actual_digest,
     };
-    let (admitted, admitted_bytes) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
+    let (admitted, admitted_document) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
         .expect(
             "a selection matching the lifted package's own identity/version/digest is admitted",
         );
     assert_eq!(admitted.identity, identity);
     assert_eq!(admitted.version, version);
-    assert_eq!(admitted_bytes, document);
+    assert_eq!(admitted_document.tree(), &package);
 }
 
 /// (a): `agent-ix/filament-core-data` PR #200 (merged; this crate's pinned
@@ -253,7 +258,7 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types
         "this test's breakdown assumes no populations[] in the golden"
     );
 
-    let refusals = read_records(package_identity, document.as_bytes()).expect_err(
+    let refusals = read_records(package_identity, &parse_document(document.as_bytes())).expect_err(
         "measured: 5 of the golden's 12 types refuse at read_records even though the whole \
          document now clears validate_with_semantic_ir's schema check",
     );
@@ -401,7 +406,11 @@ fn reads_pump_out_as_a_real_endpoint_record() {
     document["constructs"] = Value::Array(constructs);
     document["types"] = Value::Array(types);
 
-    let records = read_records(package_identity, document.to_string().as_bytes()).expect(
+    let records = read_records(
+        package_identity,
+        &parse_document(document.to_string().as_bytes()),
+    )
+    .expect(
         "pump_out and the referential closure needed to satisfy agent-ix-semantic-ir's own \
          schema, with Sys/Pump/Flow's unrelated refusing members emptied out, read clean",
     );
@@ -747,10 +756,11 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
         version: "1.0.0".to_owned(),
         digest,
     };
-    let (package_ref, admitted_bytes) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
-        .expect("a matching selection admits");
+    let (package_ref, admitted_document) =
+        admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
+            .expect("a matching selection admits");
 
-    let records = read_records(package_identity, admitted_bytes)
+    let records = read_records(package_identity, &admitted_document)
         .expect("a QSpec-conformant document reads with no refusals");
     let domain_package = DomainPackage::new(package_ref, records);
 
@@ -833,8 +843,8 @@ fn charges_normalize_record_once_per_intake_declaration() {
     .to_string()
     .into_bytes();
 
-    let records =
-        read_records(package_identity, &document).expect("Widget and its one field read clean");
+    let records = read_records(package_identity, &parse_document(&document))
+        .expect("Widget and its one field read clean");
     assert_eq!(
         records.len(),
         2,
@@ -904,11 +914,10 @@ fn charges_normalize_record_once_per_intake_declaration() {
 /// This is confirmed two ways: directly, a plain `serde_json::from_str` on
 /// this exact document's bytes fails with "recursion limit exceeded"
 /// (asserted below, so this test is not vacuous); and end to end,
-/// `read_records` -- which now disables its own second parse's recursion
-/// limit, this crate's own idiom for a re-parse whose depth is already
-/// bounded by a prior pass (`src/package/intake.rs`,
-/// `src/protocol_artifact/decode.rs`) -- reads this document clean rather
-/// than aborting the process.
+/// `read_records` -- which no longer parses at all, reading the one tree
+/// `PackageDocument::parse` built under `agent-ix-semantic-ir`'s own
+/// 200-deep bound (QSL-201) -- reads this document clean rather than
+/// aborting the process.
 #[test]
 fn reads_a_document_nested_past_serde_jsons_default_recursion_limit() {
     let package_identity = "acme/orders";
@@ -947,7 +956,7 @@ fn reads_a_document_nested_past_serde_jsons_default_recursion_limit() {
          recursion limit, or this test proves nothing"
     );
 
-    let records = read_records(package_identity, text.as_bytes()).expect(
+    let records = read_records(package_identity, &parse_document(text.as_bytes())).expect(
         "depth 150 is within agent-ix-semantic-ir's own 200-deep bound and reads clean, \
          not a panic",
     );

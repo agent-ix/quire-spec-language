@@ -8,7 +8,8 @@
 //! turns a spec bundle plus its module roots into IR 2.0.0 document bytes
 //! (FCD FR-091..097). [`admit`] runs FR-154's own four-check admission
 //! table (`model-complete.md:58`) over a selection and a byte map, and
-//! returns the package's raw bytes. [`read_records`] is the per-node reader:
+//! returns the package parsed once as a [`PackageDocument`], the only place
+//! intake parses package bytes. [`read_records`] is the per-node reader:
 //! it dispatches every `types[]`/`populations[]` entry purely by the
 //! `meaning` its `kind` resolves to in the document's own `constructs[]`
 //! table (FR-208), never by `kind.name`/`kind.module` directly.
@@ -38,7 +39,6 @@ use std::path::{Path, PathBuf};
 
 use agent_ix_extraction_frontend::lift::{lift, LiftOutcome, LiftRequest};
 use agent_ix_extraction_frontend::{Diagnostic, Refusal};
-use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -50,6 +50,7 @@ use crate::model::domain_package::{
 };
 use crate::model::key::{hex, jcs_bytes, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use crate::model::refusal::IntakeLimit;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::{LocatedSpan, Position};
 
@@ -226,24 +227,224 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
     }
 }
 
+/// One domain-package document, parsed exactly once.
+///
+/// [`PackageDocument::parse`] is the only place intake turns package bytes
+/// into a tree. It reads the bytes with `agent-ix-semantic-ir`'s own JSON
+/// reader, the one `validate_with_semantic_ir` must be handed (its
+/// `decide` accepts only that crate's own `Json`), and derives this crate's
+/// `serde_json::Value` view from that same tree rather than from the bytes
+/// again. [`admit`]'s JCS digest and [`read_records`]'s per-node reader both
+/// read the derived view, so the three can never disagree about what the
+/// document is.
+///
+/// The reader's two limits, `json::MAX_INPUT_BYTES` and `json::MAX_DEPTH`,
+/// refuse as [`ModelRefusalCause::IntakeLimitExceeded`] naming the limit,
+/// never as a malformed document. The derived view keeps the reader's
+/// last-wins resolution of a repeated member name, and each number is
+/// converted from the lexeme the document carried with `serde_json`'s own
+/// number parser, so it equals what `serde_json::from_slice` would have read.
+/// A number `serde_json` cannot represent (`1e400`) refuses. A lone UTF-16
+/// surrogate escape refuses too: RFC 8785 (via RFC 7493) admits none, and the
+/// reader would otherwise replace it with U+FFFD, so two different documents
+/// would share one tree and one JCS digest.
+#[derive(Debug, Clone)]
+pub struct PackageDocument {
+    /// `{"ir": <document>}`: the bundle `agent_ix_semantic_ir::decide` reads
+    /// (`input-bundle.schema.json` requires an `ir` member).
+    bundle: agent_ix_semantic_ir::json::Json,
+    /// The same document as a `serde_json::Value`, derived from `bundle`'s
+    /// own `ir` member.
+    tree: Value,
+}
+
+impl PackageDocument {
+    /// Parses package document bytes once.
+    ///
+    /// Input over `json::MAX_INPUT_BYTES`, or a value enclosed by
+    /// `json::MAX_DEPTH` or more arrays and objects, refuses
+    /// `resource_exhausted`/`intake-limit-exceeded` naming the limit and its
+    /// bound. Bytes that are not UTF-8, do not parse as JSON, carry a lone
+    /// surrogate escape or carry a number `serde_json` cannot represent
+    /// refuse `invalid_model_binding`/`malformed-declaration` against the
+    /// document root `$`.
+    pub fn parse(bytes: &[u8]) -> Result<Self, ModelRefusal> {
+        use agent_ix_semantic_ir::json::{MAX_DEPTH, MAX_INPUT_BYTES};
+        if bytes.len() > MAX_INPUT_BYTES {
+            return Err(limit_exceeded(IntakeLimit::InputBytes, MAX_INPUT_BYTES));
+        }
+        let scan = ByteScan::of(bytes);
+        if scan.too_deep {
+            return Err(limit_exceeded(IntakeLimit::NestingDepth, MAX_DEPTH));
+        }
+        let root_malformed =
+            |detail: String| malformed_declaration("$".to_owned(), None, None, detail);
+        let text = std::str::from_utf8(bytes).map_err(|err| {
+            root_malformed(format!("package document bytes are not UTF-8: {err}"))
+        })?;
+        let ir = agent_ix_semantic_ir::json::parse(text).map_err(|err| {
+            root_malformed(format!(
+                "package document bytes do not parse as JSON for agent-ix-semantic-ir: {err}"
+            ))
+        })?;
+        if let Some(offset) = scan.lone_surrogate {
+            return Err(root_malformed(format!(
+                "package document carries a lone UTF-16 surrogate escape at byte {offset}"
+            )));
+        }
+        let tree = value_of(&ir).map_err(|lexeme| {
+            root_malformed(format!(
+                "package document number {lexeme} has no serde_json representation"
+            ))
+        })?;
+        Ok(Self {
+            bundle: agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), ir)]),
+            tree,
+        })
+    }
+
+    /// The parsed document.
+    pub fn tree(&self) -> &Value {
+        &self.tree
+    }
+}
+
+/// ADR-011 Limits: a package document reached `limit`, whose bound is
+/// `bound`.
+fn limit_exceeded(limit: IntakeLimit, bound: usize) -> ModelRefusal {
+    ModelRefusal {
+        code: Code::ResourceExhausted,
+        cause: ModelRefusalCause::IntakeLimitExceeded { limit, bound },
+        detail: format!(
+            "package document exceeds intake's {} limit of {bound}",
+            limit.as_str()
+        ),
+    }
+}
+
+/// What one pass over package bytes finds that the reader's own result does
+/// not say: whether the reader will refuse at its depth limit (its
+/// `JsonError` carries no kind), and whether a string carries a lone
+/// surrogate escape (the reader replaces one silently).
+///
+/// The depth rule mirrors `agent_ix_semantic_ir::json`'s reader: it refuses
+/// when it starts a value already enclosed by `MAX_DEPTH` arrays and
+/// objects. A member name counts as that value's start, since a member
+/// always carries one. The scan runs over any bytes, well-formed or not;
+/// `lone_surrogate` is only meaningful once the reader has accepted them.
+struct ByteScan {
+    /// The reader will refuse these bytes at its nesting limit.
+    too_deep: bool,
+    /// The byte offset of the first lone surrogate escape (`\uD800`-
+    /// `\uDFFF` not in a high-then-low pair).
+    lone_surrogate: Option<usize>,
+}
+
+impl ByteScan {
+    fn of(bytes: &[u8]) -> Self {
+        use agent_ix_semantic_ir::json::MAX_DEPTH;
+        let mut scan = Self {
+            too_deep: false,
+            lone_surrogate: None,
+        };
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut at = 0usize;
+        while let Some(&byte) = bytes.get(at) {
+            if in_string {
+                match byte {
+                    b'"' => in_string = false,
+                    b'\\' if bytes.get(at + 1) == Some(&b'u') => {
+                        let unit = utf16_escape(bytes, at);
+                        let paired_low = utf16_escape(bytes, at + 6).is_some_and(is_low_surrogate);
+                        match unit {
+                            Some(unit) if is_high_surrogate(unit) && paired_low => at += 6,
+                            Some(unit) if is_high_surrogate(unit) || is_low_surrogate(unit) => {
+                                scan.lone_surrogate.get_or_insert(at);
+                            }
+                            _ => {}
+                        }
+                        at += 6;
+                        continue;
+                    }
+                    // Any other escape is two bytes; skipping the second
+                    // keeps an escaped quote from closing the string.
+                    b'\\' => at += 1,
+                    _ => {}
+                }
+            } else {
+                match byte {
+                    b']' | b'}' => depth = depth.saturating_sub(1),
+                    b' ' | b'\t' | b'\n' | b'\r' | b',' | b':' => {}
+                    _ if depth >= MAX_DEPTH => {
+                        scan.too_deep = true;
+                        return scan;
+                    }
+                    b'[' | b'{' => depth += 1,
+                    b'"' => in_string = true,
+                    // A scalar's bytes; none opens or closes anything.
+                    _ => {}
+                }
+            }
+            at += 1;
+        }
+        scan
+    }
+}
+
+/// The UTF-16 code unit of a `\uXXXX` escape starting at `at`, when four
+/// hex digits follow it.
+fn utf16_escape(bytes: &[u8], at: usize) -> Option<u16> {
+    let escape = bytes.get(at..at + 6)?;
+    let (prefix, digits) = escape.split_at(2);
+    if prefix != b"\\u" || !digits.iter().all(u8::is_ascii_hexdigit) {
+        return None;
+    }
+    let digits = std::str::from_utf8(digits).ok()?;
+    u16::from_str_radix(digits, 16).ok()
+}
+
+fn is_high_surrogate(unit: u16) -> bool {
+    (0xD800..0xDC00).contains(&unit)
+}
+
+fn is_low_surrogate(unit: u16) -> bool {
+    (0xDC00..0xE000).contains(&unit)
+}
+
+/// `json` as a `serde_json::Value`, or the first number lexeme `serde_json`
+/// cannot represent. Recursion is bounded by the reader's own `MAX_DEPTH`,
+/// which already held when `json` was parsed.
+fn value_of(json: &agent_ix_semantic_ir::json::Json) -> Result<Value, &str> {
+    use agent_ix_semantic_ir::json::Json;
+    Ok(match json {
+        Json::Null => Value::Null,
+        Json::Bool(value) => Value::Bool(*value),
+        Json::Number(lexeme) => Value::Number(lexeme.parse().map_err(|_| lexeme.as_str())?),
+        Json::Str(text) => Value::String(text.clone()),
+        Json::Array(items) => Value::Array(items.iter().map(value_of).collect::<Result<_, _>>()?),
+        Json::Object(members) => {
+            // In document order, so a repeated name resolves last-wins, the
+            // same way `Json::get` and `serde_json::from_slice` resolve it.
+            let mut object = serde_json::Map::with_capacity(members.len());
+            for (name, value) in members {
+                object.insert(name.clone(), value_of(value)?);
+            }
+            Value::Object(object)
+        }
+    })
+}
+
 /// FR-154 Intake's four-check admission table (`model-complete.md:58-70`).
 ///
 /// Runs the checks in table order and stops at the first failure: digest
-/// domain, then byte presence, then digest equality, then the package's own
-/// declared identity/version. Check 3 (`model-complete.md:69`) is "SHA-256
-/// over the package's JCS bytes equals the selected digest": when the
-/// admitted bytes parse as JSON, the digest is taken over this crate's own
-/// RFC 8785 JCS canonicalisation of the parsed value, not the raw bytes
-/// verbatim, so two byte-different-but-JCS-equivalent encodings of the same
-/// document (e.g. a whitespace variant) digest identically. Bytes that do
-/// not parse as JSON at all have no JCS form to canonicalize; the digest is
-/// then taken over the raw bytes, which a producer that actually selected
-/// this digest could never have done for non-JSON bytes either, so this
-/// still reports the real mismatch rather than fabricating a match.
+/// domain, then byte presence, then digest equality
+/// (`check_package_digest`), then the package's own declared
+/// identity/version.
 ///
-/// Returns the admitted selection and a borrow of the package's raw bytes
-/// (never cloned: the caller already owns them in `bytes_by_digest`); reads
-/// its own referent past this call for [`read_records`] to read further.
+/// The package bytes are parsed once, here, into the [`PackageDocument`]
+/// this returns alongside the admitted selection; [`read_records`] reads
+/// that same tree rather than parsing the bytes again.
 ///
 /// `offered` carries `{identity, version, digest}` -- [`DomainPackageRef`]'s
 /// own flat FR-321 shape (its `digest_domain` is implicitly `sha256-jcs`).
@@ -251,11 +452,11 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// `sha256-jcs`: check 1 of the table below is exactly the question of
 /// whether the caller's offered digest domain is the one Intake accepts, so
 /// a parameter that already assumed the answer could not state that check.
-pub fn admit<'a>(
+pub fn admit(
     offered: &DomainPackageRef,
     digest_domain: &str,
-    bytes_by_digest: &'a BTreeMap<[u8; 32], Vec<u8>>,
-) -> Result<(DomainPackageRef, &'a [u8]), ModelRefusal> {
+    bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<(DomainPackageRef, PackageDocument), ModelRefusal> {
     // ADR-010 OBS-006 / ADR-013 O-03: the reserved `quire/native`
     // pseudo-package never selects, regardless of what its bytes would
     // otherwise admit -- checked first, ahead of FR-154's own four-check
@@ -301,48 +502,49 @@ pub fn admit<'a>(
             ),
         });
     };
-    let parsed: Option<Value> = serde_json::from_slice(bytes).ok();
-    let actual_digest: [u8; 32] = match &parsed {
-        Some(value) => Sha256::digest(jcs_bytes(value)).into(),
-        None => Sha256::digest(bytes.as_slice()).into(),
-    };
-    if actual_digest != offered.digest {
-        return Err(ModelRefusal {
-            code: Code::StaleDependency,
-            cause: ModelRefusalCause::ByteDigestMismatch {
-                expected: offered.digest,
-                actual: actual_digest,
+    // A document over one of the parse limits has no parsed form to take a
+    // JCS digest of, so check 3 cannot tell whether it matches: that refuses
+    // naming the limit (ADR-011 Limits), not as a digest mismatch. Any other
+    // parse failure is not itself a refusal here: bytes that do not parse
+    // are digested raw by check 3, and supply no identity/version to check 4.
+    let document = match PackageDocument::parse(bytes) {
+        Ok(document) => Some(document),
+        Err(
+            refusal @ ModelRefusal {
+                cause: ModelRefusalCause::IntakeLimitExceeded { .. },
+                ..
             },
-            detail: format!(
-                "domain package {}@{} bytes hash to {}, not the selected {}",
-                offered.identity,
-                offered.version,
-                hex(&actual_digest),
-                hex(&offered.digest)
-            ),
-        });
-    }
+        ) => return Err(refusal),
+        Err(_) => None,
+    };
+    check_package_digest(offered, bytes, document.as_ref())?;
     // The package's own declared identity/version, read defensively: bytes
     // that fail to parse or omit `package` simply supply no identity/version,
     // which check 4 below reports as a `wrong-model-selection` mismatch
     // rather than a separate malformed-package case FR-154's table does not
     // name.
-    let package = parsed.as_ref().and_then(|value| value.get("package"));
-    let actual_identity = package
-        .and_then(|value| value.get("identity"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    let actual_version = package
-        .and_then(|value| value.get("version"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    if actual_identity != offered.identity || actual_version != offered.version {
-        return Err(ModelRefusal {
+    let package = document
+        .as_ref()
+        .and_then(|document| document.tree.get("package"));
+    let declared = |member: &str| {
+        package
+            .and_then(|package| package.get(member))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let actual_identity = declared("identity");
+    let actual_version = declared("version");
+    match document {
+        Some(document)
+            if actual_identity == offered.identity && actual_version == offered.version =>
+        {
+            Ok((package_ref, document))
+        }
+        _ => Err(ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::WrongModelSelection {
-                selection: package_ref.clone(),
+                selection: package_ref,
                 actual_identity: actual_identity.clone(),
                 actual_version: actual_version.clone(),
             },
@@ -350,9 +552,50 @@ pub fn admit<'a>(
                 "domain package selection names {}@{} but the package declares {actual_identity}@{actual_version}",
                 offered.identity, offered.version
             ),
-        });
+        }),
     }
-    Ok((package_ref, bytes.as_slice()))
+}
+
+/// FR-154 Intake check 3 (`model-complete.md:69`): SHA-256 over the
+/// package's JCS bytes equals the selected digest, else `stale_dependency`.
+///
+/// When the bytes parsed, the digest is taken over this crate's own RFC 8785
+/// JCS canonicalisation of the parsed tree, not the raw bytes verbatim, so
+/// two byte-different-but-JCS-equivalent encodings of the same document
+/// (a whitespace variant, say) digest identically. Bytes that did not parse
+/// have no JCS form; the digest is then taken over the raw bytes, which a
+/// producer that actually selected this digest could never have done for
+/// unparseable bytes either, so this still reports the real mismatch rather
+/// than fabricating a match.
+///
+/// The one place intake computes a package digest (QSL-194 replaces the JCS
+/// encoder behind it).
+fn check_package_digest(
+    offered: &DomainPackageRef,
+    bytes: &[u8],
+    document: Option<&PackageDocument>,
+) -> Result<(), ModelRefusal> {
+    let actual_digest: [u8; 32] = match document {
+        Some(document) => Sha256::digest(jcs_bytes(&document.tree)).into(),
+        None => Sha256::digest(bytes).into(),
+    };
+    if actual_digest == offered.digest {
+        return Ok(());
+    }
+    Err(ModelRefusal {
+        code: Code::StaleDependency,
+        cause: ModelRefusalCause::ByteDigestMismatch {
+            expected: offered.digest,
+            actual: actual_digest,
+        },
+        detail: format!(
+            "domain package {}@{} bytes hash to {}, not the selected {}",
+            offered.identity,
+            offered.version,
+            hex(&actual_digest),
+            hex(&offered.digest)
+        ),
+    })
 }
 
 /// ADR-013 O-01: admits every selection in `offered`, in order, through
@@ -367,11 +610,11 @@ pub fn admit<'a>(
 /// domain package yet; this is the single-selection rule #131 was asked to
 /// wire together with [`admit`] and did not (ADR-013 O-01's own "Implementing
 /// ticket" row).
-pub fn admit_selections<'a>(
+pub fn admit_selections(
     offered: &[DomainPackageRef],
     digest_domain: &str,
-    bytes_by_digest: &'a BTreeMap<[u8; 32], Vec<u8>>,
-) -> Result<Vec<(DomainPackageRef, &'a [u8])>, ModelRefusal> {
+    bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<Vec<(DomainPackageRef, PackageDocument)>, ModelRefusal> {
     let mut admitted = Vec::with_capacity(offered.len());
     let mut selected_versions: BTreeMap<&str, &str> = BTreeMap::new();
     for selection in offered {
@@ -392,9 +635,9 @@ pub fn admit_selections<'a>(
                 ),
             });
         }
-        let (admitted_ref, bytes) = admit(selection, digest_domain, bytes_by_digest)?;
+        let (admitted_ref, document) = admit(selection, digest_domain, bytes_by_digest)?;
         selected_versions.insert(&selection.identity, &selection.version);
-        admitted.push((admitted_ref, bytes));
+        admitted.push((admitted_ref, document));
     }
     Ok(admitted)
 }
@@ -485,8 +728,8 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
     (artifact, span)
 }
 
-/// Validates admitted document bytes against `agent-ix-semantic-ir`'s own
-/// independent reader before [`read_records`] walks a single node. That
+/// Validates a parsed [`PackageDocument`] against `agent-ix-semantic-ir`'s
+/// own independent reader before [`read_records`] walks a single node. That
 /// crate decides `conformance/schema/input-bundle.schema.json` by wrapping
 /// the document as `{"ir": <document>}` (`input-bundle.schema.json` requires
 /// an `ir` member carrying `semantic-ir.schema.json`) and reports every
@@ -519,37 +762,8 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// which is exactly why `Pump.id`/`Sys.id`/`Tank.id` still refuse in
 /// `tests/model_intake.rs`'s golden-shape test even though the schema
 /// itself now admits them.
-fn validate_with_semantic_ir(document: &[u8]) -> Result<(), Vec<ModelRefusal>> {
-    let malformed =
-        |node: String, artifact: Option<String>, span: Option<LocatedSpan>, detail: String| {
-            ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    node,
-                    artifact,
-                    span,
-                },
-                detail,
-            }
-        };
-    let text = std::str::from_utf8(document).map_err(|err| {
-        vec![malformed(
-            "$".to_owned(),
-            None,
-            None,
-            format!("admitted document bytes are not UTF-8: {err}"),
-        )]
-    })?;
-    let parsed = agent_ix_semantic_ir::json::parse(text).map_err(|err| {
-        vec![malformed(
-            "$".to_owned(),
-            None,
-            None,
-            format!("admitted document bytes do not parse as JSON for agent-ix-semantic-ir: {err}"),
-        )]
-    })?;
-    let bundle = agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), parsed)]);
-    let verdict = agent_ix_semantic_ir::decide(&bundle);
+fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<ModelRefusal>> {
+    let verdict = agent_ix_semantic_ir::decide(&document.bundle);
     let refusals: Vec<ModelRefusal> = verdict
         .diagnostics
         .iter()
@@ -561,7 +775,7 @@ fn validate_with_semantic_ir(document: &[u8]) -> Result<(), Vec<ModelRefusal>> {
                 located.owner.clone()
             };
             let (artifact, span) = located_span(located);
-            malformed(
+            malformed_declaration(
                 node,
                 artifact,
                 span,
@@ -582,11 +796,11 @@ fn validate_with_semantic_ir(document: &[u8]) -> Result<(), Vec<ModelRefusal>> {
 /// The artifact id and span one `agent-ix-semantic-ir` diagnostic's own
 /// `locus` carries. `Located::locus` is already the `origin.source` object
 /// itself (see `agent_ix_semantic_ir::diag::locus_for`), not wrapped in an
-/// `origin` member the way [`node_span`] must unwrap from a freshly parsed
-/// `serde_json::Value` -- the two functions read the same
-/// `sourceIdentity`/`startLine`/`startColumn` shape from two different `Json`
-/// types the two crates each keep independently, one FCD's own, one this
-/// crate's own `serde_json::Value` copy of the same bytes.
+/// `origin` member the way [`node_span`] must unwrap from a node of
+/// [`PackageDocument::tree`] -- the two functions read the same
+/// `sourceIdentity`/`startLine`/`startColumn` shape from the two views a
+/// [`PackageDocument`] keeps of its one parse, one FCD's own `Json`, one this
+/// crate's `serde_json::Value` derived from it.
 fn located_span(
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> (Option<String>, Option<LocatedSpan>) {
@@ -621,18 +835,33 @@ fn located_span(
     (artifact, span)
 }
 
-fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> ModelRefusal {
-    let node = node_identity_label(value, at);
-    let (artifact, span) = node_span(value);
+/// FR-154's `invalid_model_binding`/`malformed-declaration` refusal: the one
+/// constructor every intake malformed-declaration refusal goes through.
+fn malformed_declaration(
+    node: String,
+    artifact: Option<String>,
+    span: Option<LocatedSpan>,
+    detail: String,
+) -> ModelRefusal {
     ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::IntakeMalformedDeclaration {
-            node: node.clone(),
+            node,
             artifact,
             span,
         },
-        detail: format!("{at}: {reason}"),
+        detail,
     }
+}
+
+fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> ModelRefusal {
+    let (artifact, span) = node_span(value);
+    malformed_declaration(
+        node_identity_label(value, at),
+        artifact,
+        span,
+        format!("{at}: {reason}"),
+    )
 }
 
 fn unsupported_at(value: &Value, at: &str, what: impl Into<String>) -> ModelRefusal {
@@ -723,25 +952,44 @@ impl<'a> NodeCtx<'a> {
         }
     }
 
-    /// `agent-ix-semantic-ir`'s own `identity_list` validates every present
-    /// item as an `ix://<owner>/<name>`-shaped string before
-    /// [`validate_with_semantic_ir`] lets a document reach this reader, so
-    /// each item is trusted as a string here rather than re-checked.
+    /// `value[field]` as a list of identity strings. `agent-ix-semantic-ir`'s
+    /// own `identity_list` validates every present item as an
+    /// `ix://<owner>/<name>`-shaped string before [`validate_with_semantic_ir`]
+    /// lets a document reach this reader; a non-string item still refuses
+    /// here, so a dependency pin that stops guaranteeing it degrades to a
+    /// refusal, not a panic.
     fn identity_keys(
         &self,
         package: &str,
         field: &'static str,
     ) -> Result<Vec<DeclarationKey>, ModelRefusal> {
-        Ok(self
-            .array_field(field)?
+        self.array_field(field)?
             .iter()
-            .map(|item| {
-                let node = item
-                    .as_str()
-                    .expect("agent-ix-semantic-ir guarantees identity_list items are strings");
-                declaration_key(package, node)
+            .enumerate()
+            .map(|(position, item)| {
+                item.as_str()
+                    .map(|node| declaration_key(package, node))
+                    .ok_or_else(|| self.malformed(format!("{field}[{position}]: not a string")))
             })
-            .collect())
+            .collect()
+    }
+
+    /// The `{module, name}` pair of this node's `kind` object, the key a
+    /// `constructs[]` entry is indexed by (FR-208).
+    fn kind_key(&self) -> Result<(&'a str, &'a str), ModelRefusal> {
+        let kind = self
+            .value
+            .get("kind")
+            .ok_or_else(|| self.malformed("kind: missing"))?;
+        let module = kind
+            .get("module")
+            .and_then(Value::as_str)
+            .ok_or_else(|| self.malformed("kind.module: missing or not a string"))?;
+        let name = kind
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| self.malformed("kind.name: missing or not a string"))?;
+        Ok((module, name))
     }
 
     /// FR-154's own multiplicity shape (`model-complete.md`:167-169):
@@ -1025,16 +1273,15 @@ fn read_object_type(
     let ctx = NodeCtx::new(type_value, at);
     let supertypes = ctx.identity_keys(package, "supertypes")?;
     // `agent-ix-semantic-ir`'s own `expect_bool` guarantees `abstract`, when
-    // present, is a boolean, before this reader sees the document; absent
-    // reads as `false` (QSpec's own default for the property).
-    let abstract_type = type_value
-        .get("abstract")
-        .map(|value| {
-            value
-                .as_bool()
-                .expect("agent-ix-semantic-ir guarantees abstract is a boolean when present")
-        })
-        .unwrap_or(false);
+    // present, is a boolean, before this reader sees the document; a
+    // non-boolean still refuses here rather than panicking. Absent reads as
+    // `false` (QSpec's own default for the property).
+    let abstract_type = match type_value.get("abstract") {
+        None => false,
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| ctx.malformed("abstract: not a boolean"))?,
+    };
     let interface_features = if is_interface {
         Some(ctx.identity_keys(package, "featureOrder")?)
     } else {
@@ -1307,21 +1554,11 @@ fn read_population(
     meanings: &HashMap<(String, String), String>,
 ) -> Result<PopulationRecord, ModelRefusal> {
     // `agent-ix-semantic-ir`'s own `POPULATION_MEMBERS` requires `kind`
-    // present with a shape `construct_kind` validates, so only the
-    // meaning-resolution (QSL's own: `kind` must resolve to POPULATION,
-    // not merely to some constructs entry) stays hand-checked here.
-    let kind = ctx
-        .value
-        .get("kind")
-        .expect("agent-ix-semantic-ir guarantees kind is present on a population");
-    let module = kind
-        .get("module")
-        .and_then(Value::as_str)
-        .expect("agent-ix-semantic-ir guarantees kind.module is a string");
-    let name = kind
-        .get("name")
-        .and_then(Value::as_str)
-        .expect("agent-ix-semantic-ir guarantees kind.name is a string");
+    // present with a shape `construct_kind` validates; `kind_key` still
+    // refuses a shape that guarantee missed. The meaning resolution is QSL's
+    // own: `kind` must resolve to POPULATION, not merely to some constructs
+    // entry.
+    let (module, name) = ctx.kind_key()?;
     match meanings.get(&(module.to_owned(), name.to_owned())) {
         Some(resolved) if resolved == meaning::POPULATION => {}
         Some(other) => {
@@ -1375,30 +1612,22 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
     // `constructs` present, `CONSTRUCT_ENTRY_MEMBERS` requires each entry's
     // `kind`/`construct` present, `construct_kind` validates `kind.module`/
     // `kind.name` are strings, and `DECLARATION_REQUIRED` guarantees
-    // `construct.meaning` is a string -- all guaranteed before this reader
-    // sees the document.
+    // `construct.meaning` is a string -- all before this reader sees the
+    // document. Each is still checked here, so a dependency pin that stops
+    // guaranteeing one refuses the document rather than panicking.
     let constructs = document
         .get("constructs")
         .and_then(Value::as_array)
-        .expect("agent-ix-semantic-ir guarantees constructs is present and an array");
-    let mut index = HashMap::new();
-    for entry in constructs {
-        let kind = entry
-            .get("kind")
-            .expect("agent-ix-semantic-ir guarantees kind is present on a constructs entry");
-        let module = kind
-            .get("module")
-            .and_then(Value::as_str)
-            .expect("agent-ix-semantic-ir guarantees kind.module is a string");
-        let name = kind
-            .get("name")
-            .and_then(Value::as_str)
-            .expect("agent-ix-semantic-ir guarantees kind.name is a string");
+        .ok_or_else(|| malformed_at(document, "$", "constructs: missing or not an array"))?;
+    let mut index = HashMap::with_capacity(constructs.len());
+    for (position, entry) in constructs.iter().enumerate() {
+        let ctx = NodeCtx::new(entry, format!("$.constructs[{position}]"));
+        let (module, name) = ctx.kind_key()?;
         let meaning = entry
             .get("construct")
             .and_then(|construct| construct.get("meaning"))
             .and_then(Value::as_str)
-            .expect("agent-ix-semantic-ir guarantees construct.meaning is a string");
+            .ok_or_else(|| ctx.malformed("construct.meaning: missing or not a string"))?;
         index.insert((module.to_owned(), name.to_owned()), meaning.to_owned());
     }
     Ok(index)
@@ -1418,7 +1647,7 @@ fn read_type_node(
     let ctx = NodeCtx::new(type_value, at);
     let (_, key) = read_type_identity(package, &ctx)?;
     let node = key.node.as_str();
-    let Some(kind) = type_value.get("kind").filter(|kind| kind.is_object()) else {
+    if !type_value.get("kind").is_some_and(Value::is_object) {
         // A bare-string kind (`"scalar"`, `"alias"`, `"record"`, ...) is a
         // core kind FCD's own schema admits, but QSpec's declaration-kinds
         // table has no row for a package declaring one of these directly in
@@ -1430,15 +1659,8 @@ fn read_type_node(
         // `types[]` declaration, so this node being refused as a top-level
         // declaration never stops a field resolving its own type reference.
         return Err(ctx.malformed("kind: a bare-string core kind is not a declared FR-208 meaning"));
-    };
-    let module = kind
-        .get("module")
-        .and_then(Value::as_str)
-        .ok_or_else(|| ctx.malformed("kind.module: missing or not a string"))?;
-    let name = kind
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| ctx.malformed("kind.name: missing or not a string"))?;
+    }
+    let (module, name) = ctx.kind_key()?;
     let Some(construct_meaning) = meanings.get(&(module.to_owned(), name.to_owned())) else {
         return Err(ctx.malformed("kind: names no constructs[] entry"));
     };
@@ -1502,46 +1724,32 @@ enum DocumentNode<'a> {
 /// `Err` with every node's refusal, in that same ascending order, otherwise.
 pub fn read_records(
     package_identity: &str,
-    document: &[u8],
+    document: &PackageDocument,
 ) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
     validate_with_semantic_ir(document)?;
-    // `agent-ix-semantic-ir`'s own independent parser (called above by
-    // `validate_with_semantic_ir`) already confirmed these bytes are UTF-8
-    // and parse as JSON *and* fit within its own `json::MAX_DEPTH` (200), so
-    // a second, divergent parse failure here would be an internal bug, not
-    // a real document defect. `serde_json::from_slice`'s own default
-    // recursion limit is 128, lower than that -- a document at depth
-    // 129-200 is real, validator-accepted input, and this crate's own
-    // idiom for a re-parse whose depth is already bounded by a prior pass
-    // is `disable_recursion_limit()` (`src/package/intake.rs`,
-    // `src/protocol_artifact/decode.rs`), not a fixed limit that can
-    // disagree with the bound that already ran.
-    let mut decoder = serde_json::Deserializer::from_slice(document);
-    decoder.disable_recursion_limit();
-    let parsed: Value = Value::deserialize(&mut decoder)
-        .and_then(|value| decoder.end().map(|()| value))
-        .expect(
-            "validate_with_semantic_ir already confirmed these bytes parse as JSON within its \
-             own depth bound, and disable_recursion_limit() removes serde_json's own lower one",
-        );
-    let meanings = match meaning_index(&parsed) {
-        Ok(meanings) => meanings,
-        Err(refusal) => return Err(vec![refusal]),
-    };
+    read_nodes(package_identity, &document.tree)
+}
+
+/// [`read_records`]'s per-node reader over a document
+/// [`validate_with_semantic_ir`] has already accepted. Every shape the
+/// validator guarantees is still checked, so a dependency pin that stops
+/// guaranteeing one degrades to a refusal rather than a panic.
+fn read_nodes(
+    package_identity: &str,
+    document: &Value,
+) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
+    let meanings = meaning_index(document).map_err(|refusal| vec![refusal])?;
     // `agent-ix-semantic-ir`'s own `IR_MEMBERS` requires `types` present and
     // `expect_array` guarantees it is an array; `populations` is optional
     // but array-shaped when present.
-    let types = parsed
+    let root = NodeCtx::new(document, "$");
+    let types = document
         .get("types")
         .and_then(Value::as_array)
-        .expect("agent-ix-semantic-ir guarantees types is present and an array");
-    let populations: &[Value] = match parsed.get("populations") {
-        None => &[],
-        Some(populations) => populations
-            .as_array()
-            .map(Vec::as_slice)
-            .expect("agent-ix-semantic-ir guarantees populations is an array when present"),
-    };
+        .ok_or_else(|| vec![root.malformed("types: missing or not an array")])?;
+    let populations = root
+        .array_field("populations")
+        .map_err(|refusal| vec![refusal])?;
 
     let mut nodes: Vec<DocumentNode<'_>> = Vec::with_capacity(types.len() + populations.len());
     for (position, type_value) in types.iter().enumerate() {
@@ -1603,6 +1811,11 @@ mod tests {
         Sha256::digest(bytes).into()
     }
 
+    /// Test document bytes through intake's one parse.
+    fn parse_document(bytes: &[u8]) -> PackageDocument {
+        PackageDocument::parse(bytes).expect("the test document parses as JSON")
+    }
+
     fn package_bytes(identity: &str, version: &str) -> Vec<u8> {
         serde_json::json!({
             "contractVersion": "2.0.0",
@@ -1637,11 +1850,14 @@ mod tests {
         map.insert(digest, bytes.clone());
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (package_ref, admitted_bytes) = admit(&offered, &digest_domain, &map).unwrap();
+        let (package_ref, document) = admit(&offered, &digest_domain, &map).unwrap();
         assert_eq!(package_ref.identity, "acme/orders");
         assert_eq!(package_ref.version, "1");
         assert_eq!(package_ref.digest, digest);
-        assert_eq!(admitted_bytes, bytes.as_slice());
+        assert_eq!(
+            document.tree(),
+            &serde_json::from_slice::<Value>(&bytes).unwrap()
+        );
     }
 
     #[trace("TC-145", "FR-056-AC-2")]
@@ -1663,9 +1879,12 @@ mod tests {
         map.insert(digest, padded.clone());
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (package_ref, admitted_bytes) = admit(&offered, &digest_domain, &map).unwrap();
+        let (package_ref, document) = admit(&offered, &digest_domain, &map).unwrap();
         assert_eq!(package_ref.digest, digest);
-        assert_eq!(admitted_bytes, padded.as_slice());
+        assert_eq!(
+            document.tree(),
+            &serde_json::from_slice::<Value>(&compact).unwrap()
+        );
     }
 
     // These five `admit` refusal tests assert the whole `ModelRefusal` --
@@ -1956,20 +2175,20 @@ mod tests {
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_a_document_that_is_not_json() {
-        let refusals = read_records("acme/orders", b"not json").unwrap_err();
+        let refusal = PackageDocument::parse(b"not json").unwrap_err();
         assert_eq!(
-            refusals,
-            vec![ModelRefusal {
+            refusal,
+            ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: ModelRefusalCause::IntakeMalformedDeclaration {
                     node: "$".to_owned(),
                     artifact: None,
                     span: None,
                 },
-                detail: "admitted document bytes do not parse as JSON for \
+                detail: "package document bytes do not parse as JSON for \
                           agent-ix-semantic-ir: an unrecognised literal at byte 0"
                     .to_owned(),
-            }]
+            }
         );
     }
 
@@ -1986,7 +2205,8 @@ mod tests {
             )]),
         )
         .to_string();
-        let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
+        let refusals =
+            read_records("acme/orders", &parse_document(document.as_bytes())).unwrap_err();
         assert_eq!(
             refusals,
             vec![ModelRefusal {
@@ -2046,10 +2266,10 @@ mod tests {
             "ix://acme/orders/Order",
             "A Totally Different Title"
         )]));
-        let records_a =
-            read_records("acme/orders", &titled_a).expect("displayName alone never refuses");
-        let records_b =
-            read_records("acme/orders", &titled_b).expect("displayName alone never refuses");
+        let records_a = read_records("acme/orders", &parse_document(&titled_a))
+            .expect("displayName alone never refuses");
+        let records_b = read_records("acme/orders", &parse_document(&titled_b))
+            .expect("displayName alone never refuses");
         assert_eq!(
             records_a, records_b,
             "changing only displayName must not change the resulting records"
@@ -2060,7 +2280,7 @@ mod tests {
             one_type("ix://acme/orders/Order", "Shared Title"),
             one_type("ix://acme/orders/Invoice", "Shared Title"),
         ]));
-        let records = read_records("acme/orders", &shared_title)
+        let records = read_records("acme/orders", &parse_document(&shared_title))
             .expect("two artifacts with equal titles are still two distinct declarations");
         assert_eq!(records.len(), 2, "both equal-titled artifacts are admitted");
         let keys: std::collections::BTreeSet<_> =
@@ -2090,7 +2310,8 @@ mod tests {
             )]),
         )
         .to_string();
-        let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
+        let refusals =
+            read_records("acme/orders", &parse_document(document.as_bytes())).unwrap_err();
         assert_eq!(
             refusals,
             vec![ModelRefusal {
@@ -2137,7 +2358,8 @@ mod tests {
             )]),
         )
         .to_string();
-        let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
+        let refusals =
+            read_records("acme/orders", &parse_document(document.as_bytes())).unwrap_err();
         assert_eq!(
             refusals,
             vec![ModelRefusal {
@@ -2203,7 +2425,8 @@ mod tests {
             ]),
         )
         .to_string();
-        let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
+        let refusals =
+            read_records("acme/orders", &parse_document(document.as_bytes())).unwrap_err();
         assert_eq!(
             refusals.len(),
             2,
@@ -2515,7 +2738,7 @@ mod tests {
                 },
             }],
         }));
-        let refusals = read_records("acme/orders", &document)
+        let refusals = read_records("acme/orders", &parse_document(&document))
             .expect_err("a frame that declares a creates entry is not silently dropped");
         assert_eq!(
             refusals,
@@ -2849,7 +3072,7 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a real FR-208 meaning with no QSL record shape yet refuses, not folds into \
              ObjectTypeRecord",
         );
@@ -2896,7 +3119,7 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &document)
+        let refusals = read_records("acme/orders", &parse_document(&document))
             .expect_err("a meaning outside FR-208 is not a declared vocabulary at all");
         assert_eq!(
             refusals,
@@ -2941,10 +3164,13 @@ mod tests {
             .to_string()
             .into_bytes()
         };
-        let records_a = read_records("acme/orders", &document_named("order"))
+        let records_a = read_records("acme/orders", &parse_document(&document_named("order")))
             .expect("a real OBJECT_TYPE meaning always reads");
-        let records_b = read_records("acme/orders", &document_named("purchase_order"))
-            .expect("a real OBJECT_TYPE meaning always reads");
+        let records_b = read_records(
+            "acme/orders",
+            &parse_document(&document_named("purchase_order")),
+        )
+        .expect("a real OBJECT_TYPE meaning always reads");
         assert_eq!(
             records_a, records_b,
             "renaming the kind while keeping the same meaning id must not change the record"
@@ -2993,7 +3219,7 @@ mod tests {
             },
         }]);
         let document = document.to_string().into_bytes();
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a population's kind names a real constructs entry, but that entry's own \
              meaning is object-type, not population",
         );
@@ -3041,7 +3267,7 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a type identity naming a different package's owner is not a node of acme/orders",
         );
         assert_eq!(
@@ -3075,7 +3301,7 @@ mod tests {
             "other",
             "ix://acme/orders/OtherType",
         ));
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a field identity that is not exactly <owner identity>/<member name> is malformed",
         );
         assert_eq!(
@@ -3140,7 +3366,7 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a typeRef naming a different package's node is not this field's own package",
         );
         assert_eq!(
@@ -3242,7 +3468,7 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a connection end with no multiplicity at all is stricter than \
              agent-ix-semantic-ir's own optional check",
         );
@@ -3363,7 +3589,7 @@ mod tests {
             "other",
             "ix://acme/orders/OtherType",
         ));
-        let records = read_records("acme/orders", &document)
+        let records = read_records("acme/orders", &parse_document(&document))
             .expect("a typeRef naming a node of the field's own package reads");
         let field = records
             .iter()
@@ -3381,5 +3607,594 @@ mod tests {
             "a package-scoped typeRef resolves under the field's own package, \
              exactly as its own identity string names"
         );
+    }
+
+    // QSL-201: every shape the per-node reader once `expect`ed from the
+    // pinned `agent-ix-semantic-ir` validator now refuses instead. Each test
+    // below breaks one of those shapes in an otherwise clean document and
+    // checks two layers. Through `read_records`, the validator or the reader
+    // refuses with the stable `invalid_model_binding`/`malformed-declaration`
+    // code and nothing panics. Through `read_nodes` alone, which is what a
+    // pin bump that drops the validator's guarantee would leave, the reader's
+    // own refusal names the node and the broken member.
+
+    /// One object type (`Widget`) and one population (`Fleet`) of it, every
+    /// member the validator requires present, reading clean.
+    fn reader_base_document() -> Value {
+        let mut document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([
+                wire_construct(
+                    "acme/orders",
+                    "order",
+                    meaning::OBJECT_TYPE,
+                    serde_json::json!({}),
+                ),
+                wire_construct(
+                    "acme/orders",
+                    "fleet",
+                    meaning::POPULATION,
+                    serde_json::json!({}),
+                ),
+            ]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/Widget",
+                serde_json::json!({"module": "acme/orders", "name": "order"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            )]),
+        );
+        document["populations"] = serde_json::json!([{
+            "identity": "ix://acme/orders/Fleet",
+            "displayName": "Fleet",
+            "kind": {"module": "acme/orders", "name": "fleet"},
+            "members": ["ix://acme/orders/Widget"],
+            "extent": "closed",
+            "origin": {
+                "generated": {
+                    "generatorIdentity": "ix://acme/orders/Fleet",
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": ["ix://acme/orders/Fleet"],
+                }
+            },
+        }]);
+        document
+    }
+
+    /// Breaks `reader_base_document` with `mutate`, then checks both layers
+    /// (see the comment above `reader_base_document`).
+    fn assert_refuses_without_panicking(mutate: impl FnOnce(&mut Value), expected: ModelRefusal) {
+        let mut document = reader_base_document();
+        mutate(&mut document);
+        let package = parse_document(document.to_string().as_bytes());
+        let refusals = read_records("acme/orders", &package)
+            .expect_err("the broken shape refuses through read_records");
+        assert!(!refusals.is_empty());
+        for refusal in &refusals {
+            assert_eq!(refusal.code, Code::InvalidModelBinding, "{refusal:?}");
+            assert!(
+                matches!(
+                    refusal.cause,
+                    ModelRefusalCause::IntakeMalformedDeclaration { .. }
+                ),
+                "{refusal:?}"
+            );
+        }
+        assert_eq!(
+            read_nodes("acme/orders", package.tree()),
+            Err(vec![expected])
+        );
+    }
+
+    /// The expected reader refusal for a generated-origin node: no artifact,
+    /// no span.
+    fn malformed(node: &str, detail: &str) -> ModelRefusal {
+        malformed_declaration(node.to_owned(), None, None, detail.to_owned())
+    }
+
+    #[trace("TC-145", "FR-056-AC-1")]
+    #[test]
+    fn reader_base_document_reads_clean() {
+        let package = parse_document(reader_base_document().to_string().as_bytes());
+        let records = read_records("acme/orders", &package)
+            .expect("the base document the refusal tests break reads clean");
+        assert_eq!(records.len(), 2, "one object type and one population");
+    }
+
+    /// Was `identity_keys`'s `expect("... identity_list items are strings")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_non_string_identity_list_item() {
+        assert_refuses_without_panicking(
+            |document| document["types"][0]["supertypes"] = serde_json::json!([7]),
+            malformed(
+                "ix://acme/orders/Widget",
+                "$.types[0]: supertypes[0]: not a string",
+            ),
+        );
+    }
+
+    /// Was `read_object_type`'s `expect("... abstract is a boolean when present")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_non_boolean_abstract_in_the_reader() {
+        assert_refuses_without_panicking(
+            |document| document["types"][0]["abstract"] = serde_json::json!("yes"),
+            malformed(
+                "ix://acme/orders/Widget",
+                "$.types[0]: abstract: not a boolean",
+            ),
+        );
+    }
+
+    /// Was `read_population`'s `expect("... kind is present on a population")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_population_with_no_kind() {
+        assert_refuses_without_panicking(
+            |document| {
+                document["populations"][0]
+                    .as_object_mut()
+                    .expect("the base population is an object")
+                    .remove("kind");
+            },
+            malformed("ix://acme/orders/Fleet", "$.populations[0]: kind: missing"),
+        );
+    }
+
+    /// Was `read_population`'s `expect("... kind.module is a string")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_population_kind_module_that_is_not_a_string() {
+        assert_refuses_without_panicking(
+            |document| document["populations"][0]["kind"]["module"] = serde_json::json!(7),
+            malformed(
+                "ix://acme/orders/Fleet",
+                "$.populations[0]: kind.module: missing or not a string",
+            ),
+        );
+    }
+
+    /// Was `read_population`'s `expect("... kind.name is a string")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_population_kind_name_that_is_not_a_string() {
+        assert_refuses_without_panicking(
+            |document| document["populations"][0]["kind"]["name"] = serde_json::json!(7),
+            malformed(
+                "ix://acme/orders/Fleet",
+                "$.populations[0]: kind.name: missing or not a string",
+            ),
+        );
+    }
+
+    /// Was `meaning_index`'s `expect("... constructs is present and an array")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_document_with_no_constructs_array() {
+        assert_refuses_without_panicking(
+            |document| document["constructs"] = serde_json::json!({}),
+            malformed("$", "$: constructs: missing or not an array"),
+        );
+    }
+
+    /// Was `meaning_index`'s `expect("... kind is present on a constructs entry")`.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn refuses_a_constructs_entry_with_no_kind() {
+        assert_refuses_without_panicking(
+            |document| {
+                document["constructs"][0]
+                    .as_object_mut()
+                    .expect("the base constructs entry is an object")
+                    .remove("kind");
+            },
+            malformed("$.constructs[0]", "$.constructs[0]: kind: missing"),
+        );
+    }
+
+    /// Was `meaning_index`'s `expect("... kind.module is a string")`.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn refuses_a_constructs_kind_module_that_is_not_a_string() {
+        assert_refuses_without_panicking(
+            |document| document["constructs"][0]["kind"]["module"] = serde_json::json!(7),
+            malformed(
+                "$.constructs[0]",
+                "$.constructs[0]: kind.module: missing or not a string",
+            ),
+        );
+    }
+
+    /// Was `meaning_index`'s `expect("... kind.name is a string")`.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn refuses_a_constructs_kind_name_that_is_not_a_string() {
+        assert_refuses_without_panicking(
+            |document| document["constructs"][0]["kind"]["name"] = serde_json::json!(7),
+            malformed(
+                "$.constructs[0]",
+                "$.constructs[0]: kind.name: missing or not a string",
+            ),
+        );
+    }
+
+    /// Was `meaning_index`'s `expect("... construct.meaning is a string")`.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn refuses_a_construct_with_no_meaning_string() {
+        assert_refuses_without_panicking(
+            |document| document["constructs"][0]["construct"]["meaning"] = serde_json::json!(7),
+            malformed(
+                "$.constructs[0]",
+                "$.constructs[0]: construct.meaning: missing or not a string",
+            ),
+        );
+    }
+
+    /// Was `read_records`'s `expect("... types is present and an array")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_document_with_no_types_array() {
+        assert_refuses_without_panicking(
+            |document| {
+                document
+                    .as_object_mut()
+                    .expect("the base document is an object")
+                    .remove("types");
+            },
+            malformed("$", "$: types: missing or not an array"),
+        );
+    }
+
+    /// Was `read_records`'s `expect("... populations is an array when present")`.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_populations_member_that_is_not_an_array() {
+        assert_refuses_without_panicking(
+            |document| document["populations"] = serde_json::json!({}),
+            malformed("$", "$: populations: not an array"),
+        );
+    }
+
+    /// Was `read_records`'s re-parse `expect("validate_with_semantic_ir
+    /// already confirmed these bytes parse as JSON ...")`. The two parsers
+    /// disagreed on a number serde_json cannot represent: the validator's
+    /// reader accepted `1e400`, and the re-parse panicked on it. Intake now
+    /// parses once, and that parse refuses it.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_number_serde_json_cannot_represent_at_the_one_parse() {
+        let text = reader_base_document().to_string().replacen(
+            "\"extent\":\"closed\"",
+            "\"extent\":\"closed\",\"weight\":1e400",
+            1,
+        );
+        assert!(
+            text.contains("1e400"),
+            "the out-of-range number is in the document"
+        );
+        assert!(
+            agent_ix_semantic_ir::json::parse(&text).is_ok(),
+            "the validator's own reader accepts it, which is what made the re-parse panic"
+        );
+        assert_eq!(
+            PackageDocument::parse(text.as_bytes()).unwrap_err(),
+            malformed(
+                "$",
+                "package document number 1e400 has no serde_json representation"
+            )
+        );
+    }
+
+    /// AC-3 of QSL-201: the JCS digest check still runs over the one parse.
+    /// A document nested past serde_json's default recursion limit (128)
+    /// admits under its JCS digest, which the old `serde_json::from_slice`
+    /// in `admit` could not parse and so digested raw.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn admits_a_deeply_nested_document_under_its_jcs_digest() {
+        let mut nested = serde_json::json!(0);
+        for _ in 0..150 {
+            nested = serde_json::json!([nested]);
+        }
+        let document = serde_json::json!({
+            "package": {"identity": "acme/orders", "version": "1"},
+            "payload": nested,
+        });
+        let padded = format!("  {document}  ").into_bytes();
+        assert!(serde_json::from_slice::<Value>(&padded).is_err());
+        let digest = digest_of(&jcs_bytes(&document));
+        let mut map = BTreeMap::new();
+        map.insert(digest, padded);
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let (package_ref, admitted) = admit(&offered, &digest_domain, &map)
+            .expect("a document within the reader's 200-deep bound admits under its JCS digest");
+        assert_eq!(package_ref.digest, digest);
+        assert_eq!(admitted.tree(), &document);
+    }
+
+    // PR #379 review F1: a lone UTF-16 surrogate escape refuses at the one
+    // parse. The reader would replace it with U+FFFD, so without this check
+    // `"\ud800"`, `"\udc00"` and `"�"` would read as one tree and admit
+    // under one JCS digest.
+
+    /// `text` refuses at the one parse as a lone surrogate at the offset of
+    /// `escape`'s first occurrence.
+    fn assert_lone_surrogate_refused(text: &str, escape: &str) {
+        let offset = text.find(escape).expect("the escape is in the text");
+        assert_eq!(
+            PackageDocument::parse(text.as_bytes()).unwrap_err(),
+            malformed_declaration(
+                "$".to_owned(),
+                None,
+                None,
+                format!("package document carries a lone UTF-16 surrogate escape at byte {offset}"),
+            ),
+            "{text}"
+        );
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_lone_high_surrogate_escape() {
+        assert_lone_surrogate_refused(r#"{"s":"\ud800"}"#, r"\ud800");
+        assert_lone_surrogate_refused(r#"{"s":"a\uD800b"}"#, r"\uD800");
+        // Followed by an escape that is not a low surrogate.
+        assert_lone_surrogate_refused(r#"{"s":"\ud800A"}"#, r"\ud800");
+        // Followed by a second high surrogate.
+        assert_lone_surrogate_refused(r#"{"s":"\ud800𐀀"}"#, r"\ud800");
+        // In a member name.
+        assert_lone_surrogate_refused(r#"{"\udbff":1}"#, r"\udbff");
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_lone_low_surrogate_escape() {
+        assert_lone_surrogate_refused(r#"{"s":"\udc00"}"#, r"\udc00");
+        assert_lone_surrogate_refused(r#"["ok", "\uDFFF"]"#, r"\uDFFF");
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_reversed_surrogate_pair() {
+        assert_lone_surrogate_refused(r#"{"s":"\ude00\ud83d"}"#, r"\ude00");
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn admits_a_valid_surrogate_pair_and_an_escaped_backslash_before_u() {
+        for text in [
+            r#"{"s":"😀"}"#,
+            r#"{"s":"😀 and 𐀀"}"#,
+            // `\\` is one escaped backslash; the `ud800` after it is text.
+            r#"{"s":"\\ud800"}"#,
+            r#"{"s":"\"😀\""}"#,
+        ] {
+            let document = PackageDocument::parse(text.as_bytes())
+                .unwrap_or_else(|refusal| panic!("{text} refused: {refusal:?}"));
+            assert_eq!(
+                document.tree(),
+                &serde_json::from_str::<Value>(text).unwrap(),
+                "{text}"
+            );
+        }
+    }
+
+    /// The reviewer's scenario: lone-surrogate bytes offered under the JCS
+    /// digest of the U+FFFD document no longer admit.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn a_lone_surrogate_no_longer_admits_under_the_replacement_character_digest() {
+        let replacement = serde_json::json!({
+            "package": {"identity": "acme/orders", "version": "1"},
+            "s": "\u{FFFD}",
+        });
+        let digest = digest_of(&jcs_bytes(&replacement));
+        let lone = br#"{"package":{"identity":"acme/orders","version":"1"},"s":"\ud800"}"#.to_vec();
+        let mut map = BTreeMap::new();
+        map.insert(digest, lone.clone());
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(refusal.code, Code::StaleDependency);
+        assert_eq!(
+            refusal.cause,
+            ModelRefusalCause::ByteDigestMismatch {
+                expected: digest,
+                actual: digest_of(&lone),
+            },
+            "unparseable bytes digest raw, so they cannot match a JCS digest"
+        );
+    }
+
+    // PR #379 review F2: a document over a parse limit that arrives with its
+    // correct JCS digest refuses naming the limit, not as a digest mismatch.
+
+    /// `depth` arrays nested around `inner`.
+    fn nested_arrays(depth: usize, inner: &str) -> String {
+        format!("{}{inner}{}", "[".repeat(depth), "]".repeat(depth))
+    }
+
+    /// The scan's depth rule agrees with the reader's own at the boundary.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn nesting_limit_matches_the_readers_own_boundary() {
+        let max = agent_ix_semantic_ir::json::MAX_DEPTH;
+        let cases = [
+            (nested_arrays(max - 1, "0"), true),
+            (nested_arrays(max, ""), true),
+            (nested_arrays(max, "0"), false),
+            (nested_arrays(max, "[]"), false),
+            (nested_arrays(max, "\"s\""), false),
+            (nested_arrays(max - 1, "{}"), true),
+            (nested_arrays(max - 1, r#"{"a":0}"#), false),
+            (nested_arrays(max + 50, "0"), false),
+        ];
+        for (text, within) in cases {
+            let label = &text[text.len() / 2 - 4..text.len() / 2 + 4];
+            assert_eq!(
+                agent_ix_semantic_ir::json::parse(&text).is_ok(),
+                within,
+                "the reader, around {label}"
+            );
+            assert_eq!(
+                !ByteScan::of(text.as_bytes()).too_deep,
+                within,
+                "the scan, around {label}"
+            );
+            match PackageDocument::parse(text.as_bytes()) {
+                Ok(_) => assert!(within, "{label}"),
+                Err(refusal) => {
+                    assert!(!within, "{label}: {refusal:?}");
+                    assert_eq!(refusal, limit_exceeded(IntakeLimit::NestingDepth, max));
+                }
+            }
+        }
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_an_overdeep_document_with_its_correct_digest_as_a_depth_limit() {
+        let max = agent_ix_semantic_ir::json::MAX_DEPTH;
+        let mut nested = serde_json::json!(0);
+        for _ in 0..max {
+            nested = serde_json::json!([nested]);
+        }
+        let document = serde_json::json!({
+            "package": {"identity": "acme/orders", "version": "1"},
+            "payload": nested,
+        });
+        let bytes = document.to_string().into_bytes();
+        let digest = digest_of(&jcs_bytes(&document));
+        let mut map = BTreeMap::new();
+        map.insert(digest, bytes);
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::ResourceExhausted,
+                cause: ModelRefusalCause::IntakeLimitExceeded {
+                    limit: IntakeLimit::NestingDepth,
+                    bound: max,
+                },
+                detail: format!("package document exceeds intake's nesting_depth limit of {max}"),
+            }
+        );
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_an_oversize_document_with_its_correct_digest_as_a_size_limit() {
+        let max = agent_ix_semantic_ir::json::MAX_INPUT_BYTES;
+        let head = r#"{"package":{"identity":"acme/orders","version":"1"},"pad":""#;
+        let tail = r#""}"#;
+        let pad = max + 1 - head.len() - tail.len();
+        let bytes = format!("{head}{}{tail}", "x".repeat(pad)).into_bytes();
+        assert_eq!(bytes.len(), max + 1);
+        let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
+        let mut map = BTreeMap::new();
+        map.insert(digest, bytes);
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::ResourceExhausted,
+                cause: ModelRefusalCause::IntakeLimitExceeded {
+                    limit: IntakeLimit::InputBytes,
+                    bound: max,
+                },
+                detail: format!("package document exceeds intake's input_bytes limit of {max}"),
+            }
+        );
+    }
+
+    /// PR #379 review F3: unparseable bytes supply no document, so even an
+    /// empty offered identity and version, whose raw digest matches, refuse
+    /// `wrong-model-selection`. Before `admit` required a parsed document,
+    /// the two empty strings compared equal and the bytes admitted.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_unparseable_bytes_under_an_empty_identity_and_version() {
+        let bytes = b"not json".to_vec();
+        let digest = digest_of(&bytes);
+        let mut map = BTreeMap::new();
+        map.insert(digest, bytes);
+        let (offered, digest_domain) = selection("", "", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::WrongModelSelection {
+                    selection: offered.clone(),
+                    actual_identity: String::new(),
+                    actual_version: String::new(),
+                },
+                detail: "domain package selection names @ but the package declares @".to_owned(),
+            }
+        );
+    }
+
+    /// PR #379 review F4: the tree and JCS bytes the one parse derives equal
+    /// what `serde_json::from_slice` reads from the same bytes, for numbers
+    /// at every edge, repeated member names and every string escape.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn the_one_parse_reads_what_serde_json_reads() {
+        let cases = [
+            // Numbers.
+            "0",
+            "-0",
+            "-0.0",
+            "1.0",
+            "1e2",
+            "1E+2",
+            "1e-400",
+            "-1e-400",
+            "18446744073709551615",
+            "18446744073709551616",
+            "-9223372036854775808",
+            "-9223372036854775809",
+            "123456789012345678901234567890",
+            "5e-324",
+            "4.9e-324",
+            "1.7976931348623157e308",
+            "0.123456789012345678901234567890123456789012345678901234567890123456789012345",
+            r#"[0, -0, 1.5, -2, 3e-7, -1E-2]"#,
+            // Out of range for both: refused, never a different value.
+            "1e400",
+            "-1e400",
+            // Repeated member names: the last wins.
+            r#"{"a":1,"a":2}"#,
+            r#"{"a":{"x":1},"a":{"y":2}}"#,
+            r#"{"o":{"a":1,"a":[1]},"o":{"a":2,"b":3,"a":{"c":4}}}"#,
+            r#"{"a":1,"a":2}"#,
+            r#"{"a":1,"a":2}"#,
+            r#"{"😀":1,"😀":2}"#,
+            // Every string escape, and surrogate pairs.
+            r#""\" \\ \/ \b \f \n \r \t""#,
+            r#""\u0000 \u001f \u007f é € ￿ �""#,
+            r#""😀 𝄞 􏿿 𐀀""#,
+            r#""é 😀 raw""#,
+            r#"{"k\"ey":"v\\al","\/":"\n"}"#,
+        ];
+        for text in cases {
+            let expected = serde_json::from_slice::<Value>(text.as_bytes());
+            match (PackageDocument::parse(text.as_bytes()), expected) {
+                (Ok(document), Ok(expected)) => {
+                    assert_eq!(document.tree(), &expected, "{text}");
+                    assert_eq!(jcs_bytes(document.tree()), jcs_bytes(&expected), "{text}");
+                }
+                (Err(_), Err(_)) => assert!(text.ends_with("1e400"), "{text}: both refused"),
+                (parsed, expected) => {
+                    panic!("{text}: the one parse gave {parsed:?}, serde_json gave {expected:?}")
+                }
+            }
+        }
     }
 }

@@ -503,6 +503,16 @@ pub enum ModelRefusalCause {
         /// The digest actually computed over the supplied bytes.
         actual: [u8; 32],
     },
+    /// ADR-011 Limits: a domain package document reached one of intake's
+    /// parse limits, so it has no parsed form to digest or read. Names the
+    /// limit and its bound. ADR-013 T-4's `LimitExceeded` (held back as
+    /// S-5b) is the eventual shared type for this.
+    IntakeLimitExceeded {
+        /// The limit the document reached.
+        limit: IntakeLimit,
+        /// That limit's bound.
+        bound: usize,
+    },
     /// FR-154 Intake check 4 (`model-complete.md:70`): the package's own
     /// identity and version disagree with the selection.
     WrongModelSelection {
@@ -633,6 +643,26 @@ pub enum ModelRefusalCause {
     },
 }
 
+/// One parse limit a domain package document is read under
+/// ([`ModelRefusalCause::IntakeLimitExceeded`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IntakeLimit {
+    /// The document's length in bytes.
+    InputBytes,
+    /// The number of arrays and objects enclosing any one value.
+    NestingDepth,
+}
+
+impl IntakeLimit {
+    /// The limit's name.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InputBytes => "input_bytes",
+            Self::NestingDepth => "nesting_depth",
+        }
+    }
+}
+
 impl ModelRefusalCause {
     /// The cause tag (the exact spelling every FR-150/151/152/153/272 test
     /// tracing and every prior wire-visible string used before #141).
@@ -698,6 +728,7 @@ impl ModelRefusalCause {
             Self::MissingSelection { .. } => "missing-selection",
             Self::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             Self::WrongModelSelection { .. } => "wrong-model-selection",
+            Self::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
             Self::DuplicateMember { .. } => "duplicate-member",
             Self::SubsettingViolation { .. } => "subsetting-violation",
             Self::FrameCreateOutsideGrant { .. }
@@ -753,7 +784,8 @@ impl ModelRefusalCause {
             | Self::WrongModelSelection { .. } => "invalid_model_binding",
             Self::DispatchFamilyDepth { .. }
             | Self::GeneralizationDepthExceeded { .. }
-            | Self::ConformanceDepth { .. } => "resource_exhausted",
+            | Self::ConformanceDepth { .. }
+            | Self::IntakeLimitExceeded { .. } => "resource_exhausted",
             Self::UnclosedMethodSet
             | Self::IncompleteScope { .. }
             | Self::UnclosedSubtypes { .. } => "incomplete_population",
@@ -1036,6 +1068,10 @@ pub mod fixtures {
             actual_identity: String::new(),
             actual_version: String::new(),
         },
+        IntakeLimitExceeded => ModelRefusalCause::IntakeLimitExceeded {
+            limit: super::IntakeLimit::NestingDepth,
+            bound: 0,
+        },
         ReservedPackageIdentity => ModelRefusalCause::ReservedPackageIdentity {
             selection: DomainPackageRef::fixture("p"),
         },
@@ -1168,6 +1204,7 @@ pub(crate) mod tests {
             ModelRefusalCause::MissingSelection { .. } => "missing-selection",
             ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
             ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
+            ModelRefusalCause::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
             ModelRefusalCause::DuplicateMember { .. } => "duplicate-member",
             ModelRefusalCause::SubsettingViolation { .. } => "subsetting-violation",
             ModelRefusalCause::FrameCreateOutsideGrant { .. }
@@ -1218,6 +1255,7 @@ pub(crate) mod tests {
             ModelRefusalCause::IntakeMalformedDeclaration { .. } => "invalid_model_binding",
             ModelRefusalCause::ReservedPackageIdentity { .. } => "invalid_model_binding",
             ModelRefusalCause::WrongModelSelection { .. } => "invalid_model_binding",
+            ModelRefusalCause::IntakeLimitExceeded { .. } => "resource_exhausted",
             ModelRefusalCause::DispatchFamilyDepth { .. } => "resource_exhausted",
             ModelRefusalCause::GeneralizationDepthExceeded { .. } => "resource_exhausted",
             ModelRefusalCause::ConformanceDepth { .. } => "resource_exhausted",
