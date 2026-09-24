@@ -28,8 +28,8 @@ mod parser;
 pub mod token;
 
 pub use cst::{
-    CstElement, CstNode, CstToken, LosslessCst, NodeIdentity, Production, Recovery, RecoveryKind,
-    StableNodeId, TokenClass, TokenKind,
+    CstElement, CstNode, CstToken, IdentityPreimageBytes, LosslessCst, NodeIdentity, Production,
+    Recovery, RecoveryKind, StableNodeId, TokenClass, TokenKind,
 };
 pub use diagnostic::{CompleteCause, CompleteCode, CompleteDiagnostic, HostCause};
 pub use lexer::Limits;

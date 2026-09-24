@@ -33,15 +33,21 @@
 use std::collections::BTreeMap;
 
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::conformance::{resolve_redefinition_target, RedefinitionTargetOutcome};
 use qsl_semantics::model::dispatch::GeneralizationClosure;
-use qsl_semantics::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};
-use qsl_semantics::model::intake::{admit, meaning, read_records};
+use qsl_semantics::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, OperationEffect,
+};
+use qsl_semantics::model::intake::{admit, meaning, read_records, PackageDocument};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{normalize, EffectiveView, ModelRefusal, NormalizeOutcome};
+use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::model::population::{
     admit_binding, admit_invocation, AdmissionMeter, AdmissionOutcome, InvocationContext,
     InvocationDelta, PopulationAdmissionLimits, PopulationDocument, PopulationMember,
 };
+use qsl_semantics::value::model_query::{evaluate_all_instances, ModelQueryHalt};
+use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Meter, ValueType};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -222,15 +228,36 @@ pub enum IntakeFailure {
     Read(Vec<ModelRefusal>),
 }
 
-/// FR-154 intake: `admit`, then `read_records`, then `DomainPackage::new`.
-pub fn intake(offer: &Offer) -> Result<DomainPackage, IntakeFailure> {
-    let (selection, bytes) = admit(
+// Every call into `model::intake` goes through the three functions below,
+// so an intake signature change is one edit here, not one per bench.
+
+/// FR-154's admission table (`intake::admit`) over `offer`: the selection
+/// and the package document it parsed.
+pub fn admit_offer(
+    offer: &Offer,
+) -> Result<(DomainPackageRef, PackageDocument), Box<ModelRefusal>> {
+    admit(
         &offer.selection,
         SHA256_JCS_DIGEST_DOMAIN,
         &offer.bytes_by_digest,
     )
-    .map_err(|refusal| IntakeFailure::Admit(Box::new(refusal)))?;
-    let records = read_records(PACKAGE, bytes).map_err(IntakeFailure::Read)?;
+    .map_err(Box::new)
+}
+
+/// Parse package bytes the way `admit` does (`PackageDocument::parse`).
+pub fn parse_document(bytes: &[u8]) -> Result<PackageDocument, Box<ModelRefusal>> {
+    PackageDocument::parse(bytes).map_err(Box::new)
+}
+
+/// The per-node reader (`intake::read_records`) over an admitted document.
+pub fn read(document: &PackageDocument) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
+    read_records(PACKAGE, document)
+}
+
+/// FR-154 intake: [`admit_offer`], then [`read`], then `DomainPackage::new`.
+pub fn intake(offer: &Offer) -> Result<DomainPackage, IntakeFailure> {
+    let (selection, document) = admit_offer(offer).map_err(IntakeFailure::Admit)?;
+    let records = read(&document).map_err(IntakeFailure::Read)?;
     Ok(DomainPackage::new(selection, records))
 }
 
@@ -314,4 +341,80 @@ pub fn admit_unchanged_invocation(
         &mut pre_meter,
         &mut post_meter,
     )
+}
+
+/// A generated package, its effective view and an admitted `Pop` binding of
+/// `members` objects of the chain's deepest type.
+///
+/// # Panics
+///
+/// Panics when intake or admission refuses: every generated shape is valid.
+pub fn admitted(shape: ModelShape, members: usize) -> (DomainPackage, PopulationBinding) {
+    let domain_package =
+        intake(&offer(document(shape))).expect("the generated document passes intake");
+    let effective = view(&domain_package);
+    match admit_population(
+        &domain_package,
+        &effective,
+        &population_document(shape, members),
+    ) {
+        AdmissionOutcome::Admitted(binding) => (domain_package, binding),
+        other => panic!("the generated population admits: {other:?}"),
+    }
+}
+
+/// `allInstances<C0>` through the evaluator-facing bridge
+/// (`value::model_query::evaluate_all_instances`), which resolves `C0`'s
+/// effective identity through a reverse catalog it rebuilds per query.
+///
+/// # Panics
+///
+/// Panics when `binding`'s catalog does not name `C0`.
+pub fn query_all_instances_of_root(
+    binding: &PopulationBinding,
+) -> Result<quire_exact::Value, ModelQueryHalt> {
+    let root = *binding
+        .type_catalog()
+        .get(&key(&chain_type(0)))
+        .expect("C0 is a declared object type");
+    let maximum = binding.declared_maximum().unwrap_or(u64::MAX);
+    let collection = CollectionType::new(
+        CollectionKind::Set,
+        ValueType::Reference(root),
+        CardinalityBound::new(0, maximum).expect("0 <= any maximum"),
+    );
+    let mut meter = Meter::new(crate::check::SCALAR_UNLIMITED);
+    evaluate_all_instances(binding, &collection, &mut meter)
+}
+
+/// `resolve_redefinition_target` for the chain root's field: a model
+/// conformance entry point that builds `ConformanceIndex` over the whole
+/// package on every call.
+pub fn resolve_root_field_redefinition(
+    domain_package: &DomainPackage,
+) -> Result<RedefinitionTargetOutcome, Box<ModelRefusal>> {
+    let field = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: format!("{}/flag", node(&chain_type(0))),
+    };
+    resolve_redefinition_target(domain_package, &field).map_err(Box::new)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smallest_shape_admits_and_queries() {
+        let shape = ModelShape { types: 1, depth: 0 };
+        let (domain_package, binding) = admitted(shape, 1);
+        assert_eq!(domain_package.records.len(), 3);
+        assert!(query_all_instances_of_root(&binding).is_ok());
+        assert!(resolve_root_field_redefinition(&domain_package).is_ok());
+        let effective = view(&domain_package);
+        assert!(matches!(
+            admit_unchanged_invocation(&domain_package, &effective, &population_document(shape, 1)),
+            AdmissionOutcome::Admitted(_)
+        ));
+    }
 }

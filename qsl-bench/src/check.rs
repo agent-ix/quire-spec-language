@@ -138,3 +138,19 @@ pub fn completed_with_five(evaluation: &Evaluation) -> bool {
             if *value == Integer::from(5_i64)
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smallest_packages_check_and_evaluate() {
+        assert!(check(call_chain(1)).is_ok());
+        assert!(check(independent(1)).is_ok());
+        let package = linked_chain(2);
+        assert!(completed_with_five(&call_head(
+            &package,
+            &ObjectEnvironment::default()
+        )));
+    }
+}

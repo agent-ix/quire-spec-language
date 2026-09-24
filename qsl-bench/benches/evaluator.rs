@@ -23,7 +23,7 @@ fn call_chain(c: &mut Criterion) {
             completed_with_five(&call_head(&package, &objects)),
             "f0(5) on a {frames}-chain evaluates to 5"
         );
-        group.throughput(Throughput::Elements(frames as u64));
+        group.throughput(Throughput::Elements(qsl_bench::widen(frames)));
         group.bench_with_input(
             BenchmarkId::from_parameter(frames),
             &package,

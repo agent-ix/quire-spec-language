@@ -19,9 +19,10 @@
 use std::process::ExitCode;
 use std::time::Instant;
 
+use qsl_attrs::string_edge;
 use qsl_bench::check::{self, call_head, completed_with_five, linked_chain};
 use qsl_bench::model::{self, ModelShape};
-use qsl_bench::parse::{self, cst_identity_hashed_bytes, ParseOutcome};
+use qsl_bench::parse::{self, ParseOutcome};
 use qsl_bench::rss::peak_rss_kib;
 use qsl_semantics::model::domain_package::DomainPackageRecord;
 use qsl_semantics::model::normalize::object_universe_of;
@@ -107,13 +108,13 @@ fn probe_cst() {
     for (label, text) in inputs {
         match parse::parse(&text) {
             Ok(parsed) if parsed.is_admissible() => {
-                let hashed = cst_identity_hashed_bytes(&parsed);
+                let hashed = parsed.cst().identity_preimage_bytes();
                 let source = text.len();
                 // Display only: both counts are far below 2^52, so the
                 // float division loses nothing that two decimals show.
                 let ratio = hashed.total as f64 / source as f64;
                 println!(
-                    "cst.hash {label} source_bytes={source} nodes={} hashed_bytes={} of_which_source_slices={} of_which_ancestor_paths={} ratio={ratio:.2} (model of LosslessCst::new's preimage at 89326999)",
+                    "cst.hash {label} source_bytes={source} nodes={} hashed_bytes={} of_which_source_slices={} of_which_ancestor_paths={} ratio={ratio:.2} (counted by qsl-cst's preimage builder)",
                     parsed.cst().nodes().len(),
                     hashed.total,
                     hashed.source_slices,
@@ -125,6 +126,9 @@ fn probe_cst() {
     }
 }
 
+/// `#[string_edge]`: `shape` is a command-line word, matched here to pick
+/// the generator; it selects no family semantics.
+#[string_edge]
 fn probe_check(shape: &str, functions: usize) -> ExitCode {
     let declarations = match shape {
         "chain" => check::call_chain(functions),
@@ -207,6 +211,8 @@ fn probe_model(shape: ModelShape, members: usize) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// `#[string_edge]`: dispatches the probe's command-line subcommand words.
+#[string_edge]
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     match arguments.first().map(String::as_str) {

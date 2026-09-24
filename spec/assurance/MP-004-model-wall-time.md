@@ -60,7 +60,7 @@ negative_controls:
       machine it ran on; a result from another revision or machine is not
       compared against this baseline.
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-154
+  - target: ix://agent-ix/quire-spec-language/FR-056
     type: measures
 ---
 

@@ -107,69 +107,40 @@ impl ParseOutcome {
     pub fn is_admitted(&self) -> bool {
         matches!(self, Self::Admitted { .. })
     }
-}
 
-/// Bytes fed to SHA-256 while building one CST's node identities, split by
-/// where they come from.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct IdentityHashBytes {
-    /// Every preimage byte: [`Self::source_slices`], [`Self::ancestor_paths`]
-    /// and the fixed per-node and per-document framing.
-    pub total: u64,
-    /// Bytes of each node's own source slice, summed over nodes: a byte at
-    /// nesting depth `d` is hashed once per enclosing node.
-    pub source_slices: u64,
-    /// Bytes of each node's ancestor production names, summed over nodes.
-    pub ancestor_paths: u64,
-}
-
-/// Bytes fed to SHA-256 while building `parsed`'s CST identities, computed
-/// from the CST's public node spans and ancestor lists by the preimage
-/// layout `qsl_cst::cst::LosslessCst::new` uses at `89326999`: one
-/// document-revision preimage, then one `quire.complete.cst-node/1`
-/// preimage per node carrying the source identity, the node's production
-/// name, **the node's whole source slice**, every ancestor production name
-/// and a 4-byte occurrence ordinal.
-///
-/// This is a model of that code, not an instrumented count: it goes stale
-/// when `LosslessCst::new`'s preimage changes, and the probe says so where
-/// it prints the figure. Timing (`benches/cst.rs`) is the measured
-/// counterpart.
-pub fn cst_identity_hashed_bytes(parsed: &ParsedSource) -> IdentityHashBytes {
-    let widen = |bytes: usize| u64::try_from(bytes).unwrap_or(u64::MAX);
-    let identity = parsed.source().identity();
-    let digest_text = parsed.source().digest().to_string();
-    let revision = b"quire.complete.document-revision/1\0".len()
-        + [
-            identity.identity.len(),
-            identity.revision.len(),
-            digest_text.len(),
-        ]
-        .iter()
-        .map(|length| 8 + length)
-        .sum::<usize>();
-    let mut counted = IdentityHashBytes {
-        total: widen(revision),
-        ..IdentityHashBytes::default()
-    };
-    for node in parsed.cst().nodes() {
-        let span = node.span();
-        let slice = span.end.saturating_sub(span.start);
-        let ancestors: usize = node
-            .identity()
-            .ancestor_productions
-            .iter()
-            .map(|production| format!("{production:?}/").len())
-            .sum();
-        let framing = b"quire.complete.cst-node/1\0".len()
-            + identity.identity.len()
-            + format!("|{:?}|", node.production()).len()
-            + 1
-            + 1
-            + 4;
-        counted.source_slices += widen(slice);
-        counted.ancestor_paths += widen(ancestors);
-        counted.total += widen(framing + slice + ancestors);
+    /// The outcome's name in a benchmark id (`parser/depth/refused/5`), so
+    /// a benchmark whose input changes from refused to admitted gets a new
+    /// id instead of reading as a regression or a speed-up.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Admitted { .. } => "admitted",
+            Self::Recovered { .. } => "recovered",
+            Self::Refused { .. } => "refused",
+        }
     }
-    counted
+}
+
+/// The benchmark id for `input` under `outcome`: `<outcome>/<input>`.
+pub fn outcome_id(outcome: &ParseOutcome, input: impl std::fmt::Display) -> String {
+    format!("{}/{input}", outcome.label())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smallest_inputs_parse() {
+        for text in [nested_source(0), volume_source(1)] {
+            assert!(ParseOutcome::of(&parse(&text)).is_admitted(), "{text}");
+        }
+    }
+
+    #[test]
+    fn identity_preimage_bytes_count_the_revision_and_every_node() {
+        let parsed = parse(&nested_source(1)).expect("depth 1 parses");
+        let hashed = parsed.cst().identity_preimage_bytes();
+        assert!(hashed.source_slices > 0 && hashed.ancestor_paths > 0);
+        assert!(hashed.total > hashed.source_slices + hashed.ancestor_paths);
+    }
 }

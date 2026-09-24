@@ -20,6 +20,15 @@
 
 #![forbid(unsafe_code)]
 
+/// `count` as the `u64` criterion's throughput and the probe's counts take.
+///
+/// # Panics
+///
+/// Panics on a count above `u64::MAX`, which no benchmark input reaches.
+pub fn widen(count: usize) -> u64 {
+    u64::try_from(count).expect("a benchmark count fits in u64")
+}
+
 pub mod check;
 pub mod model;
 pub mod parse;

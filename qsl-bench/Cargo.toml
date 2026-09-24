@@ -7,10 +7,11 @@ rust-version = "1.98"
 license = "AGPL-3.0-or-later"
 description = "QSL-196: the committed performance benchmarks (parser, checker, CST identity hashing, model layer, evaluator) and the probe that records their baseline counts."
 
-# A benchmark-only crate: no workspace crate depends on it, and it depends on
-# the layer crates only through their public API, so a benchmark keeps
-# compiling across an internal rewrite of the layer it times (QSL-197
-# rewrites the S1 parser behind `qsl_cst::parse`).
+# A benchmark-only crate: no workspace crate depends on it. It reaches the
+# layer crates through their public API only, so an internal rewrite behind
+# that API needs no bench change; a change to the API itself does (QSL-201
+# changed `intake::admit`'s return type). Every model-intake call goes
+# through `src/model.rs` so such a change is one edit there.
 [dependencies]
 qsl-cst = { path = "../qsl-cst" }
 qsl-foundation = { path = "../qsl-foundation" }
@@ -21,10 +22,9 @@ qsl-eval = { path = "../qsl-eval" }
 quire-exact = { path = "../quire-exact" }
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"
-# F13 (QSL-196): the third of model intake's three parses of the same bytes
-# is this crate's own `json::parse`; the model probe times it alone. Same
-# pinned revision `qsl-semantics` already locks -- no new package.
-agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
+# FR-064: the probe's two command-line dispatch functions carry
+# `#[string_edge]`, since `xtask string-edge` scans this crate.
+qsl-attrs = { path = "../qsl-attrs" }
 
 [dev-dependencies]
 # Default features off: no rayon, no plotters. `cargo_bench_support` is the

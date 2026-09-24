@@ -407,8 +407,9 @@ fn scan_file(workspace_root: &Path, relative: &Path) -> Result<Vec<Occurrence>> 
 /// (ADR-011 §7.3 X-3, QSL-178), `qsl-source` (ADR-011 §7.3 X-4, QSL-179),
 /// `qsl-forms` (ADR-011 §7.3 X-5, QSL-180), `qsl-semantics` (ADR-011 §7.3
 /// X-6, QSL-181), `qsl-package` (ADR-011 §7.3 X-7, QSL-182), `qsl-eval`
-/// (ADR-011 §7.3 X-8, QSL-183), `qsl-route` (ADR-011 §7.3 X-9, QSL-184) and `qsl-replay` (ADR-011 §7.3 X-10, QSL-185
-/// -- each extracted §6.1 layer crate adds its own entry here the same way).
+/// (ADR-011 §7.3 X-8, QSL-183), `qsl-route` (ADR-011 §7.3 X-9, QSL-184), `qsl-replay` (ADR-011 §7.3 X-10, QSL-185
+/// -- each extracted §6.1 layer crate adds its own entry here the same way)
+/// and `qsl-bench` (QSL-196, the benchmark harness).
 /// `qsl-attrs` is excluded -- it is a proc-macro identity transform with no
 /// string dispatch of any kind (its own module doc).
 fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
@@ -425,6 +426,7 @@ fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
         "qsl-eval/src",
         "qsl-route/src",
         "qsl-replay/src",
+        "qsl-bench/src",
     ]
     .into_iter()
     .map(|relative| workspace_root.join(relative))
@@ -542,11 +544,9 @@ mod tests {
     use ix_trace_rs::trace;
 
     /// Workspace members `crate_roots` does not scan: `qsl-attrs` (see
-    /// `crate_roots`' own doc), `tools/arch-lint`, which the scan has
-    /// never covered, and `qsl-bench` (QSL-196), the benchmark harness: no
-    /// crate depends on it, it selects no family semantics, and its only
-    /// string `match` is the probe binary's command-line dispatch.
-    const UNSCANNED_MEMBERS: [&str; 3] = ["qsl-attrs", "qsl-bench", "tools/arch-lint"];
+    /// `crate_roots`' own doc) and `tools/arch-lint`, which the scan has
+    /// never covered.
+    const UNSCANNED_MEMBERS: [&str; 2] = ["qsl-attrs", "tools/arch-lint"];
 
     /// Every workspace member's `src/` is a scan root, except the
     /// documented [`UNSCANNED_MEMBERS`]. A crate extracted later, or a root

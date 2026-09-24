@@ -1364,8 +1364,8 @@ dependencies = [
 name = "qsl-bench"
 version = "0.1.0"
 dependencies = [
- "agent-ix-semantic-ir",
  "criterion",
+ "qsl-attrs",
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",

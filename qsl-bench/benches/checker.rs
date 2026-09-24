@@ -26,6 +26,10 @@ fn chain(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(8));
     for functions in CHAIN {
+        assert!(
+            check(call_chain(functions)).is_ok(),
+            "{functions} functions check, so the timing is of a completed check"
+        );
         group.bench_with_input(
             BenchmarkId::from_parameter(functions),
             &functions,
@@ -42,6 +46,10 @@ fn independent_functions(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(5));
     for functions in INDEPENDENT {
+        assert!(
+            check(independent(functions)).is_ok(),
+            "{functions} functions check, so the timing is of a completed check"
+        );
         group.bench_with_input(
             BenchmarkId::from_parameter(functions),
             &functions,

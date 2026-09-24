@@ -18,7 +18,7 @@
 //! functions. `qsl-bench-probe cst` prints the byte counts.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use qsl_bench::parse::{cst_identity_hashed_bytes, nested_source, parse, volume_source};
+use qsl_bench::parse::{nested_source, parse, volume_source};
 use sha2::{Digest, Sha256};
 use std::hint::black_box;
 
@@ -34,7 +34,8 @@ fn identity_hashing(c: &mut Criterion) {
     let mut group = c.benchmark_group("cst");
     for (label, text) in inputs() {
         let parsed = parse(&text).expect("every CST bench input parses at 89326999");
-        let hashed = cst_identity_hashed_bytes(&parsed);
+        assert!(parsed.is_admissible(), "{label} is admissible");
+        let hashed = parsed.cst().identity_preimage_bytes();
         let nodes = parsed.cst().nodes().len().max(1);
         group.throughput(Throughput::Bytes(hashed.total));
         group.bench_with_input(BenchmarkId::new("parse", &label), &text, |b, text| {
