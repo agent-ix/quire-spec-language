@@ -22,6 +22,7 @@ use crate::check::{CheckedGraph, CheckedTypeNode, CheckingLimits, PackageDeclara
 use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
 
 mod depth;
+mod expression_depth;
 mod leaves;
 mod rows;
 
@@ -837,7 +838,12 @@ fn the_type_and_lowering_matches_have_no_catch_all_arm() {
             .expect("the function ends");
         &source[start..end]
     };
-    for signature in ["fn descend<'v>(", "fn expression(", "fn literal("] {
+    for signature in [
+        "fn descend<'v>(",
+        "fn expression(",
+        "fn lower_node<'n>(",
+        "fn literal(",
+    ] {
         assert!(
             !body_of(signature).contains("_ =>"),
             "{signature} has a catch-all arm"

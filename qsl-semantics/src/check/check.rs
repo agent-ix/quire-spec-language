@@ -3,10 +3,11 @@
 //! declarations into the typed tree, before any definedness or termination
 //! judgment.
 //!
-//! Every refusal here is made before any charge. Typing recursion is bounded
-//! by the declared [`CheckingLimits`] depth, whose maximum keeps checking off
-//! the host stack limit; reaching a declared limit is `resource_exhausted`,
-//! never an admission verdict.
+//! Every refusal here is made before any charge. Typing nesting is bounded
+//! by the declared [`CheckingLimits`] depth; reaching a declared limit is
+//! `resource_exhausted`, never an admission verdict. The typer itself
+//! (`typing`) walks an expression over an explicit heap stack (QSL-228), so
+//! its host stack use does not grow with nesting.
 //!
 //! FR-065 (owner ruling, carried from the QSL-25 spec review): this module
 //! retains `infer_form`'s dispatch over [`Expression`] for every `Value`
@@ -14,7 +15,7 @@
 //! `Self::call` -- the method `infer_form`'s `Expression::Call` arm used to
 //! dispatch to, doing the real name resolution, arity check and
 //! per-argument typing -- is deleted; its logic now lives in
-//! [`super::family::check_application`], reached through this module's own
+//! [`super::family::Application`], reached through this module's own
 //! `Typer::scope`/`Typer::signatures`/`Typer::type_named`/`Typer::check_as`
 //! accessors (widened from private to `pub(crate)` for exactly this one
 //! caller). `infer_form`'s `Expression::Call` arm makes one call into that
@@ -22,7 +23,7 @@
 //! module still owns function-declaration *typing*'s underlying engine
 //! (`bind_parameters`, `check_declared_type`, `check_as`), because a
 //! function body is an arbitrary `Expression` and checking one still needs
-//! the same general recursive typer every other `Value` form uses --
+//! the same general typer every other `Value` form uses --
 //! FR-065-CON-1 forbids reimplementing that engine a second time inside the
 //! family module, not calling into this module's existing one. What moved
 //! is the *entry point*: `check::family::check_declaration_body` (not this
@@ -44,15 +45,17 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+mod typing;
+
 use super::ir::{
     Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit,
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
-    WrongSnapshotCause,
 };
 use crate::value::declaration::{
-    admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator, TypeEnvironment,
+    admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
+    FieldDeclaration, TypeEnvironment,
 };
 use crate::value::definition::AdmittedIeeeProfile;
 use crate::value::enumeration::{mint_variant_id, EnumDeclaration, EnumMemberIndex, EnumValue};
@@ -73,8 +76,9 @@ use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
 use quire_exact::{Value, ValueType};
 
-/// The largest expression nesting depth a checker may declare. It keeps every
-/// recursive checking pass well inside the host stack.
+/// The largest expression nesting depth a checker may declare. The typing,
+/// facts and lowering walks run over explicit heap stacks, so this bounds the
+/// checked tree's size rather than protecting the host stack.
 pub const MAX_CHECKING_DEPTH: u64 = 128;
 
 /// The NFR-010 node admission limits this checker declares before accepting
@@ -623,9 +627,6 @@ struct Local {
     kind: LocalKind,
 }
 
-/// Two typed operands, each with its per-operator extra.
-type OperandPair<T> = ((Node, T), (Node, T));
-
 /// One typing pass over a function or standalone expression.
 pub(crate) struct Typer<'a> {
     scope: &'a Scope,
@@ -703,14 +704,44 @@ fn is_integer(value_type: &ValueType) -> bool {
 /// `Let`, not in this `pre(...)`'s own subtree. `pre(1)` and `pre(delta)`
 /// (a bare parameter) fail it for the same reason: a literal or a `Name`
 /// alone is never itself an eligible read.
+///
+/// The walk keeps its pending sub-expressions on a heap stack (QSL-228): it
+/// runs before the typer has entered `expression`'s own levels, so no
+/// checking limit has bounded its depth yet.
 fn contains_pre_eligible_read(expression: &Expression) -> bool {
-    matches!(
-        expression,
-        Expression::AllInstances { .. } | Expression::Lookup { .. } | Expression::Pre(_)
-    ) || expression
-        .children()
-        .into_iter()
-        .any(contains_pre_eligible_read)
+    let mut pending = vec![expression];
+    while let Some(expression) = pending.pop() {
+        if matches!(
+            expression,
+            Expression::AllInstances { .. } | Expression::Lookup { .. } | Expression::Pre(_)
+        ) {
+            return true;
+        }
+        pending.extend(expression.children());
+    }
+    false
+}
+
+/// One `let` a captured-alias walk has passed (QSL-228): its name, whether
+/// its value resolves to a captured alias, and the binding it was made
+/// under, as an index into the walk's binding arena. A chain of `outer`
+/// links from one binding is the `let` scope, innermost first.
+struct AliasBinding<'e> {
+    name: &'e str,
+    alias: bool,
+    outer: Option<usize>,
+}
+
+/// One pending step of [`Typer::resolves_to_captured_alias`]'s walk.
+enum AliasStep<'e> {
+    /// Resolve an operand under the scope ending at the binding index.
+    Operand(&'e Expression, Option<usize>),
+    /// The value of `let name = value in body` is resolved on top of the
+    /// result stack: bind it, then resolve `body`.
+    Bind(&'e str, &'e Expression, Option<usize>),
+    /// One branch of an `if` is resolved on top of the result stack: keep a
+    /// `true`, otherwise resolve the other branch.
+    OrElse(&'e Expression, Option<usize>),
 }
 
 /// Whether an expression takes its type from its context.
@@ -800,7 +831,7 @@ impl<'a> Typer<'a> {
     }
 
     /// The package-level declarations this typing pass resolves names
-    /// against. QSL-148: `check::family::check_application` (the relocated
+    /// against. QSL-148: `check::family::Application` (the relocated
     /// function-application checker) reads this to resolve a call's callee
     /// against `model_operations` and tuple-constructor types, the same way
     /// this `Typer`'s own other methods already do.
@@ -810,7 +841,7 @@ impl<'a> Typer<'a> {
 
     /// Every function signature this typing pass may resolve an ordinary
     /// named [`Expression::Call`] against. QSL-148: `check::family::
-    /// check_application` reads this for name resolution and arity
+    /// Application` reads this for name resolution and arity
     /// checking, exactly as this `Typer`'s own (now deleted) `call` method
     /// did.
     pub(crate) fn signatures(&self) -> &'a Signatures {
@@ -879,7 +910,7 @@ impl<'a> Typer<'a> {
     /// this `pre(...)`'s own operand, re-anchored only because the read
     /// syntax happens to sit inside it.
     ///
-    /// `bindings` tracks every name a `let` *within this same walk* (i.e.
+    /// The walk tracks every name a `let` *within this same walk* (i.e.
     /// within this `pre(...)`'s own operand) has since rebound, most recent
     /// last, paired with whether *that* binding's own value is itself a
     /// captured alias. A rebinding to a fresh, non-alias value (say,
@@ -898,85 +929,120 @@ impl<'a> Typer<'a> {
     /// own FR-153 "direct operand" doc governs the unrelated `Population`
     /// *value-type* placement, not this syntactic alias check -- so this
     /// resolves the general case rather than special-casing one syntax.
-    fn contains_captured_pre_alias(
-        &self,
-        expression: &Expression,
-        boundary: usize,
-        bindings: &[(String, bool)],
-    ) -> bool {
-        let direct = match expression {
-            Expression::AllInstances { population, .. } => {
-                self.resolves_to_captured_alias(population, boundary, bindings)
+    ///
+    /// The walk and [`Self::resolves_to_captured_alias`] keep their pending
+    /// sub-expressions and `let` bindings on the heap (QSL-228): they run
+    /// before the typer has entered the operand's own levels, so no
+    /// checking limit has bounded its depth yet.
+    fn contains_captured_pre_alias(&self, expression: &Expression, boundary: usize) -> bool {
+        let mut bindings: Vec<AliasBinding<'_>> = Vec::new();
+        let mut pending: Vec<(&Expression, Option<usize>)> = vec![(expression, None)];
+        while let Some((expression, scope)) = pending.pop() {
+            match expression {
+                Expression::AllInstances { population, .. }
+                | Expression::Lookup { population, .. } => {
+                    if self.resolves_to_captured_alias(population, boundary, &mut bindings, scope) {
+                        return true;
+                    }
+                }
+                Expression::Let { name, value, body } => {
+                    let alias =
+                        self.resolves_to_captured_alias(value, boundary, &mut bindings, scope);
+                    bindings.push(AliasBinding {
+                        name,
+                        alias,
+                        outer: scope,
+                    });
+                    pending.push((body, Some(bindings.len() - 1)));
+                    pending.push((value, scope));
+                    continue;
+                }
+                _ => {}
             }
-            Expression::Lookup { population, .. } => {
-                self.resolves_to_captured_alias(population, boundary, bindings)
-            }
-            _ => false,
-        };
-        if direct {
-            return true;
+            pending.extend(
+                expression
+                    .children()
+                    .into_iter()
+                    .map(|child| (child, scope)),
+            );
         }
-        if let Expression::Let { name, value, body } = expression {
-            if self.contains_captured_pre_alias(value, boundary, bindings) {
-                return true;
-            }
-            let mut bindings = bindings.to_vec();
-            bindings.push((
-                name.clone(),
-                self.resolves_to_captured_alias(value, boundary, &bindings),
-            ));
-            return self.contains_captured_pre_alias(body, boundary, &bindings);
-        }
-        expression
-            .children()
-            .into_iter()
-            .any(|child| self.contains_captured_pre_alias(child, boundary, bindings))
+        false
     }
 
     /// Whether `operand` -- a population-typed sub-expression this walk is
     /// considering as `allInstances`/`lookup`'s direct operand, or as a
     /// `let`'s own value -- resolves to a captured alias of a state root
     /// bound outside this `pre(...)`'s operand, however many `let`s or `if`
-    /// branches it is spelled through.
+    /// branches it is spelled through. `scope` is the innermost binding in
+    /// `bindings` the operand sits under; the bindings its own `let`s make
+    /// are appended to `bindings`.
     ///
-    /// - [`Expression::Name`] resolves against `bindings` first (innermost
+    /// - [`Expression::Name`] resolves against the scope first (innermost
     ///   within this walk wins, matching ordinary shadowing), falling back
     ///   to [`Self::captured_before`] for a name this walk never rebound.
-    /// - [`Expression::Let`] resolves its own value first (recursively --
-    ///   the value may itself be a further `let`/`if`), pushes that result
-    ///   as `name`'s own binding, and resolves through its body under that
-    ///   extended `bindings`.
+    /// - [`Expression::Let`] resolves its own value first (the value may
+    ///   itself be a further `let`/`if`), binds that result as `name`, and
+    ///   resolves through its body under that extended scope.
     /// - [`Expression::If`] resolves `true` when *either* branch does: a
     ///   checker refusing statically cannot rule out the branch that
     ///   escapes, so both must be clear.
     /// - Every other shape is not itself alias-bearing syntax and resolves
     ///   `false`.
-    fn resolves_to_captured_alias(
+    fn resolves_to_captured_alias<'e>(
         &self,
-        operand: &Expression,
+        operand: &'e Expression,
         boundary: usize,
-        bindings: &[(String, bool)],
+        bindings: &mut Vec<AliasBinding<'e>>,
+        scope: Option<usize>,
     ) -> bool {
-        match operand {
-            Expression::Name(name) => bindings
-                .iter()
-                .rev()
-                .find(|(bound, _)| bound == name)
-                .map_or_else(|| self.captured_before(name, boundary), |(_, alias)| *alias),
-            Expression::Let { name, value, body } => {
-                let alias = self.resolves_to_captured_alias(value, boundary, bindings);
-                let mut bindings = bindings.to_vec();
-                bindings.push((name.clone(), alias));
-                self.resolves_to_captured_alias(body, boundary, &bindings)
+        let mut resolved: Vec<bool> = Vec::new();
+        let mut pending = vec![AliasStep::Operand(operand, scope)];
+        while let Some(step) = pending.pop() {
+            match step {
+                AliasStep::Operand(Expression::Name(name), scope) => {
+                    let mut at = scope;
+                    let mut alias = None;
+                    while let Some(binding) = at.and_then(|index| bindings.get(index)) {
+                        if binding.name == name {
+                            alias = Some(binding.alias);
+                            break;
+                        }
+                        at = binding.outer;
+                    }
+                    resolved.push(alias.unwrap_or_else(|| self.captured_before(name, boundary)));
+                }
+                AliasStep::Operand(Expression::Let { name, value, body }, scope) => {
+                    pending.push(AliasStep::Bind(name, body, scope));
+                    pending.push(AliasStep::Operand(value, scope));
+                }
+                AliasStep::Operand(
+                    Expression::If {
+                        then, otherwise, ..
+                    },
+                    scope,
+                ) => {
+                    pending.push(AliasStep::OrElse(otherwise, scope));
+                    pending.push(AliasStep::Operand(then, scope));
+                }
+                AliasStep::Operand(_, _) => resolved.push(false),
+                AliasStep::Bind(name, body, scope) => {
+                    let alias = resolved.pop() == Some(true);
+                    bindings.push(AliasBinding {
+                        name,
+                        alias,
+                        outer: scope,
+                    });
+                    pending.push(AliasStep::Operand(body, Some(bindings.len() - 1)));
+                }
+                AliasStep::OrElse(otherwise, scope) => {
+                    if resolved.last() == Some(&false) {
+                        resolved.pop();
+                        pending.push(AliasStep::Operand(otherwise, scope));
+                    }
+                }
             }
-            Expression::If {
-                then, otherwise, ..
-            } => {
-                self.resolves_to_captured_alias(then, boundary, bindings)
-                    || self.resolves_to_captured_alias(otherwise, boundary, bindings)
-            }
-            _ => false,
         }
+        resolved.pop() == Some(true)
     }
 
     fn enter(&mut self, location: &Location) -> Result<(), CheckRefusal> {
@@ -1052,7 +1118,7 @@ impl<'a> Typer<'a> {
 
     /// Resolve a qualified type name: an alias, a record or tuple, or an enum.
     ///
-    /// `pub(crate)` (QSL-148): `check::family::check_application` (the
+    /// `pub(crate)` (QSL-148): `check::family::Application` (the
     /// relocated function-application checker) calls this the same way this
     /// `Typer`'s own (now deleted) `call` method did, to resolve a call's
     /// callee against a tuple-constructor type when no function signature
@@ -1076,397 +1142,6 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<ValueType, CheckRefusal> {
         super::type_form::resolve_type_form(self.scope, form, location)
-    }
-
-    /// Type `expression` where `required` is expected. A conditional or `let`
-    /// passes the requirement into its branches or body.
-    pub(crate) fn check_as(
-        &mut self,
-        expression: &Expression,
-        required: &ValueType,
-        location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        match expression {
-            Expression::If {
-                condition,
-                then,
-                otherwise,
-            } => {
-                self.enter(location)?;
-                let condition =
-                    self.check_as(condition, &ValueType::Boolean, &location.child(0))?;
-                let then = self.check_as(then, required, &location.child(1))?;
-                let otherwise = self.check_as(otherwise, required, &location.child(2))?;
-                self.leave();
-                Ok(node(
-                    NodeKind::If {
-                        condition: Box::new(condition),
-                        then: Box::new(then),
-                        otherwise: Box::new(otherwise),
-                    },
-                    required.clone(),
-                    location,
-                ))
-            }
-            Expression::Let { name, value, body } => {
-                self.enter(location)?;
-                let value = self.infer(value, None, &location.child(0))?;
-                let slot = self.bind(name, value.value_type.clone(), location, LocalKind::Bound)?;
-                let body = self.check_as(body, required, &location.child(1))?;
-                self.unbind(1);
-                self.leave();
-                Ok(node(
-                    NodeKind::Let {
-                        slot,
-                        value: Box::new(value),
-                        body: Box::new(body),
-                    },
-                    required.clone(),
-                    location,
-                ))
-            }
-            _ => {
-                let typed = self.infer(expression, Some(required), location)?;
-                coerce(typed, required)
-            }
-        }
-    }
-
-    /// Type `expression`, with `hint` as the expected type of a contextual
-    /// literal.
-    pub(crate) fn infer(
-        &mut self,
-        expression: &Expression,
-        hint: Option<&ValueType>,
-        location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        self.enter(location)?;
-        let typed = self.infer_form(expression, hint, location)?;
-        self.leave();
-        Ok(typed)
-    }
-
-    /// FR-065's dispatch seam over [`Expression`] (ADR-012 §4.3).
-    ///
-    /// **`Expression::Call` is thin (QSL-148).** The arm below makes exactly
-    /// one call, into [`super::family::check_application`] -- `Value`'s
-    /// family check code for function application -- and holds no semantic
-    /// logic of its own (FR-065-AC-4): no name resolution, arity check or
-    /// per-argument typing loop runs directly in this arm. `Self::call`, the
-    /// method that used to hold that logic, is deleted; `check_application`
-    /// is its relocated replacement, reached through `Typer`'s own
-    /// `scope`/`signatures`/`type_named`/`check_as` accessors (see this
-    /// module's own doc).
-    ///
-    /// **`Expression::Call` itself is still present in [`Expression`]
-    /// (FR-065-AC-5 remains unmet for this reason).** FR-065-AC-5 requires
-    /// the composed checker's input form-kind enum to carry neither a
-    /// function-declaration nor a function-application variant once this
-    /// requirement lands; `Expression::Call` is that variant, and it has not
-    /// been removed. An earlier version of this doc argued a call should
-    /// stay because it is "an ordinary, nestable operand of every other
-    /// `Value` form" -- that argument reasons about a migration that has
-    /// not happened, not about one AC-5 already excuses, and FR-065-AC-5's
-    /// own text says plainly that a variant left in place "with or without
-    /// an arm for it, does not satisfy this criterion." See FR-065's own
-    /// Status section for why AC-5 stays recorded unbacked rather than
-    /// retagged onto what this arm's own shape does satisfy.
-    ///
-    /// `#[deny(...)]` (FR-063's residual paragraph, carried into the
-    /// QSL-25 implementation by owner ruling): a future change that wants
-    /// to delete an arm from this `match` cannot restore exhaustiveness
-    /// with a `_ => ...` catch-all -- that is the exact "escape hatch"
-    /// closed here, not merely by convention; what this attribute forbids
-    /// is silently absorbing a *future* removed arm behind a catch-all
-    /// instead of deleting the corresponding variant.
-    #[deny(clippy::wildcard_enum_match_arm)]
-    #[deny(clippy::match_wildcard_for_single_variants)]
-    fn infer_form(
-        &mut self,
-        expression: &Expression,
-        hint: Option<&ValueType>,
-        location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        match expression {
-            Expression::Boolean(value) => Ok(node(
-                NodeKind::Literal(Value::Boolean(*value)),
-                ValueType::Boolean,
-                location,
-            )),
-            Expression::Integer(value) => Ok(node(
-                NodeKind::Literal(Value::Integer(value.clone())),
-                ValueType::Integer,
-                location,
-            )),
-            Expression::Rational(numerator, denominator) => {
-                self.rational_literal(numerator, denominator, hint, location)
-            }
-            Expression::Name(name) => self.name(name, location),
-            Expression::Let { name, value, body } => {
-                let value = self.infer(value, None, &location.child(0))?;
-                let slot = self.bind(name, value.value_type.clone(), location, LocalKind::Bound)?;
-                let body = self.infer(body, hint, &location.child(1))?;
-                self.unbind(1);
-                let value_type = body.value_type.clone();
-                Ok(node(
-                    NodeKind::Let {
-                        slot,
-                        value: Box::new(value),
-                        body: Box::new(body),
-                    },
-                    value_type,
-                    location,
-                ))
-            }
-            Expression::If {
-                condition,
-                then,
-                otherwise,
-            } => {
-                let condition =
-                    self.check_as(condition, &ValueType::Boolean, &location.child(0))?;
-                let then = self.infer(then, hint, &location.child(1))?;
-                let otherwise = self.infer(otherwise, hint, &location.child(2))?;
-                let value_type = if then.value_type == otherwise.value_type {
-                    then.value_type.clone()
-                } else if is_integer(&then.value_type) && is_integer(&otherwise.value_type) {
-                    ValueType::Integer
-                } else {
-                    return Err(mismatch(&otherwise.location));
-                };
-                Ok(node(
-                    NodeKind::If {
-                        condition: Box::new(condition),
-                        then: Box::new(then),
-                        otherwise: Box::new(otherwise),
-                    },
-                    value_type,
-                    location,
-                ))
-            }
-            Expression::Binary {
-                operator,
-                left,
-                right,
-            } => self.binary(*operator, left, right, hint, location),
-            Expression::Negate(operand) => self.negate(operand, hint, location),
-            Expression::Not(operand) => {
-                let operand = self.check_as(operand, &ValueType::Boolean, &location.child(0))?;
-                Ok(node(
-                    NodeKind::Not(Box::new(operand)),
-                    ValueType::Boolean,
-                    location,
-                ))
-            }
-            Expression::Field { operand, field } => self.field(operand, field, location),
-            Expression::Present(operand) => {
-                let operand = self.infer(operand, None, &location.child(0))?;
-                if !matches!(operand.value_type, ValueType::Option(_)) {
-                    return Err(mismatch(location));
-                }
-                Ok(node(
-                    NodeKind::Present(Box::new(operand)),
-                    ValueType::Boolean,
-                    location,
-                ))
-            }
-            Expression::Value(operand) => {
-                let operand = self.infer(operand, None, &location.child(0))?;
-                let ValueType::Option(payload) = operand.value_type.clone() else {
-                    return Err(mismatch(location));
-                };
-                Ok(node(NodeKind::Value(Box::new(operand)), *payload, location))
-            }
-            Expression::Deref(operand) => {
-                // Only `deref(r).f` is a value.
-                self.infer(operand, None, &location.child(0))?;
-                Err(mismatch(location))
-            }
-            Expression::Pre(operand) => {
-                // FR-153/FR-042 (FR-208 applies FR-042 to invariants and
-                // preconditions, naming this same cause explicitly): `pre(...)`
-                // is legal only in an operation's postcondition -- every other
-                // clause kind (a function body, its measure, an invariant, a
-                // precondition, or a bare `check_expression` call) refuses it
-                // here, before looking at `operand` at all, as
-                // `wrong_snapshot`/`forbidden-pre-read`. `wrong-anchor` is a
-                // different, catalogued cause for a different case this
-                // checker cannot see: a postcondition it does admit, evaluated
-                // at runtime over a population with no attached pre anchor
-                // (`evaluate.rs`'s `select_anchor`) -- never a `pre(...)`
-                // written in the wrong clause.
-                if self.clause_kind != ClauseKind::Postcondition {
-                    return Err(refuse(
-                        location,
-                        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
-                    ));
-                }
-                // FR-042's Behavior clause: "Pre is refused ... on bare
-                // parameters/constants/captures". `operand` must contain, in
-                // its own syntax, at least one form `pre(...)`'s anchor can
-                // actually act on -- see `contains_pre_eligible_read`'s own
-                // doc for exactly which forms count and why a bare `Name`
-                // (a parameter, or a `let` bound outside this very
-                // `pre(...)`) never does.
-                if !contains_pre_eligible_read(operand) {
-                    return Err(refuse(
-                        location,
-                        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
-                    ));
-                }
-                // FR-042-AC-3's `let s = self in pre(s.version)` analogue:
-                // an eligible read this operand does contain must not take
-                // its population operand from a `let` local captured before
-                // this `pre(...)` was reached -- see
-                // `contains_captured_pre_alias`'s own doc.
-                if self.contains_captured_pre_alias(operand, self.slots, &[]) {
-                    return Err(refuse(
-                        location,
-                        CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
-                    ));
-                }
-                // FR-153: `pre(e)` is identity-typed; only the anchor that
-                // `allInstances`/`lookup` read underneath it changes.
-                let operand = self.infer(operand, hint, &location.child(0))?;
-                let value_type = operand.value_type.clone();
-                Ok(node(NodeKind::Pre(Box::new(operand)), value_type, location))
-            }
-            Expression::Call { name, arguments } => {
-                super::family::check_application(self, name, arguments, location)
-            }
-            Expression::Record { name, fields } => self.record(name, fields, location),
-            Expression::Collection { kind, elements } => {
-                self.collection_literal(*kind, elements, hint, location)
-            }
-            Expression::Convert { target, operand } => self.convert(target, operand, location),
-            Expression::Query {
-                query,
-                binder,
-                source,
-                body,
-            } => self.query(*query, binder, source, body, location),
-            Expression::Flatten(source) => {
-                let source = self.infer(source, None, &location.child(0))?;
-                self.flatten(source, location)
-            }
-            Expression::Accumulate {
-                form,
-                accumulator_type,
-                accumulator,
-                binder,
-                source,
-                step,
-                identity,
-            } => self.accumulate(
-                *form,
-                accumulator_type,
-                accumulator,
-                binder,
-                source,
-                step,
-                identity.as_deref(),
-                location,
-            ),
-            Expression::Count {
-                result_type,
-                binder,
-                source,
-                predicate,
-            } => {
-                let value_type = self.type_named(result_type, location)?;
-                if !is_integer(&value_type) {
-                    return Err(mismatch(location));
-                }
-                let source = self.infer(source, None, &location.child(0))?;
-                let element = self.element_type(&source)?;
-                let slot = self.bind(binder, element, location, LocalKind::Bound)?;
-                let predicate =
-                    self.check_as(predicate, &ValueType::Boolean, &location.child(1))?;
-                self.unbind(1);
-                Ok(node(
-                    NodeKind::Query {
-                        visit: Visit::Count,
-                        slot,
-                        source: Box::new(source),
-                        body: Box::new(predicate),
-                    },
-                    value_type,
-                    location,
-                ))
-            }
-            Expression::Sum {
-                result_type,
-                binder,
-                source,
-                summand,
-            } => {
-                let value_type = self.type_named(result_type, location)?;
-                if !is_integer(&value_type) {
-                    return Err(mismatch(location));
-                }
-                let source = self.infer(source, None, &location.child(0))?;
-                let element = self.element_type(&source)?;
-                let slot = self.bind(binder, element, location, LocalKind::Bound)?;
-                let summand = self.infer(summand, None, &location.child(1))?;
-                self.unbind(1);
-                if !is_integer(&summand.value_type) {
-                    return Err(mismatch(&summand.location));
-                }
-                Ok(node(
-                    NodeKind::Query {
-                        visit: Visit::Sum,
-                        slot,
-                        source: Box::new(source),
-                        body: Box::new(summand),
-                    },
-                    value_type,
-                    location,
-                ))
-            }
-            Expression::Size(operand) => {
-                let operand = self.infer(operand, None, &location.child(0))?;
-                self.element_type(&operand)?;
-                Ok(node(
-                    NodeKind::Size(Box::new(operand)),
-                    ValueType::Integer,
-                    location,
-                ))
-            }
-            Expression::Contains { collection, item } => {
-                let collection = self.infer(collection, None, &location.child(0))?;
-                let element = self.element_type(&collection)?;
-                let item = self.check_as(item, &element, &location.child(1))?;
-                self.scope
-                    .types
-                    .check_equality_in(
-                        &self.units,
-                        EqualityOperator::Equal,
-                        EqualityOperand::typed(element.clone()),
-                        EqualityOperand::typed(element),
-                        &|shape: &EnumShape| self.scope.enum_members_of(shape),
-                    )
-                    .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
-                Ok(node(
-                    NodeKind::Contains(Box::new(collection), Box::new(item)),
-                    ValueType::Boolean,
-                    location,
-                ))
-            }
-            Expression::AllInstances { target, population } => {
-                self.all_instances(target, population, location)
-            }
-            Expression::Lookup {
-                target,
-                population,
-                reference,
-                absence,
-            } => self.lookup(target, population, reference, *absence, location),
-            Expression::Dispatch {
-                receiver,
-                member,
-                arguments,
-            } => self.dispatch_call(receiver, member, arguments, location),
-        }
     }
 
     fn element_type(&self, collection: &Node) -> Result<ValueType, CheckRefusal> {
@@ -1547,142 +1222,15 @@ impl<'a> Typer<'a> {
         }
     }
 
-    fn binary(
-        &mut self,
-        operator: BinaryOperator,
-        left: &Expression,
-        right: &Expression,
-        hint: Option<&ValueType>,
-        location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        let (left_location, right_location) = (location.child(0), location.child(1));
-        match operator {
-            BinaryOperator::Add
-            | BinaryOperator::Subtract
-            | BinaryOperator::Multiply
-            | BinaryOperator::Divide => {
-                let operator = match operator {
-                    BinaryOperator::Add => ArithmeticOperator::Add,
-                    BinaryOperator::Subtract => ArithmeticOperator::Subtract,
-                    BinaryOperator::Multiply => ArithmeticOperator::Multiply,
-                    BinaryOperator::Divide => ArithmeticOperator::Divide,
-                    _ => return Err(ineligible(location)),
-                };
-                self.arithmetic(operator, left, right, hint, location)
-            }
-            BinaryOperator::Equal | BinaryOperator::NotEqual => {
-                let operator = if operator == BinaryOperator::Equal {
-                    EqualityOperator::Equal
-                } else {
-                    EqualityOperator::NotEqual
-                };
-                self.equality(operator, left, right, location)
-            }
-            BinaryOperator::Less
-            | BinaryOperator::LessOrEqual
-            | BinaryOperator::Greater
-            | BinaryOperator::GreaterOrEqual => {
-                let ordering = match operator {
-                    BinaryOperator::Less => OrderingOperator::Less,
-                    BinaryOperator::LessOrEqual => OrderingOperator::LessOrEqual,
-                    BinaryOperator::Greater => OrderingOperator::Greater,
-                    BinaryOperator::GreaterOrEqual => OrderingOperator::GreaterOrEqual,
-                    _ => return Err(ineligible(location)),
-                };
-                self.ordering(ordering, left, right, location)
-            }
-            BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Implies => {
-                let connective = match operator {
-                    BinaryOperator::And => Connective::And,
-                    BinaryOperator::Or => Connective::Or,
-                    BinaryOperator::Implies => Connective::Implies,
-                    _ => return Err(ineligible(location)),
-                };
-                let left = self.check_as(left, &ValueType::Boolean, &left_location)?;
-                let right = self.check_as(right, &ValueType::Boolean, &right_location)?;
-                Ok(node(
-                    NodeKind::Connective(connective, Box::new(left), Box::new(right)),
-                    ValueType::Boolean,
-                    location,
-                ))
-            }
-        }
-    }
-
-    /// Type both operands, the non-contextual one first so a literal can take
-    /// its peer's type.
-    fn peer_operands<T>(
-        &mut self,
-        left: &Expression,
-        right: &Expression,
-        location: &Location,
-        mut operand: impl FnMut(
-            &mut Self,
-            &Expression,
-            Option<&ValueType>,
-            &Location,
-        ) -> Result<(Node, T, ValueType), CheckRefusal>,
-    ) -> Result<OperandPair<T>, CheckRefusal> {
-        let (left_location, right_location) = (location.child(0), location.child(1));
-        if contextual(left) && !contextual(right) {
-            let (right_node, right_extra, right_type) =
-                operand(self, right, None, &right_location)?;
-            let (left_node, left_extra, _) =
-                operand(self, left, Some(&right_type), &left_location)?;
-            Ok(((left_node, left_extra), (right_node, right_extra)))
-        } else {
-            let (left_node, left_extra, left_type) = operand(self, left, None, &left_location)?;
-            let (right_node, right_extra, _) =
-                operand(self, right, Some(&left_type), &right_location)?;
-            Ok(((left_node, left_extra), (right_node, right_extra)))
-        }
-    }
-
-    fn equality_operand(
-        &mut self,
-        expression: &Expression,
-        peer: Option<&ValueType>,
-        location: &Location,
-    ) -> Result<(Node, EqualityOperand, ValueType), CheckRefusal> {
-        if let Expression::Convert { target, operand } = expression {
-            let target = self.resolve_type(target, location)?;
-            if !matches!(target, ValueType::Collection(_)) {
-                self.enter(location)?;
-                self.check_declared_type(&target, location)?;
-                let inner = self.infer(operand, None, &location.child(0))?;
-                self.leave();
-                if !matches!(inner.value_type, ValueType::Float(_)) {
-                    let source = inner.value_type.clone();
-                    return Ok((
-                        inner,
-                        EqualityOperand::converted(source, target.clone()),
-                        target,
-                    ));
-                }
-                return Err(mismatch(location));
-            }
-        }
-        let typed = match peer {
-            Some(peer) if contextual(expression) => self.check_as(expression, peer, location)?,
-            _ => self.infer(expression, peer, location)?,
-        };
-        let value_type = typed.value_type.clone();
-        Ok((
-            typed,
-            EqualityOperand::typed(value_type.clone()),
-            value_type,
-        ))
-    }
-
+    /// `left = right` or `left != right` over its two typed operands, each
+    /// with the equality operand it compares as.
     fn equality(
-        &mut self,
+        &self,
         operator: EqualityOperator,
-        left: &Expression,
-        right: &Expression,
+        (left, left_operand): (Node, EqualityOperand),
+        (right, right_operand): (Node, EqualityOperand),
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let ((left, left_operand), (right, right_operand)) =
-            self.peer_operands(left, right, location, Self::equality_operand)?;
         let checked = self
             .scope
             .types
@@ -1701,19 +1249,14 @@ impl<'a> Typer<'a> {
         ))
     }
 
+    /// An ordering over its two typed operands.
     fn ordering(
-        &mut self,
+        &self,
         operator: OrderingOperator,
-        left: &Expression,
-        right: &Expression,
+        left: Node,
+        right: Node,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let ((left, ()), (right, ())) =
-            self.peer_operands(left, right, location, |typer, expression, peer, at| {
-                let typed = typer.infer(expression, peer, at)?;
-                let value_type = typed.value_type.clone();
-                Ok((typed, (), value_type))
-            })?;
         let kind = match (&left.value_type, &right.value_type) {
             (l, r) if is_integer(l) && is_integer(r) => OrderedKind::Integers,
             (ValueType::Rational(_), ValueType::Rational(_)) => OrderedKind::Rationals,
@@ -1760,22 +1303,17 @@ impl<'a> Typer<'a> {
         ))
     }
 
-    /// `left op right` for `+`, `-`, `*` and `/`. Both operands are of one
-    /// numeric family; mixing families needs an explicit conversion.
+    /// `left op right` for `+`, `-`, `*` and `/`, over its two typed
+    /// operands. Both operands are of one numeric family; mixing families
+    /// needs an explicit conversion.
     fn arithmetic(
         &mut self,
         operator: ArithmeticOperator,
-        left: &Expression,
-        right: &Expression,
+        left: Node,
+        right: Node,
         hint: Option<&ValueType>,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let ((left, ()), (right, ())) =
-            self.peer_operands(left, right, location, |typer, expression, peer, at| {
-                let typed = typer.infer(expression, peer, at)?;
-                let value_type = typed.value_type.clone();
-                Ok((typed, (), value_type))
-            })?;
         let (left_type, right_type) = (left.value_type.clone(), right.value_type.clone());
         let (left_box, right_box) = (Box::new(left), Box::new(right));
         let (kind, value_type) = match (&left_type, &right_type, operator) {
@@ -1880,15 +1418,14 @@ impl<'a> Typer<'a> {
         Ok(node(kind, value_type, location))
     }
 
-    /// Unary `-`: integers, rationals and decimals. FR-148 and FR-142 define
-    /// no negation of an IEEE value or a quantity.
+    /// Unary `-` over its typed operand: integers, rationals and decimals.
+    /// FR-148 and FR-142 define no negation of an IEEE value or a quantity.
     fn negate(
-        &mut self,
-        operand: &Expression,
+        &self,
+        operand: Node,
         hint: Option<&ValueType>,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let operand = self.infer(operand, None, &location.child(0))?;
         let (kind, value_type) = match &operand.value_type {
             ValueType::Integer | ValueType::Int(_) => {
                 (NodeKind::Negate(Box::new(operand)), ValueType::Integer)
@@ -1933,48 +1470,48 @@ impl<'a> Typer<'a> {
         Ok(node(kind, value_type, location))
     }
 
-    fn field(
-        &mut self,
-        operand: &Expression,
+    /// `deref(r).f` over the typed reference `r`, read at
+    /// `operand_location` (the `deref(r)` operand's own location).
+    fn attribute(
+        &self,
+        reference: Node,
         field: &str,
+        operand_location: &Location,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let operand_location = location.child(0);
-        if let Expression::Deref(reference) = operand {
-            self.enter(&operand_location)?;
-            let reference = self.infer(reference, None, &operand_location.child(0))?;
-            self.leave();
-            let ValueType::Reference(key) = reference.value_type else {
-                return Err(mismatch(&operand_location));
-            };
-            let attribute = self
-                .scope
-                .types
-                .object_type(key)
-                .and_then(|object| {
-                    object
-                        .attributes()
-                        .iter()
-                        .find(|attribute| attribute.name() == field)
-                })
-                .ok_or_else(|| mismatch(location))?;
-            let optional = attribute.presence() == Presence::Optional;
-            let value_type = if optional {
-                ValueType::option(attribute.value_type().clone())
-            } else {
-                attribute.value_type().clone()
-            };
-            return Ok(node(
-                NodeKind::Attribute {
-                    reference: Box::new(reference),
-                    name: field.to_owned(),
-                    optional,
-                },
-                value_type,
-                location,
-            ));
-        }
-        let operand = self.infer(operand, None, &operand_location)?;
+        let ValueType::Reference(key) = reference.value_type else {
+            return Err(mismatch(operand_location));
+        };
+        let attribute = self
+            .scope
+            .types
+            .object_type(key)
+            .and_then(|object| {
+                object
+                    .attributes()
+                    .iter()
+                    .find(|attribute| attribute.name() == field)
+            })
+            .ok_or_else(|| mismatch(location))?;
+        let optional = attribute.presence() == Presence::Optional;
+        let value_type = if optional {
+            ValueType::option(attribute.value_type().clone())
+        } else {
+            attribute.value_type().clone()
+        };
+        Ok(node(
+            NodeKind::Attribute {
+                reference: Box::new(reference),
+                name: field.to_owned(),
+                optional,
+            },
+            value_type,
+            location,
+        ))
+    }
+
+    /// `e.f` over the typed record `e`.
+    fn field(&self, operand: Node, field: &str, location: &Location) -> Result<Node, CheckRefusal> {
         let ValueType::Composite(key) = operand.value_type else {
             return Err(mismatch(location));
         };
@@ -2009,75 +1546,56 @@ impl<'a> Typer<'a> {
     }
 
     /// `receiver.member(args)` (FR-151, `quire.model.dispatch.single/v1`):
-    /// only checks inside an invariant, precondition or postcondition
-    /// (TC-196 D07); the receiver is `self`, a `deref(...)` result or
-    /// another `Reference<T>` value, and `member` resolves statically
-    /// against `T`'s exposed dispatch-eligible operations.
-    fn dispatch_call(
-        &mut self,
-        receiver: &Expression,
-        member: &str,
-        arguments: &[Expression],
-        location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        if !matches!(
+    /// whether a dispatch call checks in this clause at all. It checks only
+    /// inside an invariant, precondition or postcondition (TC-196 D07).
+    fn dispatch_admitted(&self, location: &Location) -> Result<(), CheckRefusal> {
+        if matches!(
             self.clause_kind,
             ClauseKind::Invariant | ClauseKind::Precondition | ClauseKind::Postcondition
         ) {
-            return Err(ineligible(location));
-        }
-        let receiver_location = location.child(0);
-        let receiver_node = if let Expression::Deref(inner) = receiver {
-            self.enter(&receiver_location)?;
-            let inner = self.infer(inner, None, &receiver_location.child(0))?;
-            self.leave();
-            inner
+            Ok(())
         } else {
-            self.infer(receiver, None, &receiver_location)?
-        };
-        let ValueType::Reference(receiver_type) = receiver_node.value_type else {
+            Err(ineligible(location))
+        }
+    }
+
+    /// The dispatch-eligible operation `member` a call with `arity`
+    /// arguments names on its typed receiver: the receiver is `self`, a
+    /// `deref(...)` result or another `Reference<T>` value, and `member`
+    /// resolves statically against `T`'s exposed dispatch-eligible
+    /// operations. Returns the operation's index and declaration.
+    fn dispatch_operation(
+        &self,
+        receiver: &Node,
+        member: &str,
+        arity: usize,
+        location: &Location,
+    ) -> Result<(usize, &'a DispatchOperation), CheckRefusal> {
+        let scope: &'a Scope = self.scope;
+        let ValueType::Reference(receiver_type) = receiver.value_type else {
             return Err(ineligible(location));
         };
-        let Some((operation_index, operation)) = self
-            .scope
-            .dispatch_operations
-            .iter()
-            .enumerate()
-            .find(|(_, operation)| {
-                operation.receiver_type == receiver_type && operation.member == member
-            })
+        let Some((operation_index, operation)) =
+            scope
+                .dispatch_operations
+                .iter()
+                .enumerate()
+                .find(|(_, operation)| {
+                    operation.receiver_type == receiver_type && operation.member == member
+                })
         else {
             return Err(ineligible(location));
         };
-        if operation.parameters.len() != arguments.len() {
+        if operation.parameters.len() != arity {
             return Err(mismatch(location));
         }
-        let mut typed_arguments = Vec::with_capacity(arguments.len());
-        for (index, (argument, parameter)) in
-            arguments.iter().zip(&operation.parameters).enumerate()
-        {
-            typed_arguments.push(self.check_dispatch_argument(
-                argument,
-                parameter,
-                &location.child(index + 1),
-            )?);
-        }
-        Ok(node(
-            NodeKind::Dispatch {
-                receiver: Box::new(receiver_node),
-                table: operation.table,
-                operation: operation_index,
-                arguments: typed_arguments,
-            },
-            operation.result.clone(),
-            location,
-        ))
+        Ok((operation_index, operation))
     }
 
-    /// A dispatch call argument against its declared parameter type
+    /// A dispatch call argument typed against its declared parameter type
     /// (`quire.model.dispatch.single/v1`: "its arguments are type-checked
     /// statically against `o`'s signature with reference upcasts only").
-    /// Unlike [`Self::check_as`], this never calls [`coerce`]: an ordinary
+    /// Unlike a checked operand, this never calls [`coerce`]: an ordinary
     /// call admits an `Integer`/`Int[..]` argument into a wider or
     /// differently-bounded `Int[..]` parameter, which a dispatch call must
     /// not. A `Reference<T>` argument is admitted where `T` exactly matches
@@ -2086,121 +1604,94 @@ impl<'a> Typer<'a> {
     /// #204 round 1) -- the static upcast case FR-151 names, never a wider
     /// admission than the spec allows. The upcast changes only this node's
     /// own static/declared type at the binding site; the runtime
-    /// `ObjectReference` triple underneath is untouched.
-    fn check_dispatch_argument(
-        &mut self,
-        expression: &Expression,
+    /// `ObjectReference` triple underneath is untouched. A conditional or
+    /// `let` passes the parameter type into its branches or body, so only
+    /// the value an argument's branches yield reaches this.
+    fn upcast(
+        &self,
+        mut typed: Node,
         required: &ValueType,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        match expression {
-            Expression::If {
-                condition,
-                then,
-                otherwise,
-            } => {
-                self.enter(location)?;
-                let condition =
-                    self.check_as(condition, &ValueType::Boolean, &location.child(0))?;
-                let then = self.check_dispatch_argument(then, required, &location.child(1))?;
-                let otherwise =
-                    self.check_dispatch_argument(otherwise, required, &location.child(2))?;
-                self.leave();
-                Ok(node(
-                    NodeKind::If {
-                        condition: Box::new(condition),
-                        then: Box::new(then),
-                        otherwise: Box::new(otherwise),
-                    },
-                    required.clone(),
-                    location,
-                ))
+        if &typed.value_type == required {
+            Ok(typed)
+        } else if let (ValueType::Reference(actual), ValueType::Reference(expected)) =
+            (&typed.value_type, required)
+        {
+            if self.scope.types.conforms(*actual, *expected) {
+                typed.value_type = required.clone();
+                Ok(typed)
+            } else {
+                Err(mismatch(location))
             }
-            Expression::Let { name, value, body } => {
-                self.enter(location)?;
-                let value = self.infer(value, None, &location.child(0))?;
-                let slot = self.bind(name, value.value_type.clone(), location, LocalKind::Bound)?;
-                let body = self.check_dispatch_argument(body, required, &location.child(1))?;
-                self.unbind(1);
-                self.leave();
-                Ok(node(
-                    NodeKind::Let {
-                        slot,
-                        value: Box::new(value),
-                        body: Box::new(body),
-                    },
-                    required.clone(),
-                    location,
-                ))
-            }
-            _ => {
-                let mut typed = self.infer(expression, Some(required), location)?;
-                if &typed.value_type == required {
-                    Ok(typed)
-                } else if let (ValueType::Reference(actual), ValueType::Reference(expected)) =
-                    (&typed.value_type, required)
-                {
-                    if self.scope.types.conforms(*actual, *expected) {
-                        typed.value_type = required.clone();
-                        Ok(typed)
-                    } else {
-                        Err(mismatch(location))
-                    }
-                } else {
-                    Err(mismatch(location))
-                }
-            }
+        } else {
+            Err(mismatch(location))
         }
     }
 
-    fn record(
-        &mut self,
+    /// The record declaration `name` a record literal builds, and its
+    /// declared fields.
+    fn record_declaration(
+        &self,
         name: &str,
-        fields: &[(String, FieldInitializer)],
         location: &Location,
-    ) -> Result<Node, CheckRefusal> {
+    ) -> Result<(quire_exact::NodeKey, &'a [FieldDeclaration]), CheckRefusal> {
+        let scope: &'a Scope = self.scope;
         let ValueType::Composite(key) = self.type_named(name, location)? else {
             return Err(mismatch(location));
         };
-        let Some(CompositeShape::Record(declared)) = self
-            .scope
+        let Some(CompositeShape::Record(declared)) = scope
             .types
             .composite(key)
             .map(|declaration| declaration.shape())
         else {
             return Err(mismatch(location));
         };
-        let mut supplied: Vec<Option<RecordSlot>> = declared.iter().map(|_| None).collect();
-        let mut child = 0;
-        for (field, initializer) in fields {
-            let field_location = match initializer {
-                FieldInitializer::Value(_) => {
-                    let at = location.child(child);
-                    child += 1;
-                    at
-                }
-                FieldInitializer::Null => location.clone(),
-            };
-            let (index, declaration) = declared
-                .iter()
-                .enumerate()
-                .find(|(_, declaration)| declaration.name() == field)
-                .ok_or_else(|| mismatch(&field_location))?;
-            let slot = supplied
-                .get_mut(index)
-                .ok_or_else(|| mismatch(&field_location))?;
-            if slot.is_some() {
-                return Err(mismatch(&field_location));
-            }
-            let optional = declaration.presence() == Presence::Optional;
-            *slot = Some(match initializer {
-                FieldInitializer::Null if optional => RecordSlot::Null,
-                FieldInitializer::Null => return Err(mismatch(&field_location)),
-                FieldInitializer::Value(expression) => RecordSlot::Present(Box::new(
-                    self.check_as(expression, declaration.value_type(), &field_location)?,
-                )),
-            });
+        Ok((key, declared))
+    }
+
+    /// Admit a record literal's initializer of `field` at `field_location`
+    /// into `supplied`: a `null` is admitted now; a value expression names
+    /// the slot it fills and the type it is checked against once typed.
+    fn record_field<'d, 'i>(
+        declared: &'d [FieldDeclaration],
+        supplied: &mut [Option<RecordSlot>],
+        field: &str,
+        initializer: &'i FieldInitializer,
+        field_location: &Location,
+    ) -> Result<Option<(usize, &'d ValueType, &'i Expression)>, CheckRefusal> {
+        let (index, declaration) = declared
+            .iter()
+            .enumerate()
+            .find(|(_, declaration)| declaration.name() == field)
+            .ok_or_else(|| mismatch(field_location))?;
+        let slot = supplied
+            .get_mut(index)
+            .ok_or_else(|| mismatch(field_location))?;
+        if slot.is_some() {
+            return Err(mismatch(field_location));
         }
+        let optional = declaration.presence() == Presence::Optional;
+        match initializer {
+            FieldInitializer::Null if optional => {
+                *slot = Some(RecordSlot::Null);
+                Ok(None)
+            }
+            FieldInitializer::Null => Err(mismatch(field_location)),
+            FieldInitializer::Value(expression) => {
+                Ok(Some((index, declaration.value_type(), expression)))
+            }
+        }
+    }
+
+    /// A record literal's node over every field it supplied: an optional
+    /// field it left out is absent, a required one refuses.
+    fn record(
+        key: quire_exact::NodeKey,
+        declared: &[FieldDeclaration],
+        supplied: Vec<Option<RecordSlot>>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
         let mut slots = Vec::with_capacity(declared.len());
         for (declaration, slot) in declared.iter().zip(supplied) {
             slots.push(match slot {
@@ -2219,54 +1710,43 @@ impl<'a> Typer<'a> {
         ))
     }
 
-    fn collection_literal(
-        &mut self,
+    /// The collection type a `kind` literal takes: its unique expected
+    /// collection type.
+    fn collection_type(
         kind: CollectionKind,
-        elements: &[Expression],
         hint: Option<&ValueType>,
         location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        let collection_type = match hint {
-            None => {
-                return Err(CheckRefusal::ill_typed(
-                    location,
-                    IllTypedCause::AmbiguousLiteral,
-                ))
-            }
+    ) -> Result<CollectionType, CheckRefusal> {
+        match hint {
+            None => Err(CheckRefusal::ill_typed(
+                location,
+                IllTypedCause::AmbiguousLiteral,
+            )),
             Some(ValueType::Collection(collection_type)) if collection_type.kind() == kind => {
-                (**collection_type).clone()
+                Ok((**collection_type).clone())
             }
-            Some(_) => return Err(mismatch(location)),
-        };
-        let mut typed = Vec::with_capacity(elements.len());
-        for (index, element) in elements.iter().enumerate() {
-            typed.push(self.check_as(
-                element,
-                collection_type.element(),
-                &location.child(index),
-            )?);
+            Some(_) => Err(mismatch(location)),
         }
-        let value_type = ValueType::collection(collection_type.clone());
-        Ok(node(
-            NodeKind::Collection {
-                collection_type,
-                elements: typed,
-            },
-            value_type,
-            location,
-        ))
     }
 
-    fn convert(
-        &mut self,
+    /// A declared conversion or query target, resolved and checked.
+    fn declared_target(
+        &self,
         target: &qsl_forms::TypeForm,
-        operand: &Expression,
+        location: &Location,
+    ) -> Result<ValueType, CheckRefusal> {
+        let target = self.resolve_type(target, location)?;
+        self.check_declared_type(&target, location)?;
+        Ok(target)
+    }
+
+    /// `convert<target>(e)` over the typed operand `e`.
+    fn convert(
+        &self,
+        target: &ValueType,
+        operand: Node,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let target = self.resolve_type(target, location)?;
-        let target = &target;
-        self.check_declared_type(target, location)?;
-        let operand = self.infer(operand, None, &location.child(0))?;
         match (&operand.value_type, target) {
             (ValueType::Collection(source), ValueType::Collection(to)) => {
                 if source.element() != to.element() {
@@ -2319,22 +1799,29 @@ impl<'a> Typer<'a> {
         }
     }
 
-    /// `allInstances<T>(p)` (FR-153): `p`'s own checked `Population<T>[N]`
-    /// type (`ValueType::Population`) gives the result's declared bound
-    /// `[0,N]` directly; no runtime value is consulted at check time.
-    fn all_instances(
-        &mut self,
+    /// The queried type `T` of `allInstances<T>(p)` or `lookup<T>(p, r)`
+    /// (FR-153), resolved and checked: an object reference type.
+    fn population_target(
+        &self,
         target: &qsl_forms::TypeForm,
-        population: &Expression,
         location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        let target = self.resolve_type(target, location)?;
-        let target = &target;
-        self.check_declared_type(target, location)?;
+    ) -> Result<ValueType, CheckRefusal> {
+        let target = self.declared_target(target, location)?;
         if !matches!(target, ValueType::Reference(_)) {
             return Err(mismatch(location));
         }
-        let population = self.infer(population, None, &location.child(0))?;
+        Ok(target)
+    }
+
+    /// `allInstances<T>(p)` (FR-153) over the typed population `p`: `p`'s
+    /// own checked `Population<T>[N]` type (`ValueType::Population`) gives
+    /// the result's declared bound `[0,N]` directly; no runtime value is
+    /// consulted at check time.
+    fn all_instances(
+        target: &ValueType,
+        population: Node,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
         // FR-153 requires `p` to be a population binding with a declared
         // maximum, otherwise `ill_typed`/`operator-ineligible` (TC-198 L06):
         // the operand is the wrong kind, not merely the wrong type name.
@@ -2355,40 +1842,37 @@ impl<'a> Typer<'a> {
         ))
     }
 
-    /// `lookup<T>(p, r) absent m` (FR-153). `r`'s own checked static type `S`
-    /// (never `T`) is `reference.value_type` at evaluation time
-    /// (`qsl-eval`'s `value::expression::evaluate`), so [`NodeKind::Lookup`] does
-    /// not restate it. FR-153 also refuses `ill_typed`/`type-mismatch` at
-    /// check time when `S` does not conform to `T` (TC-198 L03's last case,
-    /// "before any charge") -- this checker cannot decide that here without
-    /// the model's own generalization graph, which `TypeEnvironment` does not
-    /// carry (the "TypeEnvironment island", tracked at
-    /// <https://github.com/agent-ix/quire-spec-language/issues/164>), so that
-    /// refusal is deferred to evaluation, inside
+    /// `lookup<T>(p, r)`'s typed population operand `p`: FR-153 requires a
+    /// population binding with a declared maximum, otherwise
+    /// `ill_typed`/`operator-ineligible` (TC-198 L06): the operand is the
+    /// wrong kind, not merely the wrong type name.
+    fn lookup_population(population: &Node) -> Result<(), CheckRefusal> {
+        if matches!(population.value_type, ValueType::Population(_)) {
+            Ok(())
+        } else {
+            Err(ineligible(&population.location))
+        }
+    }
+
+    /// `lookup<T>(p, r) absent m` (FR-153) over its typed operands. `r`'s own
+    /// checked static type `S` (never `T`) is `reference.value_type` at
+    /// evaluation time (`qsl-eval`'s `value::expression::evaluate`), so
+    /// [`NodeKind::Lookup`] does not restate it. FR-153 also refuses
+    /// `ill_typed`/`type-mismatch` at check time when `S` does not conform to
+    /// `T` (TC-198 L03's last case, "before any charge") -- this checker
+    /// cannot decide that here without the model's own generalization graph,
+    /// which `TypeEnvironment` does not carry (the "TypeEnvironment island",
+    /// tracked at <https://github.com/agent-ix/quire-spec-language/issues/164>),
+    /// so that refusal is deferred to evaluation, inside
     /// `crate::model::population::lookup`'s own `ModelIndex::conforms` call
     /// (`crate::value::evaluate_lookup`).
     fn lookup(
-        &mut self,
-        target: &qsl_forms::TypeForm,
-        population: &Expression,
-        reference: &Expression,
+        target: &ValueType,
+        population: Node,
+        reference: Node,
         absence: AbsenceMode,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        let target = self.resolve_type(target, location)?;
-        let target = &target;
-        self.check_declared_type(target, location)?;
-        if !matches!(target, ValueType::Reference(_)) {
-            return Err(mismatch(location));
-        }
-        let population = self.infer(population, None, &location.child(0))?;
-        // FR-153 requires `p` to be a population binding with a declared
-        // maximum, otherwise `ill_typed`/`operator-ineligible` (TC-198 L06):
-        // the operand is the wrong kind, not merely the wrong type name.
-        if !matches!(population.value_type, ValueType::Population(_)) {
-            return Err(ineligible(&population.location));
-        }
-        let reference = self.infer(reference, None, &location.child(1))?;
         if !matches!(reference.value_type, ValueType::Reference(_)) {
             return Err(mismatch(&reference.location));
         }
@@ -2407,15 +1891,15 @@ impl<'a> Typer<'a> {
         ))
     }
 
-    fn query(
+    /// Bind a one-binder form's binder to the element type of its typed
+    /// collection operand `source`; returns the binder's slot and the
+    /// source's collection type.
+    fn bind_element(
         &mut self,
-        query: BinderQuery,
+        source: &Node,
         binder: &str,
-        source: &Expression,
-        body: &Expression,
         location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        let source = self.infer(source, None, &location.child(0))?;
+    ) -> Result<(Slot, Box<CollectionType>), CheckRefusal> {
         let ValueType::Collection(source_type) = source.value_type.clone() else {
             return Err(mismatch(location));
         };
@@ -2425,10 +1909,21 @@ impl<'a> Typer<'a> {
             location,
             LocalKind::Bound,
         )?;
-        let body_location = location.child(1);
+        Ok((slot, source_type))
+    }
+
+    /// A one-binder query `q(x in source: body)` over its typed source and
+    /// body, the binder bound at `slot`; unbinds the binder.
+    fn query(
+        &mut self,
+        query: BinderQuery,
+        (slot, source_type): (Slot, Box<CollectionType>),
+        source: Node,
+        body: Node,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
         let typed = match query {
             BinderQuery::Map | BinderQuery::FlatMap => {
-                let body = self.infer(body, None, &body_location)?;
                 let bound = source_type.bound();
                 let minimum = if source_type.kind().is_unique() {
                     bound.minimum().min(1)
@@ -2459,7 +1954,6 @@ impl<'a> Typer<'a> {
                 }
             }
             BinderQuery::Filter => {
-                let body = self.check_as(body, &ValueType::Boolean, &body_location)?;
                 let filtered = CollectionType::new(
                     source_type.kind(),
                     source_type.element().clone(),
@@ -2477,7 +1971,6 @@ impl<'a> Typer<'a> {
                 )
             }
             BinderQuery::Forall | BinderQuery::Exists => {
-                let body = self.check_as(body, &ValueType::Boolean, &body_location)?;
                 let visit = if query == BinderQuery::Forall {
                     Visit::Forall
                 } else {
@@ -2539,30 +2032,28 @@ impl<'a> Typer<'a> {
         ))
     }
 
-    #[allow(clippy::too_many_arguments)] // One argument per syntax member.
-    fn accumulate(
+    /// Bind a `fold`/`reduce`'s accumulator and element binder over its
+    /// typed source, the accumulator typed `value_type`; `identity` is
+    /// whether an `identity:` is written. Returns the accumulator's and the
+    /// binder's slots and the source's collection type.
+    fn bind_accumulation(
         &mut self,
-        form: Accumulation,
-        accumulator_type: &str,
-        accumulator: &str,
-        binder: &str,
-        source: &Expression,
-        step: &Expression,
-        identity: Option<&Expression>,
+        (form, identity): (Accumulation, bool),
+        value_type: &ValueType,
+        (accumulator, binder): (&str, &str),
+        source: &Node,
         location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        let value_type = self.type_named(accumulator_type, location)?;
-        let source = self.infer(source, None, &location.child(0))?;
+    ) -> Result<(Slot, Slot, Box<CollectionType>), CheckRefusal> {
         let ValueType::Collection(source_type) = source.value_type.clone() else {
             return Err(mismatch(location));
         };
         match (form, identity) {
-            (Accumulation::Fold, None) | (Accumulation::Reduce, Some(_)) => {
+            (Accumulation::Fold, false) | (Accumulation::Reduce, true) => {
                 return Err(mismatch(location))
             }
-            (Accumulation::Fold, Some(_)) | (Accumulation::Reduce, None) => {}
+            (Accumulation::Fold, true) | (Accumulation::Reduce, false) => {}
         }
-        if form == Accumulation::Reduce && source_type.element() != &value_type {
+        if form == Accumulation::Reduce && source_type.element() != value_type {
             return Err(mismatch(location));
         }
         let accumulator_slot =
@@ -2573,30 +2064,31 @@ impl<'a> Typer<'a> {
             location,
             LocalKind::Bound,
         )?;
-        let raw = self.infer(step, Some(&value_type), &location.child(1))?;
-        self.unbind(2);
-        let catalogued = catalogued_step(&raw, accumulator_slot, &value_type);
-        let step = coerce(raw, &value_type)?;
-        let identity = match identity {
-            Some(identity) => Some(Box::new(self.check_as(
-                identity,
-                &value_type,
-                &location.child(2),
-            )?)),
-            None => None,
-        };
-        if !source_type.kind().is_ordered() && !catalogued {
-            return Err(ineligible(location));
-        }
+        Ok((accumulator_slot, binder_slot, source_type))
+    }
+
+    /// `contains(c, v)` over its typed collection `c`, of element type
+    /// `element`, and its typed item `v`: the element type admits equality.
+    fn contains(
+        &self,
+        collection: Node,
+        item: Node,
+        element: ValueType,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.scope
+            .types
+            .check_equality_in(
+                &self.units,
+                EqualityOperator::Equal,
+                EqualityOperand::typed(element.clone()),
+                EqualityOperand::typed(element),
+                &|shape: &EnumShape| self.scope.enum_members_of(shape),
+            )
+            .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
         Ok(node(
-            NodeKind::Fold {
-                accumulator: accumulator_slot,
-                binder: binder_slot,
-                source: Box::new(source),
-                step: Box::new(step),
-                identity,
-            },
-            value_type,
+            NodeKind::Contains(Box::new(collection), Box::new(item)),
+            ValueType::Boolean,
             location,
         ))
     }

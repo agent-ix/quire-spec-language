@@ -16,15 +16,16 @@
 //! through [`crate::family::StageFailure::Refused`] when the body or measure
 //! does not type or is not statically defined; `PackageDeclarations::check`
 //! reaches that verdict only by calling the contract, not by a second,
-//! parallel call of its own. [`check_application`] is `Value`'s
+//! parallel call of its own. [`Application`] is `Value`'s
 //! function-application family check code the same way, relocated from
 //! `check.rs`'s deleted `Typer::call`; it is reached transitively through
 //! `check_declaration_body`'s own `Typer` pass (a call nested anywhere in a
-//! checked body recurses back into `infer_form`'s `Call` arm, which is
-//! exactly one call into `check_application`), not through a second,
-//! separate `CheckContext`-driven entry -- see [`check_application`]'s own
-//! doc for why threading `CheckContext` into every recursive step of the
-//! general `Typer` engine (not just `Call`) is out of this ticket's scope.
+//! checked body reaches the typer's `Call` arm, which resolves it through
+//! [`Application::resolve`] and builds it through [`Application::finish`]),
+//! not through a second, separate `CheckContext`-driven entry -- see
+//! [`Application`]'s own doc for why threading `CheckContext` into every
+//! nesting step of the general `Typer` engine (not just `Call`) is out of
+//! this ticket's scope.
 //!
 //! **Amended, PR #282 review F4:** FR-068's move surface names `family.rs`
 //! explicitly, alongside `check`, `evaluate`, `facts`, `ir`, `refusal`,
@@ -57,7 +58,7 @@ use qsl_forms::{
 use qsl_foundation::absence::AbsenceMode;
 // QSL-148: the relocated function-application/-declaration checking code
 // below needs `check.rs`'s own `Typer`/`Signature`/`bind_parameters` (the
-// general recursive typer this family delegates to for a body or a call's
+// general typer this family delegates to for a body or a call's
 // arguments -- FR-065-CON-1 forbids reimplementing that engine here, not
 // calling into it) and `check::refusal`'s located-refusal vocabulary. Both
 // are sibling submodules of `crate::check`, reached the same way this
@@ -338,233 +339,224 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
     }
 }
 
-fn encode_field_initializer(
-    out: &mut DeclarationMeter,
-    initializer: &FieldInitializer,
-    targets: &TargetTypes<'_>,
-) -> Result<(), CheckRefusal> {
-    match initializer {
-        FieldInitializer::Value(expression) => {
-            out.write_str("value");
-            encode_expression(out, expression, targets)?;
-        }
-        FieldInitializer::Null => out.write_str("null"),
-    }
-    Ok(())
-}
-
 // `Expression::Integer`/`Rational`'s `.to_string()` below: same
 // `Integer::Display` canonical-wire-spelling contract, same reasoning --
 // see `encode_value_type`'s own doc comment above.
+//
+// QSL-228: the walk keeps its pending sub-expressions on a heap stack, not
+// the host stack, so an expression nested past every checking limit is
+// measured (and then refused by the typer's depth limit) rather than
+// overflowing here first. Sub-expressions are visited in source pre-order,
+// so a `Convert`/`AllInstances`/`Lookup` target that does not resolve is
+// refused at the same node the recursive walk refused it at. A node's own
+// writes all happen at its visit, including the few (a field name, an
+// absence mode, a dispatch member, the identity flag) that follow an operand
+// in source order: every figure is a sum over the writes, so where a write
+// falls in the walk does not change it.
 fn encode_expression(
     out: &mut DeclarationMeter,
-    expr: &Expression,
+    root: &Expression,
     targets: &TargetTypes<'_>,
 ) -> Result<(), CheckRefusal> {
-    out.enter_node();
-    match expr {
-        Expression::Boolean(value) => {
-            out.write_str("boolean");
-            out.write_bool(*value);
-        }
-        Expression::Integer(value) => {
-            out.write_str("integer");
-            out.write_str(&value.to_string());
-        }
-        Expression::Rational(numerator, denominator) => {
-            out.write_str("rational");
-            out.write_str(&numerator.to_string());
-            out.write_str(&denominator.to_string());
-        }
-        Expression::Name(name) => {
-            out.write_str("name");
-            out.write_str(name);
-        }
-        Expression::Let { name, value, body } => {
-            out.write_str("let");
-            out.write_str(name);
-            encode_expression(out, value, targets)?;
-            encode_expression(out, body, targets)?;
-        }
-        Expression::If {
-            condition,
-            then,
-            otherwise,
-        } => {
-            out.write_str("if");
-            encode_expression(out, condition, targets)?;
-            encode_expression(out, then, targets)?;
-            encode_expression(out, otherwise, targets)?;
-        }
-        Expression::Binary {
-            operator,
-            left,
-            right,
-        } => {
-            out.write_str("binary");
-            out.write_str(binary_operator_tag(*operator));
-            encode_expression(out, left, targets)?;
-            encode_expression(out, right, targets)?;
-        }
-        Expression::Negate(operand) => {
-            out.write_str("negate");
-            encode_expression(out, operand, targets)?;
-        }
-        Expression::Not(operand) => {
-            out.write_str("not");
-            encode_expression(out, operand, targets)?;
-        }
-        Expression::Field { operand, field } => {
-            out.write_str("field");
-            encode_expression(out, operand, targets)?;
-            out.write_str(field);
-        }
-        Expression::Present(operand) => {
-            out.write_str("present");
-            encode_expression(out, operand, targets)?;
-        }
-        Expression::Value(operand) => {
-            out.write_str("value");
-            encode_expression(out, operand, targets)?;
-        }
-        Expression::Deref(operand) => {
-            out.write_str("deref");
-            encode_expression(out, operand, targets)?;
-        }
-        Expression::Call { name, arguments } => {
-            out.write_str("call");
-            out.write_str(name);
-            out.write_u64(arguments.len() as u64);
-            for argument in arguments {
-                encode_expression(out, argument, targets)?;
+    let mut pending = vec![root];
+    while let Some(expr) = pending.pop() {
+        out.enter_node();
+        // The node's sub-expressions in source order; pushed reversed below
+        // so the first is visited next.
+        let first = pending.len();
+        match expr {
+            Expression::Boolean(value) => {
+                out.write_str("boolean");
+                out.write_bool(*value);
+            }
+            Expression::Integer(value) => {
+                out.write_str("integer");
+                out.write_str(&value.to_string());
+            }
+            Expression::Rational(numerator, denominator) => {
+                out.write_str("rational");
+                out.write_str(&numerator.to_string());
+                out.write_str(&denominator.to_string());
+            }
+            Expression::Name(name) => {
+                out.write_str("name");
+                out.write_str(name);
+            }
+            Expression::Let { name, value, body } => {
+                out.write_str("let");
+                out.write_str(name);
+                pending.extend([&**value, &**body]);
+            }
+            Expression::If {
+                condition,
+                then,
+                otherwise,
+            } => {
+                out.write_str("if");
+                pending.extend([&**condition, &**then, &**otherwise]);
+            }
+            Expression::Binary {
+                operator,
+                left,
+                right,
+            } => {
+                out.write_str("binary");
+                out.write_str(binary_operator_tag(*operator));
+                pending.extend([&**left, &**right]);
+            }
+            Expression::Negate(operand) => {
+                out.write_str("negate");
+                pending.push(operand);
+            }
+            Expression::Not(operand) => {
+                out.write_str("not");
+                pending.push(operand);
+            }
+            Expression::Field { operand, field } => {
+                out.write_str("field");
+                out.write_str(field);
+                pending.push(operand);
+            }
+            Expression::Present(operand) => {
+                out.write_str("present");
+                pending.push(operand);
+            }
+            Expression::Value(operand) => {
+                out.write_str("value");
+                pending.push(operand);
+            }
+            Expression::Deref(operand) => {
+                out.write_str("deref");
+                pending.push(operand);
+            }
+            Expression::Call { name, arguments } => {
+                out.write_str("call");
+                out.write_str(name);
+                out.write_u64(arguments.len() as u64);
+                pending.extend(arguments);
+            }
+            Expression::Record { name, fields } => {
+                out.write_str("record");
+                out.write_str(name);
+                out.write_u64(fields.len() as u64);
+                for (field_name, initializer) in fields {
+                    out.write_str(field_name);
+                    match initializer {
+                        FieldInitializer::Value(expression) => {
+                            out.write_str("value");
+                            pending.push(expression);
+                        }
+                        FieldInitializer::Null => out.write_str("null"),
+                    }
+                }
+            }
+            Expression::Collection { kind, elements } => {
+                out.write_str("collection");
+                out.write_str(collection_kind_tag(*kind));
+                out.write_u64(elements.len() as u64);
+                pending.extend(elements);
+            }
+            Expression::Convert { target, operand } => {
+                out.write_str("convert");
+                encode_value_type(out, &targets.resolve(target)?);
+                pending.push(operand);
+            }
+            Expression::Query {
+                query,
+                binder,
+                source,
+                body,
+            } => {
+                out.write_str("query");
+                out.write_str(binder_query_tag(*query));
+                out.write_str(binder);
+                pending.extend([&**source, &**body]);
+            }
+            Expression::Flatten(operand) => {
+                out.write_str("flatten");
+                pending.push(operand);
+            }
+            Expression::Accumulate {
+                form,
+                accumulator_type,
+                accumulator,
+                binder,
+                source,
+                step,
+                identity,
+            } => {
+                out.write_str("accumulate");
+                out.write_str(accumulation_tag(*form));
+                out.write_str(accumulator_type);
+                out.write_str(accumulator);
+                out.write_str(binder);
+                out.write_bool(identity.is_some());
+                pending.extend([&**source, &**step]);
+                pending.extend(identity.as_deref());
+            }
+            Expression::Count {
+                result_type,
+                binder,
+                source,
+                predicate,
+            } => {
+                out.write_str("count");
+                out.write_str(result_type);
+                out.write_str(binder);
+                pending.extend([&**source, &**predicate]);
+            }
+            Expression::Sum {
+                result_type,
+                binder,
+                source,
+                summand,
+            } => {
+                out.write_str("sum");
+                out.write_str(result_type);
+                out.write_str(binder);
+                pending.extend([&**source, &**summand]);
+            }
+            Expression::Size(operand) => {
+                out.write_str("size");
+                pending.push(operand);
+            }
+            Expression::Contains { collection, item } => {
+                out.write_str("contains");
+                pending.extend([&**collection, &**item]);
+            }
+            Expression::AllInstances { target, population } => {
+                out.write_str("all-instances");
+                encode_value_type(out, &targets.resolve(target)?);
+                pending.push(population);
+            }
+            Expression::Lookup {
+                target,
+                population,
+                reference,
+                absence,
+            } => {
+                out.write_str("lookup");
+                encode_value_type(out, &targets.resolve(target)?);
+                out.write_str(absence_mode_tag(*absence));
+                pending.extend([&**population, &**reference]);
+            }
+            Expression::Dispatch {
+                receiver,
+                member,
+                arguments,
+            } => {
+                out.write_str("dispatch");
+                out.write_str(member);
+                out.write_u64(arguments.len() as u64);
+                pending.push(receiver);
+                pending.extend(arguments);
+            }
+            Expression::Pre(operand) => {
+                out.write_str("pre");
+                pending.push(operand);
             }
         }
-        Expression::Record { name, fields } => {
-            out.write_str("record");
-            out.write_str(name);
-            out.write_u64(fields.len() as u64);
-            for (field_name, initializer) in fields {
-                out.write_str(field_name);
-                encode_field_initializer(out, initializer, targets)?;
-            }
-        }
-        Expression::Collection { kind, elements } => {
-            out.write_str("collection");
-            out.write_str(collection_kind_tag(*kind));
-            out.write_u64(elements.len() as u64);
-            for element in elements {
-                encode_expression(out, element, targets)?;
-            }
-        }
-        Expression::Convert { target, operand } => {
-            out.write_str("convert");
-            encode_value_type(out, &targets.resolve(target)?);
-            encode_expression(out, operand, targets)?;
-        }
-        Expression::Query {
-            query,
-            binder,
-            source,
-            body,
-        } => {
-            out.write_str("query");
-            out.write_str(binder_query_tag(*query));
-            out.write_str(binder);
-            encode_expression(out, source, targets)?;
-            encode_expression(out, body, targets)?;
-        }
-        Expression::Flatten(operand) => {
-            out.write_str("flatten");
-            encode_expression(out, operand, targets)?;
-        }
-        Expression::Accumulate {
-            form,
-            accumulator_type,
-            accumulator,
-            binder,
-            source,
-            step,
-            identity,
-        } => {
-            out.write_str("accumulate");
-            out.write_str(accumulation_tag(*form));
-            out.write_str(accumulator_type);
-            out.write_str(accumulator);
-            out.write_str(binder);
-            encode_expression(out, source, targets)?;
-            encode_expression(out, step, targets)?;
-            out.write_bool(identity.is_some());
-            if let Some(identity) = identity {
-                encode_expression(out, identity, targets)?;
-            }
-        }
-        Expression::Count {
-            result_type,
-            binder,
-            source,
-            predicate,
-        } => {
-            out.write_str("count");
-            out.write_str(result_type);
-            out.write_str(binder);
-            encode_expression(out, source, targets)?;
-            encode_expression(out, predicate, targets)?;
-        }
-        Expression::Sum {
-            result_type,
-            binder,
-            source,
-            summand,
-        } => {
-            out.write_str("sum");
-            out.write_str(result_type);
-            out.write_str(binder);
-            encode_expression(out, source, targets)?;
-            encode_expression(out, summand, targets)?;
-        }
-        Expression::Size(operand) => {
-            out.write_str("size");
-            encode_expression(out, operand, targets)?;
-        }
-        Expression::Contains { collection, item } => {
-            out.write_str("contains");
-            encode_expression(out, collection, targets)?;
-            encode_expression(out, item, targets)?;
-        }
-        Expression::AllInstances { target, population } => {
-            out.write_str("all-instances");
-            encode_value_type(out, &targets.resolve(target)?);
-            encode_expression(out, population, targets)?;
-        }
-        Expression::Lookup {
-            target,
-            population,
-            reference,
-            absence,
-        } => {
-            out.write_str("lookup");
-            encode_value_type(out, &targets.resolve(target)?);
-            encode_expression(out, population, targets)?;
-            encode_expression(out, reference, targets)?;
-            out.write_str(absence_mode_tag(*absence));
-        }
-        Expression::Dispatch {
-            receiver,
-            member,
-            arguments,
-        } => {
-            out.write_str("dispatch");
-            encode_expression(out, receiver, targets)?;
-            out.write_str(member);
-            out.write_u64(arguments.len() as u64);
-            for argument in arguments {
-                encode_expression(out, argument, targets)?;
-            }
-        }
-        Expression::Pre(operand) => {
-            out.write_str("pre");
-            encode_expression(out, operand, targets)?;
-        }
+        pending[first..].reverse();
     }
     Ok(())
 }
@@ -639,24 +631,31 @@ impl<'a> TargetTypes<'a> {
         super::type_form::resolve_type_form(self.scope, target, self.location)
     }
 }
-
 /// QSL-148: `Value`'s family check code for function application
 /// (FR-065-AC-4's "one call into `Value`'s family check code"), relocated
 /// here from `check.rs`'s deleted `Typer::call`. The algorithm is unchanged
-/// -- name resolution against `typer.signatures()`, an arity check, a
-/// `typer.check_as` pass over every argument, then a tuple-constructor
+/// -- name resolution against `typer.signatures()`, an arity check, a check
+/// of every argument against its parameter type, then a tuple-constructor
 /// fallback -- only its *location* moved, from a `Typer`-owned method into
-/// this family module, so `infer_form`'s `Expression::Call` arm now
-/// dispatches to family-owned code instead of deciding admission itself.
+/// this family module, so the typer's `Expression::Call` arm dispatches to
+/// family-owned code instead of deciding admission itself.
 ///
-/// Takes `typer: &mut Typer<'_>` rather than a `CheckContext`: an ordinary
-/// call's own admission decision (does this name resolve, does the arity
-/// match, do the arguments type) needs exactly what `Typer` already carries
-/// -- the package's `Scope` and every declared `Signature`, for a call
-/// possibly nested arbitrarily deep inside the declaration currently being
-/// typed. A call is reached from `infer_form`, which recurses through every
-/// other `Value` expression form (`Let`, `If`, `Binary`, ... ), so this is
-/// itself already reached, transitively, through the one
+/// QSL-228 splits the one function in two around the arguments' typing:
+/// [`Self::resolve`] resolves the callee and checks the arity, the typer's
+/// explicit-stack loop checks each argument against [`Self::parameter`], and
+/// [`Self::finish`] builds the call. The typer's loop, not this module,
+/// holds the argument checks, so a call nested in a call's argument costs
+/// heap, not host stack.
+///
+/// Resolved against the `Typer`'s own declarations rather than a
+/// `CheckContext`: an ordinary call's own admission decision (does this
+/// name resolve, does the arity match, do the arguments type) needs exactly
+/// what `Typer` already carries -- the package's `Scope` and every declared
+/// `Signature`, for a call possibly nested arbitrarily deep inside the
+/// declaration currently being typed. A call is reached from the typer's
+/// dispatch over every other `Value` expression form (`Let`, `If`,
+/// `Binary`, ... ), so this is itself already reached, transitively,
+/// through the one
 /// [`FamilyContract::check`](crate::family::FamilyContract::check) call that starts a declaration's real
 /// typing (QSL-148: `check` now calls [`check_declaration_body`], which
 /// drives the same `Typer`) -- an application inside a declaration's own
@@ -671,114 +670,153 @@ impl<'a> TargetTypes<'a> {
 /// standalone public entry point on `CheckedGraph`, not something
 /// `ValueFunctionFamily::check` (or anything else reached from it) calls. An
 /// `Expression::Call` inside such a clause still reaches this same
-/// `check_application`, through that `Typer`'s own `infer_form` -- the
+/// application check, through that `Typer`'s own dispatch -- the
 /// algorithm is identical either way -- but that call is not, today, reached
 /// "through the contract" the way a declaration body's own application is;
 /// only the `CheckedGraph` caller that invoked `check_clause_expression`
 /// knows it happened at all.
 ///
-/// What this function does *not* do, on either path, is charge the
+/// What this check does *not* do, on either path, is charge the
 /// contract's own `CheckContext`/`StageLimits.nesting_depth` once
-/// per real recursive step the way [`FamilyContract::check`](crate::family::FamilyContract::check)'s
+/// per real nesting step the way [`FamilyContract::check`](crate::family::FamilyContract::check)'s
 /// top-level entry charge does: that would mean threading `&mut
-/// CheckContext` through every recursive arm of `Typer::infer_form`, not
-/// just `Call` (`Let`'s body, `If`'s three arms, `Binary`'s operands, and so
-/// on all recurse too) -- reworking the general engine's own recursion
-/// signature for every form it checks, which is the reimplementation-scale
-/// change FR-065-CON-1 rules out here, not a small addition to this one
-/// function. That is real, reported `Typer` entanglement (QSL-148's own open
-/// question), not a gap this function papers over: `Typer`'s pre-existing,
-/// separate [`super::CheckingLimits`] depth bound (unchanged, checked at
-/// every real recursive step already) is what actually keeps a call's own
-/// nesting off the host stack today.
-pub(crate) fn check_application(
-    typer: &mut Typer<'_>,
-    name: &str,
-    arguments: &[Expression],
-    location: &CheckLocation,
-) -> Result<Node, CheckRefusal> {
-    if let Some((function, signature)) = typer.signatures().callable(name) {
-        if signature.parameters.len() != arguments.len() {
-            return Err(CheckRefusal::ill_typed(
-                location,
-                IllTypedCause::TypeMismatch,
-            ));
-        }
-        let mut typed = Vec::with_capacity(arguments.len());
-        for (index, (argument, (_, parameter))) in
-            arguments.iter().zip(&signature.parameters).enumerate()
-        {
-            typed.push(typer.check_as(argument, parameter, &location.child(index))?);
-        }
-        let result = signature.result.clone();
-        // FR-093: the call's identity is the key of the `expression` node
-        // `check::lowering` builds for it once its callee is keyed.
-        return Ok(Node {
-            kind: super::ir::NodeKind::Call {
-                function,
-                arguments: typed,
-            },
-            value_type: result,
-            location: location.clone(),
-        });
-    }
-    let declared = match typer.type_named(name, location) {
-        Ok(value_type) => Some(value_type),
-        Err(CheckRefusal {
-            cause: CheckCause::MissingName(_),
-            ..
-        }) => None,
-        Err(refusal) => return Err(refusal),
-    };
-    match declared {
-        Some(ValueType::Composite(key)) => {
-            let Some(CompositeShape::Tuple(positions)) = typer
-                .scope()
-                .types()
-                .composite(key)
-                .map(|declaration| declaration.shape())
-            else {
-                return Err(CheckRefusal::ill_typed(
-                    location,
-                    IllTypedCause::OperatorIneligible,
-                ));
-            };
-            if positions.len() != arguments.len() {
+/// CheckContext` through every form the typer checks, not just `Call`
+/// (`Let`'s body, `If`'s three arms, `Binary`'s operands, and so on all
+/// nest too) -- reworking the general engine for every form it checks,
+/// which is the reimplementation-scale change FR-065-CON-1 rules out here,
+/// not a small addition to this one check. That is real, reported `Typer`
+/// entanglement (QSL-148's own open question), not a gap this check papers
+/// over: `Typer`'s pre-existing, separate [`super::CheckingLimits`] depth
+/// bound (unchanged, checked at every real nesting step already) is what
+/// bounds a call's own nesting.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Application<'a> {
+    /// A call of the declared function at index `function`.
+    Function {
+        /// The callee's index among the package's functions.
+        function: usize,
+        /// The callee's signature.
+        signature: &'a Signature,
+    },
+    /// A tuple constructor of the declared tuple `declaration`.
+    Tuple {
+        /// The tuple declaration's handle.
+        declaration: NodeKey,
+        /// Its position types, in order.
+        positions: &'a [ValueType],
+    },
+}
+
+impl<'a> Application<'a> {
+    /// Resolve a call of `name` with `arity` arguments: a declared function
+    /// callable by name, else a tuple constructor; refuses an arity
+    /// mismatch, a name naming neither, and a name that is not callable.
+    pub(crate) fn resolve(
+        typer: &Typer<'a>,
+        name: &str,
+        arity: usize,
+        location: &CheckLocation,
+    ) -> Result<Self, CheckRefusal> {
+        if let Some((function, signature)) = typer.signatures().callable(name) {
+            if signature.parameters.len() != arity {
                 return Err(CheckRefusal::ill_typed(
                     location,
                     IllTypedCause::TypeMismatch,
                 ));
             }
-            let mut typed = Vec::with_capacity(arguments.len());
-            for (index, (argument, position)) in arguments.iter().zip(positions).enumerate() {
-                typed.push(typer.check_as(argument, position, &location.child(index))?);
-            }
-            Ok(Node {
-                kind: super::ir::NodeKind::Tuple {
-                    declaration: key,
-                    arguments: typed,
-                },
-                value_type: ValueType::Composite(key),
-                location: location.clone(),
-            })
+            return Ok(Self::Function {
+                function,
+                signature,
+            });
         }
-        Some(_) => Err(CheckRefusal::ill_typed(
-            location,
-            IllTypedCause::OperatorIneligible,
-        )),
-        None if typer.scope().declares_model_operation(name) => Err(CheckRefusal::ill_typed(
-            location,
-            IllTypedCause::OperatorIneligible,
-        )),
-        None => Err(CheckRefusal {
-            location: location.clone(),
-            cause: CheckCause::MissingName(name.to_owned()),
-        }),
+        let declared = match typer.type_named(name, location) {
+            Ok(value_type) => Some(value_type),
+            Err(CheckRefusal {
+                cause: CheckCause::MissingName(_),
+                ..
+            }) => None,
+            Err(refusal) => return Err(refusal),
+        };
+        match declared {
+            Some(ValueType::Composite(key)) => {
+                let Some(CompositeShape::Tuple(positions)) = typer
+                    .scope()
+                    .types()
+                    .composite(key)
+                    .map(|declaration| declaration.shape())
+                else {
+                    return Err(CheckRefusal::ill_typed(
+                        location,
+                        IllTypedCause::OperatorIneligible,
+                    ));
+                };
+                if positions.len() != arity {
+                    return Err(CheckRefusal::ill_typed(
+                        location,
+                        IllTypedCause::TypeMismatch,
+                    ));
+                }
+                Ok(Self::Tuple {
+                    declaration: key,
+                    positions,
+                })
+            }
+            Some(_) => Err(CheckRefusal::ill_typed(
+                location,
+                IllTypedCause::OperatorIneligible,
+            )),
+            None if typer.scope().declares_model_operation(name) => Err(CheckRefusal::ill_typed(
+                location,
+                IllTypedCause::OperatorIneligible,
+            )),
+            None => Err(CheckRefusal {
+                location: location.clone(),
+                cause: CheckCause::MissingName(name.to_owned()),
+            }),
+        }
+    }
+
+    /// The type the argument at `index` is checked against.
+    pub(crate) fn parameter(self, index: usize) -> Option<&'a ValueType> {
+        match self {
+            Self::Function { signature, .. } => signature
+                .parameters
+                .get(index)
+                .map(|(_, parameter)| parameter),
+            Self::Tuple { positions, .. } => positions.get(index),
+        }
+    }
+
+    /// The application node over its checked `arguments`.
+    pub(crate) fn finish(self, arguments: Vec<Node>, location: &CheckLocation) -> Node {
+        match self {
+            // FR-093: the call's identity is the key of the `expression`
+            // node `check::lowering` builds for it once its callee is keyed.
+            Self::Function {
+                function,
+                signature,
+            } => Node {
+                kind: super::ir::NodeKind::Call {
+                    function,
+                    arguments,
+                },
+                value_type: signature.result.clone(),
+                location: location.clone(),
+            },
+            Self::Tuple { declaration, .. } => Node {
+                kind: super::ir::NodeKind::Tuple {
+                    declaration,
+                    arguments,
+                },
+                value_type: ValueType::Composite(declaration),
+                location: location.clone(),
+            },
+        }
     }
 }
 
 /// One function declaration's real typing and static-definedness verdict
-/// (QSL-148), returned by [`check_application`]'s sibling entry point for
+/// (QSL-148), returned by [`Application`]'s sibling entry point for
 /// declarations. Termination is not included -- see this function's own
 /// doc below for why it cannot be.
 #[derive(Debug)]
@@ -1126,7 +1164,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // replacement for) `Typer`'s own separate, pre-existing
         // `CheckingLimits.depth` bound that `check_declaration_body`'s real
         // recursive descent below is charged against -- see
-        // `check_application`'s own doc for why the two are not unified in
+        // `Application`'s own doc for why the two are not unified in
         // this change.
         cx.enter_nesting()
             .map_err(crate::family::StageFailure::Limit)?;
@@ -1525,7 +1563,7 @@ pub mod fixtures {
 #[cfg(test)]
 pub(crate) mod checking_tests {
     //! QSL-148: behavioral coverage of what `Value`'s relocated family check
-    //! code (`check_application`, `check_declaration_body`) accepts and
+    //! code (`Application`, `check_declaration_body`) accepts and
     //! refuses, per the testing-policy ruling at
     //! <https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837>
     //! (Peter, 2026-09-22, relayed by the QSL team lead) -- these tests
@@ -1541,6 +1579,22 @@ pub(crate) mod checking_tests {
     use ix_trace_rs::trace;
     use quire_exact::Meter;
 
+    /// A call of `name` over `arguments`, typed through the typer's `Call`
+    /// arm: [`Application::resolve`], each argument's check, then
+    /// [`Application::finish`].
+    fn check_application(
+        typer: &mut Typer<'_>,
+        name: &str,
+        arguments: &[Expression],
+        location: &CheckLocation,
+    ) -> Result<Node, CheckRefusal> {
+        let call = Expression::Call {
+            name: name.to_owned(),
+            arguments: arguments.to_vec(),
+        };
+        typer.infer(&call, None, location)
+    }
+
     /// An `Option<Integer>` type form.
     fn option_integer_type_form() -> qsl_forms::TypeForm {
         qsl_forms::TypeForm::builtin(
@@ -1554,7 +1608,7 @@ pub(crate) mod checking_tests {
     }
 
     /// TC-376/FR-065-AC-4: a well-typed call to a one-argument Boolean
-    /// function is admitted through `check_application` -- `Value`'s
+    /// function is admitted through [`Application`] -- `Value`'s
     /// relocated family check code, not `Typer::call` (deleted) -- and
     /// produces a `NodeKind::Call` node of the declared result type.
     #[trace("TC-376")]
@@ -1582,7 +1636,7 @@ pub(crate) mod checking_tests {
     }
 
     /// TC-376/FR-065-AC-4: a call with the wrong number of arguments is
-    /// refused (`ill_typed`/`type-mismatch`) by `check_application` itself,
+    /// refused (`ill_typed`/`type-mismatch`) by [`Application::resolve`] itself,
     /// not admitted and caught somewhere else.
     #[trace("TC-376")]
     #[test]
@@ -1635,7 +1689,7 @@ pub(crate) mod checking_tests {
     /// TC-376 step 4: a call whose argument type disagrees with the
     /// declared parameter type -- arity matches, the callee resolves, but
     /// `typer.check_as` refuses the mismatched argument -- is refused
-    /// `ill_typed`/`type-mismatch` by `check_application` itself, the same
+    /// `ill_typed`/`type-mismatch` by the application check itself, the same
     /// path `check_application_refuses_wrong_arity` exercises for the
     /// arity case above.
     #[trace("TC-376")]
@@ -2189,12 +2243,12 @@ pub(crate) mod checking_tests {
     /// -- a typed refusal through `Typer`'s pre-existing, unrelated
     /// `CheckingLimits.depth` bound, not a `StageFailure::Limit` naming the
     /// contract's own nesting-depth limit. Wiring the contract's own
-    /// `CheckContext::enter_nesting` into every recursive step of
-    /// `Typer::infer`/`infer_form` (not just the one top-level entry charge
+    /// `CheckContext::enter_nesting` into every
+    /// nesting step of the typer (not just the one top-level entry charge
     /// `check` already makes) would require threading `&mut CheckContext`
-    /// through the general engine's entire recursive signature -- the same
+    /// through the general engine's every step -- the same
     /// class of `Typer` entanglement QSL-148's own open question raises,
-    /// reported here (see `check::family::check_application`'s own doc)
+    /// reported here (see `check::family::Application`'s own doc)
     /// rather than routed around by re-tagging this test onto AC-7.
     #[test]
     fn real_checker_depth_limit_is_the_proximate_cause() {
