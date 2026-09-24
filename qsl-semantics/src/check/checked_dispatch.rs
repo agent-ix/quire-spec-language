@@ -115,11 +115,6 @@ use qsl_foundation::diagnostic::Code;
 use quire_exact::EffectiveId;
 use quire_exact::ValueType;
 
-/// Bounds the effective-precondition ancestor walk. Mirrors
-/// `crate::model::dispatch::MAX_DISPATCH_DEPTH`'s own style; declared
-/// separately here since that constant is private to its module.
-const MAX_ANCESTOR_DEPTH: usize = 128;
-
 /// One dispatch candidate's own clause `Expression`s and signature, supplied
 /// by the caller since [`DomainPackage`] carries no `Expression` payload. Every
 /// operation this bridge is asked to check — the root operation and every
@@ -191,13 +186,14 @@ pub enum DispatchBridgeRefusal {
         /// The subtype missing an entry.
         subtype: Box<DeclarationKey>,
     },
-    /// The effective-precondition ancestor walk exceeded
-    /// `MAX_ANCESTOR_DEPTH` redefinition steps, built from
-    /// [`ModelRefusalCause::DispatchFamilyDepth`] exactly as
-    /// `crate::model::dispatch::build_family`'s own depth-exceeded refusal
-    /// is, rather than a bridge-only cause. Boxed: `ModelRefusal` is far
-    /// larger than the other variants.
-    AncestorDepthExceeded(Box<ModelRefusal>),
+    /// The effective-precondition ancestor walk followed more `redefines`
+    /// edges than the caller's `family_steps` ceiling
+    /// ([`crate::model::accounting::ModelNormalizationLimits::family_steps`]),
+    /// built from [`ModelRefusalCause::FamilySteps`] exactly as
+    /// `crate::model::dispatch::build_family`'s own refusal is, rather than a
+    /// bridge-only cause. Boxed: `ModelRefusal` is far larger than the other
+    /// variants.
+    FamilyStepsExceeded(Box<ModelRefusal>),
     /// A linked candidate reachable as this dispatch's own target has no
     /// declared result, or a non-empty effect set (#174): FR-151
     /// (`quire.model.dispatch.single/v1`) admits only a query -- "whose
@@ -228,14 +224,15 @@ fn missing(operation: &DeclarationKey, field: MissingClauseField) -> DispatchBri
     }
 }
 
-fn depth_exceeded(candidate: &DeclarationKey) -> DispatchBridgeRefusal {
-    DispatchBridgeRefusal::AncestorDepthExceeded(Box::new(ModelRefusal {
+fn family_steps_exceeded(candidate: &DeclarationKey, max_steps: u64) -> DispatchBridgeRefusal {
+    DispatchBridgeRefusal::FamilyStepsExceeded(Box::new(ModelRefusal {
         code: Code::ResourceExhausted,
-        cause: ModelRefusalCause::DispatchFamilyDepth {
+        cause: ModelRefusalCause::FamilySteps {
             original: candidate.clone(),
+            limit: max_steps,
         },
         detail: format!(
-            "effective-precondition ancestry for {} exceeded {MAX_ANCESTOR_DEPTH} redefinition steps",
+            "effective-precondition ancestry for {} exceeded the family_steps limit of {max_steps}",
             candidate.node
         ),
     }))
@@ -390,11 +387,14 @@ fn declaration_order(domain_package: &DomainPackage) -> BTreeMap<DeclarationKey,
 /// members' own inline `redefines` property (`model-complete.md`:162): the
 /// full static FR-146 reachability set [`ancestor_closure`] needs for
 /// [`DispatchCandidate::precondition_clauses`]. Bounded breadth-first walk
-/// over an explicit queue, never native recursion; refuses at the depth
-/// bound instead of silently truncating the closure.
+/// over an explicit queue, never native recursion. `max_steps` is the
+/// caller's `family_steps` ceiling, used as given: an ancestor `n`
+/// `redefines` edges above `candidate` is admitted at `max_steps == n`, and
+/// one edge further refuses instead of silently truncating the closure.
 fn ancestor_closure(
     redefinition_parents: &BTreeMap<DeclarationKey, DeclarationKey>,
     candidate: &DeclarationKey,
+    max_steps: u64,
 ) -> Result<BTreeSet<DeclarationKey>, DispatchBridgeRefusal> {
     let mut closure = BTreeSet::new();
     // `depth` is `current`'s own redefinition-chain distance from
@@ -403,15 +403,15 @@ fn ancestor_closure(
     // family where one member has many direct redefiners (wide, shallow
     // fan-out) must not exhaust the same bound a genuinely deep single chain
     // would.
-    let mut pending: VecDeque<(DeclarationKey, usize)> = VecDeque::from([(candidate.clone(), 0)]);
+    let mut pending: VecDeque<(DeclarationKey, u64)> = VecDeque::from([(candidate.clone(), 0)]);
     while let Some((current, depth)) = pending.pop_front() {
         if !closure.insert(current.clone()) {
             continue;
         }
-        if depth > MAX_ANCESTOR_DEPTH {
-            return Err(depth_exceeded(candidate));
-        }
         if let Some(parent) = redefinition_parents.get(&current) {
+            if depth >= max_steps {
+                return Err(family_steps_exceeded(candidate, max_steps));
+            }
             pending.push_back((parent.clone(), depth + 1));
         }
     }
@@ -426,56 +426,93 @@ fn ancestor_closure(
 /// own clause, and every later element is an ancestor's contributing clause,
 /// substituted from that ancestor's parameter names into `candidate`'s own —
 /// the receiver is `parameters[0]`, substituted the same way as every other
-/// parameter. Memoized per candidate, since a diamond of
-/// redefinitions can reach the same ancestor from several paths; bounded by
-/// `depth`, the current call's own redefinition-chain distance from the
-/// *top-level* candidate this walk started at (0 there, incremented once per
-/// recursive step into a parent) — never a counter shared across every
-/// candidate [`checked_dispatch_operation`] computes this for. A family with
-/// many precondition-bearing members but no chain longer than
-/// [`MAX_ANCESTOR_DEPTH`] must not be refused just because the family is
-/// wide; a memoized hit returns immediately without consuming any of the
-/// caller's own depth budget, since its own walk already passed the bound
-/// when it was first computed.
+/// parameter. Memoized per candidate, since a diamond of redefinitions can
+/// reach the same ancestor from several paths.
+///
+/// Iterative, never native recursion, so a caller-raised `max_steps` cannot
+/// overflow the host stack: the `redefines` chain above `candidate` is first
+/// collected up to the first memoized, clause-less or parentless ancestor,
+/// then folded back down. `max_steps` is the caller's `family_steps`
+/// ceiling, used as given and counted from *this* call's `candidate` (never
+/// a counter shared across every candidate [`checked_dispatch_operation`]
+/// computes this for): a chain of `n` `redefines` edges is admitted at
+/// `max_steps == n`, so a wide family with only shallow chains is never
+/// refused, and a memoized hit consumes none of the budget. A `redefines`
+/// cycle is an unbounded chain, so it refuses with the same cause whatever
+/// `max_steps` is, rather than looping.
 fn effective_terms(
     candidate: &DeclarationKey,
     clauses: &OperationClauses,
     redefinition_parents: &BTreeMap<DeclarationKey, DeclarationKey>,
     memo: &mut BTreeMap<DeclarationKey, Option<Vec<Expression>>>,
-    depth: usize,
+    max_steps: u64,
 ) -> Result<Option<Vec<Expression>>, DispatchBridgeRefusal> {
-    if let Some(cached) = memo.get(candidate) {
-        return Ok(cached.clone());
-    }
-    if depth > MAX_ANCESTOR_DEPTH {
-        return Err(depth_exceeded(candidate));
-    }
-    let Some(own_expression) = clauses.own_precondition.get(candidate).cloned() else {
-        memo.insert(candidate.clone(), None);
-        return Ok(None);
-    };
-    let (candidate_parameters, _) = require_signature(clauses, candidate)?;
-    let mut terms = vec![own_expression];
-    if let Some(parent) = redefinition_parents.get(candidate) {
-        match effective_terms(parent, clauses, redefinition_parents, memo, depth + 1)? {
-            None => {
-                memo.insert(candidate.clone(), None);
+    // `chain[0]` is `candidate`; `chain[i + 1]` is `chain[i]`'s redefinition
+    // parent. Every element declares its own precondition and a signature.
+    let mut chain: Vec<DeclarationKey> = Vec::new();
+    let mut on_chain: BTreeSet<DeclarationKey> = BTreeSet::new();
+    let mut current = candidate.clone();
+    // `current`'s own `redefines`-edge distance from `candidate`.
+    let mut depth: u64 = 0;
+    // What the last chain element's parent contributes: `None` for "no
+    // parent", `Some(result)` for a parent whose own effective terms are
+    // `result`.
+    let parent_result: Option<Option<Vec<Expression>>> = loop {
+        if let Some(cached) = memo.get(&current) {
+            if chain.is_empty() {
+                return Ok(cached.clone());
+            }
+            break Some(cached.clone());
+        }
+        if depth > max_steps || !on_chain.insert(current.clone()) {
+            return Err(family_steps_exceeded(candidate, max_steps));
+        }
+        if !clauses.own_precondition.contains_key(&current) {
+            memo.insert(current.clone(), None);
+            if chain.is_empty() {
                 return Ok(None);
             }
-            Some(parent_terms) => {
-                let (parent_parameters, _) = require_signature(clauses, parent)?;
-                for term in parent_terms {
-                    terms.push(rename_parameters(
-                        &term,
-                        &parent_parameters,
-                        &candidate_parameters,
-                    ));
-                }
-            }
+            break Some(None);
         }
+        require_signature(clauses, &current)?;
+        chain.push(current.clone());
+        let Some(parent) = redefinition_parents.get(&current) else {
+            break None;
+        };
+        current = parent.clone();
+        depth = depth.saturating_add(1);
+    };
+
+    let mut below = parent_result;
+    let mut result: Option<Vec<Expression>> = None;
+    for member in chain.iter().rev() {
+        let own = require_expression(
+            &clauses.own_precondition,
+            member,
+            MissingClauseField::OwnPrecondition,
+        )?;
+        let terms =
+            match below {
+                None => Some(vec![own]),
+                Some(None) => None,
+                Some(Some(parent_terms)) => {
+                    let parent = redefinition_parents
+                        .get(member)
+                        .ok_or_else(|| missing(member, MissingClauseField::OwnPrecondition))?;
+                    let (member_parameters, _) = require_signature(clauses, member)?;
+                    let (parent_parameters, _) = require_signature(clauses, parent)?;
+                    let mut terms = vec![own];
+                    terms.extend(parent_terms.iter().map(|term| {
+                        rename_parameters(term, &parent_parameters, &member_parameters)
+                    }));
+                    Some(terms)
+                }
+            };
+        memo.insert(member.clone(), terms.clone());
+        below = Some(terms.clone());
+        result = terms;
     }
-    memo.insert(candidate.clone(), Some(terms.clone()));
-    Ok(Some(terms))
+    Ok(result)
 }
 
 /// `expression` with every name bound positionally in `from` rewritten to
@@ -781,6 +818,7 @@ pub fn checked_dispatch_operation(
     clauses: &OperationClauses,
     meter: &mut Meter,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
+    let family_steps = meter.limits().family_steps;
     let outcome = link_dispatch(domain_package, view, &root.key, root.closure, meter);
     let type_identities = view.type_identities();
     let table = match outcome {
@@ -856,7 +894,7 @@ pub fn checked_dispatch_operation(
     let mut closures: BTreeMap<DeclarationKey, BTreeSet<DeclarationKey>> = BTreeMap::new();
     let mut every_member: BTreeSet<DeclarationKey> = BTreeSet::new();
     for candidate in &ordered_candidates {
-        let closure = ancestor_closure(&redefinitions, candidate)?;
+        let closure = ancestor_closure(&redefinitions, candidate, family_steps)?;
         every_member.extend(closure.iter().cloned());
         closures.insert(candidate.clone(), closure);
     }
@@ -903,7 +941,7 @@ pub fn checked_dispatch_operation(
     for candidate in &ordered_candidates {
         let (parameters, result) = require_signature(clauses, candidate)?;
 
-        let terms = effective_terms(candidate, clauses, &redefinitions, &mut memo, 0)?;
+        let terms = effective_terms(candidate, clauses, &redefinitions, &mut memo, family_steps)?;
         if let Some(terms) = terms {
             let precondition_function = if terms.len() == 1 {
                 // The candidate's own clause is the only contributing term:
@@ -1069,110 +1107,184 @@ pub fn checked_dispatch_operation(
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::{
-        ancestor_closure, effective_terms, DispatchBridgeRefusal, OperationClauses,
-        MAX_ANCESTOR_DEPTH,
-    };
+    use super::{ancestor_closure, effective_terms, DispatchBridgeRefusal, OperationClauses};
     use crate::model::key::DeclarationKey;
     use crate::model::normalize::ModelRefusalCause;
     use qsl_forms::Expression;
     use quire_exact::ValueType;
 
-    /// `ancestor_closure` refuses at [`MAX_ANCESTOR_DEPTH`]
-    /// rather than silently truncating the closure. A straight redefinition
-    /// chain one step past the bound (`op[N]` redefines `op[N-1]`, ...,
-    /// `op[1]` redefines `op[0]`) must be refused
-    /// `AncestorDepthExceeded`/`DispatchFamilyDepth`, not truncated to a
-    /// partial, silently-wrong closure.
-    #[test]
-    fn ancestor_closure_refuses_past_the_depth_bound_instead_of_truncating() {
-        let chain_length = MAX_ANCESTOR_DEPTH + 1;
-        let keys: Vec<DeclarationKey> = (0..=chain_length)
-            .map(|index| DeclarationKey::fixture(format!("model.chain.op{index}")))
-            .collect();
-        let redefinitions: BTreeMap<DeclarationKey, DeclarationKey> = (1..keys.len())
-            .map(|index| (keys[index].clone(), keys[index - 1].clone()))
-            .collect();
-        let deepest = keys.last().unwrap();
+    /// A caller-configured `family_steps` ceiling small enough to build a
+    /// chain one past it cheaply.
+    const FAMILY_STEPS: u64 = 8;
 
-        let refusal = ancestor_closure(&redefinitions, deepest)
-            .expect_err("a redefinition chain past MAX_ANCESTOR_DEPTH must be refused");
-        match refusal {
-            DispatchBridgeRefusal::AncestorDepthExceeded(model_refusal) => {
-                assert_eq!(
-                    model_refusal.cause,
-                    ModelRefusalCause::DispatchFamilyDepth {
-                        original: deepest.clone(),
-                    }
-                );
-            }
-            other => panic!("expected AncestorDepthExceeded, got {other:?}"),
-        }
-
-        // A chain reaching exactly the bound must still succeed and return
-        // the full closure — the guard (`depth > MAX_ANCESTOR_DEPTH`) fires
-        // strictly past the bound, never at it.
-        let shallow_chain = MAX_ANCESTOR_DEPTH;
-        let shallow_keys: Vec<DeclarationKey> = (0..=shallow_chain)
-            .map(|index| DeclarationKey::fixture(format!("model.shallow-chain.op{index}")))
+    /// `op[0]` .. `op[edges]`, where `op[i]` redefines `op[i - 1]`: a chain
+    /// of exactly `edges` `redefines` edges. Returns the keys and the
+    /// child-to-parent map.
+    fn chain(
+        prefix: &str,
+        edges: u64,
+    ) -> (
+        Vec<DeclarationKey>,
+        BTreeMap<DeclarationKey, DeclarationKey>,
+    ) {
+        let keys: Vec<DeclarationKey> = (0..=edges)
+            .map(|index| DeclarationKey::fixture(format!("model.{prefix}.op{index}")))
             .collect();
-        let shallow_redefinitions: BTreeMap<DeclarationKey, DeclarationKey> = (1..shallow_keys
-            .len())
-            .map(|index| (shallow_keys[index].clone(), shallow_keys[index - 1].clone()))
+        let redefinitions = keys
+            .windows(2)
+            .map(|pair| (pair[1].clone(), pair[0].clone()))
             .collect();
-        let shallow_deepest = shallow_keys.last().unwrap();
-        let closure = ancestor_closure(&shallow_redefinitions, shallow_deepest)
-            .expect("a chain exactly at MAX_ANCESTOR_DEPTH must not be refused");
-        assert_eq!(closure.len(), shallow_keys.len());
+        (keys, redefinitions)
     }
 
-    /// A family with more precondition-bearing members than
-    /// [`MAX_ANCESTOR_DEPTH`] must not be refused when no single chain is
-    /// deep: one root plus `MAX_ANCESTOR_DEPTH + 1` direct children, each
-    /// redefining the root and each declaring its own precondition, so every
-    /// child's own walk is exactly one step deep. `memo` is shared across
-    /// every top-level [`effective_terms`] call in this loop, mirroring
-    /// [`checked_dispatch_operation`]'s own loop, but each top-level call
-    /// starts `depth` fresh at `0`: `depth` tracks only the current call's
-    /// own recursion, so a far-side child is never charged for nodes a
-    /// sibling already visited.
+    /// Every key in `keys` declares a `self`-only signature and its own
+    /// `true` precondition.
+    fn clauses_for(keys: &[DeclarationKey]) -> OperationClauses {
+        let self_parameters = vec![("self".to_owned(), ValueType::Boolean)];
+        let mut clauses = OperationClauses::default();
+        for key in keys {
+            clauses
+                .parameters
+                .insert(key.clone(), self_parameters.clone());
+            clauses.result.insert(key.clone(), ValueType::Boolean);
+            clauses
+                .own_precondition
+                .insert(key.clone(), Expression::Boolean(true));
+        }
+        clauses
+    }
+
+    fn assert_family_steps_refusal(refusal: DispatchBridgeRefusal, original: &DeclarationKey) {
+        match refusal {
+            DispatchBridgeRefusal::FamilyStepsExceeded(model_refusal) => assert_eq!(
+                model_refusal.cause,
+                ModelRefusalCause::FamilySteps {
+                    original: original.clone(),
+                    limit: FAMILY_STEPS,
+                }
+            ),
+            other => panic!("expected FamilyStepsExceeded, got {other:?}"),
+        }
+    }
+
+    /// `ancestor_closure` admits a chain of exactly `family_steps` edges with
+    /// its full closure, and refuses one edge more instead of truncating.
+    #[test]
+    fn ancestor_closure_admits_the_bound_and_refuses_one_past_it() {
+        let (keys, redefinitions) = chain("at", FAMILY_STEPS);
+        let deepest = keys.last().unwrap();
+        let closure = ancestor_closure(&redefinitions, deepest, FAMILY_STEPS)
+            .expect("a chain exactly at family_steps must not be refused");
+        assert_eq!(closure.len(), keys.len());
+
+        let (keys, redefinitions) = chain("past", FAMILY_STEPS + 1);
+        let deepest = keys.last().unwrap();
+        let refusal = ancestor_closure(&redefinitions, deepest, FAMILY_STEPS)
+            .expect_err("a chain one edge past family_steps must be refused");
+        assert_family_steps_refusal(refusal, deepest);
+    }
+
+    /// `effective_terms` admits a chain of exactly `family_steps` edges with
+    /// every ancestor's term, and refuses one edge more.
+    #[test]
+    fn effective_terms_admits_the_bound_and_refuses_one_past_it() {
+        let (keys, redefinitions) = chain("at", FAMILY_STEPS);
+        let deepest = keys.last().unwrap();
+        let terms = effective_terms(
+            deepest,
+            &clauses_for(&keys),
+            &redefinitions,
+            &mut BTreeMap::new(),
+            FAMILY_STEPS,
+        )
+        .expect("a chain exactly at family_steps must not be refused");
+        assert_eq!(terms.map(|terms| terms.len()), Some(keys.len()));
+
+        let (keys, redefinitions) = chain("past", FAMILY_STEPS + 1);
+        let deepest = keys.last().unwrap();
+        let refusal = effective_terms(
+            deepest,
+            &clauses_for(&keys),
+            &redefinitions,
+            &mut BTreeMap::new(),
+            FAMILY_STEPS,
+        )
+        .expect_err("a chain one edge past family_steps must be refused");
+        assert_family_steps_refusal(refusal, deepest);
+    }
+
+    /// A caller-raised `family_steps` over a long chain completes on a small
+    /// thread stack: the walk is iterative, so raising the ceiling can never
+    /// turn into a stack overflow.
+    #[test]
+    fn effective_terms_walks_a_long_chain_without_native_recursion() {
+        const EDGES: u64 = 2_000;
+        let outcome = std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(|| {
+                let (keys, redefinitions) = chain("long", EDGES);
+                effective_terms(
+                    keys.last().unwrap(),
+                    &clauses_for(&keys),
+                    &redefinitions,
+                    &mut BTreeMap::new(),
+                    u64::MAX,
+                )
+                .map(|terms| terms.map(|terms| terms.len()))
+            })
+            .unwrap()
+            .join()
+            .expect("the walk must not overflow a 128 KiB stack");
+        assert_eq!(outcome.unwrap(), Some(usize::try_from(EDGES).unwrap() + 1));
+    }
+
+    /// A `redefines` cycle is an unbounded chain: it refuses even under an
+    /// unlimited `family_steps` rather than looping.
+    #[test]
+    fn effective_terms_refuses_a_redefinition_cycle_under_an_unlimited_ceiling() {
+        let a = DeclarationKey::fixture("model.cycle.a");
+        let b = DeclarationKey::fixture("model.cycle.b");
+        let redefinitions = BTreeMap::from([(a.clone(), b.clone()), (b.clone(), a.clone())]);
+        let refusal = effective_terms(
+            &a,
+            &clauses_for(&[a.clone(), b]),
+            &redefinitions,
+            &mut BTreeMap::new(),
+            u64::MAX,
+        )
+        .expect_err("a cyclic redefinition chain must be refused");
+        assert!(matches!(
+            refusal,
+            DispatchBridgeRefusal::FamilyStepsExceeded(model_refusal)
+                if matches!(model_refusal.cause, ModelRefusalCause::FamilySteps { .. })
+        ));
+    }
+
+    /// A family with more precondition-bearing members than `family_steps`
+    /// is not refused when no single chain is deep: one root plus
+    /// `family_steps + 1` direct children, each one edge deep. `memo` is
+    /// shared across every top-level [`effective_terms`] call, mirroring
+    /// [`super::checked_dispatch_operation`]'s own loop, but each call counts
+    /// only its own chain.
     #[test]
     fn effective_terms_does_not_refuse_a_wide_family_with_a_shallow_chain() {
         let root = DeclarationKey::fixture("model.wide.root");
-        let self_parameters = vec![("self".to_owned(), ValueType::Boolean)];
-        let mut clauses = OperationClauses::default();
-        clauses
-            .parameters
-            .insert(root.clone(), self_parameters.clone());
-        clauses.result.insert(root.clone(), ValueType::Boolean);
-        clauses
-            .own_precondition
-            .insert(root.clone(), Expression::Boolean(true));
-
-        let child_count = MAX_ANCESTOR_DEPTH + 1;
-        let children: Vec<DeclarationKey> = (0..child_count)
+        let children: Vec<DeclarationKey> = (0..=FAMILY_STEPS)
             .map(|index| DeclarationKey::fixture(format!("model.wide.child{index}")))
             .collect();
-        let mut redefinitions: BTreeMap<DeclarationKey, DeclarationKey> = BTreeMap::new();
-        for child in &children {
-            clauses
-                .parameters
-                .insert(child.clone(), self_parameters.clone());
-            clauses.result.insert(child.clone(), ValueType::Boolean);
-            clauses
-                .own_precondition
-                .insert(child.clone(), Expression::Boolean(true));
-            redefinitions.insert(child.clone(), root.clone());
-        }
+        let mut members = children.clone();
+        members.push(root.clone());
+        let clauses = clauses_for(&members);
+        let redefinitions: BTreeMap<DeclarationKey, DeclarationKey> = children
+            .iter()
+            .map(|child| (child.clone(), root.clone()))
+            .collect();
 
         let mut memo = BTreeMap::new();
         for child in &children {
-            let terms = effective_terms(child, &clauses, &redefinitions, &mut memo, 0)
+            let terms = effective_terms(child, &clauses, &redefinitions, &mut memo, FAMILY_STEPS)
                 .unwrap_or_else(|refusal| {
-                    panic!(
-                        "a shallow one-hop walk must not exhaust the depth bound just \
-                         because {child_count} other members share it, got {refusal:?}"
-                    )
+                    panic!("a one-edge walk must not exhaust family_steps, got {refusal:?}")
                 });
             // Each child's own clause plus the root's: exactly two terms,
             // never truncated by the shared `memo`.

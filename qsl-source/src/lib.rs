@@ -33,9 +33,11 @@ pub use preflight::PreflightFailure;
 pub const CONTRACT_VERSION: &str = "1.0.0";
 /// Quire semantic-core contract admitted by this consumer and command adapters.
 pub const SEMANTIC_CORE_VERSION: &str = "0.1.0";
-/// Hard original-document byte ceiling before extraction.
+/// Default original-document byte ceiling before extraction; a caller's
+/// [`Limits::source_bytes`] is used as given (NFR-001).
 pub const MAX_SOURCE_BYTES: usize = 1_048_576;
-/// Hard original-document line ceiling, including trailing empty line.
+/// Default original-document line ceiling, including the trailing empty
+/// line; a caller's [`Limits::lines`] is used as given (NFR-001).
 pub const MAX_LINES: usize = 4096;
 
 use qsl_foundation::source_map::{Layout, Segment, SourceMap};
@@ -56,12 +58,14 @@ pub struct Selection {
     pub body: SourceIdentity,
 }
 
-/// Pre-extraction input bounds.
+/// Pre-extraction input bounds. Each field is enforced exactly as the
+/// caller supplies it, above or below [`Limits::default`].
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
-    /// Original document bytes; hard maximum 1 MiB.
+    /// Original document bytes; defaults to [`MAX_SOURCE_BYTES`].
     pub source_bytes: usize,
-    /// Original lines, including trailing empty line; hard maximum 4096.
+    /// Original lines, including trailing empty line; defaults to
+    /// [`MAX_LINES`].
     pub lines: usize,
 }
 

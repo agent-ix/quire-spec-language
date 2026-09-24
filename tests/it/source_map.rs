@@ -87,6 +87,40 @@ fn exact_bytes_digest_is_checked_before_correspondence() {
     }
 }
 
+/// QSL-199: `Source::read` enforces the caller's byte limit as given, with
+/// no hidden 1 MiB ceiling underneath it. A limit raised past the 1 MiB
+/// default admits a source the default refuses, and one byte past the raised
+/// limit refuses `resource_exhausted` naming that limit.
+#[trace("TC-011", "FR-001-AC-4")]
+#[test]
+fn a_caller_raised_byte_limit_is_enforced_as_given() {
+    use qsl_foundation::source::MAX_SOURCE_BYTES;
+    let id = SourceIdentity {
+        identity: "raised".into(),
+        revision: "1".into(),
+    };
+    let raised = MAX_SOURCE_BYTES + 16;
+    let at_raised = vec![b'a'; raised];
+    assert_eq!(
+        Source::read(id.clone(), "x", &at_raised, MAX_SOURCE_BYTES)
+            .unwrap_err()
+            .code,
+        Code::ResourceExhausted,
+        "the default limit must refuse a source past it"
+    );
+    let admitted = Source::read(id.clone(), "x", &at_raised, raised)
+        .expect("a caller-raised limit must admit a source at it");
+    assert_eq!(admitted.text().len(), raised);
+
+    let past_raised = vec![b'a'; raised + 1];
+    let refusal = Source::read(id, "x", &past_raised, raised).unwrap_err();
+    assert_eq!(refusal.code, Code::ResourceExhausted);
+    assert!(
+        refusal.message.contains(&raised.to_string()),
+        "the refusal must name the caller's limit, got {refusal:?}"
+    );
+}
+
 #[trace("TC-014", "TC-184", "FR-004-AC-1", "FR-134-AC-1")]
 #[test]
 fn verbatim_mapping_retains_original_utf8_crlf_locations() {

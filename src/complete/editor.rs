@@ -210,7 +210,6 @@ pub fn format_document(
     catalog: &ProfileCatalog,
     limits: Limits,
 ) -> Result<FormatResponse, Box<CompleteDiagnostic>> {
-    let limits = limits.bounded();
     validate_binding(parsed, &binding, catalog)?;
     if !parsed.is_admissible() {
         // The refusal retains the originating code and cause. The parser

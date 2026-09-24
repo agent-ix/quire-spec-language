@@ -8,12 +8,14 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_cst::{parse, CompleteCause, CompleteDiagnostic, Limits, ParsedSource};
-use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, ProfileCatalog};
+use qsl_foundation::selection::{
+    DefinitionDigest, DefinitionRef, ProfileCatalog, MAX_SELECTED_DEFINITIONS,
+};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::complete::{
     resolve_source_package, CapabilityId, Definition, DefinitionCatalog, DefinitionRole, Facet,
-    ModelArtifact, ModelCatalog, PackageError, PackageLimits, PackageRefusal, ReaderAuthority,
-    ResolutionCause, ResolvedSourcePackage, SourceAuthority, SourceDigest,
+    ModelArtifact, ModelCatalog, PackageError, PackageLimitKind, PackageLimits, PackageRefusal,
+    ReaderAuthority, ResolutionCause, ResolvedSourcePackage, SourceAuthority, SourceDigest,
 };
 use quire_spec_language::command::{resolve_parsed_source, SourcePackageRefusal};
 use quire_spec_language::complete;
@@ -643,6 +645,7 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
         dependency_edges: 0,
         depth: 1,
         artifact_bytes,
+        single_artifact_bytes: artifact_bytes,
     };
     assert!(DefinitionCatalog::with_limits(definitions.clone(), exact).is_ok());
     assert_eq!(
@@ -654,7 +657,10 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
             },
         )
         .unwrap_err(),
-        PackageError::ResourceLimit
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::Definitions,
+            limit: definitions.len() - 1,
+        }
     );
     assert_eq!(
         DefinitionCatalog::with_limits(
@@ -665,7 +671,10 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
             },
         )
         .unwrap_err(),
-        PackageError::ResourceLimit
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::ArtifactBytes,
+            limit: artifact_bytes - 1,
+        }
     );
 
     let model = compiled_model();
@@ -689,7 +698,13 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
     )
     .unwrap_err();
     assert_eq!(artifact_refusal.code, Code::ResourceExhausted);
-    assert_eq!(artifact_refusal.cause, PackageError::ResourceLimit);
+    assert_eq!(
+        artifact_refusal.cause,
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::ArtifactBytes,
+            limit: resolved_artifact_bytes - 1,
+        }
+    );
     assert_eq!(
         artifact_refusal.cause_tag,
         ResolutionCause::InsufficientNextCharge
@@ -707,7 +722,102 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
     )
     .unwrap_err();
     assert_eq!(refusal.code, Code::ResourceExhausted);
-    assert_eq!(refusal.cause, PackageError::ResourceLimit);
+    assert_eq!(
+        refusal.cause,
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::Definitions,
+            limit: 1,
+        }
+    );
+}
+
+/// QSL-199: `PackageLimits::bounded()` no longer clamps a caller-supplied
+/// `definitions` ceiling down to [`PackageLimits::default`] (ADR-011 §7.3;
+/// NFR-001 "an implementation ceiling is not a domain bound"): a catalog
+/// with more definitions than the default (`MAX_SELECTED_DEFINITIONS`, 4096)
+/// admits under a caller-raised ceiling that the default itself refuses.
+#[trace("TC-180", "FR-131-AC-2")]
+#[test]
+fn a_caller_raised_definitions_ceiling_admits_a_catalog_the_default_refuses() {
+    let over_default = MAX_SELECTED_DEFINITIONS + 1;
+    let definitions: Vec<Definition> = (0..over_default)
+        .map(|i| {
+            Definition::from_exact_bytes(
+                &READER_AUTHORITY,
+                format!("acme.bulk.{i}"),
+                "1",
+                DefinitionRole::MethodPlan,
+                BTreeSet::new(),
+                BTreeSet::new(),
+                format!("definition body {i}").as_bytes(),
+            )
+            .unwrap()
+        })
+        .collect();
+
+    assert!(
+        matches!(
+            DefinitionCatalog::with_limits(definitions.clone(), PackageLimits::default()),
+            Err(PackageError::ResourceLimit {
+                kind: PackageLimitKind::Definitions,
+                ..
+            })
+        ),
+        "the default definitions ceiling must refuse a catalog past it"
+    );
+
+    let raised = PackageLimits {
+        definitions: over_default,
+        ..PackageLimits::default()
+    };
+    assert!(
+        DefinitionCatalog::with_limits(definitions, raised).is_ok(),
+        "a caller-raised definitions ceiling must admit what the default refuses"
+    );
+}
+
+/// QSL-199 AC-3: reaching a *caller-raised* `definitions` ceiling (not just
+/// the default) still refuses, naming the limit kind
+/// ([`PackageLimitKind::Definitions`]) and the caller's own configured
+/// bound.
+#[trace("TC-180", "FR-131-AC-2")]
+#[test]
+fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_bound() {
+    let raised = PackageLimits {
+        definitions: MAX_SELECTED_DEFINITIONS + 10,
+        ..PackageLimits::default()
+    };
+    let definitions: Vec<Definition> = (0..=raised.definitions)
+        .map(|i| {
+            Definition::from_exact_bytes(
+                &READER_AUTHORITY,
+                format!("acme.bulk.{i}"),
+                "1",
+                DefinitionRole::MethodPlan,
+                BTreeSet::new(),
+                BTreeSet::new(),
+                format!("definition body {i}").as_bytes(),
+            )
+            .unwrap()
+        })
+        .collect();
+
+    let refusal = DefinitionCatalog::with_limits(definitions, raised).unwrap_err();
+    assert_eq!(
+        refusal,
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::Definitions,
+            limit: raised.definitions,
+        },
+        "must name the raised ceiling actually in force, not the original default"
+    );
+    assert_eq!(
+        refusal.to_string(),
+        format!(
+            "package resource limit exceeded: definitions (limit {})",
+            raised.definitions
+        )
+    );
 }
 
 #[trace("TC-180", "FR-131-AC-1", "FR-131-AC-2")]
@@ -755,7 +865,27 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         depth: 3,
         ..PackageLimits::default()
     };
-    assert!(resolve_parsed(&parsed, &catalog, &models, exact).is_ok());
+    assert_eq!(
+        resolve_parsed(&parsed, &catalog, &models, exact)
+            .unwrap()
+            .effective_limits(),
+        exact,
+        "a resolution records exactly the limits it was checked against"
+    );
+    let raised = PackageLimits {
+        definitions: PackageLimits::default().definitions + 1,
+        dependency_edges: PackageLimits::default().dependency_edges + 1,
+        depth: PackageLimits::default().depth + 1,
+        artifact_bytes: PackageLimits::default().artifact_bytes + 1,
+        single_artifact_bytes: PackageLimits::default().single_artifact_bytes + 1,
+    };
+    assert_eq!(
+        resolve_parsed(&parsed, &catalog, &models, raised)
+            .unwrap()
+            .effective_limits(),
+        raised,
+        "a caller-raised limit is recorded as given, never clamped to the default"
+    );
     assert_eq!(
         resolve_parsed(
             &parsed,
@@ -768,7 +898,10 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         )
         .unwrap_err()
         .cause,
-        PackageError::ResourceLimit
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::DependencyEdges,
+            limit: 1,
+        }
     );
     assert_eq!(
         resolve_parsed(
@@ -779,7 +912,10 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         )
         .unwrap_err()
         .cause,
-        PackageError::ResourceLimit
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::Depth,
+            limit: 2,
+        }
     );
 }
 
@@ -834,4 +970,97 @@ fn resolution_causes_match_the_complete_cause_catalog() {
             );
         }
     }
+}
+
+/// QSL-199: the size of one definition or compiled-model artifact is a
+/// caller limit (`PackageLimits::single_artifact_bytes`), not a fixed 1 MiB
+/// ceiling refused as invalid bytes. An artifact one byte past the default
+/// is built, refused at catalog admission naming the kind and the bound, and
+/// admitted once the caller raises the limit to its size.
+#[trace("TC-180", "FR-131-AC-2")]
+#[test]
+fn single_artifact_bytes_is_a_caller_limit_naming_its_bound() {
+    let default = PackageLimits::default();
+    let oversized = vec![b'x'; default.single_artifact_bytes + 1];
+    let definition = Definition::from_exact_bytes(
+        &READER_AUTHORITY,
+        "acme.large",
+        "1",
+        DefinitionRole::MethodPlan,
+        BTreeSet::new(),
+        BTreeSet::new(),
+        &oversized,
+    )
+    .expect("size is a catalog limit, not an invalid-bytes refusal");
+    let model = ModelArtifact::from_exact_bytes(&READER_AUTHORITY, "acme.large", "1", &oversized)
+        .expect("size is a catalog limit, not an invalid-bytes refusal");
+    let expected = PackageError::ResourceLimit {
+        kind: PackageLimitKind::SingleArtifactBytes,
+        limit: default.single_artifact_bytes,
+    };
+    assert_eq!(
+        DefinitionCatalog::with_limits(vec![definition.clone()], default).unwrap_err(),
+        expected
+    );
+    assert_eq!(
+        ModelCatalog::with_limits(vec![model.clone()], default).unwrap_err(),
+        expected
+    );
+    assert_eq!(
+        expected.to_string(),
+        format!(
+            "package resource limit exceeded: single_artifact_bytes (limit {})",
+            default.single_artifact_bytes
+        )
+    );
+
+    let raised = PackageLimits {
+        single_artifact_bytes: oversized.len(),
+        ..default
+    };
+    assert!(DefinitionCatalog::with_limits(vec![definition], raised).is_ok());
+    assert!(ModelCatalog::with_limits(vec![model], raised).is_ok());
+}
+
+/// QSL-199: resolution checks `single_artifact_bytes` under its own limits,
+/// whatever limits the catalog was built under.
+#[trace("TC-180", "FR-131-AC-2")]
+#[test]
+fn resolution_enforces_its_own_single_artifact_bytes() {
+    let default = PackageLimits::default();
+    let mut definitions = complete_definitions();
+    definitions[0] = Definition::from_exact_bytes(
+        &READER_AUTHORITY,
+        definitions[0].exact().identity(),
+        "1",
+        DefinitionRole::Source,
+        BTreeSet::new(),
+        CapabilityId::complete_inventory().into_iter().collect(),
+        &vec![b'x'; default.single_artifact_bytes + 1],
+    )
+    .unwrap();
+    let model = compiled_model();
+    let parsed = resolved_source(&definitions, &model);
+    let raised = PackageLimits {
+        single_artifact_bytes: default.single_artifact_bytes + 1,
+        ..default
+    };
+    let catalog = DefinitionCatalog::with_limits(definitions, raised).unwrap();
+    let models = ModelCatalog::new(vec![model]).unwrap();
+
+    let refusal = resolve_parsed(&parsed, &catalog, &models, default).unwrap_err();
+    assert_eq!(refusal.code, Code::ResourceExhausted);
+    assert_eq!(
+        refusal.cause,
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::SingleArtifactBytes,
+            limit: default.single_artifact_bytes,
+        }
+    );
+    assert_eq!(
+        resolve_parsed(&parsed, &catalog, &models, raised)
+            .unwrap()
+            .effective_limits(),
+        raised
+    );
 }

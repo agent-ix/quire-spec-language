@@ -384,7 +384,7 @@ fn r02_a_compatible_operation_redefinition_admits_every_axis() {
     }
 }
 
-#[trace("TC-196", "FR-151-AC-2", "FR-151-AC-4")]
+#[trace("TC-218", "FR-082-AC-1")]
 #[test]
 fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
     let domain_package = bundle_h(vec![operation_redefining(
@@ -441,7 +441,7 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
     }
 }
 
-#[trace("TC-196", "FR-151-AC-4")]
+#[trace("TC-239", "FR-082-AC-5")]
 #[test]
 fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
     let domain_package = bundle_h(vec![operation_redefining(
@@ -594,7 +594,7 @@ fn r06_subsetting_type_and_multiplicity_axes() {
 // one `redefines`, never several competing candidates. TC-196 R07's "two
 // distinct, both-legitimate inherited targets" shape is therefore
 // structurally unreachable here and is dropped rather than adapted.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("TC-219", "FR-082-AC-2")]
 #[test]
 fn r07_zero_inherited_targets_refuses_redefinition_target() {
     // Zero inherited targets: B.z claims to redefine C.w, but B does not
@@ -616,7 +616,11 @@ fn r07_zero_inherited_targets_refuses_redefinition_target() {
             ),
         ],
     );
-    match resolve_redefinition_target(&zero, &DeclarationKey::fixture("model.B.z")) {
+    match resolve_redefinition_target(
+        &zero,
+        &DeclarationKey::fixture("model.B.z"),
+        ModelNormalizationLimits::UNLIMITED.ancestor_steps,
+    ) {
         Ok(RedefinitionTargetOutcome::Refused { cause, candidate }) => {
             assert_eq!(
                 cause,
@@ -672,7 +676,7 @@ fn r08_base() -> Vec<DomainPackageRecord> {
     ]
 }
 
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("TC-221", "FR-082-AC-4")]
 #[test]
 fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
     let mut records = r08_base();
@@ -697,7 +701,7 @@ fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
     }
 }
 
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("TC-221", "FR-082-AC-4")]
 #[test]
 fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation() {
     let mut records = r08_base();
@@ -1851,5 +1855,158 @@ fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
             );
         }
         other => panic!("expected Refused(field-presence), got {other:?}"),
+    }
+}
+
+/// QSL-199: a linear chain `model.chain.0 -> model.chain.1 -> ... ->
+/// model.chain.{depth}`, each type's own single direct supertype the next
+/// in the chain; `model.chain.{depth}` itself has none. `model.chain.0` has
+/// exactly `depth` ancestors. Two fields ride on the chain's ends: one on
+/// `model.chain.0` typed `model.chain.0`, one on `model.chain.{depth}` typed
+/// `model.chain.{depth}`, so checking the first as a redefinition of the
+/// second walks `depth` generalization steps.
+fn ancestor_chain_package(depth: u64) -> DomainPackage {
+    let mut records: Vec<DomainPackageRecord> = (0..=depth)
+        .map(|i| {
+            let supertypes = if i < depth {
+                vec![DeclarationKey::fixture(format!("model.chain.{}", i + 1))]
+            } else {
+                vec![]
+            };
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: DeclarationKey::fixture(format!("model.chain.{i}")),
+                interface_features: None,
+                abstract_type: false,
+                supertypes,
+            })
+        })
+        .collect();
+    records.push(field_member(
+        "model.chain.redefining",
+        "model.chain.0",
+        "model.chain.0",
+        mult(0, Some(1)),
+    ));
+    records.push(field_member(
+        &format!("model.chain.{depth}.redefined"),
+        &format!("model.chain.{depth}"),
+        &format!("model.chain.{depth}"),
+        mult(0, Some(1)),
+    ));
+    DomainPackage::new(DomainPackageRef::fixture("bundle.chain"), records)
+}
+
+fn check_chain(depth: u64, limits: ModelNormalizationLimits) -> ConformanceCheckOutcome {
+    let mut meter = Meter::new(limits);
+    check_field_redefinition(
+        &ancestor_chain_package(depth),
+        &DeclarationKey::fixture("model.chain.redefining"),
+        &DeclarationKey::fixture(format!("model.chain.{depth}.redefined")),
+        &mut meter,
+    )
+}
+
+/// QSL-199 AC-4: a valid model with more than 128 ancestors on one type
+/// passes conformance at default (unlimited) limits. The removed fixed
+/// ceiling of 128 refused this whatever the caller configured (ADR-011 §7.3;
+/// NFR-001 "an implementation ceiling is not a domain bound").
+#[trace("TC-220", "FR-082-AC-3")]
+#[test]
+fn a_type_with_more_than_128_ancestors_passes_conformance_at_default_limits() {
+    assert_eq!(
+        check_chain(129, ModelNormalizationLimits::UNLIMITED),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible),
+    );
+}
+
+/// TC-220: a chain of exactly `ancestor_steps` generalization steps
+/// completes with a conformance verdict, and one step longer refuses with
+/// the distinct `resource_exhausted` outcome naming the configured bound --
+/// never a `Completed` verdict of either polarity, which is what a walk
+/// truncated at the bound would report.
+#[trace("TC-220", "FR-082-AC-3")]
+#[test]
+fn an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses() {
+    const BOUND: u64 = 50;
+    let limits = ModelNormalizationLimits {
+        ancestor_steps: BOUND,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+
+    assert_eq!(
+        check_chain(BOUND, limits),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible),
+        "a chain of exactly ancestor_steps generalization steps must be admitted"
+    );
+
+    match check_chain(BOUND + 1, limits) {
+        ConformanceCheckOutcome::Refused(refusal) => {
+            assert_eq!(refusal.code, Code::ResourceExhausted);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::AncestorSteps {
+                    from: DeclarationKey::fixture("model.chain.0"),
+                    limit: BOUND,
+                }
+            );
+            assert_eq!(refusal.cause.as_str(), "ancestor-steps");
+            assert!(
+                refusal.detail.contains(&BOUND.to_string()),
+                "refusal detail must name the configured bound, got {refusal:?}"
+            );
+        }
+        other => panic!("expected Refused(AncestorSteps), got {other:?}"),
+    }
+}
+
+/// QSL-199 AC-4, end to end: a model with more than 128 ancestors on one
+/// type normalizes at default (unlimited) limits, and the same model's
+/// redefinition then passes conformance. The removed fixed ceiling of 128
+/// on normalization's ancestor paths refused this before conformance ever
+/// ran.
+#[trace("TC-220", "FR-082-AC-3")]
+#[test]
+fn a_type_with_more_than_128_ancestors_normalizes_and_conforms_at_default_limits() {
+    const DEPTH: u64 = 130;
+    let domain_package = ancestor_chain_package(DEPTH);
+    match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+        NormalizeOutcome::Completed(_) => {}
+        other => panic!("expected a completed effective view, got {other:?}"),
+    }
+    assert_eq!(
+        check_chain(DEPTH, ModelNormalizationLimits::UNLIMITED),
+        ConformanceCheckOutcome::Completed(ConformanceOutcome::Compatible),
+    );
+}
+
+/// TC-220 at normalization: an ancestor path of exactly `ancestor_steps`
+/// generalization steps normalizes, and one step longer refuses with
+/// `resource_exhausted` naming the configured bound.
+#[trace("TC-220", "FR-082-AC-3")]
+#[test]
+fn normalization_admits_an_ancestor_path_at_the_bound_and_refuses_one_longer() {
+    const BOUND: u64 = 40;
+    let limits = ModelNormalizationLimits {
+        ancestor_steps: BOUND,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    assert!(matches!(
+        normalize(&ancestor_chain_package(BOUND), limits),
+        NormalizeOutcome::Completed(_)
+    ));
+    match normalize(&ancestor_chain_package(BOUND + 1), limits) {
+        NormalizeOutcome::Refused(refusals) => {
+            assert_eq!(refusals.len(), 1);
+            let refusal = refusals.into_first();
+            assert_eq!(refusal.code, Code::ResourceExhausted);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::AncestorSteps {
+                    from: DeclarationKey::fixture("model.chain.0"),
+                    limit: BOUND,
+                }
+            );
+        }
+        other => panic!("expected Refused(AncestorSteps), got {other:?}"),
     }
 }

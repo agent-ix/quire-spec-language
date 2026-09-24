@@ -107,7 +107,9 @@ pub struct SourceReadRefusal {
     pub error: SourceReadError,
 }
 
-/// Hard source-content ceiling; callers may select a lower value.
+/// Default source-content ceiling for callers that configure none. It is
+/// not a clamp: [`Source::read_typed`] enforces the caller's own
+/// `byte_limit` as given (NFR-001).
 pub const MAX_SOURCE_BYTES: usize = 1_048_576;
 
 impl Source {
@@ -123,7 +125,6 @@ impl Source {
         byte_limit: usize,
     ) -> Result<Self, Box<SourceReadRefusal>> {
         let path = path.into();
-        let byte_limit = byte_limit.min(MAX_SOURCE_BYTES);
         let point = Position {
             byte: 0,
             line: 1,
@@ -158,7 +159,7 @@ impl Source {
                 SourceReadCause::ByteBudget,
                 identity,
                 path,
-                "source byte budget exhausted",
+                &format!("source byte budget exhausted (limit {byte_limit})"),
             )));
         }
         let text = match std::str::from_utf8(bytes) {

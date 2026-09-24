@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-030: distinguish input ceilings, profile skew and foreign Quire context.
 
-use super::{
-    Limits, Selection, SemanticContext, Source, CONTRACT_VERSION, MAX_LINES, MAX_SOURCE_BYTES,
-    SEMANTIC_CORE_VERSION,
-};
+use super::{Limits, Selection, SemanticContext, Source, CONTRACT_VERSION, SEMANTIC_CORE_VERSION};
 use qsl_foundation::Code;
 
 /// Failure before invoking Quire, with a typed discriminator and actual context.
@@ -17,7 +14,7 @@ pub enum PreflightFailure {
     SourceBytes {
         /// Original source bytes.
         actual: usize,
-        /// Effective caller-lowered ceiling.
+        /// The caller's ceiling, used as given.
         maximum: usize,
     },
     /// Original line count cannot be admitted under the selected ceiling.
@@ -25,7 +22,7 @@ pub enum PreflightFailure {
     SourceLines {
         /// Actual final line, or absence if the source index cannot locate EOF.
         actual: Option<usize>,
-        /// Effective caller-lowered ceiling.
+        /// The caller's ceiling, used as given.
         maximum: usize,
     },
     /// The context selects a different Quire contract version.
@@ -90,14 +87,14 @@ pub(super) fn check(
     limits: Limits,
 ) -> Result<(), Box<PreflightFailure>> {
     let actual = original.text().len();
-    let maximum = limits.source_bytes.min(MAX_SOURCE_BYTES);
+    let maximum = limits.source_bytes;
     if actual > maximum {
         return Err(Box::new(PreflightFailure::SourceBytes { actual, maximum }));
     }
     let actual = original
         .position(original.text().len())
         .map(|position| position.line);
-    let maximum = limits.lines.min(MAX_LINES);
+    let maximum = limits.lines;
     if actual.is_none_or(|actual| actual > maximum) {
         return Err(Box::new(PreflightFailure::SourceLines { actual, maximum }));
     }

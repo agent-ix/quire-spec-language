@@ -13,7 +13,8 @@ mod package_tests;
 
 pub use package::{
     resolve_source_package, CompleteBundle, Definition, DefinitionCatalog, DefinitionConflict,
-    DefinitionRole, Facet, ModelArtifact, ModelCatalog, PackageLimits, PackageRefusal,
-    ReaderAuthority, ResolutionCause, ResolvedSourcePackage, SemanticDigest, SourceAuthority,
+    DefinitionRole, Facet, ModelArtifact, ModelCatalog, PackageLimitKind, PackageLimits,
+    PackageRefusal, ReaderAuthority, ResolutionCause, ResolvedSourcePackage, SemanticDigest,
+    SourceAuthority,
 };
 pub use package::{CapabilityId, PackageError, SourceDigest};

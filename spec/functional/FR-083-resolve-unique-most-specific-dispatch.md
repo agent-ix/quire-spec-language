@@ -88,14 +88,18 @@ over its concrete descendants.
 
 ### Family enumeration is bounded
 
-The model checker SHALL bound the depth of the redefinition-family walk, at
-a fixed depth ceiling distinct from any `ModelNormalizationLimitsV1` charge
-counter — the QSL implementation's `MAX_DISPATCH_DEPTH` constant in
-`qsl-semantics/src/model/dispatch.rs`, currently 128. If the walk would exceed the
-bound, the model checker SHALL refuse the family outright with a
-resource-exhaustion cause naming the bound and SHALL NOT report a linked
-table or an ambiguity result for that family. Exceeding this depth ceiling
-is a real defect in the redefinition family (a `Refused` outcome), never the
+The model checker SHALL bound the redefinition-family walk by the
+caller-supplied `family_steps` ceiling carried in
+`ModelNormalizationLimitsV1`. The ceiling counts the `redefines` edges the
+walk follows, one per redefiner admitted to the family, so a chain of `n`
+redefinitions is admitted at a ceiling of `n`; the same ceiling bounds the
+effective-precondition walk up each linked candidate's `redefines` chain. The
+checker SHALL use the caller's ceiling as given and SHALL NOT substitute a
+fixed implementation ceiling for it. The ceiling is read, never charged. If
+the walk would follow one edge more than the ceiling, the model checker SHALL
+refuse the family outright with a resource-exhaustion cause (`family-steps`)
+naming the ceiling and SHALL NOT report a linked table or an ambiguity result
+for that family. Reaching this ceiling is a `Refused` outcome, never the
 `Incomplete` outcome a denied `ModelNormalizationLimitsV1` charge produces;
 see FR-082's "Ancestor and conformance walks are bounded" for the same
 distinction and its ADR-013 O-21 grounding.

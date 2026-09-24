@@ -565,7 +565,12 @@ pub fn check_connection(
     ) {
         flow_source.value_type == flow_target.value_type
     } else {
-        match type_conforms(&generals, &flow_source.value_type, &flow_target.value_type) {
+        match type_conforms(
+            &generals,
+            &flow_source.value_type,
+            &flow_target.value_type,
+            meter.limits().ancestor_steps,
+        ) {
             Ok(conforms) => conforms,
             Err(refusal) => return ConnectionCheckOutcome::Refused(refusal),
         }

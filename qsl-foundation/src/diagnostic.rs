@@ -484,7 +484,8 @@ pub fn error(
 // `SourceMap::verify` and `SourceMap::map_span` keep their existing
 // `Result<_, Box<Diagnostic>>` signatures.
 impl crate::source::Source {
-    /// Read original UTF-8 bytes without normalization. Caller may lower the 1 MiB ceiling.
+    /// Read original UTF-8 bytes without normalization, refusing more than
+    /// `byte_limit` bytes. The caller's `byte_limit` is used as given.
     pub fn read(
         identity: SourceIdentity,
         path: impl Into<String>,

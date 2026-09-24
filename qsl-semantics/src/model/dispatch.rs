@@ -48,12 +48,6 @@ use crate::model::key::DeclarationKey;
 use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::Code;
 
-/// Bounds the family-closure walk `link_dispatch` performs over operation
-/// members' own inline `redefines` edges: an explicit task stack, never
-/// native recursion, with a visited set and this depth ceiling as a typed
-/// `resource_exhausted` refusal.
-const MAX_DISPATCH_DEPTH: usize = 128;
-
 /// Whether a [`crate::model::domain_package::DomainPackageRef`]'s generalization graph
 /// is closed. See the module docs: this is not a `DomainPackage` field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -152,7 +146,9 @@ pub enum LinkCheckOutcome {
     /// [`DispatchLinkOutcome`].
     Completed(DispatchLinkOutcome),
     /// A real defect (a dangling operation reference, or a family/dominance
-    /// walk deeper than `MAX_DISPATCH_DEPTH`) refused the check outright.
+    /// walk reaching the caller's own configured `family_steps`/
+    /// `ancestor_steps` ceiling, ADR-011 §7.3 QSL-199) refused the check
+    /// outright.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-link.
     Incomplete(Incomplete),
@@ -206,33 +202,42 @@ impl DispatchIndex {
 /// `redefines` property (`model-complete.md`:162), sorted ascending by
 /// [`DeclarationKey`] for deterministic reporting. Bounded task stack, never
 /// native recursion, over the domain package's own operation members.
+/// `max_steps` is the caller's `family_steps` ceiling
+/// ([`crate::model::accounting::ModelNormalizationLimits::family_steps`]),
+/// used as given: it bounds how many `redefines` edges the walk follows into
+/// the family, one per redefiner admitted, so a linear chain of `n`
+/// redefinitions below `original` is admitted at `max_steps == n`. Following
+/// one more refuses with [`ModelRefusalCause::FamilySteps`] naming
+/// `original` and `max_steps`; the family is never truncated.
 fn build_family(
     index: &DispatchIndex,
     original: &DeclarationKey,
+    max_steps: u64,
 ) -> Result<Vec<DeclarationKey>, ModelRefusal> {
     let mut family = vec![original.clone()];
     let mut frontier: Vec<DeclarationKey> = vec![original.clone()];
     let mut visited: HashSet<DeclarationKey> = HashSet::new();
     visited.insert(original.clone());
-    let mut steps: usize = 0;
+    let mut steps: u64 = 0;
     while let Some(target) = frontier.pop() {
-        steps += 1;
-        if steps > MAX_DISPATCH_DEPTH {
-            return Err(ModelRefusal {
-                code: Code::ResourceExhausted,
-                cause: ModelRefusalCause::DispatchFamilyDepth {
-                    original: original.clone(),
-                },
-                detail: format!(
-                    "dispatch family for {} exceeded {MAX_DISPATCH_DEPTH} redefinition steps",
-                    original.node
-                ),
-            });
-        }
         for operation in index.operations.values() {
             if operation.redefines.as_ref() == Some(&target)
                 && visited.insert(operation.key.clone())
             {
+                if steps >= max_steps {
+                    return Err(ModelRefusal {
+                        code: Code::ResourceExhausted,
+                        cause: ModelRefusalCause::FamilySteps {
+                            original: original.clone(),
+                            limit: max_steps,
+                        },
+                        detail: format!(
+                            "dispatch family for {} exceeded the family_steps limit of {max_steps}",
+                            original.node
+                        ),
+                    });
+                }
+                steps += 1;
                 family.push(operation.key.clone());
                 frontier.push(operation.key.clone());
             }
@@ -248,11 +253,12 @@ fn dominates(
     generals_by_specific: &HashMap<DeclarationKey, Vec<DeclarationKey>>,
     p_owner: &DeclarationKey,
     q_owner: &DeclarationKey,
+    max_steps: u64,
 ) -> Result<bool, ModelRefusal> {
     if p_owner == q_owner {
         return Ok(false);
     }
-    type_conforms(generals_by_specific, p_owner, q_owner)
+    type_conforms(generals_by_specific, p_owner, q_owner, max_steps)
 }
 
 /// Links `original`'s dispatch family across every effective type `view`
@@ -286,7 +292,7 @@ pub fn link_dispatch(
     };
     let receiver_type = receiver_operation.owner.clone();
 
-    let family = match build_family(&index, original) {
+    let family = match build_family(&index, original, meter.limits().family_steps) {
         Ok(family) => family,
         Err(refusal) => return LinkCheckOutcome::Refused(refusal),
     };
@@ -312,6 +318,7 @@ pub fn link_dispatch(
             &index.generals_by_specific,
             candidate_subtype,
             &receiver_type,
+            meter.limits().ancestor_steps,
         ) {
             Ok(true) => subtypes.push(candidate_subtype.clone()),
             Ok(false) => {}
@@ -347,7 +354,12 @@ pub fn link_dispatch(
                 });
             };
             let candidate_owner = &candidate_record.owner;
-            match type_conforms(&index.generals_by_specific, subtype, candidate_owner) {
+            match type_conforms(
+                &index.generals_by_specific,
+                subtype,
+                candidate_owner,
+                meter.limits().ancestor_steps,
+            ) {
                 Ok(true) => applicable.push(candidate.clone()),
                 Ok(false) => {}
                 Err(refusal) => return LinkCheckOutcome::Refused(refusal),
@@ -400,7 +412,12 @@ pub fn link_dispatch(
                     });
                 };
                 let q_owner = &q_record.owner;
-                match dominates(&index.generals_by_specific, p_owner, q_owner) {
+                match dominates(
+                    &index.generals_by_specific,
+                    p_owner,
+                    q_owner,
+                    meter.limits().ancestor_steps,
+                ) {
                     Ok(true) => {
                         dominance_pairs.push(DominancePair {
                             dominant: p.clone(),

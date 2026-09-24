@@ -173,6 +173,7 @@ pub(super) fn parse(
         diagnostics,
         selections,
         false,
+        limits,
     ))
 }
 

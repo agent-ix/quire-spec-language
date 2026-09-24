@@ -229,6 +229,8 @@ pub fn read_source(
     byte_limit: usize,
 ) -> Result<Source, Box<CompleteDiagnostic>> {
     Source::read_typed(identity, path, bytes, byte_limit).map_err(|refusal| {
+        let limit = (refusal.cause == SourceReadCause::ByteBudget)
+            .then_some(SyntaxLimit::SourceBytes { bound: byte_limit });
         let (code, cause, phase) = match refusal.cause {
             SourceReadCause::UnnamedSource => (
                 CompleteCode::InvalidSourceIdentity,
@@ -260,7 +262,7 @@ pub fn read_source(
             span: refusal.error.span,
             related: Vec::new(),
             message: refusal.error.message,
-            limit: None,
+            limit,
         })
     })
 }

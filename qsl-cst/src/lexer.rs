@@ -10,25 +10,29 @@ use qsl_foundation::diagnostic::{error, resource_exhausted};
 use qsl_foundation::{Code, Diagnostic, Phase, Source, Span, SyntaxLimit};
 
 /// Layer-1 parse limits: the lexer's own recognizer bounds and the
-/// complete-V1 CST bounds built on it. Caller limits may lower these
-/// ceilings, never disable them. Equality compares the requested capacities,
-/// so a resource-only configuration change remains visible in retained build
-/// provenance.
+/// complete-V1 CST bounds built on it. Every field is used exactly as the
+/// caller supplies it, above or below [`Self::default`]: an implementation
+/// ceiling is not a domain bound (NFR-001), and the default is only the
+/// starting point for a caller who configures none. The limits one parse ran
+/// under are recorded on its [`crate::ParsedSource::effective_limits`].
+/// Equality compares the requested capacities, so a resource-only
+/// configuration change remains visible in retained build provenance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
-    /// Inclusive input-content ceiling, clamped to 1 MiB.
+    /// Inclusive input-content ceiling. Defaults to 1 MiB.
     pub source_bytes: usize,
     /// Maximum tokens the lexer's recognizer admits, and the retained CST
-    /// leaf ceiling for complete-V1 parsing. Clamped to 100,000.
+    /// leaf ceiling for complete-V1 parsing. Defaults to 100,000.
     pub tokens: usize,
-    /// Maximum CST nodes, clamped to 50,000: complete-V1 parsing counts one
+    /// Maximum CST nodes. Defaults to 50,000: complete-V1 parsing counts one
     /// node per matched grammar production.
     pub nodes: usize,
     /// Maximum bracket-pair nesting depth (NFR-001 "Nesting level"): one
     /// level is one `(…)`, `[…]`, `{…}` or type-argument `<…>` pair;
     /// operator, prefix, `let … in` and `if … else` chains add none. The
-    /// default is NFR-001's 64. A ceiling the implementation imposes on a
-    /// larger request is not a domain bound.
+    /// default is NFR-001's 64, and a caller's value is used as given: the
+    /// lexer and parser keep explicit stacks, so a raised ceiling cannot
+    /// overflow the host stack.
     pub nesting: usize,
 }
 
@@ -39,21 +43,6 @@ impl Default for Limits {
             tokens: 100_000,
             nodes: 50_000,
             nesting: 64,
-        }
-    }
-}
-
-impl Limits {
-    /// Clamp every field to its hard ceiling, never raising it.
-    // Widened to `pub`: the root crate's `complete::parse_with_catalog` calls
-    // it across the crate boundary (ADR-011 §7.3 X-3).
-    pub fn bounded(self) -> Self {
-        let hard = Self::default();
-        Self {
-            source_bytes: self.source_bytes.min(hard.source_bytes),
-            tokens: self.tokens.min(hard.tokens),
-            nodes: self.nodes.min(hard.nodes),
-            nesting: self.nesting.min(hard.nesting),
         }
     }
 }
