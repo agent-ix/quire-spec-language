@@ -194,14 +194,9 @@ fn fixture_f1_with_second_population() -> DomainPackage {
     domain_package
 }
 
-fn admitted_binding(
-    domain_package: &DomainPackage,
-    view: &EffectiveView,
-    document: &PopulationDocument,
-) -> PopulationBinding {
+fn admitted_binding(view: &EffectiveView, document: &PopulationDocument) -> PopulationBinding {
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     match admit_binding(
-        domain_package,
         view,
         document,
         &p1_population_key(),
@@ -254,7 +249,7 @@ fn scenario() -> Scenario {
     let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+    let binding = admitted_binding(&view, &p1("test/orders"));
     let model = AdmittedModel::new(&domain_package, &view).unwrap();
     Scenario {
         universe,
@@ -293,7 +288,6 @@ fn l07_scenario() -> Scenario {
     };
     let population = p1_population_key();
     let context = InvocationContext {
-        domain_package: &domain_package,
         view: &view,
         population: &population,
         subtype_closure: GeneralizationClosure::Closed,
@@ -2272,7 +2266,6 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
     };
     let mut meter1 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let b1_binding = match admit_binding(
-        &domain_package,
         &view,
         &b1_document,
         &p1_population_key(),
@@ -2285,7 +2278,6 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
     };
     let mut meter2 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let b2_binding = match admit_binding(
-        &domain_package,
         &view,
         &b2_document,
         &p2_population_key(),
@@ -2373,7 +2365,6 @@ fn with_population_refuses_a_conflicting_binding_under_a_shared_id() {
 
     let mut meter_3 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding_3 = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -2386,7 +2377,6 @@ fn with_population_refuses_a_conflicting_binding_under_a_shared_id() {
     };
     let mut meter_7 = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding_7 = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -2525,7 +2515,6 @@ fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
 
     let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -2600,7 +2589,6 @@ fn tc_295_population_maximum_mismatch_refuses_even_when_unconsumed() {
 
     let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -2735,7 +2723,6 @@ fn tc_391_call_refuses_a_population_maximum_mismatch_at_admission() {
     let b = type_id(&view, "model.B");
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -2799,7 +2786,6 @@ fn model_query_refusal_reaches_the_caller_with_its_own_code() {
     };
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &domain_package,
         &view,
         &document,
         &p1_population_key(),
@@ -2866,7 +2852,6 @@ fn both_family_outcome_arms_reach_a_caller_through_the_s6a_seam() {
         };
         let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
         match admit_binding(
-            &domain_package,
             &view,
             &document,
             &p1_population_key(),

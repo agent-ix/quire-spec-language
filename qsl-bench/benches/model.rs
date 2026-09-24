@@ -97,11 +97,11 @@ fn normalization_and_admission(c: &mut Criterion) {
         let effective = view(&domain_package);
         let document = population_document(shape(types), ADMITTED_MEMBERS);
         assert!(matches!(
-            admit_population(&domain_package, &effective, &document),
+            admit_population(&effective, &document),
             AdmissionOutcome::Admitted(_)
         ));
         assert!(matches!(
-            admit_unchanged_invocation(&domain_package, &effective, &document),
+            admit_unchanged_invocation(&effective, &document),
             AdmissionOutcome::Admitted(_)
         ));
         assert!(resolve_root_field_redefinition(&domain_package).is_ok());
@@ -113,13 +113,13 @@ fn normalization_and_admission(c: &mut Criterion) {
         );
         group.bench_with_input(
             BenchmarkId::new("admit_binding", types),
-            &domain_package,
-            |b, package| b.iter(|| admit_population(package, &effective, &document)),
+            &effective,
+            |b, effective| b.iter(|| admit_population(effective, &document)),
         );
         group.bench_with_input(
             BenchmarkId::new("admit_invocation", types),
-            &domain_package,
-            |b, package| b.iter(|| admit_unchanged_invocation(package, &effective, &document)),
+            &effective,
+            |b, effective| b.iter(|| admit_unchanged_invocation(effective, &document)),
         );
         group.bench_with_input(
             BenchmarkId::new("conformance/resolve_redefinition_target", types),

@@ -1532,7 +1532,6 @@ mod tests {
         };
         let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
         match admit_binding(
-            &domain_package,
             &view,
             &document,
             &DeclarationKey::fixture("model.pop.p1"),

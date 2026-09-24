@@ -88,7 +88,7 @@ no release and gates no merge.
 
 Every criterion benchmark in `qsl-bench/benches/model.rs`: one call of each
 model-layer stage (`intake::admit`, `intake::read_records`, `normalize`,
-`object_universe_of`, `admit_binding`, `admit_invocation`, `all_instances`) and
+`admit_binding`, `admit_invocation`, `all_instances`) and
 one bare parse by each JSON parser intake runs, over an N-type `DomainPackage`
 built through FR-154 intake. Each benchmark id is one observation dimension.
 Inputs are generated, not sampled, so the population is fixed by the protected

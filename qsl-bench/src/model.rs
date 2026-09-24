@@ -292,14 +292,9 @@ pub fn population_document(shape: ModelShape, members: usize) -> PopulationDocum
 
 /// FR-153 binding admission of `document` into `Pop`, with a closed
 /// subtype closure and a declared maximum of `document`'s own size.
-pub fn admit_population(
-    domain_package: &DomainPackage,
-    view: &EffectiveView,
-    document: &PopulationDocument,
-) -> AdmissionOutcome {
+pub fn admit_population(view: &EffectiveView, document: &PopulationDocument) -> AdmissionOutcome {
     let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     admit_binding(
-        domain_package,
         view,
         document,
         &key("Pop"),
@@ -315,7 +310,6 @@ pub fn admit_population(
 /// [`admit_population`] done at both instants, plus a frame check that
 /// passes.
 pub fn admit_unchanged_invocation(
-    domain_package: &DomainPackage,
     view: &EffectiveView,
     document: &PopulationDocument,
 ) -> AdmissionOutcome {
@@ -325,7 +319,6 @@ pub fn admit_unchanged_invocation(
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     admit_invocation(
         InvocationContext {
-            domain_package,
             view,
             population: &population,
             subtype_closure: GeneralizationClosure::Closed,
@@ -353,11 +346,7 @@ pub fn admitted(shape: ModelShape, members: usize) -> (DomainPackage, Population
     let domain_package =
         intake(&offer(document(shape))).expect("the generated document passes intake");
     let effective = view(&domain_package);
-    match admit_population(
-        &domain_package,
-        &effective,
-        &population_document(shape, members),
-    ) {
+    match admit_population(&effective, &population_document(shape, members)) {
         AdmissionOutcome::Admitted(binding) => (domain_package, binding),
         other => panic!("the generated population admits: {other:?}"),
     }
@@ -418,7 +407,7 @@ mod tests {
         assert!(resolve_root_field_redefinition(&domain_package).is_ok());
         let effective = view(&domain_package);
         assert!(matches!(
-            admit_unchanged_invocation(&domain_package, &effective, &population_document(shape, 1)),
+            admit_unchanged_invocation(&effective, &population_document(shape, 1)),
             AdmissionOutcome::Admitted(_)
         ));
     }

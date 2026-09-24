@@ -251,23 +251,11 @@ fn fixture_other_universe() -> DomainPackage {
     )
 }
 
-/// A version-only variant of [`fixture_f1`], for the view/domain package
-/// correspondence test below: same `identity` and digest as
+/// A version-only variant of [`fixture_f1`]: same `identity` and digest as
 /// `fixture_f1()` — only `version` differs.
 fn fixture_f1_with_version(version: &str) -> DomainPackage {
     let mut domain_package = fixture_f1();
     domain_package.model_selection.version = version.to_owned();
-    domain_package
-}
-
-/// A digest-only variant of [`fixture_f1`], for the l05 correspondence test's
-/// third case: same `identity` and `version` as `fixture_f1()` — only
-/// `digest` differs (its first byte flipped), so the `ForeignModelSelection`
-/// check is exercised over a header that disagrees in exactly one component
-/// at a time, not just `identity` (the base l05 test) or `version` (F13).
-fn fixture_f1_with_different_digest() -> DomainPackage {
-    let mut domain_package = fixture_f1();
-    domain_package.model_selection.digest[0] ^= 0xff;
     domain_package
 }
 
@@ -388,7 +376,6 @@ fn l01_all_instances_selects_subtype_population_once() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -486,7 +473,6 @@ fn l01_all_instances_incomplete_at_result_retain() {
     let view = view_of(&domain_package);
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -532,7 +518,6 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     assert_eq!(
         admit_binding(
-            &open_extent,
             &open_view,
             &p1("test/orders"),
             &p1_population_key(),
@@ -559,7 +544,6 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
     let mut open_subtypes = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     assert_eq!(
         admit_binding(
-            &domain_package,
             &view,
             &p1("test/orders"),
             &p1_population_key(),
@@ -581,14 +565,9 @@ fn l02_unknown_closure_is_incomplete_not_refused() {
     assert!(open_subtypes.admitted_charges().is_empty());
 }
 
-fn admitted_binding(
-    domain_package: &DomainPackage,
-    view: &EffectiveView,
-    document: &PopulationDocument,
-) -> PopulationBinding {
+fn admitted_binding(view: &EffectiveView, document: &PopulationDocument) -> PopulationBinding {
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     match admit_binding(
-        domain_package,
         view,
         document,
         &p1_population_key(),
@@ -624,7 +603,7 @@ fn l03_lookup_undefined_mode() {
     let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+    let binding = admitted_binding(&view, &p1("test/orders"));
 
     let rb = lookup_key(DeclarationKey::fixture("model.B"), &universe, &b, "b1");
     let mut meter_present = Meter::new(SCALAR_UNLIMITED);
@@ -680,7 +659,7 @@ fn l03_lookup_empty_mode() {
     let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
-    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+    let binding = admitted_binding(&view, &p1("test/orders"));
 
     let rb = lookup_key(DeclarationKey::fixture("model.B"), &universe, &b, "b1");
     let mut meter_present = Meter::new(SCALAR_UNLIMITED);
@@ -728,7 +707,7 @@ fn l03_lookup_refused_mode() {
     let view = view_of(&domain_package);
     let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+    let binding = admitted_binding(&view, &p1("test/orders"));
 
     let rc = lookup_key(DeclarationKey::fixture("model.A"), &universe, &a, "c9");
     let mut meter = Meter::new(SCALAR_UNLIMITED);
@@ -769,7 +748,7 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
     let view = view_of(&domain_package);
     let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+    let binding = admitted_binding(&view, &p1("test/orders"));
 
     let malformed = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
@@ -811,7 +790,7 @@ fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
     let view = view_of(&domain_package);
     let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+    let binding = admitted_binding(&view, &p1("test/orders"));
 
     let ra = LookupKey {
         static_type: DeclarationKey::fixture("model.A"),
@@ -850,7 +829,7 @@ fn l03_lookup_type_mismatch_before_any_charge() {
     let view = view_of(&domain_package);
     let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+    let binding = admitted_binding(&view, &p1("test/orders"));
 
     let ra = lookup_key(DeclarationKey::fixture("model.A"), &universe, &a, "a1");
     let mut meter = Meter::new(SCALAR_UNLIMITED);
@@ -888,7 +867,7 @@ fn l04_lookup_foreign_universe_refuses() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+    let binding = admitted_binding(&view, &p1("test/orders"));
 
     let other = fixture_other_universe();
     let foreign_universe = view_of(&other).object_universe().identity();
@@ -943,7 +922,7 @@ fn l04b_lookup_wrong_length_universe_refuses_as_foreign() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
     let a = type_id(&view, "model.A");
-    let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
+    let binding = admitted_binding(&view, &p1("test/orders"));
 
     let wrong_length_universe = vec![0x07; 31];
     let rx = LookupKey {
@@ -1000,7 +979,6 @@ fn oqe_lookup_across_connected_components_refuses_as_foreign_universe() {
 
     let mut ab_admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let ab_binding = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -1014,7 +992,6 @@ fn oqe_lookup_across_connected_components_refuses_as_foreign_universe() {
 
     let mut e_admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let e_binding = match admit_binding(
-        &domain_package,
         &view,
         &p_e("test/orders"),
         &e_population_key(),
@@ -1081,7 +1058,6 @@ fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &document,
         &p1_population_key(),
@@ -1134,7 +1110,6 @@ fn l05_duplicate_collapses_and_recovers_l01() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &domain_package,
         &view,
         &document,
         &p1_population_key(),
@@ -1181,7 +1156,6 @@ fn l05_foreign_type_refuses() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &document,
         &p1_population_key(),
@@ -1222,7 +1196,6 @@ fn l05b_member_type_not_covered_by_population_member_types_refuses() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &document,
         &p1_population_key(),
@@ -1266,7 +1239,6 @@ fn l05c_abstract_instance_refuses() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &document,
         &p1_population_key(),
@@ -1305,7 +1277,6 @@ fn l06_cardinality_bound_and_incomplete() {
     let view = view_of(&domain_package);
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -1341,7 +1312,6 @@ fn l06_cardinality_bound_and_incomplete() {
     };
     let mut meter_incomplete = Meter::new(limits);
     let bounded = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -1416,7 +1386,6 @@ fn l05_foreign_model_selection_refuses_at_admission() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &mismatched,
         &p1_population_key(),
@@ -1442,94 +1411,6 @@ fn l05_foreign_model_selection_refuses_at_admission() {
     assert!(admission.admitted_charges().is_empty());
 }
 
-/// Round-3 review finding (PR #148): `admit_binding` takes `view` and
-/// `domain_package` separately and, before this test, never checked that they
-/// correspond — the same mismatch class removed from `all_instances`/
-/// `lookup` themselves, just moved one level up. Pins the check with a
-/// version-only divergence (same `identity` and digest as
-/// `fixture_f1()` — `DomainPackageRef::fixture` derives the digest from the
-/// selection placeholder alone, so an identity-only comparison would miss
-/// this) to prove the check compares the full `DomainPackageRef` header,
-/// not just `identity`.
-///
-/// Mutation used: narrowed the check from `view.model_selection() !=
-/// domain_package.model_selection` to `view.model_selection().identity !=
-/// domain_package.model_selection.identity`, which let this version-only
-/// mismatch admit instead of refusing — red as expected, reverted.
-#[test]
-#[trace("TC-198", "FR-153-AC-3")]
-fn l05_view_from_a_different_bundle_version_refuses_at_admission() {
-    let view = view_of(&fixture_f1_with_version("1"));
-    let domain_package = fixture_f1_with_version("2");
-
-    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let outcome = admit_binding(
-        &domain_package,
-        &view,
-        &p1("test/orders"),
-        &p1_population_key(),
-        GeneralizationClosure::Closed,
-        Some(3),
-        &mut admission,
-    );
-    match outcome {
-        AdmissionOutcome::Refused(refusal) => {
-            assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::ForeignModelSelection {
-                    actual: OfferedSelection::View(view.model_selection().clone()),
-                    expected: domain_package.model_selection.clone(),
-                }
-            );
-        }
-        other => {
-            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
-        }
-    }
-    assert!(admission.admitted_charges().is_empty());
-}
-
-/// The l05 correspondence check's third case: same `identity` and `version`
-/// as the view's own selection, only `digest` differs. Neither the base l05
-/// test (identity-only mismatch) nor F13's version-only variant above
-/// exercises a pure digest mismatch, and `DomainPackageRef::fixture` derives
-/// its digest from the selection placeholder alone, so an identity/version-
-/// only comparison would miss this case entirely.
-#[test]
-#[trace("TC-198", "FR-153-AC-3")]
-fn l05_view_from_a_domain_package_with_a_different_digest_refuses_at_admission() {
-    let view = view_of(&fixture_f1());
-    let domain_package = fixture_f1_with_different_digest();
-
-    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let outcome = admit_binding(
-        &domain_package,
-        &view,
-        &p1("test/orders"),
-        &p1_population_key(),
-        GeneralizationClosure::Closed,
-        Some(3),
-        &mut admission,
-    );
-    match outcome {
-        AdmissionOutcome::Refused(refusal) => {
-            assert_eq!(refusal.code, Code::ForeignReference);
-            assert_eq!(
-                refusal.cause,
-                ModelRefusalCause::ForeignModelSelection {
-                    actual: OfferedSelection::View(view.model_selection().clone()),
-                    expected: domain_package.model_selection.clone(),
-                }
-            );
-        }
-        other => {
-            panic!("expected Refused(foreign_reference/foreign-model-selection), got {other:?}")
-        }
-    }
-    assert!(admission.admitted_charges().is_empty());
-}
-
 /// #196 review finding 1, happy path: `admit_binding` resolves
 /// `p1_population_key()` against `fixture_f1()`'s own `Population` record
 /// and admits normally -- the by-key resolution this fix added does not
@@ -1542,7 +1423,6 @@ fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -1582,7 +1462,6 @@ fn admission_reads_extent_from_the_resolved_record_never_a_caller_claim() {
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     assert_eq!(
         admit_binding(
-            &open_extent,
             &view,
             &p1("test/orders"),
             &p1_population_key(),
@@ -1623,7 +1502,6 @@ fn admission_refuses_a_population_key_from_another_domain_package() {
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     assert_eq!(
         admit_binding(
-            &domain_package,
             &view,
             &p1("test/orders"),
             &foreign_key,
@@ -1670,7 +1548,6 @@ fn l02_population_members_limit_denies_the_third_member_charge() {
     };
     let mut admission = AdmissionMeter::new(limits);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -1723,7 +1600,6 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
     };
     let mut admission = AdmissionMeter::new(limits);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -1780,7 +1656,6 @@ fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let binding = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -1863,7 +1738,6 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &document,
         &p1_population_key(),
@@ -1936,7 +1810,6 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &document,
         &p1_population_key(),
@@ -1988,7 +1861,6 @@ fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
 
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_binding(
-        &domain_package,
         &view,
         &document,
         &p1_population_key(),
@@ -2050,12 +1922,10 @@ fn empty_effect() -> OperationEffect {
 }
 
 fn invocation_context<'a>(
-    domain_package: &'a DomainPackage,
     view: &'a EffectiveView,
     population: &'a DeclarationKey,
 ) -> InvocationContext<'a> {
     InvocationContext {
-        domain_package,
         view,
         population,
         subtype_closure: GeneralizationClosure::Closed,
@@ -2096,7 +1966,7 @@ fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
         declared_deleted: &["a2".to_owned()],
     };
     let post = match admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &p1("test/orders"),
         &p1_minus_a2("test/orders"),
         &declared,
@@ -2140,7 +2010,7 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
 
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &p1("test/orders"),
         &p1_minus_a2("test/orders"),
         &declared,
@@ -2190,7 +2060,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
 
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &p1("test/orders"),
         &post_document,
         &declared,
@@ -2248,7 +2118,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &pre_document,
         &post_document,
         &undeclared_delta,
@@ -2284,7 +2154,7 @@ fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admit
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2385,7 +2255,7 @@ fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2440,7 +2310,7 @@ fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2545,7 +2415,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2608,7 +2478,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2695,7 +2565,7 @@ fn enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2763,7 +2633,7 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2822,7 +2692,7 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &pre_document,
         &post_document,
         &declared,
@@ -2881,7 +2751,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &p1("test/orders"),
         &post_document,
         &declared,
@@ -2931,7 +2801,7 @@ fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populati
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &p1("test/orders"),
         &p1_minus_a2("test/orders"),
         &declared,
@@ -2993,7 +2863,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_a
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let outcome = admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &p1("test/orders"),
         &p1("test/orders"),
         &declared,
@@ -3046,10 +2916,9 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
     let domain_package = fixture_f1_with_second_population();
     let view = view_of(&domain_package);
 
-    let admit = |package: &DomainPackage, view: &EffectiveView, key: &DeclarationKey| {
+    let admit = |view: &EffectiveView, key: &DeclarationKey| {
         let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
         match admit_binding(
-            package,
             view,
             &p1("test/orders"),
             key,
@@ -3064,20 +2933,20 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
 
     // Step 1: two independent Direct admissions of the same document,
     // domain package and population_key mint the same identity.
-    let direct_1 = admit(&domain_package, &view, &p1_population_key());
-    let direct_1_again = admit(&domain_package, &view, &p1_population_key());
+    let direct_1 = admit(&view, &p1_population_key());
+    let direct_1_again = admit(&view, &p1_population_key());
     assert_eq!(direct_1, direct_1_again);
 
     // Step 2: the same document/package, a distinct population_key ->
     // a different identity.
-    let direct_second_key = admit(&domain_package, &view, &second_population_key());
+    let direct_second_key = admit(&view, &second_population_key());
     assert_ne!(direct_second_key, direct_1);
 
     // Step 3: the same document/population_key, a distinct domain package
     // (version-only header divergence) -> a different identity.
     let other_package = fixture_f1_with_version("2");
     let other_view = view_of(&other_package);
-    let direct_other_package = admit(&other_package, &other_view, &p1_population_key());
+    let direct_other_package = admit(&other_view, &p1_population_key());
     assert_ne!(direct_other_package, direct_1);
 
     // Step 4: within one invocation, admit the same document/package/key as
@@ -3096,7 +2965,7 @@ fn tc_291_population_id_is_deterministic_over_its_admission_preimage() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let invocation_binding = match admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &p1("test/orders"),
         &p1("test/orders"),
         &declared,
@@ -3130,7 +2999,6 @@ fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
 
     let mut direct_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let id_direct = match admit_binding(
-        &domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -3155,7 +3023,7 @@ fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     let invocation_binding = match admit_invocation(
-        invocation_context(&domain_package, &view, &p1_population_key()),
+        invocation_context(&view, &p1_population_key()),
         &p1("test/orders"),
         &p1("test/orders"),
         &declared,
@@ -3199,7 +3067,6 @@ fn binding_admission_walks_member_types_under_the_callers_ancestor_steps() {
     let view = view_of(&domain_package);
     let admit = |ancestor_steps: u64| {
         admit_binding(
-            &domain_package,
             &view,
             &p1("test/orders"),
             &p1_population_key(),
@@ -3244,7 +3111,6 @@ fn admit_p1_under(
         other => return Err(Box::new(other)),
     };
     Ok(admit_binding(
-        domain_package,
         &view,
         &p1("test/orders"),
         &p1_population_key(),
@@ -3293,4 +3159,122 @@ fn qsl204_an_over_limit_domain_package_refuses_admission_naming_the_limit() {
         }
         other => panic!("expected an incomplete result naming declaration_records, got {other:?}"),
     }
+}
+
+/// A diamond: `model.A`; `model.B -> model.A`; `model.C -> model.A`;
+/// `model.D -> model.B, model.C`, with [`P1_POPULATION`] closed over all
+/// four. `D`'s two ancestor paths to `A` are each two generalization steps.
+fn fixture_diamond() -> DomainPackage {
+    DomainPackage::new(
+        DomainPackageRef::fixture("bundle.diamond"),
+        vec![
+            object_type("model.A", vec![]),
+            object_type("model.B", vec!["model.A"]),
+            object_type("model.C", vec!["model.A"]),
+            object_type("model.D", vec!["model.B", "model.C"]),
+            population_record(
+                P1_POPULATION,
+                &["model.A", "model.B", "model.C", "model.D"],
+                Extent::Closed,
+            ),
+        ],
+    )
+}
+
+/// QSL-204: the same bound on the build phases themselves. Ancestor-path
+/// enumeration is the one part of normalization bounded while it runs
+/// (`ancestor_steps`). On the diamond, `ancestor_steps = 2` admits and
+/// `ancestor_steps = 1` refuses `ancestor-steps` naming `model.D` and the
+/// bound, before admission runs.
+///
+/// Mutation used: raising the tight bound to 2 turns the refusal
+/// assertion red, since `D`'s two-step paths then fit.
+#[test]
+#[trace("TC-198", "FR-153-AC-1")]
+fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
+    let domain_package = fixture_diamond();
+
+    let fits = ModelNormalizationLimits {
+        ancestor_steps: 2,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    assert!(
+        matches!(
+            admit_p1_under(&domain_package, fits),
+            Ok(AdmissionOutcome::Admitted(_))
+        ),
+        "a diamond within its ancestor_steps admits"
+    );
+
+    let over = ModelNormalizationLimits {
+        ancestor_steps: 1,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    match admit_p1_under(&domain_package, over).map_err(|outcome| *outcome) {
+        Err(NormalizeOutcome::Refused(refusals)) => {
+            let refusal = refusals.into_first();
+            assert_eq!(refusal.code, Code::ResourceExhausted);
+            assert_eq!(
+                refusal.cause,
+                ModelRefusalCause::AncestorSteps {
+                    from: DeclarationKey::fixture("model.D"),
+                    limit: 1,
+                }
+            );
+        }
+        other => panic!("expected an ancestor-steps refusal, got {other:?}"),
+    }
+}
+
+/// QSL-204 review (PR #387, MED-1): an effective view owns the domain
+/// package it was normalized from, and admission takes no other package.
+/// So a view can no longer be paired with a package whose content differs
+/// under the same `model_selection` header:
+///
+/// - `B -> A` and `A -> B` under one header each admit into the universe of
+///   their own view -- rooted at their own root type, never the other's.
+/// - A cyclic package under that header has no view at all: normalization
+///   refuses it, and `admit_binding` has no parameter through which the
+///   cyclic package could be offered alongside some other package's view.
+#[test]
+#[trace("TC-198", "FR-153-AC-1")]
+fn qsl204_admission_reads_the_domain_package_the_view_was_normalized_from() {
+    let forward = fixture_f1();
+    let mut reversed = fixture_f1();
+    reversed.records[0] = object_type("model.A", vec!["model.B"]);
+    reversed.records[1] = object_type("model.B", vec![]);
+    assert_eq!(forward.model_selection, reversed.model_selection);
+
+    for domain_package in [&forward, &reversed] {
+        let view = view_of(domain_package);
+        assert_eq!(view.domain_package(), domain_package);
+        let binding = admitted_binding(&view, &p1("test/orders"));
+        assert_eq!(binding.model_selection(), view.model_selection());
+        assert_eq!(*binding.universe(), view.object_universe().identity());
+    }
+    let forward_root = type_id(&view_of(&forward), "model.A");
+    let reversed_root = type_id(&view_of(&reversed), "model.B");
+    assert_eq!(
+        view_of(&forward).object_universe().root_types,
+        vec![forward_root]
+    );
+    assert_eq!(
+        view_of(&reversed).object_universe().root_types,
+        vec![reversed_root]
+    );
+    assert_ne!(
+        view_of(&forward).object_universe().identity(),
+        view_of(&reversed).object_universe().identity()
+    );
+
+    let mut cyclic = fixture_f1();
+    cyclic.records[0] = object_type("model.A", vec!["model.B"]);
+    assert_eq!(cyclic.model_selection, forward.model_selection);
+    assert!(
+        matches!(
+            normalize(&cyclic, ModelNormalizationLimits::UNLIMITED),
+            NormalizeOutcome::Refused(_)
+        ),
+        "a cyclic package yields no view to admit against"
+    );
 }

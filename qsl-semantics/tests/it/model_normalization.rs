@@ -972,7 +972,7 @@ fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
         .push(object_type("ix://test/orders/E", vec![]));
 
     let view = completed(&domain_package, ModelNormalizationLimits::UNLIMITED);
-    let universes = view.object_universes();
+    let universes: Vec<&ObjectUniverse> = view.object_universes().collect();
     assert_eq!(
         universes.len(),
         2,
@@ -1004,8 +1004,10 @@ fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
 
     // Every returned universe is one of the two per-type universes above --
     // `object_universes` and `object_universe_of` agree.
-    let identities: std::collections::BTreeSet<_> =
-        universes.iter().map(ObjectUniverse::identity).collect();
+    let identities: std::collections::BTreeSet<_> = universes
+        .iter()
+        .map(|universe| universe.identity())
+        .collect();
     assert!(identities.contains(&ab_universe.identity()));
     assert!(identities.contains(&e_universe.identity()));
 }

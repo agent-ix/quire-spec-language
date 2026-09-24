@@ -194,7 +194,7 @@ fn probe_model(shape: ModelShape, members: usize) -> ExitCode {
     let universe = view.object_universe_of(&model::key(&model::chain_type(0)));
     println!("model.universe ok={}", universe.is_some());
     let population = model::population_document(shape, members);
-    match model::admit_population(&domain_package, &view, &population) {
+    match model::admit_population(&view, &population) {
         AdmissionOutcome::Admitted(binding) => {
             println!("model.admit members={}", binding.members().len());
         }
