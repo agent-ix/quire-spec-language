@@ -26,21 +26,31 @@ JSON parse/diagnostic output or formatted source plus a documented exit code.
 
 Current parse reports parsed only. [FR-301](ix://agent-ix/quire-specification/FR-301) states the native CLI's exit status contract; this command carries it. A successful parse completes without violation and exits 0. A refused syntax request, an invalid command invocation and invalid OS encoding in commands or labels are invalid or refused input and exit 20. A construct the parser recognizes but the admitted profile does not support, or a command invocation naming a lowering target outside the published catalog, names a real capability this build lacks and exits 21. An exhausted parser request is incomplete and exits 22. A failure to write the command's own output — the parsed/formatted result on stdout or a diagnostic on stderr — is a tool failure, not a request-level disposition, and exits 30, FR-301's code for tool failure. Source diagnostics preserve original byte and scalar coordinates. Future link/evaluate outcomes cannot be inferred from parse success.
 
-The CLI reads OS arguments without assuming UTF-8. Command, source identity and
-revision labels must be UTF-8; invalid label/command encoding is a usage error
-before opening the path. Empty UTF-8 source labels retain their existing source
-refusal. The file operand remains an OS path for actual I/O, including Unix
+`parse` and `format` take the source reference's four labels before the file
+([FR-001](FR-001-read-exact-source.md)):
+
+```text
+quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <revision> <file>
+```
+
+The CLI reads OS arguments without assuming UTF-8. The command and the four
+labels must be UTF-8; invalid label/command encoding is a usage error
+before opening the path. An empty or whitespace-only UTF-8 label refuses as
+`invalid_source_identity` (FR-001). The file operand remains an OS path for actual I/O, including Unix
 non-UTF-8 paths. JSON path text is display-only and may contain replacement
 characters; it cannot serve as portable source authority. The exact source
-labels and digest remain distinct. Collect at most five arguments so extra
-arguments refuse without unbounded argument allocation.
+labels and digest remain distinct. Collect at most seven arguments so extra
+arguments refuse without unbounded argument allocation. A successful parse
+reports the source as its `RawSourceRef`: the authority, the identity, the
+revision's namespace and value, and the `quire.source.bytes/v1` digest.
 
 Native Diagnostic implements standard Display and Error,
 retaining its structured phase/code/source/path/span/message fields and existing
 code spellings. The Copy Code enum exposes as_str, all and from_code; unknown
 spellings return None. The repository owns a stable native-code catalog,
-separate from the fixture-audit catalog. Existing local SourceIdentity string
-labels are documented as opaque, not promoted to shared artifact references.
+separate from the fixture-audit catalog. The source labels are the members of
+the source's `RawSourceRef` (FR-001), the reference the checked package's lock
+and source regions name the source by.
 
 Retain the public `source: SourceIdentity` field as diagnostic provenance, not
 an underlying error. Implement these two standard traits directly: the pinned
@@ -63,6 +73,7 @@ a second error envelope or alter the audit target's derived errors.
 | FR-010-AC-8 | A native Diagnostic propagates through a standard Error-based caller; every stable code round-trips through its catalog lookup. | Test |
 | FR-010-AC-9 | A construct the parser recognizes but the admitted profile does not support, or a command invocation naming a lowering target outside the published catalog, exits 21, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for unsupported. | Test |
 | FR-010-AC-10 | A failure writing the command's own output exits 30, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for tool failure. | Test |
+| FR-010-AC-11 | `parse agent-ix specs/a.quire git 3f2a <file>` over an admissible file reports its source with authority `agent-ix`, identity `specs/a.quire`, revision namespace `git`, revision value `3f2a` and the file's `quire.source.bytes/v1` digest. `parse` with the four labels and no file, or with one extra operand, exits 20. `parse agent-ix specs/a.quire "" 3f2a <file>` exits 20 with `invalid_source_identity`. | Test (TC-424) |
 
 ## Dependencies
 
@@ -71,4 +82,8 @@ a second error envelope or alter the audit target's derived errors.
 
 ## Status
 
-Draft. Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.
+Draft. FR-010-AC-11 is specified under QSL-233 and not implemented: the
+grammar (`src/cli.rs`) takes `<source-id> <source-revision> <file>`. ADR-013
+§7 slice S-4b builds it.
+
+Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

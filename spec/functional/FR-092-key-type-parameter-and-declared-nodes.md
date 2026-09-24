@@ -956,8 +956,9 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
   to a declared type resolves to its one node id, the FR-092 key.
 - QSpec FR-143 and FR-146: the recursive records and recursive functions
   that form recursion groups.
-- `SourceOwner`'s `authority` on QSL's source identity is not defined yet.
-  Remaining work: QSL-233.
+- `SourceOwner`'s `authority` and `identity` are those of the unit's
+  `RawSourceRef` ([FR-001](FR-001-read-exact-source.md); ADR-013 §7 slice
+  S-4b, QSL-233).
 - QSpec. `quire.structural-node/v1`, the `value`/`parameter` semantic form
   and the function node body shape are QSL proposals (ADR-013 QC-24). QSL
   keys its nodes by them now and conforms to QSpec's arm once QSpec publishes

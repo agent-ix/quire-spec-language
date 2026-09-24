@@ -499,11 +499,14 @@ for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
   a family's parsed forms as its input. This requirement produces them from
   source for the `Value` family.
 - ADR-013 T-4's `Staged`, `StageFailure` and `LimitExceeded` are #213 S-5b's
-  (QSL-160). T-5's `Locus` and O-12's `SourceRegion` are #213 S-4's. The
+  (QSL-160, [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)).
+  T-5's `Locus` and O-12's `SourceRegion` are #213 S-4's. The
   criteria above observe a refusal's cause, limit kind, bound and byte span,
   whichever carrier holds them.
-- The unit's `SourceOwner` needs an `authority` on QSL's source identity,
-  which no requirement defines yet. Remaining work: QSL-233.
+- The unit's `SourceOwner` is the `authority` and `identity` of the unit's
+  `RawSourceRef`, which the caller names and S0 mints
+  ([FR-001](FR-001-read-exact-source.md), ADR-013 §7 slice S-4b,
+  QSL-233).
 - Record, tuple and function keys over `SourceOwner` use QSL's
   `quire.structural-node/v1` preimage
   ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). QSpec

@@ -61,8 +61,11 @@ not the `StageFailure::Limit` outcome AC-7's wording names, and it bounds
 cause`, below, still covers at one charge per top-level declaration).
 Making AC-7 itself backed would require threading `&mut CheckContext`
 through every recursive arm of `Typer::infer_form`, not just `Call` --
-see FR-062's own Status section for AC-7 for the full reasoning. Reported
-as an open scoping question, not decided here.
+see FR-062's own Status section for AC-7 for the full reasoning.
+[FR-096](../functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
+(QSL-160) decides it: the family returns `Typer`'s depth refusal as
+`StageFailure::Limit` with a `Locus::Region`, with no `CheckContext`
+threading. TC-426 step 2 is this test case's fixture and carries its tag.
 
 `nesting_depth_limit_is_the_proximate_cause`
 (`qsl-semantics/src/check/family.rs`, `checking_tests`) remains, untagged, as a narrower

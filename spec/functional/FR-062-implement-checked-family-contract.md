@@ -301,8 +301,18 @@ they exist in the delivered code today:
   contract's `Limit` outcome. That is real, load-bearing `Typer`
   entanglement -- the same entanglement QSL-148's own ticket asked to be
   reported rather than worked around -- and it is out of scope for this PR.
-  Reported to the requirement owner as an open scoping question, not
-  decided here. Owner: QSL-148 follow-up (untracked as of this report).
+  Decided by [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
+  (QSL-160): AC-7's nesting-depth limit is `Typer`'s `CheckingLimits.depth`,
+  and `ValueFunctionFamily::check` returns `Typer`'s depth refusal as
+  `StageFailure::Limit` carrying the locus of the node whose entry failed.
+  No `CheckContext` is threaded through `Typer`. The catalog requires it:
+  a stage limit is `stage_limit_exceeded`, not `resource_exhausted`. The
+  `Limit` keeps the location PR #303 required because `LimitExceeded`
+  carries a `Locus::Region`, resolved from the node's `check::Location`.
+  That region needs the unit's `RawSourceRef` (FR-001, ADR-013 §7 slice
+  S-4b) and the forms' expression spans (FR-091-AC-10, QSL-141). Once both
+  land, FR-096-AC-3's fixture (TC-426) backs AC-7 and TC-378. Owner:
+  QSL-160.
 - FR-062-AC-8: unbacked. FR-063's seam probe covers S1 only in #214 (its
   own Status/scope note); S4 (a family `Cause` enum's `catalog_code()`) has
   no cause-bearing family to probe yet. Owner: QSL-152.
@@ -329,4 +339,5 @@ AC-5, AC-11). AC-5's two tagged tests are
 (`qsl-eval/src/value/expression/family.rs`; PR #303 review round 3, finding F3).
 The other eight are unbacked, for the
 reasons above -- not silently. AC-7 in particular stays unbacked pending a
-scoping decision on the `Typer` entanglement described in its row above.
+the `Typer` depth limit that FR-096 (QSL-160) specifies, as its row above
+describes.
