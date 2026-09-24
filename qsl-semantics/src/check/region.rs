@@ -10,7 +10,10 @@
 //! hand, or synthesized for FR-151 dispatch), `Origin::Expression` and
 //! `Origin::TypeDeclaration` (a declared type carries no form spans) have no
 //! region: no region of the unit names a position in a tree not read from
-//! it.
+//! it. A `generated` occurrence (a node no source position names) is
+//! recorded at the body or measure root of the least function declaration
+//! that names its node (`lowering::enclosing_declarations`), so it resolves
+//! here like any other body location.
 
 use qsl_forms::DeclarationSpans;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};

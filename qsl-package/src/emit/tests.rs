@@ -1299,3 +1299,88 @@ fn emit_checked_places_occurrences_at_the_form_spans() {
         Err(EmitRefusal::UnlocatedOccurrence { .. })
     ));
 }
+
+/// A unit whose function takes and returns bounded integers.
+const INT_TEXT: &[u8] = b"function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }";
+
+/// `inc` read from [`INT_TEXT`], with the span of its declaration and of
+/// every body node (FR-091-AC-10).
+fn inc_read_from_text() -> FunctionDeclaration {
+    let text = std::str::from_utf8(INT_TEXT).unwrap();
+    // The last occurrence: every body text sits after the signature.
+    let find = |needle: &str| {
+        let start = text.rfind(needle).unwrap();
+        qsl_foundation::Span {
+            start,
+            end: start + needle.len(),
+        }
+    };
+    let int = |low: &str, high: &str| {
+        TypeForm::builtin(BuiltinType::Int, SPAN).with_bounds(vec![low.into(), high.into()])
+    };
+    let mut body = ExpressionSpans::new(find("x + 1")).unwrap();
+    body.push_child(body.root(), find("x")).unwrap();
+    body.push_child(body.root(), find("1")).unwrap();
+    FunctionDeclaration::new(
+        "inc",
+        vec![("x".to_owned(), int("0", "9"))],
+        int("0", "10"),
+        None,
+        Expression::Binary {
+            operator: BinaryOperator::Add,
+            left: Box::new(name("x")),
+            right: Box::new(Expression::Integer(quire_exact::Integer::from(1_i64))),
+        },
+    )
+    .with_spans(DeclarationSpans {
+        declaration: qsl_foundation::Span {
+            start: 0,
+            end: INT_TEXT.len(),
+        },
+        body,
+        measure: None,
+    })
+    .expect("the spans fit inc")
+}
+
+/// QSL-8 (FR-096): the checker's `generated` nodes (the `Int` scalar type
+/// under each bounded domain) are placed at the body of the declaration
+/// that names them, so a package using an integer emits through
+/// `emit_checked` and reads back Verified.
+#[trace("FR-096-AC-1", "TC-426")]
+#[test]
+fn generated_nodes_are_placed_at_their_enclosing_declaration() {
+    let source = qsl_semantics::check::admitted_source(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        INT_TEXT,
+    );
+    let package = CheckedPackage::link(
+        PackageDeclarations {
+            functions: vec![inc_read_from_text()],
+            ..PackageDeclarations::new(source)
+        }
+        .check(CheckingLimits::default())
+        .expect("inc checks"),
+    );
+    let emission = emit_checked(&package).expect("inc emits");
+    assert!(
+        matches!(read_back(&emission), V2ReadOutcome::Verified { .. }),
+        "{:?}",
+        read_back(&emission)
+    );
+    let wire = wire(&emission);
+    let generated: Vec<&Value> = wire["source_map"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["role"] == "generated")
+        .collect();
+    assert!(!generated.is_empty(), "{}", wire["source_map"]);
+    for entry in generated {
+        for region in entry["regions"].as_array().unwrap() {
+            let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
+            let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
+            assert_eq!(&INT_TEXT[start..end], b"x + 1");
+        }
+    }
+}
