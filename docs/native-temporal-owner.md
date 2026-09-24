@@ -8,9 +8,9 @@ Boolean coercion.
 The immutable contracts are:
 
 - `quire.native-temporal-request/v1`, schema SHA-256
-  `2539140ff1f6fb5e481e5ae658b81c325a284bfcd85cc5c048ea1d49c4dfdebe`;
+  `00299832fa452490f169adbada12985666e7e9232b0b6a53f0ac1686f69c514f`;
 - `quire.native-temporal-result/v1`, schema SHA-256
-  `e55e15cc852f0145244d233ca5c88381e0969daf25f644e45a4da3362b611e28`.
+  `ba5310e484a7a16a11061e1072a4d2640485cc70b88ef4599d6ec2b5ae125683`.
 
 Each module exports `CONTRACT`, `SCHEMA_BYTES`, and `SCHEMA_SHA256`. Schema
 validation alone grants no authority. A consumer must use the bounded Rust

@@ -5,6 +5,7 @@ use crate::support::native_protocol as setup;
 
 use std::collections::BTreeMap;
 
+use crate::support::content_identity::assert_identity;
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
 use quire_spec_language::{
@@ -232,6 +233,10 @@ fn input(leaf: u32, value: bool, correspondence: &str) -> request::Input {
 }
 
 fn input_v2(leaf: u32, trigger: Vec<u8>) -> temporal_v2::Input {
+    to_v2(input(leaf, true, "correspondence:opaque-v2"), trigger)
+}
+
+fn to_v2(input: request::Input, trigger: Vec<u8>) -> temporal_v2::Input {
     let request::Input {
         correspondence,
         positions,
@@ -248,7 +253,7 @@ fn input_v2(leaf: u32, trigger: Vec<u8>) -> temporal_v2::Input {
         authoritative_origin,
         evicted,
         ..
-    } = input(leaf, true, "correspondence:opaque-v2");
+    } = input;
     temporal_v2::Input {
         trigger: temporal_v2::SemanticTriggerIdentity::new(trigger).expect("nonempty trigger"),
         correspondence,
@@ -371,6 +376,148 @@ fn assert_schema(schema: &[u8], expected_digest: &str, bytes: &[u8]) {
         .expect("schema compiles");
     let value: Value = serde_json::from_slice(bytes).expect("canonical document JSON");
     assert!(validator.is_valid(&value));
+}
+
+/// QSL-220: produces and strictly reads the v1 and v2 request and result
+/// documents for `supplied`, recomputing every document and position
+/// identity independently from the parsed JSON.
+fn assert_identities_round_trip(
+    subject: &artifact::temporal_subject::ValidatedTemporalSubject,
+    supplied: request::Input,
+) {
+    let limits = native_temporal::Limits::default();
+    let document = request::produce(subject, supplied.clone(), limits)
+        .into_result()
+        .expect("produce request");
+    let value: Value = serde_json::from_slice(document.bytes()).expect("request JSON");
+    assert_identity(&value, native_temporal::REQUEST_CONTRACT);
+    assert_eq!(value["identity"], document.identity());
+    let positions = value["positions"].as_array().expect("positions");
+    assert!(!positions.is_empty());
+    for position in positions {
+        assert_identity(position, "quire.native-temporal-position/v1");
+    }
+    let request = request::read(document.bytes(), subject, limits)
+        .into_result()
+        .expect("strict-read request");
+    let document = result::evaluate(&request, result::Relation::Original, limits)
+        .into_result()
+        .expect("evaluate formula-wide result");
+    let value: Value = serde_json::from_slice(document.bytes()).expect("result JSON");
+    assert_identity(&value, native_temporal::RESULT_CONTRACT);
+    assert_eq!(value["identity"], document.identity());
+    result::read(
+        document.bytes(),
+        &request,
+        result::Relation::Original,
+        limits,
+    )
+    .into_result()
+    .expect("strict-read result");
+
+    let document = temporal_v2::produce(subject, to_v2(supplied, vec![0, 0xff]), limits)
+        .into_result()
+        .expect("produce v2 request");
+    let value: Value = serde_json::from_slice(document.bytes()).expect("v2 request JSON");
+    assert_identity(&value, temporal_v2::REQUEST_CONTRACT);
+    assert_eq!(value["identity"], document.identity());
+    let request = temporal_v2::read(document.bytes(), subject, limits)
+        .into_result()
+        .expect("strict-read v2 request");
+    let document = temporal_v2::evaluate(&request, temporal_v2::Relation::Original, limits)
+        .into_result()
+        .expect("evaluate v2 result");
+    let value: Value = serde_json::from_slice(document.bytes()).expect("v2 result JSON");
+    assert_identity(&value, temporal_v2::RESULT_CONTRACT);
+    assert_eq!(value["identity"], document.identity());
+    temporal_v2::read_result(
+        document.bytes(),
+        &request,
+        temporal_v2::Relation::Original,
+        limits,
+    )
+    .into_result()
+    .expect("strict-read v2 result");
+}
+
+#[trace("TC-140", "FR-052-AC-4")]
+#[test]
+fn request_result_and_position_identities_are_rfc_8785_over_parsed_documents() {
+    with_package(
+        FixtureProfile::Event,
+        "holds(view.ready)",
+        |package, declaration| {
+            let subject = checked_subject(package, declaration);
+            let leaf = leaf(package, declaration);
+            assert_identities_round_trip(&subject, input(leaf, true, "correspondence:1"));
+        },
+    );
+}
+
+/// QSL-220 review H1: coordinates, order keys, watermarks and eviction
+/// coordinates keep their full `i64` range. A nanosecond timestamp and both
+/// `i64` extremes produce, strictly read and carry independently
+/// recomputable identities.
+#[trace("TC-140", "FR-052-AC-4")]
+#[test]
+fn full_range_i64_coordinates_produce_and_read() {
+    with_package(
+        FixtureProfile::Event,
+        "holds(view.ready)",
+        |package, declaration| {
+            let subject = checked_subject(package, declaration);
+            let leaf = leaf(package, declaration);
+            for coordinate in [1_727_136_000_123_456_789, i64::MIN, i64::MAX] {
+                let mut supplied = input(leaf, true, "correspondence:full-range");
+                let position = &mut supplied.positions[0].position;
+                position.coordinate = coordinate;
+                position.order.as_mut().expect("ordered position").key = coordinate;
+                supplied.decision_progress.watermark = coordinate;
+                supplied.surrounding_progress.watermark = coordinate;
+                assert_identities_round_trip(&subject, supplied.clone());
+                supplied.evicted.push(temporal::Eviction::Valuation {
+                    node: leaf,
+                    coordinate,
+                });
+                assert_identities_round_trip(&subject, supplied);
+            }
+        },
+    );
+}
+
+/// QSL-220: `limits.history_span` is capped at 2^53 - 1. A request document
+/// whose recorded ceiling is 2^53 refuses as `invalid("limits")`.
+#[trace("TC-140", "FR-052-AC-7")]
+#[test]
+fn history_span_ceiling_above_2_pow_53_refuses_as_invalid_limits() {
+    with_package(
+        FixtureProfile::Event,
+        "holds(view.ready)",
+        |package, declaration| {
+            let subject = checked_subject(package, declaration);
+            let leaf = leaf(package, declaration);
+            let document = request::produce(
+                &subject,
+                input(leaf, true, "correspondence:history-span"),
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect("produce request");
+            let text = std::str::from_utf8(document.bytes()).expect("UTF-8 document");
+            let ceiling = "\"history_span\":9007199254740991";
+            assert_eq!(text.matches(ceiling).count(), 1, "{text}");
+            let raised = text.replace(ceiling, "\"history_span\":9007199254740992");
+            let error = request::read(
+                raised.as_bytes(),
+                &subject,
+                native_temporal::Limits::default(),
+            )
+            .into_result()
+            .expect_err("a history_span ceiling of 2^53 refuses");
+            assert_eq!(error.code(), native_temporal::ErrorCode::InvalidInput);
+            assert_eq!(error.path(), "limits");
+        },
+    );
 }
 
 #[trace(

@@ -6,9 +6,8 @@ use serde::{
     de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor},
     Deserialize, Serialize,
 };
-use sha2::{Digest as _, Sha256};
 
-use crate::temporal;
+use crate::{protocol_artifact::content_identity, temporal};
 use qsl_foundation::ByteDigest;
 
 /// Contract identifier for the native-temporal request document.
@@ -25,7 +24,10 @@ const MAX_POSITIONS: usize = 1_000_000;
 const MAX_VALUATIONS: usize = 1_000_000;
 const MAX_CAPTURES: usize = 100_000;
 const MAX_SUPPORT: usize = 1_000_000;
-const MAX_HISTORY_SPAN: usize = usize::MAX / 2;
+/// The largest integer an I-JSON (RFC 7493) reader holds exactly as a JSON
+/// number: 2^53 - 1, or `usize::MAX` where that is smaller. A document
+/// carrying a larger `limits.history_span` refuses as `invalid("limits")`.
+const MAX_HISTORY_SPAN: usize = usize::MAX >> usize::BITS.saturating_sub(53);
 const MAX_EVALUATION_STEPS: usize = 1_000_000;
 const MAX_LINEAGE: usize = 1_024;
 const MAX_VISITED: usize = 2_000_000;
@@ -534,12 +536,22 @@ pub(crate) fn encode(value: &impl Serialize, limits: Limits) -> Result<Vec<u8>, 
     Ok(writer.bytes)
 }
 
-pub(crate) fn identity(contract: &str, preimage: &[u8]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(contract.as_bytes());
-    digest.update([0]);
-    digest.update(preimage);
-    format!("{:x}", digest.finalize())
+/// The FR-052 content identity: [`content_identity::of`] over a document's
+/// identity preimage under its contract label.
+pub(crate) fn identity(
+    contract: &str,
+    preimage: &impl Serialize,
+    limits: Limits,
+) -> Result<String, Error> {
+    content_identity::of(contract, preimage, limits.output_bytes, limits.json_depth).map_err(
+        |refusal| match refusal {
+            content_identity::Refusal::OutputBytes => exhausted("limits.output_bytes"),
+            content_identity::Refusal::JsonDepth => exhausted("limits.json_depth"),
+            content_identity::Refusal::NotEncodable => {
+                error(ErrorCode::InvalidDocument, "identity")
+            }
+        },
+    )
 }
 
 pub(crate) fn raw_digest(bytes: &[u8]) -> ByteDigest {

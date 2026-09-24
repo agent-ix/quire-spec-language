@@ -94,8 +94,12 @@ match its digest. Prior bytes remain unchanged.
 
 ## Canonicalization and resources
 
-Both identities are lowercase SHA-256 over the contract label, a zero byte and
-canonical bytes with the identity field omitted. Request, result, source,
+Both identities, and each position identity, are the lowercase hex SHA-256
+over the contract label's byte length as a big-endian `u64`, the label, and
+the RFC 8785 encoding (ADR-013 §2, `quire-canonical`) of the document or
+position with its identity field omitted and every integer written as its
+decimal string, so full-range `i64`/`u64` coordinates, order keys,
+watermarks and revisions keep exact identities. Request, result, source,
 position, observation, correspondence and predecessor identities cannot
 substitute for one another. Readers reject unknown, duplicate, missing or
 out-of-order fields, trailing data, noncanonical JSON, invalid tagged shapes,

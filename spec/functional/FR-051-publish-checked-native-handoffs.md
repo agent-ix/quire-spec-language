@@ -53,8 +53,10 @@ Boolean type identity. `profiles` selects the exact native evaluation and
 definedness profiles. `limits` records the effective construction/read limits
 and measured use.
 
-The content identity is lowercase SHA-256 over the contract-specific domain
-label, a zero byte, and the canonical document bytes with `identity` omitted.
+The content identity is the lowercase hex SHA-256 over the contract-specific
+domain label's byte length as a big-endian `u64`, the label, and the RFC 8785
+encoding (ADR-013 §2, `quire-canonical`) of the document with `identity`
+omitted and every integer written as its decimal string.
 It is not the package identity, source digest, expression identity or TL signal
 identity. Canonical bytes are unique: object fields use the specified order,
 sets are sorted and distinct, numbers use the existing exact-number encoding,

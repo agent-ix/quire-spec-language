@@ -39,7 +39,10 @@
 //! functions its hash sites may sit in: each line naming a [`HASHERS`]
 //! entry (outside a `use` item) and each call of another file's hashing
 //! function. A hash site in any other function of an exempt file fails, and
-//! a listed function with no hash site left fails as stale.
+//! a listed function with no hash site left fails as stale. An entry may
+//! also pin its hash sites to named calls ([`Exemption::calls`]): then a
+//! [`HASHERS`] line in the listed function fails, and so does any JSON the
+//! function names or produces.
 //!
 //! **How.** The same token scan FR-060's T12-B/C/D use
 //! ([`crate::api_surface`]): patterns match the file's `proc_macro2`
@@ -115,20 +118,24 @@ pub(crate) enum ExemptionKind {
     /// typed-record encoding, retiring with `NativePackage` at ADR-011 §7.3
     /// M-6c. It leaves this list in that change.
     SpecCarvedIdentity,
-    /// A canonical encoder of its own that predates QSL-194 and is outside
-    /// its scope: reported as debt on every run. It leaves this list in the
-    /// change that moves it to `quire-canonical`.
-    Debt,
 }
 
 /// One exemption: the file (its crate's source root and module path), the
 /// functions its hash sites may sit in (`name` for a free function,
-/// `Type::name` for a method), and why.
+/// `Type::name` for a method), optionally the only calls those hash sites
+/// may be, and why.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct Exemption {
     pub(crate) crate_src: &'static str,
     pub(crate) module: &'static str,
     pub(crate) functions: &'static [&'static str],
+    /// When non-empty, the exemption is pinned to calls: a hash site in a
+    /// listed function is covered only when it is a call of one of these
+    /// hashing functions of another file, never a [`HASHERS`] line, and a
+    /// listed function naming `serde_json` or calling a JSON producer
+    /// fails. So a JSON producer cannot be hashed inside the function even
+    /// through the sanctioned call.
+    pub(crate) calls: &'static [&'static str],
     pub(crate) kind: ExemptionKind,
     pub(crate) reason: &'static str,
 }
@@ -139,6 +146,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         crate_src: "src",
         module: "command",
         functions: &["with_request"],
+        calls: &[],
         kind: ExemptionKind::NotAnIdentity,
         reason: "the FR-001 `ByteDigest` of the exact artifact bytes it read from disk, \
                  handed to the command's action; not an identity over a canonical form",
@@ -147,6 +155,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         crate_src: "src",
         module: "native_model",
         functions: &["NativeModel::new_with_profile"],
+        calls: &[],
         kind: ExemptionKind::NotAnIdentity,
         reason: "the FR-001 `ByteDigest` of the native model artifact bytes it has just \
                  emitted; not an identity over a canonical form",
@@ -155,6 +164,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         crate_src: "src",
         module: "package",
         functions: &["NativePackage::new", "NativePackage::read_verified"],
+        calls: &[],
         kind: ExemptionKind::NotAnIdentity,
         reason: "the FR-001 `ByteDigest` of the emitted package bytes, and of supplied \
                  package bytes checked against their expected reference; not an identity \
@@ -164,6 +174,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         crate_src: "src",
         module: "package",
         functions: &["NativePackageIdentity::of"],
+        calls: &[],
         kind: ExemptionKind::SpecCarvedIdentity,
         reason: "FR-021's `NativePackageIdentity`: ADR-013 §2 (ADR-013:124-127) names it a \
                  typed-record encoding, not RFC 8785; retires with `NativePackage` at \
@@ -173,6 +184,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         crate_src: "src",
         module: "protocol_artifact::encoding",
         functions: &["candidate"],
+        calls: &[],
         kind: ExemptionKind::NotAnIdentity,
         reason: "the FR-001 `ByteDigest` of a transport candidate's exact bytes; not an \
                  identity over a canonical form",
@@ -181,6 +193,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         crate_src: "src",
         module: "runtime::reading",
         functions: &["read_selected"],
+        calls: &[],
         kind: ExemptionKind::NotAnIdentity,
         reason: "the FR-001 `ByteDigest` of supplied artifact bytes, checked against the \
                  expected digest before decoding; not an identity over a canonical form",
@@ -189,6 +202,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         crate_src: "src",
         module: "runtime::construction",
         functions: &["Artifact::new"],
+        calls: &[],
         kind: ExemptionKind::NotAnIdentity,
         reason: "the FR-001 `ByteDigest` of the artifact bytes it has just emitted: an \
                  exact-byte digest of those bytes, not an identity over a canonical form",
@@ -197,27 +211,29 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         crate_src: "qsl-semantics/src",
         module: "model::intake",
         functions: &["check_package_digest"],
+        calls: &["raw_bytes_digest"],
         kind: ExemptionKind::NotAnIdentity,
         reason: "the FR-154 raw-byte digest of a package document that did not parse, \
-                 reported against its declared digest; the parsed document's `sha256-jcs` \
-                 digest is `quire-canonical`'s",
+                 reported against its declared digest, through `raw_bytes_digest` only; the \
+                 parsed document's `sha256-jcs` digest is `quire-canonical`'s",
     },
     Exemption {
         crate_src: "src",
         module: "protocol_artifact::checked_handoff",
-        functions: &["hex_digest", "build"],
-        kind: ExemptionKind::Debt,
-        reason: "the checked-handoff document identity hashes its `serde_json` struct-order \
-                 encoding, not RFC 8785; outside QSL-194's eight sites, moved by QSL-220",
+        functions: &["build"],
+        calls: &[],
+        kind: ExemptionKind::NotAnIdentity,
+        reason: "the FR-051 `ByteDigest` of the checked-handoff document bytes it has just \
+                 emitted; the document's content identity is `quire-canonical`'s (QSL-220)",
     },
     Exemption {
         crate_src: "src",
         module: "protocol_artifact::native_temporal::common",
-        functions: &["identity", "raw_digest"],
-        kind: ExemptionKind::Debt,
-        reason: "the native-temporal request/result identities hash their `serde_json` \
-                 struct-order encoding, not RFC 8785; outside QSL-194's eight sites, moved \
-                 by QSL-220",
+        functions: &["raw_digest"],
+        calls: &[],
+        kind: ExemptionKind::NotAnIdentity,
+        reason: "the FR-052 `ByteDigest` of native-temporal document bytes, emitted or \
+                 supplied; the documents' content identities are `quire-canonical`'s (QSL-220)",
     },
 ];
 
@@ -267,6 +283,10 @@ pub(crate) struct Outcome {
     pub(crate) unlisted: Vec<(EncoderSite, Vec<HashSite>)>,
     /// Exempt files, with the exemptions their hash sites fall under.
     pub(crate) allowed: Vec<(EncoderSite, Vec<&'static Exemption>)>,
+    /// Lines naming `serde_json` or calling a JSON producer inside a
+    /// function of a call-pinned exemption (see [`Exemption::calls`]): each
+    /// fails the check.
+    pub(crate) json_in_pinned: Vec<(PathBuf, HashSite)>,
     /// Listed functions with no remaining hash site, by exemption; `None`
     /// when the file no longer pairs JSON with a hash at all. Each fails.
     pub(crate) stale: Vec<(&'static Exemption, Option<&'static str>)>,
@@ -274,7 +294,10 @@ pub(crate) struct Outcome {
 
 impl Outcome {
     pub(crate) fn passed(&self) -> bool {
-        self.violations.is_empty() && self.unlisted.is_empty() && self.stale.is_empty()
+        self.violations.is_empty()
+            && self.unlisted.is_empty()
+            && self.json_in_pinned.is_empty()
+            && self.stale.is_empty()
     }
 
     /// The allowed files under exemptions of `kind`.
@@ -947,6 +970,7 @@ pub(crate) fn evaluate(qsl_root: &Path) -> Result<Outcome> {
                 e.functions
                     .iter()
                     .any(|function| *function == hash_site.function)
+                    && (e.calls.is_empty() || pinned_call(&site, hash_site.line, e.calls))
             });
             match owner {
                 Some((index, exemption)) => {
@@ -970,6 +994,33 @@ pub(crate) fn evaluate(qsl_root: &Path) -> Result<Outcome> {
         for (index, _) in &entries {
             seen.insert((*index, ""));
         }
+        for (_, exemption) in entries.iter().filter(|(_, e)| !e.calls.is_empty()) {
+            // Every way the function can hold JSON: a line naming
+            // `serde_json`, a serializer call however it was imported, and
+            // a call of any JSON producer, in this file or another.
+            let producer_calls = calls[file_index]
+                .iter()
+                .filter(|call| call.callees.iter().any(|callee| producers.contains(callee)))
+                .map(|call| call.line);
+            let mut json_lines: Vec<usize> = site
+                .json_lines
+                .iter()
+                .chain(&file.serializer_lines)
+                .copied()
+                .filter(|line| !file.use_lines.contains(line))
+                .chain(producer_calls)
+                .collect();
+            json_lines.sort_unstable();
+            json_lines.dedup();
+            for line in json_lines {
+                let function = file.enclosing_name(line);
+                if exemption.functions.contains(&function.as_str()) {
+                    outcome
+                        .json_in_pinned
+                        .push((site.file.clone(), HashSite { line, function }));
+                }
+            }
+        }
         if !unlisted.is_empty() {
             outcome.unlisted.push((site.clone(), unlisted));
         }
@@ -987,6 +1038,17 @@ pub(crate) fn evaluate(qsl_root: &Path) -> Result<Outcome> {
         }
     }
     Ok(outcome)
+}
+
+/// Whether the hash site at `line` is exactly a call of one of `calls`: a
+/// call of another file's hashing function by that name, on a line naming
+/// no [`HASHERS`] entry itself.
+fn pinned_call(site: &EncoderSite, line: usize, calls: &[&str]) -> bool {
+    !site.hasher_lines.contains(&line)
+        && site
+            .hash_calls
+            .iter()
+            .any(|call| call.line == line && calls.contains(&call.function.as_str()))
 }
 
 /// The report `main` prints.
@@ -1055,6 +1117,15 @@ pub(crate) fn report(outcome: &Outcome) -> String {
                 ));
             }
         }
+        for (file, json) in &outcome.json_in_pinned {
+            summary.push_str(&format!(
+                "    JSON inside a call-pinned exempt function: {} line {} in `{}` -- \
+                 hash only through the pinned call\n",
+                file.display(),
+                json.line,
+                json.function
+            ));
+        }
         for (stale, function) in &outcome.stale {
             match function {
                 Some(function) => summary.push_str(&format!(
@@ -1069,7 +1140,6 @@ pub(crate) fn report(outcome: &Outcome) -> String {
         }
     }
     for (label, kind) in [
-        ("debt", ExemptionKind::Debt),
         ("spec-carved identity", ExemptionKind::SpecCarvedIdentity),
         ("exempt", ExemptionKind::NotAnIdentity),
     ] {
@@ -1110,25 +1180,41 @@ mod tests {
 
     /// The fixture text satisfying every [`EXEMPT`] entry of `module`: one
     /// hashing function per listed function, in a file naming `serde_json`.
+    /// A call-pinned entry's functions hash by calling its pinned callees,
+    /// which [`PINNED_CALLEES`] defines.
     fn exempt_file(crate_src: &str, module: &str) -> String {
-        let mut text = String::from("use serde_json::Value;\n");
+        let mut text = format!("use crate::{PINNED_CALLEES}::*;\nuse serde_json::Value;\n");
         for exemption in EXEMPT
             .iter()
             .filter(|e| e.crate_src == crate_src && e.module == module)
         {
+            let body = if exemption.calls.is_empty() {
+                "Sha256::digest(b);".to_owned()
+            } else {
+                exemption
+                    .calls
+                    .iter()
+                    .map(|callee| format!("{callee}(b);"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
             for function in exemption.functions {
                 match function.split_once("::") {
                     Some((self_ty, name)) => text.push_str(&format!(
-                        "impl {self_ty} {{\n    fn {name}(b: &[u8]) {{\n        Sha256::digest(b);\n    }}\n}}\n"
+                        "impl {self_ty} {{\n    fn {name}(b: &[u8]) {{\n        {body}\n    }}\n}}\n"
                     )),
                     None => text.push_str(&format!(
-                        "fn {function}(b: &[u8]) {{\n    Sha256::digest(b);\n}}\n"
+                        "fn {function}(b: &[u8]) {{\n    {body}\n}}\n"
                     )),
                 }
             }
         }
         text
     }
+
+    /// The module, at each crate's source root, defining every call-pinned
+    /// exemption's callees as hashing functions that name no JSON.
+    const PINNED_CALLEES: &str = "exempt_pinned_callees";
 
     /// A QSL tree with every scan root and every [`EXEMPT`] entry matching,
     /// so a test sees only the scenario it plants.
@@ -1147,6 +1233,20 @@ mod tests {
                 ),
                 &exempt_file(exemption.crate_src, exemption.module),
             );
+            if !exemption.calls.is_empty() {
+                let callees: String = exemption
+                    .calls
+                    .iter()
+                    .map(|callee| {
+                        format!("pub fn {callee}(b: &[u8]) -> [u8; 32] {{ Sha256::digest(b).into() }}\n")
+                    })
+                    .collect();
+                write(
+                    dir.path(),
+                    &format!("{}/{PINNED_CALLEES}.rs", exemption.crate_src),
+                    &callees,
+                );
+            }
         }
         dir
     }
@@ -1372,7 +1472,6 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         let outcome = evaluate(dir.path()).unwrap();
         assert!(outcome.passed(), "{}", report(&outcome));
         for kind in [
-            ExemptionKind::Debt,
             ExemptionKind::SpecCarvedIdentity,
             ExemptionKind::NotAnIdentity,
         ] {
@@ -1425,6 +1524,123 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         let sites = &outcome.unlisted[0].1;
         assert_eq!(sites.len(), 1);
         assert_eq!(sites[0].function, "fresh");
+    }
+
+    /// QSL-220: intake's exemption is pinned to its `raw_bytes_digest`
+    /// call. The pre-#389 `check_package_digest` (55db8a4c), hashing a
+    /// `jcs_bytes` JSON producer with `Sha256` directly, fails on both
+    /// counts, and hashing JSON through the pinned call still fails.
+    #[test]
+    fn intake_exemption_is_pinned_to_its_raw_bytes_digest_call() {
+        const INTAKE: &str = "qsl-semantics/src/model/intake.rs";
+        let dir = tree();
+        write(
+            dir.path(),
+            "qsl-semantics/src/model/key.rs",
+            "pub fn jcs_bytes(v: &Tree) -> Vec<u8> { serde_json::to_vec(v).unwrap() }\n",
+        );
+        write(
+            dir.path(),
+            INTAKE,
+            "use super::key::jcs_bytes;\nuse serde_json::Value;\n\
+             fn check_package_digest(b: &[u8], d: Option<&Doc>) -> [u8; 32] {\n\
+             \x20   match d {\n\
+             \x20       Some(d) => Sha256::digest(jcs_bytes(&d.tree)).into(),\n\
+             \x20       None => Sha256::digest(b).into(),\n\
+             \x20   }\n}\n",
+        );
+        let outcome = evaluate(dir.path()).unwrap();
+        assert!(!outcome.passed());
+        let unlisted: Vec<usize> = outcome
+            .unlisted
+            .iter()
+            .flat_map(|(_, sites)| sites.iter().map(|site| site.line))
+            .collect();
+        assert_eq!(unlisted, vec![5, 6], "{}", report(&outcome));
+        let json: Vec<(usize, &str)> = outcome
+            .json_in_pinned
+            .iter()
+            .map(|(_, site)| (site.line, site.function.as_str()))
+            .collect();
+        assert_eq!(json, vec![(5, "check_package_digest")]);
+
+        write(
+            dir.path(),
+            INTAKE,
+            "use super::key::jcs_bytes;\nuse crate::exempt_pinned_callees::*;\n\
+             fn check_package_digest(b: &[u8], d: Option<&Doc>) -> [u8; 32] {\n\
+             \x20   match d {\n\
+             \x20       Some(d) => raw_bytes_digest(&jcs_bytes(&d.tree)),\n\
+             \x20       None => raw_bytes_digest(b),\n\
+             \x20   }\n}\n",
+        );
+        let outcome = evaluate(dir.path()).unwrap();
+        assert!(outcome.unlisted.is_empty(), "{}", report(&outcome));
+        let json: Vec<usize> = outcome
+            .json_in_pinned
+            .iter()
+            .map(|(_, site)| site.line)
+            .collect();
+        assert_eq!(json, vec![5], "{}", report(&outcome));
+        assert!(!outcome.passed());
+    }
+
+    /// The JSON lines a call-pinned exemption reports for `intake` text.
+    fn pinned_json_lines(intake: &str) -> Vec<(usize, String)> {
+        let dir = tree();
+        write(dir.path(), "qsl-semantics/src/model/intake.rs", intake);
+        let outcome = evaluate(dir.path()).unwrap();
+        assert!(outcome.unlisted.is_empty(), "{}", report(&outcome));
+        assert!(outcome.stale.is_empty(), "{}", report(&outcome));
+        assert_eq!(
+            outcome.passed(),
+            outcome.json_in_pinned.is_empty(),
+            "{}",
+            report(&outcome)
+        );
+        outcome
+            .json_in_pinned
+            .into_iter()
+            .map(|(_, site)| (site.line, site.function))
+            .collect()
+    }
+
+    /// QSL-220 review M1 (A): a serializer imported by name and hashed
+    /// through the pinned call fails.
+    #[test]
+    fn pinned_exemption_refuses_an_imported_serializer() {
+        let found = pinned_json_lines(
+            "use crate::exempt_pinned_callees::*;\nuse serde_json::to_vec;\n\
+             fn check_package_digest(v: &Tree) -> [u8; 32] {\n\
+             \x20   raw_bytes_digest(&to_vec(v).unwrap())\n}\n",
+        );
+        assert_eq!(found, vec![(4, "check_package_digest".to_owned())]);
+    }
+
+    /// QSL-220 review M1 (B): a JSON producer defined in the same file and
+    /// hashed through the pinned call fails.
+    #[test]
+    fn pinned_exemption_refuses_a_same_file_json_producer() {
+        let found = pinned_json_lines(
+            "use crate::exempt_pinned_callees::*;\n\
+             fn json(v: &Tree) -> Vec<u8> {\n    serde_json::to_vec(v).unwrap()\n}\n\
+             fn check_package_digest(v: &Tree) -> [u8; 32] {\n\
+             \x20   raw_bytes_digest(&json(v))\n}\n",
+        );
+        assert_eq!(found, vec![(6, "check_package_digest".to_owned())]);
+    }
+
+    /// The pinned call over exact bytes, next to JSON elsewhere in the
+    /// file, passes.
+    #[test]
+    fn pinned_exemption_accepts_raw_bytes_beside_json_elsewhere() {
+        let found = pinned_json_lines(
+            "use crate::exempt_pinned_callees::*;\n\
+             fn json(v: &Tree) -> Vec<u8> {\n    serde_json::to_vec(v).unwrap()\n}\n\
+             fn check_package_digest(b: &[u8]) -> [u8; 32] {\n\
+             \x20   raw_bytes_digest(b)\n}\n",
+        );
+        assert_eq!(found, Vec::new());
     }
 
     /// An exemption whose file no longer pairs the two fails as stale, and
