@@ -234,10 +234,11 @@ pub(crate) type ResolvedSignature = (Vec<(String, ValueType)>, ValueType);
 
 /// Resolved signatures that stand in for resolving some `functions`
 /// entries' own `TypeForm`s, keyed by index into
-/// [`PackageDeclarations::functions`]. Only `check::checked_dispatch` can
-/// populate it: its FR-151 synthesized clauses come from an
-/// already-resolved model signature, not from parsed source. Every other
-/// caller holds the empty default.
+/// [`PackageDeclarations::functions`]. Only `check` can populate it:
+/// `check::checked_dispatch`'s FR-151 synthesized clauses come from an
+/// already-resolved model signature, and the FR-091 assembler records the
+/// check-owned signature it resolved from each source function's type
+/// forms. Every other caller holds the empty default.
 #[derive(Clone, Debug, Default)]
 pub struct ResolvedSignatures(std::collections::BTreeMap<usize, ResolvedSignature>);
 
@@ -308,6 +309,11 @@ pub struct PackageDeclarations {
     /// Resolved signatures standing in for some `functions` entries' own
     /// type forms; see [`ResolvedSignatures`].
     pub resolved_signatures: ResolvedSignatures,
+    /// FR-096: the span of each declared record's and tuple's name, by its
+    /// declared name, for the types read from the unit (the FR-091
+    /// assembler fills it). A type declared by hand has none, and its
+    /// `declaration` occurrence then names no region.
+    pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
 }
 
 impl PackageDeclarations {
@@ -328,6 +334,7 @@ impl PackageDeclarations {
             models: Vec::new(),
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
+            declared_type_spans: BTreeMap::new(),
         }
     }
 

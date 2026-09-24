@@ -69,5 +69,8 @@ Partial: step 1's crate edges
 (`tests/it/family_outcome_layering.rs::no_crate_below_layer_three_depends_on_the_check_core`)
 and step 2 over every type `qsl-forms` defines
 (`qsl-forms/tests/it/identity_free_forms.rs`) pass locally. Step 1's
-family-module edges and step 3 need the `Value` builder module and its
-expression-mapping and assembler functions, which QSL-141 adds.
+family-module edges and step 3 are not written. The `Value` builder's
+production match (`qsl-forms/src/value.rs`, `Mapping::map`) has a `_` arm
+over `qsl_cst::Production`, which refuses any production that is not an
+expression level with `UnexpectedShape`; the dispatch match and the
+assembler's resolution match (`check::type_form::resolve_form`) have none.

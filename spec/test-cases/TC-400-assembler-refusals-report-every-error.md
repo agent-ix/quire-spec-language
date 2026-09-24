@@ -49,4 +49,4 @@ Tag the test `#[trace("FR-091-AC-14", "FR-091-AC-15", "FR-091-AC-16", "FR-091-AC
 
 ## Status
 
-Planned; no test backs this case.
+Backed by `qsl-semantics` `check::assemble` tests: `the_assembler_reports_every_error` (QSL-141).

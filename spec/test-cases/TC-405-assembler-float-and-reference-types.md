@@ -46,4 +46,4 @@ Tag the test `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`.
 
 ## Status
 
-Planned; no test backs this case.
+Steps 1 and 3 are backed by `qsl-semantics` `check::assemble` tests: `floating_and_reference_types_are_refused`. Step 2 is not: `qsl-cst` still requires `[mode]` on `Float32` and `Float64` (FR-091-AC-23).

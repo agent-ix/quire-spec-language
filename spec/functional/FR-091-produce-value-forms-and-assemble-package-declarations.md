@@ -527,24 +527,28 @@ for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
 
 ## Status
 
-Specified for ADR-011 §7.3 M-3b (the `Value` family, tracked under QSL-141)
-on the M-6a path (QSL-8). Not yet implemented. `qsl_forms::build_form` has a
-test-only dispatch entry only, so every production CST refuses with
-`NoDispatchEntry`. No module builds `PackageDeclarations` from parsed forms.
-`Expression::Convert`, `Expression::AllInstances`, `Expression::Lookup` and
-`FunctionDeclaration` carry a `TypeForm`, not a `ValueType`, and
-`qsl-forms`'s `[dependencies]` are `qsl-cst`, `qsl-foundation` and
-`quire-exact` only.
-`Expression` nodes carry no span. The forms `FunctionDeclaration` has no
-`using` field, and no parsed-unit type carries the unit's selections.
-`check` mints function identities over the constant
-`DEFAULT_PACKAGE_IDENTITY` (`qsl-semantics/src/check/family.rs`). `ValueType::Float`
-holds only an `IeeeWidth` (`quire-exact/src/value.rs`; QSL-131 V5 retyped
-`src/value/composite.rs`'s own `ValueType` onto this one kernel definition,
-so it is no longer a second, QSL-local copy), and the evaluator applies
-`RoundingMode::Exact` to every IEEE step (`qsl-eval/src/value/expression/evaluate.rs`).
-`qsl-cst` requires `[mode]` on `Float32` and `Float64`. `qsl-foundation`'s
-`Code` has no `stage_limit_exceeded` spelling.
+The `Value` slice is implemented (QSL-141). `qsl_forms::build_unit` walks a
+unit's declarations and dispatches `function`, `type`, `record` and `tuple`
+to the `Value` builder (`qsl-forms/src/value.rs`), which maps every row of
+the expression table with each node's span, refuses the listed
+unrepresented constructs, and bounds its depth. The forms
+`FunctionDeclaration` carries its `using` alias. The assembler is
+`PackageDeclarations::assemble` (`qsl-semantics/src/check/assemble.rs`). It
+resolves aliases, records, tuples and function signatures, mints each
+record's and tuple's handle over the unit's `SourceOwner`, records the span
+of each declared type's name for FR-096, and reports every error it finds.
+
+Remaining work:
+
+- FR-091-AC-23: `qsl-cst` still requires `[mode]` on `Float32` and
+  `Float64`, so a bare floating type does not reach S2.
+- FR-091-AC-22: the assembler checks each `using` alias against the unit's
+  profile selections but does not record the resolved selection, since
+  nothing reads one yet.
+- FR-091-AC-11 (TC-398 step 3): the builder's production match refuses any
+  non-expression production through a `_` arm (`UnexpectedShape`).
+- `ValueType::Float` still holds only an `IeeeWidth`; the assembler refuses
+  every floating type (FR-091-AC-19) rather than resolving one.
 
 ## Rulings
 

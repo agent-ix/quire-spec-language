@@ -48,4 +48,4 @@ Tag the test `#[trace("FR-091-AC-3", "TC-394")]`.
 
 ## Status
 
-Planned; no test backs this case.
+Backed by `qsl-forms/tests/it/value_forms.rs`: `each_expression_construct_maps_to_its_variant` and `grouping_and_associativity_come_from_the_cst` (QSL-141).

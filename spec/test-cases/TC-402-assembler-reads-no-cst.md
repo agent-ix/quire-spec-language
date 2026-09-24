@@ -38,4 +38,4 @@ Tag the test `#[trace("FR-091-AC-20", "TC-402")]`.
 
 ## Status
 
-Planned; no test backs this case.
+Backed by `qsl-semantics` `check::assemble` tests: `the_assembler_reads_no_cst` (steps 1 and 2). The assembler's tests reach `qsl_cst` only through `qsl_cst::parse` feeding S2 (step 3, by inspection).

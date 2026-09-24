@@ -36,6 +36,9 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 # input and qsl-semantics exposes no builder of them. Layer 2 is below this
 # crate, so the edge closes no cycle; TC-390 admits it in this table only.
 qsl-forms = { path = "../qsl-forms" }
+# FR-091-AC-13: a function compiled from source text through S1 and S2 is
+# called here.
+qsl-cst = { path = "../qsl-cst" }
 # `qsl-semantics`' test-only fixtures (`DeclarationKey::fixture`,
 # `DomainPackageRef::fixture`, `model::refusal::fixtures`, ...). Only this
 # dev-dependency enables `test-support`: the root crate's

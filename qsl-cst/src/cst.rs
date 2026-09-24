@@ -674,9 +674,9 @@ fn append_tokens(tokens: &[CstToken], start: usize, end: usize, output: &mut Vec
 
 impl LosslessCst {
     /// Test-only fixture: a lossless CST over the given significant token
-    /// spellings (space-joined into the backing source text, in order), one
-    /// root node — spanning only the last spelling, not the whole text; see
-    /// below — and the given recovery stream.
+    /// spellings (space-joined into the backing source text, in order): a
+    /// root node over the whole text with one `Declaration` child node over
+    /// the `declaration` spellings, and the given recovery stream.
     ///
     /// The real complete-V1 grammar admits only `edition "1-draft"` and a
     /// closed declaration keyword set (`grammar.rs`'s `CompleteUnit`/`Header`
@@ -686,14 +686,10 @@ impl LosslessCst {
     /// dispatch mechanism without depending on a real family (FR-067-AC-1,
     /// AC-7, AC-8; TC-167). This fixture builds the CST directly instead.
     ///
-    /// `spellings` is the whole token stream (any leading header/prelude
-    /// tokens, in order); its last entry is the "root construct" the S2
-    /// forms stage dispatches on, so the root node's span covers only that
-    /// last token, not the whole text — matching a single declaration's own
-    /// CST subtree, whose leading token is its own, not the file header's.
-    /// The root node has no children: nothing in `forms` reads a node's
-    /// children, only [`Self::tokens`] (the whole stream) and
-    /// [`Self::root`]'s own span.
+    /// `header` is any leading prelude, and `declaration` the one
+    /// declaration S2 dispatches on by its first spelling. Neither node has
+    /// token-level children beyond what [`Self::tokens`] holds: nothing the
+    /// dispatch mechanism reads needs more.
     ///
     /// Gated on `feature = "test-support"` (rather than a bare
     /// `#[cfg(test)]`) because `cfg(test)` gates only qsl-cst's own test
@@ -703,12 +699,15 @@ impl LosslessCst {
     /// default-feature and `--all-features` lanes (mirrors the repo's own
     /// convention, e.g. `src/model/key.rs`'s `DeclarationKey::fixture`).
     #[cfg(any(test, feature = "test-support"))]
-    pub fn fixture(spellings: &[&str], recoveries: Vec<Recovery>) -> Self {
-        assert!(!spellings.is_empty(), "a fixture needs at least one token");
+    pub fn fixture(header: &[&str], declaration: &[&str], recoveries: Vec<Recovery>) -> Self {
+        assert!(
+            !declaration.is_empty(),
+            "a fixture declaration needs at least one token"
+        );
         let mut text = String::new();
-        let mut tokens = Vec::with_capacity(spellings.len());
-        let mut root_span = Span { start: 0, end: 0 };
-        for (index, spelling) in spellings.iter().enumerate() {
+        let mut tokens = Vec::with_capacity(header.len() + declaration.len());
+        let mut declaration_span = Span { start: 0, end: 0 };
+        for (index, spelling) in header.iter().chain(declaration).enumerate() {
             if index > 0 {
                 text.push(' ');
             }
@@ -721,9 +720,10 @@ impl LosslessCst {
                 Span { start, end },
                 spelling.as_bytes(),
             ));
-            if index == spellings.len() - 1 {
-                root_span = Span { start, end };
+            if index == header.len() {
+                declaration_span.start = start;
             }
+            declaration_span.end = end;
         }
         let source = qsl_foundation::Source::read(
             qsl_foundation::SourceIdentity {
@@ -739,10 +739,18 @@ impl LosslessCst {
         .expect("fixture text is within the byte limit");
         let root = RawNode {
             production: Production::CompleteUnit,
-            span: root_span,
+            span: Span {
+                start: 0,
+                end: text.len(),
+            },
+            children: vec![CstElement::Node(1)],
+        };
+        let declaration = RawNode {
+            production: Production::Declaration,
+            span: declaration_span,
             children: Vec::new(),
         };
-        Self::new(source, tokens, vec![root], 0, recoveries)
+        Self::new(source, tokens, vec![root, declaration], 0, recoveries)
     }
 }
 

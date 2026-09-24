@@ -867,9 +867,9 @@ fn a_declaration_without_its_occurrence_is_omitted() {
         .any(|omission| omission.node == node_id(tuple.key())));
 }
 
-/// Known gap (QSL-8): a declared type carries no form spans, so
-/// `emit_checked` cannot place its `declaration` occurrence and refuses a
-/// package declaring one.
+/// A type declared by hand carries no span of its name (only the FR-091
+/// assembler records one), so `emit_checked` cannot place its
+/// `declaration` occurrence and refuses a package declaring one.
 #[trace("TC-426")]
 #[test]
 fn emit_checked_cannot_place_a_type_declaration() {
@@ -1381,6 +1381,70 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
             let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
             let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
             assert_eq!(&INT_TEXT[start..end], b"x + 1");
+        }
+    }
+}
+
+/// A unit with a declared record and an `Integer` function, the FR-091
+/// round trip's source. The function takes no parameter: IR's v2 reader
+/// has no `parameter` form yet, so a parameter node is omitted from the
+/// emitted package (`a_form_ir_lacks_is_omitted_and_everything_else_is_written`).
+const SPINE_TEXT: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"quire.value.complete/v1\" version \"1\" digest \
+    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+    record Point { x: Integer; y: Integer; }\n\
+    function one using v(): Integer pure { 1 + 0 }\n";
+
+/// FR-091 end to end: source text goes through S1 (`qsl_cst::parse`), S2
+/// (`qsl_forms::build_unit`), the E3 assembler, S3 `check`, S4 `link` and
+/// `emit_checked`, and I2 reads the bytes back Verified. The record's
+/// `declaration` occurrence is placed at its declared name, and every
+/// occurrence at a region of the unit.
+#[trace("FR-091-AC-10", "FR-096-AC-1", "TC-426")]
+#[test]
+fn source_text_compiles_through_the_spine_and_reads_back_verified() {
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        SPINE_TEXT.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .expect("S2 builds the unit");
+    let declarations = PackageDeclarations::assemble(parsed.source().reference().clone(), unit)
+        .expect("the assembler builds the package declarations");
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the package checks"),
+    );
+    let emission = emit_checked(&package).expect("the package emits with its source map");
+    assert_eq!(emission.omitted, []);
+    let exports = verified_exports(&emission);
+    assert!(exports.contains_key("Point"), "{exports:?}");
+    assert!(exports.contains_key("one"), "{exports:?}");
+
+    let wire = wire(&emission);
+    let point = declared(&wire, "Point");
+    let entries: Vec<&Value> = wire["source_map"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["node_id"] == point["node_id"] && entry["role"] == "declaration")
+        .collect();
+    let [entry] = entries.as_slice() else {
+        panic!("Point has one declaration entry: {}", wire["source_map"]);
+    };
+    let region = &entry["regions"][0];
+    let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
+    let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
+    assert_eq!(&SPINE_TEXT[start..end], "Point");
+    for entry in wire["source_map"].as_array().unwrap() {
+        for region in entry["regions"].as_array().unwrap() {
+            let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
+            assert!(end <= SPINE_TEXT.len(), "{entry}");
         }
     }
 }

@@ -53,4 +53,4 @@ Tag the test `#[trace("FR-091-AC-1", "TC-392")]`.
 
 ## Status
 
-Planned; no test backs this case.
+Backed by `qsl-forms/tests/it/value_forms.rs`: `a_unit_builds_one_form_per_declaration_in_source_order` (QSL-141).

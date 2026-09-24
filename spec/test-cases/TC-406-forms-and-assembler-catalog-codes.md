@@ -48,4 +48,4 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
 
 ## Status
 
-Planned; no test backs this case.
+Steps 1, 2 and 4 are backed by `qsl-forms/tests/it/value_forms.rs` (the S2 causes and the depth limit) and `qsl-semantics` `check::assemble` tests (`each_assembler_cause_has_its_catalog_code`). Step 3's `syn` inspection is not written; both `catalog_code` matches have no `_` arm.

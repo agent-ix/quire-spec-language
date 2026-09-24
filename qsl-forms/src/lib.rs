@@ -2,12 +2,12 @@
 //! S2: parsed semantic forms, produced from a lossless CST with no error or
 //! recovery node (ADR-011 §2.1 E2; ADR-012 §3, §4.3).
 //!
-//! This crate is the `forms` core (ADR-011 §6.1 layer 2): the closed,
+//! This crate is the `forms` core (ADR-011 §6.1 layer 2) — the closed,
 //! family-keyed dispatch entry table over the closed leading-token-kind
-//! enum, and the shared parsed-form contract. It owns no family's grammar
-//! production function and no family's variant of the parsed-form enum
-//! (M-3b, FR-067-CON-2); each family's own migration ticket adds both when
-//! that family migrates onto S2 forms.
+//! enum, and the shared parsed-form contract — and the family form
+//! builders that have migrated onto it: the `Value` family's (`value`,
+//! FR-091, M-3b for `Value`). Each other family's own migration ticket adds
+//! its production function and its variants when it migrates.
 //!
 //! The `Expression` enum and its sibling parsed-form types are defined
 //! exactly once, in `syntax`, and re-exported at this crate's top level
@@ -30,10 +30,15 @@
 mod dispatch;
 mod spans;
 mod syntax;
+mod value;
 
-pub use dispatch::{build_form, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm};
+pub use dispatch::{
+    build_unit, FormsCause, FormsFailure, FormsLimits, FormsRefusal, LeadingTokenKind, ParsedForm,
+    ParsedUnit, DEFAULT_FORMS_NESTING_DEPTH,
+};
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
-    Accumulation, BinaryOperator, BinderQuery, BuiltinType, ClauseKind, DeclaredClauseKind,
-    Expression, FieldInitializer, FunctionDeclaration, TypeForm, TypeFormHead,
+    Accumulation, AliasForm, BinaryOperator, BinderQuery, BuiltinType, ClauseKind, DeclarationForm,
+    DeclaredClauseKind, DeclaredName, Expression, FieldInitializer, FunctionDeclaration,
+    RecordFieldForm, RecordForm, TupleForm, TypeForm, TypeFormHead, UsingAlias,
 };

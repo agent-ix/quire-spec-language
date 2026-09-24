@@ -14,4 +14,5 @@ mod dispatch_calls;
 mod equality_matrix;
 mod finite_simulation;
 mod model_reference_queries;
+mod source_call;
 mod total_functions;

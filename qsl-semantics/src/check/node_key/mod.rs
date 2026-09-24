@@ -1072,6 +1072,30 @@ pub(super) fn hex(bytes: &[u8; 32]) -> String {
     String::from(HexDigest::of(bytes).as_str())
 }
 
+/// The handle a record or tuple declared in source is named by in
+/// `ValueType::Composite` before lowering keys its node (FR-091 "Node key
+/// owner"): the SHA-256 of `{version, owner, name}`'s RFC 8785 bytes. It is
+/// a checker-internal name for the declaration, stable for an unchanged
+/// declaration under one owner and different under another; lowering maps
+/// it to the node's FR-092 key, which is what the wire carries.
+pub(crate) fn declared_type_handle(
+    owner: &SourceOwner,
+    name: &str,
+) -> Result<NodeKey, NodeKeyRefusal> {
+    #[derive(Serialize)]
+    struct Handle<'a> {
+        version: &'static str,
+        owner: &'a SourceOwner,
+        name: &'a str,
+    }
+    canonical_sha256(&Handle {
+        version: "quire.qsl.declared-type-handle/v1",
+        owner,
+        name,
+    })
+    .map(NodeKey::from_digest)
+}
+
 /// `preimage`'s RFC 8785 bytes and the node key they hash to.
 fn keyed(preimage: &Preimage<'_>) -> Result<KeyedPreimage, NodeKeyRefusal> {
     let preimage = canonical_bytes(preimage)?;

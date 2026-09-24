@@ -69,6 +69,7 @@
 // file (`check.rs`, holding `Typer`/`Scope`/`bind_parameters` -- name
 // resolution and typing) -- the inception is the spec's own naming, not an
 // accidental collision this file introduced.
+mod assemble;
 mod capability;
 #[allow(clippy::module_inception)]
 mod check;
@@ -145,6 +146,7 @@ pub use family::fixtures::{
 };
 pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
+pub use assemble::{AssemblyCause, AssemblyError, AssemblyRefusal};
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
     CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
@@ -156,6 +158,7 @@ pub use checked_dispatch::{
     MissingClauseField, OperationClauses,
 };
 pub use field_refinement::check_field_refinement_obligation;
+pub use type_form::TypeFormFault;
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
 // identity directly. `mint_variant_id` itself has since moved to
@@ -322,6 +325,9 @@ pub struct CheckedGraph {
     /// FR-096: each function's form spans, by declaration index, so a
     /// `Location` resolves to a region of the checked unit.
     form_spans: Vec<Option<qsl_forms::DeclarationSpans>>,
+    /// FR-096: the span of each declared type's name read from the unit, by
+    /// its declared name, so an `Origin::TypeDeclaration` resolves.
+    type_spans: BTreeMap<String, qsl_foundation::Span>,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -666,6 +672,7 @@ impl PackageDeclarations {
             return Err(refusals);
         }
         let source = self.source;
+        let type_spans = self.declared_type_spans;
         let form_spans = self
             .functions
             .iter()
@@ -1034,6 +1041,7 @@ impl PackageDeclarations {
             semantic_graph,
             effective_limits: limits,
             form_spans,
+            type_spans,
         })
     }
 }
