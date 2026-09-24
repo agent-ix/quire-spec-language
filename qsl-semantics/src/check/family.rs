@@ -605,7 +605,7 @@ pub(crate) fn measure_declaration(
 }
 
 /// [`StageLimits`](crate::family::StageLimits)'s real producer values
-/// (QSL-153), read back from one [`measure_declaration`] pass.
+/// (QSL-153), read back from one `measure_declaration` pass.
 /// `input_bytes` and `node_count` are `StageLimits` fields, compared by
 /// `crate::family::CheckContext::check_input_bytes`/`check_node_count`;
 /// `work_budget` is charged against the shared kernel meter instead (PR
@@ -614,7 +614,7 @@ pub(crate) fn measure_declaration(
 pub struct DeclarationMetrics {
     /// The measured encoding's logical byte length.
     pub(crate) input_bytes: u64,
-    /// The number of `Expression` nodes [`encode_expression`] visited.
+    /// The number of `Expression` nodes `encode_expression` visited.
     pub(crate) node_count: u64,
     /// The number of base writes performed.
     pub(crate) work_budget: u64,
