@@ -19,7 +19,9 @@ use crate::identity::{
     Backend, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef, SourceDigestWire,
 };
 use crate::witness::ReplaySource;
-use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord};
+use qsl_foundation::digest::{
+    ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, ManifestDigest,
+};
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)
@@ -387,7 +389,11 @@ impl ReplayRequest {
         }
 
         let (backend_identity, backend_domain, backend_hex) = wire.backend;
-        let backend_digest = DigestRecord::from_wire(backend_domain.as_deref(), &backend_hex)
+        // ADR-013 C-27 (QSL-227): the backend digest is not just any FR-201
+        // domain -- it must be `quire.tool-manifest.jcs/v1`, checked before
+        // the hex bytes are read. `ManifestDigest::from_wire` cannot
+        // construct anything else.
+        let backend_digest = ManifestDigest::from_wire(backend_domain.as_deref(), &backend_hex)
             .map_err(classify_digest_error)?;
 
         Ok(Self {
@@ -441,8 +447,15 @@ impl ReplayRequest {
                 .as_bytes(),
             backend: (
                 self.backend.identity().to_owned(),
-                Some(self.backend.manifest_digest().domain().as_str().to_owned()),
-                self.backend.manifest_digest().hex(),
+                Some(
+                    self.backend
+                        .manifest_digest()
+                        .record()
+                        .domain()
+                        .as_str()
+                        .to_owned(),
+                ),
+                self.backend.manifest_digest().record().hex(),
             ),
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
@@ -651,6 +664,43 @@ mod tests {
         assert!(matches!(
             ReplayRequest::decode(oversized),
             Err(ReplayRequestRefusal::BoundExceeded(_))
+        ));
+    }
+
+    /// QSL-227 positive control: a real request whose `backend` digest is in
+    /// the required `quire.tool-manifest.jcs/v1` domain (as `wire` already
+    /// builds it) decodes, and the resulting request's backend carries that
+    /// domain.
+    #[test]
+    fn backend_digest_in_the_required_domain_decodes() {
+        let request = ReplayRequest::decode(wire(1)).unwrap();
+        assert_eq!(
+            request.backend().manifest_digest().record().domain(),
+            DigestDomain::ToolManifestJcsV1
+        );
+    }
+
+    /// QSL-227 (ADR-013 C-27): a `backend` digest in a recognized FR-201
+    /// domain other than `quire.tool-manifest.jcs/v1` refuses with the same
+    /// typed cause the reader already uses for a byte-provision domain
+    /// mismatch, and the domain is checked before the digest bytes: pairing
+    /// the wrong domain with malformed hex still reports the domain
+    /// mismatch, not a hex-encoding problem.
+    #[test]
+    fn backend_digest_in_any_other_fr201_domain_refuses() {
+        let mut bad_domain = wire(1);
+        bad_domain.backend.1 = Some(DigestDomain::SourceBytesV1.as_str().to_owned());
+        assert!(matches!(
+            ReplayRequest::decode(bad_domain),
+            Err(ReplayRequestRefusal::DigestDomainMismatch(_))
+        ));
+
+        let mut bad_domain_and_hex = wire(1);
+        bad_domain_and_hex.backend.1 = Some(DigestDomain::SourceBytesV1.as_str().to_owned());
+        bad_domain_and_hex.backend.2 = "not-hex".to_owned();
+        assert!(matches!(
+            ReplayRequest::decode(bad_domain_and_hex),
+            Err(ReplayRequestRefusal::DigestDomainMismatch(_))
         ));
     }
 

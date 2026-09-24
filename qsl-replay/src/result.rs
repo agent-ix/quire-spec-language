@@ -614,10 +614,7 @@ mod tests {
             contract_version: "quire.backend-provider/v1".to_owned(),
             capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
             backend_identity: "kani-backend-1".to_owned(),
-            manifest_digest: qsl_foundation::digest::DigestRecord::mint(
-                qsl_foundation::digest::DigestDomain::ToolManifestJcsV1,
-                [1; 32],
-            ),
+            manifest_digest: qsl_foundation::digest::ManifestDigest::from_digest([1; 32]),
             tool_pin: "kani-0.67.0".to_owned(),
             items: vec![TerminalRecord::new("item-0", TerminalValue::Refuted)],
         };

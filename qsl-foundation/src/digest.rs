@@ -485,6 +485,45 @@ impl InvalidDigestRecord {
     }
 }
 
+/// A backend's own FR-331 provider-manifest digest (ADR-013 O-19), always in
+/// FR-201 domain `quire.tool-manifest.jcs/v1`. Relocated here (QSL-227) from
+/// `qsl_route`, whose own module doc named it as the O-19 `backend` member's
+/// digest half: `qsl_route::Candidate` (layer R) and `qsl_replay::Backend`
+/// (layer 6) cannot depend on each other (ADR-011 §6.1), but both depend on
+/// this F crate, so the one domain-checked type lives here and both readers
+/// share it -- exactly the reasoning that already relocated [`WireNodeId`]
+/// from `replay` to this module.
+///
+/// The domain is fixed by construction: [`ManifestDigest::from_digest`]
+/// mints in that domain, and [`ManifestDigest::from_wire`] refuses any
+/// other (ADR-013 C-27, checked before the digest bytes).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ManifestDigest(DigestRecord);
+
+impl ManifestDigest {
+    /// The one FR-201 domain a manifest digest is in.
+    pub const DOMAIN: DigestDomain = DigestDomain::ToolManifestJcsV1;
+
+    /// Wrap an already-computed `quire.tool-manifest.jcs/v1` digest.
+    pub fn from_digest(bytes: [u8; 32]) -> Self {
+        Self(DigestRecord::mint(Self::DOMAIN, bytes))
+    }
+
+    /// Read a manifest digest from its wire parts: a domain label and a
+    /// 64-lowercase-hex digest (the `DigestRecord` wire convention, C-16).
+    /// The domain is checked before the digest bytes (ADR-013 C-27), via
+    /// [`DigestRecord::from_wire_expecting`].
+    pub fn from_wire(domain: Option<&str>, digest_hex: &str) -> Result<Self, InvalidDigestRecord> {
+        DigestRecord::from_wire_expecting(Self::DOMAIN, domain, digest_hex).map(Self)
+    }
+
+    /// The domain-labelled digest record. Its domain is always
+    /// [`ManifestDigest::DOMAIN`]; its `hex()` is the wire digest string.
+    pub fn record(&self) -> DigestRecord {
+        self.0
+    }
+}
+
 /// A node id exactly as it travels on the wire (a v2 node key's 64
 /// lowercase-hex digest), before a checked-package lookup resolves it to a
 /// `quire_exact::NodeKey` (ADR-013 O-04). Relocated here (QSL-158 S-3a) from

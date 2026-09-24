@@ -29,7 +29,7 @@ use crate::identity::{
     SourceDigestWire, TracePosition,
 };
 use qsl_foundation::digest::{
-    ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, WireNodeId,
+    ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, ManifestDigest, WireNodeId,
 };
 use qsl_foundation::source::provenance::OccurrenceKey;
 
@@ -745,15 +745,12 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         let (backend_identity, backend_domain, backend_hex) = packet
             .backend
             .ok_or(WitnessRefusal::MissingMember("backend"))?;
-        // ADR-013 C-27: the backend digest is not just any FR-201 domain
-        // (QSL-227) -- it must be `quire.tool-manifest.jcs/v1`, checked
-        // before the hex bytes are read.
-        let backend_digest = DigestRecord::from_wire_expecting(
-            DigestDomain::ToolManifestJcsV1,
-            backend_domain.as_deref(),
-            &backend_hex,
-        )
-        .map_err(|e| classify_digest_error("backend", e))?;
+        // ADR-013 C-27 (QSL-227): the backend digest is not just any FR-201
+        // domain -- it must be `quire.tool-manifest.jcs/v1`, checked before
+        // the hex bytes are read. `ManifestDigest::from_wire` cannot
+        // construct anything else.
+        let backend_digest = ManifestDigest::from_wire(backend_domain.as_deref(), &backend_hex)
+            .map_err(|e| classify_digest_error("backend", e))?;
         let backend = Backend::new(backend_identity, backend_digest);
         let trace_position = packet
             .trace_position
@@ -818,8 +815,15 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             declared_domains: Some(self.declared_domains.clone()),
             backend: Some((
                 self.backend.identity().to_owned(),
-                Some(self.backend.manifest_digest().domain().as_str().to_owned()),
-                self.backend.manifest_digest().hex(),
+                Some(
+                    self.backend
+                        .manifest_digest()
+                        .record()
+                        .domain()
+                        .as_str()
+                        .to_owned(),
+                ),
+                self.backend.manifest_digest().record().hex(),
             )),
             trace_position: Some(self.trace_position.clone()),
             source: Some(self.source.clone()),
@@ -1059,7 +1063,7 @@ mod envelope_tests {
     fn backend_digest_in_the_required_domain_reconstructs() {
         let envelope = WitnessEnvelope::reconstruct(full_packet(0)).unwrap();
         assert_eq!(
-            envelope.backend().manifest_digest().domain(),
+            envelope.backend().manifest_digest().record().domain(),
             DigestDomain::ToolManifestJcsV1
         );
     }

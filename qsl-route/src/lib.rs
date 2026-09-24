@@ -48,7 +48,8 @@ pub mod routing;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
-use qsl_foundation::digest::{parse_lower_hex32, DigestDomain, DigestRecord, UnknownDigestDomain};
+use qsl_foundation::digest::InvalidDigestRecord;
+pub use qsl_foundation::digest::ManifestDigest;
 use qsl_foundation::CatalogCode;
 use qsl_semantics::check::Capability;
 
@@ -145,82 +146,12 @@ impl Mode {
     }
 }
 
-/// The digest of a backend's own FR-331 provider manifest (FR-075 Inputs),
-/// always in FR-201 domain `quire.tool-manifest.jcs/v1` (ADR-013 O-19).
-///
-/// The domain is fixed by construction: [`ManifestDigest::from_digest`]
-/// mints in that domain, and [`ManifestDigest::from_wire`] refuses any
-/// other. The registry receives the digest already computed and never
-/// computes it (FR-075 Inputs).
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ManifestDigest(DigestRecord);
-
-impl ManifestDigest {
-    /// The one FR-201 domain a manifest digest is in.
-    pub const DOMAIN: DigestDomain = DigestDomain::ToolManifestJcsV1;
-
-    /// Wrap an already-computed `quire.tool-manifest.jcs/v1` digest.
-    pub fn from_digest(bytes: [u8; 32]) -> Self {
-        Self(DigestRecord::mint(Self::DOMAIN, bytes))
-    }
-
-    /// Read a manifest digest from its wire parts: a domain label and a
-    /// 64-lowercase-hex digest (the `DigestRecord` wire convention, C-16).
-    ///
-    /// The domain is checked first (ADR-013 C-27): an absent domain, an
-    /// unknown label, or any FR-201 domain other than
-    /// `quire.tool-manifest.jcs/v1` refuses before the digest string is
-    /// read.
-    pub fn from_wire(
-        domain: Option<&str>,
-        digest_hex: &str,
-    ) -> Result<Self, InvalidManifestDigest> {
-        let Some(label) = domain else {
-            return Err(InvalidManifestDigest::AbsentDomain);
-        };
-        let domain = label
-            .parse::<DigestDomain>()
-            .map_err(InvalidManifestDigest::UnknownDomain)?;
-        if domain != Self::DOMAIN {
-            return Err(InvalidManifestDigest::WrongDomain(domain));
-        }
-        if digest_hex.len() != 64 {
-            return Err(InvalidManifestDigest::WrongLength(digest_hex.len()));
-        }
-        parse_lower_hex32(digest_hex)
-            .map(Self::from_digest)
-            .ok_or(InvalidManifestDigest::NotLowerHex)
-    }
-
-    /// The domain-labelled digest record. Its domain is always
-    /// [`ManifestDigest::DOMAIN`]; its `hex()` is the wire digest string.
-    pub fn record(&self) -> DigestRecord {
-        self.0
-    }
-}
-
-/// [`ManifestDigest::from_wire`]'s refusal (ADR-013 C-27).
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum InvalidManifestDigest {
-    /// The wire digest names no domain (FR-201-AC-3: never defaulted).
-    #[error("manifest digest names no domain")]
-    AbsentDomain,
-    /// The wire digest names a label FR-201 does not define.
-    #[error("{0}")]
-    UnknownDomain(#[source] UnknownDigestDomain),
-    /// The wire digest names an FR-201 domain other than
-    /// `quire.tool-manifest.jcs/v1`.
-    #[error("manifest digest domain {0} is not quire.tool-manifest.jcs/v1")]
-    WrongDomain(DigestDomain),
-    /// The domain is right; the digest string is not exactly 64
-    /// characters.
-    #[error("manifest digest is {0} characters, not exactly 64")]
-    WrongLength(usize),
-    /// The domain is right; the digest string is not lowercase hex (FR-201
-    /// admits no case folding).
-    #[error("manifest digest is not exactly 64 lowercase hexadecimal digits")]
-    NotLowerHex,
-}
+// `ManifestDigest` (ADR-013 O-19's `quire.tool-manifest.jcs/v1`-typed
+// backend digest) and its refusal live in `qsl_foundation::digest` (QSL-227):
+// `route` (layer R) and `replay` (layer 6) cannot depend on each other
+// (ADR-011 §6.1), but both depend on `qsl_foundation` (layer F), so the one
+// domain-first-checked type lives there and both readers share it instead of
+// each carrying its own copy of the same "not just any FR-201 domain" check.
 
 /// A candidate: the `(backend identity, manifest digest)` pair of a
 /// registered backend (FR-290 "Candidate set and negotiation"), which is
@@ -254,7 +185,7 @@ impl Candidate {
         identity: &str,
         digest_domain: Option<&str>,
         digest_hex: &str,
-    ) -> Result<Self, InvalidManifestDigest> {
+    ) -> Result<Self, InvalidDigestRecord> {
         Ok(Self::new(
             BackendId::new(identity),
             ManifestDigest::from_wire(digest_domain, digest_hex)?,
@@ -650,6 +581,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
+    use qsl_foundation::digest::DigestDomain;
 
     use super::*;
 
@@ -810,21 +742,25 @@ mod tests {
     fn backend_member_with_a_wrong_digest_domain_refuses_before_the_bytes() {
         let hex = "ab".repeat(32);
         let wrong = DigestDomain::SourceBytesV1;
+        let wrong_domain = || InvalidDigestRecord::WrongDomain {
+            expected: ManifestDigest::DOMAIN,
+            found: wrong,
+        };
         assert_eq!(
             Candidate::from_wire("kani", Some(wrong.as_str()), &hex),
-            Err(InvalidManifestDigest::WrongDomain(wrong))
+            Err(wrong_domain())
         );
         assert_eq!(
             Candidate::from_wire("kani", Some(wrong.as_str()), "not-hex"),
-            Err(InvalidManifestDigest::WrongDomain(wrong))
+            Err(wrong_domain())
         );
         assert_eq!(
             Candidate::from_wire("kani", None, &hex),
-            Err(InvalidManifestDigest::AbsentDomain)
+            Err(InvalidDigestRecord::AbsentDomain)
         );
         assert!(matches!(
             Candidate::from_wire("kani", Some("tool-manifest"), &hex),
-            Err(InvalidManifestDigest::UnknownDomain(_))
+            Err(InvalidDigestRecord::UnknownDomain(_))
         ));
         assert!(matches!(
             Candidate::from_wire(
@@ -832,11 +768,11 @@ mod tests {
                 Some(ManifestDigest::DOMAIN.as_str()),
                 &"AB".repeat(32)
             ),
-            Err(InvalidManifestDigest::NotLowerHex)
+            Err(InvalidDigestRecord::NotLowerHex)
         ));
         assert!(matches!(
             Candidate::from_wire("kani", Some(ManifestDigest::DOMAIN.as_str()), "ab"),
-            Err(InvalidManifestDigest::WrongLength(2))
+            Err(InvalidDigestRecord::WrongLength(2))
         ));
     }
 
