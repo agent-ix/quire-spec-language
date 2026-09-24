@@ -195,7 +195,7 @@ fn effective_view_identity_matches_its_golden_vector() {
         })],
     );
     let NormalizeOutcome::Completed(view) =
-        normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        normalize(&package, ModelNormalizationLimits::default())
     else {
         panic!("a one-type domain package normalizes");
     };

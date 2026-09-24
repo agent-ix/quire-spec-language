@@ -268,7 +268,7 @@ pub fn intake(offer: &Offer) -> Result<DomainPackage, IntakeFailure> {
     Ok(DomainPackage::new(selection, records))
 }
 
-/// FR-150 normalization of `domain_package` under unlimited limits. The
+/// FR-150 normalization of `domain_package` under the default limits (NFR-012). The
 /// package is shared into the view, never copied, so the timed work is
 /// normalization alone.
 ///
@@ -279,7 +279,7 @@ pub fn intake(offer: &Offer) -> Result<DomainPackage, IntakeFailure> {
 pub fn view(domain_package: &Arc<DomainPackage>) -> EffectiveView {
     match normalize_shared(
         Arc::clone(domain_package),
-        ModelNormalizationLimits::UNLIMITED,
+        ModelNormalizationLimits::default(),
     ) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("the generated package normalizes: {other:?}"),
@@ -305,7 +305,7 @@ pub fn population_document(shape: ModelShape, members: usize) -> PopulationDocum
 /// FR-153 binding admission of `document` into `Pop`, with a closed
 /// subtype closure and a declared maximum of `document`'s own size.
 pub fn admit_population(view: &EffectiveView, document: &PopulationDocument) -> AdmissionOutcome {
-    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::default());
     admit_binding(
         view,
         document,
@@ -327,8 +327,8 @@ pub fn admit_unchanged_invocation(
 ) -> AdmissionOutcome {
     let population = key("Pop");
     let effect = OperationEffect::default();
-    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
-    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::default());
+    let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::default());
     admit_invocation(
         InvocationContext {
             view,
@@ -401,7 +401,7 @@ pub fn resolve_root_field_redefinition(
     resolve_redefinition_target(
         index,
         &field,
-        ModelNormalizationLimits::UNLIMITED.ancestor_steps,
+        ModelNormalizationLimits::default().ancestor_steps,
     )
     .map_err(Box::new)
 }

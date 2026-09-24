@@ -42,8 +42,28 @@ pub struct ModelNormalizationLimits {
     pub family_steps: u64,
 }
 
+/// NFR-012's finite default ceilings (QSL-222), which a caller may raise or
+/// lower field by field. `spec/non-functional/NFR-012-*.md` states each
+/// value and its derivation.
+impl Default for ModelNormalizationLimits {
+    fn default() -> Self {
+        Self {
+            declaration_records: 100_000,
+            derivation_facts: 1_600_000,
+            effective_declarations: 1_600_000,
+            dispatch_candidates: 1_600_000,
+            hashed_bytes: 268_435_456,
+            work_units: 16_777_216,
+            ancestor_steps: 100_000,
+            family_steps: 100_000,
+        }
+    }
+}
+
 impl ModelNormalizationLimits {
     /// A limit set large enough that no charge in this rung is denied.
+    /// Test-only: production callers start from [`Self::default`].
+    #[cfg(any(test, feature = "test-support"))]
     pub const UNLIMITED: Self = Self {
         declaration_records: u64::MAX,
         derivation_facts: u64::MAX,
@@ -229,10 +249,13 @@ pub struct Incomplete {
     pub charge_point: ChargePoint,
 }
 
-/// One exact `{ counter: amount }` charge vector.
+/// One exact `{ counter: amount }` charge vector: `work_units` plus at most
+/// one sized counter, since no model charge point sizes more than one.
+/// Fixed-size, so building and admitting a charge allocates nothing
+/// (QSL-218).
 pub(super) struct Charge {
     point: ChargePoint,
-    sizes: Vec<(LimitKind, u64)>,
+    size: Option<(LimitKind, u64)>,
     work_units: u64,
 }
 
@@ -240,13 +263,14 @@ impl Charge {
     pub(super) fn new(point: ChargePoint) -> Self {
         Self {
             point,
-            sizes: Vec::new(),
+            size: None,
             work_units: 1,
         }
     }
 
+    /// The one counter this charge sizes, and the amount.
     pub(super) fn size(mut self, kind: LimitKind, amount: u64) -> Self {
-        self.sizes.push((kind, amount));
+        self.size = Some((kind, amount));
         self
     }
 
@@ -258,12 +282,28 @@ impl Charge {
 }
 
 /// A per-normalization-run scalar meter.
+///
+/// **A count, not a log (QSL-218, as QSL-206 did for the kernel meter).** A
+/// production meter holds only fixed-size state: the limits, the six
+/// counters and the number of admitted charges. It owns no heap memory, so
+/// the meter that bounds normalization's work does not itself grow with that
+/// work; the const assertion below this type holds that in every production
+/// build. The ordered charge log ([`Meter::admitted_charges`]) exists only
+/// under the `test-support` feature, which only a dev-dependency may enable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Meter {
     limits: ModelNormalizationLimits,
     consumed: [u64; 6],
+    admissions: u64,
+    #[cfg(feature = "test-support")]
     admitted: Vec<ChargePoint>,
 }
+
+// QSL-218: a production `Meter` owns no heap memory. A type with no drop
+// glue holds no `Vec`, `Box` or `String`, so a heap-owning field added to it
+// fails the build rather than a test.
+#[cfg(not(feature = "test-support"))]
+const _: () = assert!(!std::mem::needs_drop::<Meter>());
 
 impl Meter {
     /// A fresh meter with nothing consumed.
@@ -271,6 +311,8 @@ impl Meter {
         Self {
             limits,
             consumed: [0; 6],
+            admissions: 0,
+            #[cfg(feature = "test-support")]
             admitted: Vec::new(),
         }
     }
@@ -285,7 +327,14 @@ impl Meter {
         self.consumed[kind.index()]
     }
 
-    /// Every admitted charge point in admission order.
+    /// How many charges this meter has admitted.
+    pub fn admission_count(&self) -> u64 {
+        self.admissions
+    }
+
+    /// Every admitted charge point in admission order. Test-only: a
+    /// production meter keeps [`Self::admission_count`], not a log.
+    #[cfg(feature = "test-support")]
     pub fn admitted_charges(&self) -> &[ChargePoint] {
         &self.admitted
     }
@@ -304,21 +353,22 @@ impl Meter {
     /// `ModelNormalizationLimitsV1` field order. Every counter's resulting
     /// value is computed before any counter is mutated, so a denial leaves
     /// every counter exactly as it was.
-    pub(super) fn charge(&mut self, mut charge: Charge) -> Result<(), Incomplete> {
+    pub(super) fn charge(&mut self, charge: Charge) -> Result<(), Incomplete> {
         let point = charge.point;
-        charge.sizes.sort_by_key(|(kind, _)| kind.index());
-        let mut results = Vec::with_capacity(charge.sizes.len());
-        for (kind, amount) in &charge.sizes {
-            let candidate = if kind.is_cumulative() {
-                self.consumed(*kind).checked_add(*amount)
-            } else {
-                Some((*amount).max(self.consumed(*kind)))
-            };
-            match candidate {
-                Some(value) if value <= kind.limit(&self.limits) => results.push((*kind, value)),
-                _ => return Err(self.incomplete(*kind, *amount, point)),
+        let sized = match charge.size {
+            None => None,
+            Some((kind, amount)) => {
+                let candidate = if kind.is_cumulative() {
+                    self.consumed(kind).checked_add(amount)
+                } else {
+                    Some(amount.max(self.consumed(kind)))
+                };
+                match candidate {
+                    Some(value) if value <= kind.limit(&self.limits) => Some((kind, value)),
+                    _ => return Err(self.incomplete(kind, amount, point)),
+                }
             }
-        }
+        };
         let work_total = match self
             .consumed(LimitKind::WorkUnits)
             .checked_add(charge.work_units)
@@ -326,11 +376,80 @@ impl Meter {
             Some(total) if total <= self.limits.work_units => total,
             _ => return Err(self.incomplete(LimitKind::WorkUnits, charge.work_units, point)),
         };
-        for (kind, value) in results {
+        if let Some((kind, value)) = sized {
             self.consumed[kind.index()] = value;
         }
         self.consumed[LimitKind::WorkUnits.index()] = work_total;
+        self.admissions = self.admissions.saturating_add(1);
+        #[cfg(feature = "test-support")]
         self.admitted.push(point);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::*;
+
+    /// QSL-218 AC 1: a production meter allocates nothing per charge. A
+    /// `Charge` and a `Meter` with no drop glue own no `Vec`, `Box` or
+    /// `String`, so neither building nor admitting a charge touches the heap,
+    /// whatever the charge count; the admission count still grows with every
+    /// charge. Built only without `test-support` (`cargo test -p
+    /// qsl-semantics`, which `make ci` runs): with it, the meter keeps its
+    /// ordered charge log, which allocates.
+    #[cfg(not(feature = "test-support"))]
+    #[trace("TC-433", "NFR-012")]
+    #[test]
+    fn a_production_meter_does_not_allocate_per_charge() {
+        assert!(!std::mem::needs_drop::<Meter>());
+        assert!(!std::mem::needs_drop::<Charge>());
+        let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
+        let mut admitted = 0_u64;
+        for target in [1_u64, 1_000, 100_000] {
+            while admitted < target {
+                admitted += 1;
+                meter
+                    .charge(
+                        Charge::new(ChargePoint::NormalizeFact)
+                            .size(LimitKind::DerivationFacts, admitted),
+                    )
+                    .expect("an unlimited meter admits every charge");
+            }
+            assert_eq!(meter.admission_count(), target);
+            assert_eq!(meter.consumed(LimitKind::DerivationFacts), target);
+        }
+    }
+
+    /// A denied charge leaves every counter and the admission count as they
+    /// were.
+    #[trace("TC-433", "NFR-012")]
+    #[test]
+    fn a_denied_charge_changes_nothing() {
+        let mut meter = Meter::new(ModelNormalizationLimits {
+            hashed_bytes: 10,
+            ..ModelNormalizationLimits::UNLIMITED
+        });
+        meter
+            .charge(Charge::new(ChargePoint::NormalizeHash).size(LimitKind::HashedBytes, 6))
+            .expect("6 of 10 bytes is admitted");
+        let denied = meter
+            .charge(Charge::new(ChargePoint::NormalizeHash).size(LimitKind::HashedBytes, 5))
+            .expect_err("11 of 10 bytes is denied");
+        assert_eq!(
+            denied,
+            Incomplete {
+                limit_kind: LimitKind::HashedBytes,
+                limit: 10,
+                consumed: 6,
+                next_charge: 5,
+                charge_point: ChargePoint::NormalizeHash,
+            }
+        );
+        assert_eq!(meter.consumed(LimitKind::HashedBytes), 6);
+        assert_eq!(meter.consumed(LimitKind::WorkUnits), 1);
+        assert_eq!(meter.admission_count(), 1);
     }
 }

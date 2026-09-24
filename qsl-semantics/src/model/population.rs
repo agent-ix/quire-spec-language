@@ -191,8 +191,23 @@ pub struct PopulationAdmissionLimits {
     pub ancestor_steps: u64,
 }
 
+/// NFR-012's finite default ceilings (QSL-222), which a caller may raise or
+/// lower field by field. `spec/non-functional/NFR-012-*.md` states each
+/// value and its derivation.
+impl Default for PopulationAdmissionLimits {
+    fn default() -> Self {
+        Self {
+            population_members: 100_000,
+            work_units: 16_777_216,
+            ancestor_steps: 100_000,
+        }
+    }
+}
+
 impl PopulationAdmissionLimits {
     /// A limit set large enough that no charge in this module is denied.
+    /// Test-only: production callers start from [`Self::default`].
+    #[cfg(any(test, feature = "test-support"))]
     pub const UNLIMITED: Self = Self {
         population_members: u64::MAX,
         work_units: u64::MAX,
@@ -303,12 +318,26 @@ impl AdmissionCharge {
 }
 
 /// A per-binding-admission scalar meter.
+///
+/// **A count, not a log (QSL-218).** A production meter holds only
+/// fixed-size state: the limits, the two counters and the number of admitted
+/// charges, and owns no heap memory; the const assertion below this type
+/// holds that in every production build. The ordered charge log
+/// ([`AdmissionMeter::admitted_charges`]) exists only under the
+/// `test-support` feature, which only a dev-dependency may enable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmissionMeter {
     limits: PopulationAdmissionLimits,
     consumed: [u64; 2],
+    admissions: u64,
+    #[cfg(feature = "test-support")]
     admitted: Vec<AdmissionChargePoint>,
 }
+
+// QSL-218: a production `AdmissionMeter` owns no heap memory (see
+// `crate::model::accounting::Meter`'s identical assertion).
+#[cfg(not(feature = "test-support"))]
+const _: () = assert!(!std::mem::needs_drop::<AdmissionMeter>());
 
 impl AdmissionMeter {
     /// A fresh meter with nothing consumed.
@@ -316,6 +345,8 @@ impl AdmissionMeter {
         Self {
             limits,
             consumed: [0; 2],
+            admissions: 0,
+            #[cfg(feature = "test-support")]
             admitted: Vec::new(),
         }
     }
@@ -330,7 +361,14 @@ impl AdmissionMeter {
         self.consumed[kind.index()]
     }
 
-    /// Every admitted charge point in admission order.
+    /// How many charges this meter has admitted.
+    pub fn admission_count(&self) -> u64 {
+        self.admissions
+    }
+
+    /// Every admitted charge point in admission order. Test-only: a
+    /// production meter keeps [`Self::admission_count`], not a log.
+    #[cfg(feature = "test-support")]
     pub fn admitted_charges(&self) -> &[AdmissionChargePoint] {
         &self.admitted
     }
@@ -379,6 +417,8 @@ impl AdmissionMeter {
             *slot = (*slot).max(amount);
         }
         self.consumed[AdmissionLimitKind::WorkUnits.index()] = work_total;
+        self.admissions = self.admissions.saturating_add(1);
+        #[cfg(feature = "test-support")]
         self.admitted.push(point);
         Ok(())
     }
@@ -1865,6 +1905,46 @@ mod tests {
     use crate::model::accounting::ModelNormalizationLimits;
     use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
     use crate::model::normalize::{build_calls, normalize, NormalizeOutcome};
+
+    /// QSL-218 AC 1: a production admission meter allocates nothing per
+    /// charge: an `AdmissionCharge` and an `AdmissionMeter` with no drop
+    /// glue own no heap memory, whatever the charge count. Built only
+    /// without `test-support`, as `accounting`'s identical test.
+    #[cfg(not(feature = "test-support"))]
+    #[trace("TC-433", "NFR-012")]
+    #[test]
+    fn a_production_admission_meter_does_not_allocate_per_charge() {
+        assert!(!std::mem::needs_drop::<AdmissionMeter>());
+        assert!(!std::mem::needs_drop::<AdmissionCharge>());
+        let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+        let mut admitted = 0_u64;
+        for target in [1_u64, 1_000, 100_000] {
+            while admitted < target {
+                admitted += 1;
+                meter
+                    .charge(
+                        AdmissionCharge::new(AdmissionChargePoint::BindingMember).size(admitted),
+                    )
+                    .expect("an unlimited meter admits every charge");
+            }
+            assert_eq!(meter.admission_count(), target);
+            assert_eq!(meter.consumed(AdmissionLimitKind::WorkUnits), target);
+        }
+    }
+
+    /// QSL-222: the default admission limits are NFR-012's finite ceilings.
+    #[trace("TC-433", "NFR-012")]
+    #[test]
+    fn the_default_admission_limits_are_finite() {
+        assert_eq!(
+            PopulationAdmissionLimits::default(),
+            PopulationAdmissionLimits {
+                population_members: 100_000,
+                work_units: 16_777_216,
+                ancestor_steps: 100_000,
+            }
+        );
+    }
 
     fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {
         DomainPackageRecord::ObjectType(ObjectTypeRecord {
