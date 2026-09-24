@@ -201,21 +201,18 @@ impl EmittedPackage {
     /// (`PackageId::of_preimage`, ADR-013 O-02): there is no parameter
     /// through which a caller could instead supply arbitrary preimage
     /// bytes, let alone an arbitrary `package_id` directly. `encode` writes
-    /// the wire around the minted `package_id`. `pub(super)`: reachable from
-    /// anywhere in `qsl-package` (in particular, `emit`), never from outside
-    /// it.
-    pub(super) fn new<E>(
+    /// the wire around the minted `package_id`. A preimage the encoder
+    /// refuses (a body nested past `IDENTITY_LIMITS`' depth) is returned as
+    /// `E`, never a panic. `pub(super)`: reachable from anywhere in
+    /// `qsl-package` (in particular, `emit`), never from outside it.
+    pub(super) fn new<E: From<quire_canonical::Error>>(
         identity_preimage: &quire_contract_ir::CheckedPackageIdentityPreimageV2,
         encode: impl FnOnce(PackageId) -> Result<Vec<u8>, E>,
     ) -> Result<Self, E> {
         // RFC 8785 bytes from `quire-canonical` (ADR-013 §2, ADR-013:113:
         // the one RFC 8785 implementation), encoded straight from the typed
-        // preimage: the encoder orders members itself. A preimage of owned
-        // strings and vectors always has an encoding, and `LIMITS` sets no
-        // byte ceiling; the one refusal left is a failed heap reservation,
-        // which the `serde_json` encoder this replaced aborted on.
-        let preimage_bytes = quire_canonical::to_vec(identity_preimage, IDENTITY_LIMITS)
-            .unwrap_or_else(|error| panic!("CheckedPackageIdentityPreimageV2 encodes: {error}"));
+        // preimage: the encoder orders members itself.
+        let preimage_bytes = quire_canonical::to_vec(identity_preimage, IDENTITY_LIMITS)?;
         let package_id = PackageId::of_preimage(&preimage_bytes);
         Ok(Self {
             bytes: encode(package_id)?,
@@ -325,8 +322,8 @@ mod tests {
         let preimage: quire_contract_ir::CheckedPackageIdentityPreimageV2 =
             serde_json::from_str(TEXT).expect("the vector is a v2 identity preimage");
         assert_eq!(
-            EmittedPackage::new(&preimage, |_| Ok::<_, std::convert::Infallible>(Vec::new()))
-                .unwrap_or_else(|never| match never {})
+            EmittedPackage::new(&preimage, |_| Ok::<_, quire_canonical::Error>(Vec::new()))
+                .expect("the golden preimage encodes")
                 .package_id()
                 .hex(),
             DIGEST

@@ -8,9 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
-use qsl_foundation::source::provenance::{RawSourceRef, Revision, SourceRegion};
-use qsl_foundation::ByteDigest;
+use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_semantics::check::{CheckingLimits, NodeTag, PackageDeclarations};
 use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
 use qsl_semantics::value::declaration::{
@@ -31,14 +29,13 @@ const TEXT: &[u8] = b"function t using v(): Boolean pure { if true then true els
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
+/// The fixture unit admitted as (`a`, `u`, `git`, `1`): its owner `(a, u)`
+/// is the one FR-092's golden vectors are keyed under.
 fn source() -> RawSourceRef {
-    RawSourceRef::new(
-        "a",
-        "u",
-        Revision::new("git", "1").unwrap(),
-        DigestRecord::mint(DigestDomain::SourceBytesV1, ByteDigest::of(TEXT).as_bytes()),
+    qsl_semantics::check::admitted_source(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        TEXT,
     )
-    .unwrap()
 }
 
 /// Places every occurrence at the whole fixture unit.
@@ -127,7 +124,7 @@ fn package(functions: Vec<FunctionDeclaration>) -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations {
             functions,
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(source())
         }
         .check(CheckingLimits::default())
         .expect("the fixture functions check"),
@@ -158,7 +155,7 @@ fn tree() -> CheckedPackage {
     CheckedPackage::link(
         PackageDeclarations {
             types,
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(source())
         }
         .check(CheckingLimits::default())
         .expect("Tree checks"),
@@ -275,7 +272,7 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
     let checked = |functions| {
         PackageDeclarations {
             functions,
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(source())
         }
         .check(CheckingLimits::default())
         .expect("t and f check")
@@ -723,17 +720,12 @@ fn a_declaration_without_its_occurrence_is_omitted() {
         .find(|node| node.declaration().is_some())
         .expect("Tree's record node")
         .key();
-    let omitted = match emit_package(&package, whole_unit) {
-        Ok(emission) => {
-            assert!(matches!(
-                read_back(&emission),
-                V2ReadOutcome::Verified { .. }
-            ));
-            emission.omitted
-        }
-        Err(EmitRefusal::NothingToEmit { omitted }) => omitted,
-        Err(other) => panic!("{other:?}"),
-    };
+    let emission = emit(&package);
+    assert!(matches!(
+        read_back(&emission),
+        V2ReadOutcome::Verified { .. }
+    ));
+    let omitted = emission.omitted;
     let causes: BTreeMap<String, &OmissionCause> = omitted
         .iter()
         .map(|omission| (omission.node.digest.to_string(), &omission.cause))
@@ -757,6 +749,52 @@ fn a_declaration_without_its_occurrence_is_omitted() {
             member.key()
         );
     }
+}
+
+/// The pinned IR reader keys an application node in a recursion group by
+/// the bare group label, not FR-322's `{ordinal, size}`, so it would refuse
+/// the whole package as `stale-node-key`. `g(): Boolean { if true then true
+/// else g() }` puts two application nodes in `g`'s group: they are omitted,
+/// `g` with them, and the rest is admitted.
+#[trace("FR-093-AC-7", "TC-416")]
+#[test]
+fn a_recursion_group_holding_an_application_is_omitted() {
+    let g = function(
+        "g",
+        &[],
+        Expression::If {
+            condition: Box::new(Expression::Boolean(true)),
+            then: Box::new(Expression::Boolean(true)),
+            otherwise: Box::new(Expression::Call {
+                name: "g".to_owned(),
+                arguments: Vec::new(),
+            }),
+        },
+    );
+    let package = package(vec![g, t()]);
+    let members: BTreeSet<String> = package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .filter(|node| node.recursion().is_some())
+        .map(|node| node.key().to_string())
+        .collect();
+    let g_key = package.graph().function_identity("g").unwrap().to_string();
+    assert!(members.contains(&g_key), "g is in its own group");
+    let emission = emit(&package);
+    let causes: BTreeMap<String, &OmissionCause> = emission
+        .omitted
+        .iter()
+        .map(|omission| (omission.node.digest.to_string(), &omission.cause))
+        .collect();
+    let omitted: BTreeSet<String> = causes.keys().cloned().collect();
+    assert!(members.is_subset(&omitted), "{causes:?}");
+    assert!(causes
+        .values()
+        .any(|cause| **cause == OmissionCause::RecursiveApplication));
+    let exports = verified_exports(&emission);
+    assert!(exports.contains_key("t"));
+    assert!(!exports.contains_key("g"));
 }
 
 /// FR-322 admits no empty semantic graph: an empty package refuses with no
@@ -785,6 +823,15 @@ fn an_unplaced_occurrence_refuses() {
         "{refusal:?}"
     );
     assert_eq!(refusal.code(), Code::UnsupportedProjection);
+    // IR refuses an empty region (`start >= end`), so it places nothing.
+    let empty = emit_package(&package(vec![t()]), |_| {
+        Some(SourceRegion::new(source(), 3, 3).unwrap())
+    })
+    .unwrap_err();
+    assert!(
+        matches!(empty, EmitRefusal::UnlocatedOccurrence { .. }),
+        "{empty:?}"
+    );
 }
 
 /// TC-416 step 3 (FR-093-CON-2): the `package` crate's non-test code calls

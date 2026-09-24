@@ -20,7 +20,8 @@
 //! - `edition` and `definition_selections` come from QSL's `DefinitionLock`
 //!   catalog: the `edition` role, every other always-selected role, and each
 //!   law `DefinitionRef` a node body names.
-//! - `sources` are the raw sources the occurrence regions name.
+//! - `sources` are the checked unit's `RawSourceRef` (`CheckedGraph::source`)
+//!   and any other raw source an occurrence region names.
 //! - `required_features` is `quire.value.complete/v1` (ADR-011 §2.4) and
 //!   `capability_report` reports it available.
 //! - `profile_selections` and `model_selections` are empty: the `Value`
@@ -35,8 +36,8 @@
 //! each occurrence at a `check::Location` (a declaration and a child path),
 //! and the S2 form spans that turn a `Location` into a region do not exist
 //! yet (ADR-013 O-12). The caller therefore supplies that conversion; an
-//! occurrence it cannot place refuses the whole emission
-//! ([`EmitRefusal::UnlocatedOccurrence`]).
+//! occurrence it cannot place, or places at an empty region, refuses the
+//! whole emission ([`EmitRefusal::UnlocatedOccurrence`]).
 //!
 //! # Omitted nodes
 //!
@@ -44,8 +45,9 @@
 //! hold is omitted: at the pinned IR revision that is `value`/`parameter`
 //! (IR-280) and `scalar_type`/`compound_unit`. So is a node that names a node
 //! the checked graph does not hold (an enum declaration or unit node, which
-//! lowering names by key but does not build), and every node that names an
-//! omitted one. Every other node is written (FR-062-AC-9: a refusal is per
+//! lowering names by key but does not build), an application node inside a
+//! recursion group (the pinned IR keys it by the bare group label, not
+//! FR-322's `{ordinal, size}`), and every node that names an omitted one. Every other node is written (FR-062-AC-9: a refusal is per
 //! item). [`Emission::omitted`] lists each omitted node and its cause.
 //!
 //! The wire envelope is a local struct: IR keeps its own
@@ -67,12 +69,16 @@ use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
 use qsl_semantics::check::{CheckedGraph, Location, NodeTag, SemanticNode, SemanticTerm};
 use qsl_semantics::library::PackageId;
+use qsl_semantics::value::IDENTITY_LIMITS;
 use qsl_semantics::value::{
     CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference, Member,
 };
 use quire_exact::{NodeKey, Origin, NODE_KEY_DOMAIN};
 
 use super::{CheckedPackage, EmittedPackage};
+
+/// The `value` form whose node never carries a `declaration` (FR-322).
+const ENUM_VALUE_FORM: &str = "enum_value";
 
 /// The FR-322 graph schema version every node carries.
 const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
@@ -108,7 +114,8 @@ pub(crate) enum EmitRefusal {
         /// Every node the wire would omit, with its cause.
         omitted: Vec<OmittedNode>,
     },
-    /// The caller's region conversion places no region for one occurrence.
+    /// The caller's region conversion places no region, or an empty one,
+    /// for one occurrence.
     #[error("occurrence {role:?}/{ordinal} of node {node} has no source region")]
     UnlocatedOccurrence {
         /// The node.
@@ -132,6 +139,12 @@ pub(crate) enum EmitRefusal {
         /// The encoder's message.
         reason: String,
     },
+}
+
+impl From<quire_canonical::Error> for EmitRefusal {
+    fn from(error: quire_canonical::Error) -> Self {
+        encoding(error)
+    }
 }
 
 impl EmitRefusal {
@@ -171,6 +184,12 @@ pub(crate) enum OmissionCause {
     /// declaration occurrence for a declared type (it has no location for
     /// one), so a declared record or tuple is omitted.
     DeclarationOccurrenceMismatch,
+    /// An application node inside a recursion group. The pinned IR reader
+    /// re-derives its key from the bare `recursion_group` label rather than
+    /// FR-322's `{ordinal, size}` and `group_reference` terms, so it would
+    /// refuse the package as `stale-node-key`. The whole group is omitted
+    /// through [`Self::NamesOmittedNode`].
+    RecursiveApplication,
     /// The node names a node the checked graph does not hold.
     NamesAbsentNode(CheckedNodeId),
     /// The node names a node the wire omits.
@@ -320,12 +339,31 @@ impl<'g> Candidate<'g> {
         self.tag.forms().contains(&self.node.semantic_form())
     }
 
+    /// FR-322's declaration rule, as IR applies it: `declaration` is absent
+    /// on an `expression`, `relation`, `state`, `temporal` or
+    /// `correspondence` node and on a `value`/`enum_value` node, and on every
+    /// other node present exactly when it has a `declaration` occurrence.
     fn declaration_matches_occurrences(&self) -> bool {
-        let declared = self
-            .occurrences
-            .iter()
-            .any(|(occurrence, _)| occurrence.role == CheckedOccurrenceRole::Declaration);
+        let forced_absent = matches!(
+            self.tag,
+            CheckedNodeTag::Expression
+                | CheckedNodeTag::Relation
+                | CheckedNodeTag::State
+                | CheckedNodeTag::Temporal
+                | CheckedNodeTag::Correspondence
+        ) || (self.tag == CheckedNodeTag::Value
+            && self.node.semantic_form() == ENUM_VALUE_FORM);
+        let declared = !forced_absent
+            && self
+                .occurrences
+                .iter()
+                .any(|(occurrence, _)| occurrence.role == CheckedOccurrenceRole::Declaration);
         declared == self.node.declaration().is_some()
+    }
+
+    fn is_recursive_application(&self) -> bool {
+        self.node.recursion().is_some()
+            && matches!(self.node.body(), SemanticTerm::Application { .. })
     }
 
     /// The node as FR-322 writes it.
@@ -369,6 +407,8 @@ fn omissions(candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>) -> Vec<Omitted
             })
         } else if !candidate.declaration_matches_occurrences() {
             Some(OmissionCause::DeclarationOccurrenceMismatch)
+        } else if candidate.is_recursive_application() {
+            Some(OmissionCause::RecursiveApplication)
         } else {
             candidate
                 .names
@@ -518,11 +558,15 @@ fn source_map(
     let mut sources = BTreeSet::new();
     for candidate in order {
         for (occurrence, location) in &candidate.occurrences {
-            let region = regions(location).ok_or_else(|| EmitRefusal::UnlocatedOccurrence {
-                node: candidate.node.key(),
-                role: occurrence.role.clone(),
-                ordinal: occurrence.ordinal,
-            })?;
+            // FR-322 regions are non-empty half-open intervals: an empty
+            // region places the occurrence nowhere.
+            let region = regions(location)
+                .filter(|region| region.start() < region.end())
+                .ok_or_else(|| EmitRefusal::UnlocatedOccurrence {
+                    node: candidate.node.key(),
+                    role: occurrence.role.clone(),
+                    ordinal: occurrence.ordinal,
+                })?;
             let source = source_artifact(region.source());
             sources.insert(source.clone());
             entries.push(CheckedSourceMapEntry {
@@ -597,7 +641,8 @@ pub(crate) fn emit_package(
         return Err(EmitRefusal::NothingToEmit { omitted });
     }
     let order = graph_order(&kept);
-    let (source_map, sources) = source_map(&order, &regions)?;
+    let (source_map, mut sources) = source_map(&order, &regions)?;
+    sources.insert(source_artifact(graph.source()));
     let nodes = order
         .iter()
         .map(|candidate| candidate.wire_node())
@@ -655,9 +700,7 @@ pub(crate) fn emit_package(
             capability_report: &capability_report,
             diagnostics: &diagnostics,
         };
-        let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
-            .map_err(encoding)?;
-        quire_canonical::to_vec(&wire, limits).map_err(encoding)
+        quire_canonical::to_vec(&wire, IDENTITY_LIMITS).map_err(EmitRefusal::from)
     })?;
     Ok(Emission { package, omitted })
 }

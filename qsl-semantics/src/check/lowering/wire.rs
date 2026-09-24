@@ -3,7 +3,8 @@
 //! node `body` member holds, built from the typed
 //! [`SemanticTerm`](super::SemanticTerm). The
 //! wire, not the key: a key hashes `quire-canonical`'s encoding of the typed
-//! preimage (`node_key`).
+//! preimage (`node_key`). serde_json builds the tree only; quire-canonical
+//! encodes the hashed bytes.
 
 use super::SemanticNode;
 
