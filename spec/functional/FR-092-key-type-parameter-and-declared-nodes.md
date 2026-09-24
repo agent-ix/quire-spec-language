@@ -967,26 +967,15 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 ## Status
 
 Specified under QSL-208; recursion groups and declared composite handles
-specified under QSL-211. Implemented on the QSL-156 slice A4b branch, pending merge: `check` keys every node by
-this requirement's preimages in `qsl-semantics/src/check/node_key/` and
-`qsl-semantics/src/check/lowering.rs`, and TC-413 and TC-414 back AC-1 to
-AC-10 and CON-2 there. On that branch, three parts do not yet meet this
-requirement:
-
-- `check` refuses every recursion group with `unsupported-feature` instead
-  of keying it by the group order (the call-graph refusal in `lowering.rs`
-  and the recursive-composite refusal in its composite builder), so the
-  FR-146 recursive-function tests of `qsl-eval/tests/it/total_functions.rs`
-  (`p01`, `p03`, `p06`, `p08`, `p11`, `p_input_bytes`, `p_work_budget`)
-  refuse. AC-7's collision half and AC-11 are unbacked.
-- A checked type node of a declared composite takes its id from the
-  caller-supplied `CompositeDeclaration` key, and TC-259's
-  `composite_declaration_becomes_a_real_checked_type_node` asserts that id.
-  AC-12 is unbacked.
-- `node_key::RecursionGroup` takes the members' node keys and recognizes an
-  in-group reference by key. A member's key exists only after its group is
-  keyed, so the group order needs the members named some other way until
-  then.
+specified under QSL-211. Implemented on the QSL-156 slice A4b branch,
+pending merge: `check` keys every node by this requirement's preimages in
+`qsl-semantics/src/check/node_key/` and `qsl-semantics/src/check/lowering.rs`,
+recursion groups included (`node_key::group_keys`, which names members by
+handle, and the lowering's drafts, keyed in dependency order), and gives a
+declared composite's checked type node its key. TC-413 and TC-414 back AC-1
+to AC-12 and CON-2 there, and the FR-146 recursive-function tests of
+`qsl-eval/tests/it/total_functions.rs` pass. Keying a group is charged to the
+checking stage's work budget.
 
 ## Open Questions
 

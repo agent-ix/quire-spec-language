@@ -666,10 +666,9 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
 /// independent *of*. This version checks two packages whose two functions
 /// are declared in opposite order and compares `target`'s checked identity
 /// across both -- a real reordering, at the one level position could
-/// actually leak (`PackageDeclarations::check`; see
-/// `mint_declaration_identity`'s own doc on why a typed body's
-/// `NodeKind::Call { function: usize, .. }` index makes checked position
-/// matter even though the *parsed* preimage this identity hashes does not).
+/// actually leak (`PackageDeclarations::check`: a typed body's
+/// `NodeKind::Call { function: usize, .. }` index is a checked position,
+/// while the call node's key hashes its callee's key, not that index).
 ///
 /// Also gives a real, non-fabricated test caller to four `pub`
 /// `CheckedPackage` methods PR #262 review (coordinator round 3, finding 3)

@@ -81,14 +81,14 @@ impl ScopeStack {
 /// row for this ticket), matching the shape `CheckContext::enter_nesting`
 /// already established for `nesting_depth`:
 ///
-/// - **Producer**: `crate::check::family::mint_declaration_identity`'s own
+/// - **Producer**: `crate::check::family::measure_declaration`'s
 ///   preimage pass already builds a length-prefixed byte buffer
 ///   over the declaration's structure and walks every [`qsl_forms::
 ///   Expression`] node in it to do so -- real work this contract already
 ///   does, not a synthetic counter added only to satisfy this struct.
 ///   `input_bytes` is that buffer's own logical byte length (accumulated as
 ///   the pass writes, not read back from the buffer afterward -- see
-///   `Preimage`'s own doc for why); `node_count` is the number of
+///   `DeclarationMeter`'s own doc for why); `node_count` is the number of
 ///   `Expression` nodes the same pass visits.
 /// - **Consumer**: `CheckContext::check_input_bytes` and
 ///   `CheckContext::check_node_count` each compare their metric against

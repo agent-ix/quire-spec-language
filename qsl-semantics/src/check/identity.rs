@@ -51,15 +51,11 @@
 //! [`mint_variant_id`] computes AC-10's `VariantId` from that key and the
 //! member.
 //!
-//! The model correspondence ([`ModelCorrespondence`]) is populated from
-//! `PackageDeclarations`' own `model_correspondence` field
-//! (`check/check.rs`), matching this file's own pre-existing
-//! `dispatch_operations`/`dispatch_tables` precedent of "built by the caller
-//! (the `model` bridge); the checker only records/resolves against it" --
-//! see that field's doc for why no such domain-declaration bridge exists in
-//! production yet, and `mod.rs`'s test module for tests that go through
-//! `CheckedPackage::graph().resolve_declaration`/`checked_type_node`, not a
-//! hand-built `ModelCorrespondence`.
+//! The model correspondence ([`ModelCorrespondence`]) has one writer,
+//! `check` (FR-094): lowering records each model declaration node it keys
+//! from the package's admitted domain packages
+//! (`PackageDeclarations::models`), and `CheckedGraph::resolve_declaration`
+//! reads it back.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -791,9 +787,8 @@ mod tests {
     // itself names as canonical.
 
     /// PR #300 review finding 5: a golden digest vector for
-    /// `mint_variant_id`, mirroring `check::family::
-    /// mint_declaration_identity_matches_a_checked_in_digest`'s own
-    /// convention -- this catches a reordered field or a renamed tag an
+    /// `mint_variant_id`, the pinned-digest convention the node-key tests
+    /// (`check::node_key`) follow -- this catches a reordered field or a renamed tag an
     /// equality-only test (comparing two identities minted in the same
     /// process) cannot, since both sides would move together and stay
     /// green. Regenerate the constant only when the preimage grammar change

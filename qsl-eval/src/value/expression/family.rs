@@ -134,8 +134,8 @@ struct FunctionEntryV2 {
 
 /// `quire.checked-function-package/v2`: this ticket's self-consistent v2
 /// encoding for function-declaration identity. It is not a claim of
-/// conformance to the external `quire.checked-package-id/v2` schema (see
-/// `check::family::mint_declaration_identity`'s doc) -- it exists to demonstrate, and let
+/// conformance to the external `quire.checked-package-id/v2` schema -- it
+/// exists to demonstrate, and let
 /// a test assert, that identity survives check, S4 linking and a v2
 /// emit/decode round trip unchanged (FR-065-AC-2).
 const FUNCTION_PACKAGE_V2_VERSION: &str = "quire.checked-function-package/v2";
