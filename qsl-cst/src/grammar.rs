@@ -7,6 +7,14 @@ use super::Production as P;
 #[derive(Clone, Debug)]
 pub(super) enum Terminal {
     Exact(&'static str),
+    /// A nesting-level-opening bracket: `(`, `[`, `{`, or the `<` of a
+    /// type-argument list (NFR-001 "Nesting level"). Distinct from `Exact` so
+    /// the engine can charge nesting depth exactly at bracket boundaries
+    /// rather than per grammar production.
+    Open(&'static str),
+    /// The `Close` counterpart of an `Open` terminal, decrementing nesting
+    /// depth on match.
+    Close(&'static str),
     Literal(&'static str),
     Identifier,
     MemberName,
@@ -98,6 +106,15 @@ fn selection_rule(production: P) -> Rule {
 fn x(value: &'static str) -> Rule {
     Rule::Terminal(Terminal::Exact(value))
 }
+/// A nesting-level-opening bracket terminal: `(`, `[`, `{`, or a
+/// type-argument `<`. See [`Terminal::Open`].
+fn open(value: &'static str) -> Rule {
+    Rule::Terminal(Terminal::Open(value))
+}
+/// The `Close` counterpart of [`open`].
+fn close(value: &'static str) -> Rule {
+    Rule::Terminal(Terminal::Close(value))
+}
 fn literal(value: &'static str) -> Rule {
     Rule::Terminal(Terminal::Literal(value))
 }
@@ -169,7 +186,12 @@ pub(super) fn complete_v1() -> Grammar {
 pub fn base_reserved_spellings() -> std::collections::BTreeSet<&'static str> {
     fn collect(rule: &Rule, output: &mut std::collections::BTreeSet<&'static str>) {
         match rule {
-            Rule::Terminal(Terminal::Exact(value) | Terminal::Literal(value)) => {
+            Rule::Terminal(
+                Terminal::Exact(value)
+                | Terminal::Literal(value)
+                | Terminal::Open(value)
+                | Terminal::Close(value),
+            ) => {
                 output.insert(value);
             }
             Rule::Sequence(rules) | Rule::Choice(rules) => {
@@ -333,15 +355,15 @@ fn source_and_types(g: &mut Grammar) {
             x("Integer"),
             s(vec![
                 x("Int"),
-                x("["),
+                open("["),
                 r(P::SignedInteger),
                 x(","),
                 r(P::SignedInteger),
-                x("]"),
+                close("]"),
             ]),
             s(vec![
                 x("Rational"),
-                x("["),
+                open("["),
                 r(P::SignedInteger),
                 x(","),
                 r(P::SignedInteger),
@@ -349,11 +371,11 @@ fn source_and_types(g: &mut Grammar) {
                 uint(),
                 x(","),
                 uint(),
-                x("]"),
+                close("]"),
             ]),
             s(vec![
                 x("Decimal"),
-                x("["),
+                open("["),
                 r(P::SignedInteger),
                 x(","),
                 r(P::SignedInteger),
@@ -363,37 +385,47 @@ fn source_and_types(g: &mut Grammar) {
                 uint(),
                 x(";"),
                 r(P::RoundingMode),
-                x("]"),
+                close("]"),
             ]),
             s(vec![
                 c(vec![x("Float32"), x("Float64")]),
-                x("["),
+                open("["),
                 r(P::RoundingMode),
-                x("]"),
+                close("]"),
             ]),
             s(vec![
                 x("Text"),
-                x("["),
+                open("["),
                 uint(),
                 x(","),
                 uint(),
                 x(";"),
                 r(P::TextProfile),
-                x("]"),
+                close("]"),
             ]),
-            s(vec![x("Option"), x("<"), r(P::TypeReference), x(">")]),
+            s(vec![
+                x("Option"),
+                open("<"),
+                r(P::TypeReference),
+                close(">"),
+            ]),
             s(vec![
                 c(vec![x("Sequence"), x("Set"), x("Bag"), x("OrderedSet")]),
-                x("<"),
+                open("<"),
                 r(P::TypeReference),
-                x(">"),
-                x("["),
+                close(">"),
+                open("["),
                 uint(),
                 x(","),
                 uint(),
-                x("]"),
+                close("]"),
             ]),
-            s(vec![x("Reference"), x("<"), r(P::QualifiedName), x(">")]),
+            s(vec![
+                x("Reference"),
+                open("<"),
+                r(P::QualifiedName),
+                close(">"),
+            ]),
             r(P::QualifiedName),
         ]),
     );
@@ -442,10 +474,10 @@ fn source_and_types(g: &mut Grammar) {
             opt(x("ordered")),
             x("enum"),
             ident(),
-            x("{"),
+            open("{"),
             list(r(P::EnumMember)),
             opt(x(",")),
-            x("}"),
+            close("}"),
         ]),
     );
     g.insert(
@@ -463,9 +495,9 @@ fn source_and_types(g: &mut Grammar) {
         s(vec![
             x("record"),
             ident(),
-            x("{"),
+            open("{"),
             plus(r(P::Field)),
-            x("}"),
+            close("}"),
         ]),
     );
     g.insert(
@@ -473,9 +505,9 @@ fn source_and_types(g: &mut Grammar) {
         s(vec![
             x("tuple"),
             ident(),
-            x("("),
+            open("("),
             list(r(P::TypeReference)),
-            x(")"),
+            close(")"),
             x(";"),
         ]),
     );
@@ -490,7 +522,7 @@ fn source_and_types(g: &mut Grammar) {
         ]),
     );
     g.insert(P::Parameter, s(vec![ident(), x(":"), r(P::ParameterType)]));
-    let parameters = s(vec![x("("), opt(list(r(P::Parameter))), x(")")]);
+    let parameters = s(vec![open("("), opt(list(r(P::Parameter))), close(")")]);
     g.insert(
         P::FunctionDeclaration,
         s(vec![
@@ -502,7 +534,12 @@ fn source_and_types(g: &mut Grammar) {
             x(":"),
             r(P::TypeReference),
             x("pure"),
-            opt(s(vec![x("decreases"), x("("), r(P::Expression), x(")")])),
+            opt(s(vec![
+                x("decreases"),
+                open("("),
+                r(P::Expression),
+                close(")"),
+            ])),
             r(P::Block),
         ]),
     );
@@ -544,7 +581,7 @@ fn source_and_types(g: &mut Grammar) {
             ]),
         ]),
     );
-    g.insert(P::Block, s(vec![x("{"), r(P::Expression), x("}")]));
+    g.insert(P::Block, s(vec![open("{"), r(P::Expression), close("}")]));
 }
 
 fn expressions(g: &mut Grammar) {
@@ -581,6 +618,22 @@ fn expressions(g: &mut Grammar) {
             .chain((0..16).map(|_| r(P::HexDigit)))
             .collect()),
     );
+    // `Expression`, `Implication` and `Unary` are transcribed here only as the
+    // authoritative inventory of their terminal spellings ("let", "if",
+    // "implies", "not", …) for `complete_reserved_words`/
+    // `base_reserved_spellings`. The engine (`parser.rs`) never executes
+    // these three `Rule`s: a right-recursive `Choice`/`Optional` interpreted
+    // by plain Rust recursion would grow one native stack frame per chain
+    // element, and NFR-001 requires arbitrarily long `implies`, prefix and
+    // `let … in`/`if … else` chains (bounded only by the token/node
+    // ceilings) to parse without overflowing the stack. `Engine::production`
+    // intercepts these three productions and dispatches to
+    // `Engine::parse_expression`/`parse_implication`/`parse_unary`, which
+    // build the identical node shape iteratively. Disjunction, Conjunction,
+    // Comparison, Sum, Product, Postfix and Primary below remain genuinely
+    // declarative: their repetition is already `star`-driven (iterative) or
+    // bounded to one optional operand, so plain recursion over this table is
+    // already stack-safe for them.
     g.insert(
         P::Expression,
         c(vec![
@@ -664,7 +717,7 @@ fn expressions(g: &mut Grammar) {
             r(P::Primary),
             star(c(vec![
                 s(vec![x("."), member()]),
-                s(vec![x("["), r(P::Expression), x("]")]),
+                s(vec![open("["), r(P::Expression), close("]")]),
             ])),
         ]),
     );
@@ -673,19 +726,19 @@ fn expressions(g: &mut Grammar) {
         c(vec![
             s(vec![
                 x("rational"),
-                x("("),
+                open("("),
                 r(P::SignedInteger),
                 x(","),
                 r(P::SignedInteger),
-                x(")"),
+                close(")"),
             ]),
             s(vec![
                 x("decimal"),
-                x("("),
+                open("("),
                 r(P::SignedInteger),
                 x(","),
                 uint(),
-                x(")"),
+                close(")"),
             ]),
         ]),
     );
@@ -694,19 +747,19 @@ fn expressions(g: &mut Grammar) {
         c(vec![
             s(vec![
                 x("float32"),
-                x("("),
+                open("("),
                 x("bits"),
                 x(":"),
                 r(P::Hex32),
-                x(")"),
+                close(")"),
             ]),
             s(vec![
                 x("float64"),
-                x("("),
+                open("("),
                 x("bits"),
                 x(":"),
                 r(P::Hex64),
-                x(")"),
+                close(")"),
             ]),
         ]),
     );
@@ -728,9 +781,9 @@ fn expressions(g: &mut Grammar) {
                 literal("bag"),
                 literal("orderedSet"),
             ]),
-            x("["),
+            open("["),
             opt(list(r(P::Expression))),
-            x("]"),
+            close("]"),
         ]),
     );
     g.insert(P::FieldValue, s(vec![ident(), x(":"), r(P::Expression)]));
@@ -738,20 +791,20 @@ fn expressions(g: &mut Grammar) {
         P::RecordValue,
         s(vec![
             r(P::QualifiedName),
-            x("{"),
+            open("{"),
             r(P::FieldValue),
             star(s(vec![x(","), r(P::FieldValue)])),
-            x("}"),
+            close("}"),
         ]),
     );
     g.insert(
         P::TupleValue,
         s(vec![
             r(P::QualifiedName),
-            x("("),
+            open("("),
             r(P::Expression),
             star(s(vec![x(","), r(P::Expression)])),
-            x(")"),
+            close(")"),
         ]),
     );
     g.insert(
@@ -759,21 +812,21 @@ fn expressions(g: &mut Grammar) {
         c(vec![
             s(vec![
                 c(vec![x("map"), x("collect"), x("filter"), x("flatMap")]),
-                x("("),
+                open("("),
                 ident(),
                 x("in"),
                 r(P::Expression),
                 x(":"),
                 r(P::Expression),
-                x(")"),
+                close(")"),
             ]),
-            s(vec![x("flatten"), x("("), r(P::Expression), x(")")]),
+            s(vec![x("flatten"), open("("), r(P::Expression), close(")")]),
             s(vec![
                 c(vec![x("fold"), x("reduce")]),
-                x("<"),
+                open("<"),
                 r(P::QualifiedName),
-                x(">"),
-                x("("),
+                close(">"),
+                open("("),
                 ident(),
                 x(","),
                 ident(),
@@ -782,34 +835,34 @@ fn expressions(g: &mut Grammar) {
                 x(":"),
                 r(P::Expression),
                 opt(s(vec![x(","), x("identity"), x(":"), r(P::Expression)])),
-                x(")"),
+                close(")"),
             ]),
             s(vec![
                 c(vec![x("forall"), x("exists")]),
-                x("("),
+                open("("),
                 ident(),
                 x("in"),
                 r(P::Expression),
                 x(":"),
                 r(P::Expression),
-                x(")"),
+                close(")"),
             ]),
             s(vec![
                 c(vec![x("count"), x("sum")]),
-                x("<"),
+                open("<"),
                 r(P::QualifiedName),
-                x(">"),
-                x("("),
+                close(">"),
+                open("("),
                 ident(),
                 x("in"),
                 r(P::Expression),
                 x(":"),
                 r(P::Expression),
-                x(")"),
+                close(")"),
             ]),
         ]),
     );
-    let args = s(vec![x("("), opt(list(r(P::Expression))), x(")")]);
+    let args = s(vec![open("("), opt(list(r(P::Expression))), close(")")]);
     g.insert(
         P::Primary,
         c(vec![
@@ -829,46 +882,46 @@ fn expressions(g: &mut Grammar) {
             r(P::EnumValue),
             s(vec![
                 c(vec![x("present"), x("value"), x("deref"), x("pre")]),
-                x("("),
+                open("("),
                 r(P::Expression),
-                x(")"),
+                close(")"),
             ]),
             s(vec![
                 c(vec![x("convert"), x("allInstances")]),
-                x("<"),
+                open("<"),
                 r(P::TypeReference),
-                x(">"),
-                x("("),
+                close(">"),
+                open("("),
                 r(P::Expression),
-                x(")"),
+                close(")"),
             ]),
             r(P::CollectionCall),
             s(vec![
                 x("size"),
-                opt(s(vec![x("<"), r(P::TypeReference), x(">")])),
-                x("("),
+                opt(s(vec![open("<"), r(P::TypeReference), close(">")])),
+                open("("),
                 r(P::Expression),
-                x(")"),
+                close(")"),
             ]),
             s(vec![
                 x("contains"),
-                x("("),
+                open("("),
                 r(P::Expression),
                 x(","),
                 r(P::Expression),
-                x(")"),
+                close(")"),
             ]),
             s(vec![
                 x("reaches"),
-                x("("),
+                open("("),
                 r(P::Expression),
                 x(","),
                 r(P::Expression),
                 x(","),
                 r(P::QualifiedName),
-                x(")"),
+                close(")"),
             ]),
-            s(vec![x("("), r(P::Expression), x(")")]),
+            s(vec![open("("), r(P::Expression), close(")")]),
             s(vec![ident(), args]),
             r(P::QualifiedName),
         ]),
@@ -876,7 +929,7 @@ fn expressions(g: &mut Grammar) {
 }
 
 fn temporal(g: &mut Grammar) {
-    let bound_parameter = s(vec![x("("), r(P::Parameter), x(")")]);
+    let bound_parameter = s(vec![open("("), r(P::Parameter), close(")")]);
     g.insert(
         P::Activation,
         c(vec![
@@ -885,7 +938,7 @@ fn temporal(g: &mut Grammar) {
                 x("on"),
                 x("each"),
                 bound_parameter.clone(),
-                opt(s(vec![x("when"), x("("), r(P::Expression), x(")")])),
+                opt(s(vec![x("when"), open("("), r(P::Expression), close(")")])),
             ]),
         ]),
     );
@@ -902,11 +955,11 @@ fn temporal(g: &mut Grammar) {
     g.insert(
         P::Interval,
         s(vec![
-            x("["),
+            open("["),
             uint(),
             x(","),
             c(vec![uint(), x("*")]),
-            x("]"),
+            close("]"),
         ]),
     );
     g.insert(
@@ -921,10 +974,10 @@ fn temporal(g: &mut Grammar) {
             x("clock"),
             text(),
             r(P::Activation),
-            x("{"),
+            open("{"),
             star(r(P::Capture)),
             r(P::TemporalExpression),
-            x("}"),
+            close("}"),
         ]),
     );
     g.insert(P::TemporalExpression, r(P::TemporalImplication));
@@ -982,20 +1035,20 @@ fn temporal(g: &mut Grammar) {
         c(vec![
             x("true"),
             x("false"),
-            s(vec![x("("), r(P::TemporalExpression), x(")")]),
-            s(vec![x("holds"), x("("), r(P::Expression), x(")")]),
+            s(vec![open("("), r(P::TemporalExpression), close(")")]),
+            s(vec![x("holds"), open("("), r(P::Expression), close(")")]),
         ]),
     );
 }
 
 fn protocol(g: &mut Grammar) {
-    let bound_parameter = s(vec![x("("), r(P::Parameter), x(")")]);
+    let bound_parameter = s(vec![open("("), r(P::Parameter), close(")")]);
     g.insert(
         P::RoleLifetime,
         c(vec![
             x("workflow"),
             x("scope"),
-            s(vec![x("until"), x("("), r(P::Expression), x(")")]),
+            s(vec![x("until"), open("("), r(P::Expression), close(")")]),
         ]),
     );
     g.insert(
@@ -1058,7 +1111,7 @@ fn protocol(g: &mut Grammar) {
         P::Capacity,
         c(vec![
             uint(),
-            s(vec![x("symbolic"), x("("), ident(), x(")")]),
+            s(vec![x("symbolic"), open("("), ident(), close(")")]),
         ]),
     );
     g.insert(
@@ -1112,16 +1165,16 @@ fn protocol(g: &mut Grammar) {
             ident(),
             x("clock"),
             text(),
-            x("{"),
+            open("{"),
             star(r(P::Capture)),
             x("activate"),
             x("first"),
             bound_parameter.clone(),
             x("when"),
             r(P::Block),
-            x("{"),
+            open("{"),
             star(r(P::Capture)),
-            x("}"),
+            close("}"),
             x("within"),
             r(P::Interval),
             x(";"),
@@ -1131,11 +1184,11 @@ fn protocol(g: &mut Grammar) {
             r(P::TypeName),
             x(";"),
             x("retry"),
-            x("("),
+            open("("),
             r(P::Parameter),
             x(","),
             r(P::Parameter),
-            x(")"),
+            close(")"),
             r(P::Block),
             x(";"),
             x("commit"),
@@ -1145,16 +1198,16 @@ fn protocol(g: &mut Grammar) {
             bound_parameter.clone(),
             r(P::Block),
             x(";"),
-            x("}"),
+            close("}"),
         ]),
     );
     g.insert(
         P::Visibility,
         s(vec![
             x("visible"),
-            x("("),
+            open("("),
             opt(list(r(P::Expression))),
-            x(")"),
+            close(")"),
         ]),
     );
     g.insert(
@@ -1162,9 +1215,9 @@ fn protocol(g: &mut Grammar) {
         s(vec![
             x("sequence"),
             ident(),
-            x("{"),
+            open("{"),
             star(r(P::Control)),
-            x("}"),
+            close("}"),
         ]),
     );
     g.insert(
@@ -1185,11 +1238,11 @@ fn protocol(g: &mut Grammar) {
             x("by"),
             ident(),
             r(P::Visibility),
-            x("{"),
+            open("{"),
             r(P::Case),
             r(P::Case),
             star(r(P::Case)),
-            x("}"),
+            close("}"),
         ]),
     );
     g.insert(P::Branch, s(vec![x("branch"), ident(), r(P::Control)]));
@@ -1198,8 +1251,8 @@ fn protocol(g: &mut Grammar) {
         c(vec![
             x("all"),
             x("any"),
-            s(vec![x("quorum"), x("("), uint(), x(")")]),
-            s(vec![x("predicate"), x("("), ident(), x(")")]),
+            s(vec![x("quorum"), open("("), uint(), close(")")]),
+            s(vec![x("predicate"), open("("), ident(), close(")")]),
         ]),
     );
     g.insert(
@@ -1207,16 +1260,16 @@ fn protocol(g: &mut Grammar) {
         s(vec![
             x("parallel"),
             ident(),
-            x("{"),
+            open("{"),
             r(P::Branch),
             r(P::Branch),
             star(r(P::Branch)),
-            x("}"),
+            close("}"),
             x("join"),
             r(P::JoinPolicy),
-            x("["),
+            open("["),
             list(ident()),
-            x("]"),
+            close("]"),
             opt(s(vec![
                 x("outstanding"),
                 c(vec![x("continue"), x("cancel")]),
@@ -1272,11 +1325,11 @@ fn protocol(g: &mut Grammar) {
             x("related"),
             x("by"),
             ident(),
-            x("("),
+            open("("),
             r(P::Expression),
             x(","),
             r(P::Expression),
-            x(")"),
+            close(")"),
         ]),
     );
     let event_tail = s(vec![
@@ -1313,9 +1366,9 @@ fn protocol(g: &mut Grammar) {
                 x("on"),
                 r(P::OperationName),
                 x("contracts"),
-                x("["),
+                open("["),
                 opt(list(ident())),
-                x("]"),
+                close("]"),
                 event_tail.clone(),
             ]),
             s(vec![
@@ -1393,7 +1446,7 @@ fn protocol(g: &mut Grammar) {
             x("over"),
             bound_parameter,
             r(P::Activation),
-            x("{"),
+            open("{"),
             star(r(P::Capture)),
             plus(r(P::Role)),
             star(r(P::Relationship)),
@@ -1402,7 +1455,7 @@ fn protocol(g: &mut Grammar) {
             x("run"),
             r(P::Control),
             r(P::Finish),
-            x("}"),
+            close("}"),
         ]),
     );
 }
@@ -1420,12 +1473,12 @@ fn analysis(g: &mut Grammar) {
             x("using"),
             ident(),
             x("over"),
-            x("("),
+            open("("),
             r(P::ExecutionBinding),
             x(","),
             r(P::ExecutionBinding),
             star(s(vec![x(","), r(P::ExecutionBinding)])),
-            x(")"),
+            close(")"),
             r(P::Block),
         ]),
     );
@@ -1474,9 +1527,9 @@ fn analysis(g: &mut Grammar) {
             x("invariant"),
             r(P::Block),
             x("flow"),
-            x("{"),
+            open("{"),
             plus(r(P::Equation)),
-            x("}"),
+            close("}"),
             star(s(vec![
                 x("transition"),
                 x("to"),
@@ -1496,9 +1549,9 @@ fn analysis(g: &mut Grammar) {
             ident(),
             x("using"),
             ident(),
-            x("{"),
+            open("{"),
             plus(r(P::HybridMode)),
-            x("}"),
+            close("}"),
         ]),
     );
     g.insert(
@@ -1528,7 +1581,7 @@ fn analysis(g: &mut Grammar) {
             r(P::QualifiedName),
             x("domain"),
             r(P::QualifiedName),
-            opt(s(vec![x("depends"), x("["), list(ident()), x("]")])),
+            opt(s(vec![x("depends"), open("["), list(ident()), close("]")])),
             opt(s(vec![x("bound"), uint()])),
             x(";"),
         ]),
@@ -1540,9 +1593,9 @@ fn analysis(g: &mut Grammar) {
             ident(),
             x("using"),
             ident(),
-            x("{"),
+            open("{"),
             plus(r(P::VerificationStep)),
-            x("}"),
+            close("}"),
         ]),
     );
 }

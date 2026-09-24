@@ -147,13 +147,23 @@ pub fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diag
         match kind {
             Kind::OpenParen | Kind::OpenBrace | Kind::OpenBracket => {
                 if delimiters.len() >= limits.nesting {
+                    // NFR-001 "Nesting level": name nesting depth, the
+                    // ceiling and this opening bracket's own span (`span`
+                    // here, not some farther token). This lexer-level check
+                    // covers only `(`/`[`/`{`; the complete-V1 parser also
+                    // charges type-argument `<…>` toward the same combined
+                    // ceiling, so it may refuse first on a unit this check
+                    // alone would admit.
                     return Err(error(
                         source,
                         Code::ResourceExhausted,
                         Phase::Lex,
                         span.start,
                         span.end,
-                        "delimiter nesting budget exhausted",
+                        format!(
+                            "nesting depth exceeds the ceiling of {} levels",
+                            limits.nesting
+                        ),
                     ));
                 }
                 delimiters.push((kind.clone(), span));

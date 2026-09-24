@@ -79,7 +79,22 @@ impl Failure {
 enum Attempt<T> {
     Match(T),
     No(Failure),
-    Exhausted,
+    Exhausted(ExhaustedKind),
+}
+
+/// Which ceiling a resource_exhausted refusal names (NFR-001 "Nesting
+/// level" and "Verification": a work-budget refusal must name the work
+/// limit, never nesting, and a nesting refusal must name nesting depth, the
+/// ceiling and the opening bracket's span).
+#[derive(Clone, Copy, Debug)]
+enum ExhaustedKind {
+    /// The interpreter step budget (`Engine::maximum_steps`) was exceeded.
+    Steps,
+    /// The retained syntax-node ceiling (`Limits::nodes`) was exceeded.
+    Nodes { bound: usize },
+    /// The opening bracket of pair `bound + 1` was reached: `span` is that
+    /// bracket's own span, not the farthest token scanned.
+    Nesting { bound: usize, span: Span },
 }
 
 pub(super) fn parse(
@@ -92,7 +107,7 @@ pub(super) fn parse(
     let prelude_nodes = selection_prelude_nodes(&source, &grammar, &significant, limits);
     let matched = if diagnostics.is_empty() {
         let mut engine = Engine::new(&grammar, &significant, limits);
-        match engine.production(Production::CompleteUnit, 0) {
+        match engine.production(Production::CompleteUnit, 0, 0) {
             Attempt::Match(node) => Some(node),
             Attempt::No(failure) => {
                 let span = significant.get(failure.position).map_or(
@@ -142,14 +157,33 @@ pub(super) fn parse(
                 });
                 None
             }
-            Attempt::Exhausted => {
-                let span = significant.get(engine.farthest).map_or(
-                    Span {
-                        start: source.text().len(),
-                        end: source.text().len(),
-                    },
-                    |token| token.span,
-                );
+            Attempt::Exhausted(kind) => {
+                let farthest_span = || {
+                    significant.get(engine.farthest).map_or(
+                        Span {
+                            start: source.text().len(),
+                            end: source.text().len(),
+                        },
+                        |token| token.span,
+                    )
+                };
+                let (span, message) = match kind {
+                    ExhaustedKind::Steps => (
+                        farthest_span(),
+                        format!(
+                            "complete grammar work budget exhausted: bound {} steps",
+                            engine.maximum_steps
+                        ),
+                    ),
+                    ExhaustedKind::Nodes { bound } => (
+                        farthest_span(),
+                        format!("syntax node budget exhausted: bound {bound} nodes"),
+                    ),
+                    ExhaustedKind::Nesting { bound, span } => (
+                        span,
+                        format!("nesting depth exceeds the ceiling of {bound} levels"),
+                    ),
+                };
                 return Err(super::diagnostic::error(
                     &source,
                     CompleteCode::ResourceExhausted,
@@ -157,7 +191,7 @@ pub(super) fn parse(
                     Phase::Parse,
                     span.start,
                     span.end,
-                    "complete grammar work or nesting budget exhausted",
+                    message,
                 ));
             }
         }
@@ -224,7 +258,7 @@ fn selection_prelude_nodes(
     }
 
     let mut engine = Engine::new(grammar, tokens, limits);
-    let Attempt::Match(header) = engine.production(Production::Header, 0) else {
+    let Attempt::Match(header) = engine.production(Production::Header, 0, 0) else {
         return Vec::new();
     };
     let mut position = header.end;
@@ -235,7 +269,7 @@ fn selection_prelude_nodes(
         (Production::Model, false),
     ] {
         let mut count = 0_usize;
-        while let Attempt::Match(node) = engine.production(production, position) {
+        while let Attempt::Match(node) = engine.production(production, position, 0) {
             if node.end <= position {
                 break;
             }
@@ -878,10 +912,23 @@ struct Engine<'a> {
     reserved_words: BTreeSet<&'static str>,
     tokens: &'a [Significant],
     limits: Limits,
-    depth: usize,
     steps: usize,
     maximum_steps: usize,
     farthest: usize,
+}
+
+/// Extracts the matched value from an [`Attempt`], propagating `No`/
+/// `Exhausted` out of the enclosing function (which must itself return
+/// `Attempt<_>`). Used by the hand-written chain parsers below in place of
+/// `?`, since `Attempt` is not `Try`-compatible `Result`.
+macro_rules! attempt {
+    ($expr:expr) => {
+        match $expr {
+            Attempt::Match(value) => value,
+            Attempt::No(failure) => return Attempt::No(failure),
+            Attempt::Exhausted(kind) => return Attempt::Exhausted(kind),
+        }
+    };
 }
 
 impl<'a> Engine<'a> {
@@ -891,8 +938,22 @@ impl<'a> Engine<'a> {
             reserved_words: grammar::complete_reserved_words(grammar),
             tokens,
             limits,
-            depth: 0,
             steps: 0,
+            // Work-budget derivation (FR item 7): `charge()` is called at
+            // least once per terminal matched, per production entered and
+            // per Sequence/Choice/Repeat element attempted. A single
+            // significant token is charged at most once per level of the
+            // declarative expression ladder it is matched under (Expression
+            // through Primary is ten levels, including the three the hand
+            // written `parse_expression`/`parse_implication`/`parse_unary`
+            // chain parsers replace), plus a small constant for surrounding
+            // Sequence/Choice bookkeeping and the keyword lookaheads those
+            // chain parsers add. That worst case stays comfortably under 32
+            // charges per token across the whole grammar (the expression
+            // ladder is the deepest chain of productions any token passes
+            // through). Doubling to 64 leaves headroom for future grammar
+            // growth without letting a legitimate token/node-bounded parse
+            // exhaust the work budget before it hits an actual ceiling.
             maximum_steps: limits
                 .tokens
                 .saturating_add(limits.nodes)
@@ -907,20 +968,69 @@ impl<'a> Engine<'a> {
         self.steps <= self.maximum_steps
     }
 
-    fn production(&mut self, production: Production, position: usize) -> Attempt<MatchNode> {
-        if !self.charge(position) || self.depth >= self.limits.nesting {
-            return Attempt::Exhausted;
+    /// Match one terminal directly, without a `Rule` allocation. Used by the
+    /// hand-written chain parsers, which need to try a keyword or symbol
+    /// without going through `rule()`'s `Rule::Terminal` indirection. Only
+    /// for non-bracket terminals (keywords, `=`, identifiers): the fixed
+    /// `depth` of `0` passed to `terminal()` is never inspected except for
+    /// `Terminal::Open`, which no caller here passes.
+    fn expect_terminal(&mut self, terminal: Terminal, position: usize) -> Attempt<usize> {
+        if !self.charge(position) {
+            return Attempt::Exhausted(ExhaustedKind::Steps);
         }
-        let Some(rule) = self.grammar.get(&production).cloned() else {
+        match self.terminal(&terminal, position, 0) {
+            Attempt::Match(matched) => Attempt::Match(matched.end),
+            Attempt::No(failure) => Attempt::No(failure),
+            Attempt::Exhausted(kind) => Attempt::Exhausted(kind),
+        }
+    }
+
+    /// Whether the token at `position` is the reserved keyword `spelling`.
+    /// Used only to decide which chain-parser branch to take; the actual
+    /// consumption goes through `expect_terminal` so charging and failure
+    /// reporting stay uniform.
+    fn peek_is(&self, position: usize, spelling: &str) -> bool {
+        self.tokens
+            .get(position)
+            .is_some_and(|token| token.spelling.as_ref() == spelling)
+    }
+
+    fn production(
+        &mut self,
+        production: Production,
+        position: usize,
+        depth: usize,
+    ) -> Attempt<MatchNode> {
+        if !self.charge(position) {
+            return Attempt::Exhausted(ExhaustedKind::Steps);
+        }
+        // NFR-001 "Nesting level": `Expression`, `Implication` and `Unary`
+        // are right-recursive chains of unbounded length (`let … in`/
+        // `if … else`, right-associative `implies`, prefix `not`/`-`).
+        // Interpreting their declarative `Rule` with plain Rust recursion
+        // would grow one native stack frame per chain element; these three
+        // are instead built iteratively below, producing the identical node
+        // shape the declarative table above still documents for inventory
+        // and reserved-word purposes (see the comment there).
+        match production {
+            Production::Expression => return self.parse_expression(position, depth),
+            Production::Implication => return self.parse_implication(position, depth),
+            Production::Unary => return self.parse_unary(position, depth),
+            _ => {}
+        }
+        // Copies the `&'a Grammar` reference (not its contents): no `Rule`
+        // is cloned on the production path (QSL-197 AC-4).
+        let grammar = self.grammar;
+        let Some(rule) = grammar.get(&production) else {
             return Attempt::No(Failure::expected(position, format!("{production:?}")));
         };
-        self.depth += 1;
-        let matched = self.rule(&rule, position);
-        self.depth -= 1;
+        let matched = self.rule(rule, position, depth);
         match matched {
             Attempt::Match(matched) => {
                 if matched.node_count >= self.limits.nodes {
-                    return Attempt::Exhausted;
+                    return Attempt::Exhausted(ExhaustedKind::Nodes {
+                        bound: self.limits.nodes,
+                    });
                 }
                 Attempt::Match(MatchNode {
                     production,
@@ -931,41 +1041,276 @@ impl<'a> Engine<'a> {
                 })
             }
             Attempt::No(failure) => Attempt::No(failure),
-            Attempt::Exhausted => Attempt::Exhausted,
+            Attempt::Exhausted(kind) => Attempt::Exhausted(kind),
         }
     }
 
-    fn rule(&mut self, rule: &Rule, position: usize) -> Attempt<RuleMatch> {
+    /// Parse `Expression = ("let" Identifier "=" Expression "in" Expression
+    /// | "if" Expression "then" Expression "else" Expression |
+    /// Implication)`, unwinding the `let …in`/`if … else` continuation
+    /// chain with an explicit loop instead of Rust recursion (NFR-001:
+    /// these chains add no nesting depth and must not overflow the stack).
+    fn parse_expression(&mut self, position: usize, depth: usize) -> Attempt<MatchNode> {
         if !self.charge(position) {
-            return Attempt::Exhausted;
+            return Attempt::Exhausted(ExhaustedKind::Steps);
+        }
+        enum Pending {
+            Let {
+                start: usize,
+                value: MatchNode,
+            },
+            If {
+                start: usize,
+                condition: MatchNode,
+                then_branch: MatchNode,
+            },
+        }
+        let mut stack: Vec<Pending> = Vec::new();
+        let mut cursor = position;
+        loop {
+            let start = cursor;
+            if self.peek_is(cursor, "let") {
+                cursor = attempt!(self.expect_terminal(Terminal::Exact("let"), cursor));
+                cursor = attempt!(self.expect_terminal(Terminal::Identifier, cursor));
+                cursor = attempt!(self.expect_terminal(Terminal::Exact("="), cursor));
+                let value = attempt!(self.production(Production::Expression, cursor, depth));
+                cursor = value.end;
+                cursor = attempt!(self.expect_terminal(Terminal::Exact("in"), cursor));
+                stack.push(Pending::Let { start, value });
+                continue;
+            }
+            if self.peek_is(cursor, "if") {
+                cursor = attempt!(self.expect_terminal(Terminal::Exact("if"), cursor));
+                let condition = attempt!(self.production(Production::Expression, cursor, depth));
+                cursor = condition.end;
+                cursor = attempt!(self.expect_terminal(Terminal::Exact("then"), cursor));
+                let then_branch = attempt!(self.production(Production::Expression, cursor, depth));
+                cursor = then_branch.end;
+                cursor = attempt!(self.expect_terminal(Terminal::Exact("else"), cursor));
+                stack.push(Pending::If {
+                    start,
+                    condition,
+                    then_branch,
+                });
+                continue;
+            }
+            break;
+        }
+        let implication = attempt!(self.production(Production::Implication, cursor, depth));
+        // As in `parse_implication`/`parse_unary`: check the total node
+        // budget once, against the still-shallow `implication` subtree and
+        // each pending `let`/`if` wrapper's (already fully built, but not
+        // yet nested) `value`/`condition`/`then_branch`, before folding
+        // them into the nested `Expression` chain below. A mid-loop check
+        // would risk dropping a partially-built deep chain on an early
+        // `Exhausted` return.
+        let mut total_node_count = implication.node_count.saturating_add(1);
+        for pending in &stack {
+            let extra = match pending {
+                Pending::Let { value, .. } => value.node_count,
+                Pending::If {
+                    condition,
+                    then_branch,
+                    ..
+                } => condition.node_count.saturating_add(then_branch.node_count),
+            };
+            total_node_count = total_node_count.saturating_add(extra).saturating_add(1);
+        }
+        if total_node_count >= self.limits.nodes {
+            return Attempt::Exhausted(ExhaustedKind::Nodes {
+                bound: self.limits.nodes,
+            });
+        }
+        let mut node_count = implication.node_count.saturating_add(1);
+        let mut acc = MatchNode {
+            production: Production::Expression,
+            start: implication.start,
+            end: implication.end,
+            node_count,
+            children: vec![implication],
+        };
+        for pending in stack.into_iter().rev() {
+            let end = acc.end;
+            let (start, extra, children) = match pending {
+                Pending::Let { start, value } => {
+                    let extra = value.node_count;
+                    (start, extra, vec![value, acc])
+                }
+                Pending::If {
+                    start,
+                    condition,
+                    then_branch,
+                } => {
+                    let extra = condition.node_count.saturating_add(then_branch.node_count);
+                    (start, extra, vec![condition, then_branch, acc])
+                }
+            };
+            node_count = node_count.saturating_add(extra).saturating_add(1);
+            acc = MatchNode {
+                production: Production::Expression,
+                start,
+                end,
+                node_count,
+                children,
+            };
+        }
+        Attempt::Match(acc)
+    }
+
+    /// Parse `Implication = Disjunction ("implies" Implication)?`
+    /// iteratively: a right-associative chain built by folding collected
+    /// operands from the right, rather than by Rust recursion per element.
+    fn parse_implication(&mut self, position: usize, depth: usize) -> Attempt<MatchNode> {
+        if !self.charge(position) {
+            return Attempt::Exhausted(ExhaustedKind::Steps);
+        }
+        let mut operands = Vec::new();
+        let mut cursor = position;
+        loop {
+            let operand = attempt!(self.production(Production::Disjunction, cursor, depth));
+            cursor = operand.end;
+            operands.push(operand);
+            if self.peek_is(cursor, "implies") {
+                cursor = attempt!(self.expect_terminal(Terminal::Exact("implies"), cursor));
+                continue;
+            }
+            break;
+        }
+        // Check the total node budget against the flat (shallow) `operands`
+        // list *before* folding it into the right-nested `Implication`
+        // chain below. Checking mid-fold instead would risk an early
+        // `Exhausted` return while `acc` already holds a deep chain -- and
+        // dropping that partially-built chain would recurse just as deep as
+        // building it iteratively was meant to avoid (QSL-197: this crashed
+        // a 512 KiB stack in exactly this way during development).
+        let total_node_count = operands
+            .iter()
+            .fold(0_usize, |total, operand| {
+                total.saturating_add(operand.node_count)
+            })
+            .saturating_add(operands.len());
+        if total_node_count >= self.limits.nodes {
+            return Attempt::Exhausted(ExhaustedKind::Nodes {
+                bound: self.limits.nodes,
+            });
+        }
+        let mut iter = operands.into_iter().rev();
+        let last = iter.next().expect("at least one Disjunction operand");
+        let mut node_count = last.node_count.saturating_add(1);
+        let mut acc = MatchNode {
+            production: Production::Implication,
+            start: last.start,
+            end: last.end,
+            node_count,
+            children: vec![last],
+        };
+        for operand in iter {
+            node_count = node_count
+                .saturating_add(operand.node_count)
+                .saturating_add(1);
+            acc = MatchNode {
+                production: Production::Implication,
+                start: operand.start,
+                end: acc.end,
+                node_count,
+                children: vec![operand, acc],
+            };
+        }
+        Attempt::Match(acc)
+    }
+
+    /// Parse `Unary = ("not" | "-") Unary | Postfix` iteratively: a run of
+    /// `k` prefix operators wraps one `Postfix` operand in `k + 1` nested
+    /// `Unary` nodes (matching the declarative shape, where even the
+    /// zero-prefix base case wraps once), built with an explicit loop
+    /// instead of Rust recursion per operator.
+    fn parse_unary(&mut self, position: usize, depth: usize) -> Attempt<MatchNode> {
+        if !self.charge(position) {
+            return Attempt::Exhausted(ExhaustedKind::Steps);
+        }
+        let mut prefix_count = 0_usize;
+        let mut cursor = position;
+        while self.peek_is(cursor, "not") || self.peek_is(cursor, "-") {
+            if !self.charge(cursor) {
+                return Attempt::Exhausted(ExhaustedKind::Steps);
+            }
+            cursor += 1;
+            prefix_count += 1;
+        }
+        let postfix = attempt!(self.production(Production::Postfix, cursor, depth));
+        // As in `parse_implication`: check the total node budget once,
+        // against the still-shallow `postfix` subtree, before building the
+        // `prefix_count + 1`-deep nested `Unary` chain. A mid-loop check
+        // would risk dropping a partially-built deep chain on an early
+        // `Exhausted` return.
+        let total_node_count = postfix
+            .node_count
+            .saturating_add(prefix_count)
+            .saturating_add(1);
+        if total_node_count >= self.limits.nodes {
+            return Attempt::Exhausted(ExhaustedKind::Nodes {
+                bound: self.limits.nodes,
+            });
+        }
+        let mut acc = postfix;
+        for offset in (0..=prefix_count).rev() {
+            acc = MatchNode {
+                production: Production::Unary,
+                start: position + offset,
+                end: acc.end,
+                node_count: acc.node_count.saturating_add(1),
+                children: vec![acc],
+            };
+        }
+        Attempt::Match(acc)
+    }
+
+    fn rule(&mut self, rule: &Rule, position: usize, depth: usize) -> Attempt<RuleMatch> {
+        if !self.charge(position) {
+            return Attempt::Exhausted(ExhaustedKind::Steps);
         }
         match rule {
-            Rule::Terminal(terminal) => self.terminal(terminal, position),
-            Rule::Production(production) => match self.production(*production, position) {
+            Rule::Terminal(terminal) => self.terminal(terminal, position, depth),
+            Rule::Production(production) => match self.production(*production, position, depth) {
                 Attempt::Match(node) => Attempt::Match(RuleMatch {
                     end: node.end,
                     node_count: node.node_count,
                     children: vec![node],
                 }),
                 Attempt::No(failure) => Attempt::No(failure),
-                Attempt::Exhausted => Attempt::Exhausted,
+                Attempt::Exhausted(kind) => Attempt::Exhausted(kind),
             },
             Rule::Sequence(rules) => {
                 let mut end = position;
+                let mut current_depth = depth;
                 let mut children = Vec::new();
                 let mut node_count = 0_usize;
                 for rule in rules {
-                    match self.rule(rule, end) {
+                    match self.rule(rule, end, current_depth) {
                         Attempt::Match(matched) => {
                             node_count = node_count.saturating_add(matched.node_count);
                             if node_count > self.limits.nodes {
-                                return Attempt::Exhausted;
+                                return Attempt::Exhausted(ExhaustedKind::Nodes {
+                                    bound: self.limits.nodes,
+                                });
                             }
                             end = matched.end;
                             children.extend(matched.children);
+                            // Depth is otherwise invariant across a
+                            // Sequence's own elements: every bracket this
+                            // grammar authors opens and closes within the
+                            // same Sequence, so only the two terminal kinds
+                            // that mark a bracket boundary shift it.
+                            current_depth = match rule {
+                                Rule::Terminal(Terminal::Open(_)) => current_depth + 1,
+                                Rule::Terminal(Terminal::Close(_)) => {
+                                    current_depth.saturating_sub(1)
+                                }
+                                _ => current_depth,
+                            };
                         }
                         Attempt::No(failure) => return Attempt::No(failure),
-                        Attempt::Exhausted => return Attempt::Exhausted,
+                        Attempt::Exhausted(kind) => return Attempt::Exhausted(kind),
                     }
                 }
                 Attempt::Match(RuleMatch {
@@ -977,7 +1322,7 @@ impl<'a> Engine<'a> {
             Rule::Choice(rules) => {
                 let mut failure = None;
                 for rule in rules {
-                    match self.rule(rule, position) {
+                    match self.rule(rule, position, depth) {
                         Attempt::Match(matched) => return Attempt::Match(matched),
                         Attempt::No(next) => {
                             failure = Some(
@@ -985,14 +1330,14 @@ impl<'a> Engine<'a> {
                                     .map_or(next.clone(), |current: Failure| current.merge(next)),
                             );
                         }
-                        Attempt::Exhausted => return Attempt::Exhausted,
+                        Attempt::Exhausted(kind) => return Attempt::Exhausted(kind),
                     }
                 }
                 Attempt::No(
                     failure.unwrap_or_else(|| Failure::expected(position, "alternative".into())),
                 )
             }
-            Rule::Optional(rule) => match self.rule(rule, position) {
+            Rule::Optional(rule) => match self.rule(rule, position, depth) {
                 Attempt::Match(matched) => Attempt::Match(matched),
                 Attempt::No(failure) if failure.position > position => Attempt::No(failure),
                 Attempt::No(_) => Attempt::Match(RuleMatch {
@@ -1000,7 +1345,7 @@ impl<'a> Engine<'a> {
                     children: Vec::new(),
                     node_count: 0,
                 }),
-                Attempt::Exhausted => Attempt::Exhausted,
+                Attempt::Exhausted(kind) => Attempt::Exhausted(kind),
             },
             Rule::Repeat {
                 rule,
@@ -1013,11 +1358,13 @@ impl<'a> Engine<'a> {
                 let mut count = 0;
                 let mut failure = None;
                 loop {
-                    match self.rule(rule, end) {
+                    match self.rule(rule, end, depth) {
                         Attempt::Match(matched) if matched.end > end => {
                             node_count = node_count.saturating_add(matched.node_count);
                             if node_count > self.limits.nodes {
-                                return Attempt::Exhausted;
+                                return Attempt::Exhausted(ExhaustedKind::Nodes {
+                                    bound: self.limits.nodes,
+                                });
                             }
                             end = matched.end;
                             children.extend(matched.children);
@@ -1031,7 +1378,7 @@ impl<'a> Engine<'a> {
                             failure = Some(next);
                             break;
                         }
-                        Attempt::Exhausted => return Attempt::Exhausted,
+                        Attempt::Exhausted(kind) => return Attempt::Exhausted(kind),
                     }
                 }
                 if count >= *minimum {
@@ -1051,7 +1398,7 @@ impl<'a> Engine<'a> {
         }
     }
 
-    fn terminal(&self, terminal: &Terminal, position: usize) -> Attempt<RuleMatch> {
+    fn terminal(&self, terminal: &Terminal, position: usize, depth: usize) -> Attempt<RuleMatch> {
         let accepted = match terminal {
             Terminal::End => {
                 return if position == self.tokens.len() {
@@ -1069,9 +1416,10 @@ impl<'a> Engine<'a> {
                     return Attempt::No(Failure::expected(position, terminal.description()));
                 };
                 match terminal {
-                    Terminal::Exact(value) | Terminal::Literal(value) => {
-                        token.spelling.as_ref() == *value
-                    }
+                    Terminal::Exact(value)
+                    | Terminal::Literal(value)
+                    | Terminal::Open(value)
+                    | Terminal::Close(value) => token.spelling.as_ref() == *value,
                     Terminal::Identifier => {
                         crate::token::identifier_spelling(&token.spelling)
                             && !self.reserved_words.contains(token.spelling.as_ref())
@@ -1086,22 +1434,38 @@ impl<'a> Engine<'a> {
                 }
             }
         };
-        if accepted {
-            Attempt::Match(RuleMatch {
-                end: position + 1,
-                children: Vec::new(),
-                node_count: 0,
-            })
-        } else {
-            Attempt::No(Failure::expected(position, terminal.description()))
+        if !accepted {
+            return Attempt::No(Failure::expected(position, terminal.description()));
         }
+        // NFR-001 "Nesting level": the opening bracket of pair `bound + 1`
+        // refuses here, naming nesting depth, the ceiling and this bracket's
+        // own span (never the farthest token scanned).
+        if let Terminal::Open(_) = terminal {
+            if depth >= self.limits.nesting {
+                let span = self
+                    .tokens
+                    .get(position)
+                    .map_or(Span { start: 0, end: 0 }, |token| token.span);
+                return Attempt::Exhausted(ExhaustedKind::Nesting {
+                    bound: self.limits.nesting,
+                    span,
+                });
+            }
+        }
+        Attempt::Match(RuleMatch {
+            end: position + 1,
+            children: Vec::new(),
+            node_count: 0,
+        })
     }
 }
 
 impl Terminal {
     fn description(&self) -> String {
         match self {
-            Self::Exact(value) | Self::Literal(value) => format!("`{value}`"),
+            Self::Exact(value) | Self::Literal(value) | Self::Open(value) | Self::Close(value) => {
+                format!("`{value}`")
+            }
             Self::Identifier => "identifier".into(),
             Self::MemberName => "qualified ASCII member name".into(),
             Self::Text => "quoted string".into(),
@@ -1112,44 +1476,93 @@ impl Terminal {
     }
 }
 
-fn lower_tree(source: &Source, tokens: &[Significant], root: MatchNode) -> (Vec<RawNode>, usize) {
-    fn lower(
-        source: &Source,
-        tokens: &[Significant],
-        node: MatchNode,
-        output: &mut Vec<RawNode>,
-    ) -> usize {
-        let children = node
-            .children
-            .into_iter()
-            .map(|child| CstElement::Node(lower(source, tokens, child, output)))
-            .collect();
-        let span = if node.production == Production::CompleteUnit {
-            Span {
-                start: 0,
-                end: source.text().len(),
-            }
-        } else {
-            let start = tokens
-                .get(node.start)
-                .map_or(source.text().len(), |token| token.span.start);
-            let end = node
-                .end
-                .checked_sub(1)
-                .and_then(|index| tokens.get(index))
-                .map_or(start, |token| token.span.end);
-            Span { start, end }
+/// One partially-lowered `MatchNode` on the iterative work stack below: its
+/// own production/span inputs, the remaining children still to descend
+/// into, and the `CstElement`s already produced for children visited so far.
+struct LowerFrame {
+    production: Production,
+    start: usize,
+    end: usize,
+    remaining: std::vec::IntoIter<MatchNode>,
+    collected: Vec<CstElement>,
+}
+
+fn node_span(
+    source: &Source,
+    tokens: &[Significant],
+    production: Production,
+    start: usize,
+    end: usize,
+) -> Span {
+    if production == Production::CompleteUnit {
+        return Span {
+            start: 0,
+            end: source.text().len(),
         };
+    }
+    let span_start = tokens
+        .get(start)
+        .map_or(source.text().len(), |token| token.span.start);
+    let span_end = end
+        .checked_sub(1)
+        .and_then(|index| tokens.get(index))
+        .map_or(span_start, |token| token.span.end);
+    Span {
+        start: span_start,
+        end: span_end,
+    }
+}
+
+/// Convert the parsed `MatchNode` tree into the flat `RawNode` arena with an
+/// explicit work stack rather than Rust recursion. `let … in`/`if … else`
+/// chains and other deep spines are real nested `MatchNode` values (NFR-001
+/// only exempts them from the nesting *ceiling*, not from existing as
+/// nested productions); a naive recursive walk here — or the recursive
+/// `Drop` glue for `Vec<MatchNode>` a large owned tree would trigger — would
+/// grow one native stack frame per chain element regardless of how the tree
+/// was built. This walk, and the `into_iter()` below that hands out one
+/// child `MatchNode` at a time, never holds the whole tree as a value poised
+/// to be dropped recursively.
+fn lower_tree(source: &Source, tokens: &[Significant], root: MatchNode) -> (Vec<RawNode>, usize) {
+    let mut output: Vec<RawNode> = Vec::new();
+    let mut stack: Vec<LowerFrame> = Vec::new();
+    let mut next = Some(root);
+    let mut finished: Option<usize> = None;
+    loop {
+        if let Some(node) = next.take() {
+            let mut remaining = node.children.into_iter();
+            let first_child = remaining.next();
+            stack.push(LowerFrame {
+                production: node.production,
+                start: node.start,
+                end: node.end,
+                remaining,
+                collected: Vec::new(),
+            });
+            if first_child.is_some() {
+                next = first_child;
+                continue;
+            }
+        }
+        let mut frame = stack.pop().expect("lower_tree: non-empty frame stack");
+        if let Some(id) = finished.take() {
+            frame.collected.push(CstElement::Node(id));
+        }
+        if let Some(sibling) = frame.remaining.next() {
+            next = Some(sibling);
+            stack.push(frame);
+            continue;
+        }
+        let span = node_span(source, tokens, frame.production, frame.start, frame.end);
         let id = output.len();
         output.push(RawNode {
-            production: node.production,
+            production: frame.production,
             span,
-            children,
+            children: frame.collected,
         });
-        id
+        if stack.is_empty() {
+            return (output, id);
+        }
+        finished = Some(id);
     }
-
-    let mut nodes = Vec::new();
-    let root = lower(source, tokens, root, &mut nodes);
-    (nodes, root)
 }

@@ -546,37 +546,69 @@ struct IdentityTraversal<'a> {
 }
 
 impl IdentityTraversal<'_> {
+    /// Pre-order depth-first assignment of structural paths, ancestor
+    /// productions and stable occurrence numbers. An explicit work stack,
+    /// not Rust recursion: a `let … in`/`if … else`/right-associative
+    /// `implies` chain admitted up to the token/node ceilings (NFR-001) can
+    /// be thousands of productions deep even though its *nesting* depth is
+    /// 0, and this walks the same flat `nodes` arena `lower_tree` already
+    /// builds iteratively for exactly that reason (QSL-197).
     fn assign(&mut self, index: usize, path: &[u32], ancestor_path: &[Production]) {
-        self.paths[index] = path.to_vec();
-        self.ancestors[index] = ancestor_path.to_vec();
-        let occurrence = self
-            .occurrences
-            .entry((
-                ancestor_path.to_vec(),
-                self.nodes[index].production,
-                self.source
-                    .slice(self.nodes[index].span)
-                    .unwrap_or_default()
-                    .as_bytes()
-                    .to_vec(),
-            ))
-            .or_insert(0);
-        self.stable_occurrences[index] = *occurrence;
-        *occurrence = occurrence.saturating_add(1);
-        let child_nodes: Vec<_> = self.nodes[index]
-            .children
-            .iter()
-            .filter_map(|child| match child {
-                CstElement::Node(node) => Some(*node),
-                CstElement::Token(_) => None,
-            })
-            .collect();
-        for (child_index, node) in child_nodes.into_iter().enumerate() {
-            let mut child_path = path.to_vec();
-            child_path.push(u32::try_from(child_index).unwrap_or(u32::MAX));
-            let mut child_ancestors = ancestor_path.to_vec();
-            child_ancestors.push(self.nodes[index].production);
-            self.assign(node, &child_path, &child_ancestors);
+        struct Pending {
+            index: usize,
+            path: Vec<u32>,
+            ancestor_path: Vec<Production>,
+        }
+        let mut stack = vec![Pending {
+            index,
+            path: path.to_vec(),
+            ancestor_path: ancestor_path.to_vec(),
+        }];
+        while let Some(Pending {
+            index,
+            path,
+            ancestor_path,
+        }) = stack.pop()
+        {
+            self.paths[index] = path.clone();
+            self.ancestors[index] = ancestor_path.clone();
+            let occurrence = self
+                .occurrences
+                .entry((
+                    ancestor_path.clone(),
+                    self.nodes[index].production,
+                    self.source
+                        .slice(self.nodes[index].span)
+                        .unwrap_or_default()
+                        .as_bytes()
+                        .to_vec(),
+                ))
+                .or_insert(0);
+            self.stable_occurrences[index] = *occurrence;
+            *occurrence = occurrence.saturating_add(1);
+            let child_nodes: Vec<_> = self.nodes[index]
+                .children
+                .iter()
+                .filter_map(|child| match child {
+                    CstElement::Node(node) => Some(*node),
+                    CstElement::Token(_) => None,
+                })
+                .collect();
+            // Push in reverse so the leftmost child is popped (and its
+            // whole subtree completed) next, reproducing the original
+            // recursive traversal's left-to-right pre-order visitation
+            // exactly -- `occurrences` numbers repeats in visitation order.
+            for (child_index, node) in child_nodes.into_iter().enumerate().rev() {
+                let mut child_path = path.clone();
+                child_path.push(u32::try_from(child_index).unwrap_or(u32::MAX));
+                let mut child_ancestors = ancestor_path.clone();
+                child_ancestors.push(self.nodes[index].production);
+                stack.push(Pending {
+                    index: node,
+                    path: child_path,
+                    ancestor_path: child_ancestors,
+                });
+            }
         }
     }
 }
