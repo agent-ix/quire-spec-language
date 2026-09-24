@@ -551,11 +551,11 @@ fn text_cluster(n: usize) -> Vec<CompositeDeclaration> {
         .collect()
 }
 
-/// TC-420 steps 1 and 2 (NFR-011-M-1): at the default checking limits,
+/// TC-423 steps 1 and 2 (NFR-011-M-1): at the default checking limits,
 /// structural equality over a nine-record Text-reachable cluster refuses on
 /// the node ceiling, naming the node limit kind and its default bound, and
 /// yields no node; the six-record cluster's leaves fit.
-#[trace("NFR-011-M-1", "TC-420")]
+#[trace("NFR-011-M-1", "TC-423")]
 #[test]
 fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
     let refusals = eq_over(
@@ -583,11 +583,11 @@ fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
     .expect("the six-record cluster checks at the default limits");
 }
 
-/// TC-420 step 3 (NFR-011-M-1 to NFR-011-M-4): a checked package and a
+/// TC-423 step 3 (NFR-011-M-1 to NFR-011-M-4): a checked package and a
 /// checked expression each record the ceilings they were checked under --
 /// the defaults when the caller sets none, and a caller's ceilings as
 /// given, above or below the defaults.
-#[trace("NFR-011-M-1", "NFR-011-M-2", "NFR-011-M-3", "NFR-011-M-4", "TC-420")]
+#[trace("NFR-011-M-1", "NFR-011-M-2", "NFR-011-M-3", "NFR-011-M-4", "TC-423")]
 #[test]
 fn a_checked_result_records_its_effective_limits() {
     let defaults = CheckingLimits::default();
@@ -626,10 +626,10 @@ fn a_checked_result_records_its_effective_limits() {
     }
 }
 
-/// TC-420 step 3 (NFR-011-M-3, NFR-011-M-4): `CheckingLimits::new` sets the
+/// TC-423 step 3 (NFR-011-M-3, NFR-011-M-4): `CheckingLimits::new` sets the
 /// node and depth ceilings and keeps the default input-byte and work
 /// ceilings.
-#[trace("NFR-011-M-3", "NFR-011-M-4", "TC-420")]
+#[trace("NFR-011-M-3", "NFR-011-M-4", "TC-423")]
 #[test]
 fn new_keeps_the_default_byte_and_work_ceilings() {
     let limits = CheckingLimits::new(7, 9).expect("9 is within the maximum depth");
@@ -675,7 +675,7 @@ fn deep_wide(chain: usize, levels: usize, name: &str) -> Vec<CompositeDeclaratio
     records
 }
 
-/// TC-420 step 5 (NFR-011-M-4): a leaf list whose count fits the node
+/// TC-423 step 5 (NFR-011-M-4): a leaf list whose count fits the node
 /// ceiling but whose paths are long -- 65,536 text leaves under 256-byte
 /// field names, each path 35 segments -- refuses at the default ceilings
 /// on the work budget, which each leaf's materialized key bytes are
@@ -683,7 +683,7 @@ fn deep_wide(chain: usize, levels: usize, name: &str) -> Vec<CompositeDeclaratio
 /// 30-record chain overflows a debug test thread's 2 MiB stack in
 /// composite lowering, before any leaf walk; `qsl-bench`'s `deep-wide`
 /// probe runs the reviewer's 46-record chain in release.)
-#[trace("NFR-011-M-4", "TC-420")]
+#[trace("NFR-011-M-4", "TC-423")]
 #[test]
 fn long_leaf_paths_refuse_on_the_default_work_budget() {
     let name = format!("n{}", "x".repeat(255));

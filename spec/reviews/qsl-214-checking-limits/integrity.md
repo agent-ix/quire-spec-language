@@ -3,12 +3,12 @@ id: SR-615
 title: "Integrity and EARS review of the QSL-214 default checking ceilings"
 type: SpecReview
 analysis: integrity
-scope: "QSL-214/QSL-215 branch: new NFR-011 and TC-420, the NFR-011 references added to FR-062 and FR-093, and their spec.md and tests.md index rows"
+scope: "QSL-214/QSL-215 branch: new NFR-011 and TC-423, the NFR-011 references added to FR-062 and FR-093, and their spec.md and tests.md index rows"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-011
     type: reviews
-  - target: ix://agent-ix/quire-spec-language/TC-420
+  - target: ix://agent-ix/quire-spec-language/TC-423
     type: reviews
   - target: ix://agent-ix/quire-spec-language/FR-062
     type: reviews
@@ -22,7 +22,7 @@ The base checklist, the integrity analysis and the EARS analysis were run over
 the change. NFR-011's statement uses the EARS unwanted-behaviour pattern
 ("If ..., then the checker shall ..."), with one trigger and one response. The
 four metric rows are measurable and each has a default and a method. Every
-metric row traces to TC-420, and each ceiling's refusal at a caller-selected
+metric row traces to TC-423, and each ceiling's refusal at a caller-selected
 bound traces to an existing TC or AC. FR-062 and FR-093 now cite NFR-011
 instead of restating the numbers, apart from FR-093's one example value. The
 index rows resolve. Four integrity gaps were found against the code.

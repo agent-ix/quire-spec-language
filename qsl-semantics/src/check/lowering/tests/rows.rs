@@ -624,14 +624,14 @@ fn enum_parameter_package(functions: usize) -> PackageDeclarations {
     }
 }
 
-/// TC-420 step 4 (NFR-011-M-3, NFR-011-M-4): 4,000 functions over one
+/// TC-423 step 4 (NFR-011-M-3, NFR-011-M-4): 4,000 functions over one
 /// 250-variant enum parameter -- about 180 KB of source, inside NFR-001 --
 /// check at the default ceilings, though each declaration's preimage
 /// writes all 250 variants. With the work budget at its default ratio to
 /// the preimage byte ceiling (one work unit per byte), a declaration whose
 /// preimage passes the byte ceiling refuses on the byte ceiling, not on
 /// the work budget.
-#[trace("NFR-011-M-3", "NFR-011-M-4", "TC-420")]
+#[trace("NFR-011-M-3", "NFR-011-M-4", "TC-423")]
 #[test]
 fn preimage_bytes_bind_before_the_work_budget() {
     enum_parameter_package(4_000)

@@ -138,7 +138,7 @@ The enforced bound is on counts: at most 100000 leaves, and at most
 
 ## Verification
 
-TC-420 covers the defaults:
+TC-423 covers the defaults:
 
 - At the default ceilings, a nine-record Text-reachable cluster refuses,
   naming the node ceiling and its default bound.

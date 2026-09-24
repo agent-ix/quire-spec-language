@@ -1,12 +1,12 @@
 ---
-id: TC-420
+id: TC-423
 title: "The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-011
     type: verifies
 ---
-# TC-420: The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result
+# TC-423: The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result
 
 ## Description
 

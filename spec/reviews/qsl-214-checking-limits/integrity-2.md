@@ -3,12 +3,12 @@ id: SR-616
 title: "Second integrity and EARS review of NFR-011 after the PR #390 review"
 type: SpecReview
 analysis: integrity
-scope: "NFR-011 and TC-420 as revised for the PR #390 review (leaf key bytes charged to work, work default derived from the byte ceiling), the FR-093 reference and the spec/tests.md TC-420 row"
+scope: "NFR-011 and TC-423 as revised for the PR #390 review (leaf key bytes charged to work, work default derived from the byte ceiling), the FR-093 reference and the spec/tests.md TC-423 row"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-011
     type: reviews
-  - target: ix://agent-ix/quire-spec-language/TC-420
+  - target: ix://agent-ix/quire-spec-language/TC-423
     type: reviews
   - target: ix://agent-ix/quire-spec-language/FR-093
     type: reviews
@@ -29,7 +29,7 @@ ceiling, and gives the arithmetic for when it does.
 
 The cost section now separates the bound the limits enforce, which is on
 counts (leaves and key bytes), from the memory figures, which are measured.
-The TC-420 row now maps each metric to the step that shows its refusal or
+The TC-423 row now maps each metric to the step that shows its refusal or
 admission. FR-093 now cites NFR-011 and no longer restates a number.
 
 Three wording gaps were found.
