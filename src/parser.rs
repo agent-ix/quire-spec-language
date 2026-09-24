@@ -406,3 +406,63 @@ fn binary_op(kind: &Kind) -> Option<BinaryOp> {
         _ => return None,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source(text: &str) -> Source {
+        Source::read(
+            SourceIdentity {
+                identity: "test:raised".into(),
+                revision: "1".into(),
+            },
+            "raised.native",
+            text.as_bytes(),
+            qsl_foundation::source::MAX_SOURCE_BYTES,
+        )
+        .expect("test source")
+    }
+
+    // A caller may raise the nesting ceiling far past the default; brackets
+    // nested that deep still never recurse. `Parser` here sits below the
+    // public clamp in `Limits::bounded`.
+    #[test]
+    fn brackets_under_a_raised_nesting_ceiling_never_overflow_the_stack() {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let limits = Limits {
+                    nesting: 100_000,
+                    ..Limits::default()
+                };
+                let depth = 30_000;
+                let historical = format!(
+                    "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant T on M::Thing at current {{ {}1{} }}\n",
+                    "(".repeat(depth),
+                    ")".repeat(depth)
+                );
+                let text = source(&historical);
+                let tokens = lexer::lex(&text, lexer_limits(limits)).expect("lexes");
+                let unit = Parser::new(text, tokens, limits).unit().expect("parses");
+                // One group per pair around the literal.
+                assert_eq!(unit.expressions.len(), depth + 1);
+
+                let composed = format!(
+                    "language \"ix:native\" edition \"1-draft\";\nprofile T = \"quire.temporal.timestamped-event.finite-window/v1\" version \"t\" digest \"u\";\nmodel M = \"m\" version \"1\" digest \"u\";\ntemporal W using T over (v: M::V) clock \"c\" on origin {{ {}holds({}v{}){} }}\n",
+                    "(".repeat(depth / 2),
+                    "(".repeat(depth / 4),
+                    ")".repeat(depth / 4),
+                    ")".repeat(depth / 2)
+                );
+                let text = source(&composed);
+                let tokens = lexer::recognize(&text, lexer_limits(limits)).expect("lexes");
+                Parser::new(text, tokens, limits)
+                    .native_unit()
+                    .expect("parses");
+            })
+            .expect("spawn a 512 KiB thread")
+            .join()
+            .expect("the parser must not overflow a 512 KiB stack");
+    }
+}

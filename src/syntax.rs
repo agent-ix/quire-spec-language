@@ -25,10 +25,11 @@ pub struct Limits {
     /// expressions; the composed path also counts declarations, parameters,
     /// captures, activation/interval records and protocol binding/control records.
     pub nodes: usize,
-    /// Maximum bracket-pair nesting depth -- `(…)`, `[…]`, `{…}`, or a
-    /// composed type-argument `<…>` -- clamped to 64 (NFR-001 "Nesting
-    /// level"). Operator, prefix, `let … in` and `if … else` chains add no
-    /// depth regardless of length.
+    /// Maximum bracket-pair nesting depth (NFR-001 "Nesting level"): one
+    /// level is one `(…)`, `[…]`, `{…}` or composed type-argument `<…>`
+    /// pair; operator, prefix, `let … in` and `if … else` chains add none.
+    /// The default is NFR-001's 64. `bounded` caps a larger request at that
+    /// default; the cap is an implementation ceiling, not a domain bound.
     pub nesting: usize,
 }
 

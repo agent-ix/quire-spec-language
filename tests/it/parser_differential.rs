@@ -155,8 +155,15 @@ fn expression(rng: &mut Rng, dialect: Dialect, depth: usize) -> String {
                 sub(rng),
                 sub(rng)
             ),
-            Dialect::Complete => format!("{} {} {}", sub(rng), rng.pick(&["div", "rem", "mod", "/"]), sub(rng)),
-            Dialect::Historical => format!("{} {} {}", sub(rng), rng.pick(&["div", "rem"]), sub(rng)),
+            Dialect::Complete => format!(
+                "{} {} {}",
+                sub(rng),
+                rng.pick(&["div", "rem", "mod", "/"]),
+                sub(rng)
+            ),
+            Dialect::Historical => {
+                format!("{} {} {}", sub(rng), rng.pick(&["div", "rem"]), sub(rng))
+            }
         },
         10 if dialect == Dialect::Composed => {
             format!("{} {} {}", sub(rng), rng.pick(&["/", "mod"]), sub(rng))
@@ -189,7 +196,12 @@ fn temporal_formula(rng: &mut Rng, dialect: Dialect, depth: usize) -> String {
             rng.pick(&["until", "release", "since", "triggered"]),
             sub(rng)
         ),
-        _ => format!("{} {} {}", sub(rng), rng.pick(&["implies", "and", "or"]), sub(rng)),
+        _ => format!(
+            "{} {} {}",
+            sub(rng),
+            rng.pick(&["implies", "and", "or"]),
+            sub(rng)
+        ),
     }
 }
 
@@ -507,7 +519,10 @@ fn generated_units_include_admitted_and_refused_parses() {
             _ => failed += 1,
         }
     }
-    assert!(admitted > 100 && failed > 100, "{admitted} admitted, {failed} failed");
+    assert!(
+        admitted > 100 && failed > 100,
+        "{admitted} admitted, {failed} failed"
+    );
     for (seed, generate) in [
         (0x5eed_0002_u64, historical_unit as fn(&mut Rng) -> String),
         (0x5eed_0003, composed_unit),
@@ -522,6 +537,9 @@ fn generated_units_include_admitted_and_refused_parses() {
                 Err(_) => failed += 1,
             }
         }
-        assert!(admitted > 100 && failed > 100, "{admitted} admitted, {failed} failed");
+        assert!(
+            admitted > 100 && failed > 100,
+            "{admitted} admitted, {failed} failed"
+        );
     }
 }
