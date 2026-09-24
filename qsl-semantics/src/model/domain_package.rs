@@ -298,8 +298,6 @@ pub struct OperationMemberRecord {
     pub result: Option<OperationResult>,
     /// Declared effect frame.
     pub effect: OperationEffect,
-    /// Whether this operation carries an own precondition clause.
-    pub has_own_precondition: bool,
     /// This operation's own postcondition clause(s), exactly as the caller
     /// states them (see [`PostconditionClause`]).
     pub own_postcondition_clauses: Vec<PostconditionClause>,

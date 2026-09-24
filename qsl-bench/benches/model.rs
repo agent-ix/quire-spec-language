@@ -14,9 +14,15 @@
 //!   unchanged invocation (pre and post). Admission reads its object
 //!   universe from the effective view and never normalizes (QSL-204), so
 //!   neither figure scales with `model/normalize/<n>`.
+//! - `model/admit_binding_cold/4000`: `admit_binding/4000` against a view
+//!   normalized fresh for every iteration (normalization untimed), so each
+//!   admission fills the `ModelIndex` ancestry it reads. Every other
+//!   admission, conformance and `all_instances` row reuses one view or
+//!   binding across iterations and so reads a warm ancestry (QSL-202).
 //! - `model/conformance/resolve_redefinition_target/<n>`: one model
-//!   conformance call, which builds `ConformanceIndex` over the whole
-//!   package every time (QSL-202).
+//!   conformance call against the package's shared `ModelIndex`, which the
+//!   normalization that produced the view built once (QSL-202). Before
+//!   QSL-202 each call built its own index over the whole package.
 //! - `model/all_instances/{root,own}/<depth>`: `allInstances` over 1,000
 //!   members whose type has `depth` proper ancestors, querying the root
 //!   type (a full ancestor walk per member) or the members' own type (no
@@ -24,10 +30,13 @@
 //! - `model/all_instances/members/<m>` and
 //!   `model/query/evaluate_all_instances/<m>`: `allInstances<C0>` over `m`
 //!   members of an 8-ancestor type, called directly and through the
-//!   evaluator's bridge (`value::model_query`, which rebuilds its reverse
-//!   catalog per query) -- F6's N axis and QSL-202's `reverse_catalog`.
+//!   evaluator's bridge (`value::model_query`, which rebuilt its reverse
+//!   catalog per query before QSL-202) -- F6's N axis and QSL-202's
+//!   `reverse_catalog`.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{
+    criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, SamplingMode, Throughput,
+};
 use qsl_bench::model::{
     self, admit_offer, admit_population, admit_unchanged_invocation, admitted, chain_type, intake,
     offer, parse_document, population_document, query_all_instances_of_root, read,
@@ -107,7 +116,7 @@ fn normalization_and_admission(c: &mut Criterion) {
             admit_unchanged_invocation(&effective, &document),
             AdmissionOutcome::Admitted(_)
         ));
-        assert!(resolve_root_field_redefinition(&domain_package).is_ok());
+        assert!(resolve_root_field_redefinition(effective.model_index()).is_ok());
         group.throughput(Throughput::Elements(widen(domain_package.records.len())));
         group.bench_with_input(
             BenchmarkId::new("normalize", types),
@@ -126,12 +135,40 @@ fn normalization_and_admission(c: &mut Criterion) {
         );
         group.bench_with_input(
             BenchmarkId::new("conformance/resolve_redefinition_target", types),
-            &domain_package,
-            |b, package| {
-                b.iter(|| black_box(resolve_root_field_redefinition(black_box(package))).is_ok());
+            effective.model_index(),
+            |b, index| {
+                b.iter(|| black_box(resolve_root_field_redefinition(black_box(index))).is_ok());
             },
         );
     }
+    group.finish();
+}
+
+/// Package size of the cold-ancestry admission row.
+const COLD_TYPES: usize = 4_000;
+
+fn cold_admission(c: &mut Criterion) {
+    let mut group = c.benchmark_group("model");
+    // Every iteration normalizes a fresh view outside the timing (about half
+    // a second at 4,000 types), so the row takes one iteration per sample
+    // rather than filling criterion's default measurement window.
+    group.sample_size(10);
+    group.sampling_mode(SamplingMode::Flat);
+    group.warm_up_time(Duration::from_millis(1));
+    group.measurement_time(Duration::from_millis(1));
+    let domain_package = Arc::new(
+        intake(&offer(model::document(shape(COLD_TYPES))))
+            .expect("the generated document passes intake"),
+    );
+    let document = population_document(shape(COLD_TYPES), ADMITTED_MEMBERS);
+    group.bench_function(BenchmarkId::new("admit_binding_cold", COLD_TYPES), |b| {
+        // By reference, so dropping the view stays outside the timing too.
+        b.iter_batched_ref(
+            || view(&domain_package),
+            |effective| admit_population(effective, &document),
+            BatchSize::PerIteration,
+        );
+    });
     group.finish();
 }
 
@@ -203,6 +240,7 @@ criterion_group!(
     benches,
     intake_stages,
     normalization_and_admission,
+    cold_admission,
     conformance_depth,
     conformance_members
 );

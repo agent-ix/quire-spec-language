@@ -1259,7 +1259,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
     assert_eq!(code.cause(), "type-mismatch");
 }
 
-/// FR-153-AC-3: `lookup`'s own `type_conforms(S, T)` runs "before any
+/// FR-153-AC-3: `lookup`'s own `ModelIndex::conforms(S, T)` runs "before any
 /// charge" (TC-198 L03), so a foreign reference cannot skip it -- the
 /// checked static type `S` (`M::B`) must still conform to the queried `T`
 /// (`M::A`) for this probe to reach `crate::model::population::lookup` at
@@ -1274,7 +1274,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
 /// `crate::value::model_query::bridge_lookup_key` carries the foreign
 /// universe's own bytes, so `lookup` itself -- the single owner of the
 /// FR-153 lookup order -- reaches this same outcome by its own byte
-/// comparison: the same `type_conforms` check, the same single `lookup.key`
+/// comparison: the same `ModelIndex::conforms` check, the same single `lookup.key`
 /// charge, then `foreign-universe` -- reporting the bytes actually supplied,
 /// not a fabricated complement.
 #[test]

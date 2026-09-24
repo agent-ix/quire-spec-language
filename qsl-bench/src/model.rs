@@ -39,6 +39,7 @@ use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, OperationEffect,
 };
+use qsl_semantics::model::index::ModelIndex;
 use qsl_semantics::model::intake::{admit, meaning, read_records, PackageDocument};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use qsl_semantics::model::normalize::{
@@ -365,7 +366,7 @@ pub fn admitted(shape: ModelShape, members: usize) -> (Arc<DomainPackage>, Popul
 
 /// `allInstances<C0>` through the evaluator-facing bridge
 /// (`value::model_query::evaluate_all_instances`), which resolves `C0`'s
-/// effective identity through a reverse catalog it rebuilds per query.
+/// effective identity through the binding's reverse type catalog.
 ///
 /// # Panics
 ///
@@ -387,18 +388,18 @@ pub fn query_all_instances_of_root(
     evaluate_all_instances(binding, &collection, &mut meter)
 }
 
-/// `resolve_redefinition_target` for the chain root's field: a model
-/// conformance entry point that builds `ConformanceIndex` over the whole
-/// package on every call.
+/// `resolve_redefinition_target` for the chain root's field: one model
+/// conformance check against the package's shared `ModelIndex`, which is
+/// built once per package, not once per check (QSL-202).
 pub fn resolve_root_field_redefinition(
-    domain_package: &DomainPackage,
+    index: &ModelIndex,
 ) -> Result<RedefinitionTargetOutcome, Box<ModelRefusal>> {
     let field = DeclarationKey {
         package: PACKAGE.to_owned(),
         node: format!("{}/flag", node(&chain_type(0))),
     };
     resolve_redefinition_target(
-        domain_package,
+        index,
         &field,
         ModelNormalizationLimits::UNLIMITED.ancestor_steps,
     )
@@ -415,8 +416,8 @@ mod tests {
         let (domain_package, binding) = admitted(shape, 1);
         assert_eq!(domain_package.records.len(), 3);
         assert!(query_all_instances_of_root(&binding).is_ok());
-        assert!(resolve_root_field_redefinition(&domain_package).is_ok());
         let effective = view(&domain_package);
+        assert!(resolve_root_field_redefinition(effective.model_index()).is_ok());
         assert!(matches!(
             admit_unchanged_invocation(&effective, &population_document(shape, 1)),
             AdmissionOutcome::Admitted(_)

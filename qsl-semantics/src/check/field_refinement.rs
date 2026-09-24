@@ -21,9 +21,10 @@
 //! already uses, then decides discharge from what that derivation actually
 //! proves.
 //!
-//! This reaches back into `crate::model::conformance`'s own
-//! `ConformanceIndex`, [`AxisFailure`], [`ConformanceOutcome`] and
-//! `missing_member`, each widened to `pub(crate)` for exactly this call —
+//! This reads the caller's shared [`ModelIndex`] and reaches back into
+//! `crate::model::conformance`'s own [`AxisFailure`], [`ConformanceOutcome`]
+//! and `missing_member`, the last widened to `pub(crate)` for exactly this
+//! call —
 //! `check` sits above `model` in ADR-011 §6.1's layer-3 order, so `check`
 //! depending back on `model` is legal; the reverse (what M-5 left as the
 //! interim edge) was not.
@@ -39,10 +40,9 @@
 use super::facts::{established_field_fact, Established};
 use super::ir::{Connective, Node, NodeKind, OrderedKind};
 use super::refusal::{Location, Origin, ProvedInterval};
-use crate::model::conformance::{
-    missing_member, AxisFailure, ConformanceIndex, ConformanceOutcome,
-};
-use crate::model::domain_package::{DomainPackage, PostconditionClause};
+use crate::model::conformance::{missing_member, AxisFailure, ConformanceOutcome};
+use crate::model::domain_package::PostconditionClause;
+use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::Code;
@@ -209,12 +209,11 @@ fn format_interval(interval: &ProvedInterval) -> String {
 /// operation (own or inherited) that writes the redefined field. See the
 /// module docs for the [`PostconditionClause`] scope decision this rests on.
 pub fn check_field_refinement_obligation(
-    domain_package: &DomainPackage,
+    index: &ModelIndex,
     redefining_key: &DeclarationKey,
     redefined_key: &DeclarationKey,
 ) -> Result<ConformanceOutcome, ModelRefusal> {
-    let index = ConformanceIndex::build(domain_package);
-    let Some(redefining) = index.fields.get(redefining_key) else {
+    let Some(redefining) = index.field(redefining_key) else {
         return Err(missing_member(
             ModelRefusalCause::UnknownRedefining {
                 member: redefining_key.clone(),
@@ -223,7 +222,7 @@ pub fn check_field_refinement_obligation(
             "redefining field",
         ));
     };
-    let Some(redefined) = index.fields.get(redefined_key) else {
+    let Some(redefined) = index.field(redefined_key) else {
         return Err(missing_member(
             ModelRefusalCause::UnknownRedefined {
                 member: redefined_key.clone(),
@@ -255,7 +254,7 @@ pub fn check_field_refinement_obligation(
         }
     }
 
-    let writer = index.operations.values().find(|operation| {
+    let writer = index.operations().find(|operation| {
         operation
             .effect
             .modifies
@@ -268,7 +267,7 @@ pub fn check_field_refinement_obligation(
     };
 
     let mut clauses: Vec<&PostconditionClause> = writer.own_postcondition_clauses.iter().collect();
-    for operation in index.operations.values() {
+    for operation in index.operations() {
         let Some(target) = &operation.redefines else {
             continue;
         };
@@ -286,8 +285,7 @@ pub fn check_field_refinement_obligation(
     let domain = redefined
         .value_type
         .as_package()
-        .and_then(|key| index.scalars.get(key))
-        .copied();
+        .and_then(|key| index.scalar_bounds(key));
     let field_clauses: Vec<&PostconditionClause> = clauses
         .iter()
         .filter(|clause| names_field(clause.field()))
@@ -330,13 +328,13 @@ pub fn check_field_refinement_obligation(
         redefining
             .value_type
             .as_package()
-            .and_then(|key| index.scalars.get(key)),
+            .and_then(|key| index.scalar_bounds(key)),
         redefined
             .value_type
             .as_package()
-            .and_then(|key| index.scalars.get(key)),
+            .and_then(|key| index.scalar_bounds(key)),
     ) {
-        (Some(&(narrow_lower, narrow_upper)), Some(_)) => {
+        (Some((narrow_lower, narrow_upper)), Some(_)) => {
             let interval = established.interval.clone();
             let lower_bound = Integer::from(narrow_lower);
             let upper_bound = Integer::from(narrow_upper);

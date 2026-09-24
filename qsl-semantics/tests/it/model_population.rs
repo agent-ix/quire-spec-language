@@ -355,7 +355,7 @@ fn lookup_key(
 /// names the queried type and `bound()` carries `[0, declared_maximum]`.
 ///
 /// Mutation used (selection): in `all_instances`, inverted the
-/// `type_conforms` match (`Ok(true) => selected.insert(...)` swapped to fire
+/// `ModelIndex::conforms` match (`Ok(true) => selected.insert(...)` swapped to fire
 /// on `Ok(false)`), which drove the `M::A` selection empty instead of
 /// `{b1, a1, a2}` — red as expected, reverted.
 ///
@@ -2662,7 +2662,7 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
 
 /// Item 8: a subtype (`model.B`) created and deleted under a supertype
 /// (`model.A`) grant admits -- `enforce_frame` decides `creates`/`deletes`
-/// membership by conformance (`crate::model::conformance::type_conforms`),
+/// membership by conformance (`crate::model::index::ModelIndex::conforms`),
 /// not exact type equality, exactly like `all_instances`'s own subtype
 /// selection (`tests/model_population.rs`'s `l01_*` test).
 #[test]

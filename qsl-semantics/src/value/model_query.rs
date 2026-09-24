@@ -41,7 +41,7 @@
 //! `bridge_lookup_key` never substitutes a derived value for either
 //! component and never classifies it itself: it hands [`LookupKey`] `r`'s
 //! own bytes exactly as supplied, and [`lookup`] alone decides the outcome,
-//! in its own single order (`type_conforms(S, T)`, then `lookup.key`, then
+//! in its own single order (`ModelIndex::conforms(S, T)`, then `lookup.key`, then
 //! the universe check, then membership or absence -- see [`LookupKey`]'s own
 //! doc comment). `LookupKey.universe`/`.object` stay raw bytes there because
 //! `crate::model::population`'s own direct callers (`tests/it/
@@ -62,7 +62,7 @@
 //! ([`all_instances`]/[`lookup`]) run entirely inside
 //! `crate::model::population`, which does carry that graph -- including,
 //! for a malformed reference, the short-circuit above, since [`lookup`]
-//! itself decides `type_conforms(S, T)` before any charge for every
+//! itself decides `ModelIndex::conforms(S, T)` before any charge for every
 //! reference it is called with, well-formed or not. Three FR-153/FR-149
 //! obligations that would need this graph at *check* time still cannot get
 //! it, tracked at
@@ -70,8 +70,6 @@
 //! display-name resolution, TC-198 L08 upcast equality, and refusing
 //! `lookup<T>(p, r)` at check time when `r`'s declared type does not conform
 //! to `T` (today refused only at evaluation).
-
-use std::collections::HashMap;
 
 use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -152,21 +150,11 @@ fn bridge_lookup_key(static_type: DeclarationKey, reference: &ObjectReference) -
     }
 }
 
-/// A one-time reverse index of `binding`'s own
-/// [`PopulationBinding::type_catalog`], built once per query rather than
-/// scanned linearly once per resolved type (`allInstances` resolves one
-/// type; `lookup` resolves two).
-fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, DeclarationKey> {
-    binding
-        .type_catalog()
-        .iter()
-        .map(|(producer, effective)| (*effective, producer.clone()))
-        .collect()
-}
-
 /// The queried type `t`'s original [`DeclarationKey`], resolved from a checked
-/// `Reference<T>`'s `T` (its [`EffectiveId`]) through `catalog` (see
-/// [`reverse_catalog`]). `Err` for a
+/// `Reference<T>`'s `T` (its [`EffectiveId`]) through `binding`'s own type
+/// catalog, read in reverse from the index built once with it
+/// ([`PopulationBinding::type_key_of`], QSL-202), never rebuilt per query.
+/// `Err` for a
 /// `T` the checked package declares but this particular runtime binding's
 /// model does not -- a real FR-153 `ill_typed`/`type-mismatch`, the same
 /// cause `crate::model::population::all_instances`'s own `is_object_type`
@@ -176,10 +164,10 @@ fn reverse_catalog(binding: &PopulationBinding) -> HashMap<EffectiveId, Declarat
 /// the module docs -- runs the other way here too, since which types a
 /// *binding* declares is model data, not package data).
 fn resolve_target(
-    catalog: &HashMap<EffectiveId, DeclarationKey>,
+    binding: &PopulationBinding,
     target: EffectiveId,
 ) -> Result<DeclarationKey, ModelQueryHalt> {
-    catalog.get(&target).cloned().ok_or_else(|| {
+    binding.type_key_of(&target).cloned().ok_or_else(|| {
         ModelQueryHalt::Refused(Box::new(ModelRefusal {
             code: Code::IllTyped,
             cause: ModelRefusalCause::TypeMismatch,
@@ -200,8 +188,7 @@ pub fn evaluate_all_instances(
     let ValueType::Reference(target_key) = collection_type.element() else {
         return Err(invariant());
     };
-    let catalog = reverse_catalog(binding);
-    let target = resolve_target(&catalog, *target_key)?;
+    let target = resolve_target(binding, *target_key)?;
     match all_instances(binding, &target, meter) {
         AllInstancesOutcome::Completed(set) => {
             let mut elements = Vec::with_capacity(set.len());
@@ -233,9 +220,8 @@ pub fn evaluate_lookup(
     let Value::Reference(reference) = reference else {
         return Err(invariant());
     };
-    let catalog = reverse_catalog(binding);
-    let target = resolve_target(&catalog, target)?;
-    let static_type = resolve_target(&catalog, static_type)?;
+    let target = resolve_target(binding, target)?;
+    let static_type = resolve_target(binding, static_type)?;
 
     let lookup_key = bridge_lookup_key(static_type, &reference);
     match lookup(binding, &target, &lookup_key, absence, meter) {
@@ -247,7 +233,7 @@ pub fn evaluate_lookup(
                 // `OptionValue::from_admitted`'s own doc comment for the
                 // soundness chain (`F` conforms to `S` by parameter
                 // admission, `S` conforms to `T` by `lookup`'s own
-                // `type_conforms` call) that lets this bypass the checked
+                // `ModelIndex::conforms` call) that lets this bypass the checked
                 // `OptionValue::present`, whose structural `admits()` call
                 // would wrongly refuse every genuine upcast (`b1: M::B`
                 // present as `Reference<M::A>`) that this operation's whole

@@ -15,6 +15,7 @@ pub mod accounting;
 pub mod conformance;
 pub mod dispatch;
 pub mod domain_package;
+pub mod index;
 pub mod intake;
 pub mod key;
 pub mod normalize;

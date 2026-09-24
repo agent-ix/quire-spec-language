@@ -44,11 +44,12 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::model::accounting::{Charge, ChargePoint, Incomplete, Meter};
-use crate::model::conformance::{generals_by_specific, multiplicity_conforms, type_conforms};
+use crate::model::conformance::multiplicity_conforms;
 use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackage, DomainPackageRecord, EndpointRecord,
     PortDirection, RelationshipRecord,
 };
+use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_foundation::diagnostic::Code;
@@ -448,9 +449,11 @@ fn end_port<'a>(
 /// Runs `quire.model.systems.connection/v1` over `relationship_key`, which
 /// must already classify as [`Kind::Connection`]. Charges
 /// `systems.connection-condition` for each of the three table conditions,
-/// in table order, and reports every failure (never stop-at-first).
+/// in table order, and reports every failure (never stop-at-first). The
+/// interface-type condition reads conformance from `index`, the package's
+/// shared [`ModelIndex`].
 pub fn check_connection(
-    domain_package: &DomainPackage,
+    index: &ModelIndex,
     classification: &SystemsClassification,
     relationship_key: &DeclarationKey,
     meter: &mut Meter,
@@ -558,15 +561,13 @@ pub fn check_connection(
     if let Err(incomplete) = meter.charge(Charge::new(ChargePoint::SystemsConnectionCondition)) {
         return ConnectionCheckOutcome::Incomplete(incomplete);
     }
-    let generals = generals_by_specific(domain_package);
     let interface_ok = if matches!(
         relationship.direction,
         crate::model::domain_package::RelationshipDirection::Bidirectional
     ) {
         flow_source.value_type == flow_target.value_type
     } else {
-        match type_conforms(
-            &generals,
+        match index.conforms(
             &flow_source.value_type,
             &flow_target.value_type,
             meter.limits().ancestor_steps,

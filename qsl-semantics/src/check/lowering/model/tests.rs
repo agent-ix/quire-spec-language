@@ -155,12 +155,7 @@ fn object(name: &str, supertypes: &[&str]) -> DomainPackageRecord {
     })
 }
 
-fn query(
-    name: &str,
-    owner: &str,
-    precondition: bool,
-    redefines: Option<&str>,
-) -> DomainPackageRecord {
+fn query(name: &str, owner: &str, redefines: Option<&str>) -> DomainPackageRecord {
     DomainPackageRecord::OperationMember(OperationMemberRecord {
         key: key(name),
         owner: key(owner),
@@ -170,7 +165,6 @@ fn query(
             multiplicity: one(),
         }),
         effect: OperationEffect::default(),
-        has_own_precondition: precondition,
         own_postcondition_clauses: Vec::new(),
         has_body: true,
         redefines: redefines.map(key),
@@ -199,9 +193,9 @@ fn acme(version: &str) -> DomainPackage {
                 subsets: Vec::new(),
                 redefines: None,
             }),
-            query("Order/size", "Order", true, None),
-            query("Order/count", "Order", true, None),
-            query("Sub/size", "Sub", true, Some("Order/size")),
+            query("Order/size", "Order", None),
+            query("Order/count", "Order", None),
+            query("Sub/size", "Sub", Some("Order/size")),
             DomainPackageRecord::Relationship(RelationshipRecord {
                 key: key("billedTo"),
                 source: RelationshipEnd {
@@ -222,7 +216,6 @@ fn acme(version: &str) -> DomainPackage {
 
 /// `acme/orders` at `version`, normalized and admitted.
 struct Acme {
-    package: DomainPackage,
     view: EffectiveView,
     model: AdmittedModel,
     order: EffectiveId,
@@ -244,7 +237,6 @@ fn admitted(version: &str) -> Acme {
         invoice: id("Invoice"),
         sub: id("Sub"),
         model,
-        package,
         view,
     }
 }
@@ -354,7 +346,6 @@ fn clauses(acme: &Acme) -> OperationClauses {
 fn dispatch(acme: &Acme, root: &str) -> PackageDeclarations {
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     let mut declarations = checked_dispatch_operation(
-        &acme.package,
         &acme.view,
         &DispatchRoot {
             key: key(root),

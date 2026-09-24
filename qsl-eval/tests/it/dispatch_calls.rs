@@ -1107,7 +1107,6 @@ fn ab_bridge_declarations(
         closure: GeneralizationClosure::Closed,
     };
     let mut declarations = checked_dispatch_operation(
-        &domain_package,
         &view,
         &root,
         &clauses,
@@ -1716,7 +1715,6 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
         closure: GeneralizationClosure::Closed,
     };
     let mut declarations = checked_dispatch_operation(
-        &domain_package,
         &view,
         &root,
         &clauses,
@@ -1817,7 +1815,6 @@ fn operation_record(
             },
         }),
         effect: OperationEffect::default(),
-        has_own_precondition: false,
         own_postcondition_clauses: Vec::new(),
         has_body,
         redefines: redefines.map(DeclarationKey::fixture),
@@ -1858,7 +1855,7 @@ fn bridge_keys_object_types_by_their_effective_identity() {
     let domain_package = bridge_bundle();
     let view = bridge_view(&domain_package);
     let (a, b) = (view_type(&view, "model.A"), view_type(&view, "model.B"));
-    let supertypes = object_type_supertypes(&domain_package, &view).unwrap();
+    let supertypes = object_type_supertypes(&view).unwrap();
     assert_eq!(supertypes, BTreeMap::from([(a, vec![]), (b, vec![a])]));
 
     let types = TypeEnvironment::new(
@@ -1973,7 +1970,6 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         closure: GeneralizationClosure::Closed,
     };
     let mut declarations = checked_dispatch_operation(
-        &domain_package,
         &view,
         &root,
         &clauses,
@@ -2098,7 +2094,6 @@ fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines
         closure: GeneralizationClosure::Closed,
     };
     let mut declarations = checked_dispatch_operation(
-        &domain_package,
         &view,
         &root,
         &clauses,
@@ -2173,7 +2168,6 @@ fn not_a_query_bundle(result: Option<OperationResult>, effect: OperationEffect) 
                 parameters: Vec::new(),
                 result,
                 effect,
-                has_own_precondition: false,
                 own_postcondition_clauses: Vec::new(),
                 has_body: true,
                 redefines: None,
@@ -2195,7 +2189,6 @@ fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal 
         closure: GeneralizationClosure::Closed,
     };
     checked_dispatch_operation(
-        domain_package,
         &view,
         &root,
         &clauses,
@@ -2287,7 +2280,6 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
-                has_own_precondition: false,
                 own_postcondition_clauses: Vec::new(),
                 has_body: true,
                 redefines: Some(DeclarationKey::fixture("model.A.size")),
@@ -2298,7 +2290,6 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
                 parameters: Vec::new(),
                 result: None,
                 effect: OperationEffect::default(),
-                has_own_precondition: false,
                 own_postcondition_clauses: Vec::new(),
                 has_body: true,
                 redefines: None,
@@ -2328,7 +2319,6 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
         closure: GeneralizationClosure::Closed,
     };
     let refusal = checked_dispatch_operation(
-        &domain_package,
         &view,
         &root,
         &clauses,

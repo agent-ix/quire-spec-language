@@ -59,7 +59,18 @@ impl AdmittedModel {
                 view: Box::new(view.model_selection().clone()),
             });
         }
-        Ok(Self {
+        Ok(Self::assemble(domain_package, view))
+    }
+
+    /// `view`'s own domain package, admitted with `view`: the package the
+    /// view was normalized from, so there is no second package whose
+    /// selection could differ (QSL-217).
+    pub fn from_view(view: &EffectiveView) -> Self {
+        Self::assemble(view.domain_package(), view)
+    }
+
+    fn assemble(domain_package: &DomainPackage, view: &EffectiveView) -> Self {
+        Self {
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -71,7 +82,7 @@ impl AdmittedModel {
                 .iter()
                 .map(|(key, id)| (*id, key.clone()))
                 .collect(),
-        })
+        }
     }
 
     /// `domain_package` with the given `EffectiveId` of each object type,
