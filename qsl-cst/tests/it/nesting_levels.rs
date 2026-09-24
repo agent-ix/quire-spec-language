@@ -230,6 +230,26 @@ fn nested_trailing_comma_typo_exposes_a_recovery_within_the_work_budget() {
     });
 }
 
+// NFR-001: a work-budget refusal names the work limit rather than nesting
+// depth. 40 unclosed `set[` stay under the nesting ceiling. No production
+// matches inside them, so nothing is memoized: every level re-reads the
+// failing levels inside it under each alternative that starts with `set`,
+// and the work grows quadratically with depth. At depth 40 it is about
+// 39,700 steps against a budget of 28,160.
+#[trace("TC-012")]
+#[test]
+fn a_work_budget_refusal_names_the_work_limit() {
+    on_bounded_stack(|| {
+        let body = format!("{}x", "set[".repeat(40));
+        let error = parse(&function(&body)).expect_err("the work budget is exhausted");
+        assert!(
+            matches!(refused_limit(&error), SyntaxLimit::Work { .. }),
+            "{error:?}"
+        );
+        assert_eq!(error.phase, Phase::Parse);
+    });
+}
+
 #[trace("TC-012", "NFR-001-M-3")]
 #[test]
 fn exhausting_the_node_ceiling_names_the_node_ceiling() {
