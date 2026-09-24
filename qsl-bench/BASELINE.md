@@ -120,9 +120,16 @@ it took to refuse.
 | `parser/volume/admitted/2000` | 2,000 functions, 125,069 B, 36,003 nodes (largest that parses) | 194 ms | 182 ms – 261 ms | 9% | volume/1000: 1.8 times, linear |
 | `parser/volume/refused/3000` | 3,000 functions, 188,069 B; `resource_exhausted`, "complete grammar work or nesting budget exhausted" | 134 ms | 117 ms – 149 ms | 11% | volume/2000. Time to reach the refusal. QSL-197 AC 5 requires this input to parse. |
 
-Refusal boundary, from `qsl-bench-probe parse`, which tries depths 0 to 64:
-depth 4 is the deepest nesting that parses, and every depth from 5 to 64 is
-refused. 4,000 functions is refused with "CST leaf budget exhausted".
+Refusal boundary at 89326999, from `qsl-bench-probe parse`, which tries depths
+0 to 64: depth 4 is the deepest nesting that parses, and every depth from 5 to
+64 is refused. 4,000 functions is refused with "CST leaf budget exhausted".
+
+Since QSL-197, nesting counts bracket pairs, so every depth from 0 to 63 in the
+function body parses (the body's `{` is the 64th pair) and the depth rows
+become `parser/depth/admitted/<d>`. `volume/3000` is still refused, now by the
+syntax-node ceiling (54,003 nodes against 50,000): "syntax node ceiling of
+50000 nodes exhausted". 4,000 functions is refused with "token ceiling of
+100000 tokens exhausted".
 
 ### Checker: one `PackageDeclarations::check` over the whole package (`benches/checker.rs`)
 
@@ -173,7 +180,7 @@ identity is the revision digest, its span and its arena index; the structural
 path is derived from parent links on request, and reuse is decided on request
 by comparing productions, byte slices and ancestor paths. The only identity
 hash is the document-revision preimage, once per parse.
-`LosslessCst::identity_hashed_bytes` reports that count: 141 bytes for every
+`LosslessCst::identity_hashed_bytes` reports that count: 144 bytes for every
 input below, whatever its node count.
 
 - `cst/parse/<input>` times the whole parse.
