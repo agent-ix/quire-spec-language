@@ -116,8 +116,9 @@ is spelled by its `value_kind`:
 Building a type node and lowering a checked expression each walk a tree
 whose depth the check stage's depth limit bounds (`CheckingLimits`, at most
 `MAX_CHECKING_DEPTH`; ADR-011 §2.3). A walk that would pass the limit
-refuses with `resource_exhausted`/`insufficient-next-charge` naming the depth
-limit (`CheckCause::ResourceExhausted`), and yields no key. A type node's
+stops with a stage limit of kind nesting depth, reported as
+`stage_limit_exceeded`/`nesting-depth-exceeded` (the `quire.native.diagnostics/v1` `stage_limit_exceeded` row, revision `1-draft.6`; FR-096), and yields
+no key. A type node's
 walk uses stack that does not grow with the nesting of the options,
 collections and declared composites it follows; only the depth limit bounds
 that nesting.
@@ -927,7 +928,7 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 | FR-092-AC-4 | For `function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }`, `a`'s and `b`'s parameter nodes key to P1 and P2, and `both` keys to F2. For `function f using v(): Boolean pure { true }`, the literal node keys to L1 and `f` keys to F1. For `function h using v(a: Boolean): Boolean pure { let y = a in y }`, `y`'s parameter node keys to P3. For `function k using v(n: Boolean): Integer pure { 7 }`, the literal node keys to L2, whose preimage spells the value as the string `"7"`. | Test (TC-414) |
 | FR-092-AC-5 | `function unused using v(a: Boolean, b: Boolean): Boolean pure { a }` gives a function node whose `parameters` binding lists P1 and then P2, although the body never reads `b`. `function both2 using v(a: Boolean, b: Boolean): Boolean pure { a and b }`, declared beside `both` in the same unit, reuses P1 and P2. | Test (TC-414) |
 | FR-092-AC-6 | No function node's body contains an `application` term, and every function node's key is the SHA-256 of its `quire.structural-node/v1` preimage, which carries the unit's `owner`. The node of `a and b` in `both` is keyed by `quire.application-node/v1`; its preimage has no `owner` member, and its key is E1. | Test (TC-414) |
-| FR-092-AC-7 | With the check stage's depth limit set to 4 (`CheckingLimits`), a parameter typed `Option<Option<Option<Option<Boolean>>>>` is keyed, and one typed with five nested `Option`s refuses with `resource_exhausted`/`insufficient-next-charge` naming the depth limit, and yields no key. The recursive `f` of vectors G4 to G6 and the same declaration under the name `g`, calling `g`, in one unit: the preimages of the conditionals of `f` and `g` both hash to G5, and the package refuses with `unknown_required_feature`/`unsupported-feature` naming the regions of `f` and `g`, with no key for any member of either group. On a 2 MiB stack, at the default limits, a chain of 30 records each holding an optional field of the next, the last into a text field, checks; a chain of 1,000 refuses naming the depth limit. | Test (TC-413) |
+| FR-092-AC-7 | With the check stage's depth limit set to 4 (`CheckingLimits`), a parameter typed `Option<Option<Option<Option<Boolean>>>>` is keyed, and one typed with five nested `Option`s stops with `stage_limit_exceeded`/`nesting-depth-exceeded`, bound 4, and yields no key. The recursive `f` of vectors G4 to G6 and the same declaration under the name `g`, calling `g`, in one unit: the preimages of the conditionals of `f` and `g` both hash to G5, and the package refuses with `unknown_required_feature`/`unsupported-feature` naming the regions of `f` and `g`, with no key for any member of either group. On a 2 MiB stack, at the default limits, a chain of 30 records each holding an optional field of the next, the last into a text field, checks; a chain of 1,000 stops with `nesting-depth-exceeded`. | Test (TC-413) |
 | FR-092-AC-8 | An enum declaration is keyed by `quire.enum-declaration-node/v1` and its member by `quire.enum-member-node/v1`, never by `quire.structural-node/v1`: for QSpec's `enum-status` and `enum-status-ready` preimages in `node-identity-vectors.json`, the minted keys equal the recorded `sha256`. | Test (TC-413) |
 | FR-092-AC-9 | `Rational[-9, 9; 1, 9]` and its base key to T10 and T9, `Decimal[-100000, 100000; 2, 2; nearest-even]` and its base to T12 and T11, and `tuple Pair(Int[0, 9], Int[0, 9]);` under (`a`, `u`) to D5. `record Opt { a: Int[0, 9]; b?: Int[0, 9]; }` keys to D3 and `record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }` to D4, which differs. `rational(1, 2)` as a `Rational[-9, 9; 1, 9]` literal keys to L3, spelled `"1/2"`, and `rational(2, 4)` keys to L3 too. | Test (TC-413) |
 | FR-092-AC-10 | `function m using v(x: Int[0, 9]): Boolean pure decreases(x) { true }` keys `x`'s parameter node to P4 and `m` to F3, whose body binds `decreases` to a `reference` to P4. | Test (TC-414) |
@@ -956,8 +957,9 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
   to a declared type resolves to its one node id, the FR-092 key.
 - QSpec FR-143 and FR-146: the recursive records and recursive functions
   that form recursion groups.
-- `SourceOwner`'s `authority` on QSL's source identity is not defined yet.
-  Remaining work: QSL-233.
+- `SourceOwner`'s `authority` and `identity` are those of the unit's
+  `RawSourceRef` ([FR-001](FR-001-read-exact-source.md); ADR-013 §7 slice
+  S-4b, QSL-233).
 - QSpec. `quire.structural-node/v1`, the `value`/`parameter` semantic form
   and the function node body shape are QSL proposals (ADR-013 QC-24). QSL
   keys its nodes by them now and conforms to QSpec's arm once QSpec publishes

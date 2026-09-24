@@ -27,11 +27,15 @@ together when their combined node count exceeds it. Scope: FR-062-AC-11.
 
 - Step 1: the package is admitted.
 - Step 2: the package is admitted.
-- Step 3: the package is refused with
-  `ResourceExhausted{stage: Typing, kind: Nodes, limit: 4}`; the reported
-  limit is the caller's configured value, not a remaining amount.
+- Step 3: the package stops with `StageFailure::Limit` of kind node count,
+  bound 4, code `stage_limit_exceeded`/`node-count-exceeded`; the reported
+  bound is the caller's configured value, not a remaining amount.
 
 ## Status
 
 Backed: `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
 (`qsl-eval/tests/it/total_functions.rs`), tagged `#[trace("TC-381", "FR-062-AC-11")]`.
+
+The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
+(QSL-160, FR-096). Until S-5b lands, the tests observe the same limit as
+`ResourceExhausted`, and the code and outcome assertions move with S-5b.

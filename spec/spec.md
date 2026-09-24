@@ -353,7 +353,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 
 | Artifact | Type | Status |
 | --- | --- | --- |
-| [FR-001](functional/FR-001-read-exact-source.md) | FR | Draft |
+| [FR-001](functional/FR-001-read-exact-source.md) | FR | Draft; AC-5 to AC-7 (the caller-named `RawSourceRef`, TC-424) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
 | [FR-002](functional/FR-002-parse-native-units.md) | FR | Draft |
 | [FR-003](functional/FR-003-format-native-source.md) | FR | Draft |
 | [FR-004](functional/FR-004-verify-source-maps.md) | FR | Draft |
@@ -362,7 +362,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-007](functional/FR-007-validate-runtime-inputs.md) | FR | Draft |
 | [FR-008](functional/FR-008-evaluate-state-reference.md) | FR | Draft |
 | [FR-009](functional/FR-009-lower-qualified-projections.md) | FR | Draft |
-| [FR-010](functional/FR-010-report-native-outcomes.md) | FR | Draft |
+| [FR-010](functional/FR-010-report-native-outcomes.md) | FR | Draft; AC-11 (the four source labels, TC-425) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
 | [FR-011](functional/FR-011-integrate-opaque-extraction.md) | FR | Draft |
 | [US-001](usecase/US-001-author-native-source.md) | US | Draft |
 | [US-002](usecase/US-002-link-exact-models.md) | US | Draft |
@@ -474,5 +474,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-092](functional/FR-092-key-type-parameter-and-declared-nodes.md) | FR | Specified under QSL-208, recursion groups under QSL-211 (ADR-013 O-04, OQ-G, QC-18, QC-24); implemented on the QSL-156 A4b branch, pending merge, except recursion groups and AC-12 -- TC-413 and TC-414 |
 | [FR-093](functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md) | FR | Specified under QSL-208, recursive text leaves under QSL-212; lowering and keys implemented on the QSL-156 A4b branch, pending merge, recursive text leaves not yet; serialized by QSL-6 S1b, node `dependencies` and the fixture comparison specified under QSL-225 -- TC-415, and TC-416 planned |
 | [FR-094](functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md) | FR | Specified under QSL-210 (ADR-013 O-04, C-02, QC-25, QC-26); implemented on the QSL-156 A4b branch, pending merge -- TC-417 to TC-419 |
-| [FR-095](functional/FR-095-occurrence-keyed-source-map-and-locus.md) | FR | Specified and implemented under QSL-159 (ADR-013 §7 S-4: O-07, O-12, T-5, C-14) -- TC-420 to TC-422 pass locally; `LocatedSpan` replacement, C-21 and check-stage regions wait on a defined source authority; Remaining work: QSL-233 |
+| [FR-095](functional/FR-095-occurrence-keyed-source-map-and-locus.md) | FR | Specified and implemented under QSL-159 (ADR-013 §7 S-4: O-07, O-12, T-5, C-14) -- TC-420 to TC-422 pass locally; `LocatedSpan` replacement and C-21 are slice S-4b (QSL-233, FR-001), check-stage regions slice S-5b (QSL-160, FR-096) |
+| [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md) | FR | Specified under QSL-160 (ADR-013 §7 S-5b: T-4, O-17, O-22 with T-5 loci); not implemented -- TC-426 to TC-429 planned; gated on S-4b, FR-091-AC-10 (QSL-141) and QC-28; AC-9 and AC-10 need three IR reader changes; open question FR-096-OQ-1 (IR's edge, occurrence and diagnostic limits, QC-28) |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented under QSL-214 and QSL-215: finite default checking ceilings, recorded with each checked result -- TC-423 |
