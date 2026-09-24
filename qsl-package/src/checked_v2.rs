@@ -42,21 +42,20 @@
 //!
 //! # Ceilings
 //!
-//! [`V2ReadLimits`] holds only the two ceilings this reader itself checks
-//! before and during the call into IR: `artifact_bytes` and `depth`. It is
-//! not the native-v1 `PackageLimits` (the root crate's `package`, FR-019, SEAM-1
-//! until M-6): that type's other two fields, `string_bytes` and `entries`,
-//! exist only for the native encode/intake path and have no IR
-//! counterpart -- IR's own I04 reader does not meter decoded string bytes
-//! or aggregate entries at all, only
-//! [`quire_contract_ir::CheckedPackageReadLimits`]'s seven ceilings
-//! (`bytes`, `depth`, `nodes`, `edges`, `occurrences`, `diagnostics`,
-//! `work`). This reader passes `artifact_bytes`/`depth` through unchanged
-//! (see below) and leaves the other five at IR's own bounded defaults;
-//! every one of the seven a caller can hit is reported, verbatim, as
-//! [`V2ReadIncomplete::Limit`]'s [`quire_contract_ir::CheckedPackageLimit`]
-//! -- except `depth` itself, which two IR-side facts (both raised as
-//! IR-238, not papered over here) keep from being a clean refused/
+//! [`V2ReadLimits`] carries every ceiling of this read: `artifact_bytes`
+//! and `depth`, which this reader checks itself and also hands to IR as
+//! `bytes`/`depth`, and IR's other five
+//! [`quire_contract_ir::CheckedPackageReadLimits`] ceilings (`nodes`,
+//! `edges`, `occurrences`, `diagnostics`, `work`), passed through unchanged.
+//! Every one is the caller's, used as given; the defaults are IR's own
+//! `bounded()` values plus this reader's 16 MiB byte default. It is not the
+//! native-v1 `PackageLimits` (the root crate's `package`, FR-019, SEAM-1
+//! until M-6): that type's `string_bytes` and `entries` exist only for the
+//! native encode/intake path and have no IR counterpart. Every IR ceiling a
+//! caller can hit is reported, verbatim, as [`V2ReadIncomplete::Limit`]'s
+//! [`quire_contract_ir::CheckedPackageLimit`] -- except `depth` itself,
+//! which two IR-side facts (both raised as IR-238, not papered over here)
+//! keep from being a clean refused/
 //! incomplete split at every depth:
 //!
 //! - **Above serde_json's parse-time recursion cap, refused, not
@@ -99,44 +98,80 @@ use qsl_semantics::library::{
 #[cfg(test)]
 mod tests;
 
-/// The two ceilings this reader itself enforces (see the module doc's
-/// "Ceilings" section). A caller-supplied ceiling is used as given -- an
-/// implementation ceiling is not a domain bound (NFR-001); [`Self::default`]
-/// is only the fail-closed starting point a caller who supplies none gets
-/// (ADR-011 §7.3, QSL-199). `depth` above `Self::default().depth` (128) has
-/// no practical effect: `read_checked_package_v2`'s own module doc records
-/// that IR's `strict_json_value` parses with `serde_json::Deserializer`,
-/// which never calls `disable_recursion_limit`, so serde_json's own fixed
-/// 128-container recursion cap refuses a deeper wire (as
-/// `Refused(Envelope(MalformedWire))`) before this ceiling is ever
-/// consulted -- a separate, out-of-scope hard ceiling in a third-party
-/// dependency, not this type's own clamp.
+/// serde_json's fixed container-recursion cap, which IR's
+/// `strict_json_value` inherits because it never calls
+/// `disable_recursion_limit`: a wire nested deeper is refused as malformed
+/// before any depth ceiling is consulted, so no `depth` above this is
+/// actually enforced. An IR-side defect, not a bound of this reader; remove
+/// it once IR parses without the cap.
+const SERDE_JSON_RECURSION_LIMIT: usize = 128;
+
+/// Every ceiling of one [`read_checked_package_v2`] call (see the module
+/// doc's "Ceilings" section). Each field is used exactly as the caller
+/// supplies it, above or below [`Self::default`]: an implementation ceiling
+/// is not a domain bound (NFR-001). The one ceiling a caller cannot raise
+/// is `depth` past [`SERDE_JSON_RECURSION_LIMIT`];
+/// [`V2ReadOutcome::Verified`]'s `effective_limits` records that.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct V2ReadLimits {
-    /// Offered bytes. Defaults to 16 MiB.
+    /// Offered bytes, checked here and handed to IR as its `bytes`.
+    /// Defaults to 16 MiB.
     pub(crate) artifact_bytes: usize,
-    /// Entered JSON containers. Defaults to 128; see this type's own doc for
-    /// why raising it has no practical effect.
+    /// Entered JSON containers, handed to IR as its `depth`. Defaults to
+    /// 128; enforced only up to [`SERDE_JSON_RECURSION_LIMIT`].
     pub(crate) depth: usize,
+    /// IR's semantic-graph node ceiling.
+    pub(crate) nodes: u64,
+    /// IR's graph dependency-edge ceiling.
+    pub(crate) edges: u64,
+    /// IR's combined semantic-occurrence and source-map-entry ceiling.
+    pub(crate) occurrences: u64,
+    /// IR's diagnostic-entry ceiling.
+    pub(crate) diagnostics: u64,
+    /// IR's semantic-term validation-visit ceiling.
+    pub(crate) work: u64,
 }
 
 impl Default for V2ReadLimits {
     fn default() -> Self {
+        let ir = CheckedPackageReadLimits::bounded();
         Self {
             artifact_bytes: 16_777_216,
             depth: 128,
+            nodes: ir.nodes,
+            edges: ir.edges,
+            occurrences: ir.occurrences,
+            diagnostics: ir.diagnostics,
+            work: ir.work,
         }
     }
 }
 
 impl V2ReadLimits {
-    /// The effective limits: exactly what the caller supplied. Kept as a
-    /// named step (rather than removed outright) so every existing call site
-    /// stays a one-line, self-describing "this is the ceiling actually in
-    /// force" marker; it no longer clamps a caller-supplied ceiling down to
-    /// [`Self::default`] (ADR-011 §7.3, QSL-199).
-    fn bounded(self) -> Self {
-        self
+    /// The ceilings IR's reader receives: every field passed through
+    /// unchanged. `depth` is fail-closed (QSL-6 M2, see the module doc's
+    /// "Ceilings" section): never widened by one for IR's
+    /// scalar-counts-as-depth-1 convention, so no wire deeper than `depth`
+    /// containers is ever admitted.
+    fn for_ir(self) -> CheckedPackageReadLimits {
+        CheckedPackageReadLimits {
+            bytes: u64::try_from(self.artifact_bytes).unwrap_or(u64::MAX),
+            depth: u64::try_from(self.depth).unwrap_or(u64::MAX),
+            nodes: self.nodes,
+            edges: self.edges,
+            occurrences: self.occurrences,
+            diagnostics: self.diagnostics,
+            work: self.work,
+        }
+    }
+
+    /// The ceilings actually enforced: every field as given, except `depth`,
+    /// which cannot exceed [`SERDE_JSON_RECURSION_LIMIT`].
+    fn enforced(self) -> Self {
+        Self {
+            depth: self.depth.min(SERDE_JSON_RECURSION_LIMIT),
+            ..self
+        }
     }
 }
 
@@ -280,10 +315,9 @@ pub(crate) enum V2ReadOutcome {
     Verified {
         /// The verified package.
         package: VerifiedPackage,
-        /// The exact [`V2ReadLimits`] this read actually ran under -- a
-        /// caller's own ceiling when one was supplied, [`V2ReadLimits::default`]
-        /// otherwise. Recorded so a caller-raised ceiling is visible with the
-        /// result it produced (ADR-011 §7.3, QSL-199).
+        /// The ceilings this read actually enforced: the caller's
+        /// [`V2ReadLimits`] as given, with `depth` reported as at most
+        /// [`SERDE_JSON_RECURSION_LIMIT`] (see [`V2ReadLimits::enforced`]).
         effective_limits: V2ReadLimits,
     },
     /// A named defect in the input.
@@ -315,23 +349,13 @@ pub(crate) fn read_checked_package_v2(
     evidence: &CheckedPackageEvidence,
     pinned: &PinnedRequest,
 ) -> V2ReadOutcome {
-    let limits = limits.bounded();
     if bytes.len() > limits.artifact_bytes {
         return V2ReadOutcome::Incomplete(V2ReadIncomplete::Bytes {
             limit: limits.artifact_bytes,
             actual: bytes.len(),
         });
     }
-    let ir_limits = CheckedPackageReadLimits {
-        bytes: u64::try_from(limits.artifact_bytes).unwrap_or(u64::MAX),
-        // Fail-closed (QSL-6 M2, see the module doc's "Ceilings" section):
-        // passed through unchanged, never widened by one for IR's
-        // scalar-counts-as-depth-1 convention, so no wire deeper than
-        // `V2ReadLimits::depth` containers is ever admitted.
-        depth: u64::try_from(limits.depth).unwrap_or(u64::MAX),
-        ..CheckedPackageReadLimits::bounded()
-    };
-    match read_checked_package(bytes, ir_limits, evidence) {
+    match read_checked_package(bytes, limits.for_ir(), evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => {
             if !package.lock().dependency_selections.is_empty() {
                 return V2ReadOutcome::Refused(V2ReadRefusal::UnsupportedDependencySelections);
@@ -403,7 +427,7 @@ pub(crate) fn read_checked_package_v2(
             match verify_binding(admitted, candidate, pinned) {
                 Ok(verified) => V2ReadOutcome::Verified {
                     package: verified,
-                    effective_limits: limits,
+                    effective_limits: limits.enforced(),
                 },
                 Err(refusal) => V2ReadOutcome::Refused(V2ReadRefusal::Structural(refusal)),
             }

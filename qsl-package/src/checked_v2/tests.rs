@@ -717,58 +717,145 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
     );
 }
 
-/// QSL-199: `V2ReadLimits::bounded()` no longer clamps a caller-supplied
-/// `artifact_bytes` down to [`V2ReadLimits::default`] (ADR-011 §7.3; NFR-001
-/// "an implementation ceiling is not a domain bound"). The default ceiling
-/// (16 MiB) makes a genuinely oversized *valid* wire impractical to build in
-/// a unit test, so this exercises the byte-length gate directly with
-/// deliberately non-JSON filler bytes: `read_checked_package_v2` checks
-/// `bytes.len() > limits.artifact_bytes` before ever parsing, so the
-/// distinction this test names -- refused at the byte-length gate under the
-/// default, past that gate under a caller-raised ceiling -- holds regardless
-/// of the bytes' own validity. Once past the gate, the reader correctly
-/// refuses the filler as malformed JSON: a defect in the input, never
-/// conflated with a resource ceiling ([`V2ReadRefusal`]'s own doc).
-#[test]
-fn a_caller_raised_artifact_bytes_ceiling_admits_past_the_byte_length_gate() {
-    let oversized = vec![b'x'; V2ReadLimits::default().artifact_bytes + 1];
+/// A valid wire of at least `min_bytes`, made large by one export whose
+/// qualified name is long (it appears in both the identity projection and
+/// the semantic graph).
+fn wire_of_at_least(min_bytes: usize) -> (Value, Vec<u8>) {
+    let export = format!("R{}", "r".repeat(min_bytes / 2));
+    let (preimage, envelope) = envelope_declaring(&[("pkg::R", &export)]);
+    let bytes = jcs(&envelope);
+    assert!(bytes.len() >= min_bytes);
+    (preimage, bytes)
+}
 
-    let default_outcome = read_checked_package_v2(
-        &oversized,
-        identity("pkg"),
-        "1".to_owned(),
-        V2ReadLimits::default(),
-        &evidence(None),
-        &no_pins(),
-    );
+/// QSL-199: a caller-raised `artifact_bytes` is enforced as given by this
+/// reader *and* by IR, which receives it as its own `bytes` ceiling. A valid
+/// wire past the 16 MiB default is refused at the byte-length gate by
+/// default, and verified under a ceiling raised to its length -- not
+/// stopped by IR at a fixed byte ceiling of its own.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default() {
+    let default_bytes = V2ReadLimits::default().artifact_bytes;
+    let (preimage, bytes) = wire_of_at_least(default_bytes + 1);
+    let read_under = |limits: V2ReadLimits| {
+        read_checked_package_v2(
+            &bytes,
+            identity("pkg"),
+            "1".to_owned(),
+            limits,
+            &evidence(None),
+            &pinned_for(&preimage),
+        )
+    };
+
     assert_eq!(
-        default_outcome,
+        read_under(V2ReadLimits::default()),
         V2ReadOutcome::Incomplete(V2ReadIncomplete::Bytes {
-            limit: V2ReadLimits::default().artifact_bytes,
-            actual: oversized.len(),
+            limit: default_bytes,
+            actual: bytes.len(),
         }),
         "the default ceiling must refuse an oversized read at the byte-length gate"
     );
 
     let raised = V2ReadLimits {
-        artifact_bytes: oversized.len(),
+        artifact_bytes: bytes.len(),
         ..V2ReadLimits::default()
     };
-    let raised_outcome = read_checked_package_v2(
-        &oversized,
+    match read_under(raised) {
+        V2ReadOutcome::Verified {
+            effective_limits, ..
+        } => assert_eq!(effective_limits, raised),
+        other => panic!("expected Verified under the raised ceiling, got {other:?}"),
+    }
+}
+
+/// QSL-199: IR's own ceilings are the caller's too. A wire with more
+/// semantic-graph nodes than IR's 10,000-node default is `Incomplete` at
+/// IR's `nodes` meter under the default `nodes`, naming that bound, and
+/// verified once the caller raises `nodes`.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
+    let default_nodes = V2ReadLimits::default().nodes;
+    let count = usize::try_from(default_nodes).unwrap() + 1;
+    let labels: Vec<(String, String)> = (0..count)
+        .map(|index| (format!("pkg::N{index}"), format!("N{index}")))
+        .collect();
+    let exports: Vec<(&str, &str)> = labels
+        .iter()
+        .map(|(label, export)| (label.as_str(), export.as_str()))
+        .collect();
+    let (preimage, envelope) = envelope_declaring(&exports);
+    let bytes = jcs(&envelope);
+    let read_under = |limits: V2ReadLimits| {
+        read_checked_package_v2(
+            &bytes,
+            identity("pkg"),
+            "1".to_owned(),
+            limits,
+            &evidence(None),
+            &pinned_for(&preimage),
+        )
+    };
+
+    // So many nodes exceed the 16 MiB byte default too; admit the bytes so
+    // only IR's node ceiling is in play.
+    let base = V2ReadLimits {
+        artifact_bytes: bytes.len(),
+        ..V2ReadLimits::default()
+    };
+    match read_under(base) {
+        V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit { kind, limit, .. }) => {
+            assert_eq!(kind, CheckedPackageLimit::Nodes);
+            assert_eq!(limit, default_nodes);
+        }
+        other => panic!("expected Incomplete(Limit(Nodes)) at IR's default, got {other:?}"),
+    }
+
+    let raised = V2ReadLimits {
+        nodes: default_nodes + 1,
+        ..base
+    };
+    match read_under(raised) {
+        V2ReadOutcome::Verified {
+            effective_limits, ..
+        } => assert_eq!(effective_limits, raised),
+        other => panic!("expected Verified under the raised node ceiling, got {other:?}"),
+    }
+}
+
+/// QSL-199: `depth` above serde_json's recursion cap is not enforced (IR's
+/// `strict_json_value` refuses deeper wires as malformed first), so a
+/// verified read records `depth` as that cap, not the requested value.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn a_verified_read_records_depth_as_the_enforced_serde_json_cap() {
+    let preimage = identity_preimage(vec![]);
+    let bytes = jcs(&valid_envelope(&preimage));
+    let requested = V2ReadLimits {
+        depth: 500,
+        ..V2ReadLimits::default()
+    };
+    match read_checked_package_v2(
+        &bytes,
         identity("pkg"),
         "1".to_owned(),
-        raised,
+        requested,
         &evidence(None),
-        &no_pins(),
-    );
-    assert!(
-        !matches!(
-            raised_outcome,
-            V2ReadOutcome::Incomplete(V2ReadIncomplete::Bytes { .. })
+        &pinned_for(&preimage),
+    ) {
+        V2ReadOutcome::Verified {
+            effective_limits, ..
+        } => assert_eq!(
+            effective_limits,
+            V2ReadLimits {
+                depth: 128,
+                ..requested
+            }
         ),
-        "a caller-raised artifact_bytes ceiling must not refuse at the byte-length gate, got {raised_outcome:?}"
-    );
+        other => panic!("expected Verified, got {other:?}"),
+    }
 }
 
 /// QSL-199 AC-3: reaching a *caller-raised* ceiling (not just the default)

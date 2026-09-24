@@ -163,9 +163,7 @@ pub struct Definition {
     exact_bytes: Box<[u8]>,
 }
 
-/// Which [`PackageLimits`] ceiling (or the canonical semantic-identity
-/// encoding's own internal byte ceiling) a [`PackageError::ResourceLimit`]
-/// names.
+/// Which [`PackageLimits`] ceiling a [`PackageError::ResourceLimit`] names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PackageLimitKind {
     /// [`PackageLimits::definitions`].
@@ -176,16 +174,24 @@ pub enum PackageLimitKind {
     Depth,
     /// [`PackageLimits::artifact_bytes`].
     ArtifactBytes,
-    /// The canonical semantic-identity encoding's own internal byte ceiling
-    /// (`qsl_foundation::source::MAX_SOURCE_BYTES`), independent of any
-    /// caller-supplied [`PackageLimits`] field.
-    CanonicalEncoding,
 }
 
-/// Explicit package-graph accounting limits. A caller-supplied ceiling is
-/// used as given -- an implementation ceiling is not a domain bound
-/// (NFR-001); [`Self::default`] is only the fail-closed starting point a
-/// caller who supplies none gets (ADR-011 §7.3, QSL-199).
+impl std::fmt::Display for PackageLimitKind {
+    /// The [`PackageLimits`] field name this kind bounds.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Definitions => "definitions",
+            Self::DependencyEdges => "dependency_edges",
+            Self::Depth => "depth",
+            Self::ArtifactBytes => "artifact_bytes",
+        })
+    }
+}
+
+/// Explicit package-graph accounting limits. Every field is enforced
+/// exactly as the caller supplies it, above or below [`Self::default`]: an
+/// implementation ceiling is not a domain bound (NFR-001), and the default
+/// is only the starting point for a caller who configures none.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PackageLimits {
     /// Maximum number of exact definitions (or model artifacts) admitted into
@@ -210,17 +216,6 @@ impl Default for PackageLimits {
             depth: 256,
             artifact_bytes: 16 * qsl_foundation::source::MAX_SOURCE_BYTES,
         }
-    }
-}
-
-impl PackageLimits {
-    /// The effective limits: exactly what the caller supplied. Kept as a
-    /// named step (rather than removed outright) so every existing call site
-    /// stays a one-line, self-describing "this is the ceiling actually in
-    /// force" marker; it no longer clamps a caller-supplied ceiling down to
-    /// [`Self::default`] (ADR-011 §7.3, QSL-199).
-    fn bounded(self) -> Self {
-        self
     }
 }
 
@@ -284,7 +279,6 @@ impl DefinitionCatalog {
         definitions: Vec<Definition>,
         limits: PackageLimits,
     ) -> Result<Self, PackageError> {
-        let limits = limits.bounded();
         if definitions.len() > limits.definitions {
             return Err(PackageError::ResourceLimit {
                 kind: PackageLimitKind::Definitions,
@@ -364,7 +358,6 @@ impl ModelCatalog {
         models: Vec<ModelArtifact>,
         limits: PackageLimits,
     ) -> Result<Self, PackageError> {
-        let limits = limits.bounded();
         if models.len() > limits.definitions {
             return Err(PackageError::ResourceLimit {
                 kind: PackageLimitKind::Definitions,
@@ -459,10 +452,9 @@ impl ResolvedSourcePackage {
     pub fn models(&self) -> &BTreeMap<ModelRef, Arc<ModelArtifact>> {
         &self.models
     }
-    /// The exact [`PackageLimits`] this resolution actually ran under -- a
-    /// caller's own ceiling when one was supplied, [`PackageLimits::default`]
-    /// otherwise. Recorded so a caller-raised ceiling is visible with the
-    /// result it produced (ADR-011 §7.3, QSL-199).
+    /// The [`PackageLimits`] this resolution was checked against, exactly as
+    /// the caller supplied them: every field is enforced as given, so a
+    /// caller-raised ceiling is visible with the result it produced.
     pub fn effective_limits(&self) -> PackageLimits {
         self.effective_limits
     }
@@ -789,7 +781,6 @@ pub fn resolve_source_package(
     models: &ModelCatalog,
     limits: PackageLimits,
 ) -> Result<ResolvedSourcePackage, PackageRefusal> {
-    let limits = limits.bounded();
     let refusal = |code, span, cause| refusal(&authority, code, span, cause);
     for (namespace, aliases) in [
         (
@@ -1254,26 +1245,13 @@ fn encode_set<'a>(values: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, Pack
     Ok(output)
 }
 
+/// Appends one length-prefixed field. The only bound is the wire format's
+/// own: each length must fit its `u64` prefix ([`PackageError::CanonicalSize`]).
+/// [`encode_set`]'s one caller encodes the closed, compile-time capability
+/// inventory, so no caller-supplied size reaches here to need a ceiling.
 fn field(output: &mut Vec<u8>, name: &str, value: &[u8]) -> Result<(), PackageError> {
     let name_len = u64::try_from(name.len()).map_err(|_| PackageError::CanonicalSize)?;
     let value_len = u64::try_from(value.len()).map_err(|_| PackageError::CanonicalSize)?;
-    let added = 16_usize
-        .checked_add(name.len())
-        .and_then(|size| size.checked_add(value.len()))
-        .ok_or(PackageError::ResourceLimit {
-            kind: PackageLimitKind::CanonicalEncoding,
-            limit: qsl_foundation::source::MAX_SOURCE_BYTES,
-        })?;
-    if output
-        .len()
-        .checked_add(added)
-        .is_none_or(|size| size > qsl_foundation::source::MAX_SOURCE_BYTES)
-    {
-        return Err(PackageError::ResourceLimit {
-            kind: PackageLimitKind::CanonicalEncoding,
-            limit: qsl_foundation::source::MAX_SOURCE_BYTES,
-        });
-    }
     output.extend_from_slice(&name_len.to_be_bytes());
     output.extend_from_slice(name.as_bytes());
     output.extend_from_slice(&value_len.to_be_bytes());
@@ -1373,9 +1351,8 @@ pub enum PackageError {
     /// Canonical length cannot be represented by the versioned wire encoding.
     #[error("canonical field exceeds the u64 wire length domain")]
     CanonicalSize,
-    /// Package input reached the configured [`PackageLimits`] ceiling (or the
-    /// canonical semantic-identity encoding's own internal byte ceiling).
-    #[error("package resource limit exceeded: {kind:?} (limit {limit})")]
+    /// Package input reached a configured [`PackageLimits`] ceiling.
+    #[error("package resource limit exceeded: {kind} (limit {limit})")]
     ResourceLimit {
         /// Which ceiling was reached.
         kind: PackageLimitKind,

@@ -54,11 +54,12 @@ impl ParsedSource {
         &self.source
     }
 
-    /// The exact [`Limits`] this parse actually ran under -- a caller's own
-    /// ceiling when one was supplied, [`Limits::default`] otherwise. Recorded
-    /// so a caller-raised ceiling is visible with the result it produced
-    /// (ADR-011 §7.3, QSL-199), not just implied by the absence of a
-    /// resource_exhausted diagnostic.
+    /// The [`Limits`] this parse was checked against, exactly as the caller
+    /// supplied them: every field is enforced as given, with no hidden
+    /// ceiling beneath it (QSL-199), so a caller-raised ceiling is visible
+    /// with the result it produced. A whitespace fast-path edit
+    /// ([`Self::with_whitespace_insertion`]) records its predecessor's limits,
+    /// which it applies only when they equal the edit's own.
     pub fn effective_limits(&self) -> Limits {
         self.effective_limits
     }
@@ -136,6 +137,14 @@ impl ParsedSource {
     /// the insertion is actually whitespace-only against an admissible
     /// predecessor before pairing the resulting evidence (QSL-178 review
     /// F2).
+    ///
+    /// The fast path re-reads `bytes` under `limits.source_bytes` but does
+    /// not re-count tokens, nodes or nesting: it only widens one existing
+    /// whitespace token, so those counts are the predecessor's. It applies
+    /// only when `limits` equals the predecessor's
+    /// [`Self::effective_limits`], so the limits it records were enforced
+    /// against this exact structure; any other `limits` returns `Ok(None)`
+    /// for a full reparse.
     pub fn with_whitespace_insertion(
         &self,
         new_identity: SourceIdentity,
@@ -144,7 +153,10 @@ impl ParsedSource {
         bytes: &[u8],
         limits: Limits,
     ) -> Result<Option<Self>, Box<CompleteDiagnostic>> {
-        if !self.is_admissible() || !token::is_lexer_whitespace(inserted) {
+        if !self.is_admissible()
+            || !token::is_lexer_whitespace(inserted)
+            || limits != self.effective_limits
+        {
             return Ok(None);
         }
         let edited_source =
@@ -220,7 +232,6 @@ pub fn parse(
     bytes: &[u8],
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    let limits = limits.bounded();
     let source = diagnostic::read_source(identity, path, bytes, limits.source_bytes)?;
     parse_source(source, limits)
 }
@@ -230,5 +241,5 @@ pub fn parse_source(
     source: Source,
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    parser::parse(source, limits.bounded())
+    parser::parse(source, limits)
 }

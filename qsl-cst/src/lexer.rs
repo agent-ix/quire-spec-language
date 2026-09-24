@@ -10,25 +10,16 @@ use qsl_foundation::diagnostic::{error, resource_exhausted};
 use qsl_foundation::{Code, Diagnostic, Phase, Source, Span, SyntaxLimit};
 
 /// Layer-1 parse limits: the lexer's own recognizer bounds and the
-/// complete-V1 CST bounds built on it. A caller-supplied ceiling is used as
-/// given (an implementation ceiling is not a domain bound, NFR-001) --
-/// [`Self::default`] is the fail-closed starting point a caller who supplies
-/// none gets, never an upper clamp on what a caller may ask for (ADR-011
-/// §7.3, QSL-199). The effective ceiling actually used for one parse is
-/// recorded on its [`crate::ParsedSource::effective_limits`]. Equality
-/// compares the requested capacities, so a resource-only configuration
-/// change remains visible in retained build provenance.
-///
-/// `source_bytes` is the one exception: `qsl_foundation::source::MAX_SOURCE_BYTES`
-/// is foundation layer's own hard ceiling on the byte read itself
-/// (`Source::read_typed`), independent of this type and out of QSL-199's
-/// scope, so a `source_bytes` raised past it has no effect on what the
-/// actual read admits.
+/// complete-V1 CST bounds built on it. Every field is used exactly as the
+/// caller supplies it, above or below [`Self::default`]: an implementation
+/// ceiling is not a domain bound (NFR-001), and the default is only the
+/// starting point for a caller who configures none. The limits one parse ran
+/// under are recorded on its [`crate::ParsedSource::effective_limits`].
+/// Equality compares the requested capacities, so a resource-only
+/// configuration change remains visible in retained build provenance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
-    /// Inclusive input-content ceiling. Defaults to 1 MiB; see this type's
-    /// own doc for why raising it past `qsl_foundation::source::MAX_SOURCE_BYTES`
-    /// has no effect on the underlying read.
+    /// Inclusive input-content ceiling. Defaults to 1 MiB.
     pub source_bytes: usize,
     /// Maximum tokens the lexer's recognizer admits, and the retained CST
     /// leaf ceiling for complete-V1 parsing. Defaults to 100,000.
@@ -52,18 +43,6 @@ impl Default for Limits {
             nodes: 50_000,
             nesting: 64,
         }
-    }
-}
-
-impl Limits {
-    /// The effective limits: exactly what the caller supplied. Kept as a
-    /// named step (rather than removed outright) so every existing call site
-    /// stays a one-line, self-describing "this is the ceiling actually in
-    /// force" marker; it no longer clamps a caller-supplied ceiling down to
-    /// [`Self::default`] (ADR-011 §7.3, QSL-199 -- an implementation ceiling
-    /// is not a domain bound, NFR-001).
-    pub fn bounded(self) -> Self {
-        self
     }
 }
 

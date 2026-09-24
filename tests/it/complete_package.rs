@@ -801,13 +801,21 @@ fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_boun
         })
         .collect();
 
+    let refusal = DefinitionCatalog::with_limits(definitions, raised).unwrap_err();
     assert_eq!(
-        DefinitionCatalog::with_limits(definitions, raised).unwrap_err(),
+        refusal,
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: raised.definitions,
         },
         "must name the raised ceiling actually in force, not the original default"
+    );
+    assert_eq!(
+        refusal.to_string(),
+        format!(
+            "package resource limit exceeded: definitions (limit {})",
+            raised.definitions
+        )
     );
 }
 
@@ -856,7 +864,26 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         depth: 3,
         ..PackageLimits::default()
     };
-    assert!(resolve_parsed(&parsed, &catalog, &models, exact).is_ok());
+    assert_eq!(
+        resolve_parsed(&parsed, &catalog, &models, exact)
+            .unwrap()
+            .effective_limits(),
+        exact,
+        "a resolution records exactly the limits it was checked against"
+    );
+    let raised = PackageLimits {
+        definitions: PackageLimits::default().definitions + 1,
+        dependency_edges: PackageLimits::default().dependency_edges + 1,
+        depth: PackageLimits::default().depth + 1,
+        artifact_bytes: PackageLimits::default().artifact_bytes + 1,
+    };
+    assert_eq!(
+        resolve_parsed(&parsed, &catalog, &models, raised)
+            .unwrap()
+            .effective_limits(),
+        raised,
+        "a caller-raised limit is recorded as given, never clamped to the default"
+    );
     assert_eq!(
         resolve_parsed(
             &parsed,

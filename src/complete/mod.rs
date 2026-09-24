@@ -33,7 +33,6 @@ pub fn parse_with_catalog(
     catalog: &ProfileCatalog,
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    let limits = limits.bounded();
     let source = qsl_cst::diagnostic::read_source(identity, path, bytes, limits.source_bytes)?;
     let mut base = qsl_cst::parse_source(source.clone(), limits)?;
     let refused = base.selections().profiles.iter().find_map(|selection| {

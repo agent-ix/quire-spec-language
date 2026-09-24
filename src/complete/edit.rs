@@ -90,7 +90,6 @@ fn apply_edits_selected(
     limits: Limits,
     catalog: Option<&ProfileCatalog>,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    let limits = limits.bounded();
     let source = parsed.source();
     if let Some(catalog) = catalog {
         super::editor::validate_catalog_profiles(parsed, catalog)?;

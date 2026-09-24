@@ -123,7 +123,7 @@ fn tc_036_matches_independent_coordinates_and_source_boundary() {
     assert_eq!(coordinates(mapped.end()), (1_048_576, 1, 1_048_577));
     let oversized = vec![b'a'; MAX_SOURCE_BYTES + 1];
     let error =
-        Source::read(full.identity().clone(), full.path(), &oversized, usize::MAX).unwrap_err();
+        Source::read(full.identity().clone(), full.path(), &oversized, MAX_SOURCE_BYTES).unwrap_err();
     assert_eq!(error.code, Code::ResourceExhausted);
     assert_eq!(error.phase, Phase::Source);
 }
