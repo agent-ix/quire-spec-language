@@ -1,21 +1,21 @@
 ---
-id: TC-426
+id: TC-427
 title: "A stage limit names its kind, bound, actual counter and locus"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: verifies
 ---
-# TC-426: A stage limit names its kind, bound, actual counter and locus
+# TC-427: A stage limit names its kind, bound, actual counter and locus
 
 ## Description
 
 Verify FR-096's `LimitExceeded`: each kind has its `stage_limit_exceeded`
-cause, and S2 and the family `check` each locate the limit where the charge
+cause, and S1, S2 and the family `check` each locate the limit where the charge
 failed. This catches a limit with no locus where one is known, and a locus
 invented for a synthesized function.
 
-Scope: FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5.
+Scope: FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5, FR-096-AC-12.
 
 ## Test Procedure
 
@@ -25,8 +25,9 @@ Scope: FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5.
 3. Check a declaration whose preimage input bytes exceed bound `B`; then
    reach the same limit for an FR-151 synthesized function.
 4. Check a declaration whose work charge a work budget `W` denies.
+5. Run S1 over a source nested one bracket pair past its nesting bound `N`.
 
-Tag the tests `#[trace("TC-426", "FR-096-AC-n")]` with the AC each backs.
+Tag the tests `#[trace("TC-427", "FR-096-AC-n")]` with the AC each backs.
 
 ## Expected Results
 
@@ -39,6 +40,9 @@ Tag the tests `#[trace("TC-426", "FR-096-AC-n")]` with the AC each backs.
   declaration's region; the synthesized function's limit has no locus.
 - Step 4: kind work budget, bound `W`, actual the spend the denied charge
   would have reached, the declaration's region.
+- Step 5: kind nesting depth, bound `N`, actual `N + 1`, the region of the
+  bracket that opened the pair past the bound, under the source's
+  `RawSourceRef`.
 
 ## Status
 

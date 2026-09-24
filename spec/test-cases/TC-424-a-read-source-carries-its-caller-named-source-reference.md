@@ -1,12 +1,12 @@
 ---
-id: TC-423
+id: TC-424
 title: "An admitted source carries the source reference its caller named, and its node keys ignore the revision"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-001
     type: verifies
 ---
-# TC-423: An admitted source carries the source reference its caller named, and its node keys ignore the revision
+# TC-424: An admitted source carries the source reference its caller named, and its node keys ignore the revision
 
 ## Description
 
@@ -30,7 +30,7 @@ Scope: FR-001-AC-5, FR-001-AC-6, FR-001-AC-7.
    reference of `b` as (`c`, `u`, `git`, `1`), and under the reference of `b`
    as (`a`, `v`, `git`, `1`).
 
-Tag the tests `#[trace("TC-423", "FR-001-AC-n")]` with the AC each backs.
+Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 
 ## Expected Results
 

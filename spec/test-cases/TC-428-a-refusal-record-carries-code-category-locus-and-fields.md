@@ -1,12 +1,12 @@
 ---
-id: TC-427
+id: TC-428
 title: "A refusal record carries its code, category, locus and the catalog's fields"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: verifies
 ---
-# TC-427: A refusal record carries its code, category, locus and the catalog's fields
+# TC-428: A refusal record carries its code, category, locus and the catalog's fields
 
 ## Description
 
@@ -26,7 +26,7 @@ Scope: FR-096-AC-6, FR-096-AC-7, FR-096-AC-8.
 3. For each cause in FR-096's key table, read `catalog_fields()`.
 4. Build a record from an `Evaluation` whose outcome is a kernel `Refused`.
 
-Tag the tests `#[trace("TC-427", "FR-096-AC-n")]` with the AC each backs.
+Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
 
 ## Expected Results
 

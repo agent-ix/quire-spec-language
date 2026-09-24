@@ -1,12 +1,12 @@
 ---
-id: TC-428
+id: TC-429
 title: "The I2 reader locates its version refusal and its limits in the artifact"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: verifies
 ---
-# TC-428: The I2 reader locates its version refusal and its limits in the artifact
+# TC-429: The I2 reader locates its version refusal and its limits in the artifact
 
 ## Description
 
@@ -26,7 +26,7 @@ Scope: FR-096-AC-9, FR-096-AC-10.
 3. Read bytes longer than the artifact byte ceiling.
 4. Read bytes that are not JSON.
 
-Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
+Tag the tests `#[trace("TC-429", "FR-096-AC-n")]` with the AC each backs.
 
 ## Expected Results
 

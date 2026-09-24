@@ -1,12 +1,12 @@
 ---
-id: TC-424
+id: TC-425
 title: "parse and format take the four source labels and report the source reference"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-010
     type: verifies
 ---
-# TC-424: parse and format take the four source labels and report the source reference
+# TC-425: parse and format take the four source labels and report the source reference
 
 ## Description
 
@@ -27,7 +27,7 @@ Scope: FR-010-AC-11.
 4. Run `format agent-ix specs/a.quire git 3f2a <file>` over admissible
    complete-V1 source, then again with one extra operand.
 
-Tag the tests `#[trace("TC-424", "FR-010-AC-11")]`.
+Tag the tests `#[trace("TC-425", "FR-010-AC-11")]`.
 
 ## Expected Results
 

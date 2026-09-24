@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-062
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-096
+    type: verifies
 ---
 # TC-378: A real recursive-descent fixture shows the nesting-depth limit is the proximate cause of a function-declaration refusal
 
@@ -14,21 +16,29 @@ Verify FR-062-AC-7 against a body that genuinely nests, now that real
 recursive checking runs inside `ValueFunctionFamily::check` (QSL-148):
 holding a fixture nested to depth D fixed and varying only the configured
 nesting-depth limit by exactly one shows the limit, not the fixture's
-absolute size, to be the proximate cause of the refusal.
+absolute size, to be the proximate cause of the refusal. The `Limit`
+carries the `Locus::Region` of the node whose entry failed (FR-096-AC-11).
+
+Scope: FR-062-AC-7, FR-096-AC-11.
 
 ## Test Procedure
 
 1. Build a function declaration whose body is `Not(Not(Not(true)))` (three
    `Not`s wrapping a `Boolean` leaf, four nodes deep) and check it through
-   `ValueFunctionFamily::check` with the nesting-depth limit configured to 3.
+   `ValueFunctionFamily::check` with the `CheckingLimits` nesting depth
+   configured to 3.
 2. Check the identical declaration again with the limit configured to 4 and
    nothing else changed.
 
 ## Expected Results
 
-- Step 1: checking refuses with a `Limit` outcome naming the nesting-depth
-  limit.
+- Step 1: `StageFailure::Limit` with kind nesting depth, bound 3, actual
+  4, and `Locus::Region` over the span of `true`, reported as
+  `stage_limit_exceeded`/`nesting-depth-exceeded`.
 - Step 2: checking succeeds; no nesting-depth `Limit` outcome is returned.
+
+Tag the tests `#[trace("TC-378", "FR-062-AC-7")]` and
+`#[trace("TC-378", "FR-096-AC-11")]`.
 
 ## Status
 
@@ -63,9 +73,11 @@ Making AC-7 itself backed would require threading `&mut CheckContext`
 through every recursive arm of `Typer::infer_form`, not just `Call` --
 see FR-062's own Status section for AC-7 for the full reasoning.
 [FR-096](../functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
-(QSL-160) gives the `Limit` a location. Whether `Typer`'s depth refusal is
-a `Limit` at all needs an owner ruling, because FR-092-AC-7 and
-FR-093-AC-14 require it to be `resource_exhausted` (FR-062 Status, AC-7).
+(QSL-160) resolves it: the `CheckingLimits` depth is a stage limit, so the
+family returns `Typer`'s depth stop as `StageFailure::Limit` with a
+`Locus::Region`, with no `CheckContext` threaded through `Typer`. The steps
+and expected results above state that target; ADR-013 §7 slice S-5b builds
+it.
 
 `nesting_depth_limit_is_the_proximate_cause`
 (`qsl-semantics/src/check/family.rs`, `checking_tests`) remains, untagged, as a narrower

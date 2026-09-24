@@ -123,10 +123,10 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
   at `field:t`; `Tree2` and `Two` give the lists FR-093-AC-11 states;
   `List` gives `[]` for both operations; `eq` refuses with
   `missing_declaration`/`missing-selection` naming role `text_profile`, and
-  under the node limit with `resource_exhausted`/`insufficient-next-charge`
-  naming that limit, each time yielding no node.
-- Step 10: 127 levels check and 128 refuse with
-  `resource_exhausted`/`insufficient-next-charge` naming the depth limit.
+  under the node limit with `stage_limit_exceeded`/`node-count-exceeded`
+  at that limit, each time yielding no node.
+- Step 10: 127 levels check and 128 stop with
+  `stage_limit_exceeded`/`nesting-depth-exceeded`, bound 128.
   Each form checks at its deepest admitted nesting, except the unguarded
   `value` chain, which refuses there as an unproved presence, and refuses
   naming the depth limit one level deeper. Every 1,000-deep form refuses
@@ -150,3 +150,7 @@ specified under QSL-212 and unbacked: on the A4b branch the leaf walk runs
 The tests back steps 10 and 11 (QSL-228): before it, a debug build
 aborted at 20 nested `a and (…)`.
 Remaining work: QSL-156 A4b.
+
+The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
+(QSL-160, FR-096). Until S-5b lands, the tests observe the same limit as
+`ResourceExhausted`, and the code and outcome assertions move with S-5b.

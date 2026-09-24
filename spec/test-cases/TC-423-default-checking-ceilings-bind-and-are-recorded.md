@@ -46,19 +46,18 @@ Scope: NFR-011-M-1 to NFR-011-M-4.
 
 ## Expected Results
 
-- Step 1 is refused with
-  `ResourceExhausted{stage: Typing, kind: Nodes, limit: 100000}`, cause
-  `insufficient-next-charge`.
+- Step 1 stops with `StageFailure::Limit` of kind node count, bound
+  100000, code `stage_limit_exceeded`/`node-count-exceeded`.
 - Step 2 is admitted.
 - Step 3: the defaults are 100000 nodes, depth 128, 16777216 input bytes and
   16777216 work units. Each checked package and each checked expression
   records exactly the limits it was checked under. `new(7, 9)` has 7 nodes,
   depth 9, 16777216 input bytes and 16777216 work units.
 - Step 4: the 4000-function package is admitted. The two-function package
-  is refused with `ResourceExhausted{stage: Typing, kind: InputBytes,
-  limit: 10000}`, not on the work ceiling.
-- Step 5: the long-name package is refused with
-  `ResourceExhausted{stage: Typing, kind: WorkBudget, limit: 16777216}`; the
+  stops with a limit of kind input bytes, bound 10000, not on the work
+  ceiling.
+- Step 5: the long-name package stops with a limit of kind work budget,
+  bound 16777216; the
   short-name package is admitted.
 
 ## Status
@@ -74,3 +73,7 @@ These are in `qsl-semantics/src/check/lowering/tests/leaves.rs`.
 
 - Step 4: `preimage_bytes_bind_before_the_work_budget`
   (`qsl-semantics/src/check/lowering/tests/rows.rs`).
+
+The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
+(QSL-160, FR-096). Until S-5b lands, the tests observe the same limit as
+`ResourceExhausted`, and the code and outcome assertions move with S-5b.

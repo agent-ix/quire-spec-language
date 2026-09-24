@@ -86,14 +86,14 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
 - Step 3: both (`a`, `u`) keys equal D1 and the (`a`, `w`) key equals D2. D1's
   preimage has `owner` and `declaration`; T4's has neither member.
 - Step 4: the semantic type is T4, and no node's `declaration` is `Digit`.
-- Step 5: four `Option`s are keyed; five refuse with
-  `resource_exhausted`/`insufficient-next-charge` naming the depth limit. The
+- Step 5: four `Option`s are keyed; five stop with
+  `stage_limit_exceeded`/`nesting-depth-exceeded`, bound 4. The
   `f`/`g` unit refuses with `unknown_required_feature`/`unsupported-feature`
   naming the regions of `f` and `g`, and no member of either group has a
   key; each conditional's preimage alone keys to G5.
   The 30-record chain checks, alone and with the equality, and the thread
   completes. The 1,000-record chain refuses under every limit set, each
-  refusal `resource_exhausted` naming the depth limit set, and the thread
+  stop `stage_limit_exceeded`/`nesting-depth-exceeded` at the depth limit set, and the thread
   completes.
 - Step 6: each key equals the recorded `sha256`, and each preimage's
   `version` is its nominal one.
@@ -112,3 +112,7 @@ Implemented on the QSL-156 slice A4b branch, pending merge. The tests back steps
 refuses every recursion group on that branch, so step 5's collision half and
 step 9 are unbacked, and the checked type node of step 10 takes the caller's
 key. Step 3's owner needs QSL-159's source authority.
+
+The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
+(QSL-160, FR-096). Until S-5b lands, the tests observe the same limit as
+`ResourceExhausted`, and the code and outcome assertions move with S-5b.

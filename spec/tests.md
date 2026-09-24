@@ -157,7 +157,7 @@ operational validation remains outside this audit-only plan.
 | TC-297 | Kernel admits, plan_pairs and compare_keys refuse a population pair | Unit | P1 | FR-089-AC-6 | ✅ Passed locally; QSL-131 |
 | TC-376 | Function application checking accepts a well-typed call and refuses wrong arity, an unknown name and a type mismatch | Unit | P1 | FR-065-AC-4 | ✅ Passed locally (QSL-148) |
 | TC-377 | Function declaration checking accepts a well-typed declaration, reports its calls, and refuses an ill-typed body | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC (QSL-148) |
-| TC-378 | A real recursive-descent fixture shows the nesting-depth limit is the proximate cause of a function-declaration refusal | Unit | P1 | FR-062 | 🚧 Planned; QSL-160; the code needs an owner ruling (FR-062 Status, AC-7) |
+| TC-378 | A real recursive-descent fixture shows the nesting-depth limit is the proximate cause of a function-declaration refusal | Unit | P1 | FR-062-AC-7, FR-096-AC-11 | 🚧 Planned; QSL-160 (S-5b) |
 | TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Planned; QSL-158 (PR #299 review, finding 2): blocked by ADR-011 §2's interim rule and QSL-6; see FR-087 Status |
 | TC-380 | The function-declaration contract check refuses an ill-typed declaration and admits a well-typed one | Unit | P1 | FR-065-AC-7 | ✅ Passed locally (QSL-148, PR #303) |
 | TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | ✅ Passed locally (PR #303 review round 3, finding F1) |
@@ -202,12 +202,12 @@ operational validation remains outside this audit-only plan.
 | TC-421 | The package source map carries the wire's source map, and a location resolves or refuses by cause | Integration | P1 | FR-095-AC-3, FR-095-AC-4 | ✅ Passed locally; step 4 (QSpec positive fixtures) under `make conformance` |
 | TC-422 | Each Locus variant resolves to regions by its own rule, and the artifact pointer is RFC 6901 | Unit | P1 | FR-095-AC-5, FR-095-AC-6 | ✅ Passed locally |
 | TC-423 | The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result | Unit | P1 | NFR-011-M-1 (node refusal: step 1), NFR-011-M-2 (step 3), NFR-011-M-3 (byte refusal before work: step 4), NFR-011-M-4 (work refusal: step 5; enum package admitted: step 4) | ✅ Passed locally; QSL-214 |
-| TC-423 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7 | 🚧 Planned; QSL-233 (S-4b) |
-| TC-424 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | 🚧 Planned; QSL-233 (S-4b) |
-| TC-425 | A check location resolves to the region of the unit it was read from, or to none | Unit | P1 | FR-096-AC-1 | 🚧 Planned; QSL-160 (S-5b) |
-| TC-426 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5 | 🚧 Planned; QSL-160 (S-5b) |
-| TC-427 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8 | 🚧 Planned; QSL-160 (S-5b) |
-| TC-428 | The I2 reader locates its version refusal and its limits in the artifact | Integration | P1 | FR-096-AC-9, FR-096-AC-10 | 🚧 Planned; QSL-160 (S-5b); needs three IR reader changes |
+| TC-424 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7 | 🚧 Planned; QSL-233 (S-4b) |
+| TC-425 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | 🚧 Planned; QSL-233 (S-4b) |
+| TC-426 | A check location resolves to the region of the unit it was read from, or to none | Unit | P1 | FR-096-AC-1 | 🚧 Planned; QSL-160 (S-5b) |
+| TC-427 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5, FR-096-AC-12 | 🚧 Planned; QSL-160 (S-5b) |
+| TC-428 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8 | 🚧 Planned; QSL-160 (S-5b) |
+| TC-429 | The I2 reader locates its version refusal and its limits in the artifact | Integration | P1 | FR-096-AC-9, FR-096-AC-10 | 🚧 Planned; QSL-160 (S-5b); needs three IR reader changes |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -216,12 +216,12 @@ carries ADR-013 O-07, O-12, T-5 and C-14 under QSL-159. TC-420 to TC-422
 pass locally; TC-421's QSpec-fixture step runs under `make conformance`.
 O-12's `LocatedSpan` replacement and C-21 are ADR-013 §7 slice S-4b
 (QSL-233): [FR-001](functional/FR-001-read-exact-source.md) defines the
-caller-named `RawSourceRef` (TC-423) and
+caller-named `RawSourceRef` (TC-424) and
 [FR-010](functional/FR-010-report-native-outcomes.md) the `parse` and
-`format` grammar that supplies it (TC-424). Check-stage regions, stage
+`format` grammar that supplies it (TC-425). Check-stage regions, stage
 limits, refusal records and the I2 reader's loci are slice S-5b (QSL-160,
 [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md),
-TC-425 to TC-428), after S-4b and FR-091-AC-10.
+TC-426 to TC-429), after S-4b and FR-091-AC-10.
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 

@@ -1,12 +1,12 @@
 ---
-id: TC-425
+id: TC-426
 title: "A check location resolves to the region of the unit it was read from, or to none"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: verifies
 ---
-# TC-425: A check location resolves to the region of the unit it was read from, or to none
+# TC-426: A check location resolves to the region of the unit it was read from, or to none
 
 ## Description
 
@@ -31,7 +31,7 @@ Scope: FR-096-AC-1.
 4. Resolve a location in an FR-151 synthesized function and a location with
    `Origin::Expression`.
 
-Tag the tests `#[trace("TC-425", "FR-096-AC-1")]`.
+Tag the tests `#[trace("TC-426", "FR-096-AC-1")]`.
 
 ## Expected Results
 
