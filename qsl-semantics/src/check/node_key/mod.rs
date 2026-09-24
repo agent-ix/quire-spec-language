@@ -48,10 +48,10 @@
 //! `operation.member` position; each is refused when RFC 8785 cannot render
 //! it exactly (outside the IEEE-754 safe range) rather than hashed. No
 //! `Debug` or `Display` formatting of a Rust value is on the path except the
-//! canonical wire spellings `NodeKey` (lowercase hex) and `Integer` (the
-//! complete-V1 canonical decimal) document as contracts, and this module's
-//! own lowercase-hex spelling of a group digest or signature. The pinned-bytes
-//! tests fix the exact encoding.
+//! canonical wire spelling `Integer` (the complete-V1 canonical decimal)
+//! documents as a contract. A node key, a group digest and a signature are
+//! spelled by this module's own lowercase hex ([`HexDigest`]), which is
+//! `NodeKey`'s wire spelling. The pinned-bytes tests fix the exact encoding.
 //!
 //! The body walk is bounded: a body nested deeper than
 //! [`MAX_CHECKING_DEPTH`] terms is refused, whatever path built it.
@@ -253,13 +253,17 @@ pub struct NodeRef(pub NodeKey);
 impl Serialize for NodeRef {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
-        struct Wire {
+        struct Wire<'a> {
             domain: &'static str,
-            digest: String,
+            digest: &'a str,
         }
+        // `NodeKey`'s lowercase-hex spelling, written on the stack: a
+        // preimage names many keys, and each is spelled without
+        // allocating or formatting (QSL-221).
+        let digits = HexDigest::of(self.0.as_bytes());
         Wire {
             domain: NODE_KEY_DOMAIN,
-            digest: self.0.to_string(),
+            digest: digits.as_str(),
         }
         .serialize(serializer)
     }
@@ -299,7 +303,7 @@ pub enum NodeTag {
 }
 
 /// The v2 schema's closed `SemanticTerm` union.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 // No `deny_unknown_fields`: serde does not combine it with the literal's
 // `flatten`, and the conformance test compares re-encoded bytes with the
@@ -372,7 +376,7 @@ impl SemanticTerm {
 
 /// A literal's `value_kind` and `value`, typed together so the two cannot
 /// disagree. FR-092 fixes each spelling.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum LiteralValue {
     /// `boolean`: a JSON boolean.
     Boolean(bool),
@@ -432,7 +436,7 @@ impl<'de> serde::Deserialize<'de> for LiteralValue {
 }
 
 /// The schema's closed application `operator` vocabulary.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(rename_all = "snake_case")]
 pub enum Operator {
@@ -503,7 +507,7 @@ impl Operator {
 
 /// The schema's `Operation`: a catalogued operation with its laws, mode,
 /// member and leaves.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(deny_unknown_fields)]
 pub struct Operation {
@@ -540,7 +544,7 @@ impl Operation {
 }
 
 /// The schema's `OperationLaw`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(deny_unknown_fields)]
 pub struct OperationLaw {
@@ -582,7 +586,7 @@ impl LawRole {
 
 /// The schema's non-null `OperationMode` (`{kind, value}`), carrying the
 /// crate's own mode enums.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum OperationMode {
     /// `rounding`.
@@ -615,7 +619,7 @@ fn absence_spelling<S: serde::Serializer>(
 }
 
 /// The schema's `OperationLeaf`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(deny_unknown_fields)]
 pub struct OperationLeaf {
@@ -630,7 +634,7 @@ pub struct OperationLeaf {
 /// One schema `LeafSegment`: `field:<identifier>`, `position:<n>` or
 /// `inner`, and FR-093's `recursion:<d>`, which ends a recursion leaf's path
 /// (a QSL proposal, ADR-013 QC-24).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum LeafSegment {
     /// `field:<name>`.
     Field(Identifier),
@@ -1006,19 +1010,33 @@ struct SignatureRound<'a> {
     targets: Vec<&'a String>,
 }
 
-/// Lowercase hex, the spelling FR-092 gives every digest inside a preimage
-/// or a signature round.
-fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    bytes
-        .iter()
-        .flat_map(|byte| {
-            [
-                char::from(DIGITS[usize::from(byte >> 4)]),
-                char::from(DIGITS[usize::from(byte & 0x0f)]),
-            ]
-        })
-        .collect()
+/// A 32-byte digest's lowercase hex, the spelling FR-092 gives every digest
+/// inside a preimage or a signature round, and `NodeKey`'s wire spelling.
+struct HexDigest([u8; 64]);
+
+impl HexDigest {
+    fn of(bytes: &[u8; 32]) -> Self {
+        const DIGITS: &[u8; 16] = b"0123456789abcdef";
+        let mut digits = [0; 64];
+        let (pairs, _) = digits.as_chunks_mut::<2>();
+        for (pair, byte) in pairs.iter_mut().zip(bytes) {
+            *pair = [
+                DIGITS[usize::from(byte >> 4)],
+                DIGITS[usize::from(byte & 0x0f)],
+            ];
+        }
+        Self(digits)
+    }
+
+    /// The digits as text.
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.0).expect("every hex digit is ASCII, so the digits are UTF-8")
+    }
+}
+
+/// [`HexDigest`] as an owned string.
+fn hex(bytes: &[u8; 32]) -> String {
+    String::from(HexDigest::of(bytes).as_str())
 }
 
 /// `preimage`'s RFC 8785 bytes and the node key they hash to.

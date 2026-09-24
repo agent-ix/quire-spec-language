@@ -10,7 +10,7 @@
 //! than in either.
 
 /// `lookup`'s absence mode.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum AbsenceMode {
     /// `absent undefined`.
     Undefined,

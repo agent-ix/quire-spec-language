@@ -25,6 +25,7 @@ use qsl_foundation::SourceIdentity;
 
 mod binder_scope;
 mod depth;
+mod differential;
 mod expression_depth;
 mod leaves;
 mod rows;
