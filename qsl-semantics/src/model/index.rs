@@ -71,6 +71,7 @@ struct DeclFlags {
     /// Some `ObjectType` record under this key declares a supertype.
     non_root: bool,
     scalar_type: bool,
+    record_value_type: bool,
     field_member: bool,
     operation_member: bool,
 }
@@ -184,7 +185,8 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
             .chain([&operation.owner])
             .chain(&operation.redefines)
             .collect(),
-        DomainPackageRecord::ScalarType(_)
+        DomainPackageRecord::RecordValueType(_)
+        | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::Component(_)
         | DomainPackageRecord::Endpoint(_)
         | DomainPackageRecord::Relationship(_)
@@ -374,6 +376,9 @@ impl RecordIndex {
                     }
                     index.operations.insert(own, record_position);
                 }
+                DomainPackageRecord::RecordValueType(_) => {
+                    index.flags[own.0].record_value_type = true;
+                }
                 DomainPackageRecord::ScalarType(scalar) => {
                     index.flags[own.0].scalar_type = true;
                     index.scalars.insert(own, (scalar.lower, scalar.upper));
@@ -448,6 +453,11 @@ impl RecordIndex {
     /// Whether some `ScalarType` record declares `key`.
     pub(crate) fn is_scalar_type(&self, key: &DeclarationKey) -> bool {
         self.flags(key).scalar_type
+    }
+
+    /// Whether some `RecordValueType` record declares `key`.
+    pub(crate) fn is_record_value_type(&self, key: &DeclarationKey) -> bool {
+        self.flags(key).record_value_type
     }
 
     /// Whether some `FieldMember` record declares `key`.

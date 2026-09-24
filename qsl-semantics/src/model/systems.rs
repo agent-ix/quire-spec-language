@@ -218,6 +218,7 @@ pub fn classify(
                 }
             }
             DomainPackageRecord::FieldMember(_)
+            | DomainPackageRecord::RecordValueType(_)
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::OperationMember(_)
             | DomainPackageRecord::Population(_) => {}

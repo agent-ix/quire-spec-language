@@ -21,11 +21,10 @@
 //! - `Flow2`'s inline relationship is identified
 //!   `ix://agent-ix/architecture/relationship/Flow2-specializes-Flow`, not
 //!   `<owner>/<name>` (FCD `crates/extraction-frontend/src/identity.rs:223`).
-//! - `Count` is a record value type, a meaning QSL reads no record for yet.
 //!
-//! [`architecture_bundle`] therefore types the three identity fields and
-//! `Flow.rate` `Boolean` and drops `Count` and `Flow2`. Every part, port,
-//! connection and allocation of the bundle is kept as authored.
+//! [`architecture_bundle`] therefore types the three identity fields
+//! `Boolean` and drops `Flow2`. `Count`, a record value type, and every
+//! part, port, connection and allocation of the bundle are kept as authored.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -125,17 +124,6 @@ fn architecture_bundle(extra: impl FnOnce(&Path)) -> tempfile::TempDir {
     for entity in ["model/Pump.md", "model/Sys.md", "model/Tank.md"] {
         edit(&spec.join(entity), "| id | UUID |", "| id | Boolean |");
     }
-    edit(
-        &spec.join("systems/Flow.md"),
-        "| rate | Count |",
-        "| rate | Boolean |",
-    );
-    edit(
-        &spec.join("systems/Flow.md"),
-        "type: Count",
-        "type: Boolean",
-    );
-    std::fs::remove_file(spec.join("model/Count.md")).expect("drop Count");
     std::fs::remove_file(spec.join("systems/Flow2.md")).expect("drop Flow2");
     extra(dir.path());
     dir
@@ -320,6 +308,12 @@ fn architecture_ports_and_connection_admit_through_the_real_lift() {
         (tank_in.multiplicity.lower, tank_in.multiplicity.upper),
         (1, Some(1))
     );
+
+    // `Count` admits as authored: a record value type owning `value`.
+    let count = package.declaration("Count").expect("Count declared");
+    assert_eq!(count.kind, DeclarationKind::RecordValueType);
+    let value = package.member(count.key, "value").expect("Count/value");
+    assert_eq!(value.kind, DeclarationKind::Field);
 
     let pipe = package.declaration("pipe").expect("pipe declared");
     assert_eq!(pipe.kind, DeclarationKind::Connection);

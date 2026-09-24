@@ -34,6 +34,8 @@ pub enum DeclarationKind {
     Interface,
     /// A value type bound to a native value type.
     ValueType,
+    /// A record value type: named fields and no identity (FR-208).
+    RecordValueType,
     /// A field member of an object type.
     Field,
     /// An operation member of an object type.
@@ -149,6 +151,7 @@ impl AdmittedPackage {
                 DomainPackageRecord::FieldMember(member) => Some(member.owner.node.as_str()),
                 DomainPackageRecord::OperationMember(member) => Some(member.owner.node.as_str()),
                 DomainPackageRecord::ObjectType(_)
+                | DomainPackageRecord::RecordValueType(_)
                 | DomainPackageRecord::ScalarType(_)
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
@@ -259,6 +262,7 @@ impl AdmittedPackage {
             }
             DomainPackageRecord::ObjectType(_) => DeclarationKind::ObjectType,
             DomainPackageRecord::FieldMember(_) => DeclarationKind::Field,
+            DomainPackageRecord::RecordValueType(_) => DeclarationKind::RecordValueType,
             DomainPackageRecord::ScalarType(_) => DeclarationKind::ValueType,
             DomainPackageRecord::OperationMember(_) => DeclarationKind::Operation,
             // `admit` refuses every kind-mapping refusal, so an admitted

@@ -49,6 +49,17 @@ pub struct ObjectTypeRecord {
     pub supertypes: Vec<DeclarationKey>,
 }
 
+/// A record value type (FR-208 `quire.meaning.model.record-value-type/v1`):
+/// a named record of one or more fields, none an identity field. Its values
+/// have no object identity: two are equal exactly when they have one
+/// most-specific type and every field is equal. Its fields are
+/// [`FieldMemberRecord`]s owned by this type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordValueTypeRecord {
+    /// This type's own original declaration key.
+    pub key: DeclarationKey,
+}
+
 /// QSL's own closed native value-type vocabulary (shared-grammar.md's
 /// `type-ref` production): the unparameterized value-type keywords a
 /// `typeRef` may name directly, under `ix://quire/native/<Name>`, without
@@ -465,8 +476,10 @@ pub struct PopulationRecord {
 pub enum DomainPackageRecord {
     /// An object type export.
     ObjectType(ObjectTypeRecord),
-    /// A field member of an object type.
+    /// A field member of an object type or record value type.
     FieldMember(FieldMemberRecord),
+    /// A record value type (FR-208).
+    RecordValueType(RecordValueTypeRecord),
     /// A scalar type export bound to a closed integer interval.
     ScalarType(ScalarTypeRecord),
     /// An operation member of an object type.
@@ -490,6 +503,7 @@ impl DomainPackageRecord {
         match self {
             Self::ObjectType(record) => &record.key,
             Self::FieldMember(record) => &record.key,
+            Self::RecordValueType(record) => &record.key,
             Self::ScalarType(record) => &record.key,
             Self::OperationMember(record) => &record.key,
             Self::Component(record) => &record.key,

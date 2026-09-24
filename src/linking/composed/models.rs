@@ -262,7 +262,8 @@ impl Site {
         match kind {
             DeclarationKind::ObjectType
             | DeclarationKind::Interface
-            | DeclarationKind::ValueType => {
+            | DeclarationKind::ValueType
+            | DeclarationKind::RecordValueType => {
                 matches!(self, Self::Type | Self::Role)
             }
             DeclarationKind::Part | DeclarationKind::Port => matches!(self, Self::Role),

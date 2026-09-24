@@ -148,6 +148,7 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
         }),
         DomainPackageRecord::Relationship(_) => Some((NodeTag::Relation, "relationship")),
         DomainPackageRecord::FieldMember(_)
+        | DomainPackageRecord::RecordValueType(_)
         | DomainPackageRecord::ScalarType(_)
         | DomainPackageRecord::OperationMember(_)
         | DomainPackageRecord::Component(_)
