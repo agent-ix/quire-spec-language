@@ -90,13 +90,16 @@ cargo-deny-bans:
 #
 # A workspace-wide build unifies features across every package, dev-
 # dependencies included. `quire-spec-language`'s dev-dependency turns on
-# `qsl-semantics/test-support`, and `qsl-forms`'s turns on
-# `qsl-cst/test-support`, so `--workspace` builds those two crates with
-# `test-support` on even here. The `-p` runs below build each crate alone,
-# with the feature off: they lint the `not(feature = "test-support")` code
-# paths under `-D warnings`, and check that the modules of each crate's own
-# `tests/it` not gated on the feature compile and pass without it. These
-# are the only two workspace crates with a `test-support` feature.
+# `qsl-semantics/test-support`, `qsl-forms`'s turns on
+# `qsl-cst/test-support`, and several crates' turn on
+# `quire-exact/test-support` (QSL-206's charge log), so `--workspace` builds
+# those three crates with `test-support` on even here. The `-p` runs below
+# build each crate alone, with the feature off: they lint the
+# `not(feature = "test-support")` code paths under `-D warnings`, and check
+# that the modules of each crate's own `tests/it` not gated on the feature
+# compile and pass without it. `-p quire-exact` is where the production
+# meter's no-allocation test runs. These are the only three workspace crates
+# with a `test-support` feature.
 ci-default-features:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -105,6 +108,8 @@ ci-default-features:
 	cargo test --locked -p qsl-semantics
 	cargo clippy --locked -p qsl-cst --all-targets -- -D warnings
 	cargo test --locked -p qsl-cst
+	cargo clippy --locked -p quire-exact --all-targets -- -D warnings
+	cargo test --locked -p quire-exact
 
 ci-all-features:
 	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings

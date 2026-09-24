@@ -42,6 +42,10 @@ qsl-forms = { path = "../qsl-forms" }
 # `no_shipped_dependency_enables_test_support` refuses a normal or build
 # dependency that does.
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
+# QSL-206: the ordered charge log (`Meter::admitted_charges`) the
+# charge-sequence tests assert. A production meter keeps a count only; only
+# this dev-dependency enables `test-support`.
+quire-exact = { path = "../quire-exact", features = ["test-support"] }
 sha2 = "=0.10.9"
 
 [[test]]

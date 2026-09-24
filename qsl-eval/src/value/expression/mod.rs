@@ -377,38 +377,16 @@ impl CheckedPackageEvaluation for CheckedPackage {
         // FR-062/FR-065: this family's own `evaluate` hook
         // (`s6a::ReferenceEvaluation`) is the one path that runs
         // checked function-application code, not a second, parallel
-        // `Machine` call beside it.
-        let identity = callable.identity;
-        // `ReferenceEvaluation::evaluate`'s `meter` parameter is
-        // `ValueFunctionFamily`'s own `meter: &mut quire_exact::Meter`
-        // (`family.rs`), genuinely charged now (QSL-153: `Meter::charge` is
-        // exported and `evaluate` charges `ChargePoint::FunctionCall` once,
-        // per call -- see `ValueFunctionFamily::evaluate`'s own doc for why
-        // that is the top-level call's *only* `function.call` charge, PR
-        // #302 review finding 2).
-        //
-        // `contract_meter` is a second, structurally required `Meter`
-        // instance -- `meter` (this method's own parameter) is already
-        // mutably borrowed by `env.local_meter` below for the whole call,
-        // so `evaluate`'s own `meter` parameter cannot alias it -- but it is
-        // configured with `meter`'s own limits (`*meter.limits()`), not an
-        // unconditionally unlimited stand-in: a caller who configures
-        // `meter` with, say, `work_units: 0` genuinely cannot afford even
-        // this call's own admission charge, and a denied charge surfaces as
+        // `Machine` call beside it. It charges this call's own
+        // `function.call` to the caller's `meter`, then runs the body
+        // against that same meter (QSL-206), so `meter` counts the whole
+        // call. A denied charge surfaces as
         // `Ok(FamilyOutcome::Evaluated(Outcome::Incomplete(_)))`, the same
-        // shape a denied `env.local_meter` charge inside the call's own body
-        // already takes -- one uniform way for a caller to observe "this
-        // call ran out of budget," regardless of which internal meter
-        // denied it.
-        let mut contract_meter = Meter::new(*meter.limits());
-        let mut env = family::EvaluationEnv::new(self, objects, arguments, meter);
-        evaluate_declaration(
-            S6aFamilyKind::Value,
-            &identity,
-            &mut env,
-            &mut contract_meter,
-        )
-        .map_err(CallFailure::Fault)
+        // shape a denied charge inside the body takes.
+        let identity = callable.identity;
+        let mut env = family::EvaluationEnv::new(self, objects, arguments);
+        evaluate_declaration(S6aFamilyKind::Value, &identity, &mut env, meter)
+            .map_err(CallFailure::Fault)
     }
 
     fn evaluate(
@@ -508,20 +486,15 @@ mod tests {
 
         // Steps 2-3: one evaluation environment, carrying the arguments
         // [3], consumed by a first, real S6a call.
-        let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut env = family::EvaluationEnv::new(
             &package,
             &objects,
             vec![Value::Integer(Integer::from(3_i64))],
-            &mut local_meter,
         );
-        let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let first = qsl_semantics::check::ValueFunctionFamily::evaluate(
-            &identity,
-            &mut env,
-            &mut contract_meter,
-        )
-        .expect("the first call, with real arguments still present, evaluates cleanly");
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let first =
+            qsl_semantics::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut meter)
+                .expect("the first call, with real arguments still present, evaluates cleanly");
         assert!(
             matches!(
                 &first,
@@ -532,12 +505,11 @@ mod tests {
         );
 
         // Step 4: a second S6a call on that same, now-consumed environment.
-        let consumed_fault = qsl_semantics::check::ValueFunctionFamily::evaluate(
-            &identity,
-            &mut env,
-            &mut contract_meter,
-        )
-        .expect_err("a second call on the same env, arguments already consumed, must fault");
+        let consumed_fault =
+            qsl_semantics::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut meter)
+                .expect_err(
+                    "a second call on the same env, arguments already consumed, must fault",
+                );
         assert_eq!(consumed_fault.stage(), "S6a");
         assert_eq!(consumed_fault.category(), Category::InternalFailure);
         assert_eq!(
@@ -548,14 +520,12 @@ mod tests {
         // Step 5: a fresh environment, called with a NodeKey naming no
         // function in this package.
         let unknown_identity = NodeKey::from_digest([0xAB; 32]);
-        let mut fresh_local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut fresh_env =
-            family::EvaluationEnv::new(&package, &objects, Vec::new(), &mut fresh_local_meter);
-        let mut fresh_contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut fresh_env = family::EvaluationEnv::new(&package, &objects, Vec::new());
+        let mut fresh_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let unknown_fault = qsl_semantics::check::ValueFunctionFamily::evaluate(
             &unknown_identity,
             &mut fresh_env,
-            &mut fresh_contract_meter,
+            &mut fresh_meter,
         )
         .expect_err("an identity this package never declared must fault");
         assert_eq!(unknown_fault.stage(), "S6a");
@@ -613,9 +583,7 @@ mod tests {
         let undeclared = NodeKey::from_digest([0xAB; 32]);
         for kind in S6aFamilyKind::ALL {
             let name = s6a_family_name(kind);
-            let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-            let mut env =
-                family::EvaluationEnv::new(&empty, &objects, Vec::new(), &mut local_meter);
+            let mut env = family::EvaluationEnv::new(&empty, &objects, Vec::new());
             let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
             let fault = evaluate_declaration(kind, &undeclared, &mut env, &mut meter)
                 .expect_err("a package that declares no item of the family resolves no identity");
@@ -638,12 +606,10 @@ mod tests {
             .function_identity("id")
             .expect("id is declared in this package");
         let package = qsl_package::CheckedPackage::link(graph);
-        let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut env = family::EvaluationEnv::new(
             &package,
             &objects,
             vec![Value::Integer(Integer::from(3_i64))],
-            &mut local_meter,
         );
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let evaluation =

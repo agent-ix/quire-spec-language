@@ -575,17 +575,17 @@ fn p06_each_call_charges_function_call() {
         format!("{:?}", evaluated(evaluation)),
         format!("{:?}", Outcome::Completed(int(3)))
     );
-    // PR #302 review finding 2: 2, not 3 -- one `function.call` charge per
+    // QSL-206: 3 -- the top-level call's own `function.call`, which
+    // `CheckedPackage::call` now charges to this `meter`, plus one per
     // *nested* self-call inside `last`'s own body (a 3-node chain recurses
-    // twice before reaching the end of the chain), never a third charge for
-    // the top-level call itself. `CheckedPackage::call` charges the
-    // top-level call's own admission against a separate contract-level
-    // meter now (`ValueFunctionFamily::evaluate`'s own doc), not against
-    // this `meter` (`env.local_meter`) -- an earlier version charged
-    // `function.call` against `local_meter` for the top-level call too,
-    // restating the same named charge a second time for one logical call.
-    assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
+    // twice before reaching the end of the chain). Before QSL-206 the
+    // top-level charge went to a meter `call` created and dropped, so this
+    // read 2. The call is still charged once: `Machine::run` makes no
+    // entry-level charge of its own (PR #302 review finding 2).
+    assert_eq!(meter.consumed(LimitKind::WorkUnits), 3);
 
+    // One work unit: the top-level call spends it, so the first nested call
+    // is the one denied.
     let mut meter = Meter::new(work_limit(1));
     let evaluation = package
         .call(
@@ -1237,26 +1237,24 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
         )
     };
 
-    // PR #302 review finding 2: every total/threshold below is one less
-    // than before -- `package.call`'s own top-level admission charge is
-    // against a separate contract-level meter now (`ValueFunctionFamily::
-    // evaluate`'s own doc), never against this `meter` (`env.local_meter`,
-    // what `invoke` reports); an earlier version charged `function.call`
-    // against `local_meter` for the top-level call too, ahead of every
-    // charge below, so every later charge's own position -- and so the
-    // `work_limit` that exhausts exactly at it -- shifts down by one.
+    // QSL-206: every total/threshold below counts the top-level call's own
+    // `function.call`, which `package.call` charges to this `meter` (what
+    // `invoke` reports) ahead of every charge below. Before QSL-206 that
+    // charge went to a meter `call` created and dropped, so each total, and
+    // the `work_limit` that exhausts exactly at a given charge, read one
+    // less.
     assert_eq!(
         invoke("down", vec![int(2)], UNLIMITED),
-        (format!("{:?}", Outcome::Completed(int(0))), 17, 5)
+        (format!("{:?}", Outcome::Completed(int(0))), 18, 5)
     );
     assert_eq!(
-        invoke("down", vec![int(2)], work_limit(16)).0,
-        incomplete(16, ChargePoint::OrderingResultRetain)
+        invoke("down", vec![int(2)], work_limit(17)).0,
+        incomplete(17, ChargePoint::OrderingResultRetain)
     );
     let half = Value::Rational(Rational::new(integer(3), integer(2)).unwrap());
     assert_eq!(
         invoke("q", vec![int(3), int(2)], UNLIMITED),
-        (format!("{:?}", Outcome::Completed(half)), 9, 2)
+        (format!("{:?}", Outcome::Completed(half)), 10, 2)
     );
     // `rational-arithmetic.arithmetic` for `3/1` and `2/1`: `N = bits(3) +
     // bits(1) = 3`, `D = bits(1) + bits(2) = 3`, so `integer_bits` 3; the
@@ -1301,8 +1299,8 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
         )
     );
     assert_eq!(
-        invoke("q", vec![int(3), int(2)], work_limit(8)).0,
-        incomplete(8, ChargePoint::RationalArithmeticResultRetain)
+        invoke("q", vec![int(3), int(2)], work_limit(9)).0,
+        incomplete(9, ChargePoint::RationalArithmeticResultRetain)
     );
 
     let implication = binary(

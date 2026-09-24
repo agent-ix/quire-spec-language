@@ -1257,7 +1257,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
                     crate::family::FamilyKind::Value.catalog_code_prefix(),
                     form.name,
                     cx.limits().nesting_depth,
-                    cx.meter.admitted_charges().len(),
+                    cx.meter.admission_count(),
                 ),
             );
         }
