@@ -9,6 +9,8 @@
 //! `Serialize` view below (`*Wire`), encoded by `quire-canonical`, the one
 //! RFC 8785 implementation (ADR-013 §2, ADR-013:113); the encoder orders
 //! members itself, so a view's field order carries no meaning.
+use std::sync::Arc;
+
 use qsl_foundation::ByteDigest;
 use serde::Serialize;
 
@@ -98,6 +100,11 @@ impl DeclarationKey {
         }
     }
 
+    /// This key's RFC 8785 length.
+    fn canonical_len(&self) -> u64 {
+        canonical_len(&self.wire())
+    }
+
     /// This key's `$defs.DeclarationKey` preimage view.
     pub(super) fn wire(&self) -> DeclarationKeyWire<'_> {
         DeclarationKeyWire {
@@ -141,6 +148,135 @@ impl RuleRef {
     }
 }
 
+/// A run of producer keys that several facts share -- an ancestor path --
+/// with the length of its keys' RFC 8785 array elements counted once
+/// (QSL-216). Cloning shares the keys, so every fact derived along one path
+/// holds that path once, not a copy each.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct KeyPath {
+    keys: Arc<[DeclarationKey]>,
+    /// The encoded length of `keys` as array elements: each key's RFC 8785
+    /// length, plus one separating comma between each two.
+    encoded_len: u64,
+}
+
+impl KeyPath {
+    /// This path extended by `key`, counting only `key`'s own encoding.
+    pub(crate) fn extended(&self, key: &DeclarationKey) -> Self {
+        let mut keys = Vec::with_capacity(self.keys.len() + 1);
+        keys.extend_from_slice(&self.keys);
+        keys.push(key.clone());
+        Self {
+            keys: keys.into(),
+            encoded_len: joined_len(self.encoded_len, !self.keys.is_empty(), key.canonical_len()),
+        }
+    }
+
+    /// The keys, in order.
+    pub(crate) fn keys(&self) -> &[DeclarationKey] {
+        &self.keys
+    }
+
+    /// The number of keys.
+    pub(crate) fn len(&self) -> usize {
+        self.keys.len()
+    }
+}
+
+/// The encoded length of `extra` bytes of array elements appended after
+/// `prefix` bytes of elements, with the comma between them when the prefix
+/// is non-empty.
+fn joined_len(prefix: u64, prefix_nonempty: bool, extra: u64) -> u64 {
+    prefix
+        .saturating_add(u64::from(prefix_nonempty))
+        .saturating_add(extra)
+}
+
+/// A fact's ordered producer keys: a shared ancestor path, then the keys this
+/// fact adds after it (QSL-216). Compares, and reads, as the one flat list
+/// of keys it spells.
+#[derive(Clone)]
+pub struct FactInputs {
+    path: KeyPath,
+    tail: Vec<DeclarationKey>,
+}
+
+impl FactInputs {
+    /// `path`, then `tail`.
+    pub(crate) fn new(path: KeyPath, tail: Vec<DeclarationKey>) -> Self {
+        Self { path, tail }
+    }
+
+    /// Every input key, in order.
+    pub fn iter(&self) -> impl Iterator<Item = &DeclarationKey> {
+        self.path.keys().iter().chain(&self.tail)
+    }
+
+    /// The number of input keys.
+    pub fn len(&self) -> usize {
+        self.path.len() + self.tail.len()
+    }
+
+    /// Whether these inputs begin with the very allocation `other`'s path
+    /// holds: shared, not copied (test-only; QSL-216).
+    #[cfg(test)]
+    pub(crate) fn shares_path_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.path.keys, &other.path.keys)
+    }
+
+    /// Whether the fact consumed no key.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The encoded length of the keys as array elements, reading the shared
+    /// path's length rather than re-encoding it.
+    fn encoded_len(&self) -> u64 {
+        self.tail
+            .iter()
+            .fold(
+                (self.path.encoded_len, !self.path.keys.is_empty()),
+                |(len, nonempty), key| (joined_len(len, nonempty, key.canonical_len()), true),
+            )
+            .0
+    }
+}
+
+impl From<Vec<DeclarationKey>> for FactInputs {
+    fn from(keys: Vec<DeclarationKey>) -> Self {
+        let path = keys
+            .iter()
+            .fold(KeyPath::default(), |path, key| path.extended(key));
+        Self::new(path, Vec::new())
+    }
+}
+
+impl std::fmt::Debug for FactInputs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl PartialEq for FactInputs {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+impl Eq for FactInputs {}
+
+impl PartialEq<Vec<DeclarationKey>> for FactInputs {
+    fn eq(&self, other: &Vec<DeclarationKey>) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+impl PartialEq<FactInputs> for Vec<DeclarationKey> {
+    fn eq(&self, other: &FactInputs) -> bool {
+        other == self
+    }
+}
+
 /// One derivation fact: `{ordinal, rule, inputs}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Fact {
@@ -149,7 +285,7 @@ pub struct Fact {
     /// The rule that derived this fact.
     pub rule: RuleRef,
     /// Ordered producer keys the fact consumed.
-    pub inputs: Vec<DeclarationKey>,
+    pub inputs: FactInputs,
 }
 
 /// A [`Fact`]'s preimage form: `{ordinal, rule, inputs}`, the ordinal a
@@ -168,6 +304,17 @@ impl Fact {
             rule: self.rule.wire(),
             inputs: self.inputs.iter().map(DeclarationKey::wire).collect(),
         }
+    }
+
+    /// This fact's RFC 8785 length: the fact with no inputs, plus its
+    /// inputs' element length. `"inputs":[]` grows by exactly that length.
+    fn canonical_len(&self) -> u64 {
+        let bare = FactWire {
+            ordinal: self.ordinal.to_string(),
+            rule: self.rule.wire(),
+            inputs: Vec::new(),
+        };
+        canonical_len(&bare).saturating_add(self.inputs.encoded_len())
     }
 }
 
@@ -255,6 +402,29 @@ impl EffectiveDeclarationPreimage {
     /// accounting), counted by the encoder.
     pub fn canonical_len(&self) -> u64 {
         canonical_len(&self.wire())
+    }
+
+    /// This preimage's RFC 8785 length, counted from its parts without
+    /// encoding its facts' shared paths (QSL-216): the preimage with no
+    /// derivation, plus each fact's length and the commas between them.
+    /// Equal to [`Self::canonical_len`], so `normalize.hash` is charged
+    /// before the preimage is encoded and hashed.
+    pub(crate) fn canonical_len_from_parts(&self) -> u64 {
+        let bare = EffectiveDeclarationWire {
+            version: EFFECTIVE_DECLARATION_DOMAIN,
+            owner_effective_type: self
+                .owner_effective_type
+                .as_ref()
+                .map(EffectiveIdWire::from),
+            original: self.original.wire(),
+            derivation: Vec::new(),
+        };
+        self.derivation
+            .iter()
+            .enumerate()
+            .fold(canonical_len(&bare), |len, (position, fact)| {
+                joined_len(len, position > 0, fact.canonical_len())
+            })
     }
 
     /// This preimage's identity and its RFC 8785 byte length, from one

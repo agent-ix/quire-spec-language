@@ -212,7 +212,7 @@ operational validation remains outside this audit-only plan.
 | TC-430 | Native run and compile requests and their outputs carry the four source labels | Integration | P1 | FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 | 🚧 Partial; QSL-233 (S-4b): steps 2 to 5 pass locally; step 1 passes with the model source's revision value `draft:1`, not `1`, because the program's model import pins the model artifact that binds it |
 | TC-431 | Runtime input artifacts carry the four labels, and two-label bytes refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | ✅ Passed locally; QSL-233 (S-4b) |
 | TC-432 | A family check's stage limit names its kind, bound and actual counter, and the counter is where the limit stops | Unit | P1 | FR-062-AC-12 | ✅ Passed locally (QSL-160 part 1) |
-| TC-433 | Model limits have finite defaults, and normalization work stops at the limit | Unit | P1 | NFR-012 (defaults and recording: steps 1 and 2; bounded work: steps 3 and 4; meter memory: step 5) | ✅ Passed locally (QSL-216, QSL-218, QSL-222) |
+| TC-434 | Model limits have finite defaults, and normalization work stops at the limit | Unit | P1 | NFR-012 (defaults and recording: steps 1 and 2; bounded work: steps 3 and 4; meter memory: step 5; shared paths: step 6; ancestor-steps order: step 7) | ✅ Passed locally (QSL-216, QSL-218, QSL-222) |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

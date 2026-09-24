@@ -37,9 +37,22 @@ A completed effective view records the limits it was normalized under
 (`EffectiveView::effective_limits`); an admitted binding records its
 `ancestor_steps`.
 
-Normalization charges each phase's work as it does it, in the charge order
-of `value-accounting.md`, and stops at the first denied charge. A ceiling
-therefore bounds the work done, not only the result. `ancestor_steps` and
+Normalization charges each phase's work before doing it, in the charge
+order of `value-accounting.md`, and stops at the first denied charge. A
+ceiling therefore bounds the work done, not only the result:
+
+- Phase 4 prices every redefinition group and charges every phase-4 fact
+  and conflict check before it resolves any dominance contest.
+- Each effective member's `normalize.hash`, and the view's, is charged from
+  a length counted from the preimage's parts, before the preimage is
+  encoded or hashed.
+- An effective type's identity is hashed in phase 3, before its phase-5
+  `normalize.hash`, because phase 4's charge order uses it. Its encoding
+  holds only that type's ancestor paths, whose total length the type's
+  `normalize.cycle-check` charges have already admitted as work.
+- Every fact derived along one ancestor path shares that path, so memory
+  grows with the number of facts plus the total ancestor-path length, and
+  the total path length is bounded by the work the cycle checks admitted. `ancestor_steps` and
 `family_steps` are read, not charged: a walk that would pass one refuses
 `resource_exhausted` naming it, unless an earlier charge was denied first.
 
@@ -95,7 +108,7 @@ limit.
 
 ## Verification
 
-TC-433 covers the defaults and the bound on work:
+TC-434 covers the defaults and the bound on work:
 
 - Each limits type's default equals the values above, and a completed view
   records the defaults, or a caller's limits as given.
@@ -105,6 +118,10 @@ TC-433 covers the defaults and the bound on work:
   after work bounded by the limit, whatever the package's size, and a
   diamond lattice's exponentially many ancestor paths are walked only as far
   as `derivation_facts` admits.
+- Inherited facts share their type's ancestor paths at the defaults.
+- A counted limit denied before the walk reaches `ancestor_steps` wins over
+  the `AncestorSteps` refusal, and otherwise the walk refuses on
+  `ancestor_steps`.
 - A production meter and a production admission meter allocate nothing per
   charge.
 

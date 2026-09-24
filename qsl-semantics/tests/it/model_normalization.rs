@@ -4750,7 +4750,7 @@ fn r01_pins_the_full_cycle_check_charge_and_work_unit_accounting() {
 /// outcome at NFR-012's default limits as with no limit at all -- the same
 /// view identity and declarations, or the same refusals -- and a completed
 /// view records the defaults it ran under.
-#[trace("TC-433", "NFR-012")]
+#[trace("TC-434", "NFR-012")]
 #[test]
 fn every_fixture_normalizes_identically_at_the_default_limits() {
     let fixtures = [

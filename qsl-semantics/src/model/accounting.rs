@@ -393,17 +393,16 @@ mod tests {
 
     use super::*;
 
-    /// QSL-218 AC 1: a production meter allocates nothing per charge. A
-    /// `Charge` and a `Meter` with no drop glue own no `Vec`, `Box` or
-    /// `String`, so neither building nor admitting a charge touches the heap,
-    /// whatever the charge count; the admission count still grows with every
-    /// charge. Built only without `test-support` (`cargo test -p
+    /// QSL-218 AC 1: a production `Meter` and `Charge` have no drop glue, so
+    /// they own no `Vec`, `Box` or `String`: the meter holds no per-charge
+    /// state however many charges it admits, and its admission count still
+    /// counts every one. Built only without `test-support` (`cargo test -p
     /// qsl-semantics`, which `make ci` runs): with it, the meter keeps its
     /// ordered charge log, which allocates.
     #[cfg(not(feature = "test-support"))]
-    #[trace("TC-433", "NFR-012")]
+    #[trace("TC-434", "NFR-012")]
     #[test]
-    fn a_production_meter_does_not_allocate_per_charge() {
+    fn a_production_meter_owns_no_heap_memory_and_counts_every_charge() {
         assert!(!std::mem::needs_drop::<Meter>());
         assert!(!std::mem::needs_drop::<Charge>());
         let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
@@ -425,7 +424,7 @@ mod tests {
 
     /// A denied charge leaves every counter and the admission count as they
     /// were.
-    #[trace("TC-433", "NFR-012")]
+    #[trace("TC-434", "NFR-012")]
     #[test]
     fn a_denied_charge_changes_nothing() {
         let mut meter = Meter::new(ModelNormalizationLimits {

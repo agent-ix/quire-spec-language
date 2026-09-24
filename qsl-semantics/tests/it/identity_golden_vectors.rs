@@ -134,7 +134,7 @@ fn qualified(node: &str, owner: Option<EffectiveId>) -> EffectiveDeclarationPrei
         derivation: vec![Fact {
             ordinal: 0,
             rule: RULE_QUALIFY,
-            inputs: vec![key(node)],
+            inputs: vec![key(node)].into(),
         }],
     }
 }

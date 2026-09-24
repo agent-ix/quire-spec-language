@@ -1906,14 +1906,14 @@ mod tests {
     use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
     use crate::model::normalize::{build_calls, normalize, NormalizeOutcome};
 
-    /// QSL-218 AC 1: a production admission meter allocates nothing per
-    /// charge: an `AdmissionCharge` and an `AdmissionMeter` with no drop
-    /// glue own no heap memory, whatever the charge count. Built only
+    /// QSL-218 AC 1: a production `AdmissionMeter` and `AdmissionCharge`
+    /// have no drop glue, so the meter holds no per-charge state however many
+    /// charges it admits, and its admission count counts every one. Built only
     /// without `test-support`, as `accounting`'s identical test.
     #[cfg(not(feature = "test-support"))]
-    #[trace("TC-433", "NFR-012")]
+    #[trace("TC-434", "NFR-012")]
     #[test]
-    fn a_production_admission_meter_does_not_allocate_per_charge() {
+    fn a_production_admission_meter_owns_no_heap_memory_and_counts_every_charge() {
         assert!(!std::mem::needs_drop::<AdmissionMeter>());
         assert!(!std::mem::needs_drop::<AdmissionCharge>());
         let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
@@ -1933,7 +1933,7 @@ mod tests {
     }
 
     /// QSL-222: the default admission limits are NFR-012's finite ceilings.
-    #[trace("TC-433", "NFR-012")]
+    #[trace("TC-434", "NFR-012")]
     #[test]
     fn the_default_admission_limits_are_finite() {
         assert_eq!(

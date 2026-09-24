@@ -1,12 +1,12 @@
 ---
-id: TC-433
+id: TC-434
 title: "Model limits have finite defaults, and normalization work stops at the limit"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-012
     type: verifies
 ---
-# TC-433: Model limits have finite defaults, and normalization work stops at the limit
+# TC-434: Model limits have finite defaults, and normalization work stops at the limit
 
 ## Description
 
@@ -38,6 +38,11 @@ Verify NFR-012:
 5. Without `test-support`, charge a model `Meter` and an `AdmissionMeter`
    100000 times, and check that neither they nor their charges have drop
    glue.
+6. Normalize a 120-deep chain whose root declares 20 fields at the defaults,
+   and compare each inherited member fact's path allocation with its type's
+   own inherit fact's.
+7. Normalize a 10-deep chain at `ancestor_steps` 5, first with
+   `declaration_records` 10, then with it unlimited.
 
 ## Expected Results
 
@@ -52,3 +57,7 @@ Verify NFR-012:
    walk steps, although the deeper one has 2^18 paths.
 5. The admission count equals the number of charges, and no meter or charge
    type owns heap memory.
+6. The chain normalizes, and every inherited member fact shares its type's
+   path allocation.
+7. The first run is incomplete on `declaration_records` at
+   `normalize.record`; the second refuses `AncestorSteps` naming bound 5.
