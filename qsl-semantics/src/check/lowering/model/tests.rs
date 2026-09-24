@@ -26,8 +26,8 @@ use crate::model::accounting::{Meter, ModelNormalizationLimits};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
     FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord, OperationResult, RelationshipDirection, RelationshipEnd,
-    RelationshipRecord, ValueTypeRef,
+    OperationMemberRecord, OperationParameterRecord, OperationResult, RelationshipDirection,
+    RelationshipEnd, RelationshipRecord, ValueTypeRef,
 };
 use crate::model::normalize::{normalize, NormalizeOutcome};
 use crate::value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
@@ -158,10 +158,28 @@ fn object(name: &str, supertypes: &[&str]) -> DomainPackageRecord {
 }
 
 fn query(name: &str, owner: &str, redefines: Option<&str>) -> DomainPackageRecord {
+    query_over(name, owner, redefines, &[])
+}
+
+/// [`query`] over the `Integer` parameters `parameters`, keyed
+/// `<name>/<parameter>`.
+fn query_over(
+    name: &str,
+    owner: &str,
+    redefines: Option<&str>,
+    parameters: &[&str],
+) -> DomainPackageRecord {
     DomainPackageRecord::OperationMember(OperationMemberRecord {
         key: key(name),
         owner: key(owner),
-        parameters: Vec::new(),
+        parameters: parameters
+            .iter()
+            .map(|parameter| OperationParameterRecord {
+                key: key(&format!("{name}/{parameter}")),
+                value_type: ValueTypeRef::Native(NativeValueType::Integer),
+                multiplicity: one(),
+            })
+            .collect(),
         result: Some(OperationResult {
             value_type: ValueTypeRef::Native(NativeValueType::Integer),
             multiplicity: one(),
@@ -174,8 +192,9 @@ fn query(name: &str, owner: &str, redefines: Option<&str>) -> DomainPackageRecor
 }
 
 /// `acme/orders` at `version`: object types `Order` (attribute `total`,
-/// queries `size` and `count`), `Invoice` and `Sub` (supertype `Order`,
-/// redefining `size`), and the relationship `billedTo`.
+/// queries `size`, `count` and `scaled(n)`), `Invoice` and `Sub` (supertype
+/// `Order`, redefining `size`, and `scaled` as `scaled(m)`), and the
+/// relationship `billedTo`.
 fn acme(version: &str) -> DomainPackage {
     DomainPackage::new(
         DomainPackageRef {
@@ -198,6 +217,8 @@ fn acme(version: &str) -> DomainPackage {
             query("Order/size", "Order", None),
             query("Order/count", "Order", None),
             query("Sub/size", "Sub", Some("Order/size")),
+            query_over("Order/scaled", "Order", None, &["n"]),
+            query_over("Sub/scaled", "Sub", Some("Order/scaled"), &["m"]),
             DomainPackageRecord::Relationship(RelationshipRecord {
                 key: key("billedTo"),
                 source: RelationshipEnd {
@@ -318,34 +339,82 @@ fn check(acme: &Acme, functions: Vec<FunctionDeclaration>) -> CheckedGraph {
 
 /// The `OperationClauses` of `Order.size` (precondition `true`, body `7`),
 /// `Order.count` (precondition `true`, body `1`) and `Sub.size`
-/// (precondition `false`, body `8`), each over `self`.
+/// (precondition `false`, body `8`), each over `self`; and of
+/// `Order.scaled(self, n: Integer)` (precondition `true`, body `n`) and
+/// `Sub.scaled(this, m: Integer)` (precondition `false`, body `m`), whose
+/// redefinition renames both parameters.
 fn clauses(acme: &Acme) -> OperationClauses {
     let mut clauses = OperationClauses::default();
+    let literal = |value: i64| Expression::Integer(Integer::from(value));
     let operations = [
-        ("Order/size", "size", acme.order, true, 7_i64),
-        ("Order/count", "count", acme.order, true, 1),
-        ("Sub/size", "size", acme.sub, false, 8),
+        (
+            "Order/size",
+            "size",
+            acme.order,
+            "self",
+            None,
+            true,
+            literal(7),
+        ),
+        (
+            "Order/count",
+            "count",
+            acme.order,
+            "self",
+            None,
+            true,
+            literal(1),
+        ),
+        (
+            "Sub/size",
+            "size",
+            acme.sub,
+            "self",
+            None,
+            false,
+            literal(8),
+        ),
+        (
+            "Order/scaled",
+            "scaled",
+            acme.order,
+            "self",
+            Some("n"),
+            true,
+            name("n"),
+        ),
+        (
+            "Sub/scaled",
+            "scaled",
+            acme.sub,
+            "this",
+            Some("m"),
+            false,
+            name("m"),
+        ),
     ];
-    for (operation, member, receiver, precondition, body) in operations {
+    for (operation, member, receiver, receiver_name, argument, precondition, body) in operations {
         let operation = key(operation);
         clauses.member.insert(operation.clone(), member.to_owned());
-        clauses.parameters.insert(
-            operation.clone(),
-            vec![("self".to_owned(), ValueType::Reference(receiver))],
-        );
+        let mut parameters = vec![(receiver_name.to_owned(), ValueType::Reference(receiver))];
+        parameters.extend(argument.map(|argument| (argument.to_owned(), ValueType::Integer)));
+        clauses.parameters.insert(operation.clone(), parameters);
         clauses.result.insert(operation.clone(), ValueType::Integer);
         clauses
             .own_precondition
             .insert(operation.clone(), Expression::Boolean(precondition));
-        clauses
-            .own_body
-            .insert(operation, Expression::Integer(Integer::from(body)));
+        clauses.own_body.insert(operation, body);
     }
     clauses
 }
 
 /// `checked_dispatch_operation` rooted at `root`, with the acme types.
 fn dispatch(acme: &Acme, root: &str) -> PackageDeclarations {
+    dispatch_with(acme, root, &clauses(acme))
+}
+
+/// [`dispatch`] over `clauses` in place of [`clauses`].
+fn dispatch_with(acme: &Acme, root: &str, clauses: &OperationClauses) -> PackageDeclarations {
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     let mut declarations = checked_dispatch_operation(
         &acme.view,
@@ -353,7 +422,7 @@ fn dispatch(acme: &Acme, root: &str) -> PackageDeclarations {
             key: key(root),
             closure: GeneralizationClosure::Closed,
         },
-        &clauses(acme),
+        clauses,
         fixture_owner(),
         &mut meter,
     )

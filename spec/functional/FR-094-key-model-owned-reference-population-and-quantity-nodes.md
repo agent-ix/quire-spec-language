@@ -302,10 +302,12 @@ when the walk would pass it.
 Each vector below is the exact preimage bytes and the key `check` SHALL mint
 for the named node. The domain package is `acme/orders`, at version `1.0.0`
 unless the row says otherwise, and declares object type
-`ix://acme/orders/Order` with attribute `total: Int[0, 9]` and query operation
-`size(): Integer`, object type `ix://acme/orders/Invoice`, object type
-`ix://acme/orders/Sub` with supertype `Order`, which redefines `size`, and
-relationship `ix://acme/orders/billedTo`. `M::Order`, `M::Invoice` and
+`ix://acme/orders/Order` with attribute `total: Int[0, 9]` and query
+operations `size(): Integer`, `count(): Integer` and
+`scaled(n: Integer): Integer`, object type `ix://acme/orders/Invoice`, object
+type `ix://acme/orders/Sub` with supertype `Order`, which redefines `size`, and
+redefines `scaled` as `scaled(m: Integer)`; and relationship
+`ix://acme/orders/billedTo`. `M::Order`, `M::Invoice` and
 `M::Sub` name those object types. A
 vector that names another vector's key uses the digest that vector gives, and
 T1 to T4, L1 and L2 are FR-092's. The root units of U1 to U4 are QSpec's

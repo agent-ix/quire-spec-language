@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-415 step 10 (FR-093-AC-14, QSL-228) over the model forms: a
-//! `lookup` chain, an attribute read and a dispatched call over one, and
-//! `allInstances` under a nested sum, each checked on a 2 MiB thread at the
-//! deepest nesting the default limits admit and refused on the depth limit
-//! one level deeper and 1,000 levels deep.
+//! TC-415 step 10 (FR-093-AC-14, QSL-228, QSL-231) over the model forms: a
+//! `lookup` chain, an attribute read and a dispatched call over one,
+//! `allInstances` under a nested sum, nested dispatch arguments, and a
+//! nested precondition a redefinition inherits through the dispatch bridge,
+//! each checked on a 2 MiB thread at the deepest nesting the default limits
+//! admit and refused on the depth limit one level deeper and 1,000 levels
+//! deep.
 
 use qsl_foundation::absence::AbsenceMode;
 
@@ -25,13 +27,22 @@ enum ModelForm {
     /// `size(allInstances<M::Order>(p)) + (size(allInstances<M::Order>(p))
     /// + … 0)`.
     AllInstances,
+    /// The clause `r.scaled(r.scaled(… 0)) >= 0`: each level a dispatch
+    /// argument, typed against `Order.scaled`'s parameter `n: Integer`.
+    DispatchArguments,
+    /// `Order.scaled`'s precondition `n + (n + (… n)) >= 0`, which the
+    /// dispatch bridge renames to `m` for `Sub.scaled`'s effective
+    /// precondition `false or (m + (… m) >= 0)`.
+    InheritedPrecondition,
 }
 
-const MODEL_FORMS: [ModelForm; 4] = [
+const MODEL_FORMS: [ModelForm; 6] = [
     ModelForm::Lookup,
     ModelForm::Attribute,
     ModelForm::Dispatch,
     ModelForm::AllInstances,
+    ModelForm::DispatchArguments,
+    ModelForm::InheritedPrecondition,
 ];
 
 impl ModelForm {
@@ -42,6 +53,8 @@ impl ModelForm {
         match self {
             Self::Lookup => 127,
             Self::Attribute | Self::Dispatch | Self::AllInstances => 125,
+            Self::DispatchArguments => DEEPEST_ARGUMENTS,
+            Self::InheritedPrecondition => DEEPEST_INHERITED,
         }
     }
 
@@ -104,6 +117,8 @@ impl ModelForm {
                 }
                 function("f", &parameters, builtin(BuiltinType::Integer), body)
             }
+            Self::DispatchArguments => return dispatch_arguments(&acme, levels),
+            Self::InheritedPrecondition => return inherited_precondition(&acme, levels),
         };
         let mut declarations = dispatch(&acme, "Order/size");
         declarations.models = vec![acme.model];
@@ -121,6 +136,68 @@ impl ModelForm {
             .join()
             .expect("the check completes on a 2 MiB stack")
     }
+}
+
+/// The deepest dispatch-argument nesting the default limits admit: the
+/// comparison, 126 dispatches and the innermost `0` are 128 levels.
+const DEEPEST_ARGUMENTS: usize = 126;
+
+/// The deepest inherited-precondition nesting the default limits admit:
+/// `Sub.scaled`'s effective `false or (…)`, the comparison, 125 additions
+/// and the innermost `m` are 128 levels.
+const DEEPEST_INHERITED: usize = 125;
+
+/// `acme/orders`' dispatch package for `Order.scaled` with the clause `f`,
+/// over `r: Reference<M::Order>`: `r.scaled(r.scaled(… 0)) >= 0`, nested
+/// `levels` times.
+fn dispatch_arguments(acme: &Acme, levels: usize) -> PackageDeclarations {
+    let mut argument = Expression::Integer(Integer::from(0_i64));
+    for _ in 0..levels {
+        argument = Expression::Dispatch {
+            receiver: Box::new(name("r")),
+            member: "scaled".to_owned(),
+            arguments: vec![argument],
+        };
+    }
+    let mut declarations = dispatch(acme, "Order/scaled");
+    declarations.functions.push(FunctionDeclaration::clause(
+        "f",
+        vec![("r".to_owned(), named("M::Order"))],
+        builtin(BuiltinType::Boolean),
+        None,
+        Expression::Binary {
+            operator: BinaryOperator::GreaterOrEqual,
+            left: Box::new(argument),
+            right: Box::new(Expression::Integer(Integer::from(0_i64))),
+        },
+        DeclaredClauseKind::Precondition,
+    ));
+    declarations
+}
+
+/// `acme/orders`' dispatch package for `Order.scaled`, built by the
+/// dispatch bridge with `Order.scaled`'s precondition `n + (n + (… n)) >=
+/// 0`, nested `levels` times. `Sub.scaled(this, m)` redefines it, so the
+/// bridge renames the precondition into `Sub.scaled`'s effective one.
+fn inherited_precondition(acme: &Acme, levels: usize) -> PackageDeclarations {
+    let mut sum = name("n");
+    for _ in 0..levels {
+        sum = Expression::Binary {
+            operator: BinaryOperator::Add,
+            left: Box::new(name("n")),
+            right: Box::new(sum),
+        };
+    }
+    let mut clauses = clauses(acme);
+    clauses.own_precondition.insert(
+        key("Order/scaled"),
+        Expression::Binary {
+            operator: BinaryOperator::GreaterOrEqual,
+            left: Box::new(sum),
+            right: Box::new(Expression::Integer(Integer::from(0_i64))),
+        },
+    );
+    dispatch_with(acme, "Order/scaled", &clauses)
 }
 
 fn assert_depth_refusals(form: ModelForm, refusals: &[CheckRefusal], limit: u64) {

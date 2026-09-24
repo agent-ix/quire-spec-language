@@ -81,8 +81,11 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
     `contains(bs, …)`, `convert<Int[0, 9]>(…)`, a sequence literal
     `gs(sequence[…])`, a tuple literal `tv(T(…))`, and over the FR-094
     `acme/orders` model a `lookup<M::Order>(p, …) absent undefined` chain,
-    `deref(…).total` and the clause `….size() >= 0` over that chain, and
-    `size(allInstances<M::Order>(p)) + (…)`. Check each form nested 1,000
+    `deref(…).total` and the clause `….size() >= 0` over that chain,
+    `size(allInstances<M::Order>(p)) + (…)`, the clause
+    `r.scaled(r.scaled(…)) >= 0` nesting dispatch arguments, and
+    `Order.scaled`'s precondition `n + (…) >= 0`, which the dispatch bridge
+    renames into `Sub.scaled`'s effective precondition. Check each form nested 1,000
     deep at the default limits, at the maximum depth with node, input-byte
     and work limits unlimited, and at a depth limit of 16. Check a
     postcondition `pre(…)` over 1,000 nested `a and (…)`, and one over
