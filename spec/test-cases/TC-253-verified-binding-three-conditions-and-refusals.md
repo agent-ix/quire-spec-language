@@ -58,6 +58,14 @@ FR-087-AC-3.
    require the refusal count itself to be exactly one — FR-087-AC-3 states
    no such count — only that the input is refused, not admitted or
    silently accepted in part.
+9. Graph order (QSpec FR-322-AC-14): read two v2 wires that hold the same
+   two declaring nodes, one in ascending and one in descending node-id
+   order, each pinned at its own recomputed `package_id`. Under
+   `make conformance`, read every QSpec positive fixture
+   (`$QSPEC_DIR/proposals/checked-package-v2/fixtures/positive-*.json`)
+   through the whole I2 read. Then check an identity preimage that repeats a
+   node id at adjacent positions, and one that repeats it two positions
+   apart (`[R, S, R]`).
 
 ## Expected Results
 
@@ -71,3 +79,8 @@ FR-087-AC-3.
 - Step 8: a doubly-failing input still refuses cleanly, with no partial
   output and no crash; the number of refusals recorded is not itself
   scored by this step.
+- Step 9: both graph orders are admitted as a `VerifiedPackage`, under two
+  different `package_id`s, with the same exports; every positive fixture is
+  admitted, at least one of them with a non-ascending `identity_projection`;
+  each repeated node id refuses as `DuplicateNode`, naming the repeated id
+  and the index of its second occurrence.

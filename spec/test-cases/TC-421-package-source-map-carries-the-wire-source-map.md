@@ -48,8 +48,9 @@ Tag the tests `#[trace("TC-421", "FR-095-AC-n")]` with the AC each backs.
 - Step 3: `ReversedRegion` and a node-id defect, each `invalid_source_map`;
   each role's spelling equals IR's (`declaration`, `type`, `expression`,
   `anchor`, `claim`, `generated`).
-- Step 4: every entry looks up to exactly its regions, and each node's
-  occurrence count equals its entry count.
+- Step 4: each fixture is admitted (Verified); every entry looks up to
+  exactly its regions, and each node's occurrence count equals its entry
+  count.
 - Step 5: the regions, `UnknownNode` and `UnknownOccurrence`.
 - Step 6: refused as `invalid_source_map`.
 

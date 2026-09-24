@@ -1471,6 +1471,10 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
             (_, other) => panic!("{}: expected Verified, got {other:?}", path.display()),
         }
     }
+    assert!(
+        unsorted > 0,
+        "no positive fixture carries a non-ascending identity_projection"
+    );
     println!(
         "conformance: {} positive fixtures through QSL's full I2 read ({unsorted} in non-ascending projection order)",
         paths.len()
