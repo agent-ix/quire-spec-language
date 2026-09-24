@@ -21,9 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use super::semantic_node::{
-    is_qualified_name, preimage_digest, refuse, retains, CanonicalNodeId, CanonicalOwner,
-    InvalidSemanticGraph, NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-    SemanticGraphCause,
+    is_qualified_name, preimage_bytes, preimage_digest, refuse, retains, CanonicalNodeId,
+    CanonicalOwner, InvalidSemanticGraph, NodeIdDocument, NodeIdentityPreimage, NodeOwner,
+    OwnerSelection, SemanticGraphCause,
 };
 use super::stop::{outcome_from_stop, Stop};
 use qsl_foundation::digest::WireNodeId;
@@ -125,15 +125,27 @@ impl EnumDeclarationPreimage {
     }
 }
 
-impl NodeIdentityPreimage for EnumDeclarationPreimage {
-    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
-        preimage_digest(&CanonicalDeclaration {
+impl EnumDeclarationPreimage {
+    fn canonical(&self) -> CanonicalDeclaration<'_> {
+        CanonicalDeclaration {
             members: &self.members,
             ordered: self.ordered,
             owner: self.owner.canonical(),
             qualified_declaration: &self.qualified_declaration,
             version: DECLARATION_VERSION,
-        })
+        }
+    }
+
+    /// The RFC 8785 bytes whose SHA-256 is the declaration's node key: the
+    /// checked graph node's preimage (FR-092 rule 1).
+    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, InvalidSemanticGraph> {
+        preimage_bytes(&self.canonical())
+    }
+}
+
+impl NodeIdentityPreimage for EnumDeclarationPreimage {
+    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+        preimage_digest(&self.canonical())
     }
 }
 
@@ -323,6 +335,21 @@ pub fn mint_variant_id(declaration: NodeKey, case: &str) -> VariantId {
          representable as canonical JSON",
     );
     VariantId::from_digest(digest)
+}
+
+/// The RFC 8785 bytes of the `quire.enum-member-node/v1` preimage of member
+/// `case` of the enum declaration keyed by `declaration`: the checked graph
+/// node's preimage (FR-092 rule 1), whose SHA-256 is [`mint_variant_id`]'s
+/// digest.
+pub(crate) fn member_preimage_bytes(
+    declaration: NodeKey,
+    case: &str,
+) -> Result<Vec<u8>, InvalidSemanticGraph> {
+    preimage_bytes(&CanonicalMember {
+        case,
+        declaration_node_id: declaration.into(),
+        version: MEMBER_VERSION,
+    })
 }
 
 /// ADR-013 T-6 (last sentence): the checked `VariantId` -> [`EnumValue`]

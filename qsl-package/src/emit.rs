@@ -45,11 +45,20 @@
 //! A node whose (`node_tag`, `semantic_form`) IR's v2 vocabulary does not
 //! hold is omitted: at the pinned IR revision that is `value`/`parameter`
 //! (IR-280) and `scalar_type`/`compound_unit`. So is a node that names a node
-//! the checked graph does not hold (an enum declaration or unit node, which
-//! lowering names by key but does not build), an application node inside a
-//! recursion group (the pinned IR keys it by the bare group label, not
-//! FR-322's `{ordinal, size}`), and every node that names an omitted one. Every other node is written (FR-062-AC-9: a refusal is per
-//! item). [`Emission::omitted`] lists each omitted node and its cause.
+//! the checked graph does not hold (a declared unit node, which lowering
+//! names by key but does not build), a nominal node whose owner the lock
+//! does not select, an application node inside a recursion group (the
+//! pinned IR keys it by the bare group label, not FR-322's
+//! `{ordinal, size}`), and every node that names an omitted one. Every other
+//! node is written (FR-062-AC-9: a refusal is per item).
+//! [`Emission::omitted`] lists each omitted node and its cause.
+//!
+//! # Nominal nodes
+//!
+//! An enum declaration or enum member node carries the QSpec nominal
+//! preimage its key hashes (`nominal_identity_preimage`, FR-092 rule 1).
+//! An enum member node depends on its declaration, as QSpec's
+//! `quire.enum-member-node/v1` rule requires.
 //!
 //! The wire envelope is a local struct: IR keeps its own
 //! `CheckedPackageWireV2` private (IR-238). IR's reader admits exactly its
@@ -62,17 +71,19 @@ use quire_contract_ir::{
     CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole, CheckedPackageIdentityPreimageV2,
     CheckedPackageLockV2, CheckedRevision, CheckedSelection, CheckedSemanticGraphV2,
     CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRegion,
-    CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    NominalIdentityPreimage, NominalOwner, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde::Serialize;
 
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
-use qsl_semantics::check::{CheckedGraph, Location, NodeTag, SemanticNode, SemanticTerm};
+use qsl_semantics::check::{
+    CheckedGraph, Location, NodeTag, NominalNode, SemanticNode, SemanticTerm,
+};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::value::IDENTITY_LIMITS;
 use qsl_semantics::value::{
-    CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference, Member,
+    CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference, Member, NodeOwner,
 };
 use quire_exact::{NodeKey, Origin, NODE_KEY_DOMAIN};
 
@@ -181,10 +192,11 @@ pub(crate) enum OmissionCause {
         semantic_form: &'static str,
     },
     /// The node carries a `declaration` and no `declaration` occurrence, or
-    /// the reverse; FR-322 requires both or neither. `check` records no
-    /// declaration occurrence for a declared type (it has no location for
-    /// one), so a declared record or tuple is omitted.
+    /// the reverse; FR-322 requires both or neither.
     DeclarationOccurrenceMismatch,
+    /// A nominal node whose owner is not the checked unit's source, so the
+    /// lock the emitter writes selects no owner it joins.
+    UnlockedOwner,
     /// An application node inside a recursion group. The pinned IR reader
     /// re-derives its key from the bare `recursion_group` label rather than
     /// FR-322's `{ordinal, size}` and `group_reference` terms, so it would
@@ -320,6 +332,11 @@ impl<'g> Candidate<'g> {
         if node.node_tag() == NodeTag::BoundedDomain {
             dependencies.insert(semantic_type.clone());
         }
+        // QSpec's `quire.enum-member-node/v1` rule: an enum member node
+        // depends on its declaration.
+        if let Some(NominalNode::EnumMember { declaration, .. }) = node.nominal() {
+            dependencies.insert(node_id(*declaration));
+        }
         let mut names = dependencies.clone();
         names.extend(annotations);
         names.insert(semantic_type.clone());
@@ -383,7 +400,7 @@ impl<'g> Candidate<'g> {
                 .map(|(occurrence, _)| occurrence.clone())
                 .collect(),
             recursion_group: node.recursion().map(|group| group.label().into()),
-            nominal_identity_preimage: None,
+            nominal_identity_preimage: node.nominal().map(nominal_preimage),
             declaration: node.declaration().map(|segments| CheckedDeclaration {
                 qualified_name: segments
                     .iter()
@@ -395,10 +412,75 @@ impl<'g> Candidate<'g> {
     }
 }
 
+/// The node's QSpec nominal preimage as the v2 wire writes it.
+fn nominal_preimage(nominal: &NominalNode) -> NominalIdentityPreimage {
+    match nominal {
+        NominalNode::EnumDeclaration(preimage) => {
+            NominalIdentityPreimage::EnumDeclaration(quire_contract_ir::EnumDeclarationPreimage {
+                owner: nominal_owner(preimage.owner()),
+                qualified_declaration: preimage
+                    .qualified_declaration()
+                    .iter()
+                    .map(|segment| segment.as_str().into())
+                    .collect(),
+                ordered: preimage.is_ordered(),
+                members: preimage
+                    .members()
+                    .iter()
+                    .map(|case| case.as_str().into())
+                    .collect(),
+            })
+        }
+        NominalNode::EnumMember { declaration, case } => {
+            NominalIdentityPreimage::EnumMember(quire_contract_ir::EnumMemberPreimage {
+                declaration_node_id: node_id(*declaration),
+                case: case.as_str().into(),
+            })
+        }
+    }
+}
+
+fn nominal_owner(owner: &NodeOwner) -> NominalOwner {
+    match owner {
+        NodeOwner::Source(subject) => NominalOwner::Source {
+            authority: subject.authority.as_str().into(),
+            identity: subject.identity.as_str().into(),
+        },
+        NodeOwner::Definition(subject) => NominalOwner::Definition {
+            authority: subject.authority.as_str().into(),
+            identity: subject.identity.as_str().into(),
+        },
+        NodeOwner::Model(subject) => NominalOwner::Model {
+            identity: subject.identity.as_str().into(),
+            node: subject.node.as_str().into(),
+        },
+    }
+}
+
+/// Whether the lock the emitter writes selects `nominal`'s owner: a nominal
+/// node without an owner joins trivially; one with an owner joins only when
+/// that owner is the checked unit's `source`, the one lock entry it can
+/// always join (FR-322).
+fn owner_is_locked(nominal: Option<&NominalNode>, source: &RawSourceRef) -> bool {
+    match nominal {
+        None | Some(NominalNode::EnumMember { .. }) => true,
+        Some(NominalNode::EnumDeclaration(preimage)) => matches!(
+            preimage.owner(),
+            NodeOwner::Source(subject)
+                if subject.authority == source.authority()
+                    && subject.identity == source.identity()
+        ),
+    }
+}
+
 /// Which candidates the wire omits, and why: an unsupported form, a
-/// declaration without its occurrence, a name outside the graph, and then,
-/// transitively, a name of an omitted node.
-fn omissions(candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>) -> Vec<OmittedNode> {
+/// declaration without its occurrence, a nominal owner the lock does not
+/// select, a name outside the graph, and then, transitively, a name of an
+/// omitted node.
+fn omissions(
+    candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>,
+    source: &RawSourceRef,
+) -> Vec<OmittedNode> {
     let mut omitted: BTreeMap<CheckedNodeId, OmissionCause> = BTreeMap::new();
     for (id, candidate) in candidates {
         let cause = if !candidate.form_is_supported() {
@@ -408,6 +490,8 @@ fn omissions(candidates: &BTreeMap<CheckedNodeId, Candidate<'_>>) -> Vec<Omitted
             })
         } else if !candidate.declaration_matches_occurrences() {
             Some(OmissionCause::DeclarationOccurrenceMismatch)
+        } else if !owner_is_locked(candidate.node.nominal(), source) {
+            Some(OmissionCause::UnlockedOwner)
         } else if candidate.is_recursive_application() {
             Some(OmissionCause::RecursiveApplication)
         } else {
@@ -640,7 +724,7 @@ pub(crate) fn emit_package(
             (candidate.id.clone(), candidate)
         })
         .collect();
-    let omitted = omissions(&candidates);
+    let omitted = omissions(&candidates, graph.source());
     let dropped: BTreeSet<&CheckedNodeId> = omitted.iter().map(|omission| &omission.node).collect();
     let kept: Vec<&Candidate<'_>> = candidates
         .values()

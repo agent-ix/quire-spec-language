@@ -80,6 +80,8 @@ start, region end):
   an `anchor` occurrence of its parameter node, which carries no
   `declaration` (FR-092), and each read of it is an `expression` occurrence;
 - a type form's region is a `type` occurrence of its type node;
+- a declared record, tuple or enum has one `declaration` occurrence, at its
+  declared name, so its node carries its `declaration` (FR-322);
 - a node that no region denotes, such as the `Integer` and text scalar nodes
   that type the literals inside a type or parameter node's body, has one
   `generated` occurrence, so every node has at least one (FR-322).
