@@ -25,7 +25,6 @@ use qsl_bench::model::{self, ModelShape};
 use qsl_bench::parse::{self, ParseOutcome};
 use qsl_bench::rss::peak_rss_kib;
 use qsl_semantics::model::domain_package::DomainPackageRecord;
-use qsl_semantics::model::normalize::object_universe_of;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::population::AdmissionOutcome;
 
@@ -192,9 +191,8 @@ fn probe_model(shape: ModelShape, members: usize) -> ExitCode {
         view.declarations().len(),
         view.type_identities().len()
     );
-    let universe = object_universe_of(&domain_package, &model::key(&model::chain_type(0)))
-        .map(|universe| universe.identity());
-    println!("model.universe ok={}", universe.is_ok());
+    let universe = view.object_universe_of(&model::key(&model::chain_type(0)));
+    println!("model.universe ok={}", universe.is_some());
     let population = model::population_document(shape, members);
     match model::admit_population(&domain_package, &view, &population) {
         AdmissionOutcome::Admitted(binding) => {

@@ -37,9 +37,7 @@ use qsl_semantics::model::domain_package::{
     ObjectTypeRecord, OperationEffect, PopulationRecord, ValueTypeRef,
 };
 use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
-use qsl_semantics::model::normalize::{
-    normalize, object_universe, EffectiveView, NormalizeOutcome,
-};
+use qsl_semantics::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::population::{
     admit_binding, admit_invocation, AdmissionMeter, AdmissionOutcome, InvocationContext,
@@ -253,7 +251,7 @@ struct Scenario {
 fn scenario() -> Scenario {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
@@ -285,7 +283,7 @@ fn p1_minus_a2(model_identity: &str) -> PopulationDocument {
 fn l07_scenario() -> Scenario {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let effect = OperationEffect {
@@ -2260,7 +2258,7 @@ fn pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor() {
 fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
     let domain_package = fixture_f1_with_second_population();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
 
@@ -2521,7 +2519,7 @@ fn tc_294_unresolved_population_id_refuses_even_when_unconsumed() {
 fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
 
@@ -2596,7 +2594,7 @@ fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
 fn tc_295_population_maximum_mismatch_refuses_even_when_unconsumed() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
 
@@ -2732,7 +2730,7 @@ fn tc_391_call_refuses_an_unresolved_population_id_at_admission() {
 fn tc_391_call_refuses_a_population_maximum_mismatch_at_admission() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
@@ -2813,7 +2811,7 @@ fn model_query_refusal_reaches_the_caller_with_its_own_code() {
         other => panic!("expected an admitted binding, got {other:?}"),
     };
     let scenario = Scenario {
-        universe: object_universe(&domain_package).unwrap().identity(),
+        universe: view_of(&domain_package).object_universe().identity(),
         a: type_id(&view, "model.A"),
         b: type_id(&view, "model.B"),
         binding,
@@ -2882,7 +2880,7 @@ fn both_family_outcome_arms_reach_a_caller_through_the_s6a_seam() {
     };
     let call = |binding: PopulationBinding| {
         let scenario = Scenario {
-            universe: object_universe(&domain_package).unwrap().identity(),
+            universe: view_of(&domain_package).object_universe().identity(),
             a: type_id(&view, "model.A"),
             b: type_id(&view, "model.B"),
             binding,

@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::accounting::{LimitKind as ModelLimitKind, ModelNormalizationLimits};
 use qsl_semantics::model::dispatch::GeneralizationClosure;
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
@@ -25,8 +25,7 @@ use qsl_semantics::model::domain_package::{
 };
 use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
 use qsl_semantics::model::normalize::{
-    normalize, object_universe, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
-    OfferedSelection,
+    normalize, EffectiveView, ModelRefusal, ModelRefusalCause, NormalizeOutcome, OfferedSelection,
 };
 use qsl_semantics::model::population::{
     admit_binding, admit_invocation, all_instances, lookup, AdmissionChargePoint,
@@ -383,7 +382,7 @@ fn lookup_key(
 fn l01_all_instances_selects_subtype_population_once() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
 
@@ -622,7 +621,7 @@ fn admitted_binding(
 fn l03_lookup_undefined_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
@@ -678,7 +677,7 @@ fn l03_lookup_undefined_mode() {
 fn l03_lookup_empty_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let b = type_id(&view, "model.B");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
@@ -727,7 +726,7 @@ fn l03_lookup_empty_mode() {
 fn l03_lookup_refused_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
@@ -768,7 +767,7 @@ fn l03_lookup_refused_mode() {
 fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
@@ -810,7 +809,7 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
 fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
@@ -849,7 +848,7 @@ fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
 fn l03_lookup_type_mismatch_before_any_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
@@ -892,7 +891,7 @@ fn l04_lookup_foreign_universe_refuses() {
     let binding = admitted_binding(&domain_package, &view, &p1("test/orders"));
 
     let other = fixture_other_universe();
-    let foreign_universe = object_universe(&other).unwrap().identity();
+    let foreign_universe = view_of(&other).object_universe().identity();
     assert_ne!(&foreign_universe, binding.universe());
 
     let rx = lookup_key(
@@ -2085,7 +2084,7 @@ fn invocation_context<'a>(
 fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
-    let universe = object_universe(&domain_package).unwrap().identity();
+    let universe = view_of(&domain_package).object_universe().identity();
     let a = type_id(&view, "model.A");
     let effect = deletes_a_effect();
     let mut pre_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
@@ -3229,5 +3228,69 @@ fn binding_admission_walks_member_types_under_the_callers_ancestor_steps() {
             );
         }
         other => panic!("expected Refused(AncestorSteps, limit 0), got {other:?}"),
+    }
+}
+
+/// Normalizes `domain_package` under `limits` and, only when normalization
+/// completes, admits [`p1`] into [`P1_POPULATION`] against the resulting
+/// view: the whole admission pipeline, whose one normalization is metered
+/// by the caller's own `limits` (QSL-204).
+fn admit_p1_under(
+    domain_package: &DomainPackage,
+    limits: ModelNormalizationLimits,
+) -> Result<AdmissionOutcome, Box<NormalizeOutcome>> {
+    let view = match normalize(domain_package, limits) {
+        NormalizeOutcome::Completed(view) => view,
+        other => return Err(Box::new(other)),
+    };
+    Ok(admit_binding(
+        domain_package,
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        Some(3),
+        &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+    ))
+}
+
+/// QSL-204: admission is bounded by the caller's own normalization limits.
+/// F1 has four declaration records; `declaration_records = 4` admits, and
+/// `declaration_records = 3` stops the pipeline before admission with an
+/// incomplete result naming `declaration_records` and its limit, where the
+/// pre-QSL-204 admission path re-normalized under unlimited limits of its
+/// own.
+///
+/// Mutation used: raising the tight limit to 4 turns the refusal
+/// assertion red, since the package then fits.
+#[test]
+#[trace("TC-198", "FR-153-AC-1")]
+fn qsl204_an_over_limit_domain_package_refuses_admission_naming_the_limit() {
+    let domain_package = fixture_f1();
+    assert_eq!(domain_package.records.len(), 4);
+
+    let fits = ModelNormalizationLimits {
+        declaration_records: 4,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    assert!(
+        matches!(
+            admit_p1_under(&domain_package, fits),
+            Ok(AdmissionOutcome::Admitted(_))
+        ),
+        "a package within its limits admits"
+    );
+
+    let over = ModelNormalizationLimits {
+        declaration_records: 3,
+        ..ModelNormalizationLimits::UNLIMITED
+    };
+    match admit_p1_under(&domain_package, over).map_err(|outcome| *outcome) {
+        Err(NormalizeOutcome::Incomplete(incomplete)) => {
+            assert_eq!(incomplete.limit_kind, ModelLimitKind::DeclarationRecords);
+            assert_eq!(incomplete.limit, 3);
+            assert_eq!(incomplete.next_charge, 4);
+        }
+        other => panic!("expected an incomplete result naming declaration_records, got {other:?}"),
     }
 }

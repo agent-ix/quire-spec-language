@@ -142,10 +142,7 @@ use crate::model::domain_package::{
     OperationEffect,
 };
 use crate::model::key::{hex, jcs_bytes, DeclarationKey, EffectiveId};
-use crate::model::normalize::{
-    object_universe, object_universe_of, EffectiveView, ModelRefusal, ModelRefusalCause,
-    OfferedSelection,
-};
+use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection};
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 use serde_json::{Map, Value as JsonValue};
@@ -901,23 +898,38 @@ fn admit_binding_as(
     // ADR-013 §8 OQ-E: this binding's universe is its own declared type's
     // connected component, never the whole domain package's -- a population
     // with no declared member type at all (FR-153 never requires one) has
-    // no type of its own to key that lookup on, so it falls back to
-    // `object_universe`'s whole-package convenience instead.
-    let universe_result = match population.member_types.first() {
-        Some(type_key) => object_universe_of(domain_package, type_key),
-        None => object_universe(domain_package),
-    };
-    let universe = match universe_result {
-        Ok(universe) => universe.identity(),
-        // `object_universe`/`object_universe_of` return their full
-        // charge-ordered refusal bundle (L2 finding, PR #228 review); this
-        // FR-153 admission path stays single-refusal
-        // (`AdmissionOutcome::Refused`'s own shape, unchanged here), so only
-        // the first is surfaced, exactly as before this fix.
-        // `Refusals::into_first` reads it directly (M2 finding, PR #228
-        // round 2 review): `Refusals` is non-empty by construction, so there
-        // is no empty case left to `.expect()` past.
-        Err(refusals) => return AdmissionOutcome::Refused(refusals.into_first()),
+    // no type of its own to key that lookup on, so it falls back to the
+    // view's whole-package first universe instead.
+    //
+    // QSL-204: the universe is read from `view`, the caller's own completed
+    // normalization under `ModelNormalizationLimitsV1`, never recomputed
+    // here. Admission therefore does no normalization work of its own, and
+    // a package over those limits never yields a view to admit against.
+    let universe = match population.member_types.first() {
+        Some(type_key) => match view.object_universe_of(type_key) {
+            Some(universe) => universe.identity(),
+            // A completed view of `domain_package` declares every member
+            // type its population names (intake refuses
+            // `UnknownPopulationMemberType` otherwise), so this arm is
+            // reached only when `view` shares `domain_package`'s
+            // `model_selection` header but was normalized from different
+            // content. It refuses exactly as normalizing `domain_package`
+            // itself would.
+            None => {
+                return AdmissionOutcome::Refused(ModelRefusal {
+                    code: Code::MissingDeclaration,
+                    cause: ModelRefusalCause::UnknownPopulationMemberType {
+                        population: population.key.clone(),
+                        type_name: type_key.clone(),
+                    },
+                    detail: format!(
+                        "population {} names member type {}, which is not a declared object type",
+                        population.key.node, type_key.node
+                    ),
+                })
+            }
+        },
+        None => view.object_universe().identity(),
     };
 
     // Indexed once, not re-scanned per member: `view.declarations()` and
@@ -1989,5 +2001,142 @@ pub fn lookup(
             }
             LookupOutcome::Completed(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::*;
+    use crate::model::accounting::ModelNormalizationLimits;
+    use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
+    use crate::model::normalize::{build_calls, normalize, NormalizeOutcome};
+
+    fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {
+        DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: DeclarationKey::fixture(identity),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: supertypes
+                .iter()
+                .map(|key| DeclarationKey::fixture(*key))
+                .collect(),
+        })
+    }
+
+    /// `model.A`, `model.B -> model.A` and a closed population over both.
+    fn domain_package() -> DomainPackage {
+        DomainPackage::new(
+            DomainPackageRef::fixture("bundle.qsl204"),
+            vec![
+                object_type("model.A", &[]),
+                object_type("model.B", &["model.A"]),
+                DomainPackageRecord::Population(PopulationRecord {
+                    key: DeclarationKey::fixture("model.pop"),
+                    member_types: vec![
+                        DeclarationKey::fixture("model.A"),
+                        DeclarationKey::fixture("model.B"),
+                    ],
+                    extent: Extent::Closed,
+                }),
+            ],
+        )
+    }
+
+    fn document() -> PopulationDocument {
+        PopulationDocument {
+            model_identity: "test/orders".to_owned(),
+            members: vec![
+                PopulationMember {
+                    object: "a1".to_owned(),
+                    type_identity: DeclarationKey::fixture("model.A"),
+                    field_values: Vec::new(),
+                },
+                PopulationMember {
+                    object: "b1".to_owned(),
+                    type_identity: DeclarationKey::fixture("model.B"),
+                    field_values: Vec::new(),
+                },
+            ],
+        }
+    }
+
+    /// QSL-204: admission reads its object universe from the caller's
+    /// already-metered effective view and never normalizes the domain
+    /// package itself -- neither a direct [`admit_binding`] nor an
+    /// [`admit_invocation`], which admits a pre and a post document. The
+    /// counter is `normalize::build`'s own per-thread call count, so any
+    /// reintroduced normalization on the admission path turns this red.
+    ///
+    /// Mutation used: restoring the pre-QSL-204 `build`-backed universe
+    /// lookup in `admit_binding_as` made `admit_binding` count one build
+    /// and `admit_invocation` two.
+    #[test]
+    #[trace("TC-198", "FR-153-AC-1")]
+    fn admission_never_normalizes_the_domain_package() {
+        let domain_package = domain_package();
+        let before_normalize = build_calls();
+        let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("expected a completed view, got {other:?}"),
+        };
+        assert_eq!(
+            build_calls() - before_normalize,
+            1,
+            "normalize builds exactly once"
+        );
+        let population = DeclarationKey::fixture("model.pop");
+        let context = InvocationContext {
+            domain_package: &domain_package,
+            view: &view,
+            population: &population,
+            subtype_closure: GeneralizationClosure::Closed,
+            declared_maximum: None,
+        };
+
+        let before_binding = build_calls();
+        let binding = admit_binding(
+            &domain_package,
+            &view,
+            &document(),
+            &population,
+            GeneralizationClosure::Closed,
+            None,
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        );
+        let AdmissionOutcome::Admitted(binding) = binding else {
+            panic!("expected an admitted binding, got {binding:?}");
+        };
+        assert_eq!(build_calls(), before_binding, "admit_binding never builds");
+        assert_eq!(
+            *binding.universe(),
+            view.object_universe().identity(),
+            "the binding's universe is the view's own"
+        );
+
+        let before_invocation = build_calls();
+        let effect = OperationEffect::default();
+        let invocation = admit_invocation(
+            context,
+            &document(),
+            &document(),
+            &InvocationDelta {
+                effect: &effect,
+                declared_created: &[],
+                declared_deleted: &[],
+            },
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        );
+        assert!(
+            matches!(invocation, AdmissionOutcome::Admitted(_)),
+            "expected an admitted invocation, got {invocation:?}"
+        );
+        assert_eq!(
+            build_calls(),
+            before_invocation,
+            "admit_invocation never builds, for either instant"
+        );
     }
 }
