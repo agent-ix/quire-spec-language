@@ -15,14 +15,14 @@
 //!   has not normalized builds the index itself, once, and passes it to
 //!   every check.
 //!
-//! Declarations are interned as [`DeclIdx`] in ascending [`DeclarationKey`]
+//! Declarations are interned as `DeclIdx` in ascending [`DeclarationKey`]
 //! order, so iterating indices ascending is iterating keys ascending: every
 //! "ascending by declaration key" rule reads the index order directly.
 //!
 //! Conformance is answered from each type's ancestry, computed once per
 //! type the first time a check asks about it and kept for every later check.
 //! The ancestry records the exact state of the bounded walk the conformance
-//! rule specifies (see [`ModelIndex::conforms`]), so an answer, including a
+//! rule specifies (see `ModelIndex::conforms`), so an answer, including a
 //! refusal at the caller's `ancestor_steps` ceiling, is the same one that
 //! walk would give.
 //!
