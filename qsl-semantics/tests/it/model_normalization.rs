@@ -4745,3 +4745,105 @@ fn r01_pins_the_full_cycle_check_charge_and_work_unit_accounting() {
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 12);
     assert_eq!(meter.consumed(LimitKind::HashedBytes), 0);
 }
+
+/// QSL-222 AC 2: every normalization fixture in this file has the same
+/// outcome at NFR-012's default limits as with no limit at all -- the same
+/// view identity and declarations, or the same refusals -- and a completed
+/// view records the defaults it ran under.
+#[trace("TC-434", "NFR-012")]
+#[test]
+fn every_fixture_normalizes_identically_at_the_default_limits() {
+    let fixtures = [
+        ("f1", fixture_f1()),
+        ("f2", fixture_f2()),
+        ("n06_conflict", fixture_n06_conflict()),
+        ("n06_resolved", fixture_n06_resolved()),
+        (
+            "n06_conflict_with_unreachable_redefiner",
+            fixture_n06_conflict_with_unreachable_redefiner(),
+        ),
+        (
+            "n06_conflict_with_a_second_diamond_sorting_first",
+            fixture_n06_conflict_with_a_second_diamond_sorting_first(),
+        ),
+        (
+            "unreachable_target",
+            fixture_unreachable_target_reached_by_owner_and_an_earlier_sorted_descendant(),
+        ),
+        (
+            "conflict_check_owner_sorts_first",
+            fixture_conflict_check_owner_sorts_before_redefinition_check_owner(),
+        ),
+        (
+            "r07_same_owner",
+            fixture_r07_same_owner_contending_redefiners(),
+        ),
+        (
+            "r07_dominated_owner",
+            fixture_r07_dominated_owner_takes_no_part_in_the_same_owner_test(),
+        ),
+        (
+            "derivation_conflict_across_packages",
+            fixture_derivation_conflict_across_packages_sharing_an_owner_node(),
+        ),
+        (
+            "deep_parallel_chain",
+            fixture_deep_parallel_generalization_chain(),
+        ),
+        ("single_redefiner", fixture_single_redefiner_no_conflict()),
+        (
+            "wide_single_redefiner",
+            fixture_wide_ancestry_single_redefiner(256),
+        ),
+        (
+            "wide_contested_redefiners",
+            fixture_wide_ancestry_contested_redefiners(256),
+        ),
+        ("operation_redefinition", fixture_operation_redefinition()),
+        (
+            "operation_redefinition_conflict",
+            fixture_operation_redefinition_conflict(),
+        ),
+        (
+            "operation_diamond",
+            fixture_operation_diamond_conflict(false),
+        ),
+        (
+            "operation_diamond_reversed",
+            fixture_operation_diamond_conflict(true),
+        ),
+        (
+            "unrelated_cycle",
+            fixture_n06_conflict_with_unrelated_cycle(),
+        ),
+        (
+            "two_diamonds",
+            fixture_two_diamonds_where_effective_identity_disagrees_with_producer_key(),
+        ),
+        (
+            "two_owners",
+            fixture_two_owners_where_effective_identity_disagrees_with_producer_key(),
+        ),
+    ];
+    for (name, domain_package) in &fixtures {
+        let defaults = normalize(domain_package, ModelNormalizationLimits::default());
+        let unlimited = normalize(domain_package, ModelNormalizationLimits::UNLIMITED);
+        match (defaults, unlimited) {
+            (NormalizeOutcome::Completed(at_defaults), NormalizeOutcome::Completed(free)) => {
+                assert_eq!(at_defaults.identity(), free.identity(), "{name}");
+                assert_eq!(at_defaults.declarations(), free.declarations(), "{name}");
+                assert_eq!(
+                    at_defaults.effective_limits(),
+                    &ModelNormalizationLimits::default(),
+                    "{name}"
+                );
+            }
+            (NormalizeOutcome::Refused(at_defaults), NormalizeOutcome::Refused(free)) => {
+                assert_eq!(at_defaults, free, "{name}");
+            }
+            (at_defaults, free) => {
+                panic!("{name}: {at_defaults:?} at the defaults, {free:?} unlimited")
+            }
+        }
+    }
+}

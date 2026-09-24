@@ -8,7 +8,7 @@
 //!   (the one parse intake makes since QSL-201), `intake::admit` (which
 //!   includes that parse) and `intake::read_records` (FCD's validator and
 //!   the per-node reader, over the parsed document).
-//! - `model/normalize/<n>`: FR-150 normalization under unlimited limits.
+//! - `model/normalize/<n>`: FR-150 normalization under the default limits (NFR-012).
 //! - `model/admit_binding/<n>` and `model/admit_invocation/<n>`: FR-153
 //!   admission of a fixed 100-member population, directly and as one
 //!   unchanged invocation (pre and post). Admission reads its object

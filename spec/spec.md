@@ -72,6 +72,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-011
     type: contains
+  - target: ix://agent-ix/quire-spec-language/NFR-012
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-043
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-044
@@ -477,3 +479,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-095](functional/FR-095-occurrence-keyed-source-map-and-locus.md) | FR | Specified and implemented under QSL-159 (ADR-013 §7 S-4: O-07, O-12, T-5, C-14) -- TC-420 to TC-422 pass locally; `LocatedSpan` replacement and C-21 are slice S-4b (QSL-233, FR-001), check-stage regions slice S-5b (QSL-160, FR-096) |
 | [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md) | FR | Specified under QSL-160 (ADR-013 §7 S-5b: T-4, O-17, O-22 with T-5 loci); not implemented -- TC-426 to TC-429 planned; gated on S-4b, FR-091-AC-10 (QSL-141) and QC-28; AC-9 and AC-10 need three IR reader changes; open question FR-096-OQ-1 (IR's edge, occurrence and diagnostic limits, QC-28) |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented under QSL-214 and QSL-215: finite default checking ceilings, recorded with each checked result -- TC-423 |
+| [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented under QSL-216, QSL-218 and QSL-222: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |

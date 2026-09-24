@@ -46,26 +46,25 @@
 //! [`ModelNormalizationLimits`] — the same inputs always retrace the same
 //! derivation and the same bytes.
 //!
-//! `build` enumerates ancestor paths and derivation facts under a fact
-//! budget derived from `limits` itself (PR #140 F1): a diamond
-//! generalization graph produces an ancestor-path count exponential in
-//! depth, so an adversarial domain package enumerated without bound before any
-//! charge is consulted can exhaust memory long before `charge_all` gets a
-//! chance to deny anything — `ModelNormalizationLimits` protects nothing if
-//! it is only consulted after the fact. `remaining_fact_budget` and
-//! `fact_budget_exceeded` both only ever *overestimate* remaining capacity
-//! (never underestimate it), so a domain package that legitimately completes under
-//! `limits` is never truncated: enumeration only stops once continuing is
-//! certainly futile, and it always generates at least one fact past that
-//! point so `charge_all`'s real, exact replay is the one that reports the
-//! [`Incomplete`] — `build` itself never guesses at `limit`/`consumed`/
-//! `next_charge`. In the (adversarial, meter-already-saturated) case where a
-//! type's own budget is already exhausted before its ancestor paths are
-//! walked, that type's cycle/depth checks stop early too: this is
-//! deliberate, not a missed check — the real charge sequence would have
-//! denied at or before this type regardless of what a deeper walk would have
-//! found, so the reported outcome is still the correct `Incomplete`, matching
-//! FR-150's "exhaustion ends checking" rule.
+//! `build` charges the meter inside each phase as it works, in
+//! `value-accounting.md`'s charge order, and stops at the first denied
+//! charge (QSL-216). The limits therefore bound the work normalization
+//! does, not only what it admits: a diamond generalization graph, whose
+//! ancestor-path count is exponential in depth, is walked only as far as
+//! `derivation_facts` and `work_units` admit (PR #140 F1), and no member
+//! identity is hashed past `effective_declarations`. Charging in charge
+//! order needs no replay: ancestor paths are walked in DFS pre-order over
+//! ascending keys, which is their ascending charge order; every
+//! `normalize.fact` charge differs only in the running count it sizes, so
+//! each phase charges its facts as it derives them; phase 4 charges its
+//! facts and conflict checks before resolving any contest; and phase 5
+//! charges each member's and the view's `normalize.hash` from a length
+//! counted from parts, before encoding (an effective type's identity is the
+//! one hash made earlier; see `build`). Facts derived along one ancestor
+//! path share it ([`FactInputs`]), so memory grows with facts plus total
+//! path length. `ancestor_steps` is read, not
+//! charged: a path one step past it refuses `AncestorSteps` where the walk
+//! reaches it, unless an earlier charge was already denied.
 //!
 //! A closing cycle edge (TC-196 R01) refuses `specialization-cycle` naming
 //! every contributing declaration in the cycle, rotated to start at its
@@ -79,7 +78,7 @@
 //! `build` deduplicates the refusals themselves by edge set, keeping only
 //! each distinct cycle's own first (charge-order-earliest) closing
 //! extension, per `model-complete.md`:292-295's "each cycle is refused
-//! exactly once" — collected in `Built::phase3_refusals` and reported only
+//! exactly once" — and reported only
 //! once every phase 2/3 charge has admitted (`:505-511`'s "every refusal
 //! that work exposes is reported, in charge order, when its stage ends").
 //!
@@ -101,16 +100,10 @@
 //! phase-3 `type_paths` (`ancestor_key`, one entry per distinct proper
 //! ancestor) — data `build()` already produced walking every type exactly
 //! once for its own derivation facts, so this needs no second walk and has
-//! no breadth ceiling of its own to exceed. Because those paths can be
-//! truncated under a tight fact budget, `build()` skips phase 4
-//! *resolution* entirely whenever `fact_budget_exceeded(limits,
-//! facts_so_far)` is already true once every type's phase 2/3 has run: a
-//! truncated path set could otherwise derive a false `derivation-conflict`
-//! from an owner ancestry that looks incomplete rather than merely
-//! unresolved, where the correct outcome is the `Incomplete`
-//! `charge_all`'s own replay already reports for the phase 2/3 facts that
-//! triggered the truncation, reached in charge order well before phase 4's
-//! own charges. The pairwise dominance loop itself is still `O(|edges|^2)`
+//! no breadth ceiling of its own to exceed. Phase 4 runs only once every
+//! phase 2/3 charge is admitted, so those paths are complete: a denied
+//! phase 2/3 charge has already stopped `build`. The pairwise dominance
+//! loop itself is still `O(|edges|^2)`
 //! in the worst case, but each contesting redefinition edge's *owner* — not
 //! the edge — is what `owner_ancestor_sets` is keyed on, and TC-196 R07
 //! documents the case where several edges share one owner; looking up each
@@ -119,11 +112,11 @@
 //! QSL #145) rather than re-deriving it per group
 //! leaves only cheap `O(1)` set lookups inside the pair enumeration. A
 //! target group with fewer than two contesting edges has nothing to
-//! dominate and needs no ancestor-set lookup at all — `apply_redefinitions`
+//! dominate and needs no ancestor-set lookup at all — `plan_redefinitions`
 //! skips it and both `normalize.conflict-check` charges entirely whenever a
 //! group's `edges.len() < 2`, matching `value-accounting.md:456`'s own
 //! `c >= 2` condition below. Phase 3's own already-computed ancestor paths
-//! for `type_key` are still reused verbatim for `apply_redefinitions`'s
+//! for `type_key` are still reused verbatim for `plan_redefinitions`'s
 //! owner-path bookkeeping rather than recomputed a second time (PR #140
 //! F10's "don't walk the identical DFS twice" lesson).
 //!
@@ -162,13 +155,17 @@
 //! member reaching a type — `model-complete.md:231`) are themselves
 //! derivation facts, exactly like phase 2's qualify facts and phase 3's
 //! inherit facts, and `value-accounting.md:453` prices every derivation
-//! fact as `normalize.fact` regardless of which phase formed it. `build`
-//! counts them in `phase4_fact_count`; `charge_all` charges that many
-//! `normalize.fact` charges between `normalize.redefinition-check` and
-//! `normalize.conflict-check`, matching `:455`'s "before its first
-//! `normalize.fact`" and `:456`'s "after its last `normalize.fact`".
+//! fact as `normalize.fact` regardless of which phase formed it.
+//! `plan_redefinitions` counts them in `phase4_fact_count` and prices each
+//! contested group's `normalize.conflict-check`, and `build` charges each
+//! type's facts as soon as its plan is made, after every
+//! `normalize.redefinition-check` and before any `normalize.conflict-check`,
+//! matching `:455`'s "before its first `normalize.fact`" and `:456`'s "after
+//! its last `normalize.fact`". Only once every phase-4 charge is admitted
+//! does `resolve_redefinitions` run any dominance contest or build any
+//! redefine fact (QSL-216).
 //!
-//! No phase-4 refusal is ever returned by `build` itself, whichever shape it
+//! No phase-4 refusal is reported as soon as it is found, whichever shape it
 //! takes: an owner ancestry with no unique dominant redefiner
 //! (`derivation-conflict`, or `redefinition-target` for R07's same-owner
 //! shape), or a redefinition target that is not a member inherited by its
@@ -184,11 +181,10 @@
 //! (`record_phase4_refusal`'s own doc, next to `Phase4Accounting`), and
 //! keeps resolving every remaining type and target group regardless, so
 //! every later phase-4 charge amount is still computed correctly; once every
-//! call has returned, `build` sorts the whole collection into charge order
-//! and stores it in `Built::phase4_refusals`. `charge_all` charges through
-//! the last `normalize.conflict-check` and returns every one of these
-//! refusals, together, in that charge order, only once every phase-4 charge
-//! has been admitted (`:505-511`'s "every refusal that work exposes is
+//! call has returned, `build` sorts the whole collection into charge order,
+//! charges through the last `normalize.conflict-check` and returns every
+//! one of these refusals, together, in that charge order, only once every
+//! phase-4 charge has been admitted (`:505-511`'s "every refusal that work exposes is
 //! reported, in charge order, when its stage ends"; QSL #195). An earlier
 //! `Incomplete` still wins, matching `:482`'s "a stage that reports a
 //! refusal ends checking: no later stage runs or charges" — phase 5's own
@@ -216,8 +212,8 @@ use crate::model::domain_package::{
 use crate::model::index::{DeclIdx, ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
     canonical_len, sha256_and_len, DeclarationKey, EffectiveDeclarationPreimage,
-    EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, RuleRefWire, RULE_INHERIT,
-    RULE_QUALIFY, RULE_REDEFINE,
+    EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, FactInputs, KeyPath, RuleRefWire,
+    RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
 };
 use qsl_foundation::diagnostic::Code;
 use quire_exact::length_amount;
@@ -480,6 +476,8 @@ struct ViewBody {
     /// Every `Population` record of the package, keyed by its own
     /// declaration key.
     populations: BTreeMap<DeclarationKey, PopulationEntry>,
+    /// The limits this view was normalized under (QSL-222).
+    limits: ModelNormalizationLimits,
 }
 
 /// Every declared type's effective identity, keyed both ways: by its
@@ -517,12 +515,20 @@ impl TypeCatalog {
 }
 
 impl ViewBody {
-    /// The view's `quire.model.effective-view/v1` preimage form under
-    /// `model_selection`: `{version, model_selection, rules, declarations}`,
-    /// each declaration `{effective_id, preimage}` -- the package's own
-    /// header and every declaration, never the universes, populations or
-    /// `visible` bits.
-    fn wire<'a>(&'a self, model_selection: &'a DomainPackageRef) -> EffectiveViewWire<'a> {
+    /// The RFC 8785 length of [`Self::wire`] under `model_selection`, given
+    /// `declarations_len`, the encoded length of its `declarations` elements
+    /// (each [`view_entry_len`], comma-separated): the view with no
+    /// declarations, plus those elements. Nothing but the header is encoded.
+    fn canonical_len_from_parts(
+        &self,
+        model_selection: &DomainPackageRef,
+        declarations_len: u64,
+    ) -> u64 {
+        canonical_len(&Self::wire_header(model_selection)).saturating_add(declarations_len)
+    }
+
+    /// [`Self::wire`] with no declarations.
+    fn wire_header(model_selection: &DomainPackageRef) -> EffectiveViewWire<'_> {
         EffectiveViewWire {
             version: crate::model::key::EFFECTIVE_VIEW_DOMAIN,
             model_selection: model_selection.wire(),
@@ -530,6 +536,17 @@ impl ViewBody {
                 identity: crate::model::key::RULES_IDENTITY,
                 revision: crate::model::key::RULES_REVISION,
             },
+            declarations: Vec::new(),
+        }
+    }
+
+    /// The view's `quire.model.effective-view/v1` preimage form under
+    /// `model_selection`: `{version, model_selection, rules, declarations}`,
+    /// each declaration `{effective_id, preimage}` -- the package's own
+    /// header and every declaration, never the universes, populations or
+    /// `visible` bits.
+    fn wire<'a>(&'a self, model_selection: &'a DomainPackageRef) -> EffectiveViewWire<'a> {
+        EffectiveViewWire {
             declarations: self
                 .declarations
                 .iter()
@@ -538,6 +555,7 @@ impl ViewBody {
                     preimage: entry.preimage.wire(),
                 })
                 .collect(),
+            ..Self::wire_header(model_selection)
         }
     }
 }
@@ -611,6 +629,12 @@ impl EffectiveView {
     /// The model selection this view was normalized under.
     pub fn model_selection(&self) -> &DomainPackageRef {
         &self.domain_package().model_selection
+    }
+
+    /// The limits this view was normalized under: the caller's, as given,
+    /// or [`ModelNormalizationLimits::default`]'s finite ceilings (QSL-222).
+    pub fn effective_limits(&self) -> &ModelNormalizationLimits {
+        &self.body.limits
     }
 
     /// Every admitted declaration, ascending by [`EffectiveId`].
@@ -824,54 +848,8 @@ fn connected_components(
 /// supertype-record keys taken, and the ancestor's own original
 /// producer key (PR #140 F2: the full key, not a display identity string).
 struct AncestorPath {
-    path: Vec<DeclarationKey>,
+    path: KeyPath,
     ancestor_key: DeclarationKey,
-}
-
-/// A conservative upper bound on how many additional phase-2/3 facts this
-/// build could ever admit before [`charge_all`] denies a `normalize.fact` or
-/// `normalize.cycle-check` charge, derived from `limits` and the facts
-/// already produced (PR #140 F1). Passed into [`ancestor_paths`] so an
-/// adversarial diamond-generalization domain-package's path count is bounded by the
-/// meter's own configuration *during* enumeration, not only checked after
-/// full materialization.
-///
-/// Both terms only ever overestimate true remaining capacity, so a
-/// legitimately completable run is never truncated: `derivation_room` is
-/// exact (every fact costs exactly one `derivation_facts` unit);
-/// `work_room` credits every fact with only the one `work_units` it is
-/// guaranteed to cost, though a `normalize.cycle-check` fact may cost more —
-/// undercounting consumption always overestimates remaining room.
-fn remaining_fact_budget(limits: &ModelNormalizationLimits, facts_so_far: u64) -> usize {
-    let derivation_room = limits.derivation_facts.saturating_sub(facts_so_far);
-    let work_room = limits.work_units.saturating_sub(facts_so_far);
-    let room = derivation_room.min(work_room);
-    usize::try_from(room.saturating_add(1)).unwrap_or(usize::MAX)
-}
-
-/// A conservative upper bound on how many additional closing-cycle
-/// extensions this build could still admit before [`charge_all`] denies a
-/// `normalize.cycle-check` charge (H2 finding, PR #228 review). Unlike
-/// [`remaining_fact_budget`], this is `work_units` room only, never
-/// intersected with `derivation_facts` room: a closing extension charges no
-/// `normalize.fact` (`value-accounting.md:513`), so it never consumes
-/// `derivation_facts` at all, only `work_units` (its own
-/// `normalize.cycle-check` charge). `facts_so_far` is reused here as the
-/// same conservative (undercounting, so always-overestimating) proxy for
-/// `work_units` already consumed that [`remaining_fact_budget`]'s own
-/// `work_room` term uses.
-fn remaining_cycle_budget(limits: &ModelNormalizationLimits, facts_so_far: u64) -> usize {
-    let work_room = limits.work_units.saturating_sub(facts_so_far);
-    usize::try_from(work_room.saturating_add(1)).unwrap_or(usize::MAX)
-}
-
-/// Whether at least `limits.derivation_facts` or `limits.work_units` facts
-/// have already been produced, i.e. continuing to generate more can no
-/// longer change the outcome: [`charge_all`]'s real replay will already
-/// deny at or before this point. See [`remaining_fact_budget`]'s doc for why
-/// this never fires early on a run that would otherwise complete.
-fn fact_budget_exceeded(limits: &ModelNormalizationLimits, facts_so_far: u64) -> bool {
-    facts_so_far > limits.derivation_facts || facts_so_far > limits.work_units
 }
 
 /// One generalization cycle a `root_key`'s own ancestor walk closes: the
@@ -888,25 +866,25 @@ struct ClosingCycle {
     refusal: ModelRefusal,
     /// The extended path that closes this cycle — the same shape as
     /// [`AncestorPath::path`], reused as this closing extension's own
-    /// [`PendingFact::inputs`] (`closes_cycle: true`) so it sorts into
+    /// phase-3 charge-order key, so it sorts into
     /// `normalize.cycle-check`/`normalize.fact` charge order
     /// (`value-accounting.md:490`) exactly like an ordinary ancestor-path
     /// fact from the same type, and its length is `normalize.cycle-check`'s
     /// own `work_units += L` (`:491`).
-    path: Vec<DeclarationKey>,
+    path: KeyPath,
     edge_set: Vec<DeclarationKey>,
 }
 
 /// One [`ClosingCycle`] collected build-wide across `build`'s own per-type
 /// loop, tagged with the type whose walk found it (L3 finding, PR #228
 /// review: previously an anonymous 4-tuple). Sorted by `(type_key, path)` --
-/// the same charge-order key its own [`PendingFact`] sorts by
-/// (`sort_facts`) -- then deduplicated by `edge_set` only after every type
+/// the same charge-order key `ancestor_paths` charges its path in --
+/// then deduplicated by `edge_set` only after every type
 /// has been walked (`model-complete.md`:292-295's "each cycle is refused ...
 /// exactly once"; see the module docs).
 struct CycleCandidate {
     type_key: DeclarationKey,
-    path: Vec<DeclarationKey>,
+    path: KeyPath,
     refusal: ModelRefusal,
     edge_set: Vec<DeclarationKey>,
 }
@@ -928,20 +906,22 @@ struct AncestorWalk {
 }
 
 /// Every ancestor path of `root_key`, in DFS pre-order over ascending-key
-/// direct generalizations, capped at two independent entry counts:
-/// `fact_budget` for `paths` and `cycle_budget` for `closing_cycles` (H2
-/// finding, PR #228 review). Separate caps, not one shared cap counted
-/// against both: a closing extension charges no `normalize.fact`
-/// (`value-accounting.md:513`), so it never consumes `derivation_facts`
-/// room, only `work_units` — capping it against a budget that also
-/// subtracts `derivation_facts` (as `paths`' own cap correctly does)
-/// undercounts its true remaining room whenever `derivation_facts` is the
-/// tighter limit, truncating the walk before `charge_all`'s own replay
-/// would and returning `Refused` where the spec gives `Incomplete`. The
-/// walk keeps exploring siblings (not new depth) once `paths` reaches its
-/// own cap, so closing extensions past that point are still discovered up
-/// to `cycle_budget`. Explicit stack, not native recursion: domain package
-/// data is caller-supplied and may describe a cycle.
+/// direct generalizations, charged as the walk finds it (QSL-216).
+///
+/// DFS pre-order over ascending keys is ascending path order, which is
+/// phase 3's `normalize.cycle-check`/`normalize.fact` charge order for one
+/// type (`value-accounting.md:490`). Each path is therefore charged its
+/// `normalize.cycle-check` (`work_units += L`) and its `normalize.fact`
+/// before the walk extends it, and the first denied charge stops the walk:
+/// a diamond lattice with exponentially many paths is walked only as far as
+/// the limits admit. A closing extension is charged its
+/// `normalize.cycle-check` only (`value-accounting.md:491`; it derives no
+/// fact, `:513`), and the walk keeps going past it -- to this frame's
+/// remaining siblings, every frame still on the stack and, in `build`'s own
+/// per-type loop, every remaining type -- so every closing extension in the
+/// domain package is charged, not only the first. Explicit stack, not native
+/// recursion: domain package data is caller-supplied and may describe a
+/// cycle.
 ///
 /// `max_steps` is the caller's
 /// [`crate::model::accounting::ModelNormalizationLimits::ancestor_steps`],
@@ -951,39 +931,36 @@ struct AncestorWalk {
 fn ancestor_paths(
     root_key: &DeclarationKey,
     index: &RecordIndex,
-    fact_budget: usize,
-    cycle_budget: usize,
     max_steps: u64,
-) -> Result<AncestorWalk, ModelRefusal> {
+    charges: &mut Charges<'_>,
+) -> Result<AncestorWalk, Denial> {
     struct Frame {
         directs: Vec<DeclarationKey>,
         next: usize,
-        path: Vec<DeclarationKey>,
+        path: KeyPath,
         visited: Vec<DeclarationKey>,
     }
 
     let mut stack = vec![Frame {
         directs: index.sorted_generals(root_key),
         next: 0,
-        path: Vec::new(),
+        path: KeyPath::default(),
         visited: vec![root_key.clone()],
     }];
     let mut out = Vec::new();
     let mut closing_cycles: Vec<ClosingCycle> = Vec::new();
     loop {
-        if out.len() >= fact_budget && closing_cycles.len() >= cycle_budget {
-            break;
-        }
         let stack_len = stack.len();
         let Some(frame) = stack.last_mut() else { break };
         if frame.next >= frame.directs.len() {
             stack.pop();
             continue;
         }
+        work_step();
         // Extending this frame's path gives a path of `stack_len`
         // generalization steps (the root frame's own path is empty).
         if u64::try_from(stack_len).unwrap_or(u64::MAX) > max_steps {
-            return Err(ModelRefusal {
+            return Err(Denial::from(ModelRefusal {
                 code: Code::ResourceExhausted,
                 cause: ModelRefusalCause::AncestorSteps {
                     from: root_key.clone(),
@@ -993,7 +970,7 @@ fn ancestor_paths(
                     "ancestor path from {} exceeded the ancestor_steps limit of {max_steps}",
                     root_key.node
                 ),
-            });
+            }));
         }
         // The type whose own `supertypes[]` this frame walks: a refusal
         // cites this owning node's own key.
@@ -1004,8 +981,9 @@ fn ancestor_paths(
             .expect("every Frame is seeded with root_key and only ever grows visited");
         let ancestor_key = frame.directs[frame.next].clone();
         frame.next += 1;
-        let mut new_path = frame.path.clone();
-        new_path.push(ancestor_key.clone());
+        let new_path = frame.path.extended(&ancestor_key);
+
+        charges.cycle_check(new_path.len())?;
         if frame.visited.contains(&ancestor_key) {
             // Every contributing declaration in the cycle itself, not the
             // whole path from the walk's root: `frame.visited` is that whole
@@ -1017,14 +995,6 @@ fn ancestor_paths(
             // [A, B], rotated to start at the least key A"). E.g. A -> C,
             // C -> B, B -> C lists `[model.B, model.C]`, not
             // `[model.A, model.C, model.B]`.
-            // TC-196 R01: a closing extension is charged its own
-            // `normalize.cycle-check` even when its cycle's edge set was
-            // already reported, and enumeration continues past it -- to
-            // this frame's remaining siblings, to every other frame still on
-            // `stack`, and (in `build`'s own per-type loop) to every
-            // remaining type -- so every closing extension anywhere in the
-            // domain package is charged, not only the first one this walk
-            // finds.
             let mut chain = frame.visited.clone();
             if let Some(start) = chain.iter().position(|key| key == &ancestor_key) {
                 chain.drain(..start);
@@ -1051,26 +1021,14 @@ fn ancestor_paths(
                     listing.join(", ")
                 ),
             };
-            if closing_cycles.len() < cycle_budget {
-                closing_cycles.push(ClosingCycle {
-                    refusal,
-                    path: new_path,
-                    edge_set: chain,
-                });
-            }
+            closing_cycles.push(ClosingCycle {
+                refusal,
+                path: new_path,
+                edge_set: chain,
+            });
             continue;
         }
-        if out.len() >= fact_budget {
-            // `paths`' own cap is reached: this candidate is dropped (it
-            // would exceed `derivation_facts`/`work_units` room and
-            // `charge_all`'s real replay will refuse it anyway), and no new
-            // frame is pushed for it -- the walk does not grow new depth
-            // past this point, but `frame.next` already advanced above, so
-            // it still visits this frame's remaining siblings (and every
-            // other frame already on `stack`), which may still close cycles
-            // within `cycle_budget`.
-            continue;
-        }
+        charges.fact()?;
         out.push(AncestorPath {
             path: new_path.clone(),
             ancestor_key: ancestor_key.clone(),
@@ -1088,123 +1046,6 @@ fn ancestor_paths(
         paths: out,
         closing_cycles,
     })
-}
-
-/// One fact awaiting replayed accounting, tagged with what it charges.
-#[derive(Clone)]
-struct PendingFact {
-    owner_key: Option<DeclarationKey>,
-    declared_key: DeclarationKey,
-    inputs: Vec<DeclarationKey>,
-    /// `Some(path_len)` for a phase-3 type-level fact (charges
-    /// `normalize.cycle-check` first); `None` otherwise.
-    cycle_check_len: Option<usize>,
-    /// Whether this entry is a closing extension (`value-accounting.md:491`:
-    /// "a closing extension is charged even when its cycle's edge set was
-    /// already reported"; `model-complete.md`:513: "whose `normalize.fact`
-    /// is not charged"): its own `normalize.cycle-check` still charges, but
-    /// it derives no fact, so `charge_all` skips its `normalize.fact`
-    /// charge and it is never counted toward `derivation_facts`. `false`
-    /// for every ordinary phase 2/3 fact.
-    closes_cycle: bool,
-}
-
-/// One declaration awaiting replayed `normalize.declaration`/`normalize.hash`,
-/// already in final charge order (see `build`'s declaration assembly).
-struct PendingDeclaration {
-    hashed_bytes: u64,
-}
-
-struct Built {
-    /// Every `model-complete.md`:81 refusal FR-154's per-node checks expose,
-    /// in node order, then in FR-154's table order within one node
-    /// (`check_node`). `model-complete.md`:82 describes a reference naming
-    /// a refused node as not reported again as its own
-    /// `missing_declaration`/`missing-name`, but no code here performs that
-    /// cross-node dedup (H1 finding, PR #228 review): `check_node` checks
-    /// each node against `index`/`seen_keys` independently, with no view of
-    /// which other nodes already refused, so a reference naming a refused
-    /// node is reported exactly like any other dangling reference.
-    /// Remaining work: #238. Non-empty
-    /// only when intake itself
-    /// refuses: `charge_all` reports these, once every `normalize.record`
-    /// charge is admitted, and phase 2 onward never runs
-    /// (`model-complete.md`:80: "Intake reports every such refusal in node
-    /// order, and then no later phase runs"). Every other field below is a
-    /// placeholder (empty/default) when this is non-empty — phase 2 onward
-    /// never ran to populate them.
-    intake_refusals: Vec<ModelRefusal>,
-    phase2_facts: Vec<PendingFact>,
-    phase3_facts: Vec<PendingFact>,
-    /// Every distinct generalization cycle phase 3 exposes, ascending by
-    /// the closing extension's own charge-order position (owning type, then
-    /// path), deduplicated by edge set
-    /// (`model-complete.md`:292-295: "each cycle is refused ... exactly
-    /// once, keyed by the set of its supertype edges"). Non-empty only when
-    /// phase 3 refuses; `charge_all` reports these once every phase 2/3
-    /// charge (`normalize.record`, `normalize.fact`, `normalize.cycle-check`)
-    /// is admitted, before phase 4 ever charges
-    /// (`value-accounting.md:509`: "a stage that reports a refusal ends
-    /// checking: no later stage runs or charges").
-    phase3_refusals: Vec<ModelRefusal>,
-    declarations: Vec<PendingDeclaration>,
-    /// The effective view's body, carrying every object universe this
-    /// domain package normalizes to (`ViewBody::universes`' own doc), but
-    /// not the package: [`normalize`] attaches that only to a completed
-    /// view. A single-component model's universe identity is unchanged by
-    /// OQ-E's per-component partition -- see
-    /// `tests/it/model_normalization.rs`'s pinned-digest regression test.
-    view: ViewBody,
-    /// The positional index this build read the package through, kept for
-    /// the completed view's [`ModelIndex`].
-    index: RecordIndex,
-    /// Every phase-4 `normalize.redefinition-check` charge's own exact
-    /// `work_units` amount (`m + r`, `value-accounting.md:455`), one entry
-    /// per redefining member in the entire domain package (field and operation
-    /// alike), ascending by the member's own key — computed once,
-    /// domain-package-wide, in `build()` itself, never once per (member, effective
-    /// type reaching it) pair; replayed by
-    /// `charge_all`.
-    redefinition_check_work: Vec<u64>,
-    /// The count of phase-4 redefine facts (`RULE_REDEFINE`) awaiting their
-    /// own `normalize.fact` charge: `quire.model.normalize.redefine/v1`
-    /// derives "one fact on (T, redefining feature) and one on (T, redefined
-    /// feature)" per redefining member reaching `T`
-    /// (`model-complete.md:231`), for every member reaching `T`, contested
-    /// or not — `apply_redefinitions` builds these two [`Fact`]s directly
-    /// into the redefining and target members' own
-    /// [`EffectiveDeclarationPreimage`]; this is only their count, charged
-    /// as that many `normalize.fact` charges (order is never observable —
-    /// each carries `LimitKind::DerivationFacts`'s own running total, not
-    /// per-fact data — so no per-fact record or sort is kept here).
-    /// `charge_all` charges these between `redefinition_check_work` and
-    /// `conflict_check_work`: `value-accounting.md:455` puts
-    /// `normalize.redefinition-check` "before its first `normalize.fact`"
-    /// and `:456` puts `normalize.conflict-check` "after its last
-    /// `normalize.fact`", so this field's charges belong strictly between
-    /// the other two. Zero whenever phase 4's own resolution loop did not
-    /// run at all (a phase-2/3 fact budget already exhausted; see the
-    /// module docs), exactly like `conflict_check_work` in that case.
-    phase4_fact_count: u64,
-    /// Every phase-4 `normalize.conflict-check` charge's own exact
-    /// `work_units` amount (`Σ (c − 1) × f(o)`, `value-accounting.md:456`),
-    /// one entry per (effective type, redefined member) group with `c >= 2`
-    /// redefiners resolved across every type — a group with a single
-    /// redefiner needs no entry at all (`value-accounting.md:456`'s own
-    /// `c >= 2` condition); replayed by `charge_all`.
-    conflict_check_work: Vec<u64>,
-    /// Every phase-4 refusal — `derivation-conflict` or `redefinition-target`
-    /// — `apply_redefinitions` exposes across every type and target group,
-    /// ascending by charge order (`record_phase4_refusal`'s own doc), held
-    /// here rather than returned by `build` (see the module docs):
-    /// `apply_redefinitions` keeps resolving every remaining type and target
-    /// group regardless of what it has already found, so every later
-    /// phase-4 charge amount above is still computed correctly, and
-    /// `charge_all` reports every refusal here, together, only once every
-    /// phase-4 charge is admitted (`value-accounting.md:505-511`: "every
-    /// refusal that work exposes is reported, in charge order, when its
-    /// stage ends").
-    phase4_refusals: Vec<ModelRefusal>,
 }
 
 /// Refuses a [`DomainPackageRecord`] that names a type key absent from the domain package's
@@ -1539,6 +1380,12 @@ thread_local! {
     /// changes no result. Unit tests read it through [`build_calls`] to
     /// count how often a caller normalizes a package (QSL-204).
     static BUILD_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// How many units of per-declaration work [`build`] has done on this
+    /// thread: ancestor-walk steps, inherited-member facts and member
+    /// identity hashes. Observation only; unit tests read it through
+    /// [`work_steps`] to show a refused normalization's work is bounded by
+    /// the limit, not by the package (QSL-216).
+    static WORK_STEPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// How many times [`build`] has run on the current thread (test-only).
@@ -1547,142 +1394,101 @@ pub(crate) fn build_calls() -> usize {
     BUILD_CALLS.with(std::cell::Cell::get)
 }
 
-/// Pass one: build the complete normalization, refusing outright on a real
-/// defect and bounding ancestor-path enumeration against `limits` (PR #140
-/// F1) so a diamond-generalization domain-package cannot force unbounded work before
-/// [`charge_all`] gets to deny anything.
+/// How many units of per-declaration work [`build`] has done on the
+/// current thread (test-only; see `WORK_STEPS`).
+#[cfg(test)]
+fn work_steps() -> u64 {
+    WORK_STEPS.with(std::cell::Cell::get)
+}
+
+/// Counts one unit of per-declaration work in a test build; a no-op
+/// otherwise.
+#[inline]
+fn work_step() {
+    #[cfg(test)]
+    WORK_STEPS.with(|steps| steps.set(steps.get() + 1));
+}
+
+/// Normalize `domain_package`, charging `meter` inside each phase as the
+/// work happens (QSL-216; see the module docs). Every charge is made in
+/// `value-accounting.md`'s charge order before the work it prices grows any
+/// further, and the first denied charge stops normalization.
 fn build(
     domain_package: &DomainPackage,
-    limits: &ModelNormalizationLimits,
-) -> Result<Built, ModelRefusal> {
+    meter: &mut Meter,
+) -> Result<(ViewBody, RecordIndex), Denial> {
     #[cfg(test)]
     BUILD_CALLS.with(|calls| calls.set(calls.get() + 1));
     validate_selection(domain_package)?;
-    let index = RecordIndex::build(domain_package);
-    // QSL #199: every `normalize.record` charge (one per IR node, in node
-    // order) runs before any intake refusal is reported -- `validate_references`
-    // itself never charges anything; it is `charge_all` that charges the
-    // whole `domain_package.records` sequence and only then consults this
-    // result (see `Built::intake_refusals`'s own doc).
-    let intake_refusals = validate_references(domain_package, &index);
-    if !intake_refusals.is_empty() {
-        // `model-complete.md`:80: "Intake reports every such refusal in
-        // node order, and then no later phase runs" -- phase 2 onward never
-        // ran, so every other field below is its own placeholder.
-        return Ok(Built {
-            intake_refusals,
-            phase2_facts: Vec::new(),
-            phase3_facts: Vec::new(),
-            phase3_refusals: Vec::new(),
-            declarations: Vec::new(),
-            view: ViewBody {
-                declarations: Vec::new(),
-                types: Arc::default(),
-                universes: ObjectUniverses {
-                    first: ObjectUniverse {
-                        model_selection: domain_package.model_selection.clone(),
-                        root_types: Vec::new(),
-                    },
-                    rest: Vec::new(),
-                },
-                universe_index_by_type: BTreeMap::new(),
-                populations: BTreeMap::new(),
-            },
-            index,
-            redefinition_check_work: Vec::new(),
-            phase4_fact_count: 0,
-            conflict_check_work: Vec::new(),
-            phase4_refusals: Vec::new(),
-        });
+    // `normalize.record` charges once per IR node, in node order
+    // (`value-accounting.md`:489), before the index over those nodes is
+    // built. Under QSpec's inline shape (`model-complete.md`:155/159/160,
+    // :270/271) a supertype, redefinition or subsetting relationship is a
+    // property of the declaration record that owns it, never a record of
+    // its own, so `records.len()` is the exact IR node count. Only the
+    // running position is charged (#141 F11).
+    for position in 0..domain_package.records.len() {
+        meter.charge(
+            Charge::new(ChargePoint::NormalizeRecord)
+                .size(LimitKind::DeclarationRecords, length_amount(position + 1)),
+        )?;
     }
+    let index = RecordIndex::build(domain_package);
+    // QSL #199: every `normalize.record` charge above is admitted before any
+    // intake refusal is reported. `model-complete.md`:80: "Intake reports
+    // every such refusal in node order, and then no later phase runs".
+    if let Ok(refusals) = Refusals::try_from(validate_references(domain_package, &index)) {
+        return Err(Denial::Refused(refusals));
+    }
+    let limits = *meter.limits();
+    let mut charges = Charges::new(meter);
     let type_keys: Vec<DeclarationKey> = index.object_types().cloned().collect();
 
-    let mut phase2_facts = Vec::new();
-    let mut phase3_facts = Vec::new();
+    // Phase 2: one qualify fact per type and one per directly declared field
+    // member. Every phase-2 fact sorts before every phase-3 fact, and every
+    // `normalize.fact` charge differs only in the running count it sizes, so
+    // charging them here, in any order, admits the same sequence as charging
+    // them sorted.
+    let mut direct_fields = Vec::with_capacity(type_keys.len());
+    for type_key in &type_keys {
+        charges.fact()?;
+        let fields = index.sorted_direct_fields(&domain_package.records, type_key);
+        for _ in &fields {
+            charges.fact()?;
+        }
+        direct_fields.push(fields);
+    }
+
+    // Phase 3, type level: every type's ancestor paths, charged as each walk
+    // finds them. Types are walked ascending by key, and each walk yields its
+    // paths ascending, which is `value-accounting.md:490`'s charge order for
+    // type-level facts (owner-less facts sort before member facts).
     let mut type_preimages: HashMap<DeclarationKey, EffectiveDeclarationPreimage> = HashMap::new();
     let mut type_effective_ids: HashMap<DeclarationKey, EffectiveId> = HashMap::new();
     let mut type_hashed_bytes: HashMap<DeclarationKey, u64> = HashMap::new();
-    let mut member_preimages: HashMap<
-        (DeclarationKey, DeclarationKey),
-        EffectiveDeclarationPreimage,
-    > = HashMap::new();
-    let mut hidden: std::collections::HashSet<(DeclarationKey, DeclarationKey)> =
-        std::collections::HashSet::new();
-    let mut facts_so_far: u64 = 0;
-    // Phase 3's own ancestor paths, retained per type (rather than dropped
-    // at the end of each iteration below) so phase 4 -- now its own pass,
-    // run only after every type's phase 2/3 has finished -- can reuse them
-    // without recomputing (PR #140 F10) for a `type_key` whose own
-    // iteration already ran.
+    // Phase 3's own ancestor paths, retained per type so the member pass
+    // below and phase 4 reuse them without walking again (PR #140 F10).
     let mut type_paths: HashMap<DeclarationKey, Vec<AncestorPath>> = HashMap::new();
-
-    // QSL #193: every distinct generalization cycle any type's own walk
-    // closes, tagged with the same `(type_key, path)` charge-order key its
-    // own `PendingFact` sorts by (`sort_facts`), collected build-wide across
-    // every type in the loop below and deduplicated by edge set only after
-    // the loop finishes (`model-complete.md`:292-295's "each cycle is
-    // refused ... exactly once"; see the module docs).
+    // QSL #193: every generalization cycle any type's own walk closes,
+    // tagged with its charge-order key `(type_key, path)`, deduplicated by
+    // edge set only once every type is walked (`model-complete.md`:292-295's
+    // "each cycle is refused ... exactly once"; see the module docs).
     let mut cycle_candidates: Vec<CycleCandidate> = Vec::new();
-
     for type_key in &type_keys {
-        phase2_facts.push(PendingFact {
-            owner_key: None,
-            declared_key: type_key.clone(),
-            inputs: vec![type_key.clone()],
-            cycle_check_len: None,
-            closes_cycle: false,
-        });
-        facts_so_far += 1;
+        let walk = ancestor_paths(type_key, &index, limits.ancestor_steps, &mut charges)?;
         let mut derivation = vec![Fact {
             ordinal: 0,
             rule: RULE_QUALIFY,
-            inputs: vec![type_key.clone()],
+            inputs: vec![type_key.clone()].into(),
         }];
-
-        // Ancestor paths are computed once per type and reused for both the
-        // type's own derivation and its inherited members below (PR #140
-        // F10: the original two-loop shape recomputed this identical DFS
-        // twice per type), and again for phase 4's own owner-path
-        // bookkeeping just below (the same F10 lesson applied there too).
-        let fact_budget = remaining_fact_budget(limits, facts_so_far);
-        let cycle_budget = remaining_cycle_budget(limits, facts_so_far);
-        let walk = ancestor_paths(
-            type_key,
-            &index,
-            fact_budget,
-            cycle_budget,
-            limits.ancestor_steps,
-        )?;
-        let paths = walk.paths;
-        for ancestor in &paths {
-            let inputs = ancestor.path.clone();
-            phase3_facts.push(PendingFact {
-                owner_key: None,
-                declared_key: type_key.clone(),
-                inputs: inputs.clone(),
-                cycle_check_len: Some(ancestor.path.len()),
-                closes_cycle: false,
-            });
-            facts_so_far += 1;
+        for ancestor in &walk.paths {
             derivation.push(Fact {
                 ordinal: derivation.len(),
                 rule: RULE_INHERIT,
-                inputs,
+                inputs: FactInputs::new(ancestor.path.clone(), Vec::new()),
             });
         }
-        // Every closing extension this type's own walk found is charged its
-        // own `normalize.cycle-check` (QSL #193) but derives no fact
-        // (`closes_cycle: true`); its refusal is only a *candidate* until
-        // every type has been walked and duplicates across types have been
-        // removed, below.
         for closing in walk.closing_cycles {
-            phase3_facts.push(PendingFact {
-                owner_key: None,
-                declared_key: type_key.clone(),
-                inputs: closing.path.clone(),
-                cycle_check_len: Some(closing.path.len()),
-                closes_cycle: true,
-            });
             cycle_candidates.push(CycleCandidate {
                 type_key: type_key.clone(),
                 path: closing.path,
@@ -1690,29 +1496,36 @@ fn build(
                 edge_set: closing.edge_set,
             });
         }
-
         let preimage = EffectiveDeclarationPreimage {
             owner_effective_type: None,
             original: type_key.clone(),
             derivation,
         };
-        // One encoding serves both the identity (needed immediately, as this
-        // type's members' owner) and the RFC 8785 length phase 5 needs later
-        // (PR #140 F10).
-        let (owner_effective_id, type_hashed) = preimage.identity_and_canonical_len();
-        type_effective_ids.insert(type_key.clone(), owner_effective_id);
-        type_hashed_bytes.insert(type_key.clone(), type_hashed);
+        // One encoding serves both the identity (needed next, as this type's
+        // members' owner, and for phase 4's charge order) and the RFC 8785
+        // length phase 5 charges (PR #140 F10). This is the one hash made
+        // before its `normalize.hash` charge: that charge sits in phase 5,
+        // after every phase-4 charge ordered by these identities. Its
+        // encoding holds this type's paths, whose lengths the
+        // `normalize.cycle-check` charges above already admitted as work.
+        let (effective_id, hashed) = preimage.identity_and_canonical_len();
+        type_effective_ids.insert(type_key.clone(), effective_id);
+        type_hashed_bytes.insert(type_key.clone(), hashed);
         type_preimages.insert(type_key.clone(), preimage);
+        type_paths.insert(type_key.clone(), walk.paths);
+    }
 
-        // Phase 2: members declared directly on this type.
-        for member in index.sorted_direct_fields(&domain_package.records, type_key) {
-            phase2_facts.push(PendingFact {
-                owner_key: Some(type_key.clone()),
-                declared_key: member.key.clone(),
-                inputs: vec![member.key.clone()],
-                cycle_check_len: None,
-                closes_cycle: false,
-            });
+    // Phase 3, member level: each type's directly declared members (their
+    // qualify facts were charged in phase 2) and the members it inherits
+    // along its ancestor paths, one `normalize.fact` each, charged before the
+    // fact is built.
+    let mut member_preimages: HashMap<
+        (DeclarationKey, DeclarationKey),
+        EffectiveDeclarationPreimage,
+    > = HashMap::new();
+    for (type_key, fields) in type_keys.iter().zip(&direct_fields) {
+        let owner_effective_id = type_effective_ids[type_key];
+        for member in fields {
             member_preimages.insert(
                 (type_key.clone(), member.key.clone()),
                 EffectiveDeclarationPreimage {
@@ -1721,31 +1534,24 @@ fn build(
                     derivation: vec![Fact {
                         ordinal: 0,
                         rule: RULE_QUALIFY,
-                        inputs: vec![member.key.clone()],
+                        inputs: vec![member.key.clone()].into(),
                     }],
                 },
             );
         }
-
-        // Phase 3: members inherited along this type's ancestor paths
-        // (reusing `paths` computed above), from each ancestor's own
-        // directly-declared members. Bounded the same way (PR #140 F1): an
-        // ancestor with many members multiplies path count, so this loop
-        // stops the moment continuing cannot change the outcome.
-        'inherited_members: for ancestor in &paths {
+        let Some(paths) = type_paths.get(type_key) else {
+            continue;
+        };
+        for ancestor in paths {
             for member in
                 index.sorted_direct_fields(&domain_package.records, &ancestor.ancestor_key)
             {
-                let mut inputs = ancestor.path.clone();
-                inputs.push(member.key.clone());
-                phase3_facts.push(PendingFact {
-                    owner_key: Some(type_key.clone()),
-                    declared_key: member.key.clone(),
-                    inputs: inputs.clone(),
-                    cycle_check_len: None,
-                    closes_cycle: false,
-                });
-                facts_so_far += 1;
+                work_step();
+                charges.fact()?;
+                // The fact shares the ancestor path rather than copying it,
+                // so memory grows with facts plus total path length, not
+                // facts times path length (QSL-216).
+                let inputs = FactInputs::new(ancestor.path.clone(), vec![member.key.clone()]);
                 let entry = member_preimages
                     .entry((type_key.clone(), member.key.clone()))
                     .or_insert_with(|| EffectiveDeclarationPreimage {
@@ -1759,25 +1565,19 @@ fn build(
                     rule: RULE_INHERIT,
                     inputs,
                 });
-                if fact_budget_exceeded(limits, facts_so_far) {
-                    break 'inherited_members;
-                }
             }
         }
-
-        type_paths.insert(type_key.clone(), paths);
     }
+    drop(direct_fields);
 
-    // QSL #193: deduplicate cycle refusal candidates by edge set, keeping
-    // each distinct cycle's own first (charge-order-earliest) closing
-    // extension (`model-complete.md`:292-295), sorted the same way
-    // `sort_facts` orders their own `PendingFact` entries (type key, then
-    // path) so `phase3_refusals`' own order matches the charge order
-    // `charge_all` reports them in.
+    // QSL #193: keep each distinct cycle's own first (charge-order-earliest)
+    // closing extension (`model-complete.md`:292-295), reported once every
+    // phase 2/3 charge is admitted; `value-accounting.md:509`: "a stage that
+    // reports a refusal ends checking: no later stage runs or charges".
     cycle_candidates.sort_by(|a, b| {
         a.type_key
             .cmp(&b.type_key)
-            .then_with(|| a.path.cmp(&b.path))
+            .then_with(|| a.path.keys().cmp(b.path.keys()))
     });
     let mut seen_edge_sets: HashSet<Vec<DeclarationKey>> = HashSet::new();
     let mut phase3_refusals: Vec<ModelRefusal> = Vec::new();
@@ -1785,6 +1585,9 @@ fn build(
         if seen_edge_sets.insert(candidate.edge_set) {
             phase3_refusals.push(candidate.refusal);
         }
+    }
+    if let Ok(refusals) = Refusals::try_from(phase3_refusals) {
+        return Err(Denial::Refused(refusals));
     }
 
     // Phase 4: every type's own field-redefinition conflicts, run only now
@@ -1800,13 +1603,9 @@ fn build(
         *member_counts_by_owner.entry(owner.clone()).or_insert(0) += 1;
     }
     // `m` counts *every* effective member, not only fields (QSL #145): each
-    // type's own directly-declared operation
-    // members, plus every operation directly declared on a proper ancestor
-    // reached along that type's own phase-3 `type_paths` -- the same
-    // "direct at this type, or direct at some ancestor `type_paths` already
-    // reaches" shape `member_preimages` above builds for fields, just
-    // counted rather than given a full preimage (no phase 5 view entry, no
-    // redefinition resolution, exists here for `m` alone).
+    // type's own directly-declared operation members, plus every operation
+    // directly declared on a proper ancestor reached along that type's own
+    // phase-3 `type_paths`.
     for type_key in &type_keys {
         let mut effective_operations: HashSet<DeclIdx> = HashSet::new();
         effective_operations.extend(index.direct_operations(type_key));
@@ -1825,14 +1624,8 @@ fn build(
         .map(|(key, preimage)| (key.clone(), length_amount(preimage.derivation.len())))
         .collect();
     // Every owner's own proper-ancestor set, derived from phase 3's own
-    // `type_paths` (populated above for every type in the domain package) rather
-    // than a fresh, separately-bounded walk (QSL #145): `ancestor_key` is
-    // exactly the proper-ancestor identity
-    // `crate::model::conformance::ancestor_closure` used to compute with its
-    // own `MAX_CONFORMANCE_DEPTH` breadth ceiling, so deduplicating those
-    // same keys here needs no walk of its own and has no ceiling to exceed.
-    // Computed once, build-wide (QSL #145), not once per (type, target)
-    // group.
+    // `type_paths` rather than a fresh, separately-bounded walk (QSL #145),
+    // computed once, build-wide, not once per (type, target) group.
     let owner_ancestor_sets: HashMap<DeclarationKey, HashSet<DeclarationKey>> = type_paths
         .iter()
         .map(|(owner, paths)| {
@@ -1844,14 +1637,12 @@ fn build(
 
     // `normalize.redefinition-check` (`value-accounting.md:455`) charges
     // `m + r` once per redefining member in the *entire domain package* --
-    // field and operation alike -- ascending by the member's own key
-    // (there is no separate redefinition-record key to sort by under
-    // QSpec's inline `redefines` property), `r` the count of members
-    // already checked before it in this same domain-package-wide sequence.
-    // Computed once here, before the per-type phase-4 loop below even
-    // starts: each redefining member is the spec's own priced unit, tested
-    // once against its own owning type, never once per (member, effective
-    // type reaching it) pair a per-type loop would recompute it at.
+    // field and operation alike -- ascending by the member's own key (there
+    // is no separate redefinition-record key under QSpec's inline
+    // `redefines` property), `r` the count of members already checked
+    // before it in this same domain-package-wide sequence. Each redefining
+    // member is the spec's own priced unit, tested once against its own
+    // owning type, never once per (member, effective type reaching it) pair.
     let mut all_redefining_members: Vec<(&DeclarationKey, &DeclarationKey)> = domain_package
         .records
         .iter()
@@ -1866,12 +1657,15 @@ fn build(
         })
         .collect();
     all_redefining_members.sort_by(|a, b| a.0.cmp(b.0));
-    let mut redefinition_check_work: Vec<u64> = Vec::new();
     for (r, (_key, owner)) in all_redefining_members.iter().enumerate() {
         let m = member_counts_by_owner.get(*owner).copied().unwrap_or(0);
-        redefinition_check_work.push(m.saturating_add(length_amount(r)));
+        charges.charge(
+            Charge::new(ChargePoint::NormalizeRedefinitionCheck)
+                .work(m.saturating_add(length_amount(r))),
+        )?;
     }
 
+    let mut hidden: HashSet<(DeclarationKey, DeclarationKey)> = HashSet::new();
     let mut conflict_charges: Vec<(EffectiveId, DeclarationKey, u64)> = Vec::new();
     let mut phase4_fact_count: u64 = 0;
     let mut phase4_refusal_candidates: Vec<(Phase4Rank, ModelRefusal)> = Vec::new();
@@ -1883,80 +1677,97 @@ fn build(
         phase4_fact_count: &mut phase4_fact_count,
         refusals: &mut phase4_refusal_candidates,
     };
-    // A truncated phase-3 path set (a tight fact budget already exceeded by
-    // the time every type's own phase 2/3 above has run) cannot resolve
-    // phase-4 dominance honestly: an owner ancestry `owner_ancestor_sets`
-    // built from it could look incomplete rather than merely undominated,
-    // and wrongly derive a `derivation-conflict` refusal no complete build
-    // would report. Skipping phase-4 resolution here is safe exactly
-    // because `charge_all`'s own replay of the phase 2/3 facts that
-    // triggered the truncation runs, in charge order, before it ever
-    // reaches phase 4's own charges below -- it already reports the correct
-    // `Incomplete` there, never consulting `redefinition_check_work`/
-    // `conflict_charges` computed from truncated data (QSL #145). Likewise,
-    // a non-empty `phase3_refusals` (QSL #193) means phase 3 itself already
-    // exposed a refusal that `charge_all` reports before phase 4 ever
-    // charges (`value-accounting.md:509`'s "a stage that reports a refusal
-    // ends checking: no later stage runs or charges"), so phase 4's own
-    // resolution is skipped here too.
-    if !fact_budget_exceeded(limits, facts_so_far) && phase3_refusals.is_empty() {
-        for type_key in &type_keys {
-            let paths = type_paths
-                .get(type_key)
-                .expect("populated in the loop above");
-            apply_redefinitions(
-                &index,
-                type_key,
-                paths,
-                &mut member_preimages,
-                &mut hidden,
-                &mut accounting,
-            );
+    // Phase-4 redefine facts are derivation facts too
+    // (`value-accounting.md:453`), charged as `normalize.fact`, continuing
+    // phase 2/3's running count, strictly between every
+    // `normalize.redefinition-check` ("before its first `normalize.fact`",
+    // `:455`) and every `normalize.conflict-check` ("after its last
+    // `normalize.fact`", `:456`). Their charges differ only in the running
+    // count, so each type's are charged as soon as that type's plan counts
+    // them. Nothing is resolved until every phase-4 charge is admitted
+    // (QSL-216): planning prices each type's groups, the charges run in
+    // charge order, and only then does any dominance contest run or any
+    // redefine fact get built.
+    let mut phase4_facts_charged: u64 = 0;
+    let mut plans = Vec::with_capacity(type_keys.len());
+    for type_key in &type_keys {
+        let Some(paths) = type_paths.get(type_key) else {
+            continue;
+        };
+        let plan = plan_redefinitions(&index, type_key, paths, &member_preimages, &mut accounting);
+        while phase4_facts_charged < *accounting.phase4_fact_count {
+            charges.fact()?;
+            phase4_facts_charged += 1;
         }
+        plans.push((type_key, plan));
     }
-    conflict_charges.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-    let conflict_check_work: Vec<u64> = conflict_charges
-        .into_iter()
-        .map(|(_, _, amount)| amount)
-        .collect();
+    accounting
+        .conflict_charges
+        .sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    for (_, _, work) in accounting.conflict_charges.iter() {
+        charges.charge(Charge::new(ChargePoint::NormalizeConflictCheck).work(*work))?;
+    }
+    for (type_key, plan) in plans {
+        resolve_redefinitions(
+            type_key,
+            plan,
+            &mut member_preimages,
+            &mut hidden,
+            &mut accounting,
+        );
+    }
     phase4_refusal_candidates.sort_by(|a, b| a.0.cmp(&b.0));
     // A `normalize.redefinition-check` refusal's rank is the redefining
-    // member's own key alone (`Phase4Rank::RedefinitionCheck`), matching
-    // `redefinition_check_work`'s own domain-package-wide, once-per-record
-    // charge above: every descendant type that independently reaches the
-    // same broken redefining member (through generalization) derives the
-    // identical rank and an identical refusal, so a dedup by rank here
-    // keeps each redefinition-check refusal reported exactly once, the same
-    // cardinality as its own charge. A `normalize.conflict-check` refusal's
-    // rank also carries the resolving type's own effective identity, so two
-    // different types' own conflicts never collapse into each other here.
+    // member's own key alone (`Phase4Rank::RedefinitionCheck`), matching its
+    // domain-package-wide, once-per-record charge above: every descendant
+    // type that independently reaches the same broken redefining member
+    // derives the identical rank and an identical refusal, so a dedup by
+    // rank keeps each reported exactly once. A `normalize.conflict-check`
+    // refusal's rank also carries the resolving type's own effective
+    // identity, so two different types' own conflicts never collapse here.
     phase4_refusal_candidates.dedup_by(|a, b| a.0 == b.0);
-    let phase4_refusals: Vec<ModelRefusal> = phase4_refusal_candidates
-        .into_iter()
-        .map(|(_, refusal)| refusal)
-        .collect();
+    // `value-accounting.md:481`'s "checking is exhaustive within a stage":
+    // every phase-4 charge above is admitted before these refusals are
+    // reported, and `:482`'s "a stage that reports a refusal ends checking"
+    // keeps phase 5 from charging.
+    if let Ok(refusals) = Refusals::try_from(
+        phase4_refusal_candidates
+            .into_iter()
+            .map(|(_, refusal)| refusal)
+            .collect::<Vec<_>>(),
+    ) {
+        return Err(Denial::Refused(refusals));
+    }
 
-    // Phase 5 (identities only; charging is replayed separately).
-    let mut declarations: Vec<PendingDeclaration> = Vec::new();
+    // Phase 5: `normalize.declaration` then `normalize.hash` per effective
+    // declaration -- "effective types, then effective members, each
+    // ascending by effective member key" (`value-accounting.md:494`, QSL
+    // #195): `(owner effective type identity, original declaration key)`
+    // (`model-complete.md`:206). A member's `normalize.hash` is charged from
+    // its length counted from its parts, before it is encoded and hashed
+    // (QSL-216). `declarations_len` counts the view's `declarations`
+    // elements as they are admitted, so the view's own `normalize.hash` is
+    // charged without encoding the view.
     let mut entries: Vec<ViewEntry> = Vec::new();
+    let mut declarations_len: u64 = 0;
+    let mut add_entry_len = |effective_id: &EffectiveId, preimage_len: u64| {
+        let separator = u64::from(declarations_len > 0);
+        declarations_len = declarations_len
+            .saturating_add(separator)
+            .saturating_add(view_entry_len(effective_id, preimage_len));
+    };
     for type_key in &type_keys {
         let preimage = type_preimages.remove(type_key).expect("built above");
-        let effective_id = type_effective_ids[type_key];
-        declarations.push(PendingDeclaration {
-            hashed_bytes: type_hashed_bytes[type_key],
-        });
+        charges.declaration()?;
+        let hashed_bytes = type_hashed_bytes[type_key];
+        charges.hash(hashed_bytes)?;
+        add_entry_len(&type_effective_ids[type_key], hashed_bytes);
         entries.push(ViewEntry {
-            effective_id,
+            effective_id: type_effective_ids[type_key],
             preimage,
             visible: true,
         });
     }
-    // QSL #195: `normalize.declaration` charges "effective types, then
-    // effective members, each ascending by effective member key"
-    // (`value-accounting.md:494`) -- `(owner effective type identity,
-    // original declaration key)` (`model-complete.md`:206), not the owner's
-    // producer `DeclarationKey`. `type_effective_ids` is fully populated for
-    // every type by the loop above, so this lookup never falls back.
     let mut member_keys: Vec<(DeclarationKey, DeclarationKey)> =
         member_preimages.keys().cloned().collect();
     member_keys.sort_by(|(owner_a, decl_a), (owner_b, decl_b)| {
@@ -1965,10 +1776,18 @@ fn build(
             .then_with(|| decl_a.cmp(decl_b))
     });
     for key in member_keys {
+        charges.declaration()?;
+        work_step();
         let visible = !hidden.contains(&key);
         let preimage = member_preimages.remove(&key).expect("built above");
-        let (effective_id, hashed_bytes) = preimage.identity_and_canonical_len();
-        declarations.push(PendingDeclaration { hashed_bytes });
+        let hashed_bytes = preimage.canonical_len_from_parts();
+        charges.hash(hashed_bytes)?;
+        let (effective_id, encoded_bytes) = preimage.identity_and_canonical_len();
+        debug_assert_eq!(
+            encoded_bytes, hashed_bytes,
+            "a preimage's length from its parts"
+        );
+        add_entry_len(&effective_id, hashed_bytes);
         entries.push(ViewEntry {
             effective_id,
             preimage,
@@ -2006,12 +1825,8 @@ fn build(
         .collect();
     // `value-accounting.md`:495: "each object universe preimage ascending
     // by its first root type identity". A component with no root type at
-    // all (every member's `supertypes[]` is non-empty, i.e. a pure cycle)
-    // can only arise on a package phase 3 already refuses -- `charge_all`
-    // reports that refusal before this order is ever charged, and a refused
-    // normalization yields no view to read it from, so `None` sorting first is
-    // an arbitrary but harmless placement, never observed on a successful
-    // normalization.
+    // all (a pure cycle) arises only on a package phase 3 already refused
+    // above, so `None` sorting first is never observed.
     components.sort_by_key(|(_, universe)| universe.root_types.first().copied());
     let mut universe_index_by_type: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
     for (component_index, (members, _)) in components.iter().enumerate() {
@@ -2021,8 +1836,7 @@ fn build(
     }
     let mut ordered = components.into_iter().map(|(_, universe)| universe);
     // A domain package with no declared object type at all still produces
-    // exactly one (empty) universe, matching every domain package's
-    // behavior before OQ-E's per-component partition existed.
+    // exactly one (empty) universe.
     let first = ordered.next().unwrap_or_else(|| ObjectUniverse {
         model_selection: domain_package.model_selection.clone(),
         root_types: Vec::new(),
@@ -2031,6 +1845,11 @@ fn build(
         first,
         rest: ordered.collect(),
     };
+    // `value-accounting.md`:495: "each object universe preimage ascending
+    // by its first root type identity, then the effective view preimage".
+    for universe in universes.iter() {
+        charges.hash(universe.canonical_len())?;
+    }
 
     // Each population's bindings are admitted into its first member type's
     // universe, or the first universe when it declares no member type.
@@ -2069,21 +1888,21 @@ fn build(
         universes,
         universe_index_by_type,
         populations,
+        limits,
     };
+    charges
+        .hash(view.canonical_len_from_parts(&domain_package.model_selection, declarations_len))?;
+    Ok((view, index))
+}
 
-    Ok(Built {
-        index,
-        intake_refusals: Vec::new(),
-        phase2_facts,
-        phase3_facts,
-        phase3_refusals,
-        declarations,
-        view,
-        redefinition_check_work,
-        phase4_fact_count,
-        conflict_check_work,
-        phase4_refusals,
-    })
+/// The RFC 8785 length of one effective-view `declarations` element,
+/// `{"effective_id":<id>,"preimage":<preimage>}`, from its identity and its
+/// preimage's length: the element's fixed frame, plus the two values.
+fn view_entry_len(effective_id: &EffectiveId, preimage_len: u64) -> u64 {
+    const FRAME: &str = r#"{"effective_id":,"preimage":}"#;
+    length_amount(FRAME.len())
+        .saturating_add(canonical_len(&EffectiveIdWire::from(effective_id)))
+        .saturating_add(preimage_len)
 }
 
 /// One redefining member's contest for its `redefines` target, reachable
@@ -2096,25 +1915,25 @@ struct RedefinitionEdge {
     owner: DeclarationKey,
     redefining: DeclarationKey,
     target: DeclarationKey,
-    path: Vec<DeclarationKey>,
+    path: KeyPath,
 }
 
-/// Every cross-type input and output `apply_redefinitions` needs beyond its
+/// Every cross-type input and output `plan_redefinitions` needs beyond its
 /// own `type_key`'s local bookkeeping, grouped into one `&mut` borrow
 /// (rather than five separate parameters) so the function stays within
 /// clippy's `too_many_arguments` ceiling. `type_fact_counts`/
 /// `owner_ancestor_sets` are build-wide, read-only lookups (`f(o)`,
 /// `value-accounting.md:456`, and each owner's own proper-ancestor set);
-/// `conflict_check_work`, `phase4_fact_count` and `refusal` are build-wide
+/// `conflict_charges`, `phase4_fact_count` and `refusal` are build-wide
 /// accumulators mutated across every `type_key`'s own call.
 /// `normalize.redefinition-check`'s own charge sequence — and the `m` it
 /// needs — is not built here at all: `build` computes it once,
-/// domain-package-wide, before any `apply_redefinitions` call.
+/// domain-package-wide, before any `plan_redefinitions` call.
 struct Phase4Accounting<'a> {
     type_fact_counts: &'a HashMap<DeclarationKey, u64>,
     owner_ancestor_sets: &'a HashMap<DeclarationKey, HashSet<DeclarationKey>>,
     /// Every type's own effective identity, populated by `build`'s phase
-    /// 2/3 loop before any `apply_redefinitions` call — QSL #195: the
+    /// 2/3 loop before any `plan_redefinitions` call — QSL #195: the
     /// effective member key (`model-complete.md`:206) orders both
     /// `conflict_charges` below and `build`'s own member-declaration
     /// sequence by an owner's *effective* identity, not its producer
@@ -2129,8 +1948,8 @@ struct Phase4Accounting<'a> {
     /// (QSL #195; see the module docs).
     conflict_charges: &'a mut Vec<(EffectiveId, DeclarationKey, u64)>,
     /// The running count of phase-4 redefine facts awaiting their own
-    /// `normalize.fact` charge (see [`Built::phase4_fact_count`]'s own
-    /// doc) — field redefinition only, exactly like `member_preimages`/
+    /// `normalize.fact` charge (`build` charges each type's after this
+    /// function returns) — field redefinition only, exactly like `member_preimages`/
     /// `hidden`: an operation-member redefinition edge never reaches
     /// [`Fact`] construction here at all (see the module docs), so it
     /// contributes nothing to this count.
@@ -2167,7 +1986,7 @@ enum Phase4Rank {
 /// any call exposes is kept, not only whichever ranks earliest — `build`
 /// sorts the whole collection by `Phase4Rank` once every `type_key` has been
 /// processed, then reports every entry, in that charge order, as
-/// `Built::phase4_refusals` (QSL #195; see the module docs).
+/// one `Refusals` (QSL #195; see the module docs).
 fn record_phase4_refusal(
     accounting: &mut Phase4Accounting<'_>,
     rank: Phase4Rank,
@@ -2201,8 +2020,8 @@ fn record_phase4_refusal(
 /// `(owner, original)` key resolves to.
 ///
 /// Also appends this contested target group's own `normalize.conflict-check`
-/// charge amount (`value-accounting.md:456`) to `conflict_check_work`,
-/// replayed later by `charge_all` — `normalize.redefinition-check`'s own
+/// charge amount (`value-accounting.md:456`) to `conflict_charges`,
+/// charged later by `build` — `normalize.redefinition-check`'s own
 /// charge sequence is `build`'s own domain-package-wide pass, not this function's.
 /// `type_fact_counts` supplies `f(o)` for any owner in the domain package, not just
 /// `type_key` itself — `build` computes it
@@ -2212,18 +2031,17 @@ fn record_phase4_refusal(
 /// derived from phase 3's own `type_paths` (QSL #145) rather than a second,
 /// separately bounded walk, and likewise computed once, build-wide, not
 /// once per (type, target) group.
-fn apply_redefinitions(
+fn plan_redefinitions(
     index: &RecordIndex,
     type_key: &DeclarationKey,
     paths: &[AncestorPath],
-    member_preimages: &mut HashMap<(DeclarationKey, DeclarationKey), EffectiveDeclarationPreimage>,
-    hidden: &mut HashSet<(DeclarationKey, DeclarationKey)>,
+    member_preimages: &HashMap<(DeclarationKey, DeclarationKey), EffectiveDeclarationPreimage>,
     accounting: &mut Phase4Accounting<'_>,
-) {
+) -> TypeRedefinitions {
     // QSL #195: every `normalize.conflict-check` charge and refusal this
     // call exposes is tagged by `type_key`'s own *effective* identity, not
     // its producer `DeclarationKey` — `build` populates `type_effective_ids`
-    // for every type before any `apply_redefinitions` call (see the module
+    // for every type before any `plan_redefinitions` call (see the module
     // docs).
     let owner_effective_id = accounting
         .type_effective_ids
@@ -2231,8 +2049,8 @@ fn apply_redefinitions(
         .cloned()
         .expect("build populates type_effective_ids for every type before phase 4 runs");
 
-    let mut owner_paths: HashMap<DeclarationKey, Vec<DeclarationKey>> = HashMap::new();
-    owner_paths.insert(type_key.clone(), Vec::new());
+    let mut owner_paths: HashMap<DeclarationKey, KeyPath> = HashMap::new();
+    owner_paths.insert(type_key.clone(), KeyPath::default());
     for ancestor in paths {
         owner_paths
             .entry(ancestor.ancestor_key.clone())
@@ -2261,7 +2079,7 @@ fn apply_redefinitions(
     // owners that reach `type_key` only, in the records' own order: the
     // same edges, in the same order, as a scan of every record keeping those
     // whose owner reaches `type_key`.
-    let mut reaching: Vec<(&DeclarationKey, &Vec<DeclarationKey>, Redefiner)> = owner_paths
+    let mut reaching: Vec<(&DeclarationKey, &KeyPath, Redefiner)> = owner_paths
         .iter()
         .flat_map(|(owner, path)| {
             index
@@ -2306,35 +2124,147 @@ fn apply_redefinitions(
     let mut target_keys: Vec<DeclarationKey> = groups.keys().cloned().collect();
     target_keys.sort();
 
-    // `value-accounting.md:456`'s own charge order is a single ascending
-    // pass "by effective member key" over every contested `(effective type,
-    // redefined member)` reached by `c >= 2` records -- field and operation
-    // targets interleaved by that one key, never field targets as a block
-    // followed by operation targets as a block. Each loop below still
-    // resolves (and, for fields, hides/derives) its own kind in its own
-    // pass, but neither sorts its own charge amount locally (QSL #195):
-    // both push straight to `accounting.conflict_charges`, tagged with this
-    // call's own `owner_effective_id`, and `build` sorts the whole
-    // build-wide collection by effective member key once, after every
-    // `type_key`'s own call has returned.
-
-    'targets: for target_key in target_keys {
+    let mut field_groups = Vec::with_capacity(target_keys.len());
+    for target_key in target_keys {
         let mut edges = groups.remove(&target_key).expect("just listed");
         edges.sort_by(|a, b| {
             a.owner
                 .cmp(&b.owner)
                 .then_with(|| a.redefining.cmp(&b.redefining))
         });
+        // An unreachable target has no member for a redefinition to resolve
+        // *to* (H1 finding, PR #228 round 2 review): it derives no fact, and
+        // `resolve_redefinitions` refuses every edge in its group.
+        let reachable = member_preimages.contains_key(&(type_key.clone(), target_key.clone()));
+        if edges.len() >= 2 {
+            // `value-accounting.md:456`: `work_units += Σ (c − 1) × f(o)`,
+            // summed over the `c` redefining owners `o` -- once per edge,
+            // repeating a shared owner's own `f(o)` for every edge it owns.
+            // It fires whenever `c >= 2`, reachable or not (PR #228 round 2
+            // review): the package still declared `c` redefinitions of this
+            // target. A single redefiner has nothing to contest and owes no
+            // charge (QSL #145).
+            push_conflict_charge(accounting, owner_effective_id, &target_key, &edges);
+        }
+        if reachable {
+            // `model-complete.md:231`: one redefine fact on the redefining
+            // feature and one on the redefined feature per edge, contested
+            // or not, winner or not.
+            *accounting.phase4_fact_count += 2 * length_amount(edges.len());
+        }
+        field_groups.push(TargetGroup {
+            target: target_key,
+            edges,
+            reachable,
+        });
+    }
 
+    let mut operation_groups: HashMap<DeclarationKey, Vec<RedefinitionEdge>> = HashMap::new();
+    for edge in operation_edges {
+        operation_groups
+            .entry(edge.target.clone())
+            .or_default()
+            .push(edge);
+    }
+    let mut operation_target_keys: Vec<DeclarationKey> = operation_groups.keys().cloned().collect();
+    operation_target_keys.sort();
+    let mut contested_operations = Vec::new();
+    for target_key in operation_target_keys {
+        let edges = operation_groups.remove(&target_key).expect("just listed");
+        // Operation redefinitions derive no fact and grow no view entry (see
+        // the module docs); a contested target (`c >= 2`) still owes the same
+        // `normalize.conflict-check` price as a field target (QSL #145, #173).
+        if edges.len() < 2 {
+            continue;
+        }
+        push_conflict_charge(accounting, owner_effective_id, &target_key, &edges);
+        contested_operations.push(TargetGroup {
+            target: target_key,
+            edges,
+            reachable: true,
+        });
+    }
+
+    TypeRedefinitions {
+        owner_effective_id,
+        field_groups,
+        contested_operations,
+    }
+}
+
+/// Appends one contested target group's `normalize.conflict-check` amount,
+/// `Σ (c − 1) × f(o)` (`value-accounting.md:456`), tagged with its charge
+/// order key `(owner effective type identity, target)`.
+fn push_conflict_charge(
+    accounting: &mut Phase4Accounting<'_>,
+    owner_effective_id: EffectiveId,
+    target_key: &DeclarationKey,
+    edges: &[RedefinitionEdge],
+) {
+    let c = length_amount(edges.len());
+    let fact_total: u64 = edges
+        .iter()
+        .map(|edge| {
+            accounting
+                .type_fact_counts
+                .get(&edge.owner)
+                .copied()
+                .unwrap_or(0)
+        })
+        .sum();
+    accounting.conflict_charges.push((
+        owner_effective_id,
+        target_key.clone(),
+        fact_total.saturating_mul(c.saturating_sub(1)),
+    ));
+}
+
+/// One target group of one type: every redefining member reaching the type
+/// that redefines `target`, sorted by (owner, redefining member).
+struct TargetGroup {
+    target: DeclarationKey,
+    edges: Vec<RedefinitionEdge>,
+    /// Whether `target` is one of the type's effective members. Always
+    /// `true` for an operation group.
+    reachable: bool,
+}
+
+/// One type's phase-4 work, planned and priced by [`plan_redefinitions`]
+/// before any of it is charged, then resolved by [`resolve_redefinitions`]
+/// once every phase-4 charge is admitted (QSL-216).
+struct TypeRedefinitions {
+    owner_effective_id: EffectiveId,
+    /// Field target groups, ascending by target key.
+    field_groups: Vec<TargetGroup>,
+    /// Operation target groups with two or more redefiners, ascending by
+    /// target key.
+    contested_operations: Vec<TargetGroup>,
+}
+
+/// Resolves one type's planned phase-4 work, once every phase-4 charge is
+/// admitted (QSL-216): each field group's dominance contest, its redefine
+/// facts and hidden members, and each contested operation group's contest.
+/// Every refusal goes to `accounting.refusals`, ranked for charge order, and
+/// every remaining group is still resolved (see the module docs).
+fn resolve_redefinitions(
+    type_key: &DeclarationKey,
+    plan: TypeRedefinitions,
+    member_preimages: &mut HashMap<(DeclarationKey, DeclarationKey), EffectiveDeclarationPreimage>,
+    hidden: &mut HashSet<(DeclarationKey, DeclarationKey)>,
+    accounting: &mut Phase4Accounting<'_>,
+) {
+    let TypeRedefinitions {
+        owner_effective_id,
+        field_groups,
+        contested_operations,
+    } = plan;
+    'targets: for group in field_groups {
+        let TargetGroup {
+            target: target_key,
+            edges,
+            reachable,
+        } = group;
         let member_key = (type_key.clone(), target_key.clone());
-        // Checked before any dominance resolution (H1 finding, PR #228
-        // round 2 review): an unreachable target has no member for a
-        // redefinition to resolve *to*, so `resolve_redefinition_contest`'s
-        // own winner search and same-owner/diamond distinction never apply
-        // here -- every edge in this group is refused outright, grouped by
-        // its own owner (below), without ever asking which of them would
-        // have dominated the others.
-        let reachable = member_preimages.contains_key(&member_key);
 
         // `Option<usize>`, not a bare `usize`: an ambiguous group (no edge
         // dominates every other) has no winner at all, but still owes every
@@ -2345,7 +2275,7 @@ fn apply_redefinitions(
         // within a stage" (see the module docs), not by aborting this
         // function early. `None` hides every edge and the target itself:
         // harmless, since a build that ever sets `accounting.refusal`
-        // never returns `Completed` (see `charge_all`). An unreachable
+        // never returns `Completed` (see `build`). An unreachable
         // target (`!reachable`, above) never reaches the hiding loop below
         // at all -- it refuses and `continue`s instead.
         let winner_index: Option<usize> = if edges.len() < 2 {
@@ -2358,35 +2288,6 @@ fn apply_redefinitions(
             // refuse `conformance-depth`.
             Some(0)
         } else {
-            let c = length_amount(edges.len());
-
-            // `value-accounting.md:456`: `work_units += Σ (c − 1) × f(o)`,
-            // summed over the `c` redefining owners `o` -- once per edge,
-            // repeating a shared owner's own `f(o)` once for every edge it
-            // owns exactly as written, not once per *distinct* owner (the
-            // `owner_ancestor_sets` lookup below is this rung's own
-            // optimization of the *walk*, never a change to what is
-            // priced). This charge fires whenever `c >= 2` regardless of
-            // `reachable` (unchanged, PR #228 round 2 review): the domain
-            // package still declared `c` redefinitions of this target, so
-            // phase 4 still prices resolving that contention even though an
-            // unreachable target's own answer is "none of them".
-            let fact_total: u64 = edges
-                .iter()
-                .map(|edge| {
-                    accounting
-                        .type_fact_counts
-                        .get(&edge.owner)
-                        .copied()
-                        .unwrap_or(0)
-                })
-                .sum();
-            accounting.conflict_charges.push((
-                owner_effective_id,
-                target_key.clone(),
-                fact_total.saturating_mul(c.saturating_sub(1)),
-            ));
-
             if !reachable {
                 None
             } else {
@@ -2503,9 +2404,10 @@ fn apply_redefinitions(
         }
 
         for (i, edge) in edges.iter().enumerate() {
-            let mut inputs = edge.path.clone();
-            inputs.push(edge.redefining.clone());
-            inputs.push(edge.target.clone());
+            let inputs = FactInputs::new(
+                edge.path.clone(),
+                vec![edge.redefining.clone(), edge.target.clone()],
+            );
 
             let redefining_key = (type_key.clone(), edge.redefining.clone());
             // Always present: `owner_paths.get(owner)` above already
@@ -2525,12 +2427,6 @@ fn apply_redefinitions(
                 rule: RULE_REDEFINE,
                 inputs: inputs.clone(),
             });
-            // The redefining feature's own fact, awaiting its
-            // `normalize.fact` charge alongside phase 2/3's
-            // (`Built::phase4_fact_count`'s own doc;
-            // `model-complete.md:231`'s "one fact on (T, redefining
-            // feature)").
-            *accounting.phase4_fact_count += 1;
             if winner_index != Some(i) {
                 hidden.insert(redefining_key);
             }
@@ -2544,12 +2440,6 @@ fn apply_redefinitions(
                 rule: RULE_REDEFINE,
                 inputs,
             });
-            // The redefined (target) feature's own fact —
-            // `model-complete.md:231`'s "one ... on (T, redefined feature)"
-            // — one entry per redefining member reaching this target, not
-            // one per target: a `c >= 2` group counts one here for every
-            // contesting edge.
-            *accounting.phase4_fact_count += 1;
         }
         hidden.insert(member_key);
     }
@@ -2565,39 +2455,12 @@ fn apply_redefinitions(
     // `normalize.conflict-check`'s own `Σ (c − 1) × f(o)` price
     // (`value-accounting.md:456`) whenever `c >= 2`, exactly like a
     // contested field target (QSL #145), whether or not it resolves.
-    let mut operation_groups: HashMap<DeclarationKey, Vec<RedefinitionEdge>> = HashMap::new();
-    for edge in operation_edges {
-        operation_groups
-            .entry(edge.target.clone())
-            .or_default()
-            .push(edge);
-    }
-    let mut operation_target_keys: Vec<DeclarationKey> = operation_groups.keys().cloned().collect();
-    operation_target_keys.sort();
-    for target_key in operation_target_keys {
-        let edges = operation_groups.remove(&target_key).expect("just listed");
-        if edges.len() < 2 {
-            // A single redefiner has nothing to contest: no charge, matching
-            // `value-accounting.md:456`'s own `c >= 2` condition.
-            continue;
-        }
-        let c = length_amount(edges.len());
-        let fact_total: u64 = edges
-            .iter()
-            .map(|edge| {
-                accounting
-                    .type_fact_counts
-                    .get(&edge.owner)
-                    .copied()
-                    .unwrap_or(0)
-            })
-            .sum();
-        accounting.conflict_charges.push((
-            owner_effective_id,
-            target_key.clone(),
-            fact_total.saturating_mul(c.saturating_sub(1)),
-        ));
-
+    for TargetGroup {
+        target: target_key,
+        edges,
+        ..
+    } in contested_operations
+    {
         if let Err((rank, refusal)) = resolve_redefinition_contest(
             accounting.owner_ancestor_sets,
             &owner_effective_id,
@@ -2620,7 +2483,7 @@ fn apply_redefinitions(
 /// lookup against an already-computed set, never
 /// a fresh graph walk — the `O(|edges|^2)` pair enumeration this function is
 /// called from stays cheap because `closures` was already built once,
-/// build-wide, before any `apply_redefinitions` call.
+/// build-wide, before any `plan_redefinitions` call.
 fn owner_dominates(
     closures: &HashMap<DeclarationKey, HashSet<DeclarationKey>>,
     p_owner: &DeclarationKey,
@@ -2632,7 +2495,7 @@ fn owner_dominates(
             .is_some_and(|ancestors| ancestors.contains(q_owner))
 }
 
-/// The dominance rule `apply_redefinitions` applies to a contested
+/// The dominance rule `plan_redefinitions` applies to a contested
 /// `target_key`'s `edges` (`c >= 2`, already checked by every caller):
 /// `Ok(i)` names the unique edge whose owner strictly dominates every other
 /// edge's owner. `Err` when no edge does, carrying the FR-272 refusal to
@@ -2773,7 +2636,12 @@ fn resolve_redefinition_contest(
         let edge_paths: Vec<String> = edges
             .iter()
             .map(|edge| {
-                let mut path: Vec<String> = edge.path.iter().map(|key| key.node.clone()).collect();
+                let mut path: Vec<String> = edge
+                    .path
+                    .keys()
+                    .iter()
+                    .map(|key| key.node.clone())
+                    .collect();
                 path.push(edge.redefining.node.clone());
                 path.push(target_key.node.clone());
                 format!("[{}]", path.join(", "))
@@ -2806,174 +2674,80 @@ fn resolve_redefinition_contest(
     })
 }
 
-fn sort_facts(facts: &mut [PendingFact]) {
-    facts.sort_by(|a, b| {
-        a.owner_key
-            .cmp(&b.owner_key)
-            .then_with(|| a.declared_key.cmp(&b.declared_key))
-            .then_with(|| a.inputs.cmp(&b.inputs))
-    });
-}
-
-/// Pass two: replay the exact `ModelNormalizationLimitsV1` charge sequence
-/// over an already-built [`Built`] result.
-/// `charge_all`'s own denial: an ordinary metered [`Incomplete`], or one of
-/// `built`'s own refusal-vec fields (`intake_refusals`, `phase3_refusals`,
-/// `phase4_refusals`), each reported only once every charge its own stage
-/// admits (see the module docs). `From<Incomplete>` lets
-/// `meter.charge(...)?` keep working unchanged throughout `charge_all`.
-enum ChargeAllDenial {
+/// Why [`build`] stopped before completing: a counted limit ran out, or a
+/// stage exposed its refusals, each reported only once every charge its own
+/// stage admits (see the module docs). `From<Incomplete>` lets
+/// `charges.fact()?` and friends propagate a denial directly.
+enum Denial {
     Incomplete(Incomplete),
     Refused(Refusals),
 }
 
-impl From<Incomplete> for ChargeAllDenial {
+impl From<Incomplete> for Denial {
     fn from(incomplete: Incomplete) -> Self {
-        ChargeAllDenial::Incomplete(incomplete)
+        Denial::Incomplete(incomplete)
     }
 }
 
-fn charge_all(
-    domain_package: &DomainPackage,
-    built: &mut Built,
-    meter: &mut Meter,
-) -> Result<(), ChargeAllDenial> {
-    // #141 F11: only the running position (`index + 1`) is charged, never a
-    // key's value or its relative order, so collecting and sorting a
-    // `Vec<DeclarationKey>` just to throw the order away was dead work.
-    //
-    // `normalize.record` charges once per IR node (`value-accounting.md`:489).
-    // Under QSpec's inline shape (`model-complete.md`:155/159/160,
-    // :270/271) a supertype, redefinition or subsetting relationship is a
-    // property of the declaration record that owns it -- `ObjectTypeRecord`,
-    // `FieldMemberRecord`, `OperationMemberRecord` -- never a record of its
-    // own, so there is no separate variant left to filter out here:
-    // `domain_package.records.len()` already is the exact IR node count.
-    for index in 0..domain_package.records.len() {
-        meter.charge(
-            Charge::new(ChargePoint::NormalizeRecord)
-                .size(LimitKind::DeclarationRecords, length_amount(index + 1)),
-        )?;
+impl From<ModelRefusal> for Denial {
+    fn from(refusal: ModelRefusal) -> Self {
+        Denial::Refused(Refusals::new(refusal, Vec::new()))
     }
+}
 
-    // QSL #199: every `normalize.record` charge above is admitted before
-    // this is ever consulted -- `Built::intake_refusals`'s own doc.
-    // `Refusals::try_from` in an `if let` (L1 finding, PR #228 round 2
-    // review): no `.expect()` anywhere on this path -- an empty
-    // `intake_refusals` simply does not match `Ok`, so this falls through
-    // to the phase-3/4 checks below instead of ever panicking.
-    if let Ok(refusals) = Refusals::try_from(std::mem::take(&mut built.intake_refusals)) {
-        return Err(ChargeAllDenial::Refused(refusals));
-    }
+/// The meter one normalization charges as it works, with the running counts
+/// its high-water charges size: `normalize.fact`'s `derivation_facts` and
+/// `normalize.declaration`'s `effective_declarations`.
+struct Charges<'m> {
+    meter: &'m mut Meter,
+    facts: u64,
+    declarations: u64,
+}
 
-    let mut fact_count: u64 = 0;
-    let mut phase2_owned: Vec<PendingFact> = built.phase2_facts.clone();
-    sort_facts(&mut phase2_owned);
-    for _fact in &phase2_owned {
-        fact_count += 1;
-        meter.charge(
-            Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, fact_count),
-        )?;
-    }
-
-    let mut phase3_owned: Vec<PendingFact> = built.phase3_facts.clone();
-    sort_facts(&mut phase3_owned);
-    for fact in &phase3_owned {
-        if let Some(path_len) = fact.cycle_check_len {
-            meter.charge(
-                Charge::new(ChargePoint::NormalizeCycleCheck).work(length_amount(path_len)),
-            )?;
+impl<'m> Charges<'m> {
+    fn new(meter: &'m mut Meter) -> Self {
+        Self {
+            meter,
+            facts: 0,
+            declarations: 0,
         }
-        // QSL #193: a closing extension is charged its own
-        // `normalize.cycle-check` above but derives no fact
-        // (`value-accounting.md:491`; `PendingFact::closes_cycle`'s own
-        // doc), so it is skipped here rather than also charged
-        // `normalize.fact` and counted toward `derivation_facts`.
-        if fact.closes_cycle {
-            continue;
-        }
-        fact_count += 1;
-        meter.charge(
-            Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, fact_count),
+    }
+
+    fn charge(&mut self, charge: Charge) -> Result<(), Incomplete> {
+        self.meter.charge(charge)
+    }
+
+    /// One `normalize.fact`: one more derivation fact.
+    fn fact(&mut self) -> Result<(), Incomplete> {
+        let next = self.facts.saturating_add(1);
+        self.charge(
+            Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, next),
         )?;
+        self.facts = next;
+        Ok(())
     }
 
-    // QSL #193: every phase 2/3 charge above (`normalize.record`,
-    // `normalize.fact`, `normalize.cycle-check`) is admitted before this is
-    // ever consulted -- `Built::phase3_refusals`' own doc.
-    // `value-accounting.md:509`: "a stage that reports a refusal ends
-    // checking: no later stage runs or charges" -- phase 4's own charges
-    // below never run once this is reported. `Refusals::try_from` in an
-    // `if let` -- see the identical `intake_refusals` check above.
-    if let Ok(refusals) = Refusals::try_from(std::mem::take(&mut built.phase3_refusals)) {
-        return Err(ChargeAllDenial::Refused(refusals));
+    /// One `normalize.cycle-check` over an ancestor path of `path_len`
+    /// steps (`work_units += L`, `value-accounting.md:491`).
+    fn cycle_check(&mut self, path_len: usize) -> Result<(), Incomplete> {
+        self.charge(Charge::new(ChargePoint::NormalizeCycleCheck).work(length_amount(path_len)))
     }
 
-    for work in &built.redefinition_check_work {
-        meter.charge(Charge::new(ChargePoint::NormalizeRedefinitionCheck).work(*work))?;
-    }
-
-    // Phase-4 redefine facts are derivation facts too
-    // (`value-accounting.md:453`) and are charged as `normalize.fact` here,
-    // continuing the same `fact_count`/`derivation_facts` sequence phase
-    // 2/3 already ran -- strictly between `normalize.redefinition-check`
-    // ("before its first `normalize.fact`", `:455`) and
-    // `normalize.conflict-check` ("after its last `normalize.fact`",
-    // `:456`). See `Built::phase4_fact_count`'s own doc for why these carry
-    // no `normalize.cycle-check` (that charge is phase-3 type-level facts
-    // only) and no per-fact record (order is never observable, only the
-    // running `derivation_facts` total).
-    for _ in 0..built.phase4_fact_count {
-        fact_count += 1;
-        meter.charge(
-            Charge::new(ChargePoint::NormalizeFact).size(LimitKind::DerivationFacts, fact_count),
-        )?;
-    }
-
-    for work in &built.conflict_check_work {
-        meter.charge(Charge::new(ChargePoint::NormalizeConflictCheck).work(*work))?;
-    }
-
-    // `value-accounting.md:481`'s "checking is exhaustive within a stage":
-    // every phase-4 charge above (`normalize.redefinition-check`, every
-    // phase-4 `normalize.fact`, every `normalize.conflict-check`) is
-    // admitted before `built.phase4_refusals` (see the module docs) is
-    // reported -- an earlier `Incomplete` already returned via `?` above
-    // wins instead. `:482`'s "a stage that reports a refusal ends checking:
-    // no later stage runs or charges" -- phase 5's own charges below never
-    // run once these refusals are reported. `Refusals::try_from` in an
-    // `if let` -- see the identical `intake_refusals` check above.
-    if let Ok(refusals) = Refusals::try_from(std::mem::take(&mut built.phase4_refusals)) {
-        return Err(ChargeAllDenial::Refused(refusals));
-    }
-
-    let mut decl_count: u64 = 0;
-    for declaration in &built.declarations {
-        decl_count += 1;
-        meter.charge(
+    /// One `normalize.declaration`: one more effective declaration.
+    fn declaration(&mut self) -> Result<(), Incomplete> {
+        let next = self.declarations.saturating_add(1);
+        self.charge(
             Charge::new(ChargePoint::NormalizeDeclaration)
-                .size(LimitKind::EffectiveDeclarations, decl_count),
+                .size(LimitKind::EffectiveDeclarations, next),
         )?;
-        meter.charge(
-            Charge::new(ChargePoint::NormalizeHash)
-                .size(LimitKind::HashedBytes, declaration.hashed_bytes),
-        )?;
+        self.declarations = next;
+        Ok(())
     }
 
-    // `value-accounting.md`:495: "each object universe preimage ascending
-    // by its first root type identity, then the effective view preimage" --
-    // the view's universes are already in that order (`build`'s own sort).
-    for universe in built.view.universes.iter() {
-        meter.charge(
-            Charge::new(ChargePoint::NormalizeHash)
-                .size(LimitKind::HashedBytes, universe.canonical_len()),
-        )?;
+    /// One `normalize.hash` over `bytes` of RFC 8785 preimage.
+    fn hash(&mut self, bytes: u64) -> Result<(), Incomplete> {
+        self.charge(Charge::new(ChargePoint::NormalizeHash).size(LimitKind::HashedBytes, bytes))
     }
-    meter.charge(Charge::new(ChargePoint::NormalizeHash).size(
-        LimitKind::HashedBytes,
-        canonical_len(&built.view.wire(&domain_package.model_selection)),
-    ))?;
-    Ok(())
 }
 
 /// Normalize `domain_package` under `limits`: FR-150 phases 1, 2, 3, 4 and 5.
@@ -3011,15 +2785,11 @@ pub fn normalize_shared(
 }
 
 /// [`normalize`], also returning the meter that ran `domain_package` under
-/// `limits`, exposing its admitted-charge sequence for tests that assert the
-/// exact charge order alongside the result.
+/// `limits`, for tests that assert the charges alongside the result.
 ///
-/// Charging runs in two passes: `build` computes every phase to completion
-/// first (bounding only ancestor-path enumeration, by
-/// `limits.ancestor_steps`), and `charge_all` then replays the exact
-/// `ModelNormalizationLimitsV1` charge sequence against the finished result.
-/// The counted limits therefore bound what normalization admits, not the
-/// work `build` has already done by the time a charge is denied.
+/// Normalization charges the meter inside each phase as it works (QSL-216):
+/// the first denied charge stops it, so the counted limits bound the work
+/// done, not only what normalization admits.
 pub fn normalize_with_meter(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
@@ -3031,33 +2801,21 @@ pub fn normalize_with_meter(
     )
 }
 
-/// `build` then `charge_all`: the completed view's body and the record
+/// [`build`] under a fresh meter: the completed view's body and the record
 /// index it was built through, or the denial that stopped it.
 fn normalize_body(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
-) -> (Result<(ViewBody, RecordIndex), ChargeAllDenial>, Meter) {
+) -> (Result<(ViewBody, RecordIndex), Denial>, Meter) {
     let mut meter = Meter::new(limits);
-    let mut built = match build(domain_package, &limits) {
-        Ok(built) => built,
-        // `validate_selection`'s own immediate refusal (see its own doc):
-        // decided before any charge at all, so it is always the sole entry.
-        Err(refusal) => {
-            return (
-                Err(ChargeAllDenial::Refused(Refusals::new(refusal, Vec::new()))),
-                meter,
-            )
-        }
-    };
-    let body =
-        charge_all(domain_package, &mut built, &mut meter).map(|()| (built.view, built.index));
+    let body = build(domain_package, &mut meter);
     (body, meter)
 }
 
 /// The outcome of a normalization whose completed body is paired with the
 /// package `package` supplies, called only when normalization completed.
 fn into_outcome(
-    body: Result<(ViewBody, RecordIndex), ChargeAllDenial>,
+    body: Result<(ViewBody, RecordIndex), Denial>,
     package: impl FnOnce() -> Arc<DomainPackage>,
 ) -> NormalizeOutcome {
     match body {
@@ -3065,12 +2823,12 @@ fn into_outcome(
             index: Arc::new(ModelIndex::from_parts(package(), records)),
             body,
         }),
-        Err(ChargeAllDenial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
-        // `ChargeAllDenial::Refused` already carries `Refusals` (L1
+        Err(Denial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
+        // `Denial::Refused` already carries `Refusals` (L1
         // finding, PR #228 round 2 review): every raise site builds it
         // directly from an already-checked non-empty source, so there is
         // nothing left to convert, and nothing left to panic over, here.
-        Err(ChargeAllDenial::Refused(refusals)) => NormalizeOutcome::Refused(refusals),
+        Err(Denial::Refused(refusals)) => NormalizeOutcome::Refused(refusals),
     }
 }
 
@@ -3121,6 +2879,7 @@ mod tests {
                 },
                 universe_index_by_type: BTreeMap::new(),
                 populations: BTreeMap::new(),
+                limits: ModelNormalizationLimits::UNLIMITED,
             },
         };
         let refusal = view
@@ -3166,5 +2925,272 @@ mod tests {
         };
         assert!(!std::ptr::eq(borrowed.domain_package(), &*domain_package));
         assert_eq!(shared, borrowed);
+    }
+
+    fn object_type(name: &str, supertypes: &[String]) -> DomainPackageRecord {
+        DomainPackageRecord::ObjectType(crate::model::domain_package::ObjectTypeRecord {
+            key: DeclarationKey::fixture(name),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: supertypes.iter().map(DeclarationKey::fixture).collect(),
+        })
+    }
+
+    fn field(name: &str, owner: &str) -> DomainPackageRecord {
+        DomainPackageRecord::FieldMember(crate::model::domain_package::FieldMemberRecord {
+            key: DeclarationKey::fixture(name),
+            owner: DeclarationKey::fixture(owner),
+            value_type: crate::model::domain_package::ValueTypeRef::Package(
+                DeclarationKey::fixture(owner),
+            ),
+            multiplicity: crate::model::domain_package::Multiplicity {
+                lower: 0,
+                upper: Some(1),
+                ordered: false,
+                unique: true,
+            },
+            subsets: Vec::new(),
+            redefines: None,
+        })
+    }
+
+    fn package(records: Vec<DomainPackageRecord>) -> DomainPackage {
+        DomainPackage::new(DomainPackageRef::fixture("test/bounded"), records)
+    }
+
+    /// `A` declaring `fields` fields, and `B` generalizing `A`, so `B`
+    /// inherits every one of them.
+    fn wide(fields: usize) -> DomainPackage {
+        let mut records = vec![
+            object_type("model.A", &[]),
+            object_type("model.B", &["model.A".to_owned()]),
+        ];
+        records.extend((0..fields).map(|i| field(&format!("model.A.f{i:05}"), "model.A")));
+        package(records)
+    }
+
+    /// `depth` levels of two types each, every type generalizing both types
+    /// of the level above: the bottom type has `2^depth` ancestor paths.
+    fn diamond_lattice(depth: usize) -> DomainPackage {
+        let name = |level: usize, side: char| format!("model.L{level:03}{side}");
+        let mut records = vec![
+            object_type(&name(0, 'a'), &[]),
+            object_type(&name(0, 'b'), &[]),
+        ];
+        for level in 1..=depth {
+            let parents = [name(level - 1, 'a'), name(level - 1, 'b')];
+            records.push(object_type(&name(level, 'a'), &parents));
+            records.push(object_type(&name(level, 'b'), &parents));
+        }
+        package(records)
+    }
+
+    /// Normalizes `domain_package` under `limits` and counts the
+    /// per-declaration work that normalization did on this thread.
+    fn incomplete_with_steps(
+        domain_package: &DomainPackage,
+        limits: ModelNormalizationLimits,
+    ) -> (Incomplete, u64) {
+        let before = work_steps();
+        let outcome = normalize(domain_package, limits);
+        let steps = work_steps() - before;
+        match outcome {
+            NormalizeOutcome::Incomplete(incomplete) => (incomplete, steps),
+            other => panic!("expected Incomplete, got {other:?}"),
+        }
+    }
+
+    /// QSL-216 AC 1: a package past a normalization limit is refused after
+    /// work bounded by that limit, not by the package. Hashing member
+    /// identities stops at `effective_declarations`, inheriting members stops
+    /// at `derivation_facts`, and walking a diamond lattice's exponentially
+    /// many ancestor paths stops at `derivation_facts` too. Growing each
+    /// package tenfold (the lattice by 2^8 paths) leaves the refusal's work
+    /// flat.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn a_refused_normalization_does_work_bounded_by_the_limit_not_the_package() {
+        let declarations = ModelNormalizationLimits {
+            effective_declarations: 6,
+            ..ModelNormalizationLimits::UNLIMITED
+        };
+        let (small, small_steps) = incomplete_with_steps(&wide(100), declarations);
+        let (large, large_steps) = incomplete_with_steps(&wide(1_000), declarations);
+        assert_eq!(small.limit_kind, LimitKind::EffectiveDeclarations);
+        assert_eq!(small.charge_point, ChargePoint::NormalizeDeclaration);
+        assert_eq!(small, large);
+        // One walk step (B to A) and the n inherited members are admitted
+        // under unlimited facts; the member hashes are what the limit
+        // bounds: two type declarations and four member declarations are
+        // admitted, so four member identities are hashed, never n.
+        assert_eq!(small_steps, 1 + 100 + 4);
+        assert_eq!(large_steps, 1 + 1_000 + 4);
+
+        // Phase 2 charges 2 + n facts. Of three more, one admits B's path to
+        // A and two admit inherited members; the third inherited member is
+        // denied. One walk step and three member steps, whatever n is.
+        let facts = |fields: u64| ModelNormalizationLimits {
+            derivation_facts: 2 + fields + 3,
+            ..ModelNormalizationLimits::UNLIMITED
+        };
+        let (small, small_steps) = incomplete_with_steps(&wide(100), facts(100));
+        let (large, large_steps) = incomplete_with_steps(&wide(1_000), facts(1_000));
+        assert_eq!(small.limit_kind, LimitKind::DerivationFacts);
+        assert_eq!(large.limit_kind, LimitKind::DerivationFacts);
+        assert_eq!((small_steps, large_steps), (4, 4));
+
+        let lattice = ModelNormalizationLimits {
+            derivation_facts: 200,
+            ..ModelNormalizationLimits::UNLIMITED
+        };
+        let (shallow, shallow_steps) = incomplete_with_steps(&diamond_lattice(10), lattice);
+        let (deep, deep_steps) = incomplete_with_steps(&diamond_lattice(18), lattice);
+        assert_eq!(shallow.limit_kind, LimitKind::DerivationFacts);
+        assert_eq!(deep.limit_kind, LimitKind::DerivationFacts);
+        // Every walk step admits a path or is the one denied, so the walk
+        // takes at most `derivation_facts` steps whatever the lattice's
+        // 2^depth path count.
+        assert!(shallow_steps <= 200, "{shallow_steps} steps");
+        assert!(deep_steps <= 200, "{deep_steps} steps");
+    }
+
+    /// A chain `C000 <- C001 <- ... <- C{depth}` with `fields` fields
+    /// declared on the root `C000`: type `Ci` inherits every field along a
+    /// path of `i` steps.
+    fn deep_chain_with_wide_root(depth: usize, fields: usize) -> DomainPackage {
+        let name = |level: usize| format!("model.C{level:03}");
+        let mut records = vec![object_type(&name(0), &[])];
+        records.extend((1..=depth).map(|level| object_type(&name(level), &[name(level - 1)])));
+        records.extend((0..fields).map(|i| field(&format!("model.C000.f{i:04}"), &name(0))));
+        package(records)
+    }
+
+    /// QSL-216 review (HIGH 2): a type's inherited facts share its ancestor
+    /// paths rather than copying them, so memory grows with facts plus total
+    /// path length, not facts times path length. At the default limits, a
+    /// 120-deep chain whose root declares 20 fields normalizes, and every
+    /// inherited member fact of every chain type holds the very path its
+    /// type's own inherit fact holds. (A 200-deep chain over 2,000 root
+    /// fields refuses on `hashed_bytes` at the defaults, peaking at about
+    /// 650 MB where copied paths reached about 6 GB; that run takes about a
+    /// minute in a debug build, so it is measured, not run here.)
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn inherited_facts_share_their_ancestor_path_at_the_defaults() {
+        let depth = 120;
+        let fields = 20;
+        let NormalizeOutcome::Completed(view) = normalize(
+            &deep_chain_with_wide_root(depth, fields),
+            ModelNormalizationLimits::default(),
+        ) else {
+            panic!("a 120-deep chain over 20 root fields normalizes at the defaults");
+        };
+        let root = DeclarationKey::fixture("model.C000");
+        let type_paths: HashMap<EffectiveId, &FactInputs> = view
+            .declarations()
+            .iter()
+            .filter(|entry| entry.preimage.owner_effective_type.is_none())
+            .filter_map(|entry| {
+                let to_root = entry.preimage.derivation.iter().find(|fact| {
+                    fact.rule == RULE_INHERIT && fact.inputs.iter().last() == Some(&root)
+                })?;
+                Some((entry.effective_id, &to_root.inputs))
+            })
+            .collect();
+        assert_eq!(type_paths.len(), depth);
+        let mut shared = 0;
+        for entry in view.declarations() {
+            let Some(owner) = entry.preimage.owner_effective_type else {
+                continue;
+            };
+            for fact in entry
+                .preimage
+                .derivation
+                .iter()
+                .filter(|fact| fact.rule == RULE_INHERIT)
+            {
+                assert!(fact.inputs.shares_path_with(type_paths[&owner]));
+                shared += 1;
+            }
+        }
+        assert_eq!(shared, depth * fields);
+    }
+
+    /// QSL-216 review (LOW 5): `ancestor_steps` is read, not charged, so its
+    /// refusal and a counted limit are ordered by charge order. Every
+    /// `normalize.record` charge precedes the ancestor walk: one record short
+    /// of a 10-deep chain's 11 records is incomplete on
+    /// `declaration_records`, even though the walk would pass
+    /// `ancestor_steps` 5. With records unlimited, the walk reaches that
+    /// ceiling and refuses `AncestorSteps`.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn a_counted_limit_denied_first_wins_over_ancestor_steps() {
+        let chain = deep_chain_with_wide_root(10, 0);
+        let short = ModelNormalizationLimits {
+            declaration_records: 10,
+            ancestor_steps: 5,
+            ..ModelNormalizationLimits::UNLIMITED
+        };
+        match normalize(&chain, short) {
+            NormalizeOutcome::Incomplete(incomplete) => {
+                assert_eq!(incomplete.limit_kind, LimitKind::DeclarationRecords);
+                assert_eq!(incomplete.charge_point, ChargePoint::NormalizeRecord);
+                assert_eq!((incomplete.limit, incomplete.next_charge), (10, 11));
+            }
+            other => panic!("expected Incomplete(DeclarationRecords), got {other:?}"),
+        }
+        let records_unlimited = ModelNormalizationLimits {
+            declaration_records: u64::MAX,
+            ..short
+        };
+        match normalize(&chain, records_unlimited) {
+            NormalizeOutcome::Refused(refusals) => {
+                assert_eq!(refusals.len(), 1);
+                assert!(matches!(
+                    refusals[0].cause,
+                    ModelRefusalCause::AncestorSteps { limit: 5, .. }
+                ));
+            }
+            other => panic!("expected Refused(AncestorSteps), got {other:?}"),
+        }
+    }
+
+    /// QSL-222: the default limits are NFR-012's finite ceilings, and a
+    /// completed view records the limits it was normalized under: the
+    /// defaults, or a caller's limits as given.
+    #[trace("TC-434", "NFR-012")]
+    #[test]
+    fn the_default_limits_are_finite_and_recorded_with_the_view() {
+        assert_eq!(
+            ModelNormalizationLimits::default(),
+            ModelNormalizationLimits {
+                declaration_records: 100_000,
+                derivation_facts: 1_600_000,
+                effective_declarations: 1_600_000,
+                dispatch_candidates: 1_600_000,
+                hashed_bytes: 268_435_456,
+                work_units: 16_777_216,
+                ancestor_steps: 100_000,
+                family_steps: 100_000,
+            }
+        );
+        let NormalizeOutcome::Completed(view) =
+            normalize(&wide(3), ModelNormalizationLimits::default())
+        else {
+            panic!("a small package normalizes at the defaults");
+        };
+        assert_eq!(
+            view.effective_limits(),
+            &ModelNormalizationLimits::default()
+        );
+        let raised = ModelNormalizationLimits {
+            work_units: u64::MAX,
+            ..ModelNormalizationLimits::default()
+        };
+        let NormalizeOutcome::Completed(view) = normalize(&wide(3), raised) else {
+            panic!("a small package normalizes under raised limits");
+        };
+        assert_eq!(view.effective_limits(), &raised);
     }
 }

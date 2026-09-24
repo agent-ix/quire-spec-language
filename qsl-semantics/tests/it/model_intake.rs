@@ -453,8 +453,8 @@ fn multiplicity_one(lower: u64, upper: Option<u64>) -> serde_json::Value {
     })
 }
 
-fn unlimited_meter() -> Meter {
-    Meter::new(ModelNormalizationLimits::UNLIMITED)
+fn default_meter() -> Meter {
+    Meter::new(ModelNormalizationLimits::default())
 }
 
 fn key(package: &str, identity: &str) -> DeclarationKey {
@@ -765,7 +765,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
         .expect("a QSpec-conformant document reads with no refusals");
     let domain_package = DomainPackage::new(package_ref, records);
 
-    let mut meter = unlimited_meter();
+    let mut meter = default_meter();
     let classification =
         classify(&domain_package, &mut meter).expect("an unlimited meter never runs out");
     assert_eq!(
@@ -777,7 +777,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
     let pipe_key = key(package_identity, &pipe);
     let pump_alloc_key = key(package_identity, &pump_alloc);
 
-    let mut meter = unlimited_meter();
+    let mut meter = default_meter();
     let connection_outcome = check_connection(
         &ModelIndex::build(domain_package.clone()),
         &classification,
@@ -790,7 +790,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
         "PumpOut (out, Flow) to TankIn (in, Flow), 1..1 to 1..1, is a wholly admitted connection"
     );
 
-    let mut meter = unlimited_meter();
+    let mut meter = default_meter();
     let allocation_outcome = check_allocation(&classification, &pump_alloc_key, &mut meter);
     assert_eq!(
         allocation_outcome,
@@ -872,7 +872,7 @@ fn charges_normalize_record_once_per_intake_declaration() {
 
     let exact = ModelNormalizationLimits {
         declaration_records: 2,
-        ..ModelNormalizationLimits::UNLIMITED
+        ..ModelNormalizationLimits::default()
     };
     // R2-6 (PR #200 review round 2): TC-147's Expected Results say "the
     // exact bound completes with N declarations" -- inspect the
@@ -891,7 +891,7 @@ fn charges_normalize_record_once_per_intake_declaration() {
 
     let one_less = ModelNormalizationLimits {
         declaration_records: 1,
-        ..ModelNormalizationLimits::UNLIMITED
+        ..ModelNormalizationLimits::default()
     };
     match normalize(&domain_package, one_less) {
         NormalizeOutcome::Incomplete(incomplete) => {
