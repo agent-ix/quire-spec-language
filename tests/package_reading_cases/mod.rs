@@ -387,9 +387,20 @@ fn real_frontend_limits_preserve_native_causes_and_retry_state() {
             limits,
         )
         .unwrap_err();
+        // QSL-236: only the S1 syntax dimensions other than `tokens` (no
+        // catalog cause yet, STD-95) are `SyntaxLimit` kinds the catalog
+        // admits; `link.*` (`src/linking.rs`'s own node/depth/model-byte
+        // budgets) and `check.*` (`src/checking.rs`'s native constraint
+        // checker) are untouched producers outside this ticket's four
+        // kinds, and stay `resource_exhausted`.
+        let expected_code = if dimension.starts_with("syntax.") && dimension != "syntax.tokens" {
+            Code::StageLimitExceeded
+        } else {
+            Code::ResourceExhausted
+        };
         assert_eq!(
             (error.code, error.stage),
-            (Code::ResourceExhausted, PackageStage::Rebind),
+            (expected_code, PackageStage::Rebind),
             "{dimension}"
         );
         if dimension == "link.clauses" {
@@ -404,7 +415,7 @@ fn real_frontend_limits_preserve_native_causes_and_retry_state() {
                 Some(PackageCause::Checking(cause)) => cause.diagnostic.code,
                 _ => panic!("the actual native diagnostic must survive: {dimension}"),
             };
-            assert_eq!(code, Code::ResourceExhausted);
+            assert_eq!(code, expected_code);
         }
         assert!(error.usage.decode.is_some());
         assert!(error.usage.derive.is_none());

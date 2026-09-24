@@ -773,6 +773,8 @@ pub enum NodeKeyRefusal {
     TooDeep {
         /// The depth limit.
         limit: u64,
+        /// The depth the refused term is at.
+        actual: u64,
     },
     /// A recursion group has no member, names one member twice, or a
     /// placeholder names no member: an internal fault of the caller.
@@ -783,6 +785,8 @@ pub enum NodeKeyRefusal {
     WorkBudget {
         /// The work budget.
         limit: u64,
+        /// The cumulative spend the refused charge would have reached.
+        actual: u128,
     },
     /// A literal's `type`, an application's `result_type` or an operation
     /// member's `declaration` names a member of the node's own recursion
@@ -1354,6 +1358,7 @@ impl Walk<'_> {
         if depth > MAX_CHECKING_DEPTH {
             return Err(NodeKeyRefusal::TooDeep {
                 limit: MAX_CHECKING_DEPTH,
+                actual: depth,
             });
         }
         let terms = |terms: &'a [SemanticTerm]| {

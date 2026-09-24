@@ -77,7 +77,9 @@ fn a_caller_raised_source_byte_ceiling_admits_past_the_default() {
     text.push('\n');
     assert_eq!(
         parse("bytes-default", &text, Limits::default()).unwrap_err(),
-        CompleteCode::ResourceExhausted,
+        // QSL-236: `source_bytes` is a `SyntaxLimit` kind the catalog
+        // admits, so it now reports `stage_limit_exceeded`.
+        CompleteCode::StageLimitExceeded,
         "the default source-byte ceiling must refuse a source past it"
     );
 
@@ -100,7 +102,7 @@ fn a_caller_raised_source_byte_ceiling_admits_past_the_default() {
         },
     )
     .unwrap_err();
-    assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
+    assert_eq!(refusal.code, CompleteCode::StageLimitExceeded);
     assert_eq!(
         refusal.limit(),
         Some(SyntaxLimit::SourceBytes {
@@ -180,7 +182,9 @@ fn a_caller_raised_node_ceiling_admits_past_the_default_and_refuses_one_less() {
         qsl_cst::parse_source(source(), Limits::default())
             .unwrap_err()
             .code,
-        CompleteCode::ResourceExhausted,
+        // QSL-236: the node ceiling is a `SyntaxLimit` kind the catalog
+        // admits, so it now reports `stage_limit_exceeded`.
+        CompleteCode::StageLimitExceeded,
     );
 
     let raised = Limits {
@@ -200,7 +204,7 @@ fn a_caller_raised_node_ceiling_admits_past_the_default_and_refuses_one_less() {
         },
     )
     .unwrap_err();
-    assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
+    assert_eq!(refusal.code, CompleteCode::StageLimitExceeded);
     assert_eq!(
         refusal.limit(),
         Some(SyntaxLimit::Nodes { bound: nodes - 1 })

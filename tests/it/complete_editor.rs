@@ -4,6 +4,7 @@ use ix_trace_rs::trace;
 use qsl_cst::{
     parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, TokenClass,
 };
+use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, ProfileCatalog};
 use qsl_foundation::{SourceIdentity, Span};
 use quire_spec_language::complete::{
@@ -363,11 +364,13 @@ fn formatter_reparse_uses_the_callers_explicit_limits() {
         },
     )
     .unwrap_err();
+    // QSL-236: the output byte ceiling is a `SyntaxLimit` kind the catalog
+    // admits, so it now reports `stage_limit_exceeded`.
     assert_eq!(
         (refusal.code, refusal.cause),
         (
-            CompleteCode::ResourceExhausted,
-            CompleteCause::InsufficientNextCharge
+            CompleteCode::StageLimitExceeded,
+            CompleteCause::StageLimit(LimitKind::InputBytes)
         )
     );
 }
@@ -536,7 +539,7 @@ fn formatter_checks_trailing_comment_and_newline_capacity_before_append() {
             },
         )
         .unwrap_err();
-        assert_eq!(one_short.code, CompleteCode::ResourceExhausted);
+        assert_eq!(one_short.code, CompleteCode::StageLimitExceeded);
         let expected = expected_failure_span.map_or(
             Span {
                 start: source.len(),

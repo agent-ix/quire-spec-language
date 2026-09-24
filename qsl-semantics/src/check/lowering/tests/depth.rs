@@ -108,11 +108,12 @@ fn assert_depth_refusals(refusals: &[CheckRefusal], limit: u64) {
     for refusal in refusals {
         assert_eq!(
             refusal.cause,
-            CheckCause::ResourceExhausted {
+            CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                 stage: CheckingStage::Typing,
                 kind: CheckingLimitKind::Depth,
                 limit,
-            },
+                actual: u128::from(limit) + 1,
+            })),
             "{refusal:?}"
         );
     }

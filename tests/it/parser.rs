@@ -260,33 +260,49 @@ fn exact_header_versions_and_source_validation() {
 #[trace("TC-011", "TC-012", "FR-001-AC-4", "FR-002-AC-4")]
 #[test]
 fn resource_limits_never_become_boolean_results() {
-    for limits in [
-        Limits {
-            source_bytes: 1,
-            ..Limits::default()
-        },
-        Limits {
-            tokens: 2,
-            ..Limits::default()
-        },
-        Limits {
-            nodes: 0,
-            ..Limits::default()
-        },
-        Limits {
-            nesting: 0,
-            ..Limits::default()
-        },
+    // QSL-236: `tokens` has no catalog cause yet (STD-95) and stays
+    // `resource_exhausted` (incomplete, exit 22); `source_bytes`, `nodes`
+    // and `nesting` are stage limits (`stage_limit_exceeded`, a refusal,
+    // exit 20) -- neither ever becomes a boolean result either way.
+    for (limits, incomplete) in [
+        (
+            Limits {
+                source_bytes: 1,
+                ..Limits::default()
+            },
+            false,
+        ),
+        (
+            Limits {
+                tokens: 2,
+                ..Limits::default()
+            },
+            true,
+        ),
+        (
+            Limits {
+                nodes: 0,
+                ..Limits::default()
+            },
+            false,
+        ),
+        (
+            Limits {
+                nesting: 0,
+                ..Limits::default()
+            },
+            false,
+        ),
     ] {
         let error = read(document("true").as_bytes(), limits).unwrap_err();
-        assert!(error.is_incomplete());
+        assert_eq!(error.is_incomplete(), incomplete, "{limits:?}");
     }
     let error = read(
         document(&format!("{}true{}", "(".repeat(1000), ")".repeat(1000))).as_bytes(),
         Limits::default(),
     )
     .unwrap_err();
-    assert!(error.is_incomplete());
+    assert!(!error.is_incomplete());
     // A right-associative `implies` chain has nesting depth 0 (NFR-001
     // "Nesting level"): 1,000 operands fits comfortably under the default
     // token/node ceilings and must parse, not refuse. This replaces a

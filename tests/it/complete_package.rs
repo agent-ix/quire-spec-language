@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_cst::{parse, CompleteCause, CompleteDiagnostic, Limits, ParsedSource};
+use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::selection::{
     DefinitionDigest, DefinitionRef, ProfileCatalog, MAX_SELECTED_DEFINITIONS,
 };
@@ -907,19 +908,28 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
             limit: 1,
         }
     );
+    let depth_refusal = resolve_parsed(
+        &parsed,
+        &catalog,
+        &models,
+        PackageLimits { depth: 2, ..exact },
+    )
+    .unwrap_err();
     assert_eq!(
-        resolve_parsed(
-            &parsed,
-            &catalog,
-            &models,
-            PackageLimits { depth: 2, ..exact },
-        )
-        .unwrap_err()
-        .cause,
+        depth_refusal.cause,
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Depth,
             limit: 2,
         }
+    );
+    // QSL-236: the graph's own depth ceiling is the one `PackageLimitKind`
+    // that maps cleanly onto the catalog's `stage_limit_exceeded`, unlike
+    // `Definitions`/`DependencyEdges`/`ArtifactBytes` above, which stay
+    // `resource_exhausted`.
+    assert_eq!(depth_refusal.code, Code::StageLimitExceeded);
+    assert_eq!(
+        depth_refusal.cause_tag,
+        ResolutionCause::StageLimit(LimitKind::NestingDepth)
     );
 }
 
@@ -932,6 +942,10 @@ macro_rules! resolution_causes {
         fn covered(cause: ResolutionCause) {
             match cause {
                 $(ResolutionCause::$variant => {})+
+                // QSL-236: the one payload-bearing variant, covered
+                // separately below rather than through this macro's
+                // bare-identifier list.
+                ResolutionCause::StageLimit(_) => {}
             }
         }
         vec![$({
@@ -965,6 +979,27 @@ fn resolution_causes_match_the_complete_cause_catalog() {
         ConflictingBinding,
     ];
     for (resolution, complete) in pairs {
+        assert_eq!(resolution.as_str(), complete.as_str());
+        for code in Code::all() {
+            assert_eq!(
+                resolution.is_cause_of(*code),
+                complete.is_cause_of(*code),
+                "{resolution:?} and {complete:?} disagree on {code:?}"
+            );
+        }
+    }
+    // QSL-236: `StageLimit`'s payload carries the kind, so it is checked
+    // directly rather than through the macro's bare-identifier list, over
+    // every kind the catalog admits (not only `NestingDepth`, the one the
+    // package graph itself produces).
+    for kind in [
+        LimitKind::InputBytes,
+        LimitKind::NestingDepth,
+        LimitKind::NodeCount,
+        LimitKind::WorkBudget,
+    ] {
+        let resolution = ResolutionCause::StageLimit(kind);
+        let complete = CompleteCause::StageLimit(kind);
         assert_eq!(resolution.as_str(), complete.as_str());
         for code in Code::all() {
             assert_eq!(

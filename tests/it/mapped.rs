@@ -327,11 +327,17 @@ fn mapped_stage_limits_preserve_causes_and_allow_fresh_retries() {
     checking.checking.nodes = 0;
     let mut package = CompileLimits::default();
     package.package.artifact_bytes = 0;
-    for (limits, phase) in [
-        (syntax, Some(Phase::Source)),
-        (linking, Some(Phase::Link)),
-        (checking, Some(Phase::Check)),
-        (package, None),
+    // QSL-236: the syntax phase's `source_bytes` ceiling is a `SyntaxLimit`
+    // kind the catalog admits, so it now reports `stage_limit_exceeded`.
+    // `linking`'s own node budget, `src/checking.rs`'s native constraint
+    // checker and the package graph's `artifact_bytes` are untouched
+    // producers outside this ticket's four kinds, and stay
+    // `resource_exhausted`.
+    for (limits, phase, code) in [
+        (syntax, Some(Phase::Source), Code::StageLimitExceeded),
+        (linking, Some(Phase::Link), Code::ResourceExhausted),
+        (checking, Some(Phase::Check), Code::ResourceExhausted),
+        (package, None, Code::ResourceExhausted),
     ] {
         let error = compile(
             map.clone(),
@@ -342,7 +348,7 @@ fn mapped_stage_limits_preserve_causes_and_allow_fresh_retries() {
             limits,
         )
         .unwrap_err();
-        assert_eq!(error.code(), Code::ResourceExhausted);
+        assert_eq!(error.code(), code);
         assert_eq!(
             error.native_diagnostic().map(|diagnostic| diagnostic.phase),
             phase

@@ -78,7 +78,9 @@ fn exact_bytes_digest_is_checked_before_correspondence() {
             .code,
         Code::SourceDigestMismatch
     );
-    assert!(Source::read_verified(id, "x", b"abc", digest, 2)
+    // QSL-236: the source's own byte ceiling is now a stage limit
+    // (`stage_limit_exceeded`), a refusal, not incomplete work.
+    assert!(!Source::read_verified(id, "x", b"abc", digest, 2)
         .unwrap_err()
         .is_incomplete());
     for invalid in [
@@ -111,7 +113,9 @@ fn a_caller_raised_byte_limit_is_enforced_as_given() {
         Source::read(id.clone(), "x", &at_raised, MAX_SOURCE_BYTES)
             .unwrap_err()
             .code,
-        Code::ResourceExhausted,
+        // QSL-236: the source's own byte ceiling is a `SyntaxLimit` kind
+        // the catalog admits, so it now reports `stage_limit_exceeded`.
+        Code::StageLimitExceeded,
         "the default limit must refuse a source past it"
     );
     let admitted = Source::read(id.clone(), "x", &at_raised, raised)
@@ -120,7 +124,7 @@ fn a_caller_raised_byte_limit_is_enforced_as_given() {
 
     let past_raised = vec![b'a'; raised + 1];
     let refusal = Source::read(id, "x", &past_raised, raised).unwrap_err();
-    assert_eq!(refusal.code, Code::ResourceExhausted);
+    assert_eq!(refusal.code, Code::StageLimitExceeded);
     assert!(
         refusal.message.contains(&raised.to_string()),
         "the refusal must name the caller's limit, got {refusal:?}"
@@ -535,7 +539,9 @@ fn extracted_bytes_need_a_distinct_identity_and_respect_parse_limits() {
     )
     .is_err());
     let body = source("body", "true");
-    assert!(parse_source(
+    // QSL-236: the source's own byte ceiling is now a stage limit
+    // (`stage_limit_exceeded`), a refusal, not incomplete work.
+    assert!(!parse_source(
         body,
         Limits {
             source_bytes: 1,

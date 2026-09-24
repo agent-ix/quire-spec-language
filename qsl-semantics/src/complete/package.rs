@@ -703,7 +703,7 @@ pub struct PackageRefusal {
 }
 
 /// The closed catalogued cause tag of a package-graph refusal, under
-/// `quire.native.diagnostics/v1` revision `1-draft.3`. Layer 3's own subset of
+/// `quire.native.diagnostics/v1` revision `1-draft.6`. Layer 3's own subset of
 /// the cause vocabulary: the parser's `qsl_cst::CompleteCause` is layer 1's,
 /// and resolution never sees a syntax cause.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -741,6 +741,13 @@ pub enum ResolutionCause {
     /// `invalid_model_binding`: one model identity is selected twice with
     /// distinct exact selections.
     ConflictingBinding,
+    /// `stage_limit_exceeded` (QSL-236, revision `1-draft.6`): the package
+    /// graph's own dependency-chain depth ceiling
+    /// ([`PackageLimitKind::Depth`]), the one [`PackageLimitKind`] that maps
+    /// cleanly onto a T-4 [`qsl_foundation::diagnostic::LimitKind`]. The
+    /// other ceilings (`Definitions`, `DependencyEdges`, `ArtifactBytes`,
+    /// `SingleArtifactBytes`) stay `InsufficientNextCharge`.
+    StageLimit(qsl_foundation::diagnostic::LimitKind),
 }
 
 impl ResolutionCause {
@@ -762,6 +769,7 @@ impl ResolutionCause {
             Self::UnsupportedFeature => "unsupported-feature",
             Self::WrongModelSelection => "wrong-model-selection",
             Self::ConflictingBinding => "conflicting-binding",
+            Self::StageLimit(kind) => kind.catalog_cause(),
         }
     }
 
@@ -786,6 +794,7 @@ impl ResolutionCause {
             Self::WrongModelSelection | Self::ConflictingBinding => {
                 code == Code::InvalidModelBinding
             }
+            Self::StageLimit(_) => code == Code::StageLimitExceeded,
         }
     }
 }
@@ -1016,7 +1025,10 @@ pub fn resolve_source_package(
             };
             if active.len() >= limits.depth {
                 return Err(refusal(
-                    Code::ResourceExhausted,
+                    // QSL-236: the graph's dependency-chain depth ceiling
+                    // maps onto `stage_limit_exceeded`/`nesting-depth-exceeded`
+                    // (`cause_tag` picks the tag from the `PackageError`).
+                    Code::StageLimitExceeded,
                     span,
                     PackageError::ResourceLimit {
                         kind: PackageLimitKind::Depth,
@@ -1201,6 +1213,14 @@ fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
         PackageError::DefinitionCycle(_) => Tag::DefinitionCycle,
         PackageError::MissingCapability(_) => Tag::UnsupportedFeature,
         PackageError::UnknownCapability(_) => Tag::UnknownFeature,
+        // QSL-236: the graph's own dependency-chain depth is the one
+        // `PackageLimitKind` that maps cleanly onto a T-4 `LimitKind`
+        // (`NestingDepth`); the byte and count ceilings do not and stay
+        // `InsufficientNextCharge`.
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::Depth,
+            ..
+        } => Tag::StageLimit(qsl_foundation::diagnostic::LimitKind::NestingDepth),
         PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => {
             Tag::InsufficientNextCharge
         }

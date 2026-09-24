@@ -360,16 +360,13 @@ fn a_type_nested_past_the_depth_limit_refuses() {
     assert!(
         refusals.iter().any(|refusal| matches!(
             refusal.cause,
-            CheckCause::ResourceExhausted {
-                kind: CheckingLimitKind::Depth,
-                limit: 4,
-                ..
-            }
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.kind == CheckingLimitKind::Depth && exceeded.limit == 4
         )),
         "{refusals:?}"
     );
-    assert_eq!(refusals[0].cause.code().as_str(), "resource_exhausted");
-    assert_eq!(refusals[0].cause.cause(), Some("insufficient-next-charge"));
+    assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
+    assert_eq!(refusals[0].cause.cause(), Some("nesting-depth-exceeded"));
 }
 
 /// `function name(x: Int[0, 9]): Boolean decreases(x) { if x > 0 then
@@ -695,11 +692,8 @@ fn keying_a_recursion_group_is_charged_to_the_work_budget() {
     assert!(
         refusals.iter().any(|refusal| matches!(
             refusal.cause,
-            CheckCause::ResourceExhausted {
-                kind: CheckingLimitKind::WorkBudget,
-                limit,
-                ..
-            } if limit == declared
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.kind == CheckingLimitKind::WorkBudget && exceeded.limit == declared
         )),
         "{refusals:?}"
     );

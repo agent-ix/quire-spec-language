@@ -173,7 +173,7 @@ pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTabl
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
     InvalidDispatchDeclaration, KeyFault, Location, MeasureObligation, Obligation, Origin,
-    ProvedInterval, WrongSnapshotCause,
+    ProvedInterval, StageLimitCause, WrongSnapshotCause,
 };
 
 /// How a standalone expression is checked.
@@ -418,7 +418,7 @@ fn root(origin: Origin) -> Location {
 fn invalid_dispatch(location: Location, detail: InvalidDispatchDeclaration) -> CheckRefusal {
     CheckRefusal {
         location,
-        cause: CheckCause::InvalidDispatchDeclaration(detail),
+        cause: CheckCause::InvalidDispatchDeclaration(Box::new(detail)),
     }
 }
 
@@ -884,15 +884,16 @@ impl PackageDeclarations {
                     };
                     refusals.push(CheckRefusal {
                         location: location.clone(),
-                        cause: CheckCause::ResourceExhausted {
+                        cause: CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                             stage: CheckingStage::Typing,
                             kind,
                             limit: limit.configured_bound(),
-                        },
+                            actual: limit.actual(),
+                        })),
                     });
                 }
                 Err(StageFailure::Refused(refusal)) => {
-                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted { .. });
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
                     if exhausted {
                         return Err(refusals);
@@ -1665,11 +1666,12 @@ mod tests {
         assert!(matches!(
             refusals.as_slice(),
             [CheckRefusal {
-                cause: CheckCause::InvalidDispatchDeclaration(
-                    InvalidDispatchDeclaration::ResolvedSignatureOutOfRange { index: 0 }
-                ),
+                cause: CheckCause::InvalidDispatchDeclaration(box_detail),
                 ..
-            }]
+            }] if matches!(
+                **box_detail,
+                InvalidDispatchDeclaration::ResolvedSignatureOutOfRange { index: 0 }
+            )
         ));
     }
 }

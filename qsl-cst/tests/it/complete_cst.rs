@@ -152,7 +152,9 @@ fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
         )
         .unwrap_err()
         .code,
-        CompleteCode::ResourceExhausted
+        // QSL-236: the node ceiling is a `SyntaxLimit` kind the catalog
+        // admits, so it now reports `stage_limit_exceeded`.
+        CompleteCode::StageLimitExceeded
     );
 }
 

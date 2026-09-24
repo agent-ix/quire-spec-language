@@ -818,11 +818,11 @@ fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
     assert!(
         refused.iter().any(|refusal| matches!(
             refusal.cause,
-            CheckCause::ResourceExhausted {
-                stage: CheckingStage::Typing,
-                kind: CheckingLimitKind::Depth,
-                limit: 0,
-            }
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.stage == CheckingStage::Typing
+                    && exceeded.kind == CheckingLimitKind::Depth
+                    && exceeded.limit == 0
+                    && exceeded.actual == 1
         )),
         "expected a contract-level ResourceExhausted(Depth, limit=0) refusal, got {refused:?}"
     );
@@ -889,12 +889,14 @@ fn dispatch_candidate_with_an_out_of_range_body_index_is_refused_invalid_dispatc
     assert!(
         refusals.iter().any(|refusal: &CheckRefusal| matches!(
             &refusal.cause,
-            CheckCause::InvalidDispatchDeclaration(
-                InvalidDispatchDeclaration::FunctionOutOfRange {
-                    role: DispatchFunctionRole::Body,
-                    index: 99,
-                }
-            )
+            CheckCause::InvalidDispatchDeclaration(detail)
+                if matches!(
+                    **detail,
+                    InvalidDispatchDeclaration::FunctionOutOfRange {
+                        role: DispatchFunctionRole::Body,
+                        index: 99,
+                    }
+                )
         )),
         "expected an InvalidDispatchDeclaration/FunctionOutOfRange refusal, got {refusals:?}"
     );
@@ -919,12 +921,16 @@ fn dispatch_candidate_with_a_mismatched_arity_is_refused_invalid_dispatch() {
     assert!(
         refusals.iter().any(|refusal: &CheckRefusal| matches!(
             &refusal.cause,
-            CheckCause::InvalidDispatchDeclaration(InvalidDispatchDeclaration::Arity {
-                role: DispatchFunctionRole::Body,
-                index: 0,
-                declared: 1,
-                expected: 2,
-            })
+            CheckCause::InvalidDispatchDeclaration(detail)
+                if matches!(
+                    **detail,
+                    InvalidDispatchDeclaration::Arity {
+                        role: DispatchFunctionRole::Body,
+                        index: 0,
+                        declared: 1,
+                        expected: 2,
+                    }
+                )
         )),
         "expected an InvalidDispatchDeclaration/Arity refusal, got {refusals:?}"
     );
@@ -933,7 +939,8 @@ fn dispatch_candidate_with_a_mismatched_arity_is_refused_invalid_dispatch() {
         .find(|refusal| {
             matches!(
                 &refusal.cause,
-                CheckCause::InvalidDispatchDeclaration(InvalidDispatchDeclaration::Arity { .. })
+                CheckCause::InvalidDispatchDeclaration(detail)
+                    if matches!(**detail, InvalidDispatchDeclaration::Arity { .. })
             )
         })
         .map(|refusal| &refusal.location)
@@ -981,10 +988,17 @@ fn dispatch_candidate_with_a_mismatched_parameter_type_is_refused_invalid_dispat
     let location = refusals
         .iter()
         .find_map(|refusal| match &refusal.cause {
-            CheckCause::InvalidDispatchDeclaration(InvalidDispatchDeclaration::ParameterType {
-                role: DispatchFunctionRole::Body,
-                index: 0,
-            }) => Some(&refusal.location),
+            CheckCause::InvalidDispatchDeclaration(detail)
+                if matches!(
+                    **detail,
+                    InvalidDispatchDeclaration::ParameterType {
+                        role: DispatchFunctionRole::Body,
+                        index: 0,
+                    }
+                ) =>
+            {
+                Some(&refusal.location)
+            }
             _ => None,
         })
         .unwrap_or_else(|| {
@@ -1019,10 +1033,17 @@ fn dispatch_candidate_with_a_mismatched_result_type_is_refused_invalid_dispatch(
     let location = refusals
         .iter()
         .find_map(|refusal| match &refusal.cause {
-            CheckCause::InvalidDispatchDeclaration(InvalidDispatchDeclaration::ResultType {
-                role: DispatchFunctionRole::Body,
-                index: 0,
-            }) => Some(&refusal.location),
+            CheckCause::InvalidDispatchDeclaration(detail)
+                if matches!(
+                    **detail,
+                    InvalidDispatchDeclaration::ResultType {
+                        role: DispatchFunctionRole::Body,
+                        index: 0,
+                    }
+                ) =>
+            {
+                Some(&refusal.location)
+            }
             _ => None,
         })
         .unwrap_or_else(|| {

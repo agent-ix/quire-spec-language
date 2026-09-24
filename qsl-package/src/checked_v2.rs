@@ -390,7 +390,10 @@ pub(crate) enum V2ReadIncomplete {
         actual: usize,
     },
     /// IR's v2 reader stopped at a named resource ceiling before reaching a
-    /// conclusion.
+    /// conclusion. No catalog cause yet for `Edges`/`Occurrences`/
+    /// `Diagnostics` (STD-95); this reader has no production caller yet
+    /// either (ADR-011 §4's round trip, QSL-6), so none of `kind`'s values
+    /// are moved onto `stage_limit_exceeded` here (QSL-236).
     Limit {
         /// The exhausted resource.
         kind: quire_contract_ir::CheckedPackageLimit,

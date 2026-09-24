@@ -645,14 +645,19 @@ fn preimage_bytes_bind_before_the_work_budget() {
                 .with_work_budget(bytes),
         )
         .expect_err("one declaration's preimage passes 10,000 bytes");
-    assert_eq!(
-        refusals[0].cause,
-        CheckCause::ResourceExhausted {
-            stage: CheckingStage::Typing,
-            kind: CheckingLimitKind::InputBytes,
-            limit: 10_000,
-        }
+    assert!(
+        matches!(
+            refusals[0].cause,
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.stage == CheckingStage::Typing
+                    && exceeded.kind == CheckingLimitKind::InputBytes
+                    && exceeded.limit == 10_000
+        ),
+        "{:?}",
+        refusals[0]
     );
+    assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
+    assert_eq!(refusals[0].cause.cause(), Some("input-bytes-exceeded"));
 }
 
 /// TC-415 step 3 (FR-093-AC-3): each row lowers to one node with the row's

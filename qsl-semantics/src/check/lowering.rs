@@ -61,6 +61,7 @@ use super::node_key::{
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, Location, Origin,
+    StageLimitCause,
 };
 use crate::model::key::DeclarationKey;
 use crate::value::declaration::{
@@ -403,27 +404,34 @@ fn charge_work(meter: &mut Meter, work: u64) -> Result<(), NodeKeyRefusal> {
         .charge(Charge::new(ChargePoint::DeclarationCheck).work(Integer::from(work)))
         .map_err(|incomplete| NodeKeyRefusal::WorkBudget {
             limit: incomplete.limit,
+            // The meter's own report: the denied charge carries work units
+            // only, so the refused charge would have taken the cumulative
+            // spend to what was consumed plus this one charge (`work`),
+            // matching `ValueFunctionFamily::check`'s own `WorkBudget` charge.
+            actual: u128::from(incomplete.consumed) + u128::from(work),
         })
 }
 
 fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusal {
     match refusal {
-        NodeKeyRefusal::WorkBudget { limit } => refuse(
+        NodeKeyRefusal::WorkBudget { limit, actual } => refuse(
             location,
-            CheckCause::ResourceExhausted {
+            CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                 stage: CheckingStage::Typing,
                 kind: CheckingLimitKind::WorkBudget,
                 limit,
-            },
+                actual,
+            })),
         ),
         NodeKeyRefusal::InvalidGroup => fault(location, KeyFault::InvalidGroup),
-        NodeKeyRefusal::TooDeep { limit } => refuse(
+        NodeKeyRefusal::TooDeep { limit, actual } => refuse(
             location,
-            CheckCause::ResourceExhausted {
+            CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                 stage: CheckingStage::Typing,
                 kind: CheckingLimitKind::Depth,
                 limit,
-            },
+                actual: u128::from(actual),
+            })),
         ),
         refusal => refuse(location, CheckCause::NodePreimage(refusal)),
     }
@@ -802,11 +810,12 @@ impl<'w> LeafWalk<'w> {
         if depth > self.depth_limit {
             return Err(refuse(
                 location,
-                CheckCause::ResourceExhausted {
+                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                     stage: CheckingStage::Typing,
                     kind: CheckingLimitKind::Depth,
                     limit: self.depth_limit,
-                },
+                    actual: u128::from(depth),
+                })),
             ));
         }
         match value_type {
@@ -1026,11 +1035,15 @@ impl<'w> LeafWalk<'w> {
         self.budget = self.budget.checked_sub(1).ok_or_else(|| {
             refuse(
                 location,
-                CheckCause::ResourceExhausted {
+                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                     stage: CheckingStage::Typing,
                     kind: CheckingLimitKind::Nodes,
                     limit: self.limit,
-                },
+                    // `budget` reaches 0 once exactly `self.limit` leaves
+                    // have been appended; this one would have been the
+                    // `self.limit + 1`-th.
+                    actual: u128::from(self.limit) + 1,
+                })),
             )
         })?;
         let path = self.intern();
@@ -1297,11 +1310,12 @@ impl<'a> Lowering<'a> {
         if depth > self.depth_limit {
             return Err(refuse(
                 location,
-                CheckCause::ResourceExhausted {
+                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                     stage: CheckingStage::Typing,
                     kind: CheckingLimitKind::Depth,
                     limit: self.depth_limit,
-                },
+                    actual: u128::from(depth),
+                })),
             ));
         }
         Ok(())

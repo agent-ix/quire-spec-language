@@ -17,12 +17,23 @@
 /// input is cheap to reject before any further parsing.
 pub const MAX_ENCODED_BYTES: usize = 1 << 20;
 
-/// A #231 reader refused an encoding exceeding [`MAX_ENCODED_BYTES`].
+/// A #231 reader refused an encoding exceeding [`MAX_ENCODED_BYTES`]:
+/// `stage_limit_exceeded/input-bytes-exceeded` (QSL-236, catalog revision
+/// `1-draft.6`), through [`qsl_foundation::diagnostic::CatalogCoded`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("resource_exhausted/stage_limit_exceeded: encoded size {actual} exceeds the configured reader bound")]
+#[error(
+    "stage_limit_exceeded/input-bytes-exceeded: encoded size {actual} exceeds the configured reader bound of {} bytes",
+    MAX_ENCODED_BYTES
+)]
 pub struct BoundExceeded {
     /// The encoding's actual size in bytes.
     pub actual: usize,
+}
+
+impl qsl_foundation::diagnostic::CatalogCoded for BoundExceeded {
+    fn catalog_code(&self) -> qsl_foundation::diagnostic::CatalogCode {
+        qsl_foundation::diagnostic::CatalogCode::new("stage_limit_exceeded", "input-bytes-exceeded")
+    }
 }
 
 impl BoundExceeded {
@@ -55,5 +66,27 @@ mod tests {
     fn refuses_a_length_over_the_bound() {
         let err = BoundExceeded::check(MAX_ENCODED_BYTES + 1).unwrap_err();
         assert_eq!(err.actual, MAX_ENCODED_BYTES + 1);
+    }
+
+    /// QSL-236: `BoundExceeded` reports `stage_limit_exceeded/
+    /// input-bytes-exceeded`, carrying the bound (`MAX_ENCODED_BYTES`) and
+    /// the actual encoded size.
+    #[test]
+    fn reports_stage_limit_exceeded_input_bytes() {
+        use qsl_foundation::diagnostic::{CatalogCode, CatalogCoded};
+
+        let err = BoundExceeded::check(MAX_ENCODED_BYTES + 5).unwrap_err();
+        assert_eq!(
+            err.catalog_code(),
+            CatalogCode::new("stage_limit_exceeded", "input-bytes-exceeded")
+        );
+        assert_eq!(err.actual, MAX_ENCODED_BYTES + 5);
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "stage_limit_exceeded/input-bytes-exceeded: encoded size {} exceeds the configured reader bound of {MAX_ENCODED_BYTES} bytes",
+                MAX_ENCODED_BYTES + 5
+            )
+        );
     }
 }

@@ -2383,10 +2383,8 @@ pub(crate) mod checking_tests {
             StageFailure::Refused(refusal) => assert!(
                 matches!(
                     refusal.cause,
-                    CheckCause::ResourceExhausted {
-                        kind: CheckingLimitKind::Depth,
-                        ..
-                    }
+                    CheckCause::ResourceExhausted(ref exceeded)
+                        if exceeded.kind == CheckingLimitKind::Depth
                 ),
                 "expected a Depth resource-exhausted refusal, got {refusal:?}"
             ),

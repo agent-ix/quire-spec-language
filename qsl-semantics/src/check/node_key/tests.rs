@@ -581,13 +581,15 @@ fn a_body_deeper_than_the_checking_limit_is_refused() {
     assert_eq!(
         application_node_key(&node(&beyond)),
         Err(NodeKeyRefusal::TooDeep {
-            limit: MAX_CHECKING_DEPTH
+            limit: MAX_CHECKING_DEPTH,
+            actual: MAX_CHECKING_DEPTH + 1,
         })
     );
     assert_eq!(
         application_node_key(&node(&nested_arguments)),
         Err(NodeKeyRefusal::TooDeep {
-            limit: MAX_CHECKING_DEPTH
+            limit: MAX_CHECKING_DEPTH,
+            actual: MAX_CHECKING_DEPTH + 1,
         }),
         "application arguments count toward depth"
     );

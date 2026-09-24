@@ -11,7 +11,7 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckingLimitKind, CheckingLimits,
     CheckingStage, Location, MeasureObligation, Obligation, Origin, PackageDeclarations,
-    ProvedInterval,
+    ProvedInterval, StageLimitCause,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -1047,15 +1047,18 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
     }
     .check(CheckingLimits::new(4, 128).unwrap());
     let exhausted = refusal(limited);
-    assert_eq!(exhausted.cause.code().as_str(), "resource_exhausted");
-    assert_eq!(exhausted.cause.cause(), Some("insufficient-next-charge"));
-    assert_eq!(
-        exhausted.cause,
-        CheckCause::ResourceExhausted {
-            stage: CheckingStage::Typing,
-            kind: CheckingLimitKind::Nodes,
-            limit: 4,
-        }
+    assert_eq!(exhausted.cause.code().as_str(), "stage_limit_exceeded");
+    assert_eq!(exhausted.cause.cause(), Some("node-count-exceeded"));
+    assert!(
+        matches!(
+            exhausted.cause,
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.stage == CheckingStage::Typing
+                    && exceeded.kind == CheckingLimitKind::Nodes
+                    && exceeded.limit == 4
+        ),
+        "{:?}",
+        exhausted
     );
 }
 
@@ -1115,14 +1118,15 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
     );
     assert_eq!(
         exhausted.cause,
-        CheckCause::ResourceExhausted {
+        CheckCause::ResourceExhausted(Box::new(StageLimitCause {
             stage: CheckingStage::Typing,
             kind: CheckingLimitKind::Nodes,
             // The caller's own original configured limit (4), not a
             // remaining/partial figure -- `Typer`'s cap is never modified,
             // only its counter's starting value.
             limit: 4,
-        }
+            actual: 5,
+        }))
     );
 }
 
@@ -1142,14 +1146,19 @@ fn p_input_bytes_limit_refuses_through_package_declarations_check() {
     }
     .check(CheckingLimits::default().with_input_bytes(1));
     let exhausted = refusal(limited);
-    assert_eq!(
-        exhausted.cause,
-        CheckCause::ResourceExhausted {
-            stage: CheckingStage::Typing,
-            kind: CheckingLimitKind::InputBytes,
-            limit: 1,
-        }
+    assert!(
+        matches!(
+            exhausted.cause,
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.stage == CheckingStage::Typing
+                    && exceeded.kind == CheckingLimitKind::InputBytes
+                    && exceeded.limit == 1
+        ),
+        "{:?}",
+        exhausted
     );
+    assert_eq!(exhausted.cause.code().as_str(), "stage_limit_exceeded");
+    assert_eq!(exhausted.cause.cause(), Some("input-bytes-exceeded"));
 
     PackageDeclarations {
         functions: vec![down()],
@@ -1174,14 +1183,19 @@ fn p_work_budget_limit_refuses_through_package_declarations_check() {
     }
     .check(CheckingLimits::default().with_work_budget(0));
     let exhausted = refusal(limited);
-    assert_eq!(
-        exhausted.cause,
-        CheckCause::ResourceExhausted {
-            stage: CheckingStage::Typing,
-            kind: CheckingLimitKind::WorkBudget,
-            limit: 0,
-        }
+    assert!(
+        matches!(
+            exhausted.cause,
+            CheckCause::ResourceExhausted(ref exceeded)
+                if exceeded.stage == CheckingStage::Typing
+                    && exceeded.kind == CheckingLimitKind::WorkBudget
+                    && exceeded.limit == 0
+        ),
+        "{:?}",
+        exhausted
     );
+    assert_eq!(exhausted.cause.code().as_str(), "stage_limit_exceeded");
+    assert_eq!(exhausted.cause.cause(), Some("work-budget-exceeded"));
 
     PackageDeclarations {
         functions: vec![down()],

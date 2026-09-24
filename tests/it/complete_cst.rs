@@ -340,7 +340,9 @@ fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
         limits,
     )
     .unwrap_err();
-    assert_eq!(single.code, CompleteCode::ResourceExhausted);
+    // QSL-236: the source-byte ceiling is a `SyntaxLimit` kind the catalog
+    // admits, so it now reports `stage_limit_exceeded`.
+    assert_eq!(single.code, CompleteCode::StageLimitExceeded);
 
     let aggregate = complete::apply_edits(
         &parsed,
@@ -359,7 +361,7 @@ fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
         limits,
     )
     .unwrap_err();
-    assert_eq!(aggregate.code, CompleteCode::ResourceExhausted);
+    assert_eq!(aggregate.code, CompleteCode::StageLimitExceeded);
 }
 
 #[trace("Task-047")]
