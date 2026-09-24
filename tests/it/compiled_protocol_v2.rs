@@ -3087,8 +3087,10 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // The `byte_work` figure reflects the producer's dependency
             // inputs carrying forward-reference placeholders rather than
             // embedded document bytes, which legitimately shrinks the
-            // charged input bytes.
-            (4_814, 2_581, 1_169_425, 85_188)
+            // charged input bytes. `byte_work` includes the bytes of
+            // `docs/compiled-protocol-v1.md`, the contract document the
+            // fixture embeds, so an edit to that document moves it.
+            (4_814, 2_581, 1_169_464, 85_188)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),
