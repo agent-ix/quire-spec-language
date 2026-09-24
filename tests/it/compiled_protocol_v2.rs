@@ -3075,8 +3075,9 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // fixture embeds, so an edit to that document moves it. QSL-233
             // added the native source's `authority` and `revision_namespace`
             // to each of the four sources, which moves every figure but
-            // `references`.
-            (4_822, 2_581, 1_170_618, 85_376)
+            // `references`. QSL-64's domain-package `Model` paragraph in that
+            // document moves `byte_work` by its length.
+            (4_822, 2_581, 1_171_550, 85_376)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),

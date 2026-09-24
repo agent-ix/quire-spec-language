@@ -1,6 +1,6 @@
-92f77fe86e38160a26ee28110e21c1c52977dc9e74d0a9300d1dfd7a2e653371  ./compiled-protocol.json
-ab45eb7f1bdaad52d009476354de5e1d08a86fc4e3bfee2a8360db3bffd49ca3  ./compiled-protocol.ref.json
-7e39422530a5ab470c4788ff94eb1e4b0e9837056e1fc39fe74566ba636c2489  ./expected.json
+f079703f77a0faf1df9d7296a34cefe31a2c40129117ec5aa3994ddf7c09dffa  ./compiled-protocol.json
+9f4ae49b31fb74447e3a69c5b5dbda915d567c8f4df488cc1d9da8fe1cb4c81f  ./compiled-protocol.ref.json
+11dc673ecb790197f764a38c53ffffbfb1951261274ff4289b0a890996be1ace  ./expected.json
 7128303e0541130031daff2b15f879d66c9a9dfd127b0233e5ce5a3f555a44c3  ./model-source.json
 181a4deed8de873f6f63d880c5714b56e77aa9ac2776694a74bd1010e19c24d4  ./predicates.native
 8a93cfabe9ee16c4edc23cda1b15f6b35d10f8ce2703a48350cf8a12290a9072  ./state.native
