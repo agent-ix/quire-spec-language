@@ -16,7 +16,6 @@ use super::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::checking::{DomainField, DomainType, NativeType};
 use qsl_semantics::model::admitted::AdmittedPackage;
 use qsl_semantics::model::domain_package::{DomainPackageRecord, DomainPackageRef};
-use qsl_semantics::model::intake;
 use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 
 /// `Model.profile` of a domain-package model: the Semantic IR contract its
@@ -214,7 +213,7 @@ pub(super) fn verify_document(
 ) -> Result<(), Error> {
     work.bytes(bytes.len())?;
     let offered = BTreeMap::from([(selection.digest, bytes.to_vec())]);
-    intake::admit(selection, SHA256_JCS_DIGEST_DOMAIN, &offered)
+    qsl_semantics::model::intake::admit(selection, SHA256_JCS_DIGEST_DOMAIN, &offered)
         .map(|_| ())
         .map_err(|_| Error::Invalid(Invalid::Model))
 }
