@@ -427,6 +427,13 @@ one per axis, at definition version `-v2`:
 - `spec/assurance/MP-004-model-wall-time.md`
 - `spec/assurance/MP-005-evaluator-wall-time.md`
 
+MP-002 and MP-004 measure QSpec requirements that live in
+`agent-ix/quire-specification`, so they target
+`ix://agent-ix/quire-specification/FR-146` and `.../FR-154`, the form IT-012
+already uses. Plain `quire validate` passes. `quire validate --okf` reports
+both as `dangling reference`, because it resolves a cross-repo target by bare
+ID inside this bundle. That is a known quire bug, and the targets are correct.
+
 Each plan's decision rule is the same-session A/B rule above. The rule's
 reference, `prior-collection`, is the baseline revision's collection from the
 same session.
