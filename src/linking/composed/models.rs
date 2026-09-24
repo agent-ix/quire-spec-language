@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-036: exact unit-local imports over the existing admitted NativeModel.
-//! No model schema, runtime population or producer canonical correspondence is inferred.
+//! FR-036: exact unit-local imports over admitted native models and FR-056
+//! domain packages. No model schema, runtime population or producer
+//! correspondence is inferred.
 
 use std::collections::BTreeMap;
+use std::str::FromStr;
 
 use quire_contract_ir as ir;
 
@@ -13,37 +15,59 @@ use crate::linking::{location, DeclarationKey, DeclarationLocation};
 use crate::native_model::{NativeModel, OperationRole, ScalarRole, ScalarSite};
 use crate::syntax::composed::{self as c, Operation, ParameterType, QualifiedName};
 use qsl_foundation::{ByteDigest, Span, Spanned};
+use qsl_semantics::model::admitted::{AdmittedPackage, Declaration, DeclarationKind};
+use qsl_semantics::model::domain_package::DomainPackageRef;
+use qsl_semantics::model::key::DeclarationKey as DomainKey;
 
-/// Supplied model selections; only constructor-admitted native artifacts bind.
+/// Supplied model selections: admitted native models and admitted domain
+/// packages. Nothing else binds.
 #[derive(Clone, Copy, Debug)]
 pub enum ModelInput<'a> {
     /// Constructor-admitted native model, preserving its actual profile and declarations.
     Native(&'a NativeModel),
-    /// An explicit external selection whose correspondence is not implemented.
-    /// These labels select a refusal, never assert producer validity.
-    UnsupportedProducer {
-        /// Selected package label.
-        package: &'a str,
-        /// Selected revision spelling.
-        revision: &'a str,
-        /// Selected raw native artifact digest, never a canonical producer hash.
-        digest: ByteDigest,
-        /// Required producer interface retained for the caller's disposition.
-        interface: &'a str,
-    },
+    /// A domain package admitted under FR-056 and classified under FR-152.
+    Domain(&'a AdmittedPackage),
 }
 
 impl<'a> ModelInput<'a> {
-    /// The admitted native model, absent only for an explicitly unsupported offer.
+    /// The admitted native model, absent for a domain package.
     pub fn native_model(self) -> Option<&'a NativeModel> {
         match self {
             Self::Native(model) => Some(model),
-            Self::UnsupportedProducer { .. } => None,
+            Self::Domain(_) => None,
         }
     }
 
-    fn unsupported(self) -> bool {
-        matches!(self, Self::UnsupportedProducer { .. })
+    /// The admitted domain package, absent for a native model.
+    pub fn domain_package(self) -> Option<&'a AdmittedPackage> {
+        match self {
+            Self::Native(_) => None,
+            Self::Domain(package) => Some(package),
+        }
+    }
+}
+
+/// An import's selected digest, in its own digest domain. A native model is
+/// selected by the SHA-256 of its artifact bytes (`sha256:<hex>`); a domain
+/// package by the SHA-256 of its RFC 8785 document (`sha256-jcs:<hex>`,
+/// FR-056-CON-4). Neither spelling selects the other kind of input.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelectedDigest {
+    /// `sha256:<hex>`: raw artifact bytes.
+    Artifact(ByteDigest),
+    /// `sha256-jcs:<hex>`: a domain package's JCS document.
+    DomainPackage([u8; 32]),
+}
+
+impl FromStr for SelectedDigest {
+    type Err = qsl_foundation::digest::InvalidDigest;
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text.strip_prefix("sha256-jcs:") {
+            Some(hex) => {
+                ByteDigest::from_hex(hex).map(|digest| Self::DomainPackage(digest.as_bytes()))
+            }
+            None => text.parse().map(Self::Artifact),
+        }
     }
 }
 
@@ -68,12 +92,16 @@ pub enum ModelConflictKind {
 /// Exact import selection failure, separate from qualified export lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ImportRefusal {
-    /// Digest spelling is not the existing canonical raw SHA-256 spelling.
+    /// Digest spelling is neither `sha256:<hex>` nor `sha256-jcs:<hex>`.
     InvalidDigest,
     /// A native model revision is not the canonical unsigned decimal IR revision.
     InvalidRevision,
     /// No supplied model has this package label.
     MissingPackage,
+    /// The package is supplied only in the other digest domain: a
+    /// `sha256-jcs` selection of a native model, or a `sha256` selection of
+    /// a domain package (FR-056-CON-4).
+    DigestDomainMismatch,
     /// No candidate has all selected revision/digest components.
     StaleSelection,
     /// Multiple candidates match the complete selection.
@@ -85,11 +113,6 @@ pub enum ImportRefusal {
     ConflictingModel {
         /// Indices into ModelBindings::conflicts() for the shared conflicts.
         groups: Vec<usize>,
-    },
-    /// The exact selected producer interface has no admitted correspondence.
-    UnsupportedCorrespondence {
-        /// Index into ModelBindings::inputs() for the selected, unsupported producer.
-        input: usize,
     },
 }
 
@@ -192,6 +215,44 @@ impl<'a> BoundOperation<'a> {
     }
 }
 
+/// A domain-package declaration a qualified occurrence bound to: its exact
+/// FR-154 declaration key and kind, under the selection it was admitted by.
+#[derive(Clone, Copy, Debug)]
+pub struct BoundDeclaration<'a> {
+    package: &'a AdmittedPackage,
+    declaration: Declaration<'a>,
+}
+
+impl<'a> BoundDeclaration<'a> {
+    /// The admitted domain package owning the declaration.
+    pub fn package(&self) -> &'a AdmittedPackage {
+        self.package
+    }
+    /// The selection (identity, version, `sha256-jcs` digest) it was bound under.
+    pub fn selection(&self) -> &'a DomainPackageRef {
+        self.package.selection()
+    }
+    /// The declaration's exact key.
+    pub fn key(&self) -> &'a DomainKey {
+        self.declaration.key
+    }
+    /// The declaration's kind.
+    pub fn kind(&self) -> DeclarationKind {
+        self.declaration.kind
+    }
+    /// The record intake read for the declaration.
+    pub fn declaration(&self) -> Declaration<'a> {
+        self.declaration
+    }
+}
+
+/// What a selected input exposes to qualified lookup.
+#[derive(Debug)]
+enum Selected<'a> {
+    Native(Box<Exports<'a>>),
+    Domain(&'a AdmittedPackage),
+}
+
 #[derive(Debug)]
 struct Exports<'a> {
     catalog: Catalog<'a>,
@@ -244,7 +305,7 @@ impl<'a> Exports<'a> {
 #[derive(Debug)]
 pub struct ModelBindings<'a> {
     inputs: &'a [ModelInput<'a>],
-    catalogs: Vec<Option<Exports<'a>>>,
+    catalogs: Vec<Option<Selected<'a>>>,
     imports: Vec<ModelImportBinding>,
     aliases: BTreeMap<UnitId, BTreeMap<String, Vec<usize>>>,
     conflicts: Vec<ModelConflict>,
@@ -259,9 +320,12 @@ impl<'a> ModelBindings<'a> {
         self.catalogs
             .get(input)
             .and_then(Option::as_ref)
-            .map(|exports| &exports.catalog)
+            .and_then(|selected| match selected {
+                Selected::Native(exports) => Some(&exports.catalog),
+                Selected::Domain(_) => None,
+            })
     }
-    /// Original supplied artifacts and explicit unsupported interface selections.
+    /// Original supplied native models and domain packages.
     pub fn inputs(&self) -> &'a [ModelInput<'a>] {
         self.inputs
     }
@@ -357,8 +421,8 @@ impl<'a> ModelBindings<'a> {
         let mut sources = BTreeMap::<&ir::SourceIdentity, Vec<(usize, &NativeModel)>>::new();
         for (index, input) in self.inputs.iter().enumerate() {
             work.charge(Dimension::Models, 1)?;
-            match (*input).native_model() {
-                Some(model) => {
+            match *input {
+                ModelInput::Native(model) => {
                     work.charge(Dimension::Bytes, model.artifact_bytes().len())?;
                     owners
                         .entry(model.environment().owner())
@@ -368,22 +432,13 @@ impl<'a> ModelBindings<'a> {
                         .entry(model.source().identity())
                         .or_default()
                         .push((index, model));
-                    self.catalogs.push(None);
                 }
-                None => {
-                    let ModelInput::UnsupportedProducer {
-                        package,
-                        revision,
-                        interface,
-                        ..
-                    } = input
-                    else {
-                        unreachable!("only unsupported inputs lack a native model")
-                    };
-                    text(work, &[package, revision, interface])?;
-                    self.catalogs.push(None);
+                ModelInput::Domain(package) => {
+                    let selection = package.selection();
+                    text(work, &[&selection.identity, &selection.version])?;
                 }
             }
+            self.catalogs.push(None);
         }
         for inputs in owners.into_values() {
             if inputs.len() < 2 {
@@ -443,7 +498,7 @@ impl<'a> ModelBindings<'a> {
                         &selection.digest.value,
                     ],
                 )?;
-                let selected = match selection.digest.value.parse::<ByteDigest>() {
+                let selected = match selection.digest.value.parse::<SelectedDigest>() {
                     Err(_) => Err(ImportRefusal::InvalidDigest),
                     Ok(digest) => self.select(
                         &selection.package.value,
@@ -452,11 +507,7 @@ impl<'a> ModelBindings<'a> {
                         work,
                     )?,
                 };
-                let native_input = selected.as_ref().ok().and_then(|input| {
-                    self.inputs[*input]
-                        .native_model()
-                        .map(|model| (*input, model))
-                });
+                let selected_input = selected.as_ref().ok().copied();
                 self.aliases
                     .entry(unit)
                     .or_default()
@@ -468,11 +519,18 @@ impl<'a> ModelBindings<'a> {
                     import,
                     selection: selected,
                 });
-                if let Some((input, model)) = native_input {
+                if let Some(input) = selected_input {
                     work.charge(Dimension::References, 1)?;
                     if self.catalogs[input].is_none() {
-                        charge_exports(model, work)?;
-                        self.catalogs[input] = Some(Exports::new(model));
+                        self.catalogs[input] = Some(match self.inputs[input] {
+                            ModelInput::Native(model) => {
+                                charge_exports(model, work)?;
+                                Selected::Native(Box::new(Exports::new(model)))
+                            }
+                            // The package's declaration index was built at
+                            // admission; selecting it allocates nothing.
+                            ModelInput::Domain(package) => Selected::Domain(package),
+                        });
                     }
                 }
             }
@@ -484,12 +542,13 @@ impl<'a> ModelBindings<'a> {
         &self,
         package: &str,
         revision: &str,
-        digest: ByteDigest,
+        digest: SelectedDigest,
         work: &mut Work,
     ) -> Result<Result<usize, ImportRefusal>, Exhaustion> {
         let mut same_package = false;
-        // Parse a native revision once. Unsupported producer labels remain opaque
-        // and can only select their explicit unsupported-correspondence refusal.
+        let mut same_domain = false;
+        // Parse a native revision once; a domain package version is compared
+        // exactly as spelled.
         let native_revision = revision
             .parse::<u64>()
             .ok()
@@ -501,25 +560,30 @@ impl<'a> ModelBindings<'a> {
         let mut exact = Vec::new();
         for (index, input) in self.inputs.iter().enumerate() {
             work.charge(Dimension::References, 1)?;
-            let matches = if let Some(model) = (*input).native_model() {
-                let owner = model.environment().owner();
-                same_package |= owner.package().as_str() == package;
-                malformed_native_revision |=
-                    owner.package().as_str() == package && native_revision.is_none();
-                owner.package().as_str() == package
-                    && native_revision.as_ref() == Some(&owner.revision())
-                    && model.digest() == digest
-            } else if let ModelInput::UnsupportedProducer {
-                package: selected,
-                revision: selected_revision,
-                digest: selected_digest,
-                ..
-            } = input
-            {
-                same_package |= *selected == package;
-                *selected == package && *selected_revision == revision && *selected_digest == digest
-            } else {
-                unreachable!("only unsupported inputs lack a native model")
+            let matches = match *input {
+                ModelInput::Native(model) => {
+                    let owner = model.environment().owner();
+                    let named = owner.package().as_str() == package;
+                    same_package |= named;
+                    let SelectedDigest::Artifact(digest) = digest else {
+                        continue;
+                    };
+                    same_domain |= named;
+                    malformed_native_revision |= named && native_revision.is_none();
+                    named
+                        && native_revision.as_ref() == Some(&owner.revision())
+                        && model.digest() == digest
+                }
+                ModelInput::Domain(domain) => {
+                    let selection = domain.selection();
+                    let named = selection.identity == package;
+                    same_package |= named;
+                    let SelectedDigest::DomainPackage(digest) = digest else {
+                        continue;
+                    };
+                    same_domain |= named;
+                    named && selection.version == revision && selection.digest == digest
+                }
             };
             if matches {
                 exact.push(index);
@@ -527,6 +591,7 @@ impl<'a> ModelBindings<'a> {
         }
         Ok(match exact.as_slice() {
             [] if !same_package => Err(ImportRefusal::MissingPackage),
+            [] if !same_domain => Err(ImportRefusal::DigestDomainMismatch),
             [] if malformed_native_revision => Err(ImportRefusal::InvalidRevision),
             [] => Err(ImportRefusal::StaleSelection),
             [input] => {
@@ -541,12 +606,10 @@ impl<'a> ModelBindings<'a> {
                         }
                     }
                 }
-                if !groups.is_empty() {
-                    Err(ImportRefusal::ConflictingModel { groups })
-                } else if self.inputs[*input].unsupported() {
-                    Err(ImportRefusal::UnsupportedCorrespondence { input: *input })
-                } else {
+                if groups.is_empty() {
                     Ok(*input)
+                } else {
+                    Err(ImportRefusal::ConflictingModel { groups })
                 }
             }
             _ => Err(ImportRefusal::AmbiguousSelection { inputs: exact }),
@@ -558,7 +621,7 @@ impl<'a> ModelBindings<'a> {
         unit: UnitId,
         alias: &Spanned<String>,
         work: &mut Work,
-    ) -> Result<&Exports<'a>, ModelError> {
+    ) -> Result<&Selected<'a>, ModelError> {
         charge(work, Dimension::References, 1, unit, alias.span)?;
         charge(work, Dimension::Bytes, alias.value.len(), unit, alias.span)?;
         if !self.complete {
@@ -589,7 +652,138 @@ impl<'a> ModelBindings<'a> {
         })?;
         Ok(self.catalogs[*input]
             .as_ref()
-            .expect("selected native catalog"))
+            .expect("collect indexes every selected input"))
+    }
+
+    /// The native exports behind `alias`; a domain package alias has no
+    /// native type, operation or variant to export.
+    fn native_alias(
+        &self,
+        unit: UnitId,
+        alias: &Spanned<String>,
+        span: Span,
+        work: &mut Work,
+    ) -> Result<&Exports<'a>, ModelError> {
+        match self.alias(unit, alias, work)? {
+            Selected::Native(exports) => Ok(exports),
+            Selected::Domain(_) => Err(failure(unit, span, ModelErrorKind::WrongExportKind)),
+        }
+    }
+
+    /// Resolve `name` under its import: a native type as
+    /// [`ModelTarget::Type`], a domain-package type-definition node as
+    /// [`ModelTarget::Declaration`]. A domain declaration binds by its FR-154
+    /// key (`ix://<package>/<artifact id>`); a member or population
+    /// declaration is not a type.
+    pub fn resolve_target(
+        &self,
+        unit: UnitId,
+        name: &QualifiedName,
+        work: &mut Work,
+    ) -> Result<ModelTarget<'a>, ModelError> {
+        match self.alias(unit, &name.model, work)? {
+            Selected::Native(exports) => {
+                Self::export_type(exports, unit, name, work).map(ModelTarget::Type)
+            }
+            Selected::Domain(package) => {
+                let bound = Self::domain_declaration(package, unit, &name.name, work)?;
+                match bound.kind() {
+                    DeclarationKind::ObjectType
+                    | DeclarationKind::Interface
+                    | DeclarationKind::ValueType
+                    | DeclarationKind::Part
+                    | DeclarationKind::Port
+                    | DeclarationKind::Connection
+                    | DeclarationKind::Relationship
+                    | DeclarationKind::Allocation => Ok(ModelTarget::Declaration(bound)),
+                    DeclarationKind::Field
+                    | DeclarationKind::Operation
+                    | DeclarationKind::Population => Err(failure(
+                        unit,
+                        name.name.span,
+                        ModelErrorKind::WrongExportKind,
+                    )),
+                }
+            }
+        }
+    }
+
+    /// The type-definition node `name` names in `package`, with charges
+    /// mirroring a native export lookup.
+    fn domain_declaration(
+        package: &'a AdmittedPackage,
+        unit: UnitId,
+        name: &Spanned<String>,
+        work: &mut Work,
+    ) -> Result<BoundDeclaration<'a>, ModelError> {
+        charge(work, Dimension::References, 1, unit, name.span)?;
+        charge(work, Dimension::Bytes, name.value.len(), unit, name.span)?;
+        let declaration = package
+            .declaration(&name.value)
+            .ok_or_else(|| failure(unit, name.span, ModelErrorKind::MissingExport))?;
+        charge(work, Dimension::Bindings, 1, unit, name.span)?;
+        Ok(BoundDeclaration {
+            package,
+            declaration,
+        })
+    }
+
+    /// The member `member` of the object type `owner` names, keyed
+    /// `<owner identity>/<member>` (FR-154).
+    fn domain_member(
+        &self,
+        unit: UnitId,
+        owner: &QualifiedName,
+        member: &Spanned<String>,
+        work: &mut Work,
+    ) -> Result<BoundDeclaration<'a>, ModelError> {
+        let Selected::Domain(package) = self.alias(unit, &owner.model, work)? else {
+            return Err(failure(
+                unit,
+                owner.name.span,
+                ModelErrorKind::WrongExportKind,
+            ));
+        };
+        let owner = Self::domain_declaration(package, unit, &owner.name, work)?;
+        if !matches!(
+            owner.kind(),
+            DeclarationKind::ObjectType | DeclarationKind::Interface
+        ) {
+            return Err(failure(unit, member.span, ModelErrorKind::WrongExportKind));
+        }
+        charge(work, Dimension::References, 1, unit, member.span)?;
+        charge(
+            work,
+            Dimension::Bytes,
+            member.value.len(),
+            unit,
+            member.span,
+        )?;
+        let declaration = package
+            .member(owner.key(), &member.value)
+            .ok_or_else(|| failure(unit, member.span, ModelErrorKind::MissingExport))?;
+        charge(work, Dimension::Bindings, 1, unit, member.span)?;
+        Ok(BoundDeclaration {
+            package: owner.package,
+            declaration,
+        })
+    }
+
+    /// Whether `alias` selects a domain package. Refused and unknown aliases
+    /// report `false`; their own lookup refuses them.
+    fn is_domain_alias(&self, unit: UnitId, alias: &Spanned<String>) -> bool {
+        let Some([import]) = self
+            .aliases
+            .get(&unit)
+            .and_then(|aliases| aliases.get(alias.value.as_str()))
+            .map(Vec::as_slice)
+        else {
+            return false;
+        };
+        matches!(
+            self.imports[*import].selection,
+            Ok(input) if matches!(self.inputs[input], ModelInput::Domain(_))
+        )
     }
 
     /// Resolve one qualified type through its source-local exact import.
@@ -599,7 +793,7 @@ impl<'a> ModelBindings<'a> {
         name: &QualifiedName,
         work: &mut Work,
     ) -> Result<BoundType<'a>, ModelError> {
-        let exports = self.alias(unit, &name.model, work)?;
+        let exports = self.native_alias(unit, &name.model, name.name.span, work)?;
         Self::export_type(exports, unit, name, work)
     }
 
@@ -686,7 +880,12 @@ impl<'a> ModelBindings<'a> {
         operation: &Operation,
         work: &mut Work,
     ) -> Result<BoundOperation<'a>, ModelError> {
-        let exports = self.alias(unit, &operation.context.model, work)?;
+        let exports = self.native_alias(
+            unit,
+            &operation.context.model,
+            operation.context.name.span,
+            work,
+        )?;
         let context = Self::export_type(exports, unit, &operation.context, work)?;
         let NativeType::Object { role, .. } = &context.native else {
             return Err(failure(
@@ -735,7 +934,7 @@ impl<'a> ModelBindings<'a> {
         }
         for (input, exports) in self.catalogs.iter().enumerate() {
             charge(work, Dimension::References, 1, unit, span)?;
-            let Some(exports) = exports else {
+            let Some(Selected::Native(exports)) = exports else {
                 continue;
             };
             if std::ptr::eq(exports.catalog.model, model) {
@@ -1029,6 +1228,8 @@ pub enum ModelTarget<'a> {
     Type(BoundType<'a>),
     /// Explicit operation role and invocation contract.
     Operation(BoundOperation<'a>),
+    /// A domain-package declaration, bound by its exact key and kind.
+    Declaration(BoundDeclaration<'a>),
 }
 
 /// An occurrence belongs to the report's declaration and declaring source unit.
@@ -1225,9 +1426,25 @@ impl<'a> ModelBindings<'a> {
                             model: model.clone(),
                             name: name.clone(),
                         };
-                        let result = self.variant(walk.unit, &name, variant, walk.work);
+                        let result = if self.is_domain_alias(walk.unit, &name.model) {
+                            self.domain_member(walk.unit, &name, variant, walk.work)
+                                .and_then(|bound| {
+                                    if bound.kind() == DeclarationKind::Field {
+                                        Ok(ModelTarget::Declaration(bound))
+                                    } else {
+                                        Err(failure(
+                                            walk.unit,
+                                            variant.span,
+                                            ModelErrorKind::WrongExportKind,
+                                        ))
+                                    }
+                                })
+                        } else {
+                            self.variant(walk.unit, &name, variant, walk.work)
+                                .map(ModelTarget::Type)
+                        };
                         walk.record(
-                            result.map(ModelTarget::Type),
+                            result,
                             Span {
                                 start: name.model.span.start,
                                 end: variant.span.end,
@@ -1284,10 +1501,7 @@ impl<'a> ModelWalk<'_, 'a> {
         Ok(())
     }
     fn ty(&mut self, name: &QualifiedName) -> Result<(), ModelError> {
-        let result = self
-            .models
-            .resolve_type(self.unit, name, self.work)
-            .map(ModelTarget::Type);
+        let result = self.models.resolve_target(self.unit, name, self.work);
         self.record(
             result,
             Span {
@@ -1297,10 +1511,28 @@ impl<'a> ModelWalk<'_, 'a> {
         )
     }
     fn operation(&mut self, operation: &Operation) -> Result<(), ModelError> {
-        let result = self
+        let result = if self
             .models
-            .resolve_operation(self.unit, operation, self.work)
-            .map(ModelTarget::Operation);
+            .is_domain_alias(self.unit, &operation.context.model)
+        {
+            self.models
+                .domain_member(self.unit, &operation.context, &operation.name, self.work)
+                .and_then(|bound| {
+                    if bound.kind() == DeclarationKind::Operation {
+                        Ok(ModelTarget::Declaration(bound))
+                    } else {
+                        Err(failure(
+                            self.unit,
+                            operation.name.span,
+                            ModelErrorKind::WrongExportKind,
+                        ))
+                    }
+                })
+        } else {
+            self.models
+                .resolve_operation(self.unit, operation, self.work)
+                .map(ModelTarget::Operation)
+        };
         self.record(
             result,
             Span {
@@ -1309,21 +1541,46 @@ impl<'a> ModelWalk<'_, 'a> {
             },
         )
     }
-    // No admitted correspondence can authorize a relationship export without
-    // the removed Producer 1.2 adapter (#131); every relationship occurrence
-    // takes the same unsupported-correspondence refusal, after resolving its
-    // named type so the occurrence still records a located type reference.
+    // A domain package's relationship declaration (a Connection or a
+    // navigation relationship) binds by key and kind. A native model has no
+    // relationship export: its occurrence records the named type, so the
+    // occurrence still carries a located type reference, and then refuses.
     fn relationship(&mut self, relationship: &c::Relationship) -> Result<(), ModelError> {
         let name = &relationship.model;
-        self.ty(name)?;
-        self.record(
-            Err(failure(
-                self.unit,
-                relationship.span,
-                ModelErrorKind::UnsupportedRelationshipContract,
-            )),
-            relationship.span,
-        )
+        let span = Span {
+            start: name.model.span.start,
+            end: name.name.span.end,
+        };
+        match self.models.resolve_target(self.unit, name, self.work) {
+            Ok(ModelTarget::Declaration(bound))
+                if matches!(
+                    bound.kind(),
+                    DeclarationKind::Connection | DeclarationKind::Relationship
+                ) =>
+            {
+                self.record(Ok(ModelTarget::Declaration(bound)), span)
+            }
+            Ok(ModelTarget::Declaration(_) | ModelTarget::Operation(_)) => self.record(
+                Err(failure(
+                    self.unit,
+                    name.name.span,
+                    ModelErrorKind::WrongExportKind,
+                )),
+                span,
+            ),
+            Ok(ModelTarget::Type(bound)) => {
+                self.record(Ok(ModelTarget::Type(bound)), span)?;
+                self.record(
+                    Err(failure(
+                        self.unit,
+                        relationship.span,
+                        ModelErrorKind::UnsupportedRelationshipContract,
+                    )),
+                    relationship.span,
+                )
+            }
+            Err(error) => self.record(Err(error), span),
+        }
     }
     fn parameter(&mut self, parameter: &c::Parameter) -> Result<(), ModelError> {
         self.visit(parameter.span)?;

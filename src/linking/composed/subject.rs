@@ -19,7 +19,7 @@ use super::binding;
 use super::binding_work;
 use super::definition_source::RegisteredDefinition;
 use super::definitions::{Cause, Selection, UseKind};
-use super::models::{ImportRefusal, ModelInput};
+use super::models::{ImportRefusal, ModelInput, SelectedDigest};
 use super::scopes::{Anchor, BinderKind, BinderType};
 use super::{DependencyKind, DependencySite, SourceInventory, WorkLimits};
 use crate::Limits;
@@ -83,18 +83,18 @@ pub struct ProfileComponent {
     pub refusal: Option<Cause>,
 }
 
-/// The exact compiled model artifact an import resolved to, in its own digest
-/// domain. A producer canonical digest never occupies this position.
+/// The exact model input an import resolved to, in its own digest domain: a
+/// native model's artifact bytes or a domain package's `sha256-jcs` document.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelSelection {
-    /// Package label of the admitted compiled model document.
+    /// Package label of the admitted native model, or the domain package identity.
     pub package: String,
     /// The revision exactly as the selected input states it. It is retained as
     /// its original spelling so that two differing revisions can never be
     /// coerced into one comparable number.
     pub revision: String,
-    /// SHA-256 of that document's exact bytes.
-    pub digest: ByteDigest,
+    /// The selected digest, in the input's own digest domain.
+    pub digest: SelectedDigest,
 }
 
 /// Models component: one authored import and the selection it resolved to.
@@ -397,27 +397,19 @@ impl BuildProvenance {
 }
 
 fn model_selection(inputs: &[ModelInput<'_>], input: usize) -> Option<ModelSelection> {
-    let input = *inputs.get(input)?;
-    Some(if let Some(model) = input.native_model() {
-        ModelSelection {
+    Some(match *inputs.get(input)? {
+        ModelInput::Native(model) => ModelSelection {
             package: model.environment().owner().package().as_str().to_owned(),
             revision: model.environment().owner().revision().get().to_string(),
-            digest: model.digest(),
-        }
-    } else {
-        let ModelInput::UnsupportedProducer {
-            package,
-            revision,
-            digest,
-            ..
-        } = input
-        else {
-            unreachable!("only unsupported inputs lack a native model")
-        };
-        ModelSelection {
-            package: package.to_owned(),
-            revision: revision.to_owned(),
-            digest,
+            digest: SelectedDigest::Artifact(model.digest()),
+        },
+        ModelInput::Domain(package) => {
+            let selection = package.selection();
+            ModelSelection {
+                package: selection.identity.clone(),
+                revision: selection.version.clone(),
+                digest: SelectedDigest::DomainPackage(selection.digest),
+            }
         }
     })
 }

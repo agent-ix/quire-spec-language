@@ -377,39 +377,6 @@ fn formal_source_aliasing_refuses_even_when_formal_owners_differ() {
 }
 
 #[test]
-#[trace("TC-114", "FR-036-AC-3")]
-fn unsupported_producer_selection_cannot_assert_native_correspondence() {
-    let model = model("test/native", "NativeModel", "native-model");
-    let inputs = [ModelInput::UnsupportedProducer {
-        package: "test/native",
-        revision: "1",
-        digest: model.digest(),
-        interface: "producer/canonical-domain",
-    }];
-    with_namespace(
-        &[program(
-            &model,
-            "predicate Rule using S (item: M::Node): Boolean { true }",
-        )],
-        |namespace| {
-            let bindings = bind_models(namespace, &inputs, &mut work());
-            assert_eq!(
-                bindings.imports()[0].selection,
-                Err(ImportRefusal::UnsupportedCorrespondence { input: 0 })
-            );
-            let (unit, name) = parameter(namespace, "Rule", 0);
-            assert!(matches!(
-                bindings
-                    .resolve_type(unit, name, &mut work())
-                    .unwrap_err()
-                    .kind,
-                ModelErrorKind::RefusedImport { import: 0 }
-            ));
-        },
-    );
-}
-
-#[test]
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-3")]
 fn duplicate_aliases_and_missing_exports_keep_original_refusal_loci() {
     let model = model("test/native", "NativeModel", "native-model");

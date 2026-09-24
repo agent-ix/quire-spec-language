@@ -754,7 +754,10 @@ fn is_artifact_segment(text: &str) -> bool {
 
 /// The single segment past `ix://<package_identity>/`, when `identity` has
 /// exactly that form.
-fn type_identity_segment<'a>(package_identity: &str, identity: &'a str) -> Option<&'a str> {
+pub(crate) fn type_identity_segment<'a>(
+    package_identity: &str,
+    identity: &'a str,
+) -> Option<&'a str> {
     let rest = identity
         .strip_prefix("ix://")?
         .strip_prefix(package_identity)?;
@@ -764,7 +767,7 @@ fn type_identity_segment<'a>(package_identity: &str, identity: &'a str) -> Optio
 
 /// The member name past `<owner_identity>/`, when `identity` has exactly
 /// that form.
-fn member_identity_name<'a>(owner_identity: &str, identity: &'a str) -> Option<&'a str> {
+pub(crate) fn member_identity_name<'a>(owner_identity: &str, identity: &'a str) -> Option<&'a str> {
     let rest = identity.strip_prefix(owner_identity)?.strip_prefix('/')?;
     (!rest.is_empty() && !rest.contains('/') && is_artifact_segment(rest)).then_some(rest)
 }
