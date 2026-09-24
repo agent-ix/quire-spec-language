@@ -1176,6 +1176,40 @@ fn a_source_map_entry_naming_an_unknown_node_refuses() {
     }
 }
 
+/// A source-map entry that IR admitted but this crate's provenance types
+/// refuse -- here a reversed region and a non-hex node id, which IR's
+/// reader never admits -- is `invalid_source_map`, carrying the typed
+/// defect, never a panic or a silently dropped entry.
+#[trace("TC-421", "FR-095-AC-3")]
+#[test]
+fn a_source_map_the_provenance_types_refuse_is_invalid_source_map() {
+    let entry = |digest: &str, start: u64, end: u64| {
+        serde_json::from_value::<quire_contract_ir::CheckedSourceMapEntry>(json!({
+            "node_id": {"digest": digest, "domain": NODE_DOMAIN},
+            "role": "expression",
+            "ordinal": 0,
+            "regions": [{"source": source_ref("src"), "start": start, "end": end}],
+        }))
+        .unwrap()
+    };
+    let reversed = super::package_source_map(&[entry(&hex("pkg::A"), 9, 3)]).unwrap_err();
+    assert_eq!(
+        reversed,
+        super::SourceMapDefect::Provenance(
+            qsl_foundation::source::provenance::InvalidProvenance::ReversedRegion {
+                start: 9,
+                end: 3
+            }
+        )
+    );
+    let upper = hex("pkg::A").to_uppercase();
+    let node = super::package_source_map(&[entry(&upper, 0, 1)]).unwrap_err();
+    assert_eq!(node, super::SourceMapDefect::NodeId(upper.into()));
+    for defect in [reversed, node] {
+        assert_eq!(V2ReadRefusal::from(defect).code(), Code::InvalidSourceMap);
+    }
+}
+
 /// Every JSON object in `value` that has a `RawSourceRef`/artifact-ref
 /// shape, as the evidence locator IR checks currency against.
 fn locked_artifacts(value: &Value, evidence: &mut CheckedPackageEvidence) {
