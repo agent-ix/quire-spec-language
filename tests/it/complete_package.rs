@@ -665,6 +665,7 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: definitions.len() - 1,
+            actual: None,
         }
     );
     assert_eq!(
@@ -679,6 +680,7 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::ArtifactBytes,
             limit: artifact_bytes - 1,
+            actual: None,
         }
     );
 
@@ -708,6 +710,7 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::ArtifactBytes,
             limit: resolved_artifact_bytes - 1,
+            actual: None,
         }
     );
     assert_eq!(
@@ -732,6 +735,7 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: 1,
+            actual: None,
         }
     );
 }
@@ -813,6 +817,7 @@ fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_boun
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Definitions,
             limit: raised.definitions,
+            actual: None,
         },
         "must name the raised ceiling actually in force, not the original default"
     );
@@ -906,6 +911,7 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::DependencyEdges,
             limit: 1,
+            actual: None,
         }
     );
     let depth_refusal = resolve_parsed(
@@ -920,6 +926,7 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::Depth,
             limit: 2,
+            actual: Some(3),
         }
     );
     // QSL-236: the graph's own depth ceiling is the one `PackageLimitKind`
@@ -1036,6 +1043,7 @@ fn single_artifact_bytes_is_a_caller_limit_naming_its_bound() {
     let expected = PackageError::ResourceLimit {
         kind: PackageLimitKind::SingleArtifactBytes,
         limit: default.single_artifact_bytes,
+        actual: None,
     };
     assert_eq!(
         DefinitionCatalog::with_limits(vec![definition.clone()], default).unwrap_err(),
@@ -1094,6 +1102,7 @@ fn resolution_enforces_its_own_single_artifact_bytes() {
         PackageError::ResourceLimit {
             kind: PackageLimitKind::SingleArtifactBytes,
             limit: default.single_artifact_bytes,
+            actual: None,
         }
     );
     assert_eq!(

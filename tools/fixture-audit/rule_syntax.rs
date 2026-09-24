@@ -127,10 +127,20 @@ fn check_syntax_outcome(
         ("unsupported", Err(error)) if error.code == NativeCode::UnsupportedConstruct => {
             Ok(SyntaxOutcome::Unsupported)
         }
-        (_, Err(error)) if error.is_incomplete() => Err(Error::new(
-            Code::ResourceExhausted,
-            format!("native syntax {id}: {}", error.message),
-        )),
+        // QSL-236 (L2): a `stage_limit_exceeded` refusal reports the same
+        // reached-a-configured-ceiling outcome `is_incomplete()`'s own
+        // codes do (`ResourceExhausted` included) -- it is deliberately
+        // excluded from `is_incomplete()` itself (its exit code is 20, the
+        // catalog's refusal category, not 22), so it is named explicitly
+        // here rather than falling through to `InvalidFixture` below.
+        (_, Err(error))
+            if error.is_incomplete() || error.code == NativeCode::StageLimitExceeded =>
+        {
+            Err(Error::new(
+                Code::ResourceExhausted,
+                format!("native syntax {id}: {}", error.message),
+            ))
+        }
         (_, Err(error)) => Err(Error::new(
             Code::InvalidFixture,
             format!("native syntax {id}: {}", error.code.as_str()),

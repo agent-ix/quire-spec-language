@@ -1138,7 +1138,7 @@ impl<'a> Lowering<'a> {
     }
 
     /// Charge `work` units of checking work (`declaration.check`), refusing
-    /// `resource_exhausted` on the work budget at `location`.
+    /// `stage_limit_exceeded` (QSL-236) on the work budget at `location`.
     fn charge(&mut self, work: u64, location: &Location) -> Result<(), CheckRefusal> {
         charge_work(self.meter, work).map_err(|refusal| preimage_refusal(location, refusal))
     }

@@ -224,6 +224,7 @@ impl PackageLimits {
             return Err(PackageError::ResourceLimit {
                 kind: PackageLimitKind::SingleArtifactBytes,
                 limit: self.single_artifact_bytes,
+                actual: None,
             });
         }
         Ok(())
@@ -306,6 +307,7 @@ impl DefinitionCatalog {
             return Err(PackageError::ResourceLimit {
                 kind: PackageLimitKind::Definitions,
                 limit: limits.definitions,
+                actual: None,
             });
         }
         let mut edges = 0_usize;
@@ -317,24 +319,28 @@ impl DefinitionCatalog {
                 PackageError::ResourceLimit {
                     kind: PackageLimitKind::DependencyEdges,
                     limit: limits.dependency_edges,
+                    actual: None,
                 },
             )?;
             bytes = bytes.checked_add(definition.exact_bytes.len()).ok_or(
                 PackageError::ResourceLimit {
                     kind: PackageLimitKind::ArtifactBytes,
                     limit: limits.artifact_bytes,
+                    actual: None,
                 },
             )?;
             if edges > limits.dependency_edges {
                 return Err(PackageError::ResourceLimit {
                     kind: PackageLimitKind::DependencyEdges,
                     limit: limits.dependency_edges,
+                    actual: None,
                 });
             }
             if bytes > limits.artifact_bytes {
                 return Err(PackageError::ResourceLimit {
                     kind: PackageLimitKind::ArtifactBytes,
                     limit: limits.artifact_bytes,
+                    actual: None,
                 });
             }
             if catalog
@@ -386,6 +392,7 @@ impl ModelCatalog {
             return Err(PackageError::ResourceLimit {
                 kind: PackageLimitKind::Definitions,
                 limit: limits.definitions,
+                actual: None,
             });
         }
         let mut bytes = 0_usize;
@@ -398,11 +405,13 @@ impl ModelCatalog {
                     .ok_or(PackageError::ResourceLimit {
                         kind: PackageLimitKind::ArtifactBytes,
                         limit: limits.artifact_bytes,
+                        actual: None,
                     })?;
             if bytes > limits.artifact_bytes {
                 return Err(PackageError::ResourceLimit {
                     kind: PackageLimitKind::ArtifactBytes,
                     limit: limits.artifact_bytes,
+                    actual: None,
                 });
             }
             if catalog
@@ -917,6 +926,7 @@ pub fn resolve_source_package(
             PackageError::ResourceLimit {
                 kind: PackageLimitKind::Definitions,
                 limit: limits.definitions,
+                actual: None,
             },
         ));
     }
@@ -994,6 +1004,7 @@ pub fn resolve_source_package(
                         PackageError::ResourceLimit {
                             kind: PackageLimitKind::Definitions,
                             limit: limits.definitions,
+                            actual: None,
                         },
                     ));
                 }
@@ -1033,6 +1044,7 @@ pub fn resolve_source_package(
                     PackageError::ResourceLimit {
                         kind: PackageLimitKind::Depth,
                         limit: limits.depth,
+                        actual: Some(active.len() + 1),
                     },
                 ));
             }
@@ -1045,6 +1057,7 @@ pub fn resolve_source_package(
                         PackageError::ResourceLimit {
                             kind: PackageLimitKind::DependencyEdges,
                             limit: limits.dependency_edges,
+                            actual: None,
                         },
                     )
                 })?;
@@ -1055,6 +1068,7 @@ pub fn resolve_source_package(
                     PackageError::ResourceLimit {
                         kind: PackageLimitKind::DependencyEdges,
                         limit: limits.dependency_edges,
+                        actual: None,
                     },
                 ));
             }
@@ -1127,6 +1141,7 @@ pub fn resolve_source_package(
             PackageError::ResourceLimit {
                 kind: PackageLimitKind::ArtifactBytes,
                 limit: limits.artifact_bytes,
+                actual: None,
             },
         ));
     }
@@ -1432,6 +1447,13 @@ pub enum PackageError {
         kind: PackageLimitKind,
         /// The configured bound in force when the ceiling was reached.
         limit: usize,
+        /// The counter value the refused step would have reached (QSL-236,
+        /// M2). Only [`PackageLimitKind::Depth`] fills this in: it is the
+        /// one kind that maps onto a catalogued stage limit. The byte and
+        /// count ceilings stay `resource_exhausted` (S1 `SyntaxLimit`
+        /// itself stays bound-only, with no matching `actual` field), so
+        /// they carry no counter here either.
+        actual: Option<usize>,
     },
     /// One required complete facet was omitted.
     #[error("complete V1 is missing facet {0:?}")]

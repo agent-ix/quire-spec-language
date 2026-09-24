@@ -950,10 +950,7 @@ mod foundation_tests {
 
     fn source() -> Source {
         Source::read(
-            SourceIdentity {
-                identity: "test:diagnostic".into(),
-                revision: "1".into(),
-            },
+            SourceIdentity::new("agent-ix", "test:diagnostic", "git", "1"),
             "diagnostic.native",
             b"x",
             crate::source::MAX_SOURCE_BYTES,

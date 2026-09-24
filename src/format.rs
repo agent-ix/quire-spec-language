@@ -29,7 +29,7 @@ pub enum FormatRefusal {
     /// The diagnostic is the input's first diagnostic.
     DiagnosedSource(Box<CompleteDiagnostic>),
     /// The formatted text would exceed the selected output-byte ceiling
-    /// (`resource_exhausted`).
+    /// (`stage_limit_exceeded`/`input-bytes-exceeded`, QSL-236).
     OutputBudgetExhausted(Box<CompleteDiagnostic>),
     /// An established S1 invariant does not hold: a recovery with no
     /// diagnostic, or a token span that is not a UTF-8 slice of the source

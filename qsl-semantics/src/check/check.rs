@@ -5,7 +5,7 @@
 //!
 //! Every refusal here is made before any charge. Typing nesting is bounded
 //! by the declared [`CheckingLimits`] depth; reaching a declared limit is
-//! `resource_exhausted`, never an admission verdict. The typer itself
+//! `stage_limit_exceeded` (QSL-236), never an admission verdict. The typer itself
 //! (`typing`) walks an expression over an explicit heap stack (QSL-228), so
 //! its host stack use does not grow with nesting.
 //!

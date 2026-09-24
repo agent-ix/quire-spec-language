@@ -107,7 +107,7 @@ use quire_exact::Identifier;
 
 use crate::family::FamilyContract;
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
-use qsl_foundation::diagnostic::{LimitKind, StageFailure};
+use qsl_foundation::diagnostic::StageFailure;
 use quire_exact::ValueType;
 
 pub use check::Scope;
@@ -517,8 +517,8 @@ fn resolve_signature(
 impl PackageDeclarations {
     /// Check every function: duplicate names, declared types, typing, static
     /// definedness and termination, in that order. Every refusal is made
-    /// before any charge; a reached checking limit is `resource_exhausted`
-    /// and yields no admission verdict.
+    /// before any charge; a reached checking limit is `stage_limit_exceeded`
+    /// (QSL-236) and yields no admission verdict.
     pub fn check(self, limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         let body_location = |index: usize, name: &str| {
             root(Origin::Body {
@@ -866,22 +866,12 @@ impl PackageDeclarations {
                     drafts.push((signatures.as_slice()[index].clone(), checked.body));
                 }
                 Err(StageFailure::Limit(limit)) => {
-                    // PR #262 review (coordinator round 3, finding 4):
-                    // `limit.kind` is matched, not read past into a
-                    // hardcoded `CheckingLimitKind::Depth` -- this exhaustive
-                    // match (not a `_` catch-all) is what forces a real
-                    // decision here, not a guess, now that `LimitKind`
-                    // has grown three more variants (QSL-153). `NodeCount`
-                    // maps onto the pre-existing `CheckingLimitKind::Nodes`
-                    // (both name "how many expression nodes"); `InputBytes`
-                    // and `WorkBudget` have no pre-existing counterpart in
-                    // this older `Typer`-era enum, so QSL-153 adds one each.
-                    let kind = match limit.kind() {
-                        LimitKind::NestingDepth => CheckingLimitKind::Depth,
-                        LimitKind::NodeCount => CheckingLimitKind::Nodes,
-                        LimitKind::InputBytes => CheckingLimitKind::InputBytes,
-                        LimitKind::WorkBudget => CheckingLimitKind::WorkBudget,
-                    };
+                    // QSL-236 (L6): `CheckingLimitKind::from(LimitKind)` is
+                    // the named reverse of `foundation_kind`, not an inline
+                    // match here -- see its doc for why the match stays
+                    // exhaustive (PR #262 review, coordinator round 3,
+                    // finding 4).
+                    let kind = CheckingLimitKind::from(limit.kind());
                     refusals.push(CheckRefusal {
                         location: location.clone(),
                         cause: CheckCause::ResourceExhausted(Box::new(StageLimitCause {

@@ -152,6 +152,27 @@ impl CheckingLimitKind {
     }
 }
 
+impl From<LimitKind> for CheckingLimitKind {
+    /// The reverse of [`CheckingLimitKind::foundation_kind`] (QSL-236, L6):
+    /// `check::mod`'s `StageFailure::Limit` arm named this bijection inline
+    /// as a `match`, matched exhaustively rather than a `_` catch-all (PR
+    /// #262 review, coordinator round 3, finding 4) so a `LimitKind` this
+    /// crate does not yet expect forces a real decision here, not a guess.
+    /// `NodeCount` maps onto the pre-existing `Self::Nodes` (both name "how
+    /// many expression nodes"); `InputBytes` and `WorkBudget` have no
+    /// pre-existing counterpart in this older `Typer`-era enum, so QSL-153
+    /// added one each. Named once here rather than duplicated at that call
+    /// site.
+    fn from(kind: LimitKind) -> Self {
+        match kind {
+            LimitKind::NestingDepth => Self::Depth,
+            LimitKind::NodeCount => Self::Nodes,
+            LimitKind::InputBytes => Self::InputBytes,
+            LimitKind::WorkBudget => Self::WorkBudget,
+        }
+    }
+}
+
 /// FR-272's closed `wrong_snapshot` cause list this crate decides for
 /// `pre(...)` (native-diagnostics.md: `wrong-observation`, `wrong-invocation`,
 /// `wrong-anchor` or `forbidden-pre-read`). Only the two causes `pre(...)`
