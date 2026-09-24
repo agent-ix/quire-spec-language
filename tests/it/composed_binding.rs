@@ -22,7 +22,7 @@ use quire_spec_language::native_model::{ModelLimits, NativeModel};
 use quire_spec_language::Limits;
 use std::collections::BTreeMap;
 
-fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {
+pub(crate) fn artifacts() -> (Vec<Artifact<'static>>, Vec<RuleInput<'static>>) {
     let definitions = R::all()
         .iter()
         .map(|definition| Artifact {

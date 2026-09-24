@@ -42,6 +42,7 @@ mod composed_admission_stages;
 mod composed_binding;
 mod composed_definition_source;
 mod composed_definitions;
+mod composed_domain_models;
 mod composed_linking;
 mod composed_models;
 mod composed_namespace;

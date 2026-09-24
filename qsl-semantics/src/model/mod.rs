@@ -12,6 +12,7 @@
 //! document's IR nodes into [`domain_package::DomainPackageRecord`]s.
 
 pub mod accounting;
+pub mod admitted;
 pub mod conformance;
 pub mod dispatch;
 pub mod domain_package;
