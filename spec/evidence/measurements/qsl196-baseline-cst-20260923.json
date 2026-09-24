@@ -1,0 +1,690 @@
+{
+  "collectionId": "qsl196-baseline-cst-20260923",
+  "configDigest": "sha256:5d1acb8cd42989faacd0da7a880822824055bde15de55e72e2688e5030d89fad",
+  "environment": {
+    "loads": [
+      {
+        "loadavg": "9.46 10.46 10.06",
+        "round": 1,
+        "when": "before"
+      },
+      {
+        "loadavg": "4.48 8.19 9.27",
+        "round": 1,
+        "when": "after"
+      },
+      {
+        "loadavg": "16.00 17.07 13.77",
+        "round": 2,
+        "when": "before"
+      },
+      {
+        "loadavg": "13.18 15.60 13.68",
+        "round": 2,
+        "when": "after"
+      },
+      {
+        "loadavg": "4.61 7.53 10.64",
+        "round": 3,
+        "when": "before"
+      },
+      {
+        "loadavg": "16.04 9.72 10.94",
+        "round": 3,
+        "when": "after"
+      },
+      {
+        "loadavg": "9.36 9.77 10.64",
+        "round": 4,
+        "when": "before"
+      },
+      {
+        "loadavg": "21.71 16.35 13.10",
+        "round": 4,
+        "when": "after"
+      },
+      {
+        "loadavg": "11.76 17.04 15.29",
+        "round": 5,
+        "when": "before"
+      },
+      {
+        "loadavg": "26.55 20.88 16.98",
+        "round": 5,
+        "when": "after"
+      }
+    ],
+    "machine": "WSL2 Linux 6.18.33.2-microsoft-standard-WSL2, 20 logical CPUs, 62 GiB RAM",
+    "sharedLoad": "concurrent QSL builds on the same machine; loadavg recorded per round"
+  },
+  "observations": [
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/parse/nested-0"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00037489999999999995
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/sha256/nested-0"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00001826
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/parse/nested-1"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.0004909
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/sha256/nested-1"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.000037961
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/parse/nested-2"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00063958
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/sha256/nested-2"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00008075899999999999
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/parse/nested-3"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00071866
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/sha256/nested-3"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.000093626
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/parse/nested-4"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00091511
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/sha256/nested-4"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.000127
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/parse/volume-1000"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.16623
+    },
+    {
+      "definitionVersion": "qsl.bench.cst.wall_time-v1",
+      "dimensions": {
+        "benchmark": "cst/sha256/volume-1000"
+      },
+      "metric": "qsl.bench.cst.wall_time",
+      "planId": "MP-003",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.015807
+    }
+  ],
+  "rawEvidence": {
+    "criterionRounds": {
+      "cst/parse/nested-0": [
+        {
+          "ci_high_s": 0.00026279,
+          "ci_low_s": 0.00025781999999999997,
+          "estimate_s": 0.00026001999999999997,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00038291000000000003,
+          "ci_low_s": 0.00036725999999999995,
+          "estimate_s": 0.00037489999999999995,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00026922000000000003,
+          "ci_low_s": 0.00026305,
+          "estimate_s": 0.00026604,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00039907999999999995,
+          "ci_low_s": 0.000385,
+          "estimate_s": 0.00039183999999999996,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00070747,
+          "ci_low_s": 0.0006134299999999999,
+          "estimate_s": 0.00065894,
+          "round": 5
+        }
+      ],
+      "cst/parse/nested-1": [
+        {
+          "ci_high_s": 0.00036558999999999995,
+          "ci_low_s": 0.00036165,
+          "estimate_s": 0.00036348,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00050048,
+          "ci_low_s": 0.0004813,
+          "estimate_s": 0.0004909,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00039813999999999995,
+          "ci_low_s": 0.0003832,
+          "estimate_s": 0.00039033,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.0012376000000000002,
+          "ci_low_s": 0.0010421,
+          "estimate_s": 0.0011412,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0005155599999999999,
+          "ci_low_s": 0.0005007599999999999,
+          "estimate_s": 0.0005080099999999999,
+          "round": 5
+        }
+      ],
+      "cst/parse/nested-2": [
+        {
+          "ci_high_s": 0.0004868,
+          "ci_low_s": 0.00048175999999999997,
+          "estimate_s": 0.00048418999999999996,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00067514,
+          "ci_low_s": 0.00064445,
+          "estimate_s": 0.0006600299999999999,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00050032,
+          "ci_low_s": 0.00048712999999999995,
+          "estimate_s": 0.00049318,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.0021151,
+          "ci_low_s": 0.0018872000000000001,
+          "estimate_s": 0.0020011,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00065349,
+          "ci_low_s": 0.0006249299999999999,
+          "estimate_s": 0.00063958,
+          "round": 5
+        }
+      ],
+      "cst/parse/nested-3": [
+        {
+          "ci_high_s": 0.00066322,
+          "ci_low_s": 0.00063608,
+          "estimate_s": 0.0006481799999999999,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00073545,
+          "ci_low_s": 0.0007022799999999999,
+          "estimate_s": 0.00071866,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.0006317699999999999,
+          "ci_low_s": 0.00061884,
+          "estimate_s": 0.00062482,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.0009047999999999999,
+          "ci_low_s": 0.00085444,
+          "estimate_s": 0.0008783999999999999,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0011146,
+          "ci_low_s": 0.0010057,
+          "estimate_s": 0.0010551999999999998,
+          "round": 5
+        }
+      ],
+      "cst/parse/nested-4": [
+        {
+          "ci_high_s": 0.00075543,
+          "ci_low_s": 0.0007467,
+          "estimate_s": 0.00075085,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.0009373799999999999,
+          "ci_low_s": 0.0008931499999999999,
+          "estimate_s": 0.00091511,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.0008963099999999999,
+          "ci_low_s": 0.00084147,
+          "estimate_s": 0.0008694099999999999,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.0011116,
+          "ci_low_s": 0.0010635,
+          "estimate_s": 0.0010876,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0013431,
+          "ci_low_s": 0.0012567,
+          "estimate_s": 0.0012984000000000001,
+          "round": 5
+        }
+      ],
+      "cst/parse/volume-1000": [
+        {
+          "ci_high_s": 0.099324,
+          "ci_low_s": 0.096216,
+          "estimate_s": 0.09768600000000001,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.15586000000000003,
+          "ci_low_s": 0.14713,
+          "estimate_s": 0.15146,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.19293000000000002,
+          "ci_low_s": 0.16808,
+          "estimate_s": 0.18061000000000002,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.17056000000000002,
+          "ci_low_s": 0.16172,
+          "estimate_s": 0.16623,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.24194000000000002,
+          "ci_low_s": 0.22468000000000002,
+          "estimate_s": 0.23305,
+          "round": 5
+        }
+      ],
+      "cst/sha256/nested-0": [
+        {
+          "ci_high_s": 0.000014698,
+          "ci_low_s": 0.000014509,
+          "estimate_s": 0.000014594,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.000018637,
+          "ci_low_s": 0.000017893,
+          "estimate_s": 0.00001826,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.000014845,
+          "ci_low_s": 0.000014650999999999999,
+          "estimate_s": 0.000014745999999999999,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.000022309999999999998,
+          "ci_low_s": 0.000020864999999999998,
+          "estimate_s": 0.000021559999999999997,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0000291,
+          "ci_low_s": 0.000025353999999999998,
+          "estimate_s": 0.000027091,
+          "round": 5
+        }
+      ],
+      "cst/sha256/nested-1": [
+        {
+          "ci_high_s": 0.000037539999999999996,
+          "ci_low_s": 0.000034361,
+          "estimate_s": 0.000035786,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.000041454,
+          "ci_low_s": 0.000039078999999999996,
+          "estimate_s": 0.000040214,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.000034646999999999995,
+          "ci_low_s": 0.000033739,
+          "estimate_s": 0.000034182,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00011481999999999999,
+          "ci_low_s": 0.000096605,
+          "estimate_s": 0.00010573,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.000038676999999999996,
+          "ci_low_s": 0.000037267999999999996,
+          "estimate_s": 0.000037961,
+          "round": 5
+        }
+      ],
+      "cst/sha256/nested-2": [
+        {
+          "ci_high_s": 0.000063382,
+          "ci_low_s": 0.000061572,
+          "estimate_s": 0.00006238,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00008185299999999999,
+          "ci_low_s": 0.000079544,
+          "estimate_s": 0.00008075899999999999,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00006381199999999999,
+          "ci_low_s": 0.000062047,
+          "estimate_s": 0.000062839,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.000082959,
+          "ci_low_s": 0.00007973,
+          "estimate_s": 0.000081288,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.000085343,
+          "ci_low_s": 0.000080855,
+          "estimate_s": 0.000082861,
+          "round": 5
+        }
+      ],
+      "cst/sha256/nested-3": [
+        {
+          "ci_high_s": 0.000080365,
+          "ci_low_s": 0.00007934699999999998,
+          "estimate_s": 0.000079824,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00009607399999999999,
+          "ci_low_s": 0.00009127,
+          "estimate_s": 0.000093626,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00008369799999999998,
+          "ci_low_s": 0.00008157599999999999,
+          "estimate_s": 0.000082542,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00011376999999999999,
+          "ci_low_s": 0.00010728,
+          "estimate_s": 0.00011031999999999999,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00010407999999999999,
+          "ci_low_s": 0.00010195,
+          "estimate_s": 0.00010301999999999999,
+          "round": 5
+        }
+      ],
+      "cst/sha256/nested-4": [
+        {
+          "ci_high_s": 0.00012034,
+          "ci_low_s": 0.00011607999999999999,
+          "estimate_s": 0.00011802999999999999,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00014247999999999998,
+          "ci_low_s": 0.00013547,
+          "estimate_s": 0.00013885,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00011713999999999999,
+          "ci_low_s": 0.00011557999999999999,
+          "estimate_s": 0.00011632999999999999,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00012934,
+          "ci_low_s": 0.00012476,
+          "estimate_s": 0.000127,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00021316,
+          "ci_low_s": 0.00019659999999999998,
+          "estimate_s": 0.00020468,
+          "round": 5
+        }
+      ],
+      "cst/sha256/volume-1000": [
+        {
+          "ci_high_s": 0.013122,
+          "ci_low_s": 0.01262,
+          "estimate_s": 0.012848000000000002,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.016209,
+          "ci_low_s": 0.015417,
+          "estimate_s": 0.015807,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.023341999999999998,
+          "ci_low_s": 0.021403,
+          "estimate_s": 0.022325,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.015149,
+          "ci_low_s": 0.014441,
+          "estimate_s": 0.014788,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.017541,
+          "ci_low_s": 0.016987,
+          "estimate_s": 0.017259,
+          "round": 5
+        }
+      ]
+    }
+  },
+  "schemaVersion": 2,
+  "scope": {
+    "axis": "cst",
+    "benchmarks": 12,
+    "repetitions": 5
+  },
+  "sourceRevision": "4dd02fb154397a76ddc8cf306cffee298b28758a",
+  "subject": "quire-spec-language qsl-bench cst benchmarks",
+  "timestamp": "2026-09-24T01:23:09.000Z",
+  "toolIdentity": "criterion via cargo bench -p qsl-bench",
+  "toolVersion": "criterion 0.8.2; rustc 1.98.1 (48a229cea 2026-09-01)",
+  "verificationStack": {
+    "artifacts": {
+      "Cargo.lock": "sha256:9dc9cac7d466819dc9cac2cc97815531d269c85bd2dc22cea450c3ebe10bfd3b",
+      "qsl-bench/benches/cst.rs": "sha256:d87d3371fb865d264a45f481536f3ec00b02411e1273c55f284fa39f3ecaf638"
+    },
+    "buildProfile": "release",
+    "capabilities": [
+      "criterion.wall-time"
+    ],
+    "executableDigest": "sha256:b52d3b4e328ce89a30d4006f9689d26e63de7d88fdd09b4eb2666e6d17562105",
+    "lockDigest": "sha256:9dc9cac7d466819dc9cac2cc97815531d269c85bd2dc22cea450c3ebe10bfd3b",
+    "schemaVersion": "verification-stack-attestation-v1",
+    "sources": {
+      "quire-spec-language": {
+        "remote": "https://github.com/agent-ix/quire-spec-language",
+        "revision": "4dd02fb154397a76ddc8cf306cffee298b28758a",
+        "sourceState": "clean"
+      }
+    },
+    "toolchains": {
+      "node": null,
+      "python": null,
+      "rust": "rustc 1.98.1 (48a229cea 2026-09-01)"
+    }
+  }
+}

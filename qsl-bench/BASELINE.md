@@ -362,6 +362,23 @@ count is about 10^7 to 10^8, not 10^9.
   validator needs an FCD ticket: hoist `document_features` out of the per-type
   loop in `decide`.
 
+## Engineering-assurance record
+
+The same baseline is recorded as engineering-assurance MeasurementPlans, one
+per axis:
+
+- `spec/assurance/MP-001-parser-wall-time.md`
+- `spec/assurance/MP-002-checker-wall-time.md`
+- `spec/assurance/MP-003-cst-wall-time.md`
+- `spec/assurance/MP-004-model-wall-time.md`
+- `spec/assurance/MP-005-evaluator-wall-time.md`
+
+Their five-run medians are stored as quoin measurement collections under
+`spec/evidence/measurements/qsl196-baseline-<axis>-20260923.json`, and
+`quoin report --repo .` shows them. This file remains the source of truth for
+the stated variance and the findings. A collection observation carries the
+median only.
+
 ## What this baseline does not cover
 
 - **Memory.** Peak RSS is recorded only for the one-shot probe runs. The

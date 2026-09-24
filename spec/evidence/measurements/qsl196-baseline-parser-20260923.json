@@ -1,0 +1,690 @@
+{
+  "collectionId": "qsl196-baseline-parser-20260923",
+  "configDigest": "sha256:5d1acb8cd42989faacd0da7a880822824055bde15de55e72e2688e5030d89fad",
+  "environment": {
+    "loads": [
+      {
+        "loadavg": "7.04 10.37 9.92",
+        "round": 1,
+        "when": "before"
+      },
+      {
+        "loadavg": "11.65 10.84 10.14",
+        "round": 1,
+        "when": "after"
+      },
+      {
+        "loadavg": "18.14 15.80 12.52",
+        "round": 2,
+        "when": "before"
+      },
+      {
+        "loadavg": "20.81 17.82 13.74",
+        "round": 2,
+        "when": "after"
+      },
+      {
+        "loadavg": "7.66 10.76 12.23",
+        "round": 3,
+        "when": "before"
+      },
+      {
+        "loadavg": "3.29 8.12 11.06",
+        "round": 3,
+        "when": "after"
+      },
+      {
+        "loadavg": "9.19 10.76 11.12",
+        "round": 4,
+        "when": "before"
+      },
+      {
+        "loadavg": "7.92 9.83 10.73",
+        "round": 4,
+        "when": "after"
+      },
+      {
+        "loadavg": "25.97 19.19 15.21",
+        "round": 5,
+        "when": "before"
+      },
+      {
+        "loadavg": "14.86 18.57 15.63",
+        "round": 5,
+        "when": "after"
+      }
+    ],
+    "machine": "WSL2 Linux 6.18.33.2-microsoft-standard-WSL2, 20 logical CPUs, 62 GiB RAM",
+    "sharedLoad": "concurrent QSL builds on the same machine; loadavg recorded per round"
+  },
+  "observations": [
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/depth/0"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.0002781
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/depth/1"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00039546
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/depth/2"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00066763
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/depth/3"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00074006
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/depth/4"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00097884
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/depth/5"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00033906999999999996
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/depth/8"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.00032418999999999997
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/volume/100"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.009699
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/volume/500"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.061679000000000005
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/volume/1000"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.10484
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/volume/2000"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.20791
+    },
+    {
+      "definitionVersion": "qsl.bench.parser.wall_time-v1",
+      "dimensions": {
+        "benchmark": "parser/volume/3000"
+      },
+      "metric": "qsl.bench.parser.wall_time",
+      "planId": "MP-001",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.13847
+    }
+  ],
+  "rawEvidence": {
+    "criterionRounds": {
+      "parser/depth/0": [
+        {
+          "ci_high_s": 0.00028826,
+          "ci_low_s": 0.00026839999999999996,
+          "estimate_s": 0.0002781,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00035213999999999997,
+          "ci_low_s": 0.00033902999999999993,
+          "estimate_s": 0.00034552,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00026497,
+          "ci_low_s": 0.00025762,
+          "estimate_s": 0.00026115,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00027636,
+          "ci_low_s": 0.00026507999999999995,
+          "estimate_s": 0.00027035,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0006498599999999999,
+          "ci_low_s": 0.00050284,
+          "estimate_s": 0.0005794400000000001,
+          "round": 5
+        }
+      ],
+      "parser/depth/1": [
+        {
+          "ci_high_s": 0.00036850999999999995,
+          "ci_low_s": 0.00036066,
+          "estimate_s": 0.00036426,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.0005222100000000001,
+          "ci_low_s": 0.00049588,
+          "estimate_s": 0.00050933,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00040623,
+          "ci_low_s": 0.00038564,
+          "estimate_s": 0.00039546,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00037092,
+          "ci_low_s": 0.00036392,
+          "estimate_s": 0.00036694,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00095686,
+          "ci_low_s": 0.00083479,
+          "estimate_s": 0.00089145,
+          "round": 5
+        }
+      ],
+      "parser/depth/2": [
+        {
+          "ci_high_s": 0.00048571,
+          "ci_low_s": 0.00047505999999999997,
+          "estimate_s": 0.0004798,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00067963,
+          "ci_low_s": 0.00065533,
+          "estimate_s": 0.00066763,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00051025,
+          "ci_low_s": 0.00049429,
+          "estimate_s": 0.00050211,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00073701,
+          "ci_low_s": 0.0006581499999999999,
+          "estimate_s": 0.00069432,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00077564,
+          "ci_low_s": 0.00071845,
+          "estimate_s": 0.00074564,
+          "round": 5
+        }
+      ],
+      "parser/depth/3": [
+        {
+          "ci_high_s": 0.0006238999999999999,
+          "ci_low_s": 0.00060777,
+          "estimate_s": 0.0006152699999999999,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.0008289699999999999,
+          "ci_low_s": 0.0008013899999999999,
+          "estimate_s": 0.00081509,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00060518,
+          "ci_low_s": 0.0005966699999999999,
+          "estimate_s": 0.00060046,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00075397,
+          "ci_low_s": 0.0007258,
+          "estimate_s": 0.00074006,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0008899199999999999,
+          "ci_low_s": 0.00084999,
+          "estimate_s": 0.0008695599999999999,
+          "round": 5
+        }
+      ],
+      "parser/depth/4": [
+        {
+          "ci_high_s": 0.00097815,
+          "ci_low_s": 0.0009159999999999999,
+          "estimate_s": 0.00094557,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00099939,
+          "ci_low_s": 0.0009592099999999999,
+          "estimate_s": 0.00097884,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00084012,
+          "ci_low_s": 0.0008021699999999999,
+          "estimate_s": 0.00082034,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.0010569,
+          "ci_low_s": 0.0010116,
+          "estimate_s": 0.0010356,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0010612,
+          "ci_low_s": 0.0010112,
+          "estimate_s": 0.0010357,
+          "round": 5
+        }
+      ],
+      "parser/depth/5": [
+        {
+          "ci_high_s": 0.00029606,
+          "ci_low_s": 0.00028527999999999995,
+          "estimate_s": 0.00029027999999999997,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00055657,
+          "ci_low_s": 0.00051674,
+          "estimate_s": 0.00053603,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00028777999999999996,
+          "ci_low_s": 0.00027961,
+          "estimate_s": 0.00028323,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.0003473,
+          "ci_low_s": 0.0003314,
+          "estimate_s": 0.00033906999999999996,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00038260999999999997,
+          "ci_low_s": 0.0003625,
+          "estimate_s": 0.00037234,
+          "round": 5
+        }
+      ],
+      "parser/depth/8": [
+        {
+          "ci_high_s": 0.00033488999999999996,
+          "ci_low_s": 0.00031539,
+          "estimate_s": 0.00032418999999999997,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.00058764,
+          "ci_low_s": 0.00051687,
+          "estimate_s": 0.00054826,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.00029874999999999997,
+          "ci_low_s": 0.0002878,
+          "estimate_s": 0.00029275,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.00031808,
+          "ci_low_s": 0.00030517,
+          "estimate_s": 0.00031122,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.00038262999999999996,
+          "ci_low_s": 0.00035711,
+          "estimate_s": 0.00036874,
+          "round": 5
+        }
+      ],
+      "parser/volume/100": [
+        {
+          "ci_high_s": 0.011615,
+          "ci_low_s": 0.008517799999999999,
+          "estimate_s": 0.009699,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.021452000000000002,
+          "ci_low_s": 0.018921,
+          "estimate_s": 0.020014,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.008102600000000001,
+          "ci_low_s": 0.0080444,
+          "estimate_s": 0.008069000000000002,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.009827,
+          "ci_low_s": 0.008855,
+          "estimate_s": 0.009194599999999999,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.0115,
+          "ci_low_s": 0.010269,
+          "estimate_s": 0.010814,
+          "round": 5
+        }
+      ],
+      "parser/volume/1000": [
+        {
+          "ci_high_s": 0.10529000000000001,
+          "ci_low_s": 0.096531,
+          "estimate_s": 0.10051,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.16919,
+          "ci_low_s": 0.16113,
+          "estimate_s": 0.16535,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.11152,
+          "ci_low_s": 0.098027,
+          "estimate_s": 0.10484,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.097653,
+          "ci_low_s": 0.094298,
+          "estimate_s": 0.095925,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.12563,
+          "ci_low_s": 0.11042,
+          "estimate_s": 0.1179,
+          "round": 5
+        }
+      ],
+      "parser/volume/2000": [
+        {
+          "ci_high_s": 0.21419,
+          "ci_low_s": 0.18896000000000002,
+          "estimate_s": 0.20072,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.31874,
+          "ci_low_s": 0.30363,
+          "estimate_s": 0.31129,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.18587,
+          "ci_low_s": 0.18035,
+          "estimate_s": 0.18301,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.25448,
+          "ci_low_s": 0.24144000000000002,
+          "estimate_s": 0.24792,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.21384,
+          "ci_low_s": 0.2022,
+          "estimate_s": 0.20791,
+          "round": 5
+        }
+      ],
+      "parser/volume/3000": [
+        {
+          "ci_high_s": 0.11645000000000001,
+          "ci_low_s": 0.11292,
+          "estimate_s": 0.11455,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.19341,
+          "ci_low_s": 0.18464,
+          "estimate_s": 0.18889,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.1194,
+          "ci_low_s": 0.11384000000000001,
+          "estimate_s": 0.11649,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.14491,
+          "ci_low_s": 0.13196000000000002,
+          "estimate_s": 0.13847,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.15563,
+          "ci_low_s": 0.14085,
+          "estimate_s": 0.14758000000000002,
+          "round": 5
+        }
+      ],
+      "parser/volume/500": [
+        {
+          "ci_high_s": 0.06663,
+          "ci_low_s": 0.057565,
+          "estimate_s": 0.061679000000000005,
+          "round": 1
+        },
+        {
+          "ci_high_s": 0.086687,
+          "ci_low_s": 0.082055,
+          "estimate_s": 0.084376,
+          "round": 2
+        },
+        {
+          "ci_high_s": 0.043546999999999995,
+          "ci_low_s": 0.042244000000000004,
+          "estimate_s": 0.042819,
+          "round": 3
+        },
+        {
+          "ci_high_s": 0.051145,
+          "ci_low_s": 0.046458,
+          "estimate_s": 0.048662,
+          "round": 4
+        },
+        {
+          "ci_high_s": 0.068478,
+          "ci_low_s": 0.059905,
+          "estimate_s": 0.064238,
+          "round": 5
+        }
+      ]
+    }
+  },
+  "schemaVersion": 2,
+  "scope": {
+    "axis": "parser",
+    "benchmarks": 12,
+    "repetitions": 5
+  },
+  "sourceRevision": "4dd02fb154397a76ddc8cf306cffee298b28758a",
+  "subject": "quire-spec-language qsl-bench parser benchmarks",
+  "timestamp": "2026-09-24T01:23:09.000Z",
+  "toolIdentity": "criterion via cargo bench -p qsl-bench",
+  "toolVersion": "criterion 0.8.2; rustc 1.98.1 (48a229cea 2026-09-01)",
+  "verificationStack": {
+    "artifacts": {
+      "Cargo.lock": "sha256:9dc9cac7d466819dc9cac2cc97815531d269c85bd2dc22cea450c3ebe10bfd3b",
+      "qsl-bench/benches/parser.rs": "sha256:54ddf83ecced2579bd005ff39822f5820cb66d4046bdd18e9b69db47a709bd29"
+    },
+    "buildProfile": "release",
+    "capabilities": [
+      "criterion.wall-time"
+    ],
+    "executableDigest": "sha256:06dea591dd92bfb86d747e859ff6691c4b078da58fe41a44df016adf3a691170",
+    "lockDigest": "sha256:9dc9cac7d466819dc9cac2cc97815531d269c85bd2dc22cea450c3ebe10bfd3b",
+    "schemaVersion": "verification-stack-attestation-v1",
+    "sources": {
+      "quire-spec-language": {
+        "remote": "https://github.com/agent-ix/quire-spec-language",
+        "revision": "4dd02fb154397a76ddc8cf306cffee298b28758a",
+        "sourceState": "clean"
+      }
+    },
+    "toolchains": {
+      "node": null,
+      "python": null,
+      "rust": "rustc 1.98.1 (48a229cea 2026-09-01)"
+    }
+  }
+}
