@@ -31,6 +31,8 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-CON-2.
    constructor, a node-identity preimage builder and a `NodeKey`
    constructor call.
 4. List every emitted node's occurrences.
+5. Check and emit the recursive `f` of FR-092 vectors G4 to G6, and read the
+   `recursion_group` label and graph position of each member.
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
@@ -41,8 +43,13 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 - Step 4: every node has at least one occurrence; `a`'s parameter node has an
   `anchor` occurrence and one `expression` occurrence per read; the scalar
   nodes typing P1's body literals have a `generated` occurrence.
+- Step 5: the three members carry the label
+  `0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50`, their
+  graph order is G5, G4, G6 (ordinals 0 to 2), and step 2's recomputation
+  from graph order gives G4 to G6.
 
 ## Status
 
-Planned; QSL-6 S1b, after QSL-156 A4b. Emission needs the edition lock
-evidence (ADR-011 §2.4).
+Planned; QSL-6 S1b, after QSL-156 A4b merges. `qsl-package/src/emit.rs`
+refuses every non-empty graph. Emission needs the edition lock evidence
+(ADR-011 §2.4).

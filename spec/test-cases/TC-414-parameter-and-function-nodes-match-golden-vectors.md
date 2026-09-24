@@ -60,4 +60,4 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-414")]` with the AC each backs.
 
 ## Status
 
-Planned; QSL-156 A4b.
+Implemented on the QSL-156 slice A4b branch, pending merge. The tests back every step.

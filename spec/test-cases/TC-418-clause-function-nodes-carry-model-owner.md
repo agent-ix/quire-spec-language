@@ -32,7 +32,8 @@ The receiver parameter of each candidate is `self: Reference<M::Order>`.
    precondition `true` and the body `7`, under `acme/orders` `1.0.0`. Read the
    receiver parameter node and the key and preimage bytes of each clause
    function.
-2. Repeat step 1 under `acme/orders` `2.0.0`.
+2. Repeat step 1 under `acme/orders` `2.0.0`, where `M::Order` resolves to
+   M2.
 3. Run it for `Order.count` with the authored precondition `true`, under
    `1.0.0`.
 4. Add `Sub.size`, which redefines `Order.size` with the authored
@@ -51,7 +52,8 @@ Tag the tests `#[trace("FR-094-AC-5", "TC-418")]`.
   body to C2. Both preimages carry `owner` `{kind: "model", identity:
   "acme/orders", version: "1.0.0", node: "ix://acme/orders/Order/size"}` and
   `declaration` `null`.
-- Step 2: the precondition keys to C3.
+- Step 2: the receiver parameter keys to P9 over R2, and the precondition
+  keys to C3, which references P9.
 - Step 3: the precondition keys to C4.
 - Step 4: the receiver parameter keys to P8, `Sub.size`'s authored
   precondition to C5 and its effective precondition to C6 in both runs, each
@@ -63,4 +65,6 @@ Tag the tests `#[trace("FR-094-AC-5", "TC-418")]`.
 
 ## Status
 
-Planned; QSL-156 A4b.
+Implemented on the QSL-156 slice A4b branch, pending merge. The tests back every step except step 2's key: they assert the
+`2.0.0` owner and a key other than C1, and the corrected C3 (over P9) is
+the key to assert.

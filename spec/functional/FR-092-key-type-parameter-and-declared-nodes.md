@@ -19,6 +19,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-094
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-088
+    type: traces_to
 ---
 # FR-092: Key type, parameter, value and declared function nodes with the structural-node preimage
 
@@ -49,7 +51,8 @@ copied): FR-322, `proposals/checked-package-v2/node-identity-preimage.schema.jso
   requirement and [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)).
 - For a declared node, the declaring unit's `SourceOwner{authority, identity}`
   (FR-091, the required E3 input).
-- The node's recursion group, when it is in one (FR-322 `recursion_group`).
+- The checked graph's key-naming edges, from which `check` derives each
+  node's recursion group (Recursion groups).
 
 ## Outputs
 
@@ -84,20 +87,22 @@ The preimage is one JSON object with these members:
 | `owner` | Present exactly when `declaration` is not `null` or the node is model-owned: the declaring node's QSpec `Owner` (ADR-013 O-04). A `Value` declaration compiled from source carries its unit's `SourceOwner`, `{kind: "source", authority, identity}`. A model-owned node carries `ModelOwner` and a `null` `declaration` ([FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)). Absent otherwise. |
 | `node_tag` | The node's FR-322 `node_tag`. |
 | `semantic_form` | The node's FR-322 `semantic_form`. |
-| `semantic_type` | The `NodeId` (`{domain: "quire.checked-semantic-node/v1", digest}`) of the node's semantic type, or `null` when the node's semantic type is the node itself. |
+| `semantic_type` | The `NodeId` (`{domain: "quire.checked-semantic-node/v1", digest}`) of the node's semantic type, or `null` when the node's semantic type is the node itself. When the semantic type is a member of the node's own recursion group, `{term: "group_reference", ordinal}` (Recursion groups). |
 | `declaration` | `{qualified_name}` for a node with a `declaration` source occurrence (FR-322 `declaration`), else `null`. |
-| `recursion` | `null`, or `{size, ordinal}` of the node in its recursion group, as `quire.application-node/v1` defines it. |
+| `recursion` | `null` for a node outside every recursion group, else `{size, ordinal, group}` (Recursion groups). |
 | `body` | The node's FR-322 body term. A `reference` to a member of the node's own recursion group is written `{term: "group_reference", ordinal}`, as `quire.application-node/v1` writes it. |
 
 The members, the `group_reference` rule and the term shapes are those of
-`quire.application-node/v1`, with three differences: the `version`, the
-`owner` member of a declared or model-owned node, and a `null`
-`semantic_type` for a self-typed node. A `scalar_type` and a `composite_type` node are their own
-semantic type, so this `null` keeps their preimage acyclic.
+`quire.application-node/v1`, with four differences: the `version`, the
+`owner` member of a declared or model-owned node, a `null`
+`semantic_type` for a self-typed node, and the `group` member and
+`semantic_type` position of an in-group node (Recursion groups). A
+`scalar_type` and a `composite_type` node are their own semantic type, so
+this `null` keeps their preimage acyclic.
 
 A number never appears in a preimage as a JSON number except `recursion`'s
 `size` and `ordinal`, a `group_reference` `ordinal` and an `operation.member`
-`position`. A literal's value
+`position`. `recursion`'s `group` is a lowercase hex string. A literal's value
 is spelled by its `value_kind`:
 
 - `integer`: the canonical decimal string of the value: no leading zero, no
@@ -121,18 +126,140 @@ key.
 
 ### Recursion groups
 
-A node's recursion group is its strongly connected component in the graph of
-`reference` edges, when that component has more than one node or a
-self-edge; its members' order is FR-322's graph order. Two in-group nodes of
-different groups can have equal preimages, because a `group_reference`
-names a position, not a node: two recursive functions `f` and `g` with the
-same body shape give their in-group expression nodes one preimage.
-`check` SHALL refuse a package in which two in-group nodes of different
-recursion groups have equal preimages, with `unknown_required_feature`/
-`unsupported-feature` naming both nodes' source regions, and yield no key for
-either (FR-092-OQ-1).
-Two nodes outside any recursion group with equal preimages are one node,
-keyed once (FR-093's content addressing).
+A node **names** another node when the other node's key is a member of its
+preimage: a body `reference` target, its `semantic_type`, an application's
+`result_type`, a literal's `type`, or an operation member's `declaration`.
+A node's **recursion group** is its strongly connected component in the graph
+of these edges when that component has more than one node or a node that
+names itself. Recursive functions form groups (a function node, its body's
+conditional and its recursive call), and so do the recursive records that
+QSpec FR-143 admits (a record and the `Option` or collection node that its
+field names). FR-143 admits a record cycle only through an optional field,
+an `Option` or a collection whose minimum is zero, and admits no cycle
+through a tuple position.
+
+`check` SHALL key nodes in dependency order. It keys a node outside every
+group after every node that node names. It keys a group after every node
+outside the group that a member names. The components of the graph form a
+directed acyclic graph, so this order exists. When `check` keys a group, it
+already knows every key that the members name outside the group.
+
+#### An in-group node's preimage
+
+`check` SHALL key a member of a recursion group by the preimage its kind
+selects (rule 2 or rule 3), with these members:
+
+- `recursion` is `{size, ordinal}`, where `size` is the number of the
+  group's classes and `ordinal` is the rank of the member's class in the
+  group order below. In a `quire.structural-node/v1` preimage, `recursion`
+  also has `group`, the group digest below. In a
+  `quire.application-node/v1` preimage, `recursion` is exactly
+  `{size, ordinal}`, as FR-322 writes it.
+- Each position that names a member of the node's own group holds
+  `{term: "group_reference", ordinal}`, with that member's ordinal, in place
+  of the member's `reference` term or `NodeId`.
+
+An application node names members of its own group only through body
+`reference` terms: its `result_type`, its literal types and its member
+declarations are type or model nodes, and a type or model node names no
+expression, value or function node, so it is never in the application
+node's group. The application-node preimage of an in-group node therefore
+keeps FR-322's shape. A structural in-group node can name a member at its
+`semantic_type`: in `record Tree { kids: Sequence<Tree>[0, 3]; }`, the
+`collection_bounds` node's semantic type is the `Sequence<Tree>` node of the
+same group (G9).
+
+#### The group order
+
+`check` SHALL order a group's members by their content, as follows.
+
+1. A member's **full shape** is its preimage with `recursion` `null` and each
+   position that names a member of the group written
+   `{term: "group_reference"}`, with no ordinal. Its **anonymous shape** is
+   its full shape with `declaration` `null` and no `owner` member.
+2. A member's **targets** are the members named at those positions, in the
+   order the positions occur in the RFC 8785 bytes of its full shape. A
+   member named twice is listed twice.
+3. A **refinement pass** over one kind of shape computes a signature for
+   each member. `h0(m)` is SHA-256 of the RFC 8785 bytes of `m`'s shape.
+   `h(r+1)(m)` is SHA-256 of the RFC 8785 bytes of
+   `{"shape": h0(m), "targets": [hr(t) for each target t of m]}`. Each digest
+   is written as a lowercase hex string. The pass stops at the first round
+   `r` of 1 or more in which the number of distinct `hr` values equals the
+   number of distinct `h(r-1)` values, and `hr(m)` is `m`'s signature. Each
+   round before the last adds at least one distinct value, so a pass stops
+   within `n` rounds for a group of `n` members.
+4. `check` runs one pass over the anonymous shapes and one over the full
+   shapes, and orders the members by anonymous signature, then by full
+   signature, each compared as a lowercase hex string.
+5. Members with equal full signatures form one **class**. They have equal
+   preimages, so they are one node (FR-093's content addressing), and
+   `check` keeps one node for the class. A class's `ordinal` is its rank in
+   the order, from 0, and `size` is the number of classes.
+
+A member's **group-local preimage** is its preimage built with these
+ordinals, without the `group` member. The **group digest** is SHA-256 of the
+RFC 8785 bytes of the array whose `k`-th element is the lowercase hex SHA-256
+of the group-local preimage of ordinal `k`. A structural in-group node's key
+is SHA-256 of its group-local preimage with `recursion.group` set to the
+group digest. An application in-group node's key is SHA-256 of its
+group-local preimage, which is its FR-322 preimage.
+
+The order is well defined and not circular. The shapes name only keys
+outside the group, which dependency order has already fixed, and
+placeholders. The signatures are digests of shapes and of other signatures.
+The ordinals come from the order, the preimages from the ordinals and the
+keys from the preimages. No step reads the key of a member of the group, so
+the order does not depend on node keys.
+
+FR-322 reads a member's `ordinal` from the member's position among its
+group's nodes in the v2 graph's node order, which the package's writer
+chooses. QSL's v2 emission writes each group's members in ordinal order
+([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md), Who
+builds the lowering), so a reader that derives the ordinal from graph order,
+as IR-242's does, recomputes the keys `check` minted.
+
+A pass computes at most `n` signatures per round for `n` rounds, so at most
+`n²` signatures for a group of `n` members, and a group holds no more nodes
+than the check stage's node limit (`CheckingLimits`) admits.
+
+The order is independent of declaration order, source regions and the order
+in which `check` visits the declarations: no shape holds any of them. It
+depends on a member's declared name and owner only through the full pass,
+which breaks ties that the anonymous pass leaves. Names belong in the order
+for three reasons:
+
+- A declared member's key already hashes its `declaration` and `owner`, so
+  renaming the member changes its key whatever the order is.
+- Without names, the members of a mutually recursive pair whose bodies differ
+  only in which function they call tie (G10 to G15). Content would then give
+  no order for them, and any tie-break would take the declaration order.
+- Running the anonymous pass first means that a group whose anonymous pass
+  separates every member gets ordinals that do not depend on names. Two such
+  groups that differ only in declared names then always get equal ordinals
+  and collide, whatever the names are.
+
+#### Groups that collide
+
+The application-node preimage has no member that names the group: an
+in-group application node's preimage holds its body, its types, `size` and
+its own and its targets' ordinals. Two application nodes of different groups
+with the same body shape, the same `size` and the same ordinals therefore
+have equal preimages. Groups that differ only in declared names or owners
+always give their in-group application nodes equal preimages: in
+FR-092-AC-7, the preimages of the conditionals of `f` and of `g` both hash
+to G5. Groups that differ in other content can also coincide, when their
+application nodes' shapes and ordinals happen to match. A structural
+in-group node carries its group digest, and every group holds a declared
+record or function whose `declaration` and `owner` enter that digest, so a
+structural in-group node's key differs from every other group's members'.
+
+`check` SHALL refuse a package in which two members of different recursion
+groups have equal keys, with `unknown_required_feature`/
+`unsupported-feature` naming the region of every declared member of both
+groups, and yield no key for any member of either group (FR-092-OQ-1). Two
+nodes outside any recursion group with equal preimages are one node, keyed
+once (FR-093's content addressing).
 
 ### Type nodes
 
@@ -168,6 +295,18 @@ nodes carry no `declaration` and no `owner` (ADR-013 OQ-G), so equal
 structure gives one node id in every package. A declared record or tuple
 carries its `declaration` and its unit's `owner`, so the same declaration
 under two owners gives two ids.
+
+The key that a caller passes to `CompositeDeclaration::new`, which
+`ValueType::Composite` carries, is a handle local to one check. It selects
+one declaration in the check stage's `TypeEnvironment` and orders type
+admission's refusals. Only `check` mints a node id (ADR-011 FB-13): `check`
+SHALL key a declared record or tuple by its `quire.structural-node/v1`
+preimage alone, and SHALL give its checked type node (`CheckedTypeNode`) that
+key as its id. Every reference to the declaration resolves to that key
+(FR-088-AC-7). Preimages, checked-graph nodes, checked type nodes, model
+correspondence entries and v2 wire members hold node keys only, so two type
+environments that give one declaration different handles give it one node
+id.
 
 A type alias introduces no type node. A type form that names an alias lowers
 to the node of the alias's resolved type (FR-091 resolves the alias to that
@@ -277,6 +416,26 @@ builds; they are listed here because F2 and E2 depend on them.
 | E2 | both(a, true) | `d5af48cd20c8ebceb650b0137d834b4ae764dd99ae910214d33a3f3cd2785b36` |
 | E3 | let y = a in y | `faa9bf455e92d25b5622dd31501c1341fe447b1e641407dae5522ee6dd5e8a4a` |
 | F3 | function m(x: Int[0, 9]): Boolean decreases(x) { true }, owner (a, u) | `e13010a50a476f31b5955ef7ac6e008d83a7af661b0ff1d52c9fd6b7c1966ed3` |
+| L5 | literal `0` | `22fec75bfbe7f7c5d20d19818c4d7c41bf1ebaf9a94569374228ba9a13376779` |
+| L6 | literal `1` | `833ceccc8eed0661d0edc4b5f1ccb5e6df51da22a979423327b2aeba83bb8366` |
+| E11 | `x > 0` | `68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e` |
+| E12 | `x - 1` | `1b6f75d7ed4c5b25ce7addecd26dfc9f93e3265f9218ad812d62c943955bf63a` |
+| E13 | `x - 1` narrowed into `Int[0, 9]` | `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e` |
+| G1 | an `option` node over itself, a one-member group, ordinal 0 | `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31` |
+| G2 | `record List { next?: List; }`, ordinal 0 | `4471223e43af6f4377ab4e8a057b54a92020015e79944b9978ce90253f7e9636` |
+| G3 | `Option<List>`, ordinal 1 | `96901f2222cafaed9d09389407a1c38b35e99111f00abf38e3fb6a8aa84c9cae` |
+| G4 | function `f`, ordinal 1 | `23cdc2faddac19360e414395846f07003b83144a5da98cc50351485d4238570d` |
+| G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | `3d8af00b18a2c9f774c89ad6da55ae8ff8aa06ecd1f3d7216ae202ab822c34fc` |
+| G6 | `f(x - 1)`, ordinal 2 | `8cd0eadcbc67918d0ba72b19553898a4fa9693bb79db7dc76f266486fe07d840` |
+| G7 | `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0 | `5dd245d1f95885f7c628dfa8424f4b4ddb616a218369984e488731a5e3061c64` |
+| G8 | `Sequence<Tree>`, ordinal 1 | `5dab1d21b36212959d997c17b88ab44822bf4078e35ae1b993c17db591425756` |
+| G9 | `Sequence<Tree>[0, 3]`, ordinal 2 | `6bd6dd7f2b655affb65a4b49dfcff572129d960f9d45766bf954cfc8ce6a4028` |
+| G10 | function `ping`, ordinal 2 | `e491fbeae992168fef1e681476a9a20e4794eac40f377174e6700189450cf345` |
+| G11 | function `pong`, ordinal 3 | `7fd05a5af745fd388daa29067d9e7fc15ef4122bc6ffac7afde2dfdb11aaa399` |
+| G12 | `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 0 | `0c10a4780d09fec3b279bbbe1775d14af5dac2d3b3b61695d14b6d192d352830` |
+| G13 | `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 1 | `ac6436d7164016e2ab8ccb1926ae820ca7e6625b50909d289b479cf1835d49ea` |
+| G14 | `ping(x - 1)`, in `pong`, ordinal 4 | `2dc8b60b64805f36d8cb9d363ef4c090fc037251212f433153398cf15bdc638f` |
+| G15 | `pong(x - 1)`, in `ping`, ordinal 5 | `df9d5492f79e107bc06affbb920b96ff562d7b976580f0f831858e9c185d82ea` |
 
 **T1**: Boolean
 
@@ -518,6 +677,236 @@ Key: `faa9bf455e92d25b5622dd31501c1341fe447b1e641407dae5522ee6dd5e8a4a`
 
 Key: `e13010a50a476f31b5955ef7ac6e008d83a7af661b0ff1d52c9fd6b7c1966ed3`
 
+#### Recursion-group vectors
+
+L5, L6 and E11 to E13 are nodes outside any group that the recursive
+functions below name. G1 to G15 are members of recursion groups, and every
+declared member is under owner (`a`, `u`):
+
+- G1: a one-member group, a `composite_type`/`option` node whose body
+  references itself. No QSL source forms a one-member group: a function
+  names its body's root expression, which is never the function, and a
+  record that names itself directly (`record R { next: R; }`) is a cycle
+  that FR-143 refuses, since it passes no optional field, `Option` or
+  minimum-zero collection. TC-413 keys G1
+  through the key function directly.
+- G2 and G3: `record List { next?: List; }`, a group of two.
+- G4 to G6: `function f using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then f(x - 1) else true }`,
+  a self-recursive function, a group of three. `x - 1` is `Integer` (E12),
+  and the call narrows it into the parameter's `Int[0, 9]` (E13).
+- G7 to G9: `record Tree { kids: Sequence<Tree>[0, 3]; }`, a group of three
+  whose `collection_bounds` member names another member at its
+  `semantic_type`.
+- G10 to G15: `function ping using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then pong(x - 1) else true }`
+  and `function pong`, the same body calling `ping`, a mutually recursive
+  pair whose bodies differ only in which function they call, a group of six.
+
+Each group's signatures, in group order, and its group digest are below.
+The anonymous pass orders G4 to G6, G2 and G3 and G7 to G9 completely. For
+G10 to G15 it leaves three pairs of equal anonymous signatures, and the full
+pass orders each pair by the names `ping` and `pong`.
+
+**L5**: literal `0`
+
+```json
+{"body":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `22fec75bfbe7f7c5d20d19818c4d7c41bf1ebaf9a94569374228ba9a13376779`
+
+**L6**: literal `1`
+
+```json
+{"body":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"literal","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `833ceccc8eed0661d0edc4b5f1ccb5e6df51da22a979423327b2aeba83bb8366`
+
+**E11**: `x > 0`
+
+```json
+{"body":{"arguments":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"22fec75bfbe7f7c5d20d19818c4d7c41bf1ebaf9a94569374228ba9a13376779","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.integer.gt","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+```
+
+Key: `68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e`
+
+**E12**: `x - 1`
+
+```json
+{"body":{"arguments":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"833ceccc8eed0661d0edc4b5f1ccb5e6df51da22a979423327b2aeba83bb8366","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.integer.sub","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+```
+
+Key: `1b6f75d7ed4c5b25ce7addecd26dfc9f93e3265f9218ad812d62c943955bf63a`
+
+**E13**: `x - 1` narrowed into `Int[0, 9]`
+
+```json
+{"body":{"arguments":[{"target":{"digest":"1b6f75d7ed4c5b25ce7addecd26dfc9f93e3265f9218ad812d62c943955bf63a","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.numeric.narrow","laws":[],"leaves":[],"member":{"declaration":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"kind":"type_argument"},"mode":null},"operator":"convert","result_type":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"conversion","semantic_type":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+```
+
+Key: `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e`
+
+**G1**: an `option` node over itself, a one-member group, ordinal 0
+
+```json
+{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b14b","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+```
+
+Key: `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31`
+
+**G2**: `record List { next?: List; }`, ordinal 0
+
+```json
+{"body":{"members":[{"name":"next","term":"binding","value":{"name":"optional","term":"binding","value":{"ordinal":1,"term":"group_reference"}}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"c79c9c74f6849f66fcf9d2d2af6c4fddd157c567785083171cfa5c7acabfc660","ordinal":0,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+```
+
+Key: `4471223e43af6f4377ab4e8a057b54a92020015e79944b9978ce90253f7e9636`
+
+**G3**: `Option<List>`, ordinal 1
+
+```json
+{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"c79c9c74f6849f66fcf9d2d2af6c4fddd157c567785083171cfa5c7acabfc660","ordinal":1,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+```
+
+Key: `96901f2222cafaed9d09389407a1c38b35e99111f00abf38e3fb6a8aa84c9cae`
+
+**G4**: function `f`, ordinal 1
+
+```json
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50","ordinal":1,"size":3},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `23cdc2faddac19360e414395846f07003b83144a5da98cc50351485d4238570d`
+
+**G5**: `if x > 0 then f(x - 1) else true`, ordinal 0
+
+```json
+{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":2,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":3},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+```
+
+Key: `3d8af00b18a2c9f774c89ad6da55ae8ff8aa06ecd1f3d7216ae202ab822c34fc`
+
+**G6**: `f(x - 1)`, ordinal 2
+
+```json
+{"body":{"arguments":[{"ordinal":1,"term":"group_reference"},{"target":{"digest":"f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":2,"size":3},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+```
+
+Key: `8cd0eadcbc67918d0ba72b19553898a4fa9693bb79db7dc76f266486fe07d840`
+
+**G7**: `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0
+
+```json
+{"body":{"members":[{"name":"kids","term":"binding","value":{"ordinal":2,"term":"group_reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["Tree"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b98ca6b","ordinal":0,"size":3},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+```
+
+Key: `5dd245d1f95885f7c628dfa8424f4b4ddb616a218369984e488731a5e3061c64`
+
+**G8**: `Sequence<Tree>`, ordinal 1
+
+```json
+{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b98ca6b","ordinal":1,"size":3},"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
+```
+
+Key: `5dab1d21b36212959d997c17b88ab44822bf4078e35ae1b993c17db591425756`
+
+**G9**: `Sequence<Tree>[0, 3]`, ordinal 2
+
+```json
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":{"group":"098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b98ca6b","ordinal":2,"size":3},"semantic_form":"collection_bounds","semantic_type":{"ordinal":1,"term":"group_reference"},"version":"quire.structural-node/v1"}
+```
+
+Key: `6bd6dd7f2b655affb65a4b49dfcff572129d960f9d45766bf954cfc8ce6a4028`
+
+**G10**: function `ping`, ordinal 2
+
+```json
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["ping"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cecd2597aa","ordinal":2,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `e491fbeae992168fef1e681476a9a20e4794eac40f377174e6700189450cf345`
+
+**G11**: function `pong`, ordinal 3
+
+```json
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":1,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["pong"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cecd2597aa","ordinal":3,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+```
+
+Key: `7fd05a5af745fd388daa29067d9e7fc15ef4122bc6ffac7afde2dfdb11aaa399`
+
+**G12**: `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 0
+
+```json
+{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":5,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+```
+
+Key: `0c10a4780d09fec3b279bbbe1775d14af5dac2d3b3b61695d14b6d192d352830`
+
+**G13**: `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 1
+
+```json
+{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":4,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+```
+
+Key: `ac6436d7164016e2ab8ccb1926ae820ca7e6625b50909d289b479cf1835d49ea`
+
+**G14**: `ping(x - 1)`, in `pong`, ordinal 4
+
+```json
+{"body":{"arguments":[{"ordinal":2,"term":"group_reference"},{"target":{"digest":"f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":4,"size":6},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+```
+
+Key: `2dc8b60b64805f36d8cb9d363ef4c090fc037251212f433153398cf15bdc638f`
+
+**G15**: `pong(x - 1)`, in `ping`, ordinal 5
+
+```json
+{"body":{"arguments":[{"ordinal":3,"term":"group_reference"},{"target":{"digest":"f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":5,"size":6},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+```
+
+Key: `df9d5492f79e107bc06affbb920b96ff562d7b976580f0f831858e9c185d82ea`
+
+
+G1, group digest `4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b14b`:
+
+| Ordinal | Member | Anonymous signature | Full signature |
+|---|---|---|---|
+| 0 | G1 | `3ae296ebb5c73914192b56dcb1ed43464dc277339747b6840db238a5d65f51e4` | `3ae296ebb5c73914192b56dcb1ed43464dc277339747b6840db238a5d65f51e4` |
+
+G2-G3, group digest `c79c9c74f6849f66fcf9d2d2af6c4fddd157c567785083171cfa5c7acabfc660`:
+
+| Ordinal | Member | Anonymous signature | Full signature |
+|---|---|---|---|
+| 0 | G2 `List` | `597649119d3c999ef649f87ed744b3d744ca4e00804501844b2e03b5afae0ee1` | `9d185dc6e7992d708d2399672036b0c37d3904a42995bdad24d7eb8734216018` |
+| 1 | G3 `Option<List>` | `5e72aa9ed1dbb764923d3ab79e2bd94a4f47354dc8b81156904f2757a08d9e1e` | `3fd8713484ef742d2d10a182ad17f1d6c195d5c9341332c7d6b40d6f9e7fab5f` |
+
+G4-G6, group digest `0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50`:
+
+| Ordinal | Member | Anonymous signature | Full signature |
+|---|---|---|---|
+| 0 | G5 conditional | `4d44301461c0af30b4de0d11ceb8d03db50c3248cb144bd50b7111111d22e24b` | `4d44301461c0af30b4de0d11ceb8d03db50c3248cb144bd50b7111111d22e24b` |
+| 1 | G4 `f` | `4eab5ac7dd3f75eced5c6e5dbf48b230a5be7ce400eb28bc2ba2e28a8f551924` | `c9fd4dba85eed73a0de9e90dd1fa4e1a6cc1704649447b02b74c1711bb9d2cad` |
+| 2 | G6 call | `8732b7655fc2c7103dcccfa754ec175365601bbe145d29db1a5acb8f700b1359` | `2f6d9adc0049dfa1bc615e7aff49df9f59c6aad3d915f7a2890779339fb50ba4` |
+
+G7-G9, group digest `098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b98ca6b`:
+
+| Ordinal | Member | Anonymous signature | Full signature |
+|---|---|---|---|
+| 0 | G7 `Tree` | `1a9e910b451eedeb1dbaaa173d871637655c112bca6cbf8d9f75b099bb60c737` | `f5a34062f94b31dfb8aa4b9f751fec3b21f9b3cac747530cdbe17b07f4932f17` |
+| 1 | G8 `Sequence<Tree>` | `3775af7b9c7af621ec1d1298105962edd74e00cbc9c2d93b5418d01839bec5a4` | `7e043c029fe763c3e825ac4a798dc3fc8e0ecd2b9c0193072a47e744b8369b77` |
+| 2 | G9 `Sequence<Tree>[0, 3]` | `fa0d0a0301803db710840ce7bdee7d49e317c2839559694bb1ea65be5d3e2a2d` | `fa0d0a0301803db710840ce7bdee7d49e317c2839559694bb1ea65be5d3e2a2d` |
+
+G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cecd2597aa`:
+
+| Ordinal | Member | Anonymous signature | Full signature |
+|---|---|---|---|
+| 0 | G12 conditional in `ping` | `4d44301461c0af30b4de0d11ceb8d03db50c3248cb144bd50b7111111d22e24b` | `a12abd67c2361ee759d6a3e66779721a619ddf8d54a1b6a7258924dc06cf9c65` |
+| 1 | G13 conditional in `pong` | `4d44301461c0af30b4de0d11ceb8d03db50c3248cb144bd50b7111111d22e24b` | `a4c91c06d164df255f535982d9ac8dc4ef99c51abe79180795bd1f1df815fe48` |
+| 2 | G10 `ping` | `4eab5ac7dd3f75eced5c6e5dbf48b230a5be7ce400eb28bc2ba2e28a8f551924` | `2a3e7409858e5570380cf5ccef819d73da685f9b1aa39e30aed8a6e1433f9395` |
+| 3 | G11 `pong` | `4eab5ac7dd3f75eced5c6e5dbf48b230a5be7ce400eb28bc2ba2e28a8f551924` | `8158c700f25d06bb06974e7c7f9ffa1587ef05d2e835373aec4b65501c38ba99` |
+| 4 | G14 `ping(x - 1)` | `8732b7655fc2c7103dcccfa754ec175365601bbe145d29db1a5acb8f700b1359` | `dbc24afb445fa39f541b71fb0ae972a84864891316f185aaa5006cf0c6c2e431` |
+| 5 | G15 `pong(x - 1)` | `8732b7655fc2c7103dcccfa754ec175365601bbe145d29db1a5acb8f700b1359` | `f989ebfae08ce217678d4973bafc13c5c0cc10252a204a8f5913b2e52fed4b27` |
+
 ## Constraints
 
 | ID | Constraint | Type | Validation |
@@ -535,10 +924,12 @@ Key: `e13010a50a476f31b5955ef7ac6e008d83a7af661b0ff1d52c9fd6b7c1966ed3`
 | FR-092-AC-4 | For `function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }`, `a`'s and `b`'s parameter nodes key to P1 and P2, and `both` keys to F2. For `function f using v(): Boolean pure { true }`, the literal node keys to L1 and `f` keys to F1. For `function h using v(a: Boolean): Boolean pure { let y = a in y }`, `y`'s parameter node keys to P3. For `function k using v(n: Boolean): Integer pure { 7 }`, the literal node keys to L2, whose preimage spells the value as the string `"7"`. | Test (TC-414) |
 | FR-092-AC-5 | `function unused using v(a: Boolean, b: Boolean): Boolean pure { a }` gives a function node whose `parameters` binding lists P1 and then P2, although the body never reads `b`. `function both2 using v(a: Boolean, b: Boolean): Boolean pure { a and b }`, declared beside `both` in the same unit, reuses P1 and P2. | Test (TC-414) |
 | FR-092-AC-6 | No function node's body contains an `application` term, and every function node's key is the SHA-256 of its `quire.structural-node/v1` preimage, which carries the unit's `owner`. The node of `a and b` in `both` is keyed by `quire.application-node/v1`; its preimage has no `owner` member, and its key is E1. | Test (TC-414) |
-| FR-092-AC-7 | With the check stage's depth limit set to 4 (`CheckingLimits`), a parameter typed `Option<Option<Option<Option<Boolean>>>>` is keyed, and one typed with five nested `Option`s refuses with `resource_exhausted`/`insufficient-next-charge` naming the depth limit, and yields no key. Two recursive functions `function f using v(x: Int[0, 9]): Boolean pure decreases(x) { if x = 0 then true else f(0) }` and the same body under the name `g`, in one unit, refuse with `unknown_required_feature`/`unsupported-feature` naming both functions' in-group node regions. | Test (TC-413) |
+| FR-092-AC-7 | With the check stage's depth limit set to 4 (`CheckingLimits`), a parameter typed `Option<Option<Option<Option<Boolean>>>>` is keyed, and one typed with five nested `Option`s refuses with `resource_exhausted`/`insufficient-next-charge` naming the depth limit, and yields no key. The recursive `f` of vectors G4 to G6 and the same declaration under the name `g`, calling `g`, in one unit: the preimages of the conditionals of `f` and `g` both hash to G5, and the package refuses with `unknown_required_feature`/`unsupported-feature` naming the regions of `f` and `g`, with no key for any member of either group. | Test (TC-413) |
 | FR-092-AC-8 | An enum declaration is keyed by `quire.enum-declaration-node/v1` and its member by `quire.enum-member-node/v1`, never by `quire.structural-node/v1`: for QSpec's `enum-status` and `enum-status-ready` preimages in `node-identity-vectors.json`, the minted keys equal the recorded `sha256`. | Test (TC-413) |
 | FR-092-AC-9 | `Rational[-9, 9; 1, 9]` and its base key to T10 and T9, `Decimal[-100000, 100000; 2, 2; nearest-even]` and its base to T12 and T11, and `tuple Pair(Int[0, 9], Int[0, 9]);` under (`a`, `u`) to D5. `record Opt { a: Int[0, 9]; b?: Int[0, 9]; }` keys to D3 and `record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }` to D4, which differs. `rational(1, 2)` as a `Rational[-9, 9; 1, 9]` literal keys to L3, spelled `"1/2"`, and `rational(2, 4)` keys to L3 too. | Test (TC-413) |
 | FR-092-AC-10 | `function m using v(x: Int[0, 9]): Boolean pure decreases(x) { true }` keys `x`'s parameter node to P4 and `m` to F3, whose body binds `decreases` to a `reference` to P4. | Test (TC-414) |
+| FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5, L6 and E11 to E13; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's digest. In `function h using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then h(x - 1) and h(x - 1) else true }`, the two calls are one node, and `h`'s group has `size` 4: `h`, the conditional, the conjunction and the call. | Test (TC-413) |
+| FR-092-AC-12 | `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`), declared once through a `CompositeDeclaration` whose key is 32 bytes of `0x11` and once through one whose key is 32 bytes of `0x22`, keys to D1 both times, and its checked type node's id is D1 both times. No preimage, checked-graph node or checked type node holds either supplied key. | Test (TC-413) |
 
 ## Dependencies
 
@@ -558,30 +949,53 @@ Key: `e13010a50a476f31b5955ef7ac6e008d83a7af661b0ff1d52c9fd6b7c1966ed3`
   quantity type nodes, and clause functions.
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
   §5.1: no catch-all arm in a family dispatch.
+- [FR-088](FR-088-clause-name-and-type-identity.md) AC-7: every reference
+  to a declared type resolves to its one node id, the FR-092 key.
+- QSpec FR-143 and FR-146: the recursive records and recursive functions
+  that form recursion groups.
 - `SourceOwner`'s `authority` on QSL's source identity is #213 S-4
   (QSL-159).
 - QSpec. `quire.structural-node/v1`, the `value`/`parameter` semantic form
   and the function node body shape are QSL proposals (ADR-013 QC-24). QSL
   keys its nodes by them now and conforms to QSpec's arm once QSpec publishes
-  one. A recursion group's graph order is FR-322's; the IR reader's recursion
-  preimage is IR-242.
+  one. The group order, the structural `recursion.group` member and the
+  `group_reference` at a `semantic_type` position are QSL proposals too
+  (QC-24). FR-322 and IR-242's reader derive an in-group ordinal from the
+  writer's graph order, which QSL's emission sets to the group order
+  (FR-093).
 
 ## Status
 
-Specified under QSL-208. Not implemented. `check` mints each function identity
-from a length-prefixed preimage in `qsl-semantics/src/check/family.rs` that
-includes the package identity, and builds no type, parameter or value node
-key. QSL-156 slice A4b implements this requirement (see FR-093 for the
-ownership decision). TC-413 and TC-414 are planned.
+Specified under QSL-208; recursion groups and declared composite handles
+specified under QSL-211. Implemented on the QSL-156 slice A4b branch, pending merge: `check` keys every node by
+this requirement's preimages in `qsl-semantics/src/check/node_key/` and
+`qsl-semantics/src/check/lowering.rs`, and TC-413 and TC-414 back AC-1 to
+AC-10 and CON-2 there. On that branch, three parts do not yet meet this
+requirement:
+
+- `check` refuses every recursion group with `unsupported-feature` instead
+  of keying it by the group order (the call-graph refusal in `lowering.rs`
+  and the recursive-composite refusal in its composite builder), so the
+  FR-146 recursive-function tests of `qsl-eval/tests/it/total_functions.rs`
+  (`p01`, `p03`, `p06`, `p08`, `p11`, `p_input_bytes`, `p_work_budget`)
+  refuse. AC-7's collision half and AC-11 are unbacked.
+- A checked type node of a declared composite takes its id from the
+  caller-supplied `CompositeDeclaration` key, and TC-259's
+  `composite_declaration_becomes_a_real_checked_type_node` asserts that id.
+  AC-12 is unbacked.
+- `node_key::RecursionGroup` takes the members' node keys and recognizes an
+  in-group reference by key. A member's key exists only after its group is
+  keyed, so the group order needs the members named some other way until
+  then.
 
 ## Open Questions
 
-- **FR-092-OQ-1: How does an in-group node's key tell two recursion groups
-  apart?** FR-322's `group_reference` names a member by its ordinal, so an
-  expression node inside the group of `f` and the matching node inside the
-  group of `g` have equal preimages when `f` and `g` have the same body
-  shape, and a self-referential record's anonymous `Option<R>` has the same
-  preimage for every such record. The `quire.application-node/v1` preimage
-  has no member that could carry the group's declared members. Until QSpec
-  decides it with the recursion preimage (IR-242, ADR-013 QC-24), `check`
-  refuses the collision (Recursion groups) rather than merge the nodes.
+- **FR-092-OQ-1: How does an in-group application node's key tell two
+  recursion groups apart?** FR-322's `group_reference` names a member by its
+  ordinal, and the `quire.application-node/v1` preimage has no member that
+  names the group, so two groups that differ only in declared names give
+  their in-group application nodes one key. QSL's structural preimage
+  carries the group digest, so only application nodes collide. Until QSpec
+  adds a group identity to the application-node `recursion` member (ADR-013
+  QC-24), `check` refuses the collision (Groups that collide) rather than
+  merge the nodes.

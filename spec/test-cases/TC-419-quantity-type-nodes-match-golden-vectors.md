@@ -30,7 +30,10 @@ read at run time from `QSPEC_DIR` (the opt-in `make conformance` gate).
 1. Check a parameter typed as a quantity of the declared unit `metre`. Read
    its semantic type, and list the graph's `compound_unit` nodes.
 2. Over `a` (a quantity of `metre`) and `t` (a quantity of `second`), check
-   `a * a`, `a / t`, `a / a` and `a * a / a`, and read each result type node.
+   a function whose body holds `a * a`, and read its result type node. Form
+   the compound units of `a / t`, `a / a` and `(a * a) / a` with
+   `value::quantity::result_unit`, hold them in the unit scope, and key the
+   quantity type node of each.
 3. Key a quantity type whose compound `UnitId` the check stage's unit scope
    does not hold.
 4. Scan the `UnitId`-domain `match` for a `_` arm.
@@ -42,11 +45,12 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
 - Step 1: the semantic type is QSpec's `unit-metre` key,
   `79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4`, and the
   graph holds no `compound_unit` node.
-- Step 2: U1, U2 (whose first term names metre), U3 and U4, byte for byte.
-  U4 differs from the `metre` unit key.
+- Step 2: `a * a`'s result type is U1; the three formed units key to U2
+  (whose first term names metre), U3 and U4, byte for byte. U4 differs from
+  the `metre` unit key.
 - Step 3: an internal fault naming the `UnitId`, and no key.
 - Step 4: no `_` arm.
 
 ## Status
 
-Planned; QSL-156 A4b.
+Implemented on the QSL-156 slice A4b branch, pending merge. The tests back every step.

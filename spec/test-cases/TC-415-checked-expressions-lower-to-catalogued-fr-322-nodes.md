@@ -41,8 +41,8 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
    Lower the checked `Attribute`, `AllInstances`, `Lookup`, `Dispatch` and
    `Pre` nodes of the FR-153 and FR-151 postcondition, invariant and dispatch
    fixtures (TC-196) and read the same members.
-4. Check `c1`, `c2` and `c3` of FR-093-AC-4, and a function whose body is
-   `flatMap(x in s: sequence[x])`, and read their body nodes.
+4. Check `c1`, `c2`, `c3` and `fm` of FR-093-AC-4, and read their body
+   nodes.
 5. Check `q` of FR-093-AC-5 and read the levels of `x`, `y` and `z` and the
    `forall` argument list.
 6. Check `function te using v(p: Text[0, 8; nfc], r: Text[0, 8; nfc]): Boolean pure { p = r }`
@@ -60,8 +60,8 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 - Step 3: each node matches its row, and its `result_type` is the type node
   of the checked node's `value_type`.
 - Step 4: `c1` has no convert node; `c2` gives `quire.op.numeric.narrow`
-  naming `Int[0, 9]`; `c3` gives `quire.op.numeric.convert`; the `flatMap`
-  body is one `quire.op.collection.flat_map` node with no map node.
+  naming `Int[0, 9]`; `c3` gives `quire.op.numeric.convert`; `fm`'s body
+  is one `quire.op.collection.flat_map` node with no map node.
 - Step 5: levels 1, 2 and 1; the `forall` arguments are as FR-093-AC-5 gives.
 - Step 6: the first carries law `text_profile` with the supplied
   `DefinitionRef` and mode `nfc`; the second refuses with
@@ -71,5 +71,6 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
 ## Status
 
-Planned; QSL-156 A4b. Step 6's first half needs the QSpec
+Implemented on the QSL-156 slice A4b branch, pending merge. The tests back steps 1 to 7 except step 4's `fm`: the A4b `flatMap`
+test flat-maps a flat `s` over itself. Step 6's first half needs the QSpec
 `complete-value-lock.json` accessor (ADR-011 §2.4).

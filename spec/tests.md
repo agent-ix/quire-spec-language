@@ -191,13 +191,13 @@ operational validation remains outside this audit-only plan.
 | TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 Planned; QSL-131 |
 | TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | ✅ Passed locally; step 3 runs under `make conformance` |
 | TC-412 | The assembler resolves each using alias to a declared profile selection and refuses an undeclared one | Unit | P1 | FR-091-AC-22 | 🚧 Planned; QSL-141 |
-| TC-413 | Type and declared record nodes key to the structural-node golden vectors, scoped only by owner | Unit | P1 | FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8, FR-092-AC-9 | 🚧 Planned; QSL-156 A4b |
-| TC-414 | Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner | Unit | P1 | FR-092-AC-4, FR-092-AC-5, FR-092-AC-6, FR-092-AC-10 | 🚧 Planned; QSL-156 A4b |
-| TC-415 | Each checked Value expression lowers to its FR-322 node with its catalogued operation | Unit | P1 | FR-093-AC-1, FR-093-AC-2, FR-093-AC-3, FR-093-AC-4, FR-093-AC-5, FR-093-AC-6, FR-093-AC-8 | 🚧 Planned; QSL-156 A4b; step 6 needs the QSpec lock accessor |
+| TC-413 | Type and declared record nodes key to the structural-node golden vectors, scoped only by owner | Unit | P1 | FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8, FR-092-AC-9, FR-092-AC-11, FR-092-AC-12 | 🚧 Implemented on the QSL-156 A4b branch, pending merge; AC-7's collision half, AC-11 and AC-12 unbacked there |
+| TC-414 | Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner | Unit | P1 | FR-092-AC-4, FR-092-AC-5, FR-092-AC-6, FR-092-AC-10 | 🚧 Implemented on the QSL-156 A4b branch, pending merge |
+| TC-415 | Each checked Value expression lowers to its FR-322 node with its catalogued operation | Unit | P1 | FR-093-AC-1, FR-093-AC-2, FR-093-AC-3, FR-093-AC-4, FR-093-AC-5, FR-093-AC-6, FR-093-AC-8 | 🚧 Implemented on the QSL-156 A4b branch, pending merge; step 6 needs the QSpec lock accessor |
 | TC-416 | The v2 emission arm writes the nodes check lowered, and each emitted node recomputes to its node id | Integration | P1 | FR-093-AC-7, FR-093-AC-9 | 🚧 Planned; QSL-6 S1b after QSL-156 A4b |
-| TC-417 | Model declaration, Reference and Population nodes key to the golden vectors under ModelOwner | Unit | P1 | FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 | 🚧 Planned; QSL-156 A4b |
-| TC-418 | Clause function nodes key to the golden vectors with the operation member's ModelOwner | Unit | P1 | FR-094-AC-5 | 🚧 Planned; QSL-156 A4b |
-| TC-419 | A declared unit's quantity type is its unit node, and a compound unit's keys to the golden vectors | Unit | P1 | FR-094-AC-6, FR-094-AC-7 | 🚧 Planned; QSL-156 A4b; QSpec unit vectors under `make conformance` |
+| TC-417 | Model declaration, Reference and Population nodes key to the golden vectors under ModelOwner | Unit | P1 | FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 | 🚧 Implemented on the QSL-156 A4b branch, pending merge |
+| TC-418 | Clause function nodes key to the golden vectors with the operation member's ModelOwner | Unit | P1 | FR-094-AC-5 | 🚧 Implemented on the QSL-156 A4b branch, pending merge; step 2's C3 key unasserted there |
+| TC-419 | A declared unit's quantity type is its unit node, and a compound unit's keys to the golden vectors | Unit | P1 | FR-094-AC-6, FR-094-AC-7 | 🚧 Implemented on the QSL-156 A4b branch, pending merge; QSpec unit vectors under `make conformance` |
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 
@@ -494,16 +494,20 @@ M-6a), under QSL-8.
 [FR-092](functional/FR-092-key-type-parameter-and-declared-nodes.md) carries
 ADR-013 O-04 and OQ-G: QSL's `quire.structural-node/v1` preimage for type,
 value, parameter and declared function nodes, with golden vectors T1 to T12,
-D1 to D5, P1 to P4, L1 to L3 and F1 to F3. TC-413 and TC-414 back its ten ACs.
+D1 to D5, P1 to P4, L1 to L3 and F1 to F3, and it keys recursion groups by a
+content order (QSL-211), with vectors L5, L6, E11 to E13 and G1 to G15.
+TC-413 and TC-414 back its twelve ACs.
 [FR-093](functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
 carries the lowering of checked expressions to FR-322 application nodes, with
 vectors E1 to E3 and the ownership split: QSL-156 A4b lowers and keys in
 `check`, and QSL-6 S1b serializes. TC-415 backs AC-1 to AC-6 and AC-8, and
-TC-416 AC-7 and AC-9. All four are `🚧 Planned`.
+TC-416 AC-7 and AC-9. TC-413 to TC-415 are implemented on the QSL-156 A4b
+branch, pending merge; TC-416 is planned for QSL-6 S1b.
 [FR-094](functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
 keys the nodes those two leave to the model layer: model declaration nodes
 and clause functions under QSpec's `ModelOwner`, the `Reference<T>` and
 `Population<T>[N]` type nodes, and quantity type nodes for declared and
 compound units, with vectors M1 to M5, R1 to R5, S1 to S3, PO1 to PO3, P5
 to P8, L4, E4 to E10, C1 to C6 and U1 to U4. TC-417 backs AC-1 to AC-4 and AC-7, TC-418
-AC-5 and TC-419 AC-6 and AC-7. All three are `🚧 Planned`.
+AC-5 and TC-419 AC-6 and AC-7. All three are implemented on the QSL-156 A4b
+branch, pending merge.
