@@ -981,12 +981,7 @@ fn admit_binding_as(
         // type conforming to a declared member type.
         let mut covered = false;
         for declared in &population.member_types {
-            match type_conforms(
-                &generals,
-                &member.type_identity,
-                declared,
-                ancestor_steps,
-            ) {
+            match type_conforms(&generals, &member.type_identity, declared, ancestor_steps) {
                 Ok(true) => {
                     covered = true;
                     break;

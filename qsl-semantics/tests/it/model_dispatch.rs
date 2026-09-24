@@ -12,8 +12,8 @@
 //! the exact ground-truth digests; this file only needs G's structure).
 
 use ix_trace_rs::trace;
-use qsl_foundation::diagnostic::Code;
 use qsl_forms::Expression;
+use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{checked_dispatch_operation, DispatchRoot, OperationClauses};
 use qsl_semantics::model::accounting::{ChargePoint, LimitKind, Meter, ModelNormalizationLimits};
 use qsl_semantics::model::dispatch::{
@@ -307,7 +307,7 @@ fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
 /// dispatch table. With a body for `D.size`, `D.size`'s owner strictly
 /// dominates every other owner and the whole operation links, `D ->
 /// D.size`.
-#[trace("TC-196", "FR-151-AC-3")]
+#[trace("TC-223", "TC-224", "FR-083-AC-2", "FR-083-AC-3")]
 #[test]
 fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it() {
     let mut records = fixture_g();
@@ -401,7 +401,7 @@ fn d02_an_undominated_multi_way_tie_refuses_and_a_strict_descendant_resolves_it(
 /// applicable candidates: four `ambiguous_dispatch`/`no-applicable`
 /// refusals, one per subtype, and no `dispatch.candidate` charge at all
 /// (there is nothing to test a subtype against).
-#[trace("TC-196", "FR-151-AC-3")]
+#[trace("TC-223", "FR-083-AC-2")]
 #[test]
 fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
     let mut records = fixture_g();
@@ -454,7 +454,7 @@ fn d03_no_candidate_with_a_body_refuses_every_subtype_as_no_applicable() {
 /// `DeclarationKey` (`package`, `node`)-sorted family and the effective
 /// view's own ascending-identity subtype order, never on registration or
 /// source order (FR-151-AC-5): the same table results.
-#[trace("TC-196", "FR-151-AC-5")]
+#[trace("TC-222", "FR-083-AC-1")]
 #[test]
 fn d04_registration_order_does_not_change_the_linked_table() {
     let mut records = fixture_g();

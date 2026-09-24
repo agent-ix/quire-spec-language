@@ -103,12 +103,12 @@ operational validation remains outside this audit-only plan.
 | TC-217 | The model binder is a pure function with no cross-run ambient state | Unit | P1 | FR-081-AC-5 | 🚧 Planned; #120 |
 | TC-218 | Redefinition variance checking reports every failing axis, not only the first | Unit | P1 | FR-082-AC-1 | ✅ Passed locally |
 | TC-219 | A missing redefinition target and a supertype cycle each refuse with a named cause | Unit | P1 | FR-082-AC-2 | ✅ Passed locally |
-| TC-220 | A conformance ancestor walk past the bound refuses instead of truncating | Unit | P1 | FR-082-AC-3 | 🚧 Planned; #120 |
+| TC-220 | A conformance ancestor walk past the bound refuses instead of truncating | Unit | P1 | FR-082-AC-3 | ✅ Passed locally |
 | TC-221 | A narrowing field redefinition requires an established postcondition | Unit | P1 | FR-082-AC-4 | ✅ Passed locally |
 | TC-222 | Dispatch selects the descendant candidate independent of declaration order | Property | P1 | FR-083-AC-1 | ✅ Passed locally |
 | TC-223 | No-applicable-candidate and multiple-undominated-candidates are named separately | Unit | P1 | FR-083-AC-2 | ✅ Passed locally |
 | TC-224 | An ambiguous family produces no dispatch table, not even for subtypes that resolved cleanly | Unit | P1 | FR-083-AC-3 | ✅ Passed locally |
-| TC-225 | A dispatch family deeper than the bound refuses instead of reporting a false unique winner | Unit | P1 | FR-083-AC-4 | 🚧 Planned; #120 |
+| TC-225 | A dispatch family deeper than the bound refuses instead of reporting a false unique winner | Unit | P1 | FR-083-AC-4 | ✅ Passed locally |
 | TC-226 | Population admission distinguishes unknown closure from a genuine refusal | Unit | P1 | FR-084-AC-1 | ✅ Passed locally |
 | TC-227 | allInstances requires both object and subtype closure, never a partial set | Unit | P1 | FR-084-AC-2 | 🚧 Planned; #120 |
 | TC-228 | lookup returns the declared absence mode for a genuinely unmatched key | Unit | P1 | FR-084-AC-3 | ✅ Passed locally |
@@ -331,10 +331,12 @@ the exact backing test:
 - TC-215 (FR-081-AC-3): `tests/model_normalization.rs::n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender`
 - TC-218 (FR-082-AC-1): `tests/model_conformance.rs::r03_an_incompatible_operation_redefinition_reports_every_failing_axis`
 - TC-219 (FR-082-AC-2): `tests/model_conformance.rs::r07_zero_inherited_targets_refuses_redefinition_target` and `tests/model_normalization.rs::r01_a_closing_generalization_cycle_names_the_full_rotated_chain`
+- TC-220 (FR-082-AC-3): `qsl-semantics/tests/it/model_conformance.rs::an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses` (the caller-supplied `ancestor_steps` ceiling, exactly at and one past it) and `::a_type_with_more_than_128_ancestors_passes_conformance_at_default_limits`
 - TC-221 (FR-082-AC-4): `tests/model_conformance.rs::r08a_*_refuses` and `::r08b_*_discharges_the_obligation`
 - TC-222 (FR-083-AC-1): `tests/model_dispatch.rs::d04_registration_order_does_not_change_the_linked_table`
 - TC-223 (FR-083-AC-2): `tests/model_dispatch.rs::d03_no_candidate_*_no_applicable` and `::d02_an_undominated_multi_way_tie_*`
 - TC-224 (FR-083-AC-3): `tests/model_dispatch.rs::d02_an_undominated_multi_way_tie_*` (the same `Ambiguous` outcome carries no table for the family's other, cleanly-resolving subtype)
+- TC-225 (FR-083-AC-4): `qsl-semantics/tests/it/model_dispatch.rs::a_family_at_the_configured_bound_links_and_one_step_more_refuses` (the caller-supplied `family_steps` ceiling, exactly at and one past it, where the uncounted redefiner would make the family ambiguous), `::a_dispatch_family_with_more_than_128_redefinition_steps_links_at_default_limits` and `::a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_bridge`
 - TC-226 (FR-084-AC-1): `tests/model_population.rs::l02_unknown_closure_is_incomplete_not_refused` (both halves: `open` extent and an unclosed generalization graph) and `::l05_foreign_type_refuses`
 - TC-228 (FR-084-AC-3): `tests/model_population.rs::l03_lookup_undefined_mode`, `::l03_lookup_empty_mode`, `::l03_lookup_refused_mode`
 - TC-229 (FR-084-AC-4): `tests/model_population.rs::l05_conflicting_identity_refuses_after_fourth_member_charge` and `::l05_duplicate_collapses_and_recovers_l01`
@@ -351,11 +353,10 @@ fixture FR-086-AC-2 states — every one of `tests/model_systems.rs::y03a`
 through `::y05` violates exactly one condition. See FR-086's Dependencies
 note.
 
-The remaining rows (TC-214, TC-216, TC-217, TC-220, TC-225, TC-227, TC-230
-through TC-234, TC-236, TC-240 and TC-241) name real behavior with no
-existing test asserting their exact content — `title`/`displayName`
-independence, cross-process purity, the `MAX_CONFORMANCE_DEPTH`/
-`MAX_DISPATCH_DEPTH` walk bounds, dangling relationship ends, the
+The remaining rows (TC-214, TC-216, TC-217, TC-227, TC-230 through TC-234,
+TC-236, TC-240 and TC-241) name real behavior with no existing test
+asserting their exact content — `title`/`displayName` independence,
+cross-process purity, dangling relationship ends, the
 combined-condition Connection fixture, and the newly owned FR-084/FR-086
 acceptance criteria this PR adds — and stay `🚧 Planned; #120` honestly.
 This is a retrospective spec in the same sense

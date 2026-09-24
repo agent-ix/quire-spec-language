@@ -106,18 +106,22 @@ on the strength of its declared shape alone.
 ### Ancestor and conformance walks are bounded
 
 The model checker SHALL bound every ancestor-chain and conformance walk it
-performs, at a fixed depth ceiling distinct from any `ModelNormalizationLimitsV1`
-charge counter — the QSL implementation's `MAX_CONFORMANCE_DEPTH` constant
-in `qsl-semantics/src/model/conformance.rs`, currently 128. If a walk would exceed the
-bound, the model checker SHALL refuse with a resource-exhaustion cause naming
-the bound and SHALL NOT report a conformance or non-conformance verdict for
-that walk. Exceeding this depth ceiling is a `Refused` outcome (a real
-defect: a redefinition family or ancestor chain deeper than the bound), never
-the `Incomplete` outcome `ModelNormalizationLimitsV1`'s own axis-charge and
-record-charge points produce when a charge is denied; the two are distinct
-result variants over distinct counters, consistent with ADR-013 O-21 ("an
-exhausted meter yields `Incomplete` with its charge point and limit; a stage
-limit refuses with `LimitExceeded`").
+performs by the caller-supplied `ancestor_steps` ceiling carried in
+`ModelNormalizationLimitsV1` (and, for population admission, in
+`PopulationAdmissionLimitsV1`). The ceiling counts the types one walk
+expands, the starting type included, so a target `n` generalization steps
+above the starting type is reached at a ceiling of `n`. The checker SHALL use
+the caller's ceiling as given and SHALL NOT substitute a fixed implementation
+ceiling for it. The ceiling is read, never charged. If a walk would expand
+one type more than the ceiling, the model checker SHALL refuse with a
+resource-exhaustion cause (`ancestor-steps`) naming the ceiling and SHALL NOT
+report a conformance or non-conformance verdict for that walk. Reaching this
+ceiling is a `Refused` outcome, never the `Incomplete` outcome
+`ModelNormalizationLimitsV1`'s own axis-charge and record-charge points
+produce when a charge is denied; the two are distinct result variants over
+distinct counters, consistent with ADR-013 O-21 ("an exhausted meter yields
+`Incomplete` with its charge point and limit; a stage limit refuses with
+`LimitExceeded`").
 
 ## Acceptance Criteria
 

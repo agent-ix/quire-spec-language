@@ -491,22 +491,23 @@ fn effective_terms(
             member,
             MissingClauseField::OwnPrecondition,
         )?;
-        let terms = match below {
-            None => Some(vec![own]),
-            Some(None) => None,
-            Some(Some(parent_terms)) => {
-                let parent = redefinition_parents
-                    .get(member)
-                    .ok_or_else(|| missing(member, MissingClauseField::OwnPrecondition))?;
-                let (member_parameters, _) = require_signature(clauses, member)?;
-                let (parent_parameters, _) = require_signature(clauses, parent)?;
-                let mut terms = vec![own];
-                terms.extend(parent_terms.iter().map(|term| {
-                    rename_parameters(term, &parent_parameters, &member_parameters)
-                }));
-                Some(terms)
-            }
-        };
+        let terms =
+            match below {
+                None => Some(vec![own]),
+                Some(None) => None,
+                Some(Some(parent_terms)) => {
+                    let parent = redefinition_parents
+                        .get(member)
+                        .ok_or_else(|| missing(member, MissingClauseField::OwnPrecondition))?;
+                    let (member_parameters, _) = require_signature(clauses, member)?;
+                    let (parent_parameters, _) = require_signature(clauses, parent)?;
+                    let mut terms = vec![own];
+                    terms.extend(parent_terms.iter().map(|term| {
+                        rename_parameters(term, &parent_parameters, &member_parameters)
+                    }));
+                    Some(terms)
+                }
+            };
         memo.insert(member.clone(), terms.clone());
         below = Some(terms.clone());
         result = terms;

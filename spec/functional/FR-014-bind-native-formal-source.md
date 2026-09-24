@@ -74,7 +74,7 @@ intake. Extracted-to-original mapping remains the separate SourceMap API.
 ## Dependencies
 
 - [US-002](../usecase/US-002-link-exact-models.md) requires exact source/model correspondence.
-- [FR-001](FR-001-read-exact-source.md) owns immutable intake and its caller-lowered 1 MiB ceiling.
+- [FR-001](FR-001-read-exact-source.md) owns immutable intake and its caller-selected byte ceiling (1 MiB by default).
 - [FR-010](FR-010-report-native-outcomes.md) owns located native diagnostics.
 - [NFR-005](../non-functional/NFR-005-rust-verification-paths.md) requires Rust production and qualification paths.
 - [FR-006](FR-006-check-defined-expressions.md) remains the downstream checking obligation; this bridge does not satisfy TC-025–029.

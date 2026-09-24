@@ -22,7 +22,7 @@ Immutable source with digest/indexed locations or a diagnostic.
 
 ## Behavior
 
-The input ceiling is 1 MiB and can be lowered. Invalid UTF-8, BOM and NUL refuse. Verified intake checks the selected raw SHA-256 digest. Byte spans remain original and half open; line/scalar-column coordinates are derived without changing source text.
+The input ceiling is the caller's, used as given; it defaults to 1 MiB and may be set above or below that. Invalid UTF-8, BOM and NUL refuse. Verified intake checks the selected raw SHA-256 digest. Byte spans remain original and half open; line/scalar-column coordinates are derived without changing source text.
 
 ## Acceptance Criteria
 
@@ -31,7 +31,7 @@ The input ceiling is 1 MiB and can be lowered. Invalid UTF-8, BOM and NUL refuse
 | FR-001-AC-1 | Matching selected bytes produce the expected SHA-256 digest. | Test |
 | FR-001-AC-2 | Changed bytes under a selected digest receive source_digest_mismatch. | Test |
 | FR-001-AC-3 | Invalid UTF-8 receives a source diagnostic. | Test |
-| FR-001-AC-4 | Input beyond the selected byte ceiling receives resource_exhausted. | Test |
+| FR-001-AC-4 | Input beyond the selected byte ceiling receives resource_exhausted naming that ceiling, whether the ceiling is below or above the 1 MiB default. | Test |
 
 ## Dependencies
 

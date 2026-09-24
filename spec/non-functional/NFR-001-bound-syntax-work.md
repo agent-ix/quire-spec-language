@@ -86,8 +86,8 @@ naming the token or syntax-node ceiling. The native parser also completes a
 parses, including by `Option<…>` type nesting in the complete-V1
 parser, and that one pair deeper is
 refused as above. Check that a work-budget refusal names the work limit
-rather than nesting depth. Caller-supplied ceilings may be lower; an
-implementation ceiling is not a domain bound.
+rather than nesting depth. A caller-supplied ceiling is used as given, above
+or below the default; an implementation ceiling is not a domain bound.
 
 Formatter appends check prospective length, including its final newline, against
 the inclusive selected ceiling. Byte limits bound output content, not allocator

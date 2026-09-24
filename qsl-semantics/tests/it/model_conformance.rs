@@ -384,7 +384,7 @@ fn r02_a_compatible_operation_redefinition_admits_every_axis() {
     }
 }
 
-#[trace("TC-196", "FR-151-AC-2", "FR-151-AC-4")]
+#[trace("TC-218", "FR-082-AC-1")]
 #[test]
 fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
     let domain_package = bundle_h(vec![operation_redefining(
@@ -441,7 +441,7 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
     }
 }
 
-#[trace("TC-196", "FR-151-AC-4")]
+#[trace("TC-239", "FR-082-AC-5")]
 #[test]
 fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
     let domain_package = bundle_h(vec![operation_redefining(
@@ -594,7 +594,7 @@ fn r06_subsetting_type_and_multiplicity_axes() {
 // one `redefines`, never several competing candidates. TC-196 R07's "two
 // distinct, both-legitimate inherited targets" shape is therefore
 // structurally unreachable here and is dropped rather than adapted.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("TC-219", "FR-082-AC-2")]
 #[test]
 fn r07_zero_inherited_targets_refuses_redefinition_target() {
     // Zero inherited targets: B.z claims to redefine C.w, but B does not
@@ -676,7 +676,7 @@ fn r08_base() -> Vec<DomainPackageRecord> {
     ]
 }
 
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("TC-221", "FR-082-AC-4")]
 #[test]
 fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
     let mut records = r08_base();
@@ -701,7 +701,7 @@ fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
     }
 }
 
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("TC-221", "FR-082-AC-4")]
 #[test]
 fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation() {
     let mut records = r08_base();
