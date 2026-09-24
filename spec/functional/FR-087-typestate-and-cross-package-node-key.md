@@ -604,7 +604,8 @@ the candidate presented, so `LibraryRefusal::StaleDependency` carries
 `import: ImportDeclaration`; AC-11 lists this payload change.
 
 Backed: FR-087-AC-3 (TC-253), FR-087-AC-4 (TC-254), FR-087-AC-5 (TC-245)
-and FR-087-AC-12 (TC-282). TC-253's steps are backed as follows. Steps 1, 2, 4 and 8 run on
+and FR-087-AC-12 (TC-282), and, below, AC-2 in full and AC-1, AC-6, AC-8,
+AC-10 and AC-11 in part. TC-253's steps are backed as follows. Steps 1, 2, 4 and 8 run on
 the wire path (`checked_v2` tests). Step 3 runs at the `library` level
 (`library::binding_tests`), because on the wire path IR refuses a
 non-recomputing `package_id` first and names it `stale_dependency`
@@ -646,16 +647,83 @@ name passed as `&[u8]`; a closure without type annotations, including one
 held in a `fn(&str) -> Option<WireNodeId>` variable; or a local variable's
 type inside a function body.
 
-AC-1 (constructor/field privacy across all five stage-output types) stays
-an Inspection criterion across all five types together and is not flipped
-here. For `VerifiedPackage` and `ImportView`, crate-external construction
+For `VerifiedPackage` and `ImportView`, crate-external construction
 is shown by `compile_fail` doctests: a struct literal of either type, and a
 call to `verify_binding` with a hand-built candidate. The doctests show only
 that a crate-external caller fails to compile; stable rustdoc does not check
-a `compile_fail` block's error code. Still to land: the retirement of
-`ResolvedSourcePackage` (AC-7) and E3 imported-name resolution (AC-13,
-TC-379, Planned). AC-2, AC-6, AC-8, AC-9, AC-10 and AC-11 have no traced
-test yet.
+a `compile_fail` block's error code.
+
+QSL-158 backs AC-2 (TC-244) in full, and AC-1 (TC-243), AC-6 (TC-255),
+AC-8 and AC-10 (TC-247) and AC-11 (TC-281) in part, with
+`xtask::typestate_scan`. It is a `syn` scan of the shipped code of every
+QSL crate, and `make ci` runs it. Shipped code excludes `#[cfg(test)]`
+items and every file a `#[cfg(test)] mod` declares. The scan sees through
+`use … as` renames and `type` aliases. Its own tests plant each evasion
+it covers. The module doc lists what it does not see: macro bodies other
+than for mints, out-parameters, and call graphs. Each tests.md row names
+the steps its test backs.
+
+- AC-1: each of the five stage-output types has one definition in the
+  layer crates, in its owning file, with every field private and no type
+  or const generic parameter. The only other namesakes are the two
+  lane-private types AC-8 and AC-10 name. Accessor-only reads are not
+  backed, because a private field stays readable by its module's child
+  modules.
+- AC-2, and AC-1's constructor half: only named constructors return an
+  owned `CheckedGraph`, `CheckedPackage`, `EmittedPackage`,
+  `VerifiedPackage` or `ImportView`. The named constructors are
+  `PackageDeclarations::check`, `CheckedPackage::link`,
+  `EmittedPackage::new`, `verify_binding` and
+  `VerifiedPackage::into_import_view`, plus the two lane-private
+  producers. `compile_fail` doctests cover TC-244 rows 1 to 5. Rows 3 to 5
+  (`VerifiedPackage`, `ImportView` and `protocol_artifact::AdmittedPackage`
+  into checked typestate) fail with E0277. Stable rustdoc does not check
+  that code, so each block is paired with one that must compile over the
+  same names, and a renamed or moved item breaks the build.
+- AC-6: no item in `library`, `qsl-package` or `qsl-replay` mints a
+  `NodeKey`. Every mint is in `check` or is T12-B's one debt entry. No
+  minting item names `WireNodeId`, `PackageNodeKey`, `ImportView` or
+  `VerifiedPackage`. A wire value that reaches a mint through another
+  function's call is not traced (TC-255 steps 3 and 6).
+- AC-8 and AC-10: the two `EmittedPackage`s are defined at their two
+  paths with no field name in common. `src/package/features.rs` and
+  `view.rs` import `crate::checking::CheckedPackage`. No root-crate file
+  imports a canonical and a lane-private namesake together. Methods and
+  trait impls are not compared.
+- AC-11: `value::library` and `value::package_identity` are gone, no
+  `ExportIdentity` exists, and `library` defines no `resolve_name` and no
+  field or variant holding a `NodeKey`.
+
+AC-7 (TC-246) and AC-13 (TC-379) are not delivered:
+
+- **AC-7.** AC-7 and CON-4 require every caller of
+  `ResolvedSourcePackage` to move to `VerifiedPackage`/`ImportView`. That
+  contradicts ADR-011. `complete::resolve_source_package` resolves two
+  things. The first is a source's `import` declarations, which ADR-011 §6
+  (`complete::package` → layer-3 `library`, resolving against I2 import
+  views) and §8 (lane C2 → I2 and `library`) move to `library`. The second
+  is its `profile`, definition and `model` selections, which ADR-011 §2
+  places at E3 instead. There, E3's identity-preimage builder reads the
+  profile and definition selections through the QSpec value-lock accessor
+  and matches `model` declarations to the domain packages admitted at I1.
+  Neither `VerifiedPackage` nor `ImportView` resolves a definition or a
+  compiled model. So the dependency half belongs to ADR-011 M-4 (QSL-6),
+  and the header-selection half belongs to E3's identity-preimage builder.
+  AC-7 needs an owner ruling before it can be amended. Remaining work:
+  QSL-229.
+- **AC-13.** E3's resolution rule is specified, but ADR-011 §2 blocks it
+  today. FR-322, `library::ImportDeclaration` and the complete-V1
+  `import … digest …` grammar all key a dependency by its `package_id`.
+  QSpec's checked-package v2 schema types a `dependency_selections` entry
+  as a `Selection` over a `DefinitionRef`, which ADR-011 §2 records as a
+  QSpec schema defect. Until QSpec corrects it, ADR-011 §2's interim rule
+  holds: E3 refuses a unit that declares an `import`, E4 emits
+  `dependency_selections: []`, and the I2 reader refuses a non-empty one.
+  So no import reaches E3 name resolution. The resolution against an
+  `ImportView` (`check::imports::ImportedNames`) exists and names QSL-6
+  (ADR-011 M-4) as its caller; M-4 also fills the E4 dependency closure a
+  resolved `PackageNodeKey` needs. Remaining work: the QSpec schema defect
+  (ADR-011 §2), then QSL-6.
 
 **Owner ruling on QSL-158 (2026-09-21): ADR-013 T-1 stands unamended.**
 `CheckedPackage` is canonically layer-4 `package`; `check`'s S3 output is

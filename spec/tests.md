@@ -126,11 +126,11 @@ operational validation remains outside this audit-only plan.
 | TC-240 | allInstances and lookup return the FR-153 typed result shape and its bound/foreign/ineligible refusals | Unit | P1 | FR-084-AC-5 | 🚧 Planned; #120 |
 | TC-241 | Kind mapping runs interfaces first, and a port whose interface type is not an Interface refuses wrong-export | Unit | P1 | FR-086-AC-5 | 🚧 Planned; #120 |
 | TC-242 | A selected object's reference key names the same most-specific type through every conforming query | Unit | P1 | FR-084-AC-6 | ✅ Passed locally |
-| TC-243 | Typestate constructors are private to their stage module | Manual | P1 | FR-087-AC-1 | 🚧 Planned; QSL-158 |
-| TC-244 | compile_fail matrix over every forbidden typestate construction (R-10, O-15) | Unit | P1 | FR-087-AC-2 | 🚧 Planned; QSL-158 |
+| TC-243 | Typestate constructors are private to their stage module | Manual | P1 | FR-087-AC-1 | 🚧 Partial; QSL-158: steps 1-3 by `xtask::typestate_scan` (one layer-crate definition per type, in its owning file, every field private, no state generic); the constructor half by TC-244's allow-list. Step 4 (accessor-only reads) is not backed: a private field stays readable by its module's child modules |
+| TC-244 | compile_fail matrix over every forbidden typestate construction (R-10, O-15) | Unit | P1 | FR-087-AC-2 | ✅ Passed locally; QSL-158: step 0 by `xtask::typestate_scan` over all five stage types and the lane-private namesakes, against named constructor sites (a value handed out through an out-parameter is not seen); rows 1-5 by `compile_fail` doctests, each paired with a block over the same names that must compile, since stable rustdoc does not check the error code; row 6 is row 2's |
 | TC-245 | PackageNodeKey has exactly one shape and declared equality | Unit | P1 | FR-087-AC-5 | ✅ Passed locally |
-| TC-246 | ResolvedSourcePackage is retired, with no dangling caller | Integration | P1 | FR-087-AC-7, FR-087-CON-4 | 🚧 Planned; QSL-158 |
-| TC-247 | The canonical EmittedPackage/CheckedPackage stay distinct from their pre-existing namesakes | Integration | P1 | FR-087-AC-8, FR-087-AC-10 | 🚧 Planned; QSL-158 |
+| TC-246 | ResolvedSourcePackage is retired, with no dangling caller | Integration | P1 | FR-087-AC-7, FR-087-CON-4 | 🚧 Planned; QSL-158: blocked. FR-087-AC-7 and CON-4 contradict ADR-011 §2 and need an owner ruling (QSL-229); see FR-087 Status |
+| TC-247 | The canonical EmittedPackage/CheckedPackage stay distinct from their pre-existing namesakes | Integration | P1 | FR-087-AC-8, FR-087-AC-10 | 🚧 Partial; QSL-158: steps 1-3, 6 and 7 by `xtask::typestate_scan`; step 4 by field names only (no method or trait comparison); step 5 was checked once, by this PR's diff |
 | TC-248 | Frame identity's subject sets resolve to DeclarationKey through the model correspondence | Unit | P1 | FR-088-AC-2 | ✅ Passed locally; #300 |
 | TC-249 | Clause identity is the checked node id; the occurrence key disambiguates structurally identical clauses | Unit | P1 | FR-088-AC-3 | ✅ Passed locally; #300 |
 | TC-250 | Clause-kind wire-string totality in both directions, with mutation coverage | Property | P1 | FR-088-AC-4 | ✅ Passed locally; #300 |
@@ -138,15 +138,15 @@ operational validation remains outside this audit-only plan.
 | TC-252 | Checked type node to kernel ValueType is total, tested per type-node form including a sum | Unit | P1 | FR-088-AC-9, FR-088-AC-10 | ✅ Passed locally; #300; step 6's from-source reorder is QSL-131 |
 | TC-253 | The verified binding admits VerifiedPackage only under all three conditions, refusing each failure independently | Integration | P1 | FR-087-AC-3 | ✅ Passed locally; #340 (step 3 and steps 5-7 at the `library` level, see FR-087 Status) |
 | TC-254 | library converts VerifiedPackage to ImportView without resolving any name | Unit | P1 | FR-087-AC-4 | ✅ Passed locally (steps 1-2: the view keyed by `WireNodeId`; steps 3-5: the `library` signature scan and `check::imports`, see FR-087 Status) |
-| TC-255 | NodeKey is never minted from a WireNodeId; E4 and E9 resolve by lookup, never by construction | Integration | P1 | FR-087-AC-6 | 🚧 Planned; QSL-158 |
+| TC-255 | NodeKey is never minted from a WireNodeId; E4 and E9 resolve by lookup, never by construction | Integration | P1 | FR-087-AC-6 | 🚧 Partial; QSL-158: steps 1, 2 and 5 by `xtask::typestate_scan`, which sees aliases, qualified self types, trait default methods, statics, consts and macro tokens; step 3 for a wire value named in the minting item itself only; step 4 is replaced by this test, since `arch-lint api-surface` is not part of `make ci`; step 6's transitive trace is not backed |
 | TC-256 | check and package's dependency edge is one direction, and CheckedPackage wraps CheckedGraph | Integration | P1 | FR-087-AC-9 | ✅ Passed locally; step 3 by `tests/it/layer_crate_reexports.rs`, steps 1 and 6 by Cargo's `qsl-package` → `qsl-semantics` edge and TC-390; steps 2, 4 and 5 by inspection |
 | TC-257 | Exactly one closed checked clause-kind enum exists, and syntax::ClauseKind gains no variant | Unit | P1 | FR-088-AC-1 | ✅ Passed locally; #300 |
-| TC-258 | QualifiedName is used only as a declared preimage component, never as an identity | Manual | P1 | FR-088-AC-6 | 🚧 Planned; QSL-158 (not in #300's scope) |
+| TC-258 | QualifiedName is used only as a declared preimage component, never as an identity | Manual | P1 | FR-088-AC-6 | 🚧 Partial; QSL-158: steps 1 and 3 by `xtask::typestate_scan` over the layer crates' struct and variant fields and function return types, aliases seen through; step 4 by `value::expression::family`. Not backed: step 2 (a hand-written `PartialEq`/`Hash`, or a name beside a filler field), local maps, and the root crate's lane-private `QualifiedName` types (for example `src/runtime/validation.rs`'s `StateIndexes`) |
 | TC-259 | A package type's identity is its checked node id, scoped only by owner | Unit | P1 | FR-088-AC-7 | 🚧 Partial: step 4 (a declared type's node id is its declaration's key) passes locally, #300; steps 1 to 3 (same owner, different owners, builtin or anonymous type) and step 5 (recompilation) planned, QSL-156 |
-| TC-260 | ValueTypeRef is exactly the two-member union Native/Package | Manual | P1 | FR-088-AC-8 | 🚧 Planned; QSL-158 (not in #300's scope) |
+| TC-260 | ValueTypeRef is exactly the two-member union Native/Package | Manual | P1 | FR-088-AC-8 | 🚧 Partial; QSL-158: steps 1-2 by `xtask::typestate_scan`; step 3 for `model` fields whose name contains `type`, and the three value-type records; step 4 is not backed |
 | TC-261 | M-2's items are relocated to check and absent from model | Unit | P1 | FR-074-AC-1, FR-074-AC-2 | ✅ Passed locally |
 | TC-262 | The model -> check edge is fully closed after M-2 | Unit | P1 | FR-074-AC-3 | ✅ Passed locally |
-| TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Planned; QSL-158 |
+| TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Partial; QSL-158: steps 1, 4 and 5 by `xtask::typestate_scan`; step 3 by TC-227; step 6 by `arch-lint`'s T12-B allow-list, which names only `check`; step 2's byte-identity against the pre-relocation tree is not backed |
 | TC-282 | Every resolve_libraries refusal classifies to an I2 rule, a §4 condition, E3 resolution, or a named exception | Unit | P1 | FR-087-AC-12 | ✅ Passed locally |
 | TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1 | ✅ Passed locally; QSL-131 |
 | TC-292 | Kernel Value::Population carries PopulationId only, with no model dependency | Manual | P1 | FR-089-AC-2 | ✅ Inspected locally; QSL-131 |
@@ -158,7 +158,7 @@ operational validation remains outside this audit-only plan.
 | TC-376 | Function application checking accepts a well-typed call and refuses wrong arity, an unknown name and a type mismatch | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC (QSL-148) |
 | TC-377 | Function declaration checking accepts a well-typed declaration, reports its calls, and refuses an ill-typed body | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC (QSL-148) |
 | TC-378 | A real recursive-descent fixture shows the nesting-depth limit is the proximate cause of a function-declaration refusal | Unit | P1 | FR-062 | 🚧 Planned; QSL-148 |
-| TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Planned; QSL-158 (PR #299 review, finding 2) |
+| TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Planned; QSL-158 (PR #299 review, finding 2): blocked by ADR-011 §2's interim rule and QSL-6; see FR-087 Status |
 | TC-380 | The function-declaration contract check refuses an ill-typed declaration and admits a well-typed one | Unit | P1 | FR-065-AC-7 | ✅ Passed locally (QSL-148, PR #303) |
 | TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | ✅ Passed locally (PR #303 review round 3, finding F1) |
 | TC-382 | S6a returns each kernel outcome unchanged in FamilyOutcome::Evaluated | Unit | P1 | FR-090-AC-1 | ✅ Passed locally |
@@ -206,11 +206,12 @@ operational validation remains outside this audit-only plan.
 [FR-088](../spec/functional/FR-088-clause-name-and-type-identity.md)
 (S-3b: O-08, O-09 clause id, O-10, O-11, O-14, C-26) are specified under
 QSL-158, splitting ADR-013 §7 slice S-3, which no FR owned before this
-split. TC-243–260 and TC-281 above are the corresponding test cases, all
-`🚧 Planned`, except TC-245 (`✅ Passed locally`, the `PackageNodeKey`
-equality test), TC-282 (`✅ Passed locally`, `LibraryRefusal::class()`
-and its per-variant tests), TC-253 (`✅ Passed locally`, the verified
-binding) and TC-254 (`✅ Passed locally`, the name-free `ImportView`). FR-087 also resolves, by owner
+split. TC-243–260, TC-281, TC-282 and TC-379 above are the corresponding
+test cases. TC-246 and TC-379 are `🚧 Planned` and blocked, as FR-087's
+Status records. TC-243, TC-247, TC-255, TC-258, TC-260 and TC-281 are
+partial, each row naming the steps its test backs; TC-259 is partial
+(QSL-156); and TC-251 covers FR-088-AC-5's `QualifiedName` half only. The
+rest pass locally. FR-087 also resolves, by owner
 ruling on QSL-158 (2026-09-21), the `CheckedPackage`-placement half of
 QSL-167 (an
 ADR-011 §4-versus-§6.1 defect): `CheckedPackage` is canonically layer-4

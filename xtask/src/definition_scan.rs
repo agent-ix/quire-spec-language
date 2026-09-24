@@ -41,7 +41,7 @@ use syn::visit::Visit;
 
 use crate::error::{Error, Result};
 
-fn parse_file(workspace_root: &Path, relative: &str) -> Result<syn::File> {
+pub(crate) fn parse_file(workspace_root: &Path, relative: &str) -> Result<syn::File> {
     let path = workspace_root.join(relative);
     let source = fs::read_to_string(&path).map_err(|source| Error::io(&path, source))?;
     syn::parse_file(&source).map_err(|source| Error::ImportGraphParse { path, source })
@@ -60,7 +60,7 @@ fn line_of<T: syn::spanned::Spanned>(node: &T) -> u32 {
     node.span().start().line as u32
 }
 
-fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
+pub(crate) fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|attr| {
         if !attr.path().is_ident("cfg") {
             return false;
@@ -177,7 +177,7 @@ impl<'ast> Visit<'ast> for DefScanner {
 /// relative to `workspace_root` (`tests`, `target` and `.git` directory
 /// entries excluded, matching `xtask::string_edge::source_files`'s own
 /// exclusion list).
-fn source_files(workspace_root: &Path, dir: &str) -> Result<Vec<String>> {
+pub(crate) fn source_files(workspace_root: &Path, dir: &str) -> Result<Vec<String>> {
     let root = workspace_root.join(dir);
     let mut files = Vec::new();
     let mut pending = vec![root];

@@ -275,6 +275,15 @@ fn function_state<'a>(
 ///     occurrences: todo!(),
 /// };
 /// ```
+/// Its pair must compile, so a rename or a move of `CheckedGraph` breaks
+/// the build rather than making the block above fail for another reason
+/// (stable rustdoc does not check the error code):
+/// ```no_run
+/// use qsl_semantics::check::CheckedGraph;
+/// fn holds(graph: CheckedGraph) -> CheckedGraph {
+///     graph
+/// }
+/// ```
 #[derive(Debug)]
 pub struct CheckedGraph {
     scope: Scope,

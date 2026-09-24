@@ -264,7 +264,16 @@ not implemented. Remaining
 work: QSL-156. AC-5 is enforced for its
 `QualifiedName` half only (TC-251); the "or a bare string" half is
 investigated and documented as a gap, not enforced (see
-`tests/it/name_resolution_confinement.rs`'s own module doc). AC-6 (TC-258)
-and AC-8 (TC-260) remain unimplemented, out of #300's scope. AC-12 (TC-411)
+`tests/it/name_resolution_confinement.rs`'s own module doc). QSL-158 backs AC-6
+(TC-258) and AC-8 (TC-260) in part, with `xtask::typestate_scan`. For AC-6:
+in the layer crates, no struct or variant has a `QualifiedName` as its only
+field, and no map field or map-returning function outside `check` is keyed
+by one. A hand-written `PartialEq` or `Hash`, a name beside a filler field,
+a local map, and the root crate's lane-private `QualifiedName` types are
+not covered. For AC-8: `ValueTypeRef` is defined once, as exactly
+`Native(NativeValueType)` and `Package(DeclarationKey)`. No `model` field
+whose name contains `type` is a `NodeKey` or a string, and the three
+value-type records carry a `ValueTypeRef`. A field type under another name
+is not covered, and TC-260 step 4 is not backed. AC-12 (TC-411)
 is implemented by QSL-131 V4. AC-11 (TC-409) is not implemented. Remaining
 work: QSL-131.
