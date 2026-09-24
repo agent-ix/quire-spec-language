@@ -76,4 +76,4 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
 
 ## Status
 
-Implemented on the QSL-156 slice A4b branch (`task/156-a4b-application-key`), pending merge. The tests back every step.
+Implemented on the QSL-156 slice A4b branch, pending merge. The tests back every step.

@@ -197,7 +197,10 @@ node: its tag, form, semantic type, declaration, owner, body and key. The
 QSL-6 slice S1b v2 emission arm (layer-4 `package`) writes those nodes to the
 wire: it adds each node's `node_id`, `dependencies`, `occurrences` and
 `recursion_group` and the graph order, and it builds no body term and mints
-no key of its own.
+no key of its own. A recursion group's members carry one `recursion_group`
+label, the group digest as a lowercase hex string (FR-092), and the emission
+writes them in ordinal order, so FR-322's ordinal, which a reader derives
+from graph order, equals the ordinal each member's key hashes.
 
 ## Constraints
 
@@ -216,7 +219,7 @@ no key of its own.
 | FR-093-AC-4 | `function c1 using v(x: Int[0, 9]): Int[0, 10] pure { x }` builds no convert node: `c1`'s `body` binding references `x`'s parameter node. `function c2 using v(): Int[0, 9] pure { 3 }` lowers its body to a `convert` node with `quire.op.numeric.narrow` and member `type_argument` naming `Int[0, 9]`'s node, over the literal `3`. `function c3 using v(x: Int[0, 9]): Rational[0, 9; 1, 1] pure { convert<Rational[0, 9; 1, 1]>(x) }` lowers to `quire.op.numeric.convert`. `function fm using v(s: Sequence<Sequence<Int[0, 9]>[0, 2]>[0, 3]): Sequence<Int[0, 9]>[0, 6] pure { flatMap(x in s: x) }` lowers its body to one `quire.op.collection.flat_map` node and no map node. | Test (TC-415) |
 | FR-093-AC-5 | In `function q using v(s: Sequence<Int[0, 9]>[0, 5]): Boolean pure { forall(x in s: exists(y in s: x = y)) and exists(z in s: true) }`, `x`'s parameter node has level 1, `y`'s level 2 and `z`'s level 1. The `forall` argument list is `[reference(s's node), binding{name: "x", value: reference(the exists node)}]`. | Test (TC-415) |
 | FR-093-AC-6 | A text equality whose package lock evidence supplies the text-profile definition carries law `text_profile` with that `DefinitionRef` and mode `text_profile` equal to the operands' profile. The same source, lowered with no text-profile definition in the lock evidence, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node. | Test (TC-415) |
-| FR-093-AC-7 | For every node of a checked package holding `both`, `nb`, `h`, `f` and `t`, the key recomputed from the node as the v2 emission arm writes it (the FR-322 application-node rule, or FR-092's structural-node rule) equals the node's `node_id`. The `package` crate's non-test code names no `SemanticTerm` constructor and no key function. | Test (TC-416) |
+| FR-093-AC-7 | For every node of a checked package holding `both`, `nb`, `h`, `f` and `t`, the key recomputed from the node as the v2 emission arm writes it (the FR-322 application-node rule, or FR-092's structural-node rule) equals the node's `node_id`. The `package` crate's non-test code names no `SemanticTerm` constructor and no key function. For a package holding the recursive `f` of FR-092 vectors G4 to G6, the three members carry the `recursion_group` label `0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50`, their graph order is G5, G4, G6, and the keys recomputed from that graph order are G4 to G6. | Test (TC-416) |
 | FR-093-AC-8 | In the postcondition, invariant and dispatch fixtures of FR-153 and FR-151 (TC-196), a checked `Attribute`, `AllInstances`, `Lookup`, `Dispatch` and `Pre` node each lowers to the operation, member, mode and arguments its row gives, and a `Lookup` with `absent empty` carries mode `absence` = `empty`. | Test (TC-415) |
 | FR-093-AC-9 | Every node of the checked package of AC-7 has at least one occurrence: `a`'s parameter node has an `anchor` occurrence over `a: Boolean` and one `expression` occurrence per read, and the `Integer` and text scalar nodes that type P1's body literals have a `generated` occurrence. | Test (TC-416) |
 
@@ -239,8 +242,8 @@ no key of its own.
   without laws are keyed. The two-name `fold`/`reduce` binder and the
   `bound` of a nested binding are QSL proposals (ADR-013 QC-24).
 - IR-242: the IR reader's recursion preimage. It derives an in-group
-  ordinal from graph order, where FR-092 orders a group by content (ADR-013
-  QC-24).
+  ordinal from graph order, which the emission sets to FR-092's group
+  order.
 - The `Attribute` row's `record.project` over a `deref` result: FR-322 gives a
   model entity type the family `reference`, and no QSpec fixture projects an
   attribute of a dereferenced object. The row is QSL's proposal (ADR-013
@@ -250,10 +253,9 @@ no key of its own.
 
 ## Status
 
-Specified under QSL-208. Implemented on the QSL-156 slice A4b branch
-(`task/156-a4b-application-key`), pending merge: `check` lowers each checked
+Specified under QSL-208. Implemented on the QSL-156 slice A4b branch, pending merge: `check` lowers each checked
 node in `qsl-semantics/src/check/lowering.rs` and keys it by FR-092, and
-TC-415 backs AC-1 to AC-6, AC-8 and CON-1 there. A4b spells an integer
+TC-415 backs AC-1 to AC-3, AC-5, AC-6, AC-8 and CON-1 there, and AC-4 except its `fm` fixture: the A4b test flat-maps a flat sequence over itself. A4b spells an integer
 literal as a decimal string and gives `quire.op.quantity.convert` mode
 `rounding` = `exact`. The emission half is QSL-6 S1b: `qsl-package/src/emit.rs`
 refuses every non-empty graph (`ProjectionNotYetImplemented`), so AC-7, AC-9

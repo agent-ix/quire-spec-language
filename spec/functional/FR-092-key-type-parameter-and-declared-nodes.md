@@ -51,7 +51,8 @@ copied): FR-322, `proposals/checked-package-v2/node-identity-preimage.schema.jso
   requirement and [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)).
 - For a declared node, the declaring unit's `SourceOwner{authority, identity}`
   (FR-091, the required E3 input).
-- The node's recursion group, when it is in one (FR-322 `recursion_group`).
+- The checked graph's key-naming edges, from which `check` derives each
+  node's recursion group (Recursion groups).
 
 ## Outputs
 
@@ -132,7 +133,10 @@ A node's **recursion group** is its strongly connected component in the graph
 of these edges when that component has more than one node or a node that
 names itself. Recursive functions form groups (a function node, its body's
 conditional and its recursive call), and so do the recursive records that
-QSpec FR-143 admits (a record and the `Option` or collection node that its field names).
+QSpec FR-143 admits (a record and the `Option` or collection node that its
+field names). FR-143 admits a record cycle only through an optional field,
+an `Option` or a collection whose minimum is zero, and admits no cycle
+through a tuple position.
 
 `check` SHALL key nodes in dependency order. It keys a node outside every
 group after every node that node names. It keys a group after every node
@@ -206,8 +210,18 @@ outside the group, which dependency order has already fixed, and
 placeholders. The signatures are digests of shapes and of other signatures.
 The ordinals come from the order, the preimages from the ordinals and the
 keys from the preimages. No step reads the key of a member of the group, so
-the order does not depend on node keys or on the v2 graph's node order,
-which FR-322 sorts by node key.
+the order does not depend on node keys.
+
+FR-322 reads a member's `ordinal` from the member's position among its
+group's nodes in the v2 graph's node order, which the package's writer
+chooses. QSL's v2 emission writes each group's members in ordinal order
+([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md), Who
+builds the lowering), so a reader that derives the ordinal from graph order,
+as IR-242's does, recomputes the keys `check` minted.
+
+A pass computes at most `n` signatures per round for `n` rounds, so at most
+`n²` signatures for a group of `n` members, and a group holds no more nodes
+than the check stage's node limit (`CheckingLimits`) admits.
 
 The order is independent of declaration order, source regions and the order
 in which `check` visits the declarations: no shape holds any of them. It
@@ -221,20 +235,24 @@ for three reasons:
   only in which function they call tie (G10 to G15). Content would then give
   no order for them, and any tie-break would take the declaration order.
 - Running the anonymous pass first means that a group whose anonymous pass
-  separates every member gets ordinals that do not depend on names. Two
-  groups that differ only in declared names then get equal ordinals, so the
-  collision rule below depends on their structure, not on how their names
-  hash.
+  separates every member gets ordinals that do not depend on names. Two such
+  groups that differ only in declared names then always get equal ordinals
+  and collide, whatever the names are.
 
 #### Groups that collide
 
-The application-node preimage has no member that names the group, so two
-groups whose members differ only in declared names or owners give their
-in-group application nodes equal preimages. In FR-092-AC-7, the conditional
-of `f` and the conditional of `g` both key to G5. A structural in-group node
-carries its group digest, and every group holds a declared record, tuple or
-function whose `declaration` and `owner` enter that digest. A structural
-in-group node therefore never has another group's member's key.
+The application-node preimage has no member that names the group: an
+in-group application node's preimage holds its body, its types, `size` and
+its own and its targets' ordinals. Two application nodes of different groups
+with the same body shape, the same `size` and the same ordinals therefore
+have equal preimages. Groups that differ only in declared names or owners
+always give their in-group application nodes equal preimages: in
+FR-092-AC-7, the preimages of the conditionals of `f` and of `g` both hash
+to G5. Groups that differ in other content can also coincide, when their
+application nodes' shapes and ordinals happen to match. A structural
+in-group node carries its group digest, and every group holds a declared
+record or function whose `declaration` and `owner` enter that digest, so a
+structural in-group node's key differs from every other group's members'.
 
 `check` SHALL refuse a package in which two members of different recursion
 groups have equal keys, with `unknown_required_feature`/
@@ -279,16 +297,16 @@ carries its `declaration` and its unit's `owner`, so the same declaration
 under two owners gives two ids.
 
 The key that a caller passes to `CompositeDeclaration::new`, which
-`ValueType::Composite` carries, is a handle. It selects one declaration in
-the check stage's `TypeEnvironment` and orders type admission's refusals. It
-is not a node id: only `check` mints a node id (ADR-011 FB-13). `check` SHALL
-key a declared record or tuple by its `quire.structural-node/v1` preimage
-alone. No preimage, checked-graph node, checked type node
-(`CheckedTypeNode`), model correspondence entry or v2 wire member holds a
-handle. The checked type node of a declared record or tuple has the FR-092
-key as its id, and every reference to the declaration resolves to that key
-(FR-088-AC-7). Two type environments that give one declaration different
-handles give it one node id.
+`ValueType::Composite` carries, is a handle local to one check. It selects
+one declaration in the check stage's `TypeEnvironment` and orders type
+admission's refusals. Only `check` mints a node id (ADR-011 FB-13): `check`
+SHALL key a declared record or tuple by its `quire.structural-node/v1`
+preimage alone, and SHALL give its checked type node (`CheckedTypeNode`) that
+key as its id. Every reference to the declaration resolves to that key
+(FR-088-AC-7). Preimages, checked-graph nodes, checked type nodes, model
+correspondence entries and v2 wire members hold node keys only, so two type
+environments that give one declaration different handles give it one node
+id.
 
 A type alias introduces no type node. A type form that names an alias lowers
 to the node of the alias's resolved type (FR-091 resolves the alias to that
@@ -416,8 +434,8 @@ builds; they are listed here because F2 and E2 depend on them.
 | G11 | function `pong`, ordinal 3 | `7fd05a5af745fd388daa29067d9e7fc15ef4122bc6ffac7afde2dfdb11aaa399` |
 | G12 | `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 0 | `0c10a4780d09fec3b279bbbe1775d14af5dac2d3b3b61695d14b6d192d352830` |
 | G13 | `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 1 | `ac6436d7164016e2ab8ccb1926ae820ca7e6625b50909d289b479cf1835d49ea` |
-| G14 | `pong(x - 1)`, in `ping`, ordinal 4 | `2dc8b60b64805f36d8cb9d363ef4c090fc037251212f433153398cf15bdc638f` |
-| G15 | `ping(x - 1)`, in `pong`, ordinal 5 | `df9d5492f79e107bc06affbb920b96ff562d7b976580f0f831858e9c185d82ea` |
+| G14 | `ping(x - 1)`, in `pong`, ordinal 4 | `2dc8b60b64805f36d8cb9d363ef4c090fc037251212f433153398cf15bdc638f` |
+| G15 | `pong(x - 1)`, in `ping`, ordinal 5 | `df9d5492f79e107bc06affbb920b96ff562d7b976580f0f831858e9c185d82ea` |
 
 **T1**: Boolean
 
@@ -666,9 +684,11 @@ functions below name. G1 to G15 are members of recursion groups, and every
 declared member is under owner (`a`, `u`):
 
 - G1: a one-member group, a `composite_type`/`option` node whose body
-  references itself. No QSL source forms a one-member group: a declared
-  record names its fields' type nodes, a function names its body's root
-  expression, and neither is its own field type or root. TC-413 keys G1
+  references itself. No QSL source forms a one-member group: a function
+  names its body's root expression, which is never the function, and a
+  record that names itself directly (`record R { next: R; }`) is a cycle
+  that FR-143 refuses, since it passes no optional field, `Option` or
+  minimum-zero collection. TC-413 keys G1
   through the key function directly.
 - G2 and G3: `record List { next?: List; }`, a group of two.
 - G4 to G6: `function f using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then f(x - 1) else true }`,
@@ -830,7 +850,7 @@ Key: `0c10a4780d09fec3b279bbbe1775d14af5dac2d3b3b61695d14b6d192d352830`
 
 Key: `ac6436d7164016e2ab8ccb1926ae820ca7e6625b50909d289b479cf1835d49ea`
 
-**G14**: `pong(x - 1)`, in `ping`, ordinal 4
+**G14**: `ping(x - 1)`, in `pong`, ordinal 4
 
 ```json
 {"body":{"arguments":[{"ordinal":2,"term":"group_reference"},{"target":{"digest":"f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":4,"size":6},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
@@ -838,7 +858,7 @@ Key: `ac6436d7164016e2ab8ccb1926ae820ca7e6625b50909d289b479cf1835d49ea`
 
 Key: `2dc8b60b64805f36d8cb9d363ef4c090fc037251212f433153398cf15bdc638f`
 
-**G15**: `ping(x - 1)`, in `pong`, ordinal 5
+**G15**: `pong(x - 1)`, in `ping`, ordinal 5
 
 ```json
 {"body":{"arguments":[{"ordinal":3,"term":"group_reference"},{"target":{"digest":"f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":5,"size":6},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
@@ -884,8 +904,8 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 | 1 | G13 conditional in `pong` | `4d44301461c0af30b4de0d11ceb8d03db50c3248cb144bd50b7111111d22e24b` | `a4c91c06d164df255f535982d9ac8dc4ef99c51abe79180795bd1f1df815fe48` |
 | 2 | G10 `ping` | `4eab5ac7dd3f75eced5c6e5dbf48b230a5be7ce400eb28bc2ba2e28a8f551924` | `2a3e7409858e5570380cf5ccef819d73da685f9b1aa39e30aed8a6e1433f9395` |
 | 3 | G11 `pong` | `4eab5ac7dd3f75eced5c6e5dbf48b230a5be7ce400eb28bc2ba2e28a8f551924` | `8158c700f25d06bb06974e7c7f9ffa1587ef05d2e835373aec4b65501c38ba99` |
-| 4 | G14 `pong(x - 1)` | `8732b7655fc2c7103dcccfa754ec175365601bbe145d29db1a5acb8f700b1359` | `dbc24afb445fa39f541b71fb0ae972a84864891316f185aaa5006cf0c6c2e431` |
-| 5 | G15 `ping(x - 1)` | `8732b7655fc2c7103dcccfa754ec175365601bbe145d29db1a5acb8f700b1359` | `f989ebfae08ce217678d4973bafc13c5c0cc10252a204a8f5913b2e52fed4b27` |
+| 4 | G14 `ping(x - 1)` | `8732b7655fc2c7103dcccfa754ec175365601bbe145d29db1a5acb8f700b1359` | `dbc24afb445fa39f541b71fb0ae972a84864891316f185aaa5006cf0c6c2e431` |
+| 5 | G15 `pong(x - 1)` | `8732b7655fc2c7103dcccfa754ec175365601bbe145d29db1a5acb8f700b1359` | `f989ebfae08ce217678d4973bafc13c5c0cc10252a204a8f5913b2e52fed4b27` |
 
 ## Constraints
 
@@ -904,11 +924,11 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 | FR-092-AC-4 | For `function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }`, `a`'s and `b`'s parameter nodes key to P1 and P2, and `both` keys to F2. For `function f using v(): Boolean pure { true }`, the literal node keys to L1 and `f` keys to F1. For `function h using v(a: Boolean): Boolean pure { let y = a in y }`, `y`'s parameter node keys to P3. For `function k using v(n: Boolean): Integer pure { 7 }`, the literal node keys to L2, whose preimage spells the value as the string `"7"`. | Test (TC-414) |
 | FR-092-AC-5 | `function unused using v(a: Boolean, b: Boolean): Boolean pure { a }` gives a function node whose `parameters` binding lists P1 and then P2, although the body never reads `b`. `function both2 using v(a: Boolean, b: Boolean): Boolean pure { a and b }`, declared beside `both` in the same unit, reuses P1 and P2. | Test (TC-414) |
 | FR-092-AC-6 | No function node's body contains an `application` term, and every function node's key is the SHA-256 of its `quire.structural-node/v1` preimage, which carries the unit's `owner`. The node of `a and b` in `both` is keyed by `quire.application-node/v1`; its preimage has no `owner` member, and its key is E1. | Test (TC-414) |
-| FR-092-AC-7 | With the check stage's depth limit set to 4 (`CheckingLimits`), a parameter typed `Option<Option<Option<Option<Boolean>>>>` is keyed, and one typed with five nested `Option`s refuses with `resource_exhausted`/`insufficient-next-charge` naming the depth limit, and yields no key. The recursive `f` of vectors G4 to G6 and the same declaration under the name `g`, calling `g`, in one unit: the conditionals of `f` and `g` both key to G5, and the package refuses with `unknown_required_feature`/`unsupported-feature` naming the regions of `f` and `g`, with no key for any member of either group. | Test (TC-413) |
+| FR-092-AC-7 | With the check stage's depth limit set to 4 (`CheckingLimits`), a parameter typed `Option<Option<Option<Option<Boolean>>>>` is keyed, and one typed with five nested `Option`s refuses with `resource_exhausted`/`insufficient-next-charge` naming the depth limit, and yields no key. The recursive `f` of vectors G4 to G6 and the same declaration under the name `g`, calling `g`, in one unit: the preimages of the conditionals of `f` and `g` both hash to G5, and the package refuses with `unknown_required_feature`/`unsupported-feature` naming the regions of `f` and `g`, with no key for any member of either group. | Test (TC-413) |
 | FR-092-AC-8 | An enum declaration is keyed by `quire.enum-declaration-node/v1` and its member by `quire.enum-member-node/v1`, never by `quire.structural-node/v1`: for QSpec's `enum-status` and `enum-status-ready` preimages in `node-identity-vectors.json`, the minted keys equal the recorded `sha256`. | Test (TC-413) |
 | FR-092-AC-9 | `Rational[-9, 9; 1, 9]` and its base key to T10 and T9, `Decimal[-100000, 100000; 2, 2; nearest-even]` and its base to T12 and T11, and `tuple Pair(Int[0, 9], Int[0, 9]);` under (`a`, `u`) to D5. `record Opt { a: Int[0, 9]; b?: Int[0, 9]; }` keys to D3 and `record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }` to D4, which differs. `rational(1, 2)` as a `Rational[-9, 9; 1, 9]` literal keys to L3, spelled `"1/2"`, and `rational(2, 4)` keys to L3 too. | Test (TC-413) |
 | FR-092-AC-10 | `function m using v(x: Int[0, 9]): Boolean pure decreases(x) { true }` keys `x`'s parameter node to P4 and `m` to F3, whose body binds `decreases` to a `reference` to P4. | Test (TC-414) |
-| FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5, L6 and E11 to E13; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's digest. | Test (TC-413) |
+| FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5, L6 and E11 to E13; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's digest. In `function h using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then h(x - 1) and h(x - 1) else true }`, the two calls are one node, and `h`'s group has `size` 4: `h`, the conditional, the conjunction and the call. | Test (TC-413) |
 | FR-092-AC-12 | `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`), declared once through a `CompositeDeclaration` whose key is 32 bytes of `0x11` and once through one whose key is 32 bytes of `0x22`, keys to D1 both times, and its checked type node's id is D1 both times. No preimage, checked-graph node or checked type node holds either supplied key. | Test (TC-413) |
 
 ## Dependencies
@@ -940,16 +960,14 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
   keys its nodes by them now and conforms to QSpec's arm once QSpec publishes
   one. The group order, the structural `recursion.group` member and the
   `group_reference` at a `semantic_type` position are QSL proposals too
-  (QC-24). FR-322 derives an in-group ordinal from graph order, and IR-242's
-  reader does the same, so the IR reader recomputes an in-group node's key
-  as QSL keys it only once QSpec and IR adopt QSL's group order or carry the
-  ordinal on the wire (QC-24).
+  (QC-24). FR-322 and IR-242's reader derive an in-group ordinal from the
+  writer's graph order, which QSL's emission sets to the group order
+  (FR-093).
 
 ## Status
 
 Specified under QSL-208; recursion groups and declared composite handles
-specified under QSL-211. Implemented on the QSL-156 slice A4b branch
-(`task/156-a4b-application-key`), pending merge: `check` keys every node by
+specified under QSL-211. Implemented on the QSL-156 slice A4b branch, pending merge: `check` keys every node by
 this requirement's preimages in `qsl-semantics/src/check/node_key/` and
 `qsl-semantics/src/check/lowering.rs`, and TC-413 and TC-414 back AC-1 to
 AC-10 and CON-2 there. On that branch, three parts do not yet meet this

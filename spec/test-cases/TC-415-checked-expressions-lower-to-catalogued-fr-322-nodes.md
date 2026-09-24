@@ -71,6 +71,6 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
 ## Status
 
-Implemented on the QSL-156 slice A4b branch (`task/156-a4b-application-key`), pending merge. The tests back steps 1 to 7; step 4's `flatMap` test flat-maps `s`
-over itself, not `fm`'s nested sequence. Step 6's first half needs the QSpec
+Implemented on the QSL-156 slice A4b branch, pending merge. The tests back steps 1 to 7 except step 4's `fm`: the A4b `flatMap`
+test flat-maps a flat `s` over itself. Step 6's first half needs the QSpec
 `complete-value-lock.json` accessor (ADR-011 §2.4).

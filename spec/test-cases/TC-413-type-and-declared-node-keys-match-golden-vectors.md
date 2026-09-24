@@ -98,7 +98,7 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
 
 ## Status
 
-Implemented on the QSL-156 slice A4b branch (`task/156-a4b-application-key`), pending merge. The tests back steps 1 to 8 except step 5's collision half. `check`
+Implemented on the QSL-156 slice A4b branch, pending merge. The tests back steps 1 to 8 except step 5's collision half. `check`
 refuses every recursion group on that branch, so step 5's collision half and
 step 9 are unbacked, and the checked type node of step 10 takes the caller's
 key. Step 3's owner needs QSL-159's source authority.

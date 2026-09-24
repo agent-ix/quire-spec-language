@@ -65,6 +65,6 @@ Tag the tests `#[trace("FR-094-AC-5", "TC-418")]`.
 
 ## Status
 
-Implemented on the QSL-156 slice A4b branch (`task/156-a4b-application-key`), pending merge. The tests back every step except step 2's key: they assert the
+Implemented on the QSL-156 slice A4b branch, pending merge. The tests back every step except step 2's key: they assert the
 `2.0.0` owner and a key other than C1, and the corrected C3 (over P9) is
 the key to assert.

@@ -13,27 +13,32 @@ relationships:
 Verify that the `Value` family's contract `check` hook, called on a function
 declaration, makes the typing verdict itself: an ill-typed declaration is
 refused through the contract's refusal outcome, and a well-typed one is
-admitted with its minted identity. Scope: FR-065-AC-7.
+admitted, and `PackageDeclarations::check` keys it to its FR-092 function
+node key. Scope: FR-065-AC-7.
 
 ## Test Procedure
 
 1. Build a typing context whose limits the declaration does not reach, with
    an empty diagnostic sink. Check `g() -> Boolean = 1` through `ValueFunctionFamily::check`.
 2. With a fresh typing context, check `f() -> Boolean = true` through
-   `ValueFunctionFamily::check`, and mint `f`'s identity independently.
+   `ValueFunctionFamily::check`. Check a package holding `f` under source
+   owner (`a`, `u`) through `PackageDeclarations::check`, and read `f`'s
+   identity.
 
 ## Expected Results
 
 - Step 1: the outcome is `StageFailure::Refused`; its cause is
   `CheckCause::IllTyped(TypeMismatch)` (`ill_typed` / `type-mismatch`); the
   diagnostic sink holds no entry.
-- Step 2: the outcome is the checked declaration; its identity equals the
-  independently minted identity for `f`.
+- Step 2: the hook admits `f`, and `f`'s identity is FR-092 vector F1,
+  `dbd06f242fc36f1ed1b5773a7e59fb89ebc862494d8512b44e84942bea153e79`.
 
 ## Status
 
-Backed: `value_function_family_check_refuses_an_ill_typed_body` (step 1,
-`qsl-semantics/src/check/family.rs`, `checking_tests`) and
+Backed on main by `value_function_family_check_refuses_an_ill_typed_body`
+(step 1, `qsl-semantics/src/check/family.rs`, `checking_tests`) and
 `value_function_family_checks_through_the_contract` (step 2,
-`qsl-eval/src/value/expression/family.rs`, `family_contract_tests`), both tagged
-`#[trace("TC-380", "FR-065-AC-7")]`.
+`qsl-eval/src/value/expression/family.rs`, `family_contract_tests`), both
+tagged `#[trace("TC-380", "FR-065-AC-7")]`. Step 2's F1 key is asserted on
+the QSL-156 A4b branch, pending merge; on main the identity is the
+length-prefixed preimage `check/family.rs` mints.

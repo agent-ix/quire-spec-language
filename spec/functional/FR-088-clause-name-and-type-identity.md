@@ -254,9 +254,11 @@ only a unit node key as a declared-arm `UnitId`.
 Specified under QSL-158 (ADR-013 §7 S-3, split into S-3a/S-3b by the
 2026-09-21 comment on that ticket). S-3b implemented by #300: AC-1, AC-2,
 AC-3, AC-4, AC-9 and AC-10 are backed by real `check()`-driven tests
-(TC-257, TC-248, TC-249, TC-250, TC-252). AC-7 is backed for its
-within-package half only: a declared type's node id is its declaration's
-key (TC-259 step 4). Its owner-scoped and builtin or anonymous
+(TC-257, TC-248, TC-249, TC-250, TC-252). AC-7's within-package half
+is backed on main with a declared type's node id taken from the
+caller-supplied `CompositeDeclaration` key (TC-259 step 4); FR-092-AC-12
+(QSL-211) makes that id the FR-092 key `check` mints, and TC-259 step 4
+asserts the caller key until QSL-156 A4b adopts it. Its owner-scoped and builtin or anonymous
 cross-package cases (TC-259 steps 1 to 3) and recompilation (step 5) are
 not implemented. Remaining
 work: QSL-156. AC-5 is enforced for its
