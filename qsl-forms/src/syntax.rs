@@ -774,23 +774,22 @@ impl FunctionDeclaration {
 
     /// This declaration read from a source unit, with its form's spans
     /// (FR-091-AC-10). Refused when the body spans do not have the body's
-    /// shape, or the measure spans the measure's.
+    /// shape, the measure spans the measure's, or either lies outside the
+    /// declaration's span.
     pub fn with_spans(mut self, spans: DeclarationSpans) -> Result<Self, SpansMismatch> {
-        if !spans.body.fits(&self.body) {
-            return Err(SpansMismatch::Body);
-        }
-        match (&spans.measure, &self.measure) {
-            (None, None) => {}
-            (Some(measure_spans), Some(measure)) if measure_spans.fits(measure) => {}
-            (Some(_), Some(_) | None) | (None, Some(_)) => return Err(SpansMismatch::Measure),
-        }
+        spans.fit(&self.body, self.measure.as_ref())?;
         self.spans = Some(spans);
         Ok(self)
     }
 
-    /// The form's byte spans, when it was read from a source unit.
+    /// The form's byte spans, when it was read from a source unit and they
+    /// still fit its body and measure. `body` and `measure` are public, so
+    /// an edit after [`Self::with_spans`] can change the tree's shape; the
+    /// spans are then withheld rather than let a path reach the wrong node.
     pub fn spans(&self) -> Option<&DeclarationSpans> {
-        self.spans.as_ref()
+        self.spans
+            .as_ref()
+            .filter(|spans| spans.fit(&self.body, self.measure.as_ref()).is_ok())
     }
 }
 

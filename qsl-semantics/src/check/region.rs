@@ -142,7 +142,7 @@ mod tests {
             .with_bounds(vec!["0".into(), "20".into()]);
 
         let whole = find("if a then b else c + d", 0);
-        let mut body_spans = ExpressionSpans::new(whole);
+        let mut body_spans = ExpressionSpans::new(whole).unwrap();
         let root = body_spans.root();
         body_spans.push_child(root, find("a", whole.start)).unwrap();
         body_spans.push_child(root, find("b", whole.start)).unwrap();
@@ -158,10 +158,13 @@ mod tests {
                 end: whole.end + " }".len(),
             },
             body: body_spans,
-            measure: Some(ExpressionSpans::new(Span {
-                start: measure.start + 1,
-                end: measure.end - 1,
-            })),
+            measure: Some(
+                ExpressionSpans::new(Span {
+                    start: measure.start + 1,
+                    end: measure.end - 1,
+                })
+                .unwrap(),
+            ),
         };
         FunctionDeclaration::new(
             "f",
@@ -202,6 +205,17 @@ mod tests {
         }
     }
 
+    /// The node `path` reaches from `root`, one `Expression::children`
+    /// step at a time: the node the resolver is meant to have located.
+    fn node<'e>(root: &'e Expression, path: &[usize]) -> &'e Expression {
+        path.iter().fold(root, |node, &index| {
+            node.children()
+                .get(index)
+                .copied()
+                .unwrap_or_else(|| panic!("{path:?} names a node"))
+        })
+    }
+
     /// The unit bytes a region names.
     fn text(region: &SourceRegion) -> &'static str {
         let start = usize::try_from(region.start()).unwrap();
@@ -232,6 +246,22 @@ mod tests {
             assert_eq!(text(&region), *expected, "{location:?}");
             assert_eq!(region.source(), &reference);
         }
+        // Every leaf the paths reach through `Expression::children` is a
+        // name whose spelling is its region's text, so a span tree whose
+        // children are out of the form's order fails here.
+        let function = &declarations.functions[0];
+        for path in [&[0][..], &[1], &[2, 0], &[2, 1]] {
+            let Expression::Name(spelling) = node(&function.body, path) else {
+                panic!("{path:?} reaches a name");
+            };
+            let region = declarations.region(&body(path)).unwrap();
+            assert_eq!(text(&region), spelling, "{path:?}");
+        }
+        let Some(Expression::Name(measured)) = &function.measure else {
+            panic!("the measure is a name");
+        };
+        assert_eq!(text(&declarations.region(&measure(&[])).unwrap()), measured);
+
         let declaration = declarations.declaration_region(0).unwrap();
         assert!(text(&declaration).starts_with("function f using v("));
         assert!(text(&declaration).ends_with("c + d }"));
