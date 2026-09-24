@@ -145,18 +145,28 @@ fn the_assembler_reports_every_error() {
         "type A = Int[0, 1];\ntype A = Int[0, 2];\n\
          function f using v(x: A): Boolean pure { true }",
     );
+    let candidates = vec![
+        after(&text, "type A = Int[0, 1]", "A"),
+        after(&text, "type A = Int[0, 2]", "A"),
+    ];
     assert_eq!(
         found,
-        [AssemblyError {
-            cause: AssemblyCause::AmbiguousTypeName {
-                name: "A".into(),
-                candidates: vec![
-                    after(&text, "type A = Int[0, 1]", "A"),
-                    after(&text, "type A = Int[0, 2]", "A"),
-                ],
+        [
+            AssemblyError {
+                cause: AssemblyCause::AmbiguousTypeName {
+                    name: "A".into(),
+                    candidates: candidates.clone(),
+                },
+                span: candidates[1],
             },
-            span: after(&text, "(x: A)", "A"),
-        }]
+            AssemblyError {
+                cause: AssemblyCause::AmbiguousTypeName {
+                    name: "A".into(),
+                    candidates,
+                },
+                span: after(&text, "(x: A)", "A"),
+            },
+        ]
     );
 
     let (text, found) = errors(
@@ -414,7 +424,11 @@ fn using_aliases_resolve_to_the_units_profile_selections() {
                 panic!("one duplicate-alias error, not {refusal:?}");
             };
             assert_eq!(alias, "v");
-            assert_eq!(spans.len(), 2);
+            let spelled: Vec<&str> = spans
+                .iter()
+                .map(|span| &text[span.start..span.end])
+                .collect();
+            assert_eq!(spelled, [PROFILE_V.trim_end(), second.trim_end()]);
             assert_eq!(
                 refusal.errors[0].cause.catalog_code().to_string(),
                 "ambiguous_declaration/ambiguous-name"
@@ -492,4 +506,95 @@ fn a_declared_type_resolves_to_its_names_region() {
         .check(CheckingLimits::default())
         .expect("the package checks");
     assert_eq!(graph.region(&location), Some(region));
+}
+
+/// A declared type name binds one declaration whichever kind comes first:
+/// every declaration after the first is refused, in either order.
+#[trace("FR-091-AC-15", "TC-400")]
+#[test]
+fn a_duplicate_type_name_is_refused_in_either_order() {
+    for declarations in [
+        "record P { x: Integer; }\ntype P = Boolean;",
+        "type P = Boolean;\nrecord P { x: Integer; }",
+    ] {
+        let (text, found) = errors(declarations);
+        let first = after(&text, declarations.lines().next().unwrap(), "P");
+        let second = after(&text, declarations.lines().nth(1).unwrap(), "P");
+        assert_eq!(
+            found,
+            [AssemblyError {
+                cause: AssemblyCause::AmbiguousTypeName {
+                    name: "P".into(),
+                    candidates: vec![first, second],
+                },
+                span: second,
+            }],
+            "{declarations}"
+        );
+    }
+}
+
+/// A type form inside a body resolves at the assembler, so its ill-formed
+/// bounds refuse there as a signature's do.
+#[trace("FR-091-AC-16", "TC-400")]
+#[test]
+fn a_body_type_forms_bounds_refuse_at_the_assembler() {
+    let (text, found) =
+        errors("function f using v(x: Int[0, 9]): Boolean pure { convert<Int[9, 0]>(x) = x }");
+    assert_eq!(
+        found,
+        [AssemblyError {
+            cause: AssemblyCause::IllFormedBounds(TypeFormFault::EmptyInterval),
+            span: last(&text, "Int[9, 0]"),
+        }]
+    );
+}
+
+/// The named types of `fold`, `count` and `sum` are refused at their own
+/// names' spans, measure before body, in source order.
+#[trace("FR-091-AC-14", "TC-400")]
+#[test]
+fn accumulator_type_names_are_refused_at_their_own_spans_in_source_order() {
+    let (text, found) = errors(
+        "function f using v(c: Integer): Integer pure decreases(sum<Early>(x in c: x)) \
+         { count<Late>(x in c: true) + fold<Missing>(acc, y in c: acc, identity: 0) }",
+    );
+    let unresolved = |name: &str| AssemblyError {
+        cause: AssemblyCause::UnresolvedTypeName { name: name.into() },
+        span: last(&text, name),
+    };
+    assert_eq!(
+        found,
+        [
+            unresolved("Early"),
+            unresolved("Late"),
+            unresolved("Missing")
+        ]
+    );
+    assert_eq!(&text[found[2].span.start..found[2].span.end], "Missing");
+}
+
+/// Every FR-143 refusal is reported, not only the first.
+#[trace("FR-091-AC-18", "TC-401")]
+#[test]
+fn every_record_refusal_is_reported() {
+    let (text, found) = errors(
+        "record P { x: Integer; x: Integer; }\n\
+         record Q { y: Integer; y: Integer; }",
+    );
+    let names: Vec<&str> = found
+        .iter()
+        .map(|error| &text[error.span.start..error.span.end])
+        .collect();
+    assert_eq!(names, ["P", "Q"]);
+    for error in &found {
+        assert!(
+            matches!(
+                &error.cause,
+                AssemblyCause::InvalidTypeDeclaration(invalid)
+                    if matches!(invalid.cause, crate::value::declaration::DeclarationCause::DuplicateMember(_))
+            ),
+            "{error:?}"
+        );
+    }
 }

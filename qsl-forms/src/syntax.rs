@@ -347,6 +347,9 @@ pub enum Expression {
         form: Accumulation,
         /// The qualified name of the accumulator type `A`.
         accumulator_type: String,
+        /// The span of the accumulator type's name; empty when the form
+        /// was not read from a source unit.
+        accumulator_type_span: Span,
         /// The accumulator name.
         accumulator: String,
         /// The element binder name.
@@ -362,6 +365,9 @@ pub enum Expression {
     Count {
         /// The qualified name of the result type `N`.
         result_type: String,
+        /// The span of the result type's name; empty when the form was not
+        /// read from a source unit.
+        result_type_span: Span,
         /// The binder name.
         binder: String,
         /// The collection operand.
@@ -373,6 +379,9 @@ pub enum Expression {
     Sum {
         /// The qualified name of the result type `N`.
         result_type: String,
+        /// The span of the result type's name; empty when the form was not
+        /// read from a source unit.
+        result_type_span: Span,
         /// The binder name.
         binder: String,
         /// The collection operand.
@@ -1059,6 +1068,7 @@ mod tests {
                 Expression::Accumulate {
                     form: _,
                     accumulator_type: _,
+                    accumulator_type_span: _,
                     accumulator: _,
                     binder: _,
                     source: _,
@@ -1067,12 +1077,14 @@ mod tests {
                 } => "Accumulate",
                 Expression::Count {
                     result_type: _,
+                    result_type_span: _,
                     binder: _,
                     source: _,
                     predicate: _,
                 } => "Count",
                 Expression::Sum {
                     result_type: _,
+                    result_type_span: _,
                     binder: _,
                     source: _,
                     summand: _,
@@ -1202,12 +1214,14 @@ mod tests {
                 },
                 3 => Expression::Count {
                     result_type: "N".to_owned(),
+                    result_type_span: Span { start: 0, end: 0 },
                     binder: "x".to_owned(),
                     source: first,
                     predicate: second,
                 },
                 4 => Expression::Sum {
                     result_type: "N".to_owned(),
+                    result_type_span: Span { start: 0, end: 0 },
                     binder: "x".to_owned(),
                     source: first,
                     summand: second,
@@ -1249,6 +1263,7 @@ mod tests {
             Expression::Accumulate {
                 form: Accumulation::Fold,
                 accumulator_type: "A".to_owned(),
+                accumulator_type_span: Span { start: 0, end: 0 },
                 accumulator: "a".to_owned(),
                 binder: "x".to_owned(),
                 source: Box::new(source),

@@ -63,12 +63,14 @@ impl Binder {
         match self {
             Self::Let => let_in("v", name_expr("x"), v()),
             Self::Count => Expression::Count {
+                result_type_span: qsl_foundation::Span { start: 0, end: 0 },
                 result_type: "Total".to_owned(),
                 binder: "v".to_owned(),
                 source: boxed(name_expr("s")),
                 predicate: boxed(binary(BinaryOperator::Less, v(), integer_expr(5))),
             },
             Self::Sum => Expression::Sum {
+                result_type_span: qsl_foundation::Span { start: 0, end: 0 },
                 result_type: "Total".to_owned(),
                 binder: "v".to_owned(),
                 source: boxed(name_expr("s")),
@@ -81,6 +83,7 @@ impl Binder {
                 body: boxed(binary(BinaryOperator::Less, v(), integer_expr(5))),
             },
             Self::Fold => Expression::Accumulate {
+                accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
                 form: Accumulation::Fold,
                 accumulator_type: "Total".to_owned(),
                 accumulator: "acc".to_owned(),

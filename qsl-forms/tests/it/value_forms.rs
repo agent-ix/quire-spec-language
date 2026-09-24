@@ -462,6 +462,19 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
         ),
         ("a div b", Production::Product, "a div b"),
         ("null", Production::Primary, "null"),
+        ("self", Production::Primary, "self"),
+        ("result", Production::Primary, "result"),
+        ("a rem b", Production::Product, "a rem b"),
+        (
+            "float32(bits: 0x00000000)",
+            Production::FloatValue,
+            "float32(bits: 0x00000000)",
+        ),
+        (
+            "float64(bits: 0x0000000000000000)",
+            Production::FloatValue,
+            "float64(bits: 0x0000000000000000)",
+        ),
     ];
     for (source, production, construct) in cases {
         let (text, cause, span) = refusal(&format!(

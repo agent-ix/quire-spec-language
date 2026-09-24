@@ -292,18 +292,21 @@ impl Form {
                     body: boxed(body),
                 },
                 Self::Sum => Expression::Sum {
+                    result_type_span: qsl_foundation::Span { start: 0, end: 0 },
                     result_type: "Total".to_owned(),
                     binder: format!("v{level}"),
                     source: boxed(name_expr("s")),
                     summand: boxed(body),
                 },
                 Self::Count => Expression::Count {
+                    result_type_span: qsl_foundation::Span { start: 0, end: 0 },
                     result_type: "Total".to_owned(),
                     binder: format!("v{level}"),
                     source: boxed(name_expr("s")),
                     predicate: boxed(binary(BinaryOperator::Equal, body, integer_expr(0))),
                 },
                 Self::Fold => Expression::Accumulate {
+                    accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
                     form: Accumulation::Fold,
                     accumulator_type: "Total".to_owned(),
                     accumulator: format!("acc{level}"),

@@ -256,44 +256,46 @@ impl TypeNames for Names {
     }
 }
 
-/// Every type form of a function: its signature's, and the targets and
-/// named types inside its body and measure (a named type as a name form
-/// over its expression's span).
-fn function_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
-    let mut forms: Vec<TypeForm> = function
+/// A function signature's type forms: its parameters' and its result's,
+/// in source order.
+fn signature_type_forms(function: &FunctionDeclaration) -> Vec<&TypeForm> {
+    function
         .parameters
         .iter()
-        .map(|(_, form)| form.clone())
-        .chain(std::iter::once(function.result.clone()))
-        .collect();
-    let spans = function.spans();
-    let roots = [
-        Some((&function.body, spans.map(|spans| &spans.body))),
-        function
-            .measure
-            .as_ref()
-            .map(|measure| (measure, spans.and_then(|spans| spans.measure.as_ref()))),
-    ];
-    for (root, root_spans) in roots.into_iter().flatten() {
-        let mut stack = vec![(root, root_spans.map(|spans| spans.root()))];
-        while let Some((expression, id)) = stack.pop() {
-            let span = id
-                .and_then(|id| root_spans?.span(id))
-                .unwrap_or(Span { start: 0, end: 0 });
+        .map(|(_, form)| form)
+        .chain(std::iter::once(&function.result))
+        .collect()
+}
+
+/// The type forms inside a function's `decreases` measure and body, in
+/// source order: `convert<T>` and `allInstances<T>` targets, and the named
+/// types of `fold<A>`, `reduce<A>`, `count<N>` and `sum<N>` as name forms
+/// over the name's own span.
+fn body_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
+    let mut forms = Vec::new();
+    let roots = [function.measure.as_ref(), Some(&function.body)];
+    for root in roots.into_iter().flatten() {
+        let mut stack = vec![root];
+        while let Some(expression) = stack.pop() {
             match expression {
                 Expression::Convert { target, .. } | Expression::AllInstances { target, .. } => {
                     forms.push(target.clone());
                 }
                 Expression::Accumulate {
                     accumulator_type: name,
+                    accumulator_type_span: span,
                     ..
                 }
                 | Expression::Count {
-                    result_type: name, ..
+                    result_type: name,
+                    result_type_span: span,
+                    ..
                 }
                 | Expression::Sum {
-                    result_type: name, ..
-                } => forms.push(TypeForm::name(name.clone(), span)),
+                    result_type: name,
+                    result_type_span: span,
+                    ..
+                } => forms.push(TypeForm::name(name.clone(), *span)),
                 Expression::Boolean(_)
                 | Expression::Integer(_)
                 | Expression::Rational(..)
@@ -318,10 +320,9 @@ fn function_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
                 | Expression::Dispatch { .. }
                 | Expression::Pre(_) => {}
             }
-            for (index, child) in expression.children().into_iter().enumerate() {
-                let child_id = id.and_then(|id| root_spans?.child(id, index));
-                stack.push((child, child_id));
-            }
+            // Children last-first, so the first child is visited next and
+            // forms come out in source order.
+            stack.extend(expression.children().into_iter().rev());
         }
     }
     forms
@@ -452,6 +453,46 @@ fn refuse<T>(errors: Vec<AssemblyError>) -> Result<T, AssemblyRefusal> {
     Err(AssemblyRefusal { errors })
 }
 
+/// The unit's records and tuples as one admitted declaration set (FR-143),
+/// or every refusal: each refused declaration is set aside and the rest
+/// admitted again, so one declaration's refusal does not hide another's.
+/// A declaration refused only because it names one set aside
+/// (`UnknownDeclaration`) is a consequence, not an error of its own, and is
+/// not reported. Each round sets aside at least one declaration, so this
+/// ends.
+fn admit_types(
+    mut declarations: Vec<CompositeDeclaration>,
+    spans: &BTreeMap<String, Span>,
+) -> Result<TypeEnvironment, AssemblyRefusal> {
+    let mut errors = Vec::new();
+    loop {
+        match TypeEnvironment::new(declarations.clone(), []) {
+            Ok(types) if errors.is_empty() => return Ok(types),
+            Ok(_) => return refuse(errors),
+            Err(invalid) => {
+                let before = declarations.len();
+                declarations.retain(|declaration| declaration.name() != invalid.declaration);
+                let set_aside = declarations.len() < before;
+                let consequence =
+                    set_aside && matches!(invalid.cause, DeclarationCause::UnknownDeclaration(_));
+                if !consequence {
+                    let span = spans
+                        .get(&invalid.declaration)
+                        .copied()
+                        .unwrap_or(Span { start: 0, end: 0 });
+                    errors.push(AssemblyError {
+                        cause: AssemblyCause::InvalidTypeDeclaration(invalid),
+                        span,
+                    });
+                }
+                if !set_aside {
+                    return refuse(errors);
+                }
+            }
+        }
+    }
+}
+
 impl PackageDeclarations {
     /// FR-091's assembler: the package declared by `unit`, the S2 output of
     /// the source unit `source` names, whose authority and identity are the
@@ -512,19 +553,19 @@ impl PackageDeclarations {
             }
         }
 
-        // A declared record or tuple is named by its declared name alone
-        // (its handle, its region), so it may share that name with no
-        // other declaration.
-        for composite in &unit.composites {
-            let name = &composite.name;
-            let spans = unit.candidates(&name.name);
-            if spans.len() > 1 && spans.first() != Some(&name.span) {
+        // A declared type is named by its declared name alone (its handle,
+        // its region, every reference to it), so a name binds one
+        // declaration: every declaration after the first is refused, in
+        // whichever order the declarations are written.
+        for (name, declared) in &unit.declared {
+            let candidates: Vec<Span> = declared.iter().map(|(_, span)| *span).collect();
+            for (_, span) in declared.iter().skip(1) {
                 errors.push(AssemblyError {
                     cause: AssemblyCause::AmbiguousTypeName {
-                        name: name.name.clone(),
-                        candidates: spans,
+                        name: name.clone(),
+                        candidates: candidates.clone(),
                     },
-                    span: name.span,
+                    span: *span,
                 });
             }
         }
@@ -549,7 +590,10 @@ impl PackageDeclarations {
         }
         for function in &unit.functions {
             let profile = function.using().map(|using| using.alias.as_str());
-            for form in function_type_forms(function) {
+            for form in signature_type_forms(function) {
+                check_names(&unit, form, profile, &mut errors);
+            }
+            for form in body_type_forms(function) {
                 check_names(&unit, &form, profile, &mut errors);
             }
         }
@@ -699,23 +743,19 @@ impl PackageDeclarations {
                 Ok(result) => signatures.push((parameters, result)),
                 Err(error) => errors.push(resolution_error(&unit, error)),
             }
+            // A type form inside the body or measure is resolved here too,
+            // so its errors are assembler errors like a signature's; check
+            // resolves it again against the package scope.
+            for form in body_type_forms(function) {
+                if let Err(error) = resolve_form(&names, &form) {
+                    errors.push(resolution_error(&unit, error));
+                }
+            }
         }
         if !errors.is_empty() {
             return refuse(errors);
         }
-        let types = match TypeEnvironment::new(declarations, []) {
-            Ok(types) => types,
-            Err(invalid) => {
-                let span = declared_type_spans
-                    .get(&invalid.declaration)
-                    .copied()
-                    .unwrap_or(Span { start: 0, end: 0 });
-                return refuse(vec![AssemblyError {
-                    cause: AssemblyCause::InvalidTypeDeclaration(invalid),
-                    span,
-                }]);
-            }
-        };
+        let types = admit_types(declarations, &declared_type_spans)?;
 
         let mut package = PackageDeclarations::new(source);
         package.types = types;

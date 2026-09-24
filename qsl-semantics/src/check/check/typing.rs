@@ -806,6 +806,7 @@ impl<'a> Typer<'a> {
                 return Ok(Self::unary(Unary::Flatten, goal, location, frames));
             }
             Expression::Accumulate {
+                accumulator_type_span: _,
                 form,
                 accumulator_type,
                 accumulator,
@@ -829,6 +830,7 @@ impl<'a> Typer<'a> {
                 return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
             }
             Expression::Count {
+                result_type_span: _,
                 result_type,
                 binder,
                 source,
@@ -843,6 +845,7 @@ impl<'a> Typer<'a> {
                 )
             }
             Expression::Sum {
+                result_type_span: _,
                 result_type,
                 binder,
                 source,

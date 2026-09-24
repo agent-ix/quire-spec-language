@@ -404,6 +404,8 @@ fn type_head(cst: &LosslessCst, node: &CstNode) -> Result<TypeForm, FormsFailure
 /// [`Expression::children`] order.
 struct Pending {
     shape: Shape,
+    /// The CST production this node maps from, for a refusal naming it.
+    production: Production,
     span: Span,
     parent: Option<usize>,
     children: Vec<usize>,
@@ -435,13 +437,13 @@ enum Shape {
     Flatten,
     Accumulate {
         form: Accumulation,
-        accumulator_type: String,
+        accumulator_type: DeclaredName,
         accumulator: String,
         binder: String,
         identity: bool,
     },
-    Count(String, String),
-    Sum(String, String),
+    Count(DeclaredName, String),
+    Sum(DeclaredName, String),
     Size,
     Contains,
 }
@@ -604,7 +606,8 @@ impl Shape {
                 arity(if identity { 3 } else { 2 })?;
                 Expression::Accumulate {
                     form,
-                    accumulator_type,
+                    accumulator_type: accumulator_type.name,
+                    accumulator_type_span: accumulator_type.span,
                     accumulator,
                     binder,
                     source: operands.boxed()?,
@@ -619,7 +622,8 @@ impl Shape {
             Self::Count(result_type, binder) => {
                 arity(2)?;
                 Expression::Count {
-                    result_type,
+                    result_type: result_type.name,
+                    result_type_span: result_type.span,
                     binder,
                     source: operands.boxed()?,
                     predicate: operands.boxed()?,
@@ -628,7 +632,8 @@ impl Shape {
             Self::Sum(result_type, binder) => {
                 arity(2)?;
                 Expression::Sum {
-                    result_type,
+                    result_type: result_type.name,
+                    result_type_span: result_type.span,
                     binder,
                     source: operands.boxed()?,
                     summand: operands.boxed()?,
@@ -693,6 +698,7 @@ impl<'c> Mapping<'c> {
     fn node(
         &mut self,
         shape: Shape,
+        production: Production,
         span: Span,
         parent: Option<usize>,
         depth: u64,
@@ -706,6 +712,7 @@ impl<'c> Mapping<'c> {
         }
         self.arena.push(Pending {
             shape,
+            production,
             span,
             parent,
             children: Vec::new(),
@@ -720,7 +727,13 @@ impl<'c> Mapping<'c> {
         task: &Task<'c>,
         children: Vec<&'c CstNode>,
     ) -> Result<(), FormsFailure> {
-        let index = self.node(shape, task.node.span(), task.parent, task.depth)?;
+        let index = self.node(
+            shape,
+            task.node.production(),
+            task.node.span(),
+            task.parent,
+            task.depth,
+        )?;
         self.queue(index, task.depth + 1, children);
         Ok(())
     }
@@ -858,7 +871,13 @@ impl<'c> Mapping<'c> {
                 start,
                 end: right.span().end,
             };
-            let index = self.node(Shape::Binary(*operator), span, parent, depth)?;
+            let index = self.node(
+                Shape::Binary(*operator),
+                node.production(),
+                span,
+                parent,
+                depth,
+            )?;
             links.push((index, depth));
             parent = Some(index);
         }
@@ -947,7 +966,13 @@ impl<'c> Mapping<'c> {
                 start,
                 end: member.span().end,
             };
-            parent = Some(self.node(Shape::Field(text(member, node)?), span, parent, depth)?);
+            parent = Some(self.node(
+                Shape::Field(text(member, node)?),
+                node.production(),
+                span,
+                parent,
+                depth,
+            )?);
             depth += 1;
         }
         self.work.push(Task {
@@ -959,8 +984,14 @@ impl<'c> Mapping<'c> {
     }
 
     fn leaf(&mut self, shape: Shape, task: &Task<'c>) -> Result<(), FormsFailure> {
-        self.node(shape, task.node.span(), task.parent, task.depth)
-            .map(|_| ())
+        self.node(
+            shape,
+            task.node.production(),
+            task.node.span(),
+            task.parent,
+            task.depth,
+        )
+        .map(|_| ())
     }
 
     fn primary(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsFailure> {
@@ -1125,8 +1156,12 @@ impl<'c> Mapping<'c> {
         };
         let operands = nodes_of(items, Production::Expression);
         let identifiers = tokens_of(items, TokenKind::Identifier);
-        let named_type = || -> Result<String, FormsFailure> {
-            spelled(self.cst, only(items, Production::QualifiedName, node)?)
+        let named_type = || -> Result<DeclaredName, FormsFailure> {
+            let name = only(items, Production::QualifiedName, node)?;
+            Ok(DeclaredName {
+                name: spelled(self.cst, name)?,
+                span: name.span(),
+            })
         };
         let binder = |position: usize| -> Result<String, FormsFailure> {
             identifiers
@@ -1180,29 +1215,27 @@ impl<'c> Mapping<'c> {
             let parent = pending
                 .parent
                 .and_then(|parent| ids.get(parent).copied())
-                .ok_or_else(|| unexpected(root))?;
+                .ok_or_else(|| shape_at(pending))?;
             ids.push(
                 spans
                     .push_child(parent, pending.span)
-                    .map_err(|_| unexpected(root))?,
+                    .map_err(|_| shape_at(pending))?,
             );
         }
         let mut built: Vec<Option<Expression>> = Vec::with_capacity(self.arena.len());
         built.resize_with(self.arena.len(), || None);
         for (index, pending) in self.arena.into_iter().enumerate().rev() {
+            let failure = shape_at(&pending);
             let mut children = Vec::with_capacity(pending.children.len());
             for child in pending.children {
                 children.push(
                     built
                         .get_mut(child)
                         .and_then(Option::take)
-                        .ok_or_else(|| unexpected(root))?,
+                        .ok_or_else(|| failure.clone())?,
                 );
             }
-            let expression = pending
-                .shape
-                .build(children)
-                .ok_or_else(|| unexpected(root))?;
+            let expression = pending.shape.build(children).ok_or(failure)?;
             if let Some(slot) = built.get_mut(index) {
                 *slot = Some(expression);
             }
@@ -1213,6 +1246,17 @@ impl<'c> Mapping<'c> {
             .ok_or_else(|| unexpected(root))?;
         Ok((expression, spans))
     }
+}
+
+/// The refusal for an arena node whose children or span do not fit its
+/// shape, naming that node's production and span.
+fn shape_at(pending: &Pending) -> FormsFailure {
+    FormsFailure::refused(
+        FormsCause::UnexpectedShape {
+            production: pending.production,
+        },
+        pending.span,
+    )
 }
 
 /// Whether an expression CST node is exactly `null`: a chain of

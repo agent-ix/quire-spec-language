@@ -478,6 +478,7 @@ fn encode_expression(
                 pending.push(operand);
             }
             Expression::Accumulate {
+                accumulator_type_span: _,
                 form,
                 accumulator_type,
                 accumulator,
@@ -496,6 +497,7 @@ fn encode_expression(
                 pending.extend(identity.as_deref());
             }
             Expression::Count {
+                result_type_span: _,
                 result_type,
                 binder,
                 source,
@@ -507,6 +509,7 @@ fn encode_expression(
                 pending.extend([&**source, &**predicate]);
             }
             Expression::Sum {
+                result_type_span: _,
                 result_type,
                 binder,
                 source,

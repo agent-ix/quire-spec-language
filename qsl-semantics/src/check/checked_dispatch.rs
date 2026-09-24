@@ -979,6 +979,7 @@ fn open<'s, 't>(
             pending.push(Rewrite::Node(operand, hole));
         }
         Expression::Accumulate {
+            accumulator_type_span,
             form,
             accumulator_type,
             accumulator,
@@ -990,6 +991,7 @@ fn open<'s, 't>(
             write_shell!(
                 target,
                 Expression::Accumulate {
+                    accumulator_type_span: *accumulator_type_span,
                     form: *form,
                     accumulator_type: accumulator_type.clone(),
                     accumulator: String::new(),
@@ -1019,6 +1021,7 @@ fn open<'s, 't>(
             );
         }
         Expression::Count {
+            result_type_span,
             result_type,
             binder,
             source,
@@ -1027,6 +1030,7 @@ fn open<'s, 't>(
             write_shell!(
                 target,
                 Expression::Count {
+                    result_type_span: *result_type_span,
                     result_type: result_type.clone(),
                     binder: String::new(),
                     source: hole(),
@@ -1047,6 +1051,7 @@ fn open<'s, 't>(
             );
         }
         Expression::Sum {
+            result_type_span,
             result_type,
             binder,
             source,
@@ -1055,6 +1060,7 @@ fn open<'s, 't>(
             write_shell!(
                 target,
                 Expression::Sum {
+                    result_type_span: *result_type_span,
                     result_type: result_type.clone(),
                     binder: String::new(),
                     source: hole(),
@@ -1762,6 +1768,7 @@ mod tests {
             body: Box::new(add(name("x"), name("y"))),
         };
         let fold = Expression::Accumulate {
+            accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
             form: Accumulation::Fold,
             accumulator_type: "A".to_owned(),
             accumulator: "y".to_owned(),
@@ -1790,6 +1797,7 @@ mod tests {
                 body: Box::new(add(name("y"), name(alpha))),
             },
             Expression::Accumulate {
+                accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
                 form: Accumulation::Fold,
                 accumulator_type: "A".to_owned(),
                 accumulator: alpha.to_owned(),
@@ -1921,6 +1929,7 @@ mod tests {
             },
             Expression::Flatten(boxed()),
             Expression::Accumulate {
+                accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
                 form: Accumulation::Fold,
                 accumulator_type: "A".to_owned(),
                 accumulator: bound(),
@@ -1930,6 +1939,7 @@ mod tests {
                 identity: Some(boxed()),
             },
             Expression::Accumulate {
+                accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
                 form: Accumulation::Reduce,
                 accumulator_type: "A".to_owned(),
                 accumulator: bound(),
@@ -1939,12 +1949,14 @@ mod tests {
                 identity: None,
             },
             Expression::Count {
+                result_type_span: qsl_foundation::Span { start: 0, end: 0 },
                 result_type: "N".to_owned(),
                 binder: bound(),
                 source: boxed(),
                 predicate: boxed(),
             },
             Expression::Sum {
+                result_type_span: qsl_foundation::Span { start: 0, end: 0 },
                 result_type: "N".to_owned(),
                 binder: bound(),
                 source: boxed(),
