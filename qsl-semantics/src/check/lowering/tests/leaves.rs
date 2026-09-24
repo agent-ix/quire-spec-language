@@ -531,3 +531,183 @@ fn a_leaf_walk_charges_the_node_limit_before_the_law_is_read() {
         .expect_err("no text-profile evidence refuses");
     assert_eq!(refusals[0].cause.cause(), Some("missing-selection"));
 }
+
+/// `n` records `R0` .. `R{n-1}`, each with a `label` text field and an
+/// optional field of every other record: every record reaches a text type,
+/// so FR-093's leaf list over `R0` holds one leaf per simple path through
+/// the cluster, on the order of `(n - 1)!` leaves.
+fn text_cluster(n: usize) -> Vec<CompositeDeclaration> {
+    (0..n)
+        .map(|at| {
+            let mut fields = vec![required("label", text(8, TextProfile::Nfc))];
+            fields.extend((0..n).filter(|other| *other != at).map(|other| {
+                optional(
+                    &format!("r{other}"),
+                    ValueType::Composite(handle(&format!("R{other}"))),
+                )
+            }));
+            record(&format!("R{at}"), fields)
+        })
+        .collect()
+}
+
+/// TC-423 steps 1 and 2 (NFR-011-M-1): at the default checking limits,
+/// structural equality over a nine-record Text-reachable cluster refuses on
+/// the node ceiling, naming the node limit kind and its default bound, and
+/// yields no node; the six-record cluster's leaves fit.
+#[trace("NFR-011-M-1", "TC-423")]
+#[test]
+fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
+    let refusals = eq_over(
+        text_cluster(9),
+        "R0",
+        vector_lock(),
+        CheckingLimits::default(),
+    )
+    .expect_err("the nine-record cluster's leaves pass the default node ceiling");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::ResourceExhausted {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::Nodes,
+            limit: 100_000,
+        }
+    );
+    assert_eq!(refusals[0].cause.cause(), Some("insufficient-next-charge"));
+    eq_over(
+        text_cluster(6),
+        "R0",
+        vector_lock(),
+        CheckingLimits::default(),
+    )
+    .expect("the six-record cluster checks at the default limits");
+}
+
+/// TC-423 step 3 (NFR-011-M-1 to NFR-011-M-4): a checked package and a
+/// checked expression each record the ceilings they were checked under --
+/// the defaults when the caller sets none, and a caller's ceilings as
+/// given, above or below the defaults.
+#[trace("NFR-011-M-1", "NFR-011-M-2", "NFR-011-M-3", "NFR-011-M-4", "TC-423")]
+#[test]
+fn a_checked_result_records_its_effective_limits() {
+    let defaults = CheckingLimits::default();
+    assert_eq!(
+        (
+            defaults.nodes(),
+            defaults.depth(),
+            defaults.input_bytes(),
+            defaults.work_budget()
+        ),
+        (100_000, 128, 16_777_216, 16_777_216)
+    );
+    let checked = eq_over_node(vector_lock(), defaults).expect("eq over Node checks");
+    assert_eq!(checked.effective_limits(), defaults);
+
+    let raised = CheckingLimits::new(u64::MAX, 64)
+        .expect("64 is within the maximum depth")
+        .with_input_bytes(u64::MAX)
+        .with_work_budget(u64::MAX);
+    let lowered = node_limit(64)
+        .with_work_budget(5_000)
+        .with_input_bytes(4_096);
+    for limits in [raised, lowered] {
+        let checked = eq_over_node(vector_lock(), limits).expect("eq over Node checks");
+        assert_eq!(checked.effective_limits(), limits);
+        let expression = checked
+            .check_expression(
+                vec![("x".to_owned(), ValueType::Boolean)],
+                &name_expr("x"),
+                None,
+                crate::check::CheckMode::Linked,
+                limits,
+            )
+            .expect("a Boolean name checks");
+        assert_eq!(expression.effective_limits(), limits);
+    }
+}
+
+/// TC-423 step 3 (NFR-011-M-3, NFR-011-M-4): `CheckingLimits::new` sets the
+/// node and depth ceilings and keeps the default input-byte and work
+/// ceilings.
+#[trace("NFR-011-M-3", "NFR-011-M-4", "TC-423")]
+#[test]
+fn new_keeps_the_default_byte_and_work_ceilings() {
+    let limits = CheckingLimits::new(7, 9).expect("9 is within the maximum depth");
+    assert_eq!(
+        (
+            limits.nodes(),
+            limits.depth(),
+            limits.input_bytes(),
+            limits.work_budget()
+        ),
+        (7, 9, 16_777_216, 16_777_216)
+    );
+}
+
+/// A `chain`-record chain of optional fields named `name` into a binary
+/// tree of `levels` levels of optional fields, whose last level holds a
+/// text field: `2^(levels - 1)` text leaves, each under a path of about
+/// `2 * (chain + levels)` segments.
+fn deep_wide(chain: usize, levels: usize, name: &str) -> Vec<CompositeDeclaration> {
+    let link = |to: String| ValueType::Composite(handle(&to));
+    let mut records: Vec<CompositeDeclaration> = (0..chain)
+        .map(|at| {
+            let next = if at + 1 < chain {
+                format!("C{}", at + 1)
+            } else {
+                "T0".to_owned()
+            };
+            record(&format!("C{at}"), vec![optional(name, link(next))])
+        })
+        .collect();
+    records.extend((0..levels).map(|level| {
+        let fields = if level + 1 < levels {
+            let next = format!("T{}", level + 1);
+            vec![
+                optional(&format!("{name}l"), link(next.clone())),
+                optional(&format!("{name}r"), link(next)),
+            ]
+        } else {
+            vec![required(name, text(8, TextProfile::Nfc))]
+        };
+        record(&format!("T{level}"), fields)
+    }));
+    records
+}
+
+/// TC-423 step 5 (NFR-011-M-4): a leaf list whose count fits the node
+/// ceiling but whose paths are long -- 65,536 text leaves under 256-byte
+/// field names, each path 35 segments -- refuses at the default ceilings
+/// on the work budget, which each leaf's materialized key bytes are
+/// charged to, and yields no node. (The chain is one record long: a
+/// 30-record chain overflows a debug test thread's 2 MiB stack in
+/// composite lowering, before any leaf walk; `qsl-bench`'s `deep-wide`
+/// probe runs the reviewer's 46-record chain in release.)
+#[trace("NFR-011-M-4", "TC-423")]
+#[test]
+fn long_leaf_paths_refuse_on_the_default_work_budget() {
+    let name = format!("n{}", "x".repeat(255));
+    let refusals = eq_over(
+        deep_wide(1, 17, &name),
+        "C0",
+        vector_lock(),
+        CheckingLimits::default(),
+    )
+    .expect_err("the leaves' key bytes pass the default work budget");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::ResourceExhausted {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::WorkBudget,
+            limit: 16_777_216,
+        }
+    );
+    // The same shape with one-letter names and a shorter tree fits.
+    eq_over(
+        deep_wide(4, 5, "n"),
+        "C0",
+        vector_lock(),
+        CheckingLimits::default(),
+    )
+    .expect("sixteen short leaves check");
+}

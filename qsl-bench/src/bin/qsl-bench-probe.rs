@@ -8,7 +8,7 @@
 //! ```text
 //! qsl-bench-probe parse                     # nesting 0..=64, volume sizes
 //! qsl-bench-probe cst                       # hashed bytes per source byte
-//! qsl-bench-probe check <chain|independent|self-recursive> <N>   # one check, one process
+//! qsl-bench-probe check <chain|independent|self-recursive|text-cluster|deep-wide|deep-wide-chain> <N>   # one check, one process
 //! qsl-bench-probe eval <N>                  # one f0 call on an N-chain
 //! qsl-bench-probe model <types> <depth> <members> # record counts, outcomes
 //! ```
@@ -33,7 +33,7 @@ const VOLUME_SIZES: [usize; 6] = [100, 500, 1_000, 2_000, 3_000, 4_000];
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: qsl-bench-probe parse | cst | check <chain|independent|self-recursive> <N> | eval <N> | model <types> <depth> <members>"
+        "usage: qsl-bench-probe parse | cst | check <chain|independent|self-recursive|text-cluster|deep-wide|deep-wide-chain> <N> | eval <N> | model <types> <depth> <members>"
     );
     ExitCode::from(2)
 }
@@ -126,6 +126,19 @@ fn probe_check(shape: &str, functions: usize) -> ExitCode {
         "chain" => check::call_chain(functions),
         "independent" => check::independent(functions),
         "self-recursive" => qsl_bench::recursion::self_recursive(functions),
+        "text-cluster" => qsl_bench::text_cluster::text_cluster(functions),
+        // `functions` is the field-name length here.
+        "deep-wide" => qsl_bench::text_cluster::deep_wide(
+            qsl_bench::text_cluster::DEEP_WIDE_CHAIN,
+            qsl_bench::text_cluster::DEEP_WIDE_LEVELS,
+            functions,
+        ),
+        // `functions` is the chain length here, with one-byte names.
+        "deep-wide-chain" => qsl_bench::text_cluster::deep_wide(
+            functions,
+            qsl_bench::text_cluster::DEEP_WIDE_LEVELS,
+            1,
+        ),
         _ => return usage(),
     };
     let start = Instant::now();
@@ -133,7 +146,11 @@ fn probe_check(shape: &str, functions: usize) -> ExitCode {
     let elapsed = start.elapsed();
     let verdict = match &result {
         Ok(_) => "checked".to_owned(),
-        Err(refusals) => format!("refused refusals={}", refusals.len()),
+        Err(refusals) => format!(
+            "refused refusals={} first={:?}",
+            refusals.len(),
+            refusals.first().map(|refusal| &refusal.cause)
+        ),
     };
     println!(
         "check shape={shape} functions={functions} wall_ms={:.1} peak_rss_kib={} {verdict}",

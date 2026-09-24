@@ -145,7 +145,8 @@ pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Sl
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
     CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
-    ResolvedSignatures, MAX_CHECKING_DEPTH,
+    ResolvedSignatures, DEFAULT_CHECKING_INPUT_BYTES, DEFAULT_CHECKING_NODES,
+    DEFAULT_CHECKING_WORK_BUDGET, MAX_CHECKING_DEPTH,
 };
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
@@ -310,6 +311,8 @@ pub struct CheckedGraph {
     /// FR-092/FR-093 (QSL-156 A4b): every lowered, keyed node of this
     /// package's functions.
     semantic_graph: lowering::SemanticGraph,
+    /// NFR-011: the ceilings this package was checked under.
+    effective_limits: CheckingLimits,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -319,6 +322,8 @@ pub struct CheckedExpression {
     parameters: Vec<(String, ValueType)>,
     root: Node,
     slots: usize,
+    /// NFR-011: the ceilings this expression was checked under.
+    effective_limits: CheckingLimits,
 }
 
 impl CheckedExpression {
@@ -354,6 +359,15 @@ impl CheckedExpression {
     /// The evaluation slot count evaluation allocates.
     pub fn slots(&self) -> usize {
         self.slots
+    }
+
+    /// NFR-011: the ceilings this expression was checked under. A
+    /// standalone expression check applies the node and depth ceilings
+    /// only: it encodes no declaration preimage and charges no work, so the
+    /// input-byte and work ceilings are recorded here as given but were not
+    /// applied.
+    pub fn effective_limits(&self) -> CheckingLimits {
+        self.effective_limits
     }
 }
 
@@ -766,15 +780,12 @@ impl PackageDeclarations {
         // the contract's check can refuse a single oversized declaration
         // first, but it is not a substitute for the package-wide budget, and
         // does not make it redundant. `input_bytes` reads `CheckingLimits`' own
-        // dedicated knob (`with_input_bytes`), unlimited unless a caller
-        // configures it -- the same real-default-until-configured shape
-        // `nesting_depth` itself had before this exact fix wired it to
-        // `limits.depth()` (`StageLimits`'s own doc). `work_budget` has no
+        // dedicated knob (`with_input_bytes`). `work_budget` has no
         // `StageLimits` field at all (PR #302 review finding 3): it is
         // charged against `contract_meter`'s own `work_units` bound
-        // instead, read from `CheckingLimits::work_budget` (also unlimited
-        // unless a caller configures it via `with_work_budget`) -- the same
-        // unbounded-by-default shape. The mechanism is real (`CheckContext::
+        // instead, read from `CheckingLimits::work_budget`. All three are
+        // NFR-011's finite defaults unless a caller sets them (QSL-214).
+        // The mechanism is real (`CheckContext::
         // check_input_bytes`/`check_node_count`, and a `cx.meter` charge for
         // `work_budget`) and is exercised directly against tight fixtures in
         // `qsl-eval/src/value/expression/family.rs`'s `family_contract_tests`.
@@ -1007,6 +1018,7 @@ impl PackageDeclarations {
             model_correspondence,
             type_nodes,
             semantic_graph,
+            effective_limits: limits,
         })
     }
 }
@@ -1015,6 +1027,11 @@ impl CheckedGraph {
     /// FR-092/FR-093: every lowered, keyed node of this package's functions.
     pub fn semantic_graph(&self) -> &SemanticGraph {
         &self.semantic_graph
+    }
+
+    /// NFR-011: the ceilings this package was checked under.
+    pub fn effective_limits(&self) -> CheckingLimits {
+        self.effective_limits
     }
 
     /// ADR-013 O-04: `node`'s `DeclarationKey`, read only from the model
@@ -1138,6 +1155,7 @@ impl CheckedGraph {
             parameters,
             root,
             slots,
+            effective_limits: limits,
         })
     }
 

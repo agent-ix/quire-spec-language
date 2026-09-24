@@ -557,6 +557,12 @@ fn rows() -> Vec<Row> {
 
 /// `enum Status { Active, Closed }`, admitted under QSpec's own preimages.
 fn status() -> EnumBinding {
+    enum_binding("Status", &["Active", "Closed"])
+}
+
+/// `enum <name> { <cases> }`, unordered, admitted under QSpec's own
+/// preimages. `cases` must be sorted.
+fn enum_binding(name: &str, cases: &[&str]) -> EnumBinding {
     use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
     use crate::value::semantic_node::{
         NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
@@ -568,15 +574,15 @@ fn status() -> EnumBinding {
     let preimage = EnumDeclarationPreimage::from_json(json!({
         "version": "quire.enum-declaration-node/v1",
         "owner": {"kind": "definition", "authority": "agent-ix", "identity": "example-model"},
-        "qualified_declaration": ["Example", "Status"],
+        "qualified_declaration": ["Example", name],
         "ordered": false,
-        "members": ["Active", "Closed"],
+        "members": cases,
     }))
     .unwrap();
     let key = NodeKey::from_digest(preimage.digest().unwrap());
     let declaration = EnumDeclaration::admit(preimage, key, &owners).unwrap();
-    let members = ["Active", "Closed"]
-        .into_iter()
+    let members = cases
+        .iter()
         .map(|case| {
             let member = EnumMemberPreimage::from_json(json!({
                 "version": "quire.enum-member-node/v1",
@@ -589,10 +595,64 @@ fn status() -> EnumBinding {
         })
         .collect();
     EnumBinding {
-        name: "Status".to_owned(),
+        name: name.to_owned(),
         declaration,
         members,
     }
+}
+
+/// `functions` functions `fK(x: Country): Boolean { true }` over one
+/// 250-variant `Country` enum: each parameter's preimage writes every
+/// variant.
+fn enum_parameter_package(functions: usize) -> PackageDeclarations {
+    let cases: Vec<String> = (0..250).map(|case| format!("C{case:03}")).collect();
+    let cases: Vec<&str> = cases.iter().map(String::as_str).collect();
+    PackageDeclarations {
+        enums: vec![enum_binding("Country", &cases)],
+        functions: (0..functions)
+            .map(|index| {
+                function(
+                    &format!("f{index}"),
+                    &[("x", TypeForm::name("Country", SPAN))],
+                    boolean(),
+                    None,
+                    Expression::Boolean(true),
+                )
+            })
+            .collect(),
+        ..PackageDeclarations::new(fixture_owner())
+    }
+}
+
+/// TC-423 step 4 (NFR-011-M-3, NFR-011-M-4): 4,000 functions over one
+/// 250-variant enum parameter -- about 180 KB of source, inside NFR-001 --
+/// check at the default ceilings, though each declaration's preimage
+/// writes all 250 variants. With the work budget at its default ratio to
+/// the preimage byte ceiling (one work unit per byte), a declaration whose
+/// preimage passes the byte ceiling refuses on the byte ceiling, not on
+/// the work budget.
+#[trace("NFR-011-M-3", "NFR-011-M-4", "TC-423")]
+#[test]
+fn preimage_bytes_bind_before_the_work_budget() {
+    enum_parameter_package(4_000)
+        .check(CheckingLimits::default())
+        .expect("4,000 enum-parameter functions check at the default ceilings");
+    let bytes = 10_000;
+    let refusals = enum_parameter_package(2)
+        .check(
+            CheckingLimits::default()
+                .with_input_bytes(bytes)
+                .with_work_budget(bytes),
+        )
+        .expect_err("one declaration's preimage passes 10,000 bytes");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::ResourceExhausted {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::InputBytes,
+            limit: 10_000,
+        }
+    );
 }
 
 /// TC-415 step 3 (FR-093-AC-3): each row lowers to one node with the row's

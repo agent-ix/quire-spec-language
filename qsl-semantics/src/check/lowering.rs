@@ -649,6 +649,71 @@ enum Leaf {
     Recursion(usize),
 }
 
+/// One path segment as the walk holds it: a field name borrowed from its
+/// declaration, so the walk allocates no name per step.
+#[derive(Clone, Copy)]
+enum WalkSegment<'w> {
+    /// `field:<name>`, the name already checked to be an identifier.
+    Field(&'w str),
+    /// `position:<n>`.
+    Position(u64),
+    /// `inner`.
+    Inner,
+}
+
+impl WalkSegment<'_> {
+    /// The segment's key spelling's byte length (`field:<name>`,
+    /// `position:<n>`, `inner`): what one materialized leaf path costs for
+    /// this segment.
+    fn key_bytes(self) -> u64 {
+        match self {
+            Self::Field(name) => key_length("field:".len() + name.len()),
+            Self::Position(position) => key_length("position:".len() + decimal_digits(position)),
+            Self::Inner => key_length("inner".len()),
+        }
+    }
+
+    /// The key segment itself.
+    fn materialize(self) -> Result<LeafSegment, NodeKeyRefusal> {
+        Ok(match self {
+            Self::Field(name) => LeafSegment::Field(
+                Identifier::new(name).map_err(|_| NodeKeyRefusal::EmptyBindingName)?,
+            ),
+            Self::Position(position) => LeafSegment::Position(position),
+            Self::Inner => LeafSegment::Inner,
+        })
+    }
+}
+
+/// `length` as a charge amount.
+fn key_length(length: usize) -> u64 {
+    quire_exact::length_amount(length)
+}
+
+/// The number of decimal digits in `value`.
+fn decimal_digits(value: u64) -> usize {
+    value.checked_ilog10().map_or(1, |digits| {
+        usize::try_from(digits).map_or(usize::MAX, |d| d + 1)
+    })
+}
+
+/// One interned path prefix: its last segment, its parent prefix and the
+/// key bytes of the whole prefix. Leaves that share a prefix share its
+/// nodes, so the walk holds each prefix once however many leaves end
+/// under it.
+struct PathNode<'w> {
+    parent: Option<usize>,
+    segment: WalkSegment<'w>,
+    key_bytes: u64,
+}
+
+/// One segment of the walk's current path, and its interned node once a
+/// leaf under it has been appended.
+struct StackEntry<'w> {
+    segment: WalkSegment<'w>,
+    interned: Option<usize>,
+}
+
 /// One FR-093 text-leaf walk ("Text leaves").
 struct LeafWalk<'w> {
     /// The package's declared composites.
@@ -656,14 +721,17 @@ struct LeafWalk<'w> {
     /// The check stage's depth limit.
     depth_limit: u64,
     /// The checking work meter: each composite the walk enters charges one
-    /// unit.
+    /// unit, and each leaf charges its materialized key bytes.
     meter: &'w mut Meter,
     /// Whether a text type is reachable from each composite asked so far.
     reach: &'w mut BTreeMap<NodeKey, bool>,
     /// The path from the compared type.
-    path: Vec<LeafSegment>,
-    /// The leaves appended so far, each at its path.
-    leaves: Vec<(Vec<LeafSegment>, Leaf)>,
+    stack: Vec<StackEntry<'w>>,
+    /// Every path prefix a leaf was appended under, shared between leaves.
+    prefixes: Vec<PathNode<'w>>,
+    /// The leaves appended so far, each at its interned path (`None` for
+    /// the empty path).
+    leaves: Vec<(Option<usize>, Leaf)>,
     /// The open composites, each with the path length it was entered at.
     open: Vec<(NodeKey, usize)>,
     /// The node-limit units left.
@@ -672,12 +740,12 @@ struct LeafWalk<'w> {
     limit: u64,
 }
 
-impl LeafWalk<'_> {
+impl<'w> LeafWalk<'w> {
     /// Walk `value_type` at the walk's path, appending each text leaf and
     /// recursion leaf in the order the walk reaches it.
     fn walk(
         &mut self,
-        value_type: &ValueType,
+        value_type: &'w ValueType,
         location: &Location,
         depth: u64,
     ) -> Result<(), CheckRefusal> {
@@ -696,16 +764,15 @@ impl LeafWalk<'_> {
             ValueType::Text(text) => self.append(Leaf::Text(text.profile()), location)?,
             // Rule 2.
             ValueType::Option(payload) => {
-                self.path.push(LeafSegment::Inner);
-                let walked = self.walk(payload, location, depth + 1);
-                self.path.pop();
-                walked?;
+                self.within(WalkSegment::Inner, payload, location, depth + 1)?;
             }
             ValueType::Collection(collection) => {
-                self.path.push(LeafSegment::Inner);
-                let walked = self.walk(collection.element(), location, depth + 1);
-                self.path.pop();
-                walked?;
+                self.within(
+                    WalkSegment::Inner,
+                    collection.element(),
+                    location,
+                    depth + 1,
+                )?;
             }
             ValueType::Composite(declaration) => {
                 // A composite from which no text type is reachable adds no
@@ -725,7 +792,7 @@ impl LeafWalk<'_> {
                 };
                 charge_work(self.meter, 1)
                     .map_err(|refusal| preimage_refusal(location, refusal))?;
-                self.open.push((*declaration, self.path.len()));
+                self.open.push((*declaration, self.stack.len()));
                 let walked = self.fields(composite.shape(), location, depth);
                 self.open.pop();
                 walked?;
@@ -745,42 +812,62 @@ impl LeafWalk<'_> {
         Ok(())
     }
 
+    /// Walk `value_type` one `segment` further down the path.
+    fn within(
+        &mut self,
+        segment: WalkSegment<'w>,
+        value_type: &'w ValueType,
+        location: &Location,
+        depth: u64,
+    ) -> Result<(), CheckRefusal> {
+        self.stack.push(StackEntry {
+            segment,
+            interned: None,
+        });
+        let walked = self.walk(value_type, location, depth);
+        self.stack.pop();
+        walked
+    }
+
     /// Rules 4 and 5: a record's fields, an optional one's through `inner`,
     /// or a tuple's positions.
     fn fields(
         &mut self,
-        shape: &CompositeShape,
+        shape: &'w CompositeShape,
         location: &Location,
         depth: u64,
     ) -> Result<(), CheckRefusal> {
         match shape {
             CompositeShape::Record(fields) => {
                 for field in fields {
-                    let name = Identifier::new(field.name()).map_err(|_| {
-                        refuse(
+                    let name = field.name();
+                    if !quire_exact::is_identifier(name) {
+                        return Err(refuse(
                             location,
                             CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
-                        )
-                    })?;
-                    self.path.push(LeafSegment::Field(name));
-                    let optional = field.presence() == Presence::Optional;
-                    if optional {
-                        self.path.push(LeafSegment::Inner);
+                        ));
                     }
-                    let walked = self.walk(field.value_type(), location, depth + 1);
-                    if optional {
-                        self.path.pop();
-                    }
-                    self.path.pop();
+                    self.stack.push(StackEntry {
+                        segment: WalkSegment::Field(name),
+                        interned: None,
+                    });
+                    let walked = if field.presence() == Presence::Optional {
+                        self.within(WalkSegment::Inner, field.value_type(), location, depth + 1)
+                    } else {
+                        self.walk(field.value_type(), location, depth + 1)
+                    };
+                    self.stack.pop();
                     walked?;
                 }
             }
             CompositeShape::Tuple(positions) => {
                 for (position, value_type) in (0_u64..).zip(positions) {
-                    self.path.push(LeafSegment::Position(position));
-                    let walked = self.walk(value_type, location, depth + 1);
-                    self.path.pop();
-                    walked?;
+                    self.within(
+                        WalkSegment::Position(position),
+                        value_type,
+                        location,
+                        depth + 1,
+                    )?;
                 }
             }
         }
@@ -859,8 +946,32 @@ impl LeafWalk<'_> {
             .map(|(_, entered)| *entered)
     }
 
+    /// Intern the current path, sharing every prefix an earlier leaf
+    /// interned, and return its last node (`None` for the empty path).
+    fn intern(&mut self) -> Option<usize> {
+        let mut parent = None;
+        for entry in &mut self.stack {
+            let node = match entry.interned {
+                Some(node) => node,
+                None => {
+                    let above = parent.map_or(0, |parent: usize| self.prefixes[parent].key_bytes);
+                    self.prefixes.push(PathNode {
+                        parent,
+                        segment: entry.segment,
+                        key_bytes: above.saturating_add(entry.segment.key_bytes()),
+                    });
+                    let node = self.prefixes.len() - 1;
+                    entry.interned = Some(node);
+                    node
+                }
+            };
+            parent = Some(node);
+        }
+        parent
+    }
+
     /// Append `leaf` at the current path, charging one unit of the node
-    /// limit.
+    /// limit and then the leaf's materialized key bytes to the work meter.
     fn append(&mut self, leaf: Leaf, location: &Location) -> Result<(), CheckRefusal> {
         self.budget = self.budget.checked_sub(1).ok_or_else(|| {
             refuse(
@@ -872,8 +983,32 @@ impl LeafWalk<'_> {
                 },
             )
         })?;
-        self.leaves.push((self.path.clone(), leaf));
+        let path = self.intern();
+        let tail = match leaf {
+            Leaf::Text(_) => 0,
+            Leaf::Recursion(entered) => key_length(
+                "recursion:".len() + decimal_digits(u64::try_from(entered).unwrap_or(u64::MAX)),
+            ),
+        };
+        let bytes = path
+            .map_or(0, |node| self.prefixes[node].key_bytes)
+            .saturating_add(tail);
+        charge_work(self.meter, bytes).map_err(|refusal| preimage_refusal(location, refusal))?;
+        self.leaves.push((path, leaf));
         Ok(())
+    }
+
+    /// The segments of the interned path ending at `node`, root first.
+    fn path(&self, node: Option<usize>) -> Result<Vec<LeafSegment>, NodeKeyRefusal> {
+        let mut segments = Vec::new();
+        let mut at = node;
+        while let Some(index) = at {
+            let prefix = &self.prefixes[index];
+            segments.push(prefix.segment.materialize()?);
+            at = prefix.parent;
+        }
+        segments.reverse();
+        Ok(segments)
     }
 }
 
@@ -1572,25 +1707,32 @@ impl<'a> Lowering<'a> {
         let Some(compared) = compared else {
             return Ok(Vec::new());
         };
-        // The walk completes, or refuses on the node limit, before any
-        // leaf's law is read (FR-093 "Text leaves").
+        // The walk completes, or refuses on the node limit or the work
+        // budget, before any leaf's law is read (FR-093 "Text leaves").
         let mut walk = LeafWalk {
             types: self.scope.types(),
             depth_limit: self.depth_limit,
             meter: &mut *self.meter,
             reach: &mut self.text_reach,
-            path: Vec::new(),
+            stack: Vec::new(),
+            prefixes: Vec::new(),
             leaves: Vec::new(),
             open: Vec::new(),
             budget: self.node_budget,
             limit: self.node_limit,
         };
         walk.walk(compared, location, 0)?;
-        let (budget, found) = (walk.budget, walk.leaves);
-        self.node_budget = budget;
+        self.node_budget = walk.budget;
+        let found = std::mem::take(&mut walk.leaves);
+        let paths = found
+            .iter()
+            .map(|(node, _)| walk.path(*node))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|refusal| preimage_refusal(location, refusal))?;
         found
             .into_iter()
-            .map(|(path, leaf)| {
+            .zip(paths)
+            .map(|((_, leaf), path)| {
                 Ok(match leaf {
                     Leaf::Text(profile) => OperationLeaf {
                         path,

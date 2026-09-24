@@ -306,7 +306,9 @@ leaf needs the text-profile law therefore holds for recursive types too.
 Each appended leaf, text or recursion, costs one unit of the check stage's
 node limit (`CheckingLimits`), because the list is bounded per path but not
 in width: `n` records that each hold a text field and an optional field of
-every other record give on the order of `(n - 1)!` leaves. A walk that would
+every other record give on the order of `(n - 1)!` leaves. The node limit
+is finite by default, and each leaf's key bytes are charged to the work
+budget ([NFR-011](../non-functional/NFR-011-bound-value-checking-work.md)). A walk that would
 pass the limit refuses with `resource_exhausted`/`insufficient-next-charge`
 naming the node limit, and yields no node. `check` completes the walk, or
 refuses on a limit, before it reads any leaf's law, so a resource refusal

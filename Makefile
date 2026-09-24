@@ -285,14 +285,14 @@ test-differential:
 
 # QSL-196: the committed performance benchmarks (`qsl-bench/`), one
 # criterion bench per axis, each runnable by name. `make bench` runs all
-# five; `make bench-probe` prints the counts, refusal boundaries and one-shot
+# six; `make bench-probe` prints the counts, refusal boundaries and one-shot
 # large-input timings (with peak RSS) the criterion benches do not record.
 # The recorded baseline, with its variance, is `qsl-bench/BASELINE.md`.
 # Pass criterion options through BENCH_ARGS, e.g.
 # `make bench-model BENCH_ARGS='--save-baseline before'`. Not part of `ci:`
 # -- timing is not a pass/fail gate.
 BENCH_ARGS ?=
-BENCH_AXES := parser checker cst model evaluator
+BENCH_AXES := parser checker cst model evaluator text_cluster
 
 .PHONY: bench bench-probe $(addprefix bench-,$(BENCH_AXES))
 
@@ -308,5 +308,7 @@ bench-probe:
 	$(BENCH_PROBE) cst
 	for n in 250 1000 2000 4000 8000; do $(BENCH_PROBE) check chain $$n || exit 1; done
 	for n in 1000 5000; do $(BENCH_PROBE) check independent $$n || exit 1; done
+	for n in 3 4 5 6 7 8 9 10 11 12; do $(BENCH_PROBE) check text-cluster $$n || exit 1; done
+	for b in 1 64 256; do $(BENCH_PROBE) check deep-wide $$b || exit 1; done
 	for n in 1 1000; do $(BENCH_PROBE) eval $$n || exit 1; done
 	$(BENCH_PROBE) model 4000 4 100

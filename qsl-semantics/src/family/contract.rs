@@ -120,12 +120,10 @@ impl ScopeStack {
 /// shape; `work_budget` bounds the checking stage's total spend.
 ///
 /// `input_bytes`/`node_count`'s one production call site
-/// (`crate::check::mod::PackageDeclarations::check`) configures both as
-/// unlimited (`u64::MAX`) by default, the same real-default shape
-/// `nesting_depth` itself carried before a caller-configurable knob existed
-/// for it (`CheckingLimits::default()`, `crate::check::check`) --
-/// `input_bytes` now has one (`CheckingLimits::with_input_bytes`); the
-/// mechanism is real and exercised directly against tight fixtures
+/// (`crate::check::mod::PackageDeclarations::check`) reads both from the
+/// caller's `CheckingLimits`, whose defaults are NFR-011's finite ceilings
+/// (`CheckingLimits::with_input_bytes` and `CheckingLimits::new` set them);
+/// the mechanism is exercised directly against tight fixtures
 /// (`qsl-eval/src/value/expression/family.rs`'s `family_contract_tests`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StageLimits {

@@ -14,9 +14,10 @@ architecture evaluation.
 | CST identity hashing against source bytes | `make bench-cst` | `benches/cst.rs` | `src/parse.rs` |
 | Model layer on an N-type `DomainPackage` built through FR-154 intake | `make bench-model` | `benches/model.rs` | `src/model.rs` |
 | Evaluator cost per call frame | `make bench-evaluator` | `benches/evaluator.rs` | `src/check.rs` |
+| Checker: Text-reachable recursive cluster (QSL-215) | `make bench-text_cluster` | `benches/text_cluster.rs` | `src/text_cluster.rs` |
 | Counts, refusal boundaries, one-shot large inputs and peak RSS | `make bench-probe` | `src/bin/qsl-bench-probe.rs` | all of the above |
 
-`make bench` runs all five criterion suites. Each target runs
+`make bench` runs all six criterion suites. Each target runs
 `cargo bench --locked -p qsl-bench --bench <axis>`, and criterion options go
 through `BENCH_ARGS`.
 
@@ -844,6 +845,100 @@ between A and B.
 The two sides are stored as quoin measurement collections under
 `spec/evidence/measurements/qsl202-ab-a-model-v2.json` and
 `qsl202-ab-b-model-v2.json`.
+
+## QSL-214 and QSL-215: wide and long leaf lists. The default ceilings refuse both.
+
+`benches/text_cluster.rs` (`make bench-text_cluster`) times one check of two
+shapes. The generators are in `src/text_cluster.rs`.
+
+- `checker/text_cluster/<outcome>/<n>`: `n` records. Each has a
+  `label: Text[0, 8; nfc]` field and an optional field of every other
+  record. The package has one structural equality over `R0`. FR-093's leaf
+  list for it holds about `(n - 1)!` leaves.
+- `checker/deep_wide/<outcome>/<b>`: the PR #390 review's long-path shape.
+  It is a 46-record chain of optional fields into a 17-level binary tree of
+  optional fields, giving 65,536 text leaves under paths of 125 segments.
+  Every field name is `b` bytes long.
+
+`qsl-bench-probe check <text-cluster|deep-wide|deep-wide-chain> <n>` measures
+one check in one process, with peak RSS (`VmHWM`). `deep-wide-chain <c>` is
+the same tree under a `c`-record chain with one-byte names.
+
+- **A** is `ddc0083e` (main). Its `CheckingLimits::default()` has no node or
+  work ceiling.
+- **B** is this branch. It has NFR-011's defaults: 100,000 nodes and
+  16,777,216 work units.
+- Each leaf charges its key bytes to the work budget, and the walk shares
+  path prefixes between leaves.
+
+The walk stays combinatorial. QSL-215's second option is taken. At the
+defaults, the node ceiling bounds the leaf count and the work ceiling
+bounds the leaves' key bytes, so both shapes refuse early and name the
+limit that stopped them.
+
+The probe session was interleaved: A then B at each input, three rounds, on
+2026-09-24. Each figure is the median of three. A was not run on clusters
+above 9 records: at 9 it needs 3.1 GB, and each extra record multiplies the
+leaf count by about `n`.
+
+| Input | Leaf units | A outcome | A wall | A peak RSS | B outcome | B wall | B peak RSS |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| cluster 3 | 14 | checked | 0.8 ms | 4.8 MB | checked | 0.8 ms | 4.9 MB |
+| cluster 4 | 52 | checked | 1.4 ms | 5.0 MB | checked | 1.2 ms | 5.0 MB |
+| cluster 5 | 264 | checked | 2.7 ms | 5.6 MB | checked | 2.4 ms | 5.8 MB |
+| cluster 6 | 1,634 | checked | 11.1 ms | 10.0 MB | checked | 8.4 ms | 10.0 MB |
+| cluster 7 | 11,746 | checked | 61.3 ms | 42.9 MB | checked | 60.3 ms | 41.8 MB |
+| cluster 8 | 95,904 | checked | 510 ms | 332 MB | checked | 511 ms | 327 MB |
+| cluster 9 | not counted | checked | 4.95 s | 3.13 GB | refused, `Nodes`, 100000 | 15.0 ms | 18.3 MB |
+| cluster 10 | | not run | | | refused, `Nodes`, 100000 | 15.1 ms | 18.4 MB |
+| cluster 11 | | not run | | | refused, `Nodes`, 100000 | 16.0 ms | 18.4 MB |
+| cluster 12 | | not run | | | refused, `Nodes`, 100000 | 16.4 ms | 18.3 MB |
+| deep-wide, 1-byte names | 65,536 | checked | 1.95 s | 1.23 GB | refused, `WorkBudget`, 16777216 | 12.1 ms | 11.3 MB |
+| deep-wide, 64-byte names | 65,536 | checked | 3.51 s | 1.87 GB | refused, `WorkBudget`, 16777216 | 3.9 ms | 6.5 MB |
+| deep-wide, 256-byte names | 65,536 | checked | 7.46 s | 4.19 GB | refused, `WorkBudget`, 16777216 | 3.0 ms | 5.8 MB |
+| deep-wide-chain 4 (16.2 million key bytes) | 65,536 | checked | 1.24 s | 622 MB | checked | 1.09 s | 674 MB |
+
+The leaf-unit counts were read once from the lowering's node budget, with
+the limits unbounded.
+
+- **Admitted packages near a ceiling.** The eight-record cluster uses
+  95,904 of the 100,000 node units. `deep-wide-chain 4` charges 16.2
+  million key bytes against the 16,777,216 work units. At these sizes B
+  uses the same memory as A, or about 8% more. B keeps the path tree and
+  then materializes each leaf's path.
+- **Refused packages.** A refused walk holds only the shared path tree.
+  Peak RSS at refusal is 18 MB or less, whatever the cluster size or name
+  length.
+
+The criterion session was also interleaved, A then B, five rounds each,
+with load average from 4.8 to 13.6. A ran only the clusters up to 8 records
+and not `deep_wide`.
+
+| Benchmark | A median | A range | B median | B range | Larger MAD/median | Change |
+| --- | --- | --- | --- | --- | --- | --- |
+| `checker/text_cluster/checked/3` | 0.615 ms | 0.600 – 0.833 ms | 0.622 ms | 0.612 – 0.688 ms | 2% | none |
+| `checker/text_cluster/checked/4` | 1.02 ms | 0.956 – 1.56 ms | 0.999 ms | 0.968 – 3.53 ms | 6% | none |
+| `checker/text_cluster/checked/5` | 1.99 ms | 1.88 – 2.66 ms | 1.93 ms | 1.88 – 2.65 ms | 5% | none |
+| `checker/text_cluster/checked/6` | 7.45 ms | 6.91 – 11.8 ms | 9.37 ms | 6.91 – 10.4 ms | 11% | within noise; not reproduced in-process (+2%, interleaved) |
+| `checker/text_cluster/checked/7` | 53.1 ms | 49.2 – 65.4 ms | 63.0 ms | 46.5 – 65.0 ms | 7% | within noise; not reproduced in-process (+0.2%, interleaved) |
+| `checker/text_cluster/checked/8` | 508 ms | 445 – 609 ms | 531 ms | 462 – 787 ms | 8% | none: 5%, within the noise |
+| `checker/text_cluster/refused/9` | not run (4.95 s, 3.1 GB per check) | | 13.5 ms | 11.6 – 19.6 ms | 8% | refused instead of checked |
+| `checker/text_cluster/refused/10` | not run | | 13.8 ms | 12.9 – 21.1 ms | 5% | refused |
+| `checker/text_cluster/refused/11` | not run | | 14.9 ms | 14.6 – 24.0 ms | 2% | refused |
+| `checker/text_cluster/refused/12` | not run | | 16.5 ms | 15.0 – 27.3 ms | 9% | refused |
+| `checker/deep_wide/refused/1` | not run (1.95 s, 1.2 GB per check) | | 13.7 ms | 11.5 – 13.9 ms | 2% | refused instead of checked |
+| `checker/deep_wide/refused/64` | not run | | 3.94 ms | 3.40 – 4.54 ms | 10% | refused |
+| `checker/deep_wide/refused/256` | not run | | 2.56 ms | 2.54 – 2.72 ms | 1% | refused |
+
+On the admitted 6- and 7-record clusters, this criterion session showed B's
+median higher by 26% and 19%. The ranges overlap, and the probe session
+shows no difference. The PR #390 delta review timed the same checks
+in-process, interleaved, and measured +2% and +0.2%. Removing the per-leaf
+charge made the checks no faster. Both rows are therefore recorded as
+within noise.
+
+Adding this bench changes no input of `benches/checker.rs`. The only change
+to MP-002's protected `Cargo.toml` is the new `[[bench]]` entry.
 
 ## Engineering-assurance record
 
