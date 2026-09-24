@@ -245,14 +245,11 @@ impl<'a> Output<'a> {
             .is_none_or(|length| length > self.limit)
         {
             return Err(FormatRefusal::OutputBudgetExhausted(
-                qsl_cst::diagnostic::error(
+                qsl_cst::diagnostic::resource_exhausted(
                     self.parsed.source(),
-                    CompleteCode::ResourceExhausted,
-                    CompleteCause::InsufficientNextCharge,
                     Phase::Format,
-                    span.start,
-                    span.end,
-                    "formatted output byte budget exhausted",
+                    span,
+                    qsl_foundation::SyntaxLimit::SourceBytes { bound: self.limit },
                 ),
             ));
         }

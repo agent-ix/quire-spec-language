@@ -3,9 +3,10 @@
 use crate::syntax::*;
 use qsl_cst::lexer::{self, Token};
 use qsl_cst::token::{Kind, Kind as K};
-use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity, Span, Spanned};
+use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity, Span, Spanned, SyntaxLimit};
 
 mod composed;
+mod expression;
 use crate::syntax::composed as c;
 
 /// Parse the historical `0-draft` grammar. Model imports stay unresolved here.
@@ -25,13 +26,13 @@ pub fn parse(
 pub fn parse_source(source: Source, limits: Limits) -> Result<ParsedUnit, Box<Diagnostic>> {
     let limits = limits.bounded();
     if source.text().len() > limits.source_bytes {
-        return Err(qsl_foundation::diagnostic::error(
+        return Err(qsl_foundation::diagnostic::resource_exhausted(
             &source,
-            Code::ResourceExhausted,
             Phase::Source,
-            0,
-            0,
-            "source byte budget exhausted",
+            Span { start: 0, end: 0 },
+            SyntaxLimit::SourceBytes {
+                bound: limits.source_bytes,
+            },
         ));
     }
     let tokens = lexer::lex(&source, lexer_limits(limits))?;
@@ -71,13 +72,13 @@ pub fn parse_native_source(
 ) -> Result<c::NativeUnit, Box<Diagnostic>> {
     let limits = limits.bounded();
     if source.text().len() > limits.source_bytes {
-        return Err(qsl_foundation::diagnostic::error(
+        return Err(qsl_foundation::diagnostic::resource_exhausted(
             &source,
-            Code::ResourceExhausted,
             Phase::Source,
-            0,
-            0,
-            "source byte budget exhausted",
+            Span { start: 0, end: 0 },
+            SyntaxLimit::SourceBytes {
+                bound: limits.source_bytes,
+            },
         ));
     }
     let tokens = lexer::recognize(&source, lexer_limits(limits))?;
@@ -164,14 +165,11 @@ impl Parser {
         span: Span,
         message: impl Into<String>,
     ) -> Box<Diagnostic> {
-        Box::new(Diagnostic {
-            code,
-            phase,
-            source: self.source.identity().clone(),
-            path: self.source.path().into(),
-            span: self.source.locate(span).expect("parser span"),
-            message: message.into(),
-        })
+        qsl_foundation::diagnostic::error(&self.source, code, phase, span.start, span.end, message)
+    }
+    /// Refuse at `span` because the next operation would exceed `limit`.
+    fn exhausted(&self, span: Span, limit: SyntaxLimit) -> Box<Diagnostic> {
+        qsl_foundation::diagnostic::resource_exhausted(&self.source, Phase::Parse, span, limit)
     }
     fn unexpected(&self, expected: &str) -> Box<Diagnostic> {
         if !self.composed
@@ -202,6 +200,38 @@ impl Parser {
         } else {
             Err(self.unexpected(expected.description()))
         }
+    }
+    /// Match a nesting-level-opening bracket -- `(`, `[`, `{`, or a
+    /// type-argument `<` (composed.rs) -- charging nesting depth exactly
+    /// once per bracket pair (NFR-001 "Nesting level"), never per
+    /// `expression()`/`binary()` call. This parser is fully predictive (no
+    /// PEG backtracking that could try, fail, and retry a bracket from the
+    /// same position), so a plain mutable `self.depth` counter is sound.
+    fn open(&mut self, expected: K) -> Result<Token, Box<Diagnostic>> {
+        let token = self.expect(expected)?;
+        self.open_taken(token.span)?;
+        Ok(token)
+    }
+    /// Charge nesting depth for an opening bracket already consumed via
+    /// `self.take()` before its kind was known (e.g. a lookahead `match` on
+    /// a token fetched up front). `span` is that bracket's own span.
+    fn open_taken(&mut self, span: Span) -> Result<(), Box<Diagnostic>> {
+        if self.depth >= self.limits.nesting {
+            return Err(self.exhausted(
+                span,
+                SyntaxLimit::NestingDepth {
+                    bound: self.limits.nesting,
+                },
+            ));
+        }
+        self.depth += 1;
+        Ok(())
+    }
+    /// The `close` counterpart of [`Self::open`].
+    fn close(&mut self, expected: K) -> Result<Token, Box<Diagnostic>> {
+        let token = self.expect(expected)?;
+        self.depth = self.depth.saturating_sub(1);
+        Ok(token)
     }
     fn identifier(&mut self) -> Result<Spanned<String>, Box<Diagnostic>> {
         match &self.peek().kind {
@@ -315,9 +345,9 @@ impl Parser {
             self.expect(K::Qualify)?;
             Some(self.identifier()?)
         };
-        self.expect(K::OpenBrace)?;
+        self.open(K::OpenBrace)?;
         let expression = self.expression()?;
-        let end = self.expect(K::CloseBrace)?.span.end;
+        let end = self.close(K::CloseBrace)?.span.end;
         Ok(Clause {
             kind,
             name,
@@ -328,28 +358,16 @@ impl Parser {
             span: Span { start, end },
         })
     }
-    fn enter(&mut self) -> Result<(), Box<Diagnostic>> {
-        if self.depth >= self.limits.nesting {
-            return Err(self.failure(
-                Code::ResourceExhausted,
-                Phase::Parse,
-                self.peek().span,
-                "expression nesting budget exhausted",
-            ));
-        }
-        self.depth += 1;
-        Ok(())
-    }
     fn add(&mut self, kind: ExprKind, start: usize, end: usize) -> Result<ExprId, Box<Diagnostic>> {
         if self.composed {
             return self.add_value(c::ValueKind::Shared(kind), Span { start, end });
         }
         if self.nodes.len() >= self.limits.nodes {
-            return Err(self.failure(
-                Code::ResourceExhausted,
-                Phase::Parse,
+            return Err(self.exhausted(
                 Span { start, end },
-                "syntax node budget exhausted",
+                SyntaxLimit::Nodes {
+                    bound: self.limits.nodes,
+                },
             ));
         }
         let id = ExprId(self.nodes.len());
@@ -357,269 +375,6 @@ impl Parser {
             kind,
             span: Span { start, end },
         });
-        Ok(id)
-    }
-    fn expression(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        self.enter()?;
-        let result = self.expression_inner();
-        self.depth -= 1;
-        result
-    }
-    fn expression_inner(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        let start = self.peek().span.start;
-        if self.eat(K::Let) {
-            let name = self.identifier()?;
-            self.expect(K::Equal)?;
-            let value = self.expression()?;
-            self.expect(K::In)?;
-            let body = self.expression()?;
-            return self.add(
-                ExprKind::Let { name, value, body },
-                start,
-                self.expression_span(body).end,
-            );
-        }
-        if self.eat(K::If) {
-            let condition = self.expression()?;
-            self.expect(K::Then)?;
-            let then_value = self.expression()?;
-            self.expect(K::Else)?;
-            let else_value = self.expression()?;
-            return self.add(
-                ExprKind::If {
-                    condition,
-                    then_value,
-                    else_value,
-                },
-                start,
-                self.expression_span(else_value).end,
-            );
-        }
-        self.binary(0)
-    }
-    fn binary(&mut self, minimum: u8) -> Result<ExprId, Box<Diagnostic>> {
-        self.enter()?;
-        let result = self.binary_inner(minimum);
-        self.depth -= 1;
-        result
-    }
-    fn binary_inner(&mut self, minimum: u8) -> Result<ExprId, Box<Diagnostic>> {
-        let mut left = self.unary()?;
-        let mut comparison_seen = false;
-        while let Some(op) = binary_op(&self.peek().kind).or_else(|| {
-            (self.composed && matches!(self.peek().kind, K::Slash | K::Mod))
-                .then_some(BinaryOp::Multiply)
-        }) {
-            if op.power() < minimum {
-                break;
-            }
-            if op.comparison() && comparison_seen {
-                return Err(self.unexpected("a non-chained comparison (use explicit parentheses)"));
-            }
-            // A conjunction starts a new comparison operand; a second relation
-            // without it is deliberately invalid rather than a guessed chain.
-            comparison_seen = op.comparison();
-            let operator = self.take();
-            let right_min = op.power() + u8::from(op != BinaryOp::Implies);
-            let right = self.binary(right_min)?;
-            let span = Span {
-                start: self.expression_span(left).start,
-                end: self.expression_span(right).end,
-            };
-            left = if self.composed && matches!(operator.kind, K::Slash | K::Mod) {
-                self.add_value(
-                    c::ValueKind::Product {
-                        op: Spanned {
-                            value: if operator.kind == K::Slash {
-                                c::ProductOp::Slash
-                            } else {
-                                c::ProductOp::Mod
-                            },
-                            span: operator.span,
-                        },
-                        left,
-                        right,
-                    },
-                    span,
-                )?
-            } else {
-                self.add_operator(
-                    ExprKind::Binary { op, left, right },
-                    span.start,
-                    span.end,
-                    operator.span,
-                )?
-            };
-        }
-        Ok(left)
-    }
-    fn unary(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        let mut operators = Vec::new();
-        while self.is(K::Not) || self.is(K::Minus) {
-            let token = self.take();
-            let op = if matches!(token.kind, K::Minus) {
-                UnaryOp::Negate
-            } else {
-                UnaryOp::Not
-            };
-            operators.push((op, token.span));
-        }
-        let mut argument = self.primary()?;
-        while self.eat(K::Dot) {
-            let name = self.member()?;
-            let end = self.tokens[self.at - 1].span.end;
-            argument = self.add(
-                ExprKind::Field {
-                    base: argument,
-                    name,
-                },
-                self.expression_span(argument).start,
-                end,
-            )?;
-        }
-        for (op, operator_span) in operators.into_iter().rev() {
-            argument = self.add_operator(
-                ExprKind::Unary { op, argument },
-                operator_span.start,
-                self.expression_span(argument).end,
-                operator_span,
-            )?;
-        }
-        Ok(argument)
-    }
-    fn primary(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        if self.composed {
-            if let Some(value) = self.extended_primary()? {
-                return Ok(value);
-            }
-        }
-        let token = self.peek().clone();
-        let start = token.span.start;
-        let operator_span = matches!(
-            token.kind,
-            K::Present
-                | K::Value
-                | K::Deref
-                | K::Size
-                | K::Pre
-                | K::Forall
-                | K::Exists
-                | K::Reaches
-        )
-        .then_some(token.span);
-        let kind = match token.kind {
-            Kind::Text(value) => {
-                self.take();
-                ExprKind::Text(value)
-            }
-            Kind::Integer(value) => {
-                self.take();
-                ExprKind::Integer(value)
-            }
-            K::True | K::False => {
-                self.take();
-                ExprKind::Boolean(token.kind == K::True)
-            }
-            K::SelfValue => {
-                self.take();
-                ExprKind::SelfValue
-            }
-            K::ResultValue => {
-                self.take();
-                ExprKind::ResultValue
-            }
-            K::OpenParen => {
-                self.take();
-                let inner = self.expression()?;
-                self.expect(K::CloseParen)?;
-                ExprKind::Group { inner }
-            }
-            keyword @ (K::Present | K::Value | K::Deref | K::Size | K::Pre) => {
-                let builtin = match keyword {
-                    K::Present => Builtin::Present,
-                    K::Value => Builtin::Value,
-                    K::Deref => Builtin::Deref,
-                    K::Size => Builtin::Size,
-                    _ => Builtin::Pre,
-                };
-                self.take();
-                self.expect(K::OpenParen)?;
-                let argument = self.expression()?;
-                self.expect(K::CloseParen)?;
-                ExprKind::Call { builtin, argument }
-            }
-            keyword @ (K::Forall | K::Exists) => {
-                self.take();
-                self.expect(K::OpenParen)?;
-                let name = self.identifier()?;
-                self.expect(K::In)?;
-                let domain = self.expression()?;
-                self.expect(K::Colon)?;
-                let predicate = self.expression()?;
-                self.expect(K::CloseParen)?;
-                ExprKind::Quantifier {
-                    universal: keyword == K::Forall,
-                    name,
-                    domain,
-                    predicate,
-                }
-            }
-            K::Reaches => {
-                self.take();
-                self.expect(K::OpenParen)?;
-                let first = self.expression()?;
-                self.expect(K::Comma)?;
-                let target = self.expression()?;
-                self.expect(K::Comma)?;
-                let field = self.member()?;
-                self.expect(K::CloseParen)?;
-                ExprKind::Reaches {
-                    start: first,
-                    target,
-                    field,
-                }
-            }
-            Kind::Identifier(model) => {
-                let model = Spanned {
-                    value: model,
-                    span: token.span,
-                };
-                self.take();
-                if self.is(K::OpenParen) {
-                    // Same concept as native_model/admission.rs's pure-function
-                    // check, met here at parse time instead of model admission:
-                    // the native profile does not admit user-defined functions
-                    // at all, as a call form or as a declaration. That is a
-                    // form this profile's package structure excludes outright,
-                    // not a real, catalogued capability this build lacks, so
-                    // both land on InvalidPackage rather than UnsupportedConstruct.
-                    return Err(self.failure(
-                        Code::InvalidPackage,
-                        Phase::Profile,
-                        token.span,
-                        "user function calls are outside the native model profile",
-                    ));
-                }
-                if self.eat(K::Qualify) {
-                    let name = self.member()?;
-                    self.expect(K::Qualify)?;
-                    let variant = self.member()?;
-                    ExprKind::EnumValue {
-                        model,
-                        name,
-                        variant,
-                    }
-                } else {
-                    ExprKind::Name(model)
-                }
-            }
-            _ => return Err(self.unexpected("expression")),
-        };
-        let end = self.tokens[self.at - 1].span.end;
-        let id = self.add(kind, start, end)?;
-        if self.composed {
-            self.values[id.0].operator_span = operator_span;
-        }
         Ok(id)
     }
 }
@@ -642,4 +397,64 @@ fn binary_op(kind: &Kind) -> Option<BinaryOp> {
         K::Rem => BinaryOp::Remainder,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source(text: &str) -> Source {
+        Source::read(
+            SourceIdentity {
+                identity: "test:raised".into(),
+                revision: "1".into(),
+            },
+            "raised.native",
+            text.as_bytes(),
+            qsl_foundation::source::MAX_SOURCE_BYTES,
+        )
+        .expect("test source")
+    }
+
+    // A caller may raise the nesting ceiling far past the default; brackets
+    // nested that deep still never recurse. `Parser` here sits below the
+    // public entry points' own ceiling.
+    #[test]
+    fn brackets_under_a_raised_nesting_ceiling_never_overflow_the_stack() {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let limits = Limits {
+                    nesting: 100_000,
+                    ..Limits::default()
+                };
+                let depth = 30_000;
+                let historical = format!(
+                    "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant T on M::Thing at current {{ {}1{} }}\n",
+                    "(".repeat(depth),
+                    ")".repeat(depth)
+                );
+                let text = source(&historical);
+                let tokens = lexer::lex(&text, lexer_limits(limits)).expect("lexes");
+                let unit = Parser::new(text, tokens, limits).unit().expect("parses");
+                // One group per pair around the literal.
+                assert_eq!(unit.expressions.len(), depth + 1);
+
+                let composed = format!(
+                    "language \"ix:native\" edition \"1-draft\";\nprofile T = \"quire.temporal.timestamped-event.finite-window/v1\" version \"t\" digest \"u\";\nmodel M = \"m\" version \"1\" digest \"u\";\ntemporal W using T over (v: M::V) clock \"c\" on origin {{ {}holds({}v{}){} }}\n",
+                    "(".repeat(depth / 2),
+                    "(".repeat(depth / 4),
+                    ")".repeat(depth / 4),
+                    ")".repeat(depth / 2)
+                );
+                let text = source(&composed);
+                let tokens = lexer::recognize(&text, lexer_limits(limits)).expect("lexes");
+                Parser::new(text, tokens, limits)
+                    .native_unit()
+                    .expect("parses");
+            })
+            .expect("spawn a 512 KiB thread")
+            .join()
+            .expect("the parser must not overflow a 512 KiB stack");
+    }
 }

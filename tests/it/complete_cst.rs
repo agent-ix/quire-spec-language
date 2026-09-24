@@ -3,7 +3,7 @@
 //! apply_edits}`). The layer-1-only CST construction/recovery tests that used to
 //! live here moved to `qsl-cst/tests/it/complete_cst.rs` (QSL-178 review F3).
 use ix_trace_rs::trace;
-use qsl_cst::{CompleteCause, CompleteCode, HostCause, Limits};
+use qsl_cst::{CompleteCause, CompleteCode, HostCause, Limits, SourceChange};
 use qsl_foundation::{SourceIdentity, Span};
 use quire_spec_language::complete::{self, SourceEdit};
 
@@ -46,7 +46,6 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
     )
     .unwrap();
     let start = SOURCE.find("if true then").unwrap() + 3;
-    let before = parsed.cst().stable_node_ids();
     let edited = complete::apply_edit(
         &parsed,
         "r1",
@@ -68,20 +67,28 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
         edited.diagnostics()
     );
     assert_ne!(parsed.source().digest(), edited.source().digest());
-    assert!(before
-        .intersection(&edited.cst().stable_node_ids())
-        .next()
-        .is_some());
-    assert!(!edited.cst().stable_node_ids().contains(
-        parsed
-            .cst()
-            .node_covering(Span {
-                start,
-                end: start + 4
-            })
-            .unwrap()
-            .stable_id()
-    ));
+    let map = parsed
+        .cst()
+        .reuse_map(
+            edited.cst(),
+            SourceChange {
+                range: Span {
+                    start,
+                    end: start + 4,
+                },
+                inserted: "false".len(),
+            },
+        )
+        .expect("the edited source is this edit applied");
+    assert!(map.iter().any(Option::is_some));
+    let replaced = parsed
+        .cst()
+        .node_covering(Span {
+            start,
+            end: start + 4,
+        })
+        .unwrap();
+    assert_eq!(map[replaced.identity().node.get()], None);
 }
 
 #[trace("TC-222", "FR-302-AC-3")]
@@ -125,11 +132,27 @@ fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
         })
         .unwrap();
     assert_eq!(original.production(), unchanged.production());
-    assert_eq!(original.stable_id(), unchanged.stable_id());
+    let map = parsed
+        .cst()
+        .reuse_map(
+            inserted.cst(),
+            SourceChange {
+                range: Span {
+                    start: record_start,
+                    end: record_start,
+                },
+                inserted: "record Earlier { datum: Integer; }\r\n".len(),
+            },
+        )
+        .expect("the edited source is this edit applied");
     assert_eq!(
-        original.identity().ancestor_productions,
-        unchanged.identity().ancestor_productions
+        map[original.identity().node.get()],
+        Some(unchanged.identity().node)
     );
+    assert!(parsed
+        .cst()
+        .ancestor_productions(original)
+        .eq(inserted.cst().ancestor_productions(unchanged)));
 }
 
 #[trace("TC-222", "FR-302-AC-3")]
@@ -173,7 +196,23 @@ fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
         })
         .unwrap();
     assert_eq!(original.production(), unchanged.production());
-    assert_eq!(original.stable_id(), unchanged.stable_id());
+    let map = parsed
+        .cst()
+        .reuse_map(
+            edited.cst(),
+            SourceChange {
+                range: Span {
+                    start: label - 1,
+                    end: label - 1,
+                },
+                inserted: 1,
+            },
+        )
+        .expect("the edited source is this edit applied");
+    assert_eq!(
+        map[original.identity().node.get()],
+        Some(unchanged.identity().node)
+    );
 }
 
 #[trace("Task-047")]

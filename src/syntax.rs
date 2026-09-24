@@ -25,7 +25,11 @@ pub struct Limits {
     /// expressions; the composed path also counts declarations, parameters,
     /// captures, activation/interval records and protocol binding/control records.
     pub nodes: usize,
-    /// Maximum delimiter or recursive parser nesting, clamped to 64.
+    /// Maximum bracket-pair nesting depth (NFR-001 "Nesting level"): one
+    /// level is one `(…)`, `[…]`, `{…}` or composed type-argument `<…>`
+    /// pair; operator, prefix, `let … in` and `if … else` chains add none.
+    /// The default is NFR-001's 64. A ceiling the implementation imposes on
+    /// a larger request is not a domain bound.
     pub nesting: usize,
 }
 

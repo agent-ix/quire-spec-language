@@ -330,6 +330,82 @@ pub struct Diagnostic {
     pub span: LocatedSpan,
     /// Contextual human-readable explanation; code carries stable classification.
     pub message: String,
+    /// Set only by [`resource_exhausted`], so it never disagrees with
+    /// `code`; read through [`Diagnostic::limit`].
+    limit: Option<SyntaxLimit>,
+}
+
+/// The syntax resource ceiling a `resource_exhausted` refusal names
+/// (NFR-001: a refusal names the limit kind, the bound and the span). Both
+/// S1 parsers and both lexers refuse through this one type, so a caller
+/// distinguishes the ceilings by variant, never by message text.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SyntaxLimit {
+    /// Bracket-pair nesting depth (NFR-001 "Nesting level"): `bound` is the
+    /// selected nesting ceiling and the refusal's span is the opening
+    /// bracket of pair `bound + 1`.
+    NestingDepth {
+        /// Selected nesting ceiling, in bracket pairs.
+        bound: usize,
+    },
+    /// Token (complete-V1: retained CST leaf) ceiling.
+    Tokens {
+        /// Selected token ceiling.
+        bound: usize,
+    },
+    /// Syntax-node ceiling.
+    Nodes {
+        /// Selected syntax-node ceiling.
+        bound: usize,
+    },
+    /// Parser work budget, in interpreter steps.
+    Work {
+        /// Step budget: a fixed number of steps per significant token of
+        /// the unit, plus one token's worth for the end of input.
+        bound: usize,
+    },
+    /// Source or output byte ceiling.
+    SourceBytes {
+        /// Selected byte ceiling.
+        bound: usize,
+    },
+}
+
+impl std::fmt::Display for SyntaxLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NestingDepth { bound } => {
+                write!(f, "nesting depth exceeds the ceiling of {bound} levels")
+            }
+            Self::Tokens { bound } => write!(f, "token ceiling of {bound} tokens exhausted"),
+            Self::Nodes { bound } => write!(f, "syntax node ceiling of {bound} nodes exhausted"),
+            Self::Work { bound } => write!(f, "parser work budget of {bound} steps exhausted"),
+            Self::SourceBytes { bound } => {
+                write!(f, "source byte ceiling of {bound} bytes exhausted")
+            }
+        }
+    }
+}
+
+/// The one constructor for a syntax-ceiling refusal: code
+/// `resource_exhausted`, the typed [`SyntaxLimit`] and a message rendered
+/// from it, at `span`.
+pub fn resource_exhausted(
+    source: &Source,
+    phase: Phase,
+    span: Span,
+    limit: SyntaxLimit,
+) -> Box<Diagnostic> {
+    let mut diagnostic = error(
+        source,
+        Code::ResourceExhausted,
+        phase,
+        span.start,
+        span.end,
+        limit.to_string(),
+    );
+    diagnostic.limit = Some(limit);
+    diagnostic
 }
 
 // FR-010: thiserror infers `source` as an Error cause, but this public field
@@ -343,6 +419,11 @@ impl std::fmt::Display for Diagnostic {
 impl std::error::Error for Diagnostic {}
 
 impl Diagnostic {
+    /// The resource ceiling a `resource_exhausted` refusal names; `None`
+    /// for every other diagnostic.
+    pub fn limit(&self) -> Option<SyntaxLimit> {
+        self.limit
+    }
     /// Whether incomplete work, rather than invalid input, caused this diagnostic.
     pub fn is_incomplete(&self) -> bool {
         self.code.is_incomplete()
@@ -389,6 +470,7 @@ pub fn error(
             .locate(Span { start, end })
             .expect("internal offsets are UTF-8 boundaries"),
         message: message.into(),
+        limit: None,
     })
 }
 
@@ -452,6 +534,7 @@ impl From<crate::source::SourceReadRefusal> for Diagnostic {
             path: refusal.error.path,
             span: refusal.error.span,
             message: refusal.error.message,
+            limit: None,
         }
     }
 }
@@ -498,6 +581,7 @@ impl From<crate::source_map::SourceMapError> for Diagnostic {
             path: error.path,
             span: error.span,
             message: error.message,
+            limit: None,
         }
     }
 }

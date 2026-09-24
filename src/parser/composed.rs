@@ -87,11 +87,11 @@ impl Parser {
     // Header/token spans and child handles do not allocate additional syntax nodes.
     pub(super) fn charge(&mut self, span: Span) -> Result<(), Box<Diagnostic>> {
         if self.syntax_nodes >= self.limits.nodes {
-            return Err(self.failure(
-                Code::ResourceExhausted,
-                Phase::Parse,
+            return Err(self.exhausted(
                 span,
-                "syntax node budget exhausted",
+                qsl_foundation::SyntaxLimit::Nodes {
+                    bound: self.limits.nodes,
+                },
             ));
         }
         self.syntax_nodes += 1;
@@ -142,7 +142,7 @@ impl Parser {
         }
     }
 
-    fn signed(&mut self) -> Result<Spanned<String>, Box<Diagnostic>> {
+    pub(super) fn signed(&mut self) -> Result<Spanned<String>, Box<Diagnostic>> {
         let start = self.peek().span.start;
         let negative = self.eat(K::Minus);
         let mut integer = self.unsigned()?;
@@ -153,14 +153,14 @@ impl Parser {
         Ok(integer)
     }
 
-    fn range_from(&self, start: usize) -> Span {
+    pub(super) fn range_from(&self, start: usize) -> Span {
         Span {
             start,
             end: self.tokens[self.at - 1].span.end,
         }
     }
 
-    fn qualified(&mut self) -> Result<QualifiedName, Box<Diagnostic>> {
+    pub(super) fn qualified(&mut self) -> Result<QualifiedName, Box<Diagnostic>> {
         let model = self.identifier()?;
         self.expect(K::Qualify)?;
         let name = self.member()?;
@@ -192,16 +192,16 @@ impl Parser {
     }
 
     fn bound_parameter(&mut self) -> Result<Parameter, Box<Diagnostic>> {
-        self.expect(K::OpenParen)?;
+        self.open(K::OpenParen)?;
         let parameter = self.parameter()?;
-        self.expect(K::CloseParen)?;
+        self.close(K::CloseParen)?;
         Ok(parameter)
     }
 
     fn value_block(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        self.expect(K::OpenBrace)?;
+        self.open(K::OpenBrace)?;
         let expression = self.expression()?;
-        self.expect(K::CloseBrace)?;
+        self.close(K::CloseBrace)?;
         Ok(expression)
     }
 
@@ -216,9 +216,9 @@ impl Parser {
         self.expect(K::Each)?;
         let trigger = self.bound_parameter()?;
         let guard = if self.eat(K::When) {
-            self.expect(K::OpenParen)?;
+            self.open(K::OpenParen)?;
             let expression = self.expression()?;
-            self.expect(K::CloseParen)?;
+            self.close(K::CloseParen)?;
             Some(expression)
         } else {
             None
@@ -250,11 +250,11 @@ impl Parser {
 
     fn interval(&mut self) -> Result<Interval, Box<Diagnostic>> {
         self.charge(self.peek().span)?;
-        let start = self.expect(K::OpenBracket)?.span.start;
+        let start = self.open(K::OpenBracket)?.span.start;
         let lower = self.unsigned()?;
         self.expect(K::Comma)?;
         let upper = self.unsigned()?;
-        self.expect(K::CloseBracket)?;
+        self.close(K::CloseBracket)?;
         Ok(Interval {
             lower,
             upper,
@@ -281,7 +281,7 @@ impl Parser {
         let profile = self.identifier()?;
         let kind = match token.kind {
             K::Predicate => {
-                self.expect(K::OpenParen)?;
+                self.open(K::OpenParen)?;
                 let mut parameters = Vec::new();
                 if !self.is(K::CloseParen) {
                     parameters.push(self.parameter()?);
@@ -289,7 +289,7 @@ impl Parser {
                         parameters.push(self.parameter()?);
                     }
                 }
-                self.expect(K::CloseParen)?;
+                self.close(K::CloseParen)?;
                 self.expect(K::Colon)?;
                 let result = self.expect(K::BooleanType)?.span;
                 let body = self.value_block()?;
@@ -329,10 +329,10 @@ impl Parser {
                 self.expect(K::Clock)?;
                 let clock = self.string()?;
                 let activation = Box::new(self.activation()?);
-                self.expect(K::OpenBrace)?;
+                self.open(K::OpenBrace)?;
                 let captures = self.captures()?;
                 let formula = self.temporal_expression(0)?;
-                self.expect(K::CloseBrace)?;
+                self.close(K::CloseBrace)?;
                 DeclarationKind::Temporal {
                     input,
                     clock,
@@ -350,98 +350,6 @@ impl Parser {
             kind,
             span: self.range_from(token.span.start),
         })
-    }
-
-    pub(super) fn extended_primary(&mut self) -> Result<Option<ExprId>, Box<Diagnostic>> {
-        let token = self.peek().clone();
-        let kind = match token.kind.clone() {
-            K::Identifier(_)
-                if self
-                    .tokens
-                    .get(self.at + 1)
-                    .is_some_and(|t| t.kind == K::OpenParen) =>
-            {
-                let name = self.identifier()?;
-                self.expect(K::OpenParen)?;
-                let arguments = self.value_list(K::CloseParen)?;
-                self.expect(K::CloseParen)?;
-                ValueKind::Invoke { name, arguments }
-            }
-            K::Rational => {
-                self.take();
-                self.expect(K::OpenParen)?;
-                let numerator = self.signed()?;
-                self.expect(K::Comma)?;
-                let denominator = self.signed()?;
-                self.expect(K::CloseParen)?;
-                ValueKind::Rational {
-                    numerator,
-                    denominator,
-                }
-            }
-            K::Size
-                if self
-                    .tokens
-                    .get(self.at + 1)
-                    .is_some_and(|t| t.kind == K::Less) =>
-            {
-                self.take();
-                self.expect(K::Less)?;
-                let domain = self.qualified()?;
-                self.expect(K::Greater)?;
-                self.expect(K::OpenParen)?;
-                let argument = self.expression()?;
-                self.expect(K::CloseParen)?;
-                ValueKind::Size { domain, argument }
-            }
-            K::Contains => {
-                self.take();
-                self.expect(K::OpenParen)?;
-                let collection = self.expression()?;
-                self.expect(K::Comma)?;
-                let member = self.expression()?;
-                self.expect(K::CloseParen)?;
-                ValueKind::Contains { collection, member }
-            }
-            K::Filter | K::Map | K::Count | K::Sum => {
-                self.take();
-                let op = match token.kind {
-                    K::Filter => QueryOp::Filter,
-                    K::Map => QueryOp::Map,
-                    K::Count => QueryOp::Count,
-                    _ => QueryOp::Sum,
-                };
-                let result = if matches!(op, QueryOp::Count | QueryOp::Sum) {
-                    self.expect(K::Less)?;
-                    let ty = self.qualified()?;
-                    self.expect(K::Greater)?;
-                    Some(ty)
-                } else {
-                    None
-                };
-                self.expect(K::OpenParen)?;
-                let binder = self.identifier()?;
-                self.expect(K::In)?;
-                let domain = self.expression()?;
-                self.expect(K::Colon)?;
-                let body = self.expression()?;
-                self.expect(K::CloseParen)?;
-                ValueKind::Query {
-                    op: Spanned {
-                        value: op,
-                        span: token.span,
-                    },
-                    result,
-                    binder,
-                    domain,
-                    body,
-                }
-            }
-            _ => return Ok(None),
-        };
-        let id = self.add_value(kind, self.range_from(token.span.start))?;
-        self.values[id.0].operator_span = Some(token.span);
-        Ok(Some(id))
     }
 
     fn value_list(&mut self, close: K) -> Result<Vec<ExprId>, Box<Diagnostic>> {

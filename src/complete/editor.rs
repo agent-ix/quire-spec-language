@@ -157,7 +157,7 @@ pub fn analyze_document(
         .map(|node| DocumentNavigation {
             production: node.production(),
             span: node.span(),
-            identity: node.identity().clone(),
+            identity: *node.identity(),
         })
         .collect();
     navigation.sort_by_key(|entry| (entry.span.start, entry.span.end, entry.production));

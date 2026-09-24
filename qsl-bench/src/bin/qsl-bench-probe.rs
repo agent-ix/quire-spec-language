@@ -108,20 +108,13 @@ fn probe_cst() {
     for (label, text) in inputs {
         match parse::parse(&text) {
             Ok(parsed) if parsed.is_admissible() => {
-                let hashed = parsed.cst().identity_preimage_bytes();
-                let source = text.len();
-                // Display only: both counts are far below 2^52, so the
-                // float division loses nothing that two decimals show.
-                let ratio = hashed.total as f64 / source as f64;
                 println!(
-                    "cst.hash {label} source_bytes={source} nodes={} hashed_bytes={} of_which_source_slices={} of_which_ancestor_paths={} ratio={ratio:.2} (counted by qsl-cst's preimage builder)",
+                    "cst.nodes {label} source_bytes={} nodes={} (one identity digest per parse since QSL-200)",
+                    text.len(),
                     parsed.cst().nodes().len(),
-                    hashed.total,
-                    hashed.source_slices,
-                    hashed.ancestor_paths,
                 );
             }
-            other => println!("cst.hash {label} {}", describe(&ParseOutcome::of(&other))),
+            other => println!("cst.nodes {label} {}", describe(&ParseOutcome::of(&other))),
         }
     }
 }

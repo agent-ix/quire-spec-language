@@ -18,7 +18,7 @@ use qsl_foundation::selection::{
     InvalidModelComponent, ModelDigest, ModelRef, ModelSelection, ProfileSelection,
     SourceSelections,
 };
-use qsl_foundation::{Phase, Source, Span};
+use qsl_foundation::{Phase, Source, Span, SyntaxLimit};
 
 #[derive(Clone, Debug)]
 struct Significant {
@@ -33,22 +33,6 @@ type Scan = (
     Vec<CompleteDiagnostic>,
     Vec<Recovery>,
 );
-
-#[derive(Clone, Debug)]
-struct MatchNode {
-    production: Production,
-    start: usize,
-    end: usize,
-    children: Vec<MatchNode>,
-    node_count: usize,
-}
-
-#[derive(Clone, Debug)]
-struct RuleMatch {
-    end: usize,
-    children: Vec<MatchNode>,
-    node_count: usize,
-}
 
 #[derive(Clone, Debug)]
 struct Failure {
@@ -76,12 +60,6 @@ impl Failure {
     }
 }
 
-enum Attempt<T> {
-    Match(T),
-    No(Failure),
-    Exhausted,
-}
-
 pub(super) fn parse(
     source: Source,
     limits: Limits,
@@ -93,8 +71,8 @@ pub(super) fn parse(
     let matched = if diagnostics.is_empty() {
         let mut engine = Engine::new(&grammar, &significant, limits);
         match engine.production(Production::CompleteUnit, 0) {
-            Attempt::Match(node) => Some(node),
-            Attempt::No(failure) => {
+            Outcome::Match(_) => Some(engine.into_arena()),
+            Outcome::No(failure) => {
                 let span = significant.get(failure.position).map_or(
                     Span {
                         start: source.text().len(),
@@ -142,22 +120,19 @@ pub(super) fn parse(
                 });
                 None
             }
-            Attempt::Exhausted => {
-                let span = significant.get(engine.farthest).map_or(
+            Outcome::Exhausted(refusal) => {
+                let span = significant.get(refusal.position).map_or(
                     Span {
                         start: source.text().len(),
                         end: source.text().len(),
                     },
                     |token| token.span,
                 );
-                return Err(super::diagnostic::error(
+                return Err(super::diagnostic::resource_exhausted(
                     &source,
-                    CompleteCode::ResourceExhausted,
-                    CompleteCause::InsufficientNextCharge,
                     Phase::Parse,
-                    span.start,
-                    span.end,
-                    "complete grammar work or nesting budget exhausted",
+                    span,
+                    refusal.limit,
                 ));
             }
         }
@@ -165,8 +140,8 @@ pub(super) fn parse(
         None
     };
 
-    let (nodes, root) = if let Some(node) = matched {
-        lower_tree(&source, &significant, node)
+    let (nodes, root) = if let Some(arena) = matched {
+        lower_tree(&source, &significant, &arena)
     } else {
         (
             vec![RawNode {
@@ -207,27 +182,18 @@ fn selection_prelude_nodes(
     tokens: &[Significant],
     limits: Limits,
 ) -> Vec<RawNode> {
-    fn raw(source: &Source, tokens: &[Significant], node: MatchNode) -> RawNode {
-        let start = tokens
-            .get(node.start)
-            .map_or(source.text().len(), |token| token.span.start);
-        let end = node
-            .end
-            .checked_sub(1)
-            .and_then(|index| tokens.get(index))
-            .map_or(start, |token| token.span.end);
+    fn raw(source: &Source, tokens: &[Significant], node: Matched) -> RawNode {
         RawNode {
             production: node.production,
-            span: Span { start, end },
+            span: token_span(source, tokens, node.start, node.end),
             children: Vec::new(),
         }
     }
 
     let mut engine = Engine::new(grammar, tokens, limits);
-    let Attempt::Match(header) = engine.production(Production::Header, 0) else {
+    let Outcome::Match(mut position) = engine.production(Production::Header, 0) else {
         return Vec::new();
     };
-    let mut position = header.end;
     let mut output = Vec::new();
     for (production, required) in [
         (Production::Profile, true),
@@ -235,11 +201,14 @@ fn selection_prelude_nodes(
         (Production::Model, false),
     ] {
         let mut count = 0_usize;
-        while let Attempt::Match(node) = engine.production(production, position) {
-            if node.end <= position {
+        while let Outcome::Match(end) = engine.production(production, position) {
+            if end <= position {
                 break;
             }
-            position = node.end;
+            position = end;
+            let Some(node) = engine.last_match() else {
+                break;
+            };
             output.push(raw(source, tokens, node));
             count += 1;
         }
@@ -545,14 +514,11 @@ impl LeafBudget<'_> {
 
     fn commit(&mut self, span: Span) -> Result<(), Box<CompleteDiagnostic>> {
         if self.retained >= self.limit {
-            return Err(super::diagnostic::error(
+            return Err(super::diagnostic::resource_exhausted(
                 self.source,
-                CompleteCode::ResourceExhausted,
-                CompleteCause::InsufficientNextCharge,
                 Phase::Lex,
-                span.start,
-                span.end,
-                "CST leaf budget exhausted",
+                span,
+                SyntaxLimit::Tokens { bound: self.limit },
             ));
         }
         self.retained += 1;
@@ -759,15 +725,13 @@ fn scan(
     let tokens = coalesce_complete_cst_tokens(tokens, compounds);
     let significant = coalesce_complete_compounds(significant, compounds);
     if let Some(excess) = tokens.get(limits.tokens) {
-        let span = excess.span();
-        return Err(super::diagnostic::error(
+        return Err(super::diagnostic::resource_exhausted(
             source,
-            CompleteCode::ResourceExhausted,
-            CompleteCause::InsufficientNextCharge,
             Phase::Lex,
-            span.start,
-            span.end,
-            "CST leaf budget exhausted",
+            excess.span(),
+            SyntaxLimit::Tokens {
+                bound: limits.tokens,
+            },
         ));
     }
     Ok((tokens, significant, diagnostics, recoveries))
@@ -873,30 +837,164 @@ fn selection_code(tokens: &[Significant], position: usize) -> Option<CompleteCod
     }
 }
 
+/// One matched production in the engine's flat match arena.
+///
+/// The arena holds matches in post-order (every descendant before its
+/// ancestor, siblings left to right), which is exactly the order the CST node
+/// arena uses, so lowering is a single forward pass. A match's descendants
+/// are the contiguous run `first..own index`.
+#[derive(Clone, Copy, Debug)]
+struct Matched {
+    production: Production,
+    /// First significant-token index covered.
+    start: usize,
+    /// One past the last significant-token index covered.
+    end: usize,
+    /// Arena index of this match's first descendant; its own index when it
+    /// has none.
+    first: usize,
+}
+
+/// A resource ceiling hit while matching, and the significant-token index
+/// its refusal is located at.
+#[derive(Clone, Copy, Debug)]
+struct Refusal {
+    limit: SyntaxLimit,
+    position: usize,
+}
+
+/// Result of matching one rule at one position.
+#[derive(Debug)]
+enum Outcome {
+    /// Matched; the value is the position after the match.
+    Match(usize),
+    /// Did not match; the failure is recoverable by an enclosing choice,
+    /// option or repetition.
+    No(Failure),
+    /// A resource ceiling was hit; fatal for the whole parse.
+    Exhausted(Refusal),
+}
+
+/// A rule suspended on the engine's explicit stack, waiting for the outcome
+/// of the sub-rule it started. Each variant holds the state the recursive
+/// formulation would have kept in its Rust stack frame.
+enum Frame<'g> {
+    /// A production whose rule is being matched.
+    Production {
+        production: Production,
+        position: usize,
+        first: usize,
+    },
+    /// `rules[index]` is being matched.
+    Sequence {
+        rules: &'g [Rule],
+        index: usize,
+        first: usize,
+        depth: usize,
+    },
+    /// Alternative `rules[index]` is being matched at `position`.
+    Choice {
+        rules: &'g [Rule],
+        index: usize,
+        position: usize,
+        first: usize,
+        depth: usize,
+        failure: Option<Failure>,
+    },
+    /// The optional rule is being matched at `position`.
+    Optional { position: usize, first: usize },
+    /// One more repetition of `rule` is being matched at `end`.
+    Repeat {
+        rule: &'g Rule,
+        minimum: usize,
+        commit_on_progress: bool,
+        end: usize,
+        count: usize,
+        first: usize,
+        iteration: usize,
+        depth: usize,
+    },
+}
+
+/// What the engine does next.
+enum Step<'g> {
+    /// Start matching `rule` at a position and bracket depth.
+    Rule(&'g Rule, usize, usize),
+    /// Start matching a production at a position and bracket depth.
+    Production(Production, usize, usize),
+    /// Hand an outcome to the innermost suspended frame.
+    Return(Outcome),
+}
+
+/// Interpreter steps the work budget allows per significant token.
+///
+/// Derivation. The engine charges one step per rule entry and one per
+/// production entry. Without backtracking that re-reads input, the steps a
+/// unit takes grow linearly with its significant tokens, so the budget is a
+/// per-token constant. Measured steps per significant token at default
+/// ceilings (`tests::measured_work_leaves_headroom_under_the_budget`, which
+/// re-measures these inputs and fails if any exceeds a third of the budget):
+///
+/// | input (function body unless noted)   | steps / token |
+/// | ------------------------------------ | ------------- |
+/// | `x = x and x = x ...`                | 75.5          |
+/// | `x + x + ...`                        | 70.8          |
+/// | 63 nested parentheses                | 69.0          |
+/// | `g(x, x) + ...`, `x * x * ...`       | 65.3          |
+/// | `x[x][x]...`                         | 63.2          |
+/// | `set[x, x] + ...`                    | 62.3          |
+/// | `if true then x else ...`            | 53.6          |
+/// | `let v = x in ...`                   | 38.3          |
+/// | `true implies true ...`              | 34.3          |
+/// | `not not ... true`                   | 6.0           |
+/// | 63 nested `Option<...>` (alias)      | 7.0           |
+/// | `always [0,1] ...` (temporal clause) | 3.0           |
+///
+/// An identifier operand is the costliest token: `Primary` tries every
+/// alternative before `QualifiedName`. 256 is over three times the worst
+/// measured case. Only an input that makes the grammar re-parse the same
+/// tokens under several alternatives, which can grow exponentially with
+/// bracket depth, exceeds it, and that input is refused naming the work
+/// limit.
+const WORK_PER_TOKEN: usize = 256;
+
+/// A bounded interpreter for the declarative grammar table.
+///
+/// It runs on explicit heap stacks: `frames` holds suspended rules and
+/// `arena` holds completed matches. No Rust call recursion depends on the
+/// input, so neither a long operator/prefix/`let`/`if`/temporal chain nor a
+/// deeply bracketed unit can overflow the thread's stack (NFR-001). Every
+/// structure is flat, so discarding a failed attempt truncates a `Vec` and
+/// dropping a result never recurses.
 struct Engine<'a> {
     grammar: &'a Grammar,
     reserved_words: BTreeSet<&'static str>,
     tokens: &'a [Significant],
     limits: Limits,
-    depth: usize,
+    frames: Vec<Frame<'a>>,
+    arena: Vec<Matched>,
     steps: usize,
     maximum_steps: usize,
     farthest: usize,
 }
 
 impl<'a> Engine<'a> {
+    /// The work budget is [`WORK_PER_TOKEN`] steps per significant token,
+    /// plus one token's worth for the end of input, so parsing work is
+    /// linear in the input.
     fn new(grammar: &'a Grammar, tokens: &'a [Significant], limits: Limits) -> Self {
         Self {
             grammar,
             reserved_words: grammar::complete_reserved_words(grammar),
             tokens,
             limits,
-            depth: 0,
+            frames: Vec::new(),
+            arena: Vec::new(),
             steps: 0,
-            maximum_steps: limits
-                .tokens
-                .saturating_add(limits.nodes)
-                .saturating_mul(64),
+            maximum_steps: tokens
+                .len()
+                .saturating_add(1)
+                .saturating_mul(WORK_PER_TOKEN),
             farthest: 0,
         }
     }
@@ -907,171 +1005,312 @@ impl<'a> Engine<'a> {
         self.steps <= self.maximum_steps
     }
 
-    fn production(&mut self, production: Production, position: usize) -> Attempt<MatchNode> {
-        if !self.charge(position) || self.depth >= self.limits.nesting {
-            return Attempt::Exhausted;
-        }
-        let Some(rule) = self.grammar.get(&production).cloned() else {
-            return Attempt::No(Failure::expected(position, format!("{production:?}")));
-        };
-        self.depth += 1;
-        let matched = self.rule(&rule, position);
-        self.depth -= 1;
-        match matched {
-            Attempt::Match(matched) => {
-                if matched.node_count >= self.limits.nodes {
-                    return Attempt::Exhausted;
+    fn work_exhausted(&self) -> Outcome {
+        Outcome::Exhausted(Refusal {
+            limit: SyntaxLimit::Work {
+                bound: self.maximum_steps,
+            },
+            position: self.farthest,
+        })
+    }
+
+    fn nodes_exhausted(&self) -> Outcome {
+        Outcome::Exhausted(Refusal {
+            limit: SyntaxLimit::Nodes {
+                bound: self.limits.nodes,
+            },
+            position: self.farthest,
+        })
+    }
+
+    /// Descendants matched since arena length `first`.
+    fn matched_since(&self, first: usize) -> usize {
+        self.arena.len().saturating_sub(first)
+    }
+
+    /// Match `production` at `position` with an empty arena. On
+    /// [`Outcome::Match`], the production's own match is the arena's last
+    /// entry.
+    fn production(&mut self, production: Production, position: usize) -> Outcome {
+        self.frames.clear();
+        self.arena.clear();
+        let mut step = Step::Production(production, position, 0);
+        loop {
+            step = match step {
+                Step::Production(production, position, depth) => {
+                    self.enter_production(production, position, depth)
                 }
-                Attempt::Match(MatchNode {
-                    production,
-                    start: position,
-                    end: matched.end,
-                    children: matched.children,
-                    node_count: matched.node_count + 1,
-                })
-            }
-            Attempt::No(failure) => Attempt::No(failure),
-            Attempt::Exhausted => Attempt::Exhausted,
+                Step::Rule(rule, position, depth) => self.enter_rule(rule, position, depth),
+                Step::Return(outcome) => match self.frames.pop() {
+                    None => return outcome,
+                    Some(frame) => self.resume(frame, outcome),
+                },
+            };
         }
     }
 
-    fn rule(&mut self, rule: &Rule, position: usize) -> Attempt<RuleMatch> {
+    /// The match the last successful [`Self::production`] call produced.
+    fn last_match(&self) -> Option<Matched> {
+        self.arena.last().copied()
+    }
+
+    fn into_arena(self) -> Vec<Matched> {
+        self.arena
+    }
+
+    fn enter_production(
+        &mut self,
+        production: Production,
+        position: usize,
+        depth: usize,
+    ) -> Step<'a> {
         if !self.charge(position) {
-            return Attempt::Exhausted;
+            return Step::Return(self.work_exhausted());
         }
+        let grammar = self.grammar;
+        let Some(rule) = grammar.get(&production) else {
+            return Step::Return(Outcome::No(Failure::expected(
+                position,
+                format!("{production:?}"),
+            )));
+        };
+        self.frames.push(Frame::Production {
+            production,
+            position,
+            first: self.arena.len(),
+        });
+        Step::Rule(rule, position, depth)
+    }
+
+    fn enter_rule(&mut self, rule: &'a Rule, position: usize, depth: usize) -> Step<'a> {
+        if !self.charge(position) {
+            return Step::Return(self.work_exhausted());
+        }
+        let first = self.arena.len();
         match rule {
-            Rule::Terminal(terminal) => self.terminal(terminal, position),
-            Rule::Production(production) => match self.production(*production, position) {
-                Attempt::Match(node) => Attempt::Match(RuleMatch {
-                    end: node.end,
-                    node_count: node.node_count,
-                    children: vec![node],
-                }),
-                Attempt::No(failure) => Attempt::No(failure),
-                Attempt::Exhausted => Attempt::Exhausted,
-            },
+            Rule::Terminal(terminal) => Step::Return(self.terminal(terminal, position, depth)),
+            Rule::Production(production) => Step::Production(*production, position, depth),
             Rule::Sequence(rules) => {
-                let mut end = position;
-                let mut children = Vec::new();
-                let mut node_count = 0_usize;
-                for rule in rules {
-                    match self.rule(rule, end) {
-                        Attempt::Match(matched) => {
-                            node_count = node_count.saturating_add(matched.node_count);
-                            if node_count > self.limits.nodes {
-                                return Attempt::Exhausted;
-                            }
-                            end = matched.end;
-                            children.extend(matched.children);
-                        }
-                        Attempt::No(failure) => return Attempt::No(failure),
-                        Attempt::Exhausted => return Attempt::Exhausted,
-                    }
-                }
-                Attempt::Match(RuleMatch {
-                    end,
-                    children,
-                    node_count,
-                })
+                let Some(head) = rules.first() else {
+                    return Step::Return(Outcome::Match(position));
+                };
+                self.frames.push(Frame::Sequence {
+                    rules,
+                    index: 0,
+                    first,
+                    depth,
+                });
+                Step::Rule(head, position, depth)
             }
             Rule::Choice(rules) => {
-                let mut failure = None;
-                for rule in rules {
-                    match self.rule(rule, position) {
-                        Attempt::Match(matched) => return Attempt::Match(matched),
-                        Attempt::No(next) => {
-                            failure = Some(
-                                failure
-                                    .map_or(next.clone(), |current: Failure| current.merge(next)),
-                            );
-                        }
-                        Attempt::Exhausted => return Attempt::Exhausted,
-                    }
-                }
-                Attempt::No(
-                    failure.unwrap_or_else(|| Failure::expected(position, "alternative".into())),
-                )
+                let Some(head) = rules.first() else {
+                    return Step::Return(Outcome::No(Failure::expected(
+                        position,
+                        "alternative".into(),
+                    )));
+                };
+                self.frames.push(Frame::Choice {
+                    rules,
+                    index: 0,
+                    position,
+                    first,
+                    depth,
+                    failure: None,
+                });
+                Step::Rule(head, position, depth)
             }
-            Rule::Optional(rule) => match self.rule(rule, position) {
-                Attempt::Match(matched) => Attempt::Match(matched),
-                Attempt::No(failure) if failure.position > position => Attempt::No(failure),
-                Attempt::No(_) => Attempt::Match(RuleMatch {
-                    end: position,
-                    children: Vec::new(),
-                    node_count: 0,
-                }),
-                Attempt::Exhausted => Attempt::Exhausted,
-            },
+            Rule::Optional(inner) => {
+                self.frames.push(Frame::Optional { position, first });
+                Step::Rule(inner, position, depth)
+            }
             Rule::Repeat {
-                rule,
+                rule: inner,
                 minimum,
                 commit_on_progress,
             } => {
-                let mut end = position;
-                let mut children = Vec::new();
-                let mut node_count = 0_usize;
-                let mut count = 0;
-                let mut failure = None;
-                loop {
-                    match self.rule(rule, end) {
-                        Attempt::Match(matched) if matched.end > end => {
-                            node_count = node_count.saturating_add(matched.node_count);
-                            if node_count > self.limits.nodes {
-                                return Attempt::Exhausted;
-                            }
-                            end = matched.end;
-                            children.extend(matched.children);
-                            count += 1;
-                        }
-                        Attempt::Match(_) => break,
-                        Attempt::No(next) if *commit_on_progress && next.position > end => {
-                            return Attempt::No(next);
-                        }
-                        Attempt::No(next) => {
-                            failure = Some(next);
-                            break;
-                        }
-                        Attempt::Exhausted => return Attempt::Exhausted,
+                self.frames.push(Frame::Repeat {
+                    rule: inner,
+                    minimum: *minimum,
+                    commit_on_progress: *commit_on_progress,
+                    end: position,
+                    count: 0,
+                    first,
+                    iteration: first,
+                    depth,
+                });
+                Step::Rule(inner, position, depth)
+            }
+        }
+    }
+
+    /// Continue the suspended `frame` with the outcome of the sub-rule it
+    /// started. Every recovery point (a later alternative, an absent option,
+    /// the end of a repetition) truncates the arena to where the failed
+    /// attempt began, discarding exactly the matches the attempt made.
+    fn resume(&mut self, frame: Frame<'a>, outcome: Outcome) -> Step<'a> {
+        match frame {
+            Frame::Production {
+                production,
+                position,
+                first,
+            } => match outcome {
+                Outcome::Match(end) => {
+                    if self.matched_since(first) >= self.limits.nodes {
+                        return Step::Return(self.nodes_exhausted());
                     }
-                }
-                if count >= *minimum {
-                    Attempt::Match(RuleMatch {
+                    self.arena.push(Matched {
+                        production,
+                        start: position,
                         end,
-                        children,
-                        node_count,
-                    })
+                        first,
+                    });
+                    Step::Return(Outcome::Match(end))
+                }
+                other => Step::Return(other),
+            },
+            Frame::Sequence {
+                rules,
+                index,
+                first,
+                depth,
+            } => match outcome {
+                Outcome::Match(end) => {
+                    if self.matched_since(first) > self.limits.nodes {
+                        return Step::Return(self.nodes_exhausted());
+                    }
+                    // A bracket pair opens and closes within one sequence
+                    // (`tc_197_brackets_are_direct_sequence_elements`), so
+                    // the sequence alone tracks the depth of what follows.
+                    let depth = match &rules[index] {
+                        Rule::Terminal(Terminal::Open(_)) => depth.saturating_add(1),
+                        Rule::Terminal(Terminal::Close(_)) => depth.saturating_sub(1),
+                        _ => depth,
+                    };
+                    let index = index + 1;
+                    let Some(next) = rules.get(index) else {
+                        return Step::Return(Outcome::Match(end));
+                    };
+                    self.frames.push(Frame::Sequence {
+                        rules,
+                        index,
+                        first,
+                        depth,
+                    });
+                    Step::Rule(next, end, depth)
+                }
+                other => Step::Return(other),
+            },
+            Frame::Choice {
+                rules,
+                index,
+                position,
+                first,
+                depth,
+                failure,
+            } => match outcome {
+                Outcome::No(next) => {
+                    let failure = match failure {
+                        None => next,
+                        Some(current) => current.merge(next),
+                    };
+                    self.arena.truncate(first);
+                    let index = index + 1;
+                    let Some(alternative) = rules.get(index) else {
+                        return Step::Return(Outcome::No(failure));
+                    };
+                    self.frames.push(Frame::Choice {
+                        rules,
+                        index,
+                        position,
+                        first,
+                        depth,
+                        failure: Some(failure),
+                    });
+                    Step::Rule(alternative, position, depth)
+                }
+                other => Step::Return(other),
+            },
+            Frame::Optional { position, first } => match outcome {
+                Outcome::No(failure) if failure.position > position => {
+                    Step::Return(Outcome::No(failure))
+                }
+                Outcome::No(_) => {
+                    self.arena.truncate(first);
+                    Step::Return(Outcome::Match(position))
+                }
+                other => Step::Return(other),
+            },
+            Frame::Repeat {
+                rule,
+                minimum,
+                commit_on_progress,
+                end,
+                count,
+                first,
+                iteration,
+                depth,
+            } => {
+                let failure = match outcome {
+                    Outcome::Match(next) if next > end => {
+                        if self.matched_since(first) > self.limits.nodes {
+                            return Step::Return(self.nodes_exhausted());
+                        }
+                        self.frames.push(Frame::Repeat {
+                            rule,
+                            minimum,
+                            commit_on_progress,
+                            end: next,
+                            count: count + 1,
+                            first,
+                            iteration: self.arena.len(),
+                            depth,
+                        });
+                        return Step::Rule(rule, next, depth);
+                    }
+                    // A repetition that consumed nothing ends the loop and
+                    // keeps none of its matches.
+                    Outcome::Match(_) => {
+                        self.arena.truncate(iteration);
+                        None
+                    }
+                    Outcome::No(next) if commit_on_progress && next.position > end => {
+                        return Step::Return(Outcome::No(next));
+                    }
+                    Outcome::No(next) => {
+                        self.arena.truncate(iteration);
+                        Some(next)
+                    }
+                    exhausted @ Outcome::Exhausted(_) => return Step::Return(exhausted),
+                };
+                if count >= minimum {
+                    Step::Return(Outcome::Match(end))
                 } else {
-                    Attempt::No(
-                        failure.unwrap_or_else(|| {
-                            Failure::expected(end, "repeated production".into())
-                        }),
-                    )
+                    Step::Return(Outcome::No(failure.unwrap_or_else(|| {
+                        Failure::expected(end, "repeated production".into())
+                    })))
                 }
             }
         }
     }
 
-    fn terminal(&self, terminal: &Terminal, position: usize) -> Attempt<RuleMatch> {
+    fn terminal(&self, terminal: &Terminal, position: usize, depth: usize) -> Outcome {
         let accepted = match terminal {
             Terminal::End => {
                 return if position == self.tokens.len() {
-                    Attempt::Match(RuleMatch {
-                        end: position,
-                        children: Vec::new(),
-                        node_count: 0,
-                    })
+                    Outcome::Match(position)
                 } else {
-                    Attempt::No(Failure::expected(position, "end of source".into()))
+                    Outcome::No(Failure::expected(position, "end of source".into()))
                 };
             }
             _ => {
                 let Some(token) = self.tokens.get(position) else {
-                    return Attempt::No(Failure::expected(position, terminal.description()));
+                    return Outcome::No(Failure::expected(position, terminal.description()));
                 };
                 match terminal {
-                    Terminal::Exact(value) | Terminal::Literal(value) => {
-                        token.spelling.as_ref() == *value
-                    }
+                    Terminal::Exact(value)
+                    | Terminal::Literal(value)
+                    | Terminal::Open(value)
+                    | Terminal::Close(value) => token.spelling.as_ref() == *value,
                     Terminal::Identifier => {
                         crate::token::identifier_spelling(&token.spelling)
                             && !self.reserved_words.contains(token.spelling.as_ref())
@@ -1086,22 +1325,29 @@ impl<'a> Engine<'a> {
                 }
             }
         };
-        if accepted {
-            Attempt::Match(RuleMatch {
-                end: position + 1,
-                children: Vec::new(),
-                node_count: 0,
-            })
-        } else {
-            Attempt::No(Failure::expected(position, terminal.description()))
+        if !accepted {
+            return Outcome::No(Failure::expected(position, terminal.description()));
         }
+        // NFR-001 "Nesting level": the opening bracket of pair `nesting + 1`
+        // is refused at its own span.
+        if matches!(terminal, Terminal::Open(_)) && depth >= self.limits.nesting {
+            return Outcome::Exhausted(Refusal {
+                limit: SyntaxLimit::NestingDepth {
+                    bound: self.limits.nesting,
+                },
+                position,
+            });
+        }
+        Outcome::Match(position + 1)
     }
 }
 
 impl Terminal {
     fn description(&self) -> String {
         match self {
-            Self::Exact(value) | Self::Literal(value) => format!("`{value}`"),
+            Self::Exact(value) | Self::Literal(value) | Self::Open(value) | Self::Close(value) => {
+                format!("`{value}`")
+            }
             Self::Identifier => "identifier".into(),
             Self::MemberName => "qualified ASCII member name".into(),
             Self::Text => "quoted string".into(),
@@ -1112,44 +1358,201 @@ impl Terminal {
     }
 }
 
-fn lower_tree(source: &Source, tokens: &[Significant], root: MatchNode) -> (Vec<RawNode>, usize) {
-    fn lower(
-        source: &Source,
-        tokens: &[Significant],
-        node: MatchNode,
-        output: &mut Vec<RawNode>,
-    ) -> usize {
-        let children = node
-            .children
-            .into_iter()
-            .map(|child| CstElement::Node(lower(source, tokens, child, output)))
-            .collect();
-        let span = if node.production == Production::CompleteUnit {
+/// Source span of significant tokens `start..end`; empty at `start`'s
+/// offset when the range is empty.
+fn token_span(source: &Source, tokens: &[Significant], start: usize, end: usize) -> Span {
+    let span_start = tokens
+        .get(start)
+        .map_or(source.text().len(), |token| token.span.start);
+    let span_end = end
+        .checked_sub(1)
+        .and_then(|index| tokens.get(index))
+        .map_or(span_start, |token| token.span.end);
+    Span {
+        start: span_start,
+        end: span_end,
+    }
+}
+
+/// Lower the post-order match arena into CST raw nodes, index for index. A
+/// node's direct children are found by stepping back from it over whole
+/// sibling subtrees (`first - 1`), so the pass is linear and iterative.
+fn lower_tree(source: &Source, tokens: &[Significant], arena: &[Matched]) -> (Vec<RawNode>, usize) {
+    let mut nodes = Vec::with_capacity(arena.len());
+    for (index, matched) in arena.iter().enumerate() {
+        let mut children = Vec::new();
+        let mut cursor = index;
+        while cursor > matched.first {
+            let child = cursor - 1;
+            children.push(CstElement::Node(child));
+            cursor = arena[child].first;
+        }
+        children.reverse();
+        let span = if matched.production == Production::CompleteUnit {
             Span {
                 start: 0,
                 end: source.text().len(),
             }
         } else {
-            let start = tokens
-                .get(node.start)
-                .map_or(source.text().len(), |token| token.span.start);
-            let end = node
-                .end
-                .checked_sub(1)
-                .and_then(|index| tokens.get(index))
-                .map_or(start, |token| token.span.end);
-            Span { start, end }
+            token_span(source, tokens, matched.start, matched.end)
         };
-        let id = output.len();
-        output.push(RawNode {
-            production: node.production,
+        nodes.push(RawNode {
+            production: matched.production,
             span,
             children,
         });
-        id
+    }
+    let root = nodes.len().saturating_sub(1);
+    (nodes, root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qsl_foundation::SourceIdentity;
+
+    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+
+    fn source(text: &str) -> Source {
+        Source::read(
+            SourceIdentity {
+                identity: "test:engine".into(),
+                revision: "1".into(),
+            },
+            "engine.native",
+            text.as_bytes(),
+            qsl_foundation::source::MAX_SOURCE_BYTES,
+        )
+        .expect("test source")
     }
 
-    let mut nodes = Vec::new();
-    let root = lower(source, tokens, root, &mut nodes);
-    (nodes, root)
+    fn function(body: &str) -> String {
+        format!("{HEADER}function f using Complete (x: Integer): Boolean pure {{ {body} }}\n")
+    }
+
+    /// Interpreter steps and significant tokens for a unit that must parse.
+    fn work(text: &str) -> (usize, usize) {
+        let source = source(text);
+        let grammar = grammar::complete_v1();
+        let compounds = grammar::complete_compound_spellings(&grammar);
+        let (_, significant, diagnostics, _) =
+            scan(&source, Limits::default(), &compounds).expect("scan");
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let mut engine = Engine::new(&grammar, &significant, Limits::default());
+        let outcome = engine.production(Production::CompleteUnit, 0);
+        assert!(matches!(outcome, Outcome::Match(_)), "{outcome:?}");
+        (engine.steps, significant.len())
+    }
+
+    // Re-measures the table recorded at `WORK_PER_TOKEN`.
+    #[test]
+    fn measured_work_leaves_headroom_under_the_budget() {
+        let temporal = |formula: String| {
+            format!(
+                "{HEADER}temporal W using Complete over (s: Integer) clock \"t\" on origin {{ {formula} }}\n"
+            )
+        };
+        let inputs = [
+            function(&["x = x"; 500].join(" and ")),
+            function(&["x"; 1000].join(" + ")),
+            function(&format!("{}x{}", "(".repeat(63), ")".repeat(63))),
+            function(&["g(x, x)"; 250].join(" + ")),
+            function(&["x"; 1000].join(" * ")),
+            function(&format!("x{}", "[x]".repeat(750))),
+            function(&["set[x, x]"; 200].join(" + ")),
+            function(&["forall(v in x: v)"; 200].join(" and ")),
+            function(&["M::T(x, x)"; 200].join(" + ")),
+            function(&["M::R { a: x, b: x }"; 125].join(" + ")),
+            function(&["size<M::T>(x)"; 200].join(" + ")),
+            function(&format!("{}x", "if true then x else ".repeat(400))),
+            function(&format!("{}x", "let v = x in ".repeat(400))),
+            function(&["true"; 500].join(" implies ")),
+            function(&format!("{}true", "not ".repeat(2000))),
+            format!(
+                "{HEADER}type T = {}Integer{};\n",
+                "Option<".repeat(63),
+                ">".repeat(63)
+            ),
+            temporal("always [0,1] ".repeat(750) + "true"),
+        ];
+        for text in inputs {
+            let (steps, tokens) = work(&text);
+            let budget_third = (tokens + 1) * WORK_PER_TOKEN / 3;
+            assert!(
+                steps <= budget_third,
+                "{steps} steps for {tokens} tokens exceeds a third of the budget: {}",
+                &text[HEADER.len()..HEADER.len() + 80]
+            );
+        }
+    }
+
+    /// Run `run` on a 512 KiB thread; overflowing it aborts the test process.
+    fn on_bounded_stack<F: FnOnce() + Send + 'static>(run: F) {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(run)
+            .expect("spawn a 512 KiB thread")
+            .join()
+            .expect("the parser must not overflow a 512 KiB stack");
+    }
+
+    // A caller may raise the nesting ceiling far past the default; brackets
+    // nested that deep still never recurse, and are refused by the token or
+    // node ceiling (or parse). `parse` here is the engine entry below the
+    // public entry points' own ceiling.
+    #[test]
+    fn brackets_under_a_raised_nesting_ceiling_never_overflow_the_stack() {
+        on_bounded_stack(|| {
+            let limits = Limits {
+                nesting: 100_000,
+                ..Limits::default()
+            };
+            // Deeper than the node ceiling can hold for parentheses.
+            let depth = 6_000;
+            let temporal = format!(
+                "{HEADER}temporal W using Complete over (s: Integer) clock \"t\" on origin {{ {}true{} }}\n",
+                "(".repeat(depth),
+                ")".repeat(depth)
+            );
+            for text in [
+                function(&format!("{}x{}", "(".repeat(depth), ")".repeat(depth))),
+                function(&format!("{}x{}", "x[".repeat(depth), "]".repeat(depth))),
+                format!(
+                    "{HEADER}type T = {}Integer{};\n",
+                    "Option<".repeat(depth),
+                    ">".repeat(depth)
+                ),
+                temporal,
+            ] {
+                match parse(source(&text), limits) {
+                    Ok(parsed) => assert!(parsed.is_admissible()),
+                    Err(refusal) => {
+                        let defaults = Limits::default();
+                        assert!(
+                            refusal.limit()
+                                == Some(SyntaxLimit::Nodes {
+                                    bound: defaults.nodes
+                                })
+                                || refusal.limit()
+                                    == Some(SyntaxLimit::Tokens {
+                                        bound: defaults.tokens
+                                    }),
+                            "{refusal:?}"
+                        );
+                    }
+                }
+            }
+            // Within the node ceiling, deep brackets parse.
+            let parsed = parse(
+                source(&format!(
+                    "{HEADER}type T = {}Integer{};\n",
+                    "Option<".repeat(2_000),
+                    ">".repeat(2_000)
+                )),
+                limits,
+            )
+            .expect("2000 nested Option<...> fit the node ceiling");
+            assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        });
+    }
 }

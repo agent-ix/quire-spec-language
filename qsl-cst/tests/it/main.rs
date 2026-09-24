@@ -5,4 +5,6 @@
 
 mod complete_cst;
 mod complete_grammar;
+mod cst_identity;
+mod nesting_levels;
 mod selection;
