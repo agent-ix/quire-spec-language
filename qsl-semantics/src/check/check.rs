@@ -115,7 +115,7 @@ pub struct CheckingLimits {
     /// [`DEFAULT_CHECKING_INPUT_BYTES`]; [`Self::with_input_bytes`] sets it.
     input_bytes: u64,
     /// The checking stage's shared-meter `work_units` bound (QSL-153; PR
-    /// #302 review finding 3 -- `StageLimitKind::WorkBudget`'s one
+    /// #302 review finding 3 -- `LimitKind::WorkBudget`'s one
     /// caller-configurable knob, since that kind is produced by a denied
     /// charge against the contract meter, not a `StageLimits` field).
     /// Defaults to [`DEFAULT_CHECKING_WORK_BUDGET`]; [`Self::with_work_budget`]

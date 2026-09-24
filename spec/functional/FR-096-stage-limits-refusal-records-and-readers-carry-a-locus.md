@@ -270,9 +270,13 @@ name.
 
 ## Status
 
-Specified under QSL-160. Not implemented. `LimitExceeded`, `StageFailure`
-and `Staged` are `qsl-semantics`'s `family::outcome` types, with no locus
-and no actual counter. `RefusalRecord` and `catalog_fields` do not exist.
+Specified under QSL-160. Not implemented. QSL-160 part 1 moved
+`LimitExceeded`, `StageFailure` and `Staged` into the foundation
+`diagnostic` module and gave the family `check`'s four limits their actual
+counter (FR-062-AC-12, TC-432), which FR-096-AC-4 and FR-096-AC-5 name.
+Neither criterion is backed: neither limit carries a locus, and
+`LimitKind` has no `catalog_code()`, whose code is revision `1-draft.6`
+(QSL-236). `RefusalRecord` and `catalog_fields` do not exist.
 The `CheckingLimits` ceilings surface as
 `resource_exhausted`, and `Typer`'s depth stop as `StageFailure::Refused`.
 `ModelRefusalCause::AbsentKey` carries the key but not the population

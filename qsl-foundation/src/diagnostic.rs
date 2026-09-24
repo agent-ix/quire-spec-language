@@ -5,7 +5,9 @@
 use crate::source::{LocatedSpan, Source, SourceIdentity, Span};
 
 mod locus;
+mod stage;
 pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
+pub use stage::{LimitExceeded, LimitKind, StageFailure, Staged};
 
 /// Native processing phase; successful syntax does not imply later execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -601,14 +603,12 @@ impl From<crate::source_map::SourceMapError> for Diagnostic {
 // Code"); they retain no canonical authority and gain no new consumer (R-09),
 // and nothing below converts to or from them.
 //
-// Held back as S-5b, not built here: `RefusalRecord` and `LimitExceeded`
-// both carry the foundation `Locus` (ADR-013 T-5), which is slice S-4's row
-// and has not landed; `LimitKind`'s only consumer is `LimitExceeded`, so it
-// stays with it. O-22's version-refusal readers all construct a
-// `RefusalRecord` too -- for a wire reader specifically, ADR-013 T-5 assigns
-// `Locus::Artifact{digest, pointer}`, which additionally needs the O-18
-// digest record (S-2's row, gated on quire-specification#138) -- so O-22
-// stays in S-5b in full, blocked on both S-4 and S-2.
+// S-5b (QSL-160) part one adds T-4's `LimitKind`, `LimitExceeded`,
+// `Staged` and `StageFailure` in `stage`, with no `Locus` and no catalog
+// code: `stage_limit_exceeded` is a revision `1-draft.6` code, and this
+// build claims `1-draft.3` (Remaining work: QSL-236). `RefusalRecord`, the
+// `Locus` on `LimitExceeded` and O-22's readers wait on a producer that can
+// supply a `Locus` (Remaining work: QSL-233).
 
 /// ADR-013 O-16: the outcome category every evaluation, negotiation and proof
 /// result maps into. Exactly the eight values ADR-013 §3 O-16's category

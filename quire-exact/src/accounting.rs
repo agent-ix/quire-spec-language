@@ -269,7 +269,7 @@ pub enum ChargePoint {
     /// *checked* declaration. Sized by the declaration's own preimage
     /// field-write count (`crate::check::family::IdentityPreimageMetrics::
     /// work_budget` in `quire-spec-language`); denied into a `Limit`
-    /// outcome naming `StageLimitKind::WorkBudget`, never `Incomplete`
+    /// outcome naming the work-budget stage limit, never `Incomplete`
     /// (`check` never returns `Incomplete`, ADR-012 §2's structured-outcome
     /// row).
     DeclarationCheck,

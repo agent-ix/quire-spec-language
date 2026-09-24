@@ -42,16 +42,9 @@
 //! `Stage`'s own "no `Requirements` stage" doc note is deleted along with
 //! `Stage`.
 //!
-//! **Provisional types.** `outcome` (`Staged`/`StageFailure`/
-//! `LimitExceeded`) implements a shape ADR-013 T-4 already decides, but
-//! whose canonical Rust home (`#213` S-5's `diagnostic` crate) had not
-//! landed when this module was first written. `src/diagnostic.rs` has
-//! since landed (merged into this branch from `origin/main`) with its own,
-//! real `InternalFault`; this module's own copy of `InternalFault` was
-//! deleted in the same review round that removed its one (fabricated)
-//! construction site, rather than migrated onto `src/diagnostic.rs`'s --
-//! that migration, for `Staged`/`StageFailure`/`LimitExceeded` too, is real
-//! work QSL-162 does deliberately, not a byproduct of this one.
+//! **Stage outcome types.** `Staged`/`StageFailure`/`LimitExceeded` live in
+//! the foundation `diagnostic` module, ADR-013 T-4's home for them
+//! (QSL-160); this module keeps only the `CheckOutcome` alias.
 //!
 //! **The sixth contract part, `Requirements` (ADR-012 §2), is deferred.**
 //! No family this repository has migrated -- `Value`'s function-declaration
@@ -89,8 +82,7 @@ pub use contract::{Diagnostic, DiagnosticSink, ScopeStack, StageLimits};
 #[cfg(not(any(test, feature = "test-support")))]
 pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
 pub use evaluation::{EvalOutcome, FamilyOutcome, FamilyResult};
-pub(crate) use outcome::StageLimitKind;
-pub use outcome::{CheckOutcome, LimitExceeded, StageFailure, Staged};
+pub use outcome::CheckOutcome;
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed
 // function-selection key, FR-065-AC-6) lives at
