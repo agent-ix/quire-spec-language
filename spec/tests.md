@@ -129,7 +129,7 @@ operational validation remains outside this audit-only plan.
 | TC-243 | Typestate constructors are private to their stage module | Manual | P1 | FR-087-AC-1 | 🚧 Partial; QSL-158: steps 1-3 by `xtask::typestate_scan` (one layer-crate definition per type, in its owning file, every field private, no state generic); the constructor half by TC-244's allow-list. Step 4 (accessor-only reads) is not backed: a private field stays readable by its module's child modules |
 | TC-244 | compile_fail matrix over every forbidden typestate construction (R-10, O-15) | Unit | P1 | FR-087-AC-2 | ✅ Passed locally; QSL-158: step 0 by `xtask::typestate_scan` over all five stage types and the lane-private namesakes, against named constructor sites (a value handed out through an out-parameter is not seen); rows 1-5 by `compile_fail` doctests, each paired with a block over the same names that must compile, since stable rustdoc does not check the error code; row 6 is row 2's |
 | TC-245 | PackageNodeKey has exactly one shape and declared equality | Unit | P1 | FR-087-AC-5 | ✅ Passed locally |
-| TC-246 | ResolvedSourcePackage is retired, with no dangling caller | Integration | P1 | FR-087-AC-7, FR-087-CON-4 | 🚧 Planned; QSL-158: blocked. FR-087-AC-7 and CON-4 contradict ADR-011 §2 and need an owner ruling (QSL-229); see FR-087 Status |
+| TC-246 | ResolvedSourcePackage is retired, with no dangling caller | Integration | P1 | FR-087-AC-7, FR-087-CON-4 | 🚧 Planned; gated on QSL-6 (dependency half, I2 reader) and QSL-189 (header-selection half, QSpec lock accessor for E3's identity-preimage builder), per the ruling on QSL-229; see FR-087 Status |
 | TC-247 | The canonical EmittedPackage/CheckedPackage stay distinct from their pre-existing namesakes | Integration | P1 | FR-087-AC-8, FR-087-AC-10 | 🚧 Partial; QSL-158: steps 1-3, 6 and 7 by `xtask::typestate_scan`; step 4 by field names only (no method or trait comparison); step 5 was checked once, by this PR's diff |
 | TC-248 | Frame identity's subject sets resolve to DeclarationKey through the model correspondence | Unit | P1 | FR-088-AC-2 | ✅ Passed locally; #300 |
 | TC-249 | Clause identity is the checked node id; the occurrence key disambiguates structurally identical clauses | Unit | P1 | FR-088-AC-3 | ✅ Passed locally; #300 |
@@ -207,8 +207,9 @@ operational validation remains outside this audit-only plan.
 (S-3b: O-08, O-09 clause id, O-10, O-11, O-14, C-26) are specified under
 QSL-158, splitting ADR-013 §7 slice S-3, which no FR owned before this
 split. TC-243–260, TC-281, TC-282 and TC-379 above are the corresponding
-test cases. TC-246 and TC-379 are `🚧 Planned` and blocked, as FR-087's
-Status records. TC-243, TC-247, TC-255, TC-258, TC-260 and TC-281 are
+test cases. TC-246 and TC-379 are `🚧 Planned`, as FR-087's Status
+records: TC-246 is gated on QSL-6 and QSL-189, and TC-379 is blocked.
+TC-243, TC-247, TC-255, TC-258, TC-260 and TC-281 are
 partial, each row naming the steps its test backs; TC-259 is partial
 (QSL-156); and TC-251 covers FR-088-AC-5's `QualifiedName` half only. The
 rest pass locally. FR-087 also resolves, by owner
