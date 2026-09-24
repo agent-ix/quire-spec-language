@@ -110,7 +110,9 @@ nesting depth, reported as `stage_limit_exceeded`/`nesting-depth-exceeded`
 walk that measures a declaration before typing (FR-062's input bytes, node
 count and work) and the syntactic checks of a `pre(…)` operand walk the
 parsed expression on a heap stack too, so a body nested past every limit
-refuses on a limit.
+refuses on a limit. The dispatch bridge copies each clause, and renames an
+inherited precondition into a redefinition's parameters, on a heap stack
+as well, so a nested clause reaches the check stage and refuses there.
 
 Each walk closes a binder's scope when the binder's body is done, and walks
 every operand. A `let`, `count`, `sum`, query or `fold` binder is out of scope

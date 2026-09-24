@@ -275,7 +275,7 @@ fn require_expression(
     field: MissingClauseField,
 ) -> Result<Expression, DispatchBridgeRefusal> {
     map.get(operation)
-        .cloned()
+        .map(copy_expression)
         .ok_or_else(|| missing(operation, field))
 }
 
@@ -463,9 +463,9 @@ fn effective_terms(
     let parent_result: Option<Option<Vec<Expression>>> = loop {
         if let Some(cached) = memo.get(&current) {
             if chain.is_empty() {
-                return Ok(cached.clone());
+                return Ok(copy_terms(cached));
             }
-            break Some(cached.clone());
+            break Some(copy_terms(cached));
         }
         if depth > max_steps || !on_chain.insert(current.clone()) {
             return Err(family_steps_exceeded(candidate, max_steps));
@@ -487,7 +487,6 @@ fn effective_terms(
     };
 
     let mut below = parent_result;
-    let mut result: Option<Vec<Expression>> = None;
     for member in chain.iter().rev() {
         let own = require_expression(
             &clauses.own_precondition,
@@ -511,11 +510,12 @@ fn effective_terms(
                     Some(terms)
                 }
             };
-        memo.insert(member.clone(), terms.clone());
-        below = Some(terms.clone());
-        result = terms;
+        memo.insert(member.clone(), copy_terms(&terms));
+        below = Some(terms);
     }
-    Ok(result)
+    // `chain` is never empty here: each exit above with an empty chain
+    // returns early, so `below` holds the candidate's own terms.
+    Ok(below.flatten())
 }
 
 /// `expression` with every name bound positionally in `from` rewritten to
@@ -526,7 +526,8 @@ fn effective_terms(
 /// name introduced by the rename never falls under a binder that merely
 /// happens to share that spelling in the source expression (`let b = 5 in
 /// a = a`, renamed `a -> b`, must not become `let b = 5 in b = b`).
-/// Short-circuits to a plain clone when every name already matches.
+/// Short-circuits to a plain [`copy_expression`] when every name already
+/// matches.
 fn rename_parameters(
     expression: &Expression,
     from: &[(String, ValueType)],
@@ -539,11 +540,10 @@ fn rename_parameters(
         .map(|((from_name, _), (to_name, _))| (from_name.clone(), to_name.clone()))
         .collect();
     if rename.is_empty() {
-        return expression.clone();
+        return copy_expression(expression);
     }
     let to_names: BTreeSet<String> = rename.values().cloned().collect();
-    let mut scope: Vec<(String, Option<String>)> = Vec::new();
-    substitute_names(expression, &rename, &to_names, &mut scope)
+    substitute_names(expression, &rename, &to_names)
 }
 
 /// Binds `name` for the scope about to be entered: `scope` records, for
@@ -580,134 +580,194 @@ fn bind_name(
     fresh
 }
 
-/// The full recursive rewrite [`rename_parameters`] applies: every
-/// [`Expression::Name`] is looked up in `scope` (innermost binder first);
-/// a hit shadows the top-level `rename` map, using the binder's alpha-name
-/// when it has one and the original name otherwise. A name `scope` does not
-/// mention falls through to `rename`. Every binder site pushes its own
-/// [`bind_name`] result onto `scope` before recursing into its own scope and
-/// pops it after — see [`bind_name`] for how binder capture is avoided.
-fn substitute_names(
-    expression: &Expression,
+/// One step of [`substitute_names`]'s explicit stack.
+enum Rewrite<'s, 't> {
+    /// Rewrite `source` into `target`, a placeholder in the rewritten tree.
+    Node(&'s Expression, &'t mut Expression),
+    /// Bind the binder named `source` for the scope about to be entered
+    /// ([`bind_name`]), writing the name the rewritten binder uses into
+    /// `target`.
+    Bind(&'s str, &'t mut String),
+    /// Leave the innermost binder's scope.
+    Unbind,
+}
+
+/// A source node opened by [`open`]: its rewritten shell, whose operands are
+/// placeholders; its operands, in the order the rewrite visits them; and the
+/// binders its last operand is scoped under, in binding order.
+struct Opened<'s> {
+    shell: Expression,
+    operands: Vec<&'s Expression>,
+    binders: Vec<&'s str>,
+}
+
+impl<'s> Opened<'s> {
+    fn leaf(shell: Expression) -> Self {
+        Self {
+            shell,
+            operands: Vec::new(),
+            binders: Vec::new(),
+        }
+    }
+
+    fn node(shell: Expression, operands: Vec<&'s Expression>) -> Self {
+        Self {
+            shell,
+            operands,
+            binders: Vec::new(),
+        }
+    }
+
+    fn scoped(shell: Expression, operands: Vec<&'s Expression>, binders: Vec<&'s str>) -> Self {
+        Self {
+            shell,
+            operands,
+            binders,
+        }
+    }
+}
+
+/// The placeholder an operand holds until the rewrite fills it.
+fn hole() -> Box<Expression> {
+    Box::new(Expression::Boolean(false))
+}
+
+/// `name` as read at this point of the rewrite: the innermost binder in
+/// `scope` spelled `name` shadows `rename`, and reads as its alpha-name when
+/// it has one; a name no binder in `scope` spells is renamed by `rename`, or
+/// kept.
+fn resolve_name(
+    name: &str,
     rename: &BTreeMap<String, String>,
-    to_names: &BTreeSet<String>,
-    scope: &mut Vec<(String, Option<String>)>,
-) -> Expression {
-    match expression {
+    scope: &[(String, Option<String>)],
+) -> String {
+    match scope.iter().rev().find(|(original, _)| original == name) {
+        Some((_, Some(fresh))) => fresh.clone(),
+        Some((_, None)) => name.to_owned(),
+        None => rename.get(name).cloned().unwrap_or_else(|| name.to_owned()),
+    }
+}
+
+/// Open `source` for [`substitute_names`]: a literal is copied and a name
+/// resolved ([`resolve_name`]) now; any other form yields its shell over
+/// placeholder operands, its operands and its binders. A binder form's
+/// operands before the last are read outside its binders, and its last
+/// operand (the body, step, predicate or summand) under them.
+#[deny(clippy::wildcard_enum_match_arm)]
+fn open<'s>(
+    source: &'s Expression,
+    rename: &BTreeMap<String, String>,
+    scope: &[(String, Option<String>)],
+) -> Opened<'s> {
+    match source {
         Expression::Boolean(_) | Expression::Integer(_) | Expression::Rational(..) => {
-            expression.clone()
+            Opened::leaf(source.clone())
         }
-        Expression::Name(name) => {
-            for (original, alpha) in scope.iter().rev() {
-                if original == name {
-                    return match alpha {
-                        Some(fresh) => Expression::Name(fresh.clone()),
-                        None => expression.clone(),
-                    };
-                }
-            }
-            match rename.get(name) {
-                Some(renamed) => Expression::Name(renamed.clone()),
-                None => expression.clone(),
-            }
-        }
-        Expression::Let { name, value, body } => {
-            let value = Box::new(substitute_names(value, rename, to_names, scope));
-            let name = bind_name(name, to_names, scope);
-            let body = Box::new(substitute_names(body, rename, to_names, scope));
-            scope.pop();
-            Expression::Let { name, value, body }
-        }
+        Expression::Name(name) => Opened::leaf(Expression::Name(resolve_name(name, rename, scope))),
+        Expression::Let { name, value, body } => Opened::scoped(
+            Expression::Let {
+                name: String::new(),
+                value: hole(),
+                body: hole(),
+            },
+            vec![value, body],
+            vec![name],
+        ),
         Expression::If {
             condition,
             then,
             otherwise,
-        } => Expression::If {
-            condition: Box::new(substitute_names(condition, rename, to_names, scope)),
-            then: Box::new(substitute_names(then, rename, to_names, scope)),
-            otherwise: Box::new(substitute_names(otherwise, rename, to_names, scope)),
-        },
+        } => Opened::node(
+            Expression::If {
+                condition: hole(),
+                then: hole(),
+                otherwise: hole(),
+            },
+            vec![condition, then, otherwise],
+        ),
         Expression::Binary {
             operator,
             left,
             right,
-        } => Expression::Binary {
-            operator: *operator,
-            left: Box::new(substitute_names(left, rename, to_names, scope)),
-            right: Box::new(substitute_names(right, rename, to_names, scope)),
-        },
-        Expression::Negate(operand) => {
-            Expression::Negate(Box::new(substitute_names(operand, rename, to_names, scope)))
-        }
-        Expression::Not(operand) => {
-            Expression::Not(Box::new(substitute_names(operand, rename, to_names, scope)))
-        }
-        Expression::Field { operand, field } => Expression::Field {
-            operand: Box::new(substitute_names(operand, rename, to_names, scope)),
-            field: field.clone(),
-        },
-        Expression::Present(operand) => {
-            Expression::Present(Box::new(substitute_names(operand, rename, to_names, scope)))
-        }
-        Expression::Value(operand) => {
-            Expression::Value(Box::new(substitute_names(operand, rename, to_names, scope)))
-        }
-        Expression::Deref(operand) => {
-            Expression::Deref(Box::new(substitute_names(operand, rename, to_names, scope)))
-        }
-        Expression::Call { name, arguments } => Expression::Call {
-            name: name.clone(),
-            arguments: arguments
+        } => Opened::node(
+            Expression::Binary {
+                operator: *operator,
+                left: hole(),
+                right: hole(),
+            },
+            vec![left, right],
+        ),
+        Expression::Negate(operand) => Opened::node(Expression::Negate(hole()), vec![operand]),
+        Expression::Not(operand) => Opened::node(Expression::Not(hole()), vec![operand]),
+        Expression::Field { operand, field } => Opened::node(
+            Expression::Field {
+                operand: hole(),
+                field: field.clone(),
+            },
+            vec![operand],
+        ),
+        Expression::Present(operand) => Opened::node(Expression::Present(hole()), vec![operand]),
+        Expression::Value(operand) => Opened::node(Expression::Value(hole()), vec![operand]),
+        Expression::Deref(operand) => Opened::node(Expression::Deref(hole()), vec![operand]),
+        Expression::Call { name, arguments } => Opened::node(
+            Expression::Call {
+                name: name.clone(),
+                arguments: arguments.iter().map(|_| *hole()).collect(),
+            },
+            arguments.iter().collect(),
+        ),
+        Expression::Record { name, fields } => Opened::node(
+            Expression::Record {
+                name: name.clone(),
+                fields: fields
+                    .iter()
+                    .map(|(field, initializer)| {
+                        let initializer = match initializer {
+                            FieldInitializer::Value(_) => FieldInitializer::Value(*hole()),
+                            FieldInitializer::Null => FieldInitializer::Null,
+                        };
+                        (field.clone(), initializer)
+                    })
+                    .collect(),
+            },
+            fields
                 .iter()
-                .map(|argument| substitute_names(argument, rename, to_names, scope))
-                .collect(),
-        },
-        Expression::Record { name, fields } => Expression::Record {
-            name: name.clone(),
-            fields: fields
-                .iter()
-                .map(|(field, initializer)| {
-                    let initializer = match initializer {
-                        FieldInitializer::Value(value) => FieldInitializer::Value(
-                            substitute_names(value, rename, to_names, scope),
-                        ),
-                        FieldInitializer::Null => FieldInitializer::Null,
-                    };
-                    (field.clone(), initializer)
+                .filter_map(|(_, initializer)| match initializer {
+                    FieldInitializer::Value(value) => Some(value),
+                    FieldInitializer::Null => None,
                 })
                 .collect(),
-        },
-        Expression::Collection { kind, elements } => Expression::Collection {
-            kind: *kind,
-            elements: elements
-                .iter()
-                .map(|element| substitute_names(element, rename, to_names, scope))
-                .collect(),
-        },
-        Expression::Convert { target, operand } => Expression::Convert {
-            target: target.clone(),
-            operand: Box::new(substitute_names(operand, rename, to_names, scope)),
-        },
+        ),
+        Expression::Collection { kind, elements } => Opened::node(
+            Expression::Collection {
+                kind: *kind,
+                elements: elements.iter().map(|_| *hole()).collect(),
+            },
+            elements.iter().collect(),
+        ),
+        Expression::Convert { target, operand } => Opened::node(
+            Expression::Convert {
+                target: target.clone(),
+                operand: hole(),
+            },
+            vec![operand],
+        ),
         Expression::Query {
             query,
             binder,
             source,
             body,
-        } => {
-            let source = Box::new(substitute_names(source, rename, to_names, scope));
-            let binder = bind_name(binder, to_names, scope);
-            let body = Box::new(substitute_names(body, rename, to_names, scope));
-            scope.pop();
+        } => Opened::scoped(
             Expression::Query {
                 query: *query,
-                binder,
-                source,
-                body,
-            }
-        }
-        Expression::Flatten(operand) => {
-            Expression::Flatten(Box::new(substitute_names(operand, rename, to_names, scope)))
-        }
+                binder: String::new(),
+                source: hole(),
+                body: hole(),
+            },
+            vec![source, body],
+            vec![binder],
+        ),
+        Expression::Flatten(operand) => Opened::node(Expression::Flatten(hole()), vec![operand]),
         Expression::Accumulate {
             form,
             accumulator_type,
@@ -716,98 +776,275 @@ fn substitute_names(
             source,
             step,
             identity,
-        } => {
-            let source = Box::new(substitute_names(source, rename, to_names, scope));
-            let identity = identity
-                .as_ref()
-                .map(|identity| Box::new(substitute_names(identity, rename, to_names, scope)));
-            let accumulator = bind_name(accumulator, to_names, scope);
-            let binder = bind_name(binder, to_names, scope);
-            let step = Box::new(substitute_names(step, rename, to_names, scope));
-            scope.pop();
-            scope.pop();
+        } => Opened::scoped(
             Expression::Accumulate {
                 form: *form,
                 accumulator_type: accumulator_type.clone(),
-                accumulator,
-                binder,
-                source,
-                step,
-                identity,
-            }
-        }
+                accumulator: String::new(),
+                binder: String::new(),
+                source: hole(),
+                step: hole(),
+                identity: identity.as_ref().map(|_| hole()),
+            },
+            std::iter::once(source)
+                .chain(identity)
+                .chain(std::iter::once(step))
+                .map(Box::as_ref)
+                .collect(),
+            vec![accumulator, binder],
+        ),
         Expression::Count {
             result_type,
             binder,
             source,
             predicate,
-        } => {
-            let source = Box::new(substitute_names(source, rename, to_names, scope));
-            let binder = bind_name(binder, to_names, scope);
-            let predicate = Box::new(substitute_names(predicate, rename, to_names, scope));
-            scope.pop();
+        } => Opened::scoped(
             Expression::Count {
                 result_type: result_type.clone(),
-                binder,
-                source,
-                predicate,
-            }
-        }
+                binder: String::new(),
+                source: hole(),
+                predicate: hole(),
+            },
+            vec![source, predicate],
+            vec![binder],
+        ),
         Expression::Sum {
             result_type,
             binder,
             source,
             summand,
-        } => {
-            let source = Box::new(substitute_names(source, rename, to_names, scope));
-            let binder = bind_name(binder, to_names, scope);
-            let summand = Box::new(substitute_names(summand, rename, to_names, scope));
-            scope.pop();
+        } => Opened::scoped(
             Expression::Sum {
                 result_type: result_type.clone(),
-                binder,
-                source,
-                summand,
-            }
-        }
-        Expression::Size(operand) => {
-            Expression::Size(Box::new(substitute_names(operand, rename, to_names, scope)))
-        }
-        Expression::Contains { collection, item } => Expression::Contains {
-            collection: Box::new(substitute_names(collection, rename, to_names, scope)),
-            item: Box::new(substitute_names(item, rename, to_names, scope)),
-        },
-        Expression::AllInstances { target, population } => Expression::AllInstances {
-            target: target.clone(),
-            population: Box::new(substitute_names(population, rename, to_names, scope)),
-        },
+                binder: String::new(),
+                source: hole(),
+                summand: hole(),
+            },
+            vec![source, summand],
+            vec![binder],
+        ),
+        Expression::Size(operand) => Opened::node(Expression::Size(hole()), vec![operand]),
+        Expression::Contains { collection, item } => Opened::node(
+            Expression::Contains {
+                collection: hole(),
+                item: hole(),
+            },
+            vec![collection, item],
+        ),
+        Expression::AllInstances { target, population } => Opened::node(
+            Expression::AllInstances {
+                target: target.clone(),
+                population: hole(),
+            },
+            vec![population],
+        ),
         Expression::Lookup {
             target,
             population,
             reference,
             absence,
-        } => Expression::Lookup {
-            target: target.clone(),
-            population: Box::new(substitute_names(population, rename, to_names, scope)),
-            reference: Box::new(substitute_names(reference, rename, to_names, scope)),
-            absence: *absence,
-        },
+        } => Opened::node(
+            Expression::Lookup {
+                target: target.clone(),
+                population: hole(),
+                reference: hole(),
+                absence: *absence,
+            },
+            vec![population, reference],
+        ),
         Expression::Dispatch {
             receiver,
             member,
             arguments,
-        } => Expression::Dispatch {
-            receiver: Box::new(substitute_names(receiver, rename, to_names, scope)),
-            member: member.clone(),
-            arguments: arguments
-                .iter()
-                .map(|argument| substitute_names(argument, rename, to_names, scope))
+        } => Opened::node(
+            Expression::Dispatch {
+                receiver: hole(),
+                member: member.clone(),
+                arguments: arguments.iter().map(|_| *hole()).collect(),
+            },
+            std::iter::once(receiver.as_ref())
+                .chain(arguments)
                 .collect(),
-        },
-        Expression::Pre(operand) => {
-            Expression::Pre(Box::new(substitute_names(operand, rename, to_names, scope)))
+        ),
+        Expression::Pre(operand) => Opened::node(Expression::Pre(hole()), vec![operand]),
+    }
+}
+
+/// The placeholders of a shell [`open`] built, in [`Opened::operands`]
+/// order, and its binder names, in [`Opened::binders`] order.
+#[deny(clippy::wildcard_enum_match_arm)]
+fn slots(shell: &mut Expression) -> (Vec<&mut Expression>, Vec<&mut String>) {
+    match shell {
+        Expression::Boolean(_)
+        | Expression::Integer(_)
+        | Expression::Rational(..)
+        | Expression::Name(_) => (Vec::new(), Vec::new()),
+        Expression::Let { name, value, body } => (vec![value, body], vec![name]),
+        Expression::If {
+            condition,
+            then,
+            otherwise,
+        } => (vec![condition, then, otherwise], Vec::new()),
+        Expression::Binary { left, right, .. }
+        | Expression::Contains {
+            collection: left,
+            item: right,
+        }
+        | Expression::Lookup {
+            population: left,
+            reference: right,
+            ..
+        } => (vec![left, right], Vec::new()),
+        Expression::Negate(operand)
+        | Expression::Not(operand)
+        | Expression::Field { operand, .. }
+        | Expression::Present(operand)
+        | Expression::Value(operand)
+        | Expression::Deref(operand)
+        | Expression::Convert { operand, .. }
+        | Expression::Flatten(operand)
+        | Expression::Size(operand)
+        | Expression::AllInstances {
+            population: operand,
+            ..
+        }
+        | Expression::Pre(operand) => (vec![operand], Vec::new()),
+        Expression::Call { arguments, .. } => (arguments.iter_mut().collect(), Vec::new()),
+        Expression::Record { fields, .. } => (
+            fields
+                .iter_mut()
+                .filter_map(|(_, initializer)| match initializer {
+                    FieldInitializer::Value(value) => Some(value),
+                    FieldInitializer::Null => None,
+                })
+                .collect(),
+            Vec::new(),
+        ),
+        Expression::Collection { elements, .. } => (elements.iter_mut().collect(), Vec::new()),
+        Expression::Query {
+            binder,
+            source,
+            body,
+            ..
+        }
+        | Expression::Count {
+            binder,
+            source,
+            predicate: body,
+            ..
+        }
+        | Expression::Sum {
+            binder,
+            source,
+            summand: body,
+            ..
+        } => (vec![source, body], vec![binder]),
+        Expression::Accumulate {
+            accumulator,
+            binder,
+            source,
+            step,
+            identity,
+            ..
+        } => (
+            std::iter::once(source)
+                .chain(identity)
+                .chain(std::iter::once(step))
+                .map(Box::as_mut)
+                .collect(),
+            vec![accumulator, binder],
+        ),
+        Expression::Dispatch {
+            receiver,
+            arguments,
+            ..
+        } => (
+            std::iter::once(receiver.as_mut())
+                .chain(arguments.iter_mut())
+                .collect(),
+            Vec::new(),
+        ),
+    }
+}
+
+/// The rewrite [`rename_parameters`] applies: every [`Expression::Name`] is
+/// resolved against the binders in scope where it is read
+/// ([`resolve_name`]), and every binder is bound with [`bind_name`] before
+/// its scope is entered and left after it -- see [`bind_name`] for how
+/// binder capture is avoided.
+///
+/// Runs over an explicit heap stack (QSL-231), never native recursion, so a
+/// clause nested past the check stage's depth limit is rewritten in constant
+/// host stack and left for the check stage to refuse on that limit. Before
+/// QSL-231 this recursed once per nesting level and a 2 MiB debug thread
+/// aborted at 274 nested `a and (…)`. Each operand is rewritten in the order
+/// the recursive rewrite visited it, so every binder is alpha-renamed as it
+/// was.
+fn substitute_names(
+    expression: &Expression,
+    rename: &BTreeMap<String, String>,
+    to_names: &BTreeSet<String>,
+) -> Expression {
+    let mut scope: Vec<(String, Option<String>)> = Vec::new();
+    let mut rewritten = Expression::Boolean(false);
+    let mut pending = vec![Rewrite::Node(expression, &mut rewritten)];
+    while let Some(step) = pending.pop() {
+        match step {
+            Rewrite::Node(source, target) => {
+                let Opened {
+                    shell,
+                    operands,
+                    binders,
+                } = open(source, rename, &scope);
+                *target = shell;
+                let (holes, names) = slots(target);
+                // `open` and `slots` list one shell's operands and binders
+                // alike; the tests' differential rewrite pins both.
+                debug_assert_eq!((operands.len(), binders.len()), (holes.len(), names.len()));
+                let mut operands: Vec<_> = operands.into_iter().zip(holes).collect();
+                let body = if binders.is_empty() {
+                    None
+                } else {
+                    operands.pop()
+                };
+                pending.extend(binders.iter().map(|_| Rewrite::Unbind));
+                pending.extend(body.map(|(source, target)| Rewrite::Node(source, target)));
+                pending.extend(
+                    binders
+                        .into_iter()
+                        .zip(names)
+                        .rev()
+                        .map(|(binder, target)| Rewrite::Bind(binder, target)),
+                );
+                pending.extend(
+                    operands
+                        .into_iter()
+                        .rev()
+                        .map(|(source, target)| Rewrite::Node(source, target)),
+                );
+            }
+            Rewrite::Bind(name, target) => *target = bind_name(name, to_names, &mut scope),
+            Rewrite::Unbind => {
+                scope.pop();
+            }
         }
     }
+    rewritten
+}
+
+/// A copy of `expression` built by [`substitute_names`]'s explicit stack
+/// rather than the derived, per-level recursive `Clone` (QSL-231), which
+/// aborts a 2 MiB debug thread at 953 nested `a and (…)`: with nothing to
+/// rename, every name resolves to itself and no binder is alpha-renamed.
+fn copy_expression(expression: &Expression) -> Expression {
+    substitute_names(expression, &BTreeMap::new(), &BTreeSet::new())
+}
+
+/// [`copy_expression`] over a memoized effective-precondition result.
+fn copy_terms(terms: &Option<Vec<Expression>>) -> Option<Vec<Expression>> {
+    terms
+        .as_ref()
+        .map(|terms| terms.iter().map(copy_expression).collect())
 }
 
 /// Types every linked candidate's effective precondition and body for one
@@ -1144,11 +1381,16 @@ pub fn checked_dispatch_operation(
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::{ancestor_closure, effective_terms, DispatchBridgeRefusal, OperationClauses};
+    use ix_trace_rs::trace;
+
+    use super::{
+        ancestor_closure, copy_expression, effective_terms, rename_parameters,
+        DispatchBridgeRefusal, OperationClauses,
+    };
     use crate::model::key::DeclarationKey;
     use crate::model::normalize::ModelRefusalCause;
-    use qsl_forms::Expression;
-    use quire_exact::ValueType;
+    use qsl_forms::{Accumulation, BinaryOperator, Expression};
+    use quire_exact::{CollectionKind, ValueType};
 
     /// A caller-configured `family_steps` ceiling small enough to build a
     /// chain one past it cheaply.
@@ -1327,5 +1569,111 @@ mod tests {
             // never truncated by the shared `memo`.
             assert_eq!(terms.map(|terms| terms.len()), Some(2));
         }
+    }
+
+    /// `rename_parameters` renames `x` to `y` in `let y = x in x + y`:
+    /// the `let` value reads outside the binder, and the binder, which a
+    /// renamed `x` would otherwise fall under, is alpha-renamed in its body.
+    /// A fold binds its accumulator before its element binder; its source
+    /// and identity read outside both.
+    #[trace("FR-093-AC-14", "TC-415")]
+    #[test]
+    fn rename_parameters_reads_each_operand_in_its_binders_scope() {
+        let name = |name: &str| Expression::Name(name.to_owned());
+        let parameters = |name: &str| vec![(name.to_owned(), ValueType::Boolean)];
+        let add = |left, right| Expression::Binary {
+            operator: BinaryOperator::Add,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+        let binding = Expression::Let {
+            name: "y".to_owned(),
+            value: Box::new(name("x")),
+            body: Box::new(add(name("x"), name("y"))),
+        };
+        let fold = Expression::Accumulate {
+            form: Accumulation::Fold,
+            accumulator_type: "A".to_owned(),
+            accumulator: "y".to_owned(),
+            binder: "x".to_owned(),
+            source: Box::new(name("x")),
+            step: Box::new(add(name("x"), name("y"))),
+            identity: Some(Box::new(name("y"))),
+        };
+        let renamed = rename_parameters(
+            &Expression::Collection {
+                kind: CollectionKind::Sequence,
+                elements: vec![binding, fold, name("x")],
+            },
+            &parameters("x"),
+            &parameters("y"),
+        );
+        let Expression::Collection { elements, .. } = renamed else {
+            panic!("a collection renames to a collection: {renamed:?}");
+        };
+        let rendered: Vec<String> = elements.iter().map(|e| format!("{e:?}")).collect();
+        let alpha = "y#dispatch-alpha0";
+        let expected = [
+            Expression::Let {
+                name: alpha.to_owned(),
+                value: Box::new(name("y")),
+                body: Box::new(add(name("y"), name(alpha))),
+            },
+            Expression::Accumulate {
+                form: Accumulation::Fold,
+                accumulator_type: "A".to_owned(),
+                accumulator: alpha.to_owned(),
+                binder: "x".to_owned(),
+                source: Box::new(name("y")),
+                step: Box::new(add(name("x"), name(alpha))),
+                identity: Some(Box::new(name("y"))),
+            },
+            name("y"),
+        ]
+        .map(|e| format!("{e:?}"));
+        assert_eq!(rendered, expected);
+    }
+
+    /// The renaming and copying of an inherited precondition nested 10,000
+    /// levels -- far past the check stage's depth limit, which refuses it
+    /// afterwards -- completes on a 2 MiB thread and renames every level.
+    /// Before QSL-231 the renaming recursed per level and aborted a 2 MiB
+    /// debug thread at 274 nested levels, and the derived `Clone` the bridge
+    /// copied clauses with at 953.
+    #[trace("FR-093-AC-14", "TC-415")]
+    #[test]
+    fn rename_and_copy_walk_a_deep_clause_on_a_small_stack() {
+        const LEVELS: usize = 10_000;
+        let renamed = std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let mut clause = Expression::Name("x".to_owned());
+                for _ in 0..LEVELS {
+                    clause = Expression::Binary {
+                        operator: BinaryOperator::And,
+                        left: Box::new(Expression::Name("x".to_owned())),
+                        right: Box::new(clause),
+                    };
+                }
+                let copied = copy_expression(&clause);
+                let renamed = rename_parameters(
+                    &copied,
+                    &[("x".to_owned(), ValueType::Boolean)],
+                    &[("y".to_owned(), ValueType::Boolean)],
+                );
+                let mut names = Vec::new();
+                let mut spine = &renamed;
+                while let Expression::Binary { left, right, .. } = spine {
+                    names.push(format!("{left:?}"));
+                    spine = right;
+                }
+                names.push(format!("{spine:?}"));
+                names
+            })
+            .expect("the rename thread spawns")
+            .join()
+            .expect("the rename completes on a 2 MiB stack");
+        assert_eq!(renamed.len(), LEVELS + 1);
+        assert!(renamed.iter().all(|name| name == r#"Name("y")"#));
     }
 }
