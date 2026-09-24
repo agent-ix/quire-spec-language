@@ -100,7 +100,7 @@ enum Goal<'e, 'r> {
 /// What the loop does next.
 #[allow(
     clippy::large_enum_variant,
-    reason = "frames are moved once per push and pop on a heap Vec; boxing the typed Node would add an allocation per checked node"
+    reason = "Step is a per-iteration return value, never stored in a Vec; boxing its typed Node would add an allocation per checked node"
 )]
 enum Step<'e, 'r> {
     /// Type a sub-expression.
@@ -147,7 +147,7 @@ struct IfFrame<'e, 'r> {
 
 #[allow(
     clippy::large_enum_variant,
-    reason = "frames are moved once per push and pop on a heap Vec; boxing the typed Node would add an allocation per checked node"
+    reason = "this stage lives inside an already boxed Frame; boxing its Node payload would add a second allocation per node"
 )]
 enum IfStage<'e> {
     Condition {
@@ -207,7 +207,7 @@ enum PeerOperator {
 
 #[allow(
     clippy::large_enum_variant,
-    reason = "frames are moved once per push and pop on a heap Vec; boxing the typed Node would add an allocation per checked node"
+    reason = "this stage lives inside an already boxed Frame; boxing its Node payload would add a second allocation per node"
 )]
 enum PeerForm<'e, 'r> {
     Arithmetic {
@@ -312,7 +312,7 @@ struct AccumulateFrame<'e> {
 
 #[allow(
     clippy::large_enum_variant,
-    reason = "frames are moved once per push and pop on a heap Vec; boxing the typed Node would add an allocation per checked node"
+    reason = "this stage lives inside an already boxed Frame; boxing its Node payload would add a second allocation per node"
 )]
 enum AccumulateStage {
     Source,

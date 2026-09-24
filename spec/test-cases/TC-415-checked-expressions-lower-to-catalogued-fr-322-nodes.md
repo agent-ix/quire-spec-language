@@ -26,7 +26,7 @@ walk that runs a recursive composite to the depth limit, and an optional
 field's leaf path without `inner`.
 
 Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8, FR-093-AC-10,
-FR-093-AC-11, FR-093-AC-14, FR-093-CON-1.
+FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-CON-1.
 
 ## Test Procedure
 
@@ -75,11 +75,28 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
     `(x < x) = (…)`, a guard `if ((…) and x < 1) then a else a`,
     `x + (…)`, `(…) + x`, `-(…)`, `h(x * (…))` narrowed to `Int[0, 9]`, a
     record literal nested in its optional field, an unguarded
-    `value(….next)` chain and nested `forall`. Check each form nested 1,000
+    `value(….next)` chain, nested `forall`, `sum<Total>(vN in s: …)`,
+    `count<Total>(vN in s: … = 0)`, `fold<Total>(accN, vN in s: …,
+    identity: 0)`, `map(vN in …: vN)`, `filter(vN in …: true)`,
+    `contains(bs, …)`, `convert<Int[0, 9]>(…)`, a sequence literal
+    `gs(sequence[…])`, a tuple literal `tv(T(…))`, and over the FR-094
+    `acme/orders` model a `lookup<M::Order>(p, …) absent undefined` chain,
+    `deref(…).total` and the clause `….size() >= 0` over that chain, and
+    `size(allInstances<M::Order>(p)) + (…)`. Check each form nested 1,000
     deep at the default limits, at the maximum depth with node, input-byte
     and work limits unlimited, and at a depth limit of 16. Check a
     postcondition `pre(…)` over 1,000 nested `a and (…)`, and one over
     1,000 nested `let`s around `pre(a)`.
+11. With the alias `Total = Integer` and parameters `a: Boolean`,
+    `x: Int[0, 9]`, `s: Sequence<Int[0, 9]>[0, 5]` and
+    `o: Option<Int[0, 9]>`, read `v` after each of `let v = x in v`,
+    `count<Total>(v in s: v < 5)`, `sum<Total>(v in s: v)`,
+    `forall(v in s: v < 5)` and
+    `fold<Total>(acc, v in s: acc + v, identity: 0)`, and read `acc` after
+    that `fold`. Check each of those forms beside a copy of itself. Lower
+    `let v = x in ((let w = x in w) + (let u = x in v + u))`. Check
+    `if a then value(o) else 0`, `if a then 0 else value(o)` and
+    `if present(o) then value(o) else 0`.
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
@@ -115,6 +132,12 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
   naming the depth limit one level deeper. Every 1,000-deep form refuses
   naming the depth limit in force. The first `pre` refuses as a forbidden
   pre-read and the second on the depth limit. No check aborts.
+- Step 11: each read after its binder's body refuses with
+  `missing_declaration`/`missing-name` naming the name read. Each form
+  beside a copy of itself checks. `v` lowers at level 4, `w` and `u` at
+  level 5, and `v + u` reads `v`'s and `u`'s parameter nodes. The two
+  unguarded `value(o)` bodies each refuse with
+  `undefined_expression`/`unproved-presence` alone; the guarded one checks.
 
 ## Status
 
@@ -124,6 +147,6 @@ steps 1 to 7 except step 4's `fm`: the A4b `flatMap` test flat-maps a flat
 `complete-value-lock.json` accessor (ADR-011 §2.4). Steps 8 and 9 are
 specified under QSL-212 and unbacked: on the A4b branch the leaf walk runs
 `Node` to the depth limit and walks an optional field without `inner`.
-The tests back step 10 (QSL-228): before it, a debug build aborted at 20
-nested `a and (…)`.
+The tests back steps 10 and 11 (QSL-228): before it, a debug build
+aborted at 20 nested `a and (…)`.
 Remaining work: QSL-156 A4b.

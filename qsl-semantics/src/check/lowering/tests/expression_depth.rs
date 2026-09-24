@@ -8,7 +8,7 @@
 //! recursed once per level, and measuring the declaration recursed once per
 //! level before any limit was checked.
 
-use qsl_forms::FieldInitializer;
+use qsl_forms::{Accumulation, FieldInitializer};
 
 use super::*;
 use crate::check::{CheckMode, Obligation, WrongSnapshotCause, MAX_CHECKING_DEPTH};
@@ -23,24 +23,38 @@ fn handle(label: &str) -> NodeKey {
     NodeKey::from_digest(qsl_foundation::ByteDigest::of(label.as_bytes()).as_bytes())
 }
 
-/// `record N { v: Boolean; next?: N; }`.
+/// `record N { v: Boolean; next?: N; }` and `tuple T(Boolean)`.
 fn types() -> TypeEnvironment {
     TypeEnvironment::new(
-        vec![CompositeDeclaration::new(
-            handle("N"),
-            "N",
-            CompositeShape::Record(vec![
-                FieldDeclaration::new("v", ValueType::Boolean, Presence::Required),
-                FieldDeclaration::new(
-                    "next",
-                    ValueType::Composite(handle("N")),
-                    Presence::Optional,
-                ),
-            ]),
-        )],
+        vec![
+            CompositeDeclaration::new(
+                handle("N"),
+                "N",
+                CompositeShape::Record(vec![
+                    FieldDeclaration::new("v", ValueType::Boolean, Presence::Required),
+                    FieldDeclaration::new(
+                        "next",
+                        ValueType::Composite(handle("N")),
+                        Presence::Optional,
+                    ),
+                ]),
+            ),
+            CompositeDeclaration::new(
+                handle("T"),
+                "T",
+                CompositeShape::Tuple(vec![ValueType::Boolean]),
+            ),
+        ],
         [],
     )
-    .expect("FR-143 admits N")
+    .expect("FR-143 admits N and T")
+}
+
+/// `Sequence<element>[0, 5]`.
+fn sequence_of(element: TypeForm) -> TypeForm {
+    TypeForm::collection(CollectionKind::Sequence, SPAN)
+        .with_arguments(vec![element])
+        .with_bounds(vec!["0".into(), "5".into()])
 }
 
 fn boxed(expression: Expression) -> Box<Expression> {
@@ -63,7 +77,8 @@ enum Form {
     Let,
     /// `not not … a`.
     Not,
-    /// `g(g(… a))`.
+    /// `g(g(… a))`: each argument is typed against its parameter, the
+    /// typer's upcast step.
     Call,
     /// `(x < x) = ((x < x) = (… a))`.
     Comparison,
@@ -85,9 +100,29 @@ enum Form {
     Field,
     /// `forall(v0 in s: forall(v1 in s: … true))`.
     Forall,
+    /// `sum<Total>(v0 in s: sum<Total>(v1 in s: … x))`.
+    Sum,
+    /// `count<Total>(v0 in s: count<Total>(v1 in s: … x = 0) = 0)`.
+    Count,
+    /// `fold<Total>(acc0, v0 in s: fold<Total>(…), identity: 0)`.
+    Fold,
+    /// `map(v0 in map(v1 in … s: v1): v0)`.
+    Map,
+    /// `filter(v0 in filter(v1 in … s: true): true)`.
+    Filter,
+    /// `contains(bs, contains(bs, … a))`.
+    Contains,
+    /// `convert<Int[0, 9]>(convert<Int[0, 9]>(… x))`.
+    Convert,
+    /// `gs(sequence[gs(sequence[… a])])`: a collection literal, typed
+    /// against `gs`'s parameter.
+    Collection,
+    /// `tv(T(tv(T(… a))))`: a tuple literal, typed against `tv`'s
+    /// parameter.
+    Tuple,
 }
 
-const FORMS: [Form; 16] = [
+const FORMS: [Form; 25] = [
     Form::And,
     Form::AndLeft,
     Form::IfThen,
@@ -104,14 +139,25 @@ const FORMS: [Form; 16] = [
     Form::Record,
     Form::Field,
     Form::Forall,
+    Form::Sum,
+    Form::Count,
+    Form::Fold,
+    Form::Map,
+    Form::Filter,
+    Form::Contains,
+    Form::Convert,
+    Form::Collection,
+    Form::Tuple,
 ];
 
 impl Form {
     /// The deepest nesting the default limits admit: the body's deepest
-    /// expression is then at the depth limit.
+    /// expression is then at the depth limit. A form that nests two
+    /// expressions per level (`value(….next)`, `count`'s `… = 0`, a literal
+    /// inside a call) admits 63.
     fn deepest(self) -> usize {
         match self {
-            Self::Field => 63,
+            Self::Field | Self::Count | Self::Collection | Self::Tuple => 63,
             Self::Guard => 125,
             Self::Comparison | Self::Narrowed | Self::Record => 126,
             Self::And
@@ -124,7 +170,13 @@ impl Form {
             | Self::Add
             | Self::AddLeft
             | Self::Negate
-            | Self::Forall => 127,
+            | Self::Forall
+            | Self::Sum
+            | Self::Fold
+            | Self::Map
+            | Self::Filter
+            | Self::Contains
+            | Self::Convert => 127,
         }
     }
 
@@ -134,19 +186,40 @@ impl Form {
         let x = || name_expr("x");
         let x_below_one = || binary(BinaryOperator::Less, x(), integer_expr(1));
         let integer = || TypeForm::builtin(BuiltinType::Integer, SPAN);
-        let sequence = TypeForm::collection(CollectionKind::Sequence, SPAN)
-            .with_arguments(vec![int_form(0, 9)])
-            .with_bounds(vec!["0".into(), "5".into()]);
+        let sequence = sequence_of(int_form(0, 9));
         let record = |value: Expression, next: Option<Expression>| Expression::Record {
             name: "N".to_owned(),
             fields: std::iter::once(("v".to_owned(), FieldInitializer::Value(value)))
                 .chain(next.map(|next| ("next".to_owned(), FieldInitializer::Value(next))))
                 .collect(),
         };
+        let binder_query = |query: BinderQuery, binder: String, source, body| Expression::Query {
+            query,
+            binder,
+            source: boxed(source),
+            body: boxed(body),
+        };
         let (parameters, result, leaf) = match self {
             Self::Add | Self::AddLeft | Self::Negate | Self::Narrowed => {
                 (vec![("x", int_form(0, 1))], integer(), x())
             }
+            Self::Sum | Self::Count | Self::Fold => (
+                vec![("x", int_form(0, 1)), ("s", sequence.clone())],
+                integer(),
+                x(),
+            ),
+            Self::Convert => (vec![("x", int_form(0, 1))], int_form(0, 9), x()),
+            Self::Map | Self::Filter => (
+                vec![("s", sequence.clone())],
+                sequence.clone(),
+                name_expr("s"),
+            ),
+            Self::Contains => (
+                vec![("a", boolean()), ("bs", sequence_of(boolean()))],
+                boolean(),
+                a(),
+            ),
+            Self::Collection | Self::Tuple => (vec![("a", boolean())], boolean(), a()),
             Self::Record => (
                 vec![("a", boolean())],
                 TypeForm::name("N", SPAN),
@@ -218,6 +291,59 @@ impl Form {
                     source: boxed(name_expr("s")),
                     body: boxed(body),
                 },
+                Self::Sum => Expression::Sum {
+                    result_type: "Total".to_owned(),
+                    binder: format!("v{level}"),
+                    source: boxed(name_expr("s")),
+                    summand: boxed(body),
+                },
+                Self::Count => Expression::Count {
+                    result_type: "Total".to_owned(),
+                    binder: format!("v{level}"),
+                    source: boxed(name_expr("s")),
+                    predicate: boxed(binary(BinaryOperator::Equal, body, integer_expr(0))),
+                },
+                Self::Fold => Expression::Accumulate {
+                    form: Accumulation::Fold,
+                    accumulator_type: "Total".to_owned(),
+                    accumulator: format!("acc{level}"),
+                    binder: format!("v{level}"),
+                    source: boxed(name_expr("s")),
+                    step: boxed(body),
+                    identity: Some(boxed(integer_expr(0))),
+                },
+                Self::Map => {
+                    let binder = format!("v{level}");
+                    binder_query(BinderQuery::Map, binder.clone(), body, name_expr(&binder))
+                }
+                Self::Filter => binder_query(
+                    BinderQuery::Filter,
+                    format!("v{level}"),
+                    body,
+                    Expression::Boolean(true),
+                ),
+                Self::Contains => Expression::Contains {
+                    collection: boxed(name_expr("bs")),
+                    item: boxed(body),
+                },
+                Self::Convert => Expression::Convert {
+                    target: int_form(0, 9),
+                    operand: boxed(body),
+                },
+                Self::Collection => Expression::Call {
+                    name: "gs".to_owned(),
+                    arguments: vec![Expression::Collection {
+                        kind: CollectionKind::Sequence,
+                        elements: vec![body],
+                    }],
+                },
+                Self::Tuple => Expression::Call {
+                    name: "tv".to_owned(),
+                    arguments: vec![Expression::Call {
+                        name: "T".to_owned(),
+                        arguments: vec![body],
+                    }],
+                },
             };
         }
         let body = match self {
@@ -246,15 +372,26 @@ impl Form {
             | Self::AddLeft
             | Self::Negate
             | Self::Record
-            | Self::Forall => body,
+            | Self::Forall
+            | Self::Sum
+            | Self::Count
+            | Self::Fold
+            | Self::Map
+            | Self::Filter
+            | Self::Contains
+            | Self::Convert
+            | Self::Collection
+            | Self::Tuple => body,
         };
         function("f", &parameters, result, None, body)
     }
 }
 
-/// Check `form` nested `levels` times, beside `g(c: Boolean): Boolean` and
-/// `h(n: Int[0, 9]): Int[0, 9]`, under `limits` on a [`STACK`]-byte thread.
-/// The body is built and dropped on that thread too.
+/// Check `form` nested `levels` times, beside `g(c: Boolean): Boolean`,
+/// `h(n: Int[0, 9]): Int[0, 9]`, `gs(c: Sequence<Boolean>[0, 5]): Boolean`
+/// and `tv(t: T): Boolean`, with the alias `Total = Integer`, under `limits`
+/// on a [`STACK`]-byte thread. The body is built and dropped on that thread
+/// too.
 fn check_on_small_stack(
     form: Form,
     levels: usize,
@@ -274,8 +411,23 @@ fn check_on_small_stack(
                         None,
                         name_expr("n"),
                     ),
+                    function(
+                        "gs",
+                        &[("c", sequence_of(boolean()))],
+                        boolean(),
+                        None,
+                        Expression::Boolean(true),
+                    ),
+                    function(
+                        "tv",
+                        &[("t", TypeForm::name("T", SPAN))],
+                        boolean(),
+                        None,
+                        Expression::Boolean(true),
+                    ),
                 ],
                 types: types(),
+                aliases: vec![("Total".to_owned(), ValueType::Integer)],
                 ..PackageDeclarations::new(fixture_owner())
             }
             .check(limits)

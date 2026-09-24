@@ -97,11 +97,13 @@ type.
 
 Checking a function body walks its expressions to type them, to prove their
 static definedness and to lower them. Each walk keeps the expressions it has
-still to finish on a heap stack, so the host stack it uses does not grow
-with the body's nesting. The guard facts the definedness walk derives from
-one condition are derived over that condition's own nesting. The check
-stage's depth limit (`CheckingLimits`, at most `MAX_CHECKING_DEPTH`) bounds
-all of that nesting. Typing counts each expression it enters as one level
+still to finish on a heap stack. Four helpers that the definedness walk
+calls on one expression still recurse once per level of that expression:
+`outcomes` (the facts a condition establishes), `interval` (an integer
+expression's proved range), `stable_path` (a guarded read's path) and
+`shape` (an argument's shape, through `stable_path`). The check stage's
+depth limit (`CheckingLimits`, at most `MAX_CHECKING_DEPTH`) bounds all
+nesting, that recursion included. Typing counts each expression it enters as one level
 and refuses a body nested past the limit with
 `resource_exhausted`/`insufficient-next-charge` naming the depth limit
 (`CheckCause::ResourceExhausted`), before any node of it is lowered. The
@@ -109,6 +111,12 @@ walk that measures a declaration before typing (FR-062's input bytes, node
 count and work) and the syntactic checks of a `pre(…)` operand walk the
 parsed expression on a heap stack too, so a body nested past every limit
 refuses on a limit.
+
+Each walk closes a binder's scope when the binder's body is done, and walks
+every operand. A `let`, `count`, `sum`, query or `fold` binder is out of scope
+after its body, so a later sibling may bind the same name, and lowering
+gives that sibling its enclosing binder's level. The definedness walk walks
+both branches of an `if`.
 
 ### Non-application nodes
 
@@ -679,6 +687,7 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
 | FR-093-AC-12 | For every node of the checked package of AC-7, of the package of the recursive `f` and of a package holding `record Tree { kids: Sequence<Tree>[0, 3]; }`, the emitted `dependencies` equal the list that rules 1 to 5 of Node dependencies rebuild from the node as written. In ascending digest order, E1 lists P2 and P1; F2 `both` lists P2, P1 and E1; E2 lists L1, F2 and P1; T1, L1 and P1 list none. In the package of the recursive `f`, T4 `Int[0, 9]` lists T2, G4 lists G5 and P4, G5 lists L1, E11 and G6, and G6 lists G4 and E13. In the `Tree` package, G7 lists G9, G8 lists G7 and G9 lists G8. | Test (TC-416) |
 | FR-093-AC-13 | For each application node of QSpec's `positive-operation-identities.json` and `positive-control-operations.json` whose `operation.identity` a row of the application table lowers, the node emitted for a function whose body holds that operation equals the fixture node in `node_tag`, `semantic_form`, `operator`, `operation.identity`, law roles in order, `mode`, member `kind` and `name`, leaf `path`s and modes, and argument term kinds and binding names, and IR's v2 reader admits the emitted package. The comparison reads none of the members Comparison with QSpec's v2 positive fixtures places outside it. | Test (TC-416) |
 | FR-093-AC-14 | On a thread with a 2 MiB stack, at the default limits, a function body of 127 nested `a and (…)` checks and one of 128 refuses with `resource_exhausted`/`insufficient-next-charge` naming the depth limit. Each nested form TC-415 step 10 lists checks at the deepest nesting the default limits admit, or refuses there on its own unproved obligation, and refuses naming the depth limit one level deeper. Each of those forms nested 1,000 deep refuses naming the depth limit at the default limits, at the maximum depth with node, input-byte and work limits unlimited, and at a depth limit of 16. A postcondition `pre(…)` over 1,000 nested levels refuses. | Test (TC-415) |
+| FR-093-AC-15 | With the alias `Total = Integer` and parameters `x: Int[0, 9]` and `s: Sequence<Int[0, 9]>[0, 5]`, reading `v` after `let v = x in v`, `count<Total>(v in s: v < 5)`, `sum<Total>(v in s: v)`, `forall(v in s: v < 5)` or `fold<Total>(acc, v in s: acc + v, identity: 0)` refuses with `missing_declaration`/`missing-name` naming `v`, and reading `acc` after that `fold` refuses naming `acc`. Each of those forms beside a copy of itself that binds the same name checks. After `f`'s four parameters, `let v = x in ((let w = x in w) + (let u = x in v + u))` lowers `v` at level 4 and both `w` and `u` at level 5, and `v + u` reads `v`'s and `u`'s parameter nodes. `if a then value(o) else 0` and `if a then 0 else value(o)`, over `o: Option<Int[0, 9]>`, each refuse with `undefined_expression`/`unproved-presence` alone. `if present(o) then value(o) else 0` checks. | Test (TC-415) |
 
 ## Dependencies
 
@@ -731,7 +740,7 @@ Specified under QSL-208; the text-leaf walk and its recursion leaf
 specified under QSL-212. Implemented on the QSL-156 slice
 A4b branch, pending merge: `check` lowers each checked node in
 `qsl-semantics/src/check/lowering.rs` and keys it by FR-092, and TC-415
-backs AC-1 to AC-6, AC-8, AC-10, AC-11, AC-14 and CON-1 there. The
+backs AC-1 to AC-6, AC-8, AC-10, AC-11, AC-14, AC-15 and CON-1 there. The
 text-leaf walk (`text_leaves`) follows the Text leaves rules, charges each
 leaf to the node limit before any leaf's law is read, and keys the Recursive
 text-leaf vectors. A4b spells an integer literal as a decimal string and gives

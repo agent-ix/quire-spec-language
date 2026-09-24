@@ -21,6 +21,7 @@ use crate::check::family::fixtures::{empty_scope, fixture_owner, scope_with};
 use crate::check::{CheckedGraph, CheckedTypeNode, CheckingLimits, PackageDeclarations};
 use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
 
+mod binder_scope;
 mod depth;
 mod expression_depth;
 mod leaves;

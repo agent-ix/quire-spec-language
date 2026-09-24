@@ -32,6 +32,8 @@ use crate::model::domain_package::{
 use crate::model::normalize::{normalize, NormalizeOutcome};
 use crate::value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
 
+mod expression_depth;
+
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
 const FR_094: &str = include_str!(

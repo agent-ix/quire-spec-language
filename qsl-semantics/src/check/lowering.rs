@@ -572,7 +572,7 @@ struct FoldFrame<'n> {
 
 #[allow(
     clippy::large_enum_variant,
-    reason = "frames are moved once per push and pop on a heap Vec; boxing the lowered term would add an allocation per fold"
+    reason = "this stage lives inside the already boxed FoldFrame; boxing its SemanticTerm payload would add a second allocation per fold"
 )]
 enum FoldStage {
     /// The source is being lowered.
