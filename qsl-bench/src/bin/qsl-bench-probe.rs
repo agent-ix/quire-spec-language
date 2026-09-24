@@ -109,12 +109,8 @@ fn probe_cst() {
             Ok(parsed) if parsed.is_admissible() => {
                 let hashed = cst_identity_hashed_bytes(&parsed);
                 let source = text.len();
-                // Ratio as an exact-to-two-places decimal of two counts; the
-                // float is display only.
-                #[allow(
-                    clippy::cast_precision_loss,
-                    reason = "display-only ratio of two byte counts far below 2^52"
-                )]
+                // Display only: both counts are far below 2^52, so the
+                // float division loses nothing that two decimals show.
                 let ratio = hashed.total as f64 / source as f64;
                 println!(
                     "cst.hash {label} source_bytes={source} nodes={} hashed_bytes={} of_which_source_slices={} of_which_ancestor_paths={} ratio={ratio:.2} (model of LosslessCst::new's preimage at 89326999)",
