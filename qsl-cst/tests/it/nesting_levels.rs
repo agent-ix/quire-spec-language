@@ -4,7 +4,7 @@
 //! ceilings; see `tests/it/nesting_levels.rs` in the root crate for the
 //! native parser.
 use ix_trace_rs::trace;
-use qsl_cst::{CompleteCode, CompleteDiagnostic, Limits, ParsedSource, Production};
+use qsl_cst::{CompleteCode, CompleteDiagnostic, Limits, ParsedSource, Production, RecoveryKind};
 use qsl_foundation::{Phase, SourceIdentity, SyntaxLimit};
 
 fn identity(id: &str) -> SourceIdentity {
@@ -235,6 +235,39 @@ fn nested_trailing_comma_typo_exposes_a_recovery_within_the_work_budget() {
             );
             assert!(!parsed.cst().recoveries().is_empty(), "{body}");
         }
+    });
+}
+
+// QSL-223: the memoized recovery (QSL-213) must point at the innermost
+// offending token, not wherever the outermost `Choice` gave up. Every level
+// of `f(g(f(g(x,)),))` falls back from a failed call to a bare
+// `QualifiedName` (the identifier alone, no arguments), so the only failure
+// that survives every level's backtracking is the deepest one: the
+// argument list of the innermost `g(x,)` expects another expression or a
+// closing `)` after its trailing comma, and finds `)` there. That is the
+// token right after the comma, one of the two spans FR-302-AC-2 accepts.
+#[trace("TC-012", "TC-222", "FR-302-AC-2")]
+#[test]
+fn nested_trailing_comma_typo_recovery_points_at_the_offending_comma() {
+    on_bounded_stack(|| {
+        let body = "f(g(f(g(x,)),))";
+        let text = function(body);
+        let parsed = parse(&text).unwrap_or_else(|error| panic!("{error:?}"));
+        assert!(!parsed.is_admissible());
+        let recoveries = parsed.cst().recoveries();
+        assert_eq!(recoveries.len(), 1, "{recoveries:?}");
+        // `f(g(f(g(x,)),))`: the innermost trailing comma is the `,` right
+        // after `x`; the token right after it is the `)` that closes `g(`.
+        let comma = body.find("x,").expect("the innermost trailing comma") + 1;
+        let offending = function_prefix().len() + comma + 1;
+        assert_eq!(
+            (recoveries[0].span.start, recoveries[0].span.end),
+            (offending, offending + 1),
+            "{:?}",
+            recoveries[0]
+        );
+        assert_eq!(&text[recoveries[0].span.start..recoveries[0].span.end], ")");
+        assert_eq!(recoveries[0].kind, RecoveryKind::Delete);
     });
 }
 
