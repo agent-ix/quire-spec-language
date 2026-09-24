@@ -438,6 +438,156 @@ enum OpenComposite<'v> {
     Open(CompositeFrame<'v>),
 }
 
+/// One step of [`Lowering::expression`]'s loop.
+enum LowerStep<'n> {
+    /// Lower this checked node at this nesting depth (the body root is 0).
+    Descend(&'n Node, u64),
+    /// A node is lowered to this term: hand it to the frame waiting for it.
+    Lowered(SemanticTerm),
+}
+
+/// A checked node waiting for the terms of its operands.
+enum LowerFrame<'n> {
+    /// An application or value node over its operands, in order.
+    Operands(Box<OperandsFrame<'n>>),
+    /// `let`: its value, then its body under the new binder.
+    Let(Box<LetFrame<'n>>),
+    /// A one-binder operation: its source, then its body under the binder.
+    Binder(Box<BinderFrame<'n>>),
+    /// `deref(r).f` over the reference `r`, of object type `object`.
+    Attribute {
+        node: &'n Node,
+        object: NodeKey,
+        name: &'n str,
+    },
+    /// A record value: its present fields' values, in declaration order.
+    Record(Box<RecordFrame<'n>>),
+    /// `fold`/`reduce`: its source, its identity, then its step under the
+    /// accumulator and element binders.
+    Fold(Box<FoldFrame<'n>>),
+}
+
+/// A checked node's operands, in order.
+#[derive(Clone, Copy)]
+enum Operands<'n> {
+    One(&'n Node),
+    Two(&'n Node, &'n Node),
+    Three(&'n Node, &'n Node, &'n Node),
+    Each(&'n [Node]),
+    /// A dispatch call's receiver, then its arguments.
+    Receiver(&'n Node, &'n [Node]),
+}
+
+impl<'n> Operands<'n> {
+    fn len(self) -> usize {
+        match self {
+            Self::One(_) => 1,
+            Self::Two(..) => 2,
+            Self::Three(..) => 3,
+            Self::Each(nodes) => nodes.len(),
+            Self::Receiver(_, arguments) => arguments.len() + 1,
+        }
+    }
+
+    fn get(self, index: usize) -> Option<&'n Node> {
+        match (self, index) {
+            (Self::One(first) | Self::Two(first, _) | Self::Three(first, _, _), 0)
+            | (Self::Receiver(first, _), 0) => Some(first),
+            (Self::Two(_, second) | Self::Three(_, second, _), 1) => Some(second),
+            (Self::Three(_, _, third), 2) => Some(third),
+            (Self::Each(nodes), index) => nodes.get(index),
+            (Self::Receiver(_, arguments), index) => arguments.get(index.checked_sub(1)?),
+            (Self::One(_) | Self::Two(..) | Self::Three(..), _) => None,
+        }
+    }
+}
+
+/// What an operands frame keys once its operands are lowered.
+enum Keyed {
+    /// An application node.
+    Application(Operator, Operation),
+    /// A `value` node of this form, typed at this type node, whose body
+    /// aggregates the operands.
+    Value(&'static str, NodeKey),
+}
+
+/// A node over its operands' terms.
+struct OperandsFrame<'n> {
+    node: &'n Node,
+    depth: u64,
+    operands: Operands<'n>,
+    /// The next operand to lower.
+    next: usize,
+    /// The terms so far: a call's callee reference, then each operand's.
+    terms: Vec<SemanticTerm>,
+    keyed: Keyed,
+}
+
+/// `let name = value in body`.
+struct LetFrame<'n> {
+    node: &'n Node,
+    depth: u64,
+    slot: Slot,
+    value: &'n Node,
+    body: &'n Node,
+    /// The value's term and the binder's name, once the value is lowered.
+    bound: Option<(SemanticTerm, String)>,
+}
+
+/// A one-binder operation's operands `[ref(source), binding{name,
+/// ref(body)}]`, the binder typed at `source`'s element type.
+struct BinderFrame<'n> {
+    node: &'n Node,
+    depth: u64,
+    slot: Slot,
+    source: &'n Node,
+    body: &'n Node,
+    operator: Operator,
+    operation: Operation,
+    /// The source's term and the binder's name, once the source is lowered.
+    bound: Option<(SemanticTerm, String)>,
+}
+
+/// A record value's members, one binding per declared field.
+struct RecordFrame<'n> {
+    node: &'n Node,
+    depth: u64,
+    semantic_type: NodeKey,
+    fields: Vec<FieldDeclaration>,
+    slots: &'n [RecordSlot],
+    members: Vec<SemanticTerm>,
+}
+
+/// `fold`/`reduce` over `source`.
+struct FoldFrame<'n> {
+    node: &'n Node,
+    depth: u64,
+    accumulator: Slot,
+    binder: Slot,
+    source: &'n Node,
+    step: &'n Node,
+    identity: Option<&'n Node>,
+    stage: FoldStage,
+}
+
+#[allow(
+    clippy::large_enum_variant,
+    reason = "this stage lives inside the already boxed FoldFrame; boxing its SemanticTerm payload would add a second allocation per fold"
+)]
+enum FoldStage {
+    /// The source is being lowered.
+    Source,
+    /// The identity is being lowered.
+    Identity(SemanticTerm),
+    /// The step is being lowered under the accumulator and element binders.
+    Step {
+        source: SemanticTerm,
+        identity: Option<SemanticTerm>,
+        accumulator: String,
+        binder: String,
+    },
+}
+
 /// `name`'s `::`-separated segments, each an identifier.
 fn qualified_name(name: &str, location: &Location) -> Result<Vec<Identifier>, CheckRefusal> {
     name.split("::")
@@ -1828,14 +1978,14 @@ impl<'a> Lowering<'a> {
             slot_names: function.body_slots,
             scope: parameters.clone(),
         };
-        let body = self.expression(function.body, &mut binders, 0)?;
+        let body = self.expression(function.body, &mut binders)?;
         members.push(SemanticTerm::binding("body", body));
         if let Some(measure) = function.measure {
             let mut binders = Binders {
                 slot_names: function.measure_slots,
                 scope: parameters.clone(),
             };
-            let measure = self.expression(measure, &mut binders, 0)?;
+            let measure = self.expression(measure, &mut binders)?;
             members.push(SemanticTerm::binding("decreases", measure));
         }
         let key = match function.clause {
@@ -1996,52 +2146,68 @@ impl<'a> Lowering<'a> {
         })
     }
 
-    /// `ref(x)` for each of `nodes`, in order.
-    fn operands(
-        &mut self,
-        nodes: &[&Node],
-        binders: &mut Binders<'_>,
-        depth: u64,
-    ) -> Result<Vec<SemanticTerm>, CheckRefusal> {
-        nodes
-            .iter()
-            .map(|node| self.expression(node, binders, depth + 1))
-            .collect()
-    }
-
-    /// A one-binder operation's operands: `[ref(source), binding{name,
-    /// ref(body)}]`, the binder typed at `source`'s element type.
-    fn binder_operands(
-        &mut self,
-        node: &Node,
-        slot: Slot,
-        source: &Node,
-        body: &Node,
-        binders: &mut Binders<'_>,
-        depth: u64,
-    ) -> Result<Vec<SemanticTerm>, CheckRefusal> {
-        let source_ref = self.expression(source, binders, depth + 1)?;
-        let element = element_type(&source.value_type, &node.location)?;
-        let element = self.type_node(&element, &node.location)?;
-        let name = self.bind(binders, slot, element, &node.location)?;
-        let body = self.expression(body, binders, depth + 1);
-        binders.scope.pop();
-        Ok(vec![source_ref, SemanticTerm::binding(name, body?)])
-    }
-
-    /// Lower checked `node` and return the term that names it: a reference
+    /// Lower checked `root` and return the term that names it: a reference
     /// to its node, or to its binder's parameter node for a local read.
-    #[deny(clippy::wildcard_enum_match_arm)]
+    ///
+    /// The nodes still to lower and the nodes waiting on their operands are
+    /// kept on an explicit heap stack (QSL-228), so a body nested to the
+    /// depth limit lowers in the same host stack as a flat one. Nodes are
+    /// built, charged and refused in the order the recursive lowering before
+    /// QSL-228 reached them -- each node's own type and member nodes before
+    /// its operands, its operands in order, then its own node -- so every
+    /// key is that lowering's. On a refusal the binders the refused
+    /// expression bound are no longer in scope.
     fn expression(
         &mut self,
-        node: &Node,
+        root: &Node,
         binders: &mut Binders<'_>,
-        depth: u64,
     ) -> Result<SemanticTerm, CheckRefusal> {
+        let scope = binders.scope.len();
+        let lowered = self.lower(root, binders);
+        if lowered.is_err() {
+            binders.scope.truncate(scope);
+        }
+        lowered
+    }
+
+    /// [`Self::expression`]'s loop: lower a node, or hand a lowered node's
+    /// term to the frame waiting for it.
+    fn lower(
+        &mut self,
+        root: &Node,
+        binders: &mut Binders<'_>,
+    ) -> Result<SemanticTerm, CheckRefusal> {
+        let mut frames: Vec<LowerFrame<'_>> = Vec::new();
+        let mut step = LowerStep::Descend(root, 0);
+        loop {
+            step = match step {
+                LowerStep::Descend(node, depth) => {
+                    self.lower_node(node, depth, binders, &mut frames)?
+                }
+                LowerStep::Lowered(term) => match frames.pop() {
+                    None => return Ok(term),
+                    Some(frame) => self.accept_term(frame, term, binders, &mut frames)?,
+                },
+            };
+        }
+    }
+
+    /// Start lowering checked `node` at `depth`: a literal or local read is
+    /// lowered now; a node the FR-093 table builds no node for lowers its
+    /// operand in its place; any other node builds its own type and member
+    /// nodes, pushes its frame and descends into its first operand.
+    #[deny(clippy::wildcard_enum_match_arm)]
+    fn lower_node<'n>(
+        &mut self,
+        node: &'n Node,
+        depth: u64,
+        binders: &Binders<'_>,
+        frames: &mut Vec<LowerFrame<'n>>,
+    ) -> Result<LowerStep<'n>, CheckRefusal> {
         self.check_depth(depth, &node.location)?;
         let plain = Operation::plain;
-        match &node.kind {
-            NodeKind::Literal(value) => self.literal(node, value),
+        let (keyed, operands) = match &node.kind {
+            NodeKind::Literal(value) => return self.literal(node, value).map(LowerStep::Lowered),
             NodeKind::Local(slot) => {
                 let key = binders
                     .scope
@@ -2056,82 +2222,67 @@ impl<'a> Lowering<'a> {
                         )
                     })?;
                 self.record(key, "expression", node.location.clone());
-                Ok(SemanticTerm::reference(key))
+                return Ok(LowerStep::Lowered(SemanticTerm::reference(key)));
             }
             NodeKind::Coerce(operand, interval) => {
                 // FR-093: an integer whose type the target range contains is
                 // admitted with no node.
                 if let ValueType::Int(source) = &operand.value_type {
                     if interval.contains(source.lower()) && interval.contains(source.upper()) {
-                        return self.expression(operand, binders, depth + 1);
+                        return Ok(LowerStep::Descend(operand, depth + 1));
                     }
                 }
                 let member =
                     self.type_argument(&ValueType::Int(interval.clone()), &node.location)?;
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Convert,
-                    Operation {
-                        member: Some(member),
-                        ..plain("quire.op.numeric.narrow")
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Convert,
+                        Operation {
+                            member: Some(member),
+                            ..plain("quire.op.numeric.narrow")
+                        },
+                    ),
+                    Operands::One(operand),
                 )
             }
             NodeKind::Let { slot, value, body } => {
-                let value_ref = self.expression(value, binders, depth + 1)?;
-                let value_type = self.value_type_node(value, binders)?;
-                let name = self.bind(binders, *slot, value_type, &node.location)?;
-                let body_ref = self.expression(body, binders, depth + 1);
-                binders.scope.pop();
-                self.application(
+                frames.push(LowerFrame::Let(Box::new(LetFrame {
                     node,
-                    Operator::Let,
-                    plain("quire.op.control.let"),
-                    vec![SemanticTerm::binding(name, value_ref), body_ref?],
-                )
+                    depth,
+                    slot: *slot,
+                    value,
+                    body,
+                    bound: None,
+                })));
+                return Ok(LowerStep::Descend(value, depth + 1));
             }
             NodeKind::If {
                 condition,
                 then,
                 otherwise,
-            } => {
-                let arguments = self.operands(&[condition, then, otherwise], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Conditional,
-                    plain("quire.op.control.if"),
-                    arguments,
-                )
-            }
+            } => (
+                Keyed::Application(Operator::Conditional, plain("quire.op.control.if")),
+                Operands::Three(condition, then, otherwise),
+            ),
             NodeKind::Arithmetic(operator, left, right) => {
                 let identity = match operator {
                     Arithmetic::Add => "quire.op.integer.add",
                     Arithmetic::Subtract => "quire.op.integer.sub",
                     Arithmetic::Multiply => "quire.op.integer.mul",
                 };
-                let arguments = self.operands(&[left, right], binders, depth)?;
-                self.application(node, Operator::Binary, plain(identity), arguments)
-            }
-            NodeKind::Negate(operand) => {
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Unary,
-                    plain("quire.op.integer.negate"),
-                    arguments,
+                (
+                    Keyed::Application(Operator::Binary, plain(identity)),
+                    Operands::Two(left, right),
                 )
             }
-            NodeKind::Divide { left, right, .. } => {
-                let arguments = self.operands(&[left, right], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Binary,
-                    plain("quire.op.rational.div"),
-                    arguments,
-                )
-            }
+            NodeKind::Negate(operand) => (
+                Keyed::Application(Operator::Unary, plain("quire.op.integer.negate")),
+                Operands::One(operand),
+            ),
+            NodeKind::Divide { left, right, .. } => (
+                Keyed::Application(Operator::Binary, plain("quire.op.rational.div")),
+                Operands::Two(left, right),
+            ),
             NodeKind::Rational {
                 operator,
                 left,
@@ -2139,18 +2290,15 @@ impl<'a> Lowering<'a> {
                 ..
             } => {
                 let identity = format!("quire.op.rational.{}", arithmetic_suffix(*operator));
-                let arguments = self.operands(&[left, right], binders, depth)?;
-                self.application(node, Operator::Binary, plain(&identity), arguments)
-            }
-            NodeKind::RationalNegate(operand, _) => {
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Unary,
-                    plain("quire.op.rational.negate"),
-                    arguments,
+                (
+                    Keyed::Application(Operator::Binary, plain(&identity)),
+                    Operands::Two(left, right),
                 )
             }
+            NodeKind::RationalNegate(operand, _) => (
+                Keyed::Application(Operator::Unary, plain("quire.op.rational.negate")),
+                Operands::One(operand),
+            ),
             NodeKind::Decimal {
                 operator,
                 left,
@@ -2158,30 +2306,27 @@ impl<'a> Lowering<'a> {
                 target,
             } => {
                 let identity = format!("quire.op.decimal.{}", arithmetic_suffix(*operator));
-                let arguments = self.operands(&[left, right], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Binary,
-                    Operation {
-                        mode: Some(OperationMode::Rounding(target.rounding())),
-                        ..plain(&identity)
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Binary,
+                        Operation {
+                            mode: Some(OperationMode::Rounding(target.rounding())),
+                            ..plain(&identity)
+                        },
+                    ),
+                    Operands::Two(left, right),
                 )
             }
-            NodeKind::DecimalNegate(operand, _) => {
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Unary,
-                    plain("quire.op.decimal.negate"),
-                    arguments,
-                )
-            }
+            NodeKind::DecimalNegate(operand, _) => (
+                Keyed::Application(Operator::Unary, plain("quire.op.decimal.negate")),
+                Operands::One(operand),
+            ),
             NodeKind::Quantity(operator, left, right) => {
                 let identity = format!("quire.op.quantity.{}", arithmetic_suffix(*operator));
-                let arguments = self.operands(&[left, right], binders, depth)?;
-                self.application(node, Operator::Binary, plain(&identity), arguments)
+                (
+                    Keyed::Application(Operator::Binary, plain(&identity)),
+                    Operands::Two(left, right),
+                )
             }
             NodeKind::Ieee(operator, left, right) => {
                 let ValueType::Float(width) = &left.value_type else {
@@ -2193,16 +2338,16 @@ impl<'a> Lowering<'a> {
                 };
                 let law = self.law(LawRole::IeeeProfile, &node.location)?;
                 let identity = format!("quire.op.ieee.{width}.{}", arithmetic_suffix(*operator));
-                let arguments = self.operands(&[left, right], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Binary,
-                    Operation {
-                        laws: vec![law],
-                        mode: Some(OperationMode::Rounding(quire_exact::RoundingMode::Exact)),
-                        ..plain(&identity)
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Binary,
+                        Operation {
+                            laws: vec![law],
+                            mode: Some(OperationMode::Rounding(quire_exact::RoundingMode::Exact)),
+                            ..plain(&identity)
+                        },
+                    ),
+                    Operands::Two(left, right),
                 )
             }
             NodeKind::ConvertDecimal(operand, target) => {
@@ -2217,7 +2362,6 @@ impl<'a> Lowering<'a> {
                 };
                 let member =
                     self.type_argument(&ValueType::Decimal(target.clone()), &node.location)?;
-                let arguments = self.operands(&[operand], binders, depth)?;
                 let operation = if reduces {
                     Operation {
                         member: Some(member),
@@ -2230,7 +2374,10 @@ impl<'a> Lowering<'a> {
                         ..plain("quire.op.numeric.convert")
                     }
                 };
-                self.application(node, Operator::Convert, operation, arguments)
+                (
+                    Keyed::Application(Operator::Convert, operation),
+                    Operands::One(operand),
+                )
             }
             NodeKind::Order(operator, kind, left, right) => {
                 let family = match kind {
@@ -2247,8 +2394,10 @@ impl<'a> Lowering<'a> {
                     operation.laws = vec![self.law(LawRole::TextProfile, &node.location)?];
                     operation.mode = text_profile(&left.value_type).map(OperationMode::TextProfile);
                 }
-                let arguments = self.operands(&[left, right], binders, depth)?;
-                self.application(node, Operator::Binary, operation, arguments)
+                (
+                    Keyed::Application(Operator::Binary, operation),
+                    Operands::Two(left, right),
+                )
             }
             NodeKind::Equality(operator, _, left, right) => {
                 let suffix = match operator {
@@ -2256,8 +2405,10 @@ impl<'a> Lowering<'a> {
                     EqualityOperator::NotEqual => "ne",
                 };
                 let operation = self.equality(&left.value_type, suffix, &node.location)?;
-                let arguments = self.operands(&[left, right], binders, depth)?;
-                self.application(node, Operator::Binary, operation, arguments)
+                (
+                    Keyed::Application(Operator::Binary, operation),
+                    Operands::Two(left, right),
+                )
             }
             NodeKind::Connective(connective, left, right) => {
                 let identity = match connective {
@@ -2265,29 +2416,26 @@ impl<'a> Lowering<'a> {
                     Connective::Or => "quire.op.boolean.or",
                     Connective::Implies => "quire.op.boolean.implies",
                 };
-                let arguments = self.operands(&[left, right], binders, depth)?;
-                self.application(node, Operator::Binary, plain(identity), arguments)
-            }
-            NodeKind::Not(operand) => {
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Unary,
-                    plain("quire.op.boolean.not"),
-                    arguments,
+                (
+                    Keyed::Application(Operator::Binary, plain(identity)),
+                    Operands::Two(left, right),
                 )
             }
+            NodeKind::Not(operand) => (
+                Keyed::Application(Operator::Unary, plain("quire.op.boolean.not")),
+                Operands::One(operand),
+            ),
             NodeKind::Field { operand, index, .. } => {
                 let member = self.field_member(&operand.value_type, *index, &node.location)?;
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Query,
-                    Operation {
-                        member: Some(member),
-                        ..plain("quire.op.record.project")
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Query,
+                        Operation {
+                            member: Some(member),
+                            ..plain("quire.op.record.project")
+                        },
+                    ),
+                    Operands::One(operand),
                 )
             }
             NodeKind::Attribute {
@@ -2297,51 +2445,17 @@ impl<'a> Lowering<'a> {
                 // reference, typed at its object type `T`'s model node, and
                 // over it the `record.project` of field `name` of `T`.
                 let object = self.referenced_object(&reference.value_type, &node.location)?;
-                let arguments = self.operands(&[reference], binders, depth)?;
-                let dereferenced = self.typed_application(
-                    &node.location,
-                    object,
-                    Operator::Deref,
-                    plain("quire.op.model.deref"),
-                    arguments,
-                )?;
-                let name = Identifier::new(name.as_str()).map_err(|_| {
-                    refuse(
-                        &node.location,
-                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
-                    )
-                })?;
-                self.application(
-                    node,
-                    Operator::Query,
-                    Operation {
-                        member: Some(Member::Field {
-                            declaration: object,
-                            name,
-                        }),
-                        ..plain("quire.op.record.project")
-                    },
-                    vec![dereferenced],
-                )
+                frames.push(LowerFrame::Attribute { node, object, name });
+                return Ok(LowerStep::Descend(reference, depth + 1));
             }
-            NodeKind::Present(operand) => {
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Present,
-                    plain("quire.op.option.present"),
-                    arguments,
-                )
-            }
-            NodeKind::Value(operand) => {
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Value,
-                    plain("quire.op.option.value"),
-                    arguments,
-                )
-            }
+            NodeKind::Present(operand) => (
+                Keyed::Application(Operator::Present, plain("quire.op.option.present")),
+                Operands::One(operand),
+            ),
+            NodeKind::Value(operand) => (
+                Keyed::Application(Operator::Value, plain("quire.op.option.value")),
+                Operands::One(operand),
+            ),
             NodeKind::Call {
                 function,
                 arguments,
@@ -2359,31 +2473,28 @@ impl<'a> Lowering<'a> {
                             },
                         )
                     })?;
-                let mut operands = vec![SemanticTerm::reference(callee)];
-                for argument in arguments {
-                    operands.push(self.expression(argument, binders, depth + 1)?);
-                }
-                self.application(
-                    node,
-                    Operator::Call,
-                    plain("quire.op.function.call"),
-                    operands,
-                )
+                let mut terms = Vec::with_capacity(arguments.len() + 1);
+                terms.push(SemanticTerm::reference(callee));
+                return self.next_operand(
+                    Box::new(OperandsFrame {
+                        node,
+                        depth,
+                        operands: Operands::Each(arguments),
+                        next: 0,
+                        terms,
+                        keyed: Keyed::Application(Operator::Call, plain("quire.op.function.call")),
+                    }),
+                    frames,
+                );
             }
             NodeKind::Tuple {
                 declaration,
                 arguments,
             } => {
                 let semantic_type = self.composite(*declaration, &node.location)?;
-                let mut members = Vec::with_capacity(arguments.len());
-                for argument in arguments {
-                    members.push(self.expression(argument, binders, depth + 1)?);
-                }
-                self.value_node(
-                    node,
-                    "tuple_value",
-                    semantic_type,
-                    SemanticTerm::Aggregate { members },
+                (
+                    Keyed::Value("tuple_value", semantic_type),
+                    Operands::Each(arguments),
                 )
             }
             NodeKind::Record { declaration, slots } => {
@@ -2402,24 +2513,18 @@ impl<'a> Lowering<'a> {
                 if fields.len() != slots.len() {
                     return Err(fault(&node.location, KeyFault::RecordSlotCount));
                 }
-                let mut members = Vec::with_capacity(slots.len());
-                for (field, slot) in fields.iter().zip(slots) {
-                    let value = match slot {
-                        RecordSlot::Present(value) => self.expression(value, binders, depth + 1)?,
-                        RecordSlot::Null | RecordSlot::Absent => {
-                            let option = ValueType::option(field.value_type().clone());
-                            let option = self.type_node(&option, &node.location)?;
-                            SemanticTerm::literal(option, LiteralValue::None)
-                        }
-                    };
-                    members.push(SemanticTerm::binding(field.name(), value));
-                }
-                self.value_node(
-                    node,
-                    "record_value",
-                    semantic_type,
-                    SemanticTerm::Aggregate { members },
-                )
+                let members = Vec::with_capacity(slots.len());
+                return self.record_members(
+                    Box::new(RecordFrame {
+                        node,
+                        depth,
+                        semantic_type,
+                        fields,
+                        slots,
+                        members,
+                    }),
+                    frames,
+                );
             }
             NodeKind::Collection {
                 collection_type,
@@ -2431,18 +2536,15 @@ impl<'a> Lowering<'a> {
                 );
                 let leaves =
                     self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
-                let mut operands = Vec::with_capacity(elements.len());
-                for element in elements {
-                    operands.push(self.expression(element, binders, depth + 1)?);
-                }
-                self.application(
-                    node,
-                    Operator::Collection,
-                    Operation {
-                        leaves,
-                        ..plain(&identity)
-                    },
-                    operands,
+                (
+                    Keyed::Application(
+                        Operator::Collection,
+                        Operation {
+                            leaves,
+                            ..plain(&identity)
+                        },
+                    ),
+                    Operands::Each(elements),
                 )
             }
             NodeKind::ConvertCollection { target, operand } => {
@@ -2450,16 +2552,16 @@ impl<'a> Lowering<'a> {
                     self.type_argument(&ValueType::collection(target.clone()), &node.location)?;
                 let leaves =
                     self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Convert,
-                    Operation {
-                        member: Some(member),
-                        leaves,
-                        ..plain("quire.op.collection.convert")
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Convert,
+                        Operation {
+                            member: Some(member),
+                            leaves,
+                            ..plain("quire.op.collection.convert")
+                        },
+                    ),
+                    Operands::One(operand),
                 )
             }
             NodeKind::ConvertScalar(target, operand) => {
@@ -2467,50 +2569,43 @@ impl<'a> Lowering<'a> {
                 if target == operand.value_type {
                     // FR-093: a conversion to the operand's own type builds
                     // no node.
-                    return self.expression(operand, binders, depth + 1);
+                    return Ok(LowerStep::Descend(operand, depth + 1));
                 }
                 let member = self.type_argument(&target, &node.location)?;
-                if let ValueType::Quantity(_) = &operand.value_type {
+                let operation = if let ValueType::Quantity(_) = &operand.value_type {
                     // FR-093 `quire.op.quantity.convert`: a quantity's
                     // magnitude is an exact rational, and its conversion is
                     // exact (`value::quantity`'s `QuantityTarget::Exact`).
-                    let arguments = self.operands(&[operand], binders, depth)?;
-                    return self.application(
-                        node,
-                        Operator::Convert,
-                        Operation {
-                            member: Some(member),
-                            mode: Some(OperationMode::Rounding(quire_exact::RoundingMode::Exact)),
-                            ..plain("quire.op.quantity.convert")
-                        },
-                        arguments,
-                    );
-                }
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Convert,
+                    Operation {
+                        member: Some(member),
+                        mode: Some(OperationMode::Rounding(quire_exact::RoundingMode::Exact)),
+                        ..plain("quire.op.quantity.convert")
+                    }
+                } else {
                     Operation {
                         member: Some(member),
                         ..plain("quire.op.numeric.convert")
-                    },
-                    arguments,
+                    }
+                };
+                (
+                    Keyed::Application(Operator::Convert, operation),
+                    Operands::One(operand),
                 )
             }
             NodeKind::IeeeToRational(operand, domain) => {
                 let law = self.law(LawRole::IeeeProfile, &node.location)?;
                 let member =
                     self.type_argument(&ValueType::Rational(domain.clone()), &node.location)?;
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Convert,
-                    Operation {
-                        laws: vec![law],
-                        member: Some(member),
-                        ..plain("quire.op.ieee.to_rational")
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Convert,
+                        Operation {
+                            laws: vec![law],
+                            member: Some(member),
+                            ..plain("quire.op.ieee.to_rational")
+                        },
+                    ),
+                    Operands::One(operand),
                 )
             }
             NodeKind::Query {
@@ -2548,8 +2643,17 @@ impl<'a> Lowering<'a> {
                         },
                     ),
                 };
-                let arguments = self.binder_operands(node, *slot, source, body, binders, depth)?;
-                self.application(node, operator, operation, arguments)
+                frames.push(LowerFrame::Binder(Box::new(BinderFrame {
+                    node,
+                    depth,
+                    slot: *slot,
+                    source,
+                    body,
+                    operator,
+                    operation,
+                    bound: None,
+                })));
+                return Ok(LowerStep::Descend(source, depth + 1));
             }
             NodeKind::Flatten(operand) => {
                 let leaves =
@@ -2563,27 +2667,30 @@ impl<'a> Lowering<'a> {
                 {
                     // FR-093: `flatMap`, and `flatten(map(..))`, is one
                     // `flat_map` node; no node is built for the inner map.
-                    let arguments =
-                        self.binder_operands(node, *slot, source, body, binders, depth)?;
-                    return self.application(
+                    frames.push(LowerFrame::Binder(Box::new(BinderFrame {
                         node,
-                        Operator::Collection,
-                        Operation {
+                        depth,
+                        slot: *slot,
+                        source,
+                        body,
+                        operator: Operator::Collection,
+                        operation: Operation {
                             leaves,
                             ..plain("quire.op.collection.flat_map")
                         },
-                        arguments,
-                    );
+                        bound: None,
+                    })));
+                    return Ok(LowerStep::Descend(source, depth + 1));
                 }
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Collection,
-                    Operation {
-                        leaves,
-                        ..plain("quire.op.collection.flatten")
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Collection,
+                        Operation {
+                            leaves,
+                            ..plain("quire.op.collection.flatten")
+                        },
+                    ),
+                    Operands::One(operand),
                 )
             }
             NodeKind::Fold {
@@ -2593,63 +2700,29 @@ impl<'a> Lowering<'a> {
                 step,
                 identity,
             } => {
-                let source_ref = self.expression(source, binders, depth + 1)?;
-                let identity_ref = match identity {
-                    Some(identity) => Some(self.expression(identity, binders, depth + 1)?),
-                    None => None,
-                };
-                let element = element_type(&source.value_type, &node.location)?;
-                let element = self.type_node(&element, &node.location)?;
-                let accumulator_type = self.type_node(&node.value_type, &node.location)?;
-                let accumulator_name =
-                    self.bind(binders, *accumulator, accumulator_type, &node.location)?;
-                let bound = self.bind(binders, *binder, element, &node.location);
-                let step_ref = match bound {
-                    Ok(binder_name) => {
-                        let step = self.expression(step, binders, depth + 1);
-                        binders.scope.pop();
-                        step.map(|step| (binder_name, step))
-                    }
-                    Err(refusal) => Err(refusal),
-                };
-                binders.scope.pop();
-                let (binder_name, step_ref) = step_ref?;
-                let member = self.type_argument(&node.value_type, &node.location)?;
-                let mut arguments = vec![
-                    source_ref,
-                    SemanticTerm::binding(
-                        accumulator_name,
-                        SemanticTerm::binding(binder_name, step_ref),
-                    ),
-                ];
-                let identity_name = match identity_ref {
-                    Some(identity_ref) => {
-                        arguments.push(identity_ref);
-                        "quire.op.collection.fold"
-                    }
-                    None => "quire.op.collection.reduce",
-                };
-                self.application(
+                frames.push(LowerFrame::Fold(Box::new(FoldFrame {
                     node,
-                    Operator::Collection,
-                    Operation {
-                        member: Some(member),
-                        ..plain(identity_name)
-                    },
-                    arguments,
-                )
+                    depth,
+                    accumulator: *accumulator,
+                    binder: *binder,
+                    source,
+                    step,
+                    identity: identity.as_deref(),
+                    stage: FoldStage::Source,
+                })));
+                return Ok(LowerStep::Descend(source, depth + 1));
             }
             NodeKind::Size(operand) => {
                 let member = self.type_argument(&node.value_type, &node.location)?;
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Collection,
-                    Operation {
-                        member: Some(member),
-                        ..plain("quire.op.collection.size")
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Collection,
+                        Operation {
+                            member: Some(member),
+                            ..plain("quire.op.collection.size")
+                        },
+                    ),
+                    Operands::One(operand),
                 )
             }
             NodeKind::Contains(collection, item) => {
@@ -2662,30 +2735,30 @@ impl<'a> Lowering<'a> {
                 } else {
                     Vec::new()
                 };
-                let arguments = self.operands(&[collection, item], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Collection,
-                    Operation {
-                        leaves,
-                        ..plain("quire.op.collection.contains")
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Collection,
+                        Operation {
+                            leaves,
+                            ..plain("quire.op.collection.contains")
+                        },
+                    ),
+                    Operands::Two(collection, item),
                 )
             }
             NodeKind::AllInstances { population } => {
                 let object = self.referenced_object(&node.value_type, &node.location)?;
-                let arguments = self.operands(&[population], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Query,
-                    Operation {
-                        member: Some(Member::TypeArgument {
-                            declaration: object,
-                        }),
-                        ..plain("quire.op.model.all_instances")
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Query,
+                        Operation {
+                            member: Some(Member::TypeArgument {
+                                declaration: object,
+                            }),
+                            ..plain("quire.op.model.all_instances")
+                        },
+                    ),
+                    Operands::One(population),
                 )
             }
             NodeKind::Lookup {
@@ -2694,18 +2767,18 @@ impl<'a> Lowering<'a> {
                 absence,
             } => {
                 let object = self.referenced_object(&node.value_type, &node.location)?;
-                let arguments = self.operands(&[population, reference], binders, depth)?;
-                self.application(
-                    node,
-                    Operator::Query,
-                    Operation {
-                        member: Some(Member::TypeArgument {
-                            declaration: object,
-                        }),
-                        mode: Some(OperationMode::Absence(*absence)),
-                        ..plain("quire.op.model.lookup")
-                    },
-                    arguments,
+                (
+                    Keyed::Application(
+                        Operator::Query,
+                        Operation {
+                            member: Some(Member::TypeArgument {
+                                declaration: object,
+                            }),
+                            mode: Some(OperationMode::Absence(*absence)),
+                            ..plain("quire.op.model.lookup")
+                        },
+                    ),
+                    Operands::Two(population, reference),
                 )
             }
             NodeKind::Dispatch {
@@ -2734,28 +2807,287 @@ impl<'a> Lowering<'a> {
                         CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
                     )
                 })?;
-                let mut operands = vec![self.expression(receiver, binders, depth + 1)?];
-                for argument in arguments {
-                    operands.push(self.expression(argument, binders, depth + 1)?);
+                (
+                    Keyed::Application(
+                        Operator::Call,
+                        Operation {
+                            member: Some(Member::Operation {
+                                declaration: object,
+                                name,
+                            }),
+                            ..plain("quire.op.model.dispatch_call")
+                        },
+                    ),
+                    Operands::Receiver(receiver, arguments),
+                )
+            }
+            NodeKind::Pre(operand) => (
+                Keyed::Application(Operator::Pre, plain("quire.op.state.pre")),
+                Operands::One(operand),
+            ),
+        };
+        self.next_operand(
+            Box::new(OperandsFrame {
+                node,
+                depth,
+                operands,
+                next: 0,
+                terms: Vec::with_capacity(operands.len()),
+                keyed,
+            }),
+            frames,
+        )
+    }
+
+    /// Descend into `frame`'s next operand, or key its node once every
+    /// operand is lowered.
+    fn next_operand<'n>(
+        &mut self,
+        mut frame: Box<OperandsFrame<'n>>,
+        frames: &mut Vec<LowerFrame<'n>>,
+    ) -> Result<LowerStep<'n>, CheckRefusal> {
+        if let Some(operand) = frame.operands.get(frame.next) {
+            frame.next += 1;
+            let depth = frame.depth + 1;
+            frames.push(LowerFrame::Operands(frame));
+            return Ok(LowerStep::Descend(operand, depth));
+        }
+        let OperandsFrame {
+            node, terms, keyed, ..
+        } = *frame;
+        match keyed {
+            Keyed::Application(operator, operation) => {
+                self.application(node, operator, operation, terms)
+            }
+            Keyed::Value(form, semantic_type) => self.value_node(
+                node,
+                form,
+                semantic_type,
+                SemanticTerm::Aggregate { members: terms },
+            ),
+        }
+        .map(LowerStep::Lowered)
+    }
+
+    /// Append a record value's members in declaration order up to its next
+    /// present field, whose value it descends into, or key the value once
+    /// every member is built. An absent or `null` field's member is the
+    /// `none` literal of its `option` type.
+    fn record_members<'n>(
+        &mut self,
+        mut frame: Box<RecordFrame<'n>>,
+        frames: &mut Vec<LowerFrame<'n>>,
+    ) -> Result<LowerStep<'n>, CheckRefusal> {
+        let slots = frame.slots;
+        while let Some(slot) = slots.get(frame.members.len()) {
+            let Some(field) = frame.fields.get(frame.members.len()) else {
+                break;
+            };
+            match slot {
+                RecordSlot::Present(value) => {
+                    let depth = frame.depth + 1;
+                    frames.push(LowerFrame::Record(frame));
+                    return Ok(LowerStep::Descend(value, depth));
                 }
+                RecordSlot::Null | RecordSlot::Absent => {
+                    let option = ValueType::option(field.value_type().clone());
+                    let option = self.type_node(&option, &frame.node.location)?;
+                    let member = SemanticTerm::binding(
+                        field.name(),
+                        SemanticTerm::literal(option, LiteralValue::None),
+                    );
+                    frame.members.push(member);
+                }
+            }
+        }
+        let RecordFrame {
+            node,
+            semantic_type,
+            members,
+            ..
+        } = *frame;
+        self.value_node(
+            node,
+            "record_value",
+            semantic_type,
+            SemanticTerm::Aggregate { members },
+        )
+        .map(LowerStep::Lowered)
+    }
+
+    /// Hand the lowered `term` to `frame`, which descends into its next
+    /// operand or keys its own node.
+    fn accept_term<'n>(
+        &mut self,
+        frame: LowerFrame<'n>,
+        term: SemanticTerm,
+        binders: &mut Binders<'_>,
+        frames: &mut Vec<LowerFrame<'n>>,
+    ) -> Result<LowerStep<'n>, CheckRefusal> {
+        let plain = Operation::plain;
+        match frame {
+            LowerFrame::Operands(mut frame) => {
+                frame.terms.push(term);
+                self.next_operand(frame, frames)
+            }
+            LowerFrame::Let(mut frame) => match frame.bound.take() {
+                None => {
+                    let value_type = self.value_type_node(frame.value, binders)?;
+                    let name = self.bind(binders, frame.slot, value_type, &frame.node.location)?;
+                    frame.bound = Some((term, name));
+                    let (body, depth) = (frame.body, frame.depth + 1);
+                    frames.push(LowerFrame::Let(frame));
+                    Ok(LowerStep::Descend(body, depth))
+                }
+                Some((value, name)) => {
+                    binders.scope.pop();
+                    self.application(
+                        frame.node,
+                        Operator::Let,
+                        plain("quire.op.control.let"),
+                        vec![SemanticTerm::binding(name, value), term],
+                    )
+                    .map(LowerStep::Lowered)
+                }
+            },
+            LowerFrame::Binder(mut frame) => match frame.bound.take() {
+                None => {
+                    let location = &frame.node.location;
+                    let element = element_type(&frame.source.value_type, location)?;
+                    let element = self.type_node(&element, location)?;
+                    let name = self.bind(binders, frame.slot, element, location)?;
+                    frame.bound = Some((term, name));
+                    let (body, depth) = (frame.body, frame.depth + 1);
+                    frames.push(LowerFrame::Binder(frame));
+                    Ok(LowerStep::Descend(body, depth))
+                }
+                Some((source, name)) => {
+                    binders.scope.pop();
+                    let BinderFrame {
+                        node,
+                        operator,
+                        operation,
+                        ..
+                    } = *frame;
+                    self.application(
+                        node,
+                        operator,
+                        operation,
+                        vec![source, SemanticTerm::binding(name, term)],
+                    )
+                    .map(LowerStep::Lowered)
+                }
+            },
+            LowerFrame::Attribute { node, object, name } => {
+                let dereferenced = self.typed_application(
+                    &node.location,
+                    object,
+                    Operator::Deref,
+                    plain("quire.op.model.deref"),
+                    vec![term],
+                )?;
+                let name = Identifier::new(name).map_err(|_| {
+                    refuse(
+                        &node.location,
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                    )
+                })?;
                 self.application(
                     node,
-                    Operator::Call,
+                    Operator::Query,
                     Operation {
-                        member: Some(Member::Operation {
+                        member: Some(Member::Field {
                             declaration: object,
                             name,
                         }),
-                        ..plain("quire.op.model.dispatch_call")
+                        ..plain("quire.op.record.project")
                     },
-                    operands,
+                    vec![dereferenced],
                 )
+                .map(LowerStep::Lowered)
             }
-            NodeKind::Pre(operand) => {
-                let arguments = self.operands(&[operand], binders, depth)?;
-                self.application(node, Operator::Pre, plain("quire.op.state.pre"), arguments)
+            LowerFrame::Record(mut frame) => {
+                if let Some(field) = frame.fields.get(frame.members.len()) {
+                    let member = SemanticTerm::binding(field.name(), term);
+                    frame.members.push(member);
+                }
+                self.record_members(frame, frames)
             }
+            LowerFrame::Fold(frame) => self.accept_fold(frame, term, binders, frames),
         }
+    }
+
+    /// Hand a `fold`/`reduce` its lowered source, identity or step.
+    fn accept_fold<'n>(
+        &mut self,
+        mut frame: Box<FoldFrame<'n>>,
+        term: SemanticTerm,
+        binders: &mut Binders<'_>,
+        frames: &mut Vec<LowerFrame<'n>>,
+    ) -> Result<LowerStep<'n>, CheckRefusal> {
+        let (source, identity) = match std::mem::replace(&mut frame.stage, FoldStage::Source) {
+            FoldStage::Source => match frame.identity {
+                Some(identity) => {
+                    frame.stage = FoldStage::Identity(term);
+                    let depth = frame.depth + 1;
+                    frames.push(LowerFrame::Fold(frame));
+                    return Ok(LowerStep::Descend(identity, depth));
+                }
+                None => (term, None),
+            },
+            FoldStage::Identity(source) => (source, Some(term)),
+            FoldStage::Step {
+                source,
+                identity,
+                accumulator,
+                binder,
+            } => {
+                binders.scope.pop();
+                binders.scope.pop();
+                let node = frame.node;
+                let member = self.type_argument(&node.value_type, &node.location)?;
+                let mut arguments = vec![
+                    source,
+                    SemanticTerm::binding(accumulator, SemanticTerm::binding(binder, term)),
+                ];
+                let identity_name = match identity {
+                    Some(identity) => {
+                        arguments.push(identity);
+                        "quire.op.collection.fold"
+                    }
+                    None => "quire.op.collection.reduce",
+                };
+                return self
+                    .application(
+                        node,
+                        Operator::Collection,
+                        Operation {
+                            member: Some(member),
+                            ..Operation::plain(identity_name)
+                        },
+                        arguments,
+                    )
+                    .map(LowerStep::Lowered);
+            }
+        };
+        // The source and identity are lowered: bind the accumulator and the
+        // element, then lower the step under them.
+        let node = frame.node;
+        let element = element_type(&frame.source.value_type, &node.location)?;
+        let element = self.type_node(&element, &node.location)?;
+        let accumulator_type = self.type_node(&node.value_type, &node.location)?;
+        let accumulator =
+            self.bind(binders, frame.accumulator, accumulator_type, &node.location)?;
+        let binder = self.bind(binders, frame.binder, element, &node.location)?;
+        frame.stage = FoldStage::Step {
+            source,
+            identity,
+            accumulator,
+            binder,
+        };
+        let (step, depth) = (frame.step, frame.depth + 1);
+        frames.push(LowerFrame::Fold(frame));
+        Ok(LowerStep::Descend(step, depth))
     }
 
     /// A literal's node: `value`/`literal` for a Boolean, integer or
