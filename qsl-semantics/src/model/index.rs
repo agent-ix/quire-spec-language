@@ -195,7 +195,8 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
 
 impl ModelIndex {
     /// Reads `domain_package`'s records once into an index that keeps the
-    /// package.
+    /// package. Passing an `Arc<DomainPackage>` shares that package; passing
+    /// a `DomainPackage` moves it; neither copies its records.
     pub fn build(domain_package: impl Into<Arc<DomainPackage>>) -> Self {
         let package = domain_package.into();
         let records = RecordIndex::build(&package);
@@ -205,6 +206,11 @@ impl ModelIndex {
     /// `package` with `records`, the index normalization already built over
     /// it.
     pub(crate) fn from_parts(package: Arc<DomainPackage>, records: RecordIndex) -> Self {
+        debug_assert_eq!(
+            records.record_count,
+            package.records.len(),
+            "the record index was built over this package's records"
+        );
         Self { package, records }
     }
 
