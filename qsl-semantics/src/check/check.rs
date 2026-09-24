@@ -352,8 +352,9 @@ struct ScopeIndex {
     enum_members: BTreeMap<String, BTreeMap<String, Vec<(usize, usize)>>>,
     /// Every declared model operation name.
     model_operations: BTreeSet<String>,
-    /// Each enum shape's first binding position in [`Scope::enums`].
-    enum_shapes: BTreeMap<EnumShape, usize>,
+    /// Each enum shape's first binding position in [`Scope::enums`], and
+    /// the member index holding exactly that shape's members.
+    enum_shapes: BTreeMap<EnumShape, (usize, EnumMemberIndex)>,
     /// Each object type name's first declaration, in `object_types()`
     /// order.
     object_types: BTreeMap<String, EffectiveId>,
@@ -377,9 +378,7 @@ impl ScopeIndex {
             index.named_type(declaration.name(), ValueType::Composite(declaration.key()));
         }
         for (position, binding) in enums.iter().enumerate() {
-            let shape = binding.shape();
-            index.enum_shapes.entry(shape.clone()).or_insert(position);
-            index.named_type(&binding.name, ValueType::Enum(shape));
+            index.named_type(&binding.name, ValueType::Enum(binding.shape()));
             for member in &binding.members {
                 index.enum_member_index.record(member.clone());
             }
@@ -397,6 +396,15 @@ impl ScopeIndex {
                 .object_types
                 .entry(declaration.name().to_owned())
                 .or_insert(declaration.key());
+        }
+        // Filtered from the whole index, as `check_equality_in` once did
+        // per equality, so each shape's table is the same one it built.
+        for (position, binding) in enums.iter().enumerate() {
+            let shape = binding.shape();
+            if !index.enum_shapes.contains_key(&shape) {
+                let members = index.enum_member_index.filtered(shape.variants());
+                index.enum_shapes.insert(shape, (position, members));
+            }
         }
         index.model_operations = model_operations.iter().cloned().collect();
         index
@@ -460,7 +468,16 @@ impl Scope {
 
     /// The first enum binding whose shape is `shape`.
     pub(crate) fn enum_binding_of(&self, shape: &EnumShape) -> Option<&EnumBinding> {
-        self.enums.get(*self.index.enum_shapes.get(shape)?)
+        self.enums.get(self.index.enum_shapes.get(shape)?.0)
+    }
+
+    /// The member index holding exactly `shape`'s members (SR-511 M2),
+    /// shared, not copied, when `shape` is a declared enum's.
+    pub(crate) fn enum_members_of(&self, shape: &EnumShape) -> EnumMemberIndex {
+        match self.index.enum_shapes.get(shape) {
+            Some((_, members)) => members.clone(),
+            None => self.index.enum_member_index.filtered(shape.variants()),
+        }
     }
 
     /// The first object type named `name`, by its effective identity.
@@ -631,13 +648,6 @@ pub(crate) struct Typer<'a> {
     /// The package's quantity units, then every compound unit this pass
     /// formed as a product or quotient type.
     units: UnitScope<'a>,
-    /// The checked `VariantId -> EnumValue` index (ADR-013 T-6, last
-    /// sentence), built once here from `scope.enums` -- `scope` is fixed for
-    /// this `Typer`'s whole lifetime, so every `contains`/`=`/`!=` site this
-    /// pass checks reads the same index rather than rebuilding it (M1,
-    /// SR-511 review of PR #365), matching `value::expression::evaluate::
-    /// Machine::new`'s equivalent one-time build.
-    enum_members: &'a EnumMemberIndex,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -770,7 +780,6 @@ impl<'a> Typer<'a> {
             slot_names: Vec::new(),
             clause_kind,
             units: UnitScope::new(scope.types.units()),
-            enum_members: scope.enum_member_index(),
         }
     }
 
@@ -1434,7 +1443,7 @@ impl<'a> Typer<'a> {
                         EqualityOperator::Equal,
                         EqualityOperand::typed(element.clone()),
                         EqualityOperand::typed(element),
-                        self.enum_members,
+                        &|shape: &EnumShape| self.scope.enum_members_of(shape),
                     )
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 Ok(node(
@@ -1682,7 +1691,7 @@ impl<'a> Typer<'a> {
                 operator,
                 left_operand,
                 right_operand,
-                self.enum_members,
+                &|shape: &EnumShape| self.scope.enum_members_of(shape),
             )
             .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
         Ok(node(

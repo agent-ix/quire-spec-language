@@ -304,8 +304,9 @@ pub(crate) struct Machine<'a, 'm> {
     /// quotient formed during this evaluation.
     units: UnitScope<'a>,
     /// ADR-013 T-6 (last sentence): the checked `VariantId -> EnumValue`
-    /// index, built once from `scope.enums` and consulted by the `Enum`
-    /// equality schedule and `OrderedKind::Enums` -- a bare kernel
+    /// index, built once with the `Scope` (QSL-205) and borrowed here,
+    /// consulted by the `Enum` equality schedule and `OrderedKind::Enums`
+    /// -- a bare kernel
     /// `Value::Enum` (O-14/OQ-D) carries no declaration, ordered flag or
     /// case name of its own.
     enum_members: &'a EnumMemberIndex,
