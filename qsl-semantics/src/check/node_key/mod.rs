@@ -531,6 +531,21 @@ impl Operation {
         &self.identity
     }
 
+    /// The operation's profile laws, in order.
+    pub fn laws(&self) -> &[OperationLaw] {
+        &self.laws
+    }
+
+    /// The operation's member, when it names one.
+    pub fn member(&self) -> Option<&Member> {
+        self.member.as_ref()
+    }
+
+    /// The operation's leaves, in order.
+    pub fn leaves(&self) -> &[OperationLeaf] {
+        &self.leaves
+    }
+
     /// The catalogued operation `identity` with no law, mode, member or leaf.
     pub(crate) fn plain(identity: &str) -> Self {
         Self {
@@ -1035,7 +1050,7 @@ impl HexDigest {
 }
 
 /// [`HexDigest`] as an owned string.
-fn hex(bytes: &[u8; 32]) -> String {
+pub(super) fn hex(bytes: &[u8; 32]) -> String {
     String::from(HexDigest::of(bytes).as_str())
 }
 
@@ -1198,19 +1213,6 @@ enum PreimageTerm<'a> {
     },
 }
 
-/// The declaring node an operation member names, if any.
-fn member_declaration(member: &Member) -> Option<NodeKey> {
-    match member {
-        Member::Field { declaration, .. }
-        | Member::Position { declaration, .. }
-        | Member::Element { declaration }
-        | Member::RelationshipEnd { declaration, .. }
-        | Member::Operation { declaration, .. }
-        | Member::TypeArgument { declaration } => Some(*declaration),
-        Member::ProfileOperator { .. } => None,
-    }
-}
-
 impl SemanticTerm {
     /// Call `visit` with every node key this term names (FR-092 "names"):
     /// each `reference` target, literal `type`, application `result_type`
@@ -1225,7 +1227,7 @@ impl SemanticTerm {
                 arguments,
                 ..
             } => {
-                if let Some(declaration) = operation.member.as_ref().and_then(member_declaration) {
+                if let Some(declaration) = operation.member.as_ref().and_then(Member::declaration) {
                     visit(declaration);
                 }
                 visit(result_type.0);
@@ -1385,7 +1387,7 @@ impl Walk<'_> {
                 if let Some(Member::Position { position, .. }) = &operation.member {
                     exact_integer(IntegerSite::MemberPosition, *position)?;
                 }
-                if let Some(declaration) = operation.member.as_ref().and_then(member_declaration) {
+                if let Some(declaration) = operation.member.as_ref().and_then(Member::declaration) {
                     self.type_position(declaration)?;
                 }
                 self.type_position(result_type.0)?;

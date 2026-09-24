@@ -1056,6 +1056,16 @@ impl<S> OccurrenceMap<S> {
             .is_some_and(|((node, _), _)| *node == identity)
     }
 
+    /// Every recorded occurrence, ascending by (identity, role), each role's
+    /// occurrences in ordinal order.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeKey, Origin, &S)> {
+        self.spans.iter().flat_map(|((identity, role), spans)| {
+            (0_u64..)
+                .zip(spans)
+                .map(move |(ordinal, span)| (*identity, Origin::new(role.clone(), ordinal), span))
+        })
+    }
+
     /// The span recorded for `identity` at exactly `origin`, if any.
     pub(crate) fn resolve(&self, identity: NodeKey, origin: &Origin) -> Option<&S> {
         let ordinal = usize::try_from(origin.ordinal()).ok()?;

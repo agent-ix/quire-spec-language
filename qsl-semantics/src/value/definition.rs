@@ -12,11 +12,12 @@
 //! `invalid_package` code with its closed `cause_tag` vocabulary.
 //!
 //! The qualification catalog ([`CATALOG`]) is a closed table of forward
-//! references: each row names the authority, identity, revision and
-//! artifact path a caller-supplied [`DefinitionReference`] for that role is
-//! checked against. Recognition is by identity and revision; there is no
-//! content digest in this table, because a digest exists only to verify a
-//! copy, and this table holds none.
+//! references: each row names the authority, identity, revision, artifact
+//! path and raw-byte digest of one role's definition, as QSpec's
+//! `complete-value-lock.json` records them. Admission recognizes a
+//! caller-supplied [`DefinitionReference`] by identity and revision. The v2
+//! emitter writes each row as the package lock's edition and definition
+//! selections ([`CatalogEntry::reference`]).
 
 use std::collections::BTreeSet;
 
@@ -290,10 +291,9 @@ pub struct DefinitionReference {
     pub digest: String,
 }
 
-/// One qualification-catalog entry: a closed role's artifact path and the
-/// exact identity/revision a caller-supplied [`DefinitionReference`] for that
-/// role is checked against. There is no digest here: recognizing a
-/// definition is by identity and revision.
+/// One qualification-catalog entry: a closed role's artifact path, the exact
+/// identity/revision a caller-supplied [`DefinitionReference`] for that role
+/// is checked against, and the definition's raw-byte digest.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CatalogEntry {
     /// Catalog role.
@@ -308,6 +308,26 @@ pub struct CatalogEntry {
     pub revision_namespace: &'static str,
     /// Revision value.
     pub revision_value: &'static str,
+    /// Lowercase hex SHA-256 of the definition's bytes
+    /// (`quire.definition.bytes/v1`), from QSpec's `complete-value-lock.json`.
+    /// Informational; no reader verifies it yet.
+    pub digest: &'static str,
+}
+
+impl CatalogEntry {
+    /// This entry as the `DefinitionRef` a package lock selects.
+    pub fn reference(&self) -> DefinitionReference {
+        DefinitionReference {
+            authority: self.authority.to_owned(),
+            identity: self.identity.to_owned(),
+            revision: DefinitionRevision {
+                namespace: self.revision_namespace.to_owned(),
+                value: self.revision_value.to_owned(),
+            },
+            digest_domain: DIGEST_DOMAIN.to_owned(),
+            digest: self.digest.to_owned(),
+        }
+    }
 }
 
 const AGENT_IX: &str = "agent-ix";
@@ -323,6 +343,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "ix:native",
         revision_namespace: DRAFT,
         revision_value: "1-draft.2",
+        digest: "4cf0b7ac51a3b9417bc1c10a06b26d1e6a19d02fc549ef70ec627fab35bea625",
     },
     CatalogEntry {
         role: CatalogRole::Root,
@@ -330,7 +351,8 @@ const CATALOG: [CatalogEntry; 21] = [
         authority: AGENT_IX,
         identity: "quire.value.complete/v1",
         revision_namespace: DRAFT,
-        revision_value: "1-draft.1",
+        revision_value: "1-draft.2",
+        digest: "c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16",
     },
     CatalogEntry {
         role: CatalogRole::Accounting,
@@ -339,6 +361,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.value.accounting/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "1d8b15f8b0cb20bfb04841101e6dd09735cca06fe80e38652f48555a0c6871fa",
     },
     CatalogEntry {
         role: CatalogRole::CompoundUnit,
@@ -347,6 +370,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.value.compound-unit/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "320e3befa686f007f42ddccd58d2f8246699045abe45520adb9ff8357f6d2ca4",
     },
     CatalogEntry {
         role: CatalogRole::CompoundUnitSchema,
@@ -355,6 +379,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.value.compound-unit.schema/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "740824cbee8d83a9826d688106a429227e96408547db7aabe1bb607e81ce1654",
     },
     CatalogEntry {
         role: CatalogRole::CompoundUnitVectors,
@@ -363,6 +388,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.value.compound-unit.vectors/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "8636d0d7f7db87d5f311bab3f2a2b0bd19e9753bb955e21f6ea23a3657b2589c",
     },
     CatalogEntry {
         role: CatalogRole::RuleManifest,
@@ -370,7 +396,8 @@ const CATALOG: [CatalogEntry; 21] = [
         authority: AGENT_IX,
         identity: "quire.value.complete.rules/v1",
         revision_namespace: DRAFT,
-        revision_value: "1-draft.1",
+        revision_value: "1-draft.2",
+        digest: "8b8500fa5d7d3f5b0683984e9a09beecdfffc10520820f68e21ce8fbfad7bd32",
     },
     CatalogEntry {
         role: CatalogRole::TextProfile,
@@ -379,6 +406,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.value.text.unicode-17.0.0/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "cd4a985a0d7d2f2b3d3625caee3787832c00c5244e805fb49e1c2c7075b9de5e",
     },
     CatalogEntry {
         role: CatalogRole::IeeeProfile,
@@ -387,6 +415,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.value.ieee754-2019-default/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "3e9736fb8e1637b554385192de34547bafc073e90b4b85256c824be31e0aa6e5",
     },
     CatalogEntry {
         role: CatalogRole::IntegerDivisionEuclidean,
@@ -395,6 +424,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.value.integer-division.euclidean/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "9f5e59b3bfe1dd3c1efc74065b2e3e7869e21813a0c90b9c5938d82107267a51",
     },
     CatalogEntry {
         role: CatalogRole::IntegerDivisionFloor,
@@ -403,6 +433,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.value.integer-division.floor/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "ca8c7a20407eaff7f61074cc997e44ad1ab9a73f675d686c6250997c6ae6192f",
     },
     CatalogEntry {
         role: CatalogRole::IntegerDivisionTruncating,
@@ -411,6 +442,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.value.integer-division.truncating/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "9998507608e4885b314d5dcc59a88bb3d04ef3c263d2d8ae5810f92ae1893364",
     },
     CatalogEntry {
         role: CatalogRole::RulePackageContract,
@@ -419,6 +451,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.rule.package-contract/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "e1fc96174770947d3d6e48e045cd64c9b2a1cb9a8ec053e8109b5a7ddbf63b72",
     },
     CatalogEntry {
         role: CatalogRole::RuleSharedGrammar,
@@ -426,7 +459,8 @@ const CATALOG: [CatalogEntry; 21] = [
         authority: AGENT_IX,
         identity: "quire.rule.shared-grammar/v1",
         revision_namespace: DRAFT,
-        revision_value: "1-draft.1",
+        revision_value: "1-draft.2",
+        digest: "697b2458455e0c209120019013b24ad0d2506fdf5ce57c41655d066b2b057afd",
     },
     CatalogEntry {
         role: CatalogRole::RuleAd005,
@@ -435,6 +469,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.rule.ad-005/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "9b1c9d215fe3545215583484e067fcad15008eb4123d23685af2ae4ac9b2c447",
     },
     CatalogEntry {
         role: CatalogRole::RuleFr140,
@@ -443,6 +478,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.rule.fr-140/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "4d0dcb64423014f8f2a64fadd7216f4974626dcacf586fe6930da6a54aa51131",
     },
     CatalogEntry {
         role: CatalogRole::RuleFr141,
@@ -452,6 +488,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.rule.fr-141/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "5438519ea6d13e5df8947d13d5c257b46de1aed0c621295f1df76fa97e160785",
     },
     CatalogEntry {
         role: CatalogRole::RuleFr142,
@@ -461,6 +498,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.rule.fr-142/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "7eb40d7fbaea7ac5e28720ccb2bbc08595f84028bbcdcaa8998e72538a806a05",
     },
     CatalogEntry {
         role: CatalogRole::RuleFr147,
@@ -470,6 +508,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.rule.fr-147/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "644e325dd6c0b614b4a53a82ed77ef7d0f41b1d7b20c59fb7b3f7f12426af867",
     },
     CatalogEntry {
         role: CatalogRole::RuleFr148,
@@ -479,6 +518,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.rule.fr-148/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "012e66aa399d4f63bbf75962b27d2f522243e652b3d6c0ac72bcb3466c0f0931",
     },
     CatalogEntry {
         role: CatalogRole::RuleFr149,
@@ -488,6 +528,7 @@ const CATALOG: [CatalogEntry; 21] = [
         identity: "quire.rule.fr-149/v1",
         revision_namespace: DRAFT,
         revision_value: "1-draft.1",
+        digest: "721d1624e8017d111147f1187d67b233634925142574068ae416fb73ece5b271",
     },
 ];
 

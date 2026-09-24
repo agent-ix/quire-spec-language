@@ -1,0 +1,863 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! Behavioural tests of the S4 v2 emission arm (TC-416, FR-093; FR-065-AC-2
+//! through QSL's full I2 read). Every emitted package is read back through
+//! `read_checked_package_v2`, which runs IR's v2 reader, and the checks
+//! below are made on the bytes it admitted.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use ix_trace_rs::trace;
+use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
+use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
+use qsl_semantics::check::{CheckingLimits, NodeTag, PackageDeclarations};
+use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
+use qsl_semantics::value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
+};
+use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use quire_contract_ir::{CheckedArtifactLocator, CheckedPackageEvidence};
+use quire_exact::{CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, ValueType};
+use serde_json::{json, Value};
+use sha2::{Digest as _, Sha256};
+
+use super::*;
+use crate::checked_v2::{read_checked_package_v2, V2ReadLimits, V2ReadOutcome};
+
+/// The unit the fixture packages are read from; every occurrence's region is
+/// the whole of it.
+const TEXT: &[u8] = b"function t using v(): Boolean pure { if true then true else true }";
+
+const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
+
+/// The fixture unit admitted as (`a`, `u`, `git`, `1`): its owner `(a, u)`
+/// is the one FR-092's golden vectors are keyed under.
+fn source() -> RawSourceRef {
+    qsl_semantics::check::admitted_source(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        TEXT,
+    )
+}
+
+/// Places every occurrence at the whole fixture unit.
+fn whole_unit(_: &Location) -> Option<SourceRegion> {
+    Some(SourceRegion::new(source(), 0, TEXT.len() as u64).unwrap())
+}
+
+fn boolean() -> TypeForm {
+    TypeForm::builtin(BuiltinType::Boolean, SPAN)
+}
+
+fn function(name: &str, parameters: &[&str], body: Expression) -> FunctionDeclaration {
+    FunctionDeclaration::new(
+        name,
+        parameters
+            .iter()
+            .map(|parameter| ((*parameter).to_owned(), boolean()))
+            .collect(),
+        boolean(),
+        None,
+        body,
+    )
+}
+
+fn name(name: &str) -> Expression {
+    Expression::Name(name.to_owned())
+}
+
+/// FR-093-AC-1's `t`: `if true then true else true`.
+fn t() -> FunctionDeclaration {
+    function(
+        "t",
+        &[],
+        Expression::If {
+            condition: Box::new(Expression::Boolean(true)),
+            then: Box::new(Expression::Boolean(true)),
+            otherwise: Box::new(Expression::Boolean(true)),
+        },
+    )
+}
+
+/// FR-092's `f`: `true`.
+fn f() -> FunctionDeclaration {
+    function("f", &[], Expression::Boolean(true))
+}
+
+/// FR-092's `both(a, b)`: `a and b`.
+fn both() -> FunctionDeclaration {
+    function(
+        "both",
+        &["a", "b"],
+        Expression::Binary {
+            operator: BinaryOperator::And,
+            left: Box::new(name("a")),
+            right: Box::new(name("b")),
+        },
+    )
+}
+
+/// FR-093's `nb(a)`: `both(a, true)`.
+fn nb() -> FunctionDeclaration {
+    function(
+        "nb",
+        &["a"],
+        Expression::Call {
+            name: "both".to_owned(),
+            arguments: vec![name("a"), Expression::Boolean(true)],
+        },
+    )
+}
+
+/// FR-093's `h(a)`: `let y = a in y`.
+fn h() -> FunctionDeclaration {
+    function(
+        "h",
+        &["a"],
+        Expression::Let {
+            name: "y".to_owned(),
+            value: Box::new(name("a")),
+            body: Box::new(name("y")),
+        },
+    )
+}
+
+fn package(functions: Vec<FunctionDeclaration>) -> CheckedPackage {
+    CheckedPackage::link(
+        PackageDeclarations {
+            functions,
+            ..PackageDeclarations::new(source())
+        }
+        .check(CheckingLimits::default())
+        .expect("the fixture functions check"),
+    )
+}
+
+/// `record Tree { kids: Sequence<Tree>[0, 3]; }`, FR-092's G7 to G9.
+fn tree() -> CheckedPackage {
+    let tree = NodeKey::from_digest([6; 32]);
+    let kids = ValueType::collection(CollectionType::new(
+        CollectionKind::Sequence,
+        ValueType::Composite(tree),
+        CardinalityBound::new(0, 3).unwrap(),
+    ));
+    let types = TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            tree,
+            "Tree",
+            CompositeShape::Record(vec![FieldDeclaration::new(
+                "kids",
+                kids,
+                Presence::Required,
+            )]),
+        )],
+        [],
+    )
+    .expect("FR-143 admits Tree");
+    CheckedPackage::link(
+        PackageDeclarations {
+            types,
+            ..PackageDeclarations::new(source())
+        }
+        .check(CheckingLimits::default())
+        .expect("Tree checks"),
+    )
+}
+
+fn emit(package: &CheckedPackage) -> Emission {
+    emit_package(package, whole_unit).expect("the package emits")
+}
+
+fn wire(emission: &Emission) -> Value {
+    serde_json::from_slice(emission.package.bytes()).expect("the wire is JSON")
+}
+
+fn jcs(value: &Value) -> Vec<u8> {
+    serde_json::to_vec(value).unwrap()
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn library() -> LibraryName {
+    LibraryName::new(vec!["pkg".to_owned()]).unwrap()
+}
+
+/// Every artifact reference in `value`, recorded as current evidence.
+fn locked_artifacts(value: &Value, evidence: &mut CheckedPackageEvidence) {
+    match value {
+        Value::Object(members) => {
+            if let (Some(authority), Some(identity), Some(revision), Some(domain), Some(digest)) = (
+                members.get("authority").and_then(Value::as_str),
+                members.get("identity").and_then(Value::as_str),
+                members.get("revision"),
+                members.get("digest_domain").and_then(Value::as_str),
+                members.get("digest").and_then(Value::as_str),
+            ) {
+                evidence.insert_artifact_digest(
+                    CheckedArtifactLocator {
+                        authority: authority.into(),
+                        identity: identity.into(),
+                        revision_namespace: revision["namespace"].as_str().unwrap().into(),
+                        revision_value: revision["value"].as_str().unwrap().into(),
+                        domain: domain.into(),
+                    },
+                    digest,
+                );
+            }
+            members
+                .values()
+                .for_each(|member| locked_artifacts(member, evidence));
+        }
+        Value::Array(items) => items
+            .iter()
+            .for_each(|item| locked_artifacts(item, evidence)),
+        _ => {}
+    }
+}
+
+/// QSL's full I2 read of `emission`, pinned at its own `package_id`, with
+/// the emitted lock's artifacts as current evidence.
+fn read_back(emission: &Emission) -> V2ReadOutcome {
+    let wire = wire(emission);
+    let mut evidence = CheckedPackageEvidence::new();
+    locked_artifacts(&wire["lock"], &mut evidence);
+    locked_artifacts(&wire["diagnostics"], &mut evidence);
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
+        library(),
+        Selection {
+            version: "1".to_owned(),
+            package_id: emission.package.package_id(),
+        },
+    );
+    read_checked_package_v2(
+        emission.package.bytes(),
+        library(),
+        "1".to_owned(),
+        V2ReadLimits::default(),
+        &evidence,
+        &pinned,
+    )
+}
+
+/// The verified package's exports: declared name to node id hex.
+fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
+    match read_back(emission) {
+        V2ReadOutcome::Verified { package, .. } => {
+            assert_eq!(package.package_id(), emission.package.package_id());
+            package
+                .into_import_view()
+                .exports()
+                .map(|(name, key)| (name.to_owned(), key.node.to_string()))
+                .collect()
+        }
+        other => panic!("expected Verified, got {other:?}"),
+    }
+}
+
+fn nodes(wire: &Value) -> &[Value] {
+    wire["semantic_graph"]["nodes"].as_array().unwrap()
+}
+
+/// FR-065-AC-2 (TC-163): a function's checked identity is one value right
+/// after `check`, after S4 linking, and after QSL's full I2 read of the
+/// emitted v2 bytes (IR's reader included), which returns Verified.
+/// Reordering the package's other declaration leaves it unchanged at all
+/// three points.
+#[trace("FR-065-AC-2", "TC-163")]
+#[test]
+fn a_function_identity_survives_emission_and_the_i2_read() {
+    let checked = |functions| {
+        PackageDeclarations {
+            functions,
+            ..PackageDeclarations::new(source())
+        }
+        .check(CheckingLimits::default())
+        .expect("t and f check")
+    };
+    let mut identities = BTreeSet::new();
+    for functions in [vec![t(), f()], vec![f(), t()]] {
+        let graph = checked(functions);
+        let after_check = graph.function_identity("t").expect("t is declared");
+        let package = CheckedPackage::link(graph);
+        let after_link = package
+            .graph()
+            .function_identity("t")
+            .expect("t is declared");
+        let emission = emit(&package);
+        assert_eq!(emission.omitted, []);
+        let after_read = verified_exports(&emission)["t"].clone();
+        assert_eq!(after_check, after_link);
+        assert_eq!(after_read, after_check.to_string());
+        identities.insert(after_read);
+    }
+    assert_eq!(identities.len(), 1, "reordering changed t's identity");
+}
+
+/// The wire lock's edition and definition selections are the
+/// `DefinitionLock` catalog's rows, digests included, and IR admits them.
+#[trace("FR-093-AC-7", "TC-416")]
+#[test]
+fn the_lock_selects_the_catalog_definitions() {
+    let emission = emit(&package(vec![t()]));
+    assert!(matches!(
+        read_back(&emission),
+        V2ReadOutcome::Verified { .. }
+    ));
+    let wire = wire(&emission);
+    let lock = DefinitionLock::pinned();
+    let row = |role: CatalogRole| {
+        let entry = lock.entry(role).unwrap();
+        json!({
+            "authority": entry.authority,
+            "identity": entry.identity,
+            "revision": {"namespace": entry.revision_namespace, "value": entry.revision_value},
+            "digest_domain": "quire.definition.bytes/v1",
+            "digest": entry.digest,
+        })
+    };
+    assert_eq!(
+        wire["lock"]["edition"],
+        json!({"role": "edition", "definition": row(CatalogRole::Edition)})
+    );
+    let expected: Vec<Value> = lock
+        .always_roles()
+        .iter()
+        .filter(|role| **role != CatalogRole::Edition)
+        .map(|role| row(*role))
+        .collect();
+    assert_eq!(wire["lock"]["definition_selections"], json!(expected));
+    assert_eq!(wire["lock"]["dependency_selections"], json!([]));
+    assert_eq!(
+        wire["lock"]["sources"][0]["digest"],
+        json!(sha256_hex(TEXT))
+    );
+    assert_eq!(
+        wire["identity_preimage"]["edition"],
+        wire["lock"]["edition"]
+    );
+}
+
+/// FR-322's `application_node_preimage` of a wire node, or FR-092's
+/// structural preimage under owner (`a`, `u`), rebuilt by the test from the
+/// wire alone. `group` is the node's recursion group in graph order.
+fn rebuilt_key(node: &Value, group: &[&Value]) -> String {
+    let ordinal = |id: &Value| group.iter().position(|member| member["node_id"] == *id);
+    let in_group = |term: &Value| -> Value {
+        fn walk(term: &Value, ordinal: &dyn Fn(&Value) -> Option<usize>) -> Value {
+            match term {
+                Value::Object(members) => {
+                    if members.get("term") == Some(&json!("reference")) {
+                        if let Some(position) = ordinal(&members["target"]) {
+                            return json!({"term": "group_reference", "ordinal": position});
+                        }
+                    }
+                    Value::Object(
+                        members
+                            .iter()
+                            .map(|(key, value)| (key.clone(), walk(value, ordinal)))
+                            .collect(),
+                    )
+                }
+                Value::Array(items) => {
+                    Value::Array(items.iter().map(|item| walk(item, ordinal)).collect())
+                }
+                other => other.clone(),
+            }
+        }
+        walk(term, &ordinal)
+    };
+    let body = in_group(&node["body"]);
+    let application = serde_json::to_string(&body)
+        .unwrap()
+        .contains("\"application\"");
+    let declaration = node.get("declaration").cloned().unwrap_or(Value::Null);
+    let recursion = node.get("recursion_group").map(|label| {
+        let position = ordinal(&node["node_id"]).unwrap();
+        if application {
+            json!({"ordinal": position, "size": group.len()})
+        } else {
+            json!({"group": label, "ordinal": position, "size": group.len()})
+        }
+    });
+    let semantic_type = if node["semantic_type"] == node["node_id"] && !application {
+        Value::Null
+    } else {
+        match ordinal(&node["semantic_type"]) {
+            Some(position) => json!({"term": "group_reference", "ordinal": position}),
+            None => node["semantic_type"].clone(),
+        }
+    };
+    let mut preimage = json!({
+        "version": if application { "quire.application-node/v1" } else { "quire.structural-node/v1" },
+        "node_tag": node["node_tag"],
+        "semantic_form": node["semantic_form"],
+        "semantic_type": semantic_type,
+        "declaration": declaration,
+        "recursion": recursion.unwrap_or(Value::Null),
+        "body": body,
+    });
+    if !application && !declaration.is_null() {
+        preimage["owner"] = json!({"kind": "source", "authority": "a", "identity": "u"});
+    }
+    sha256_hex(&jcs(&preimage))
+}
+
+/// Each node with the members of its recursion group in graph order.
+fn with_groups(nodes: &[Value]) -> Vec<(&Value, Vec<&Value>)> {
+    nodes
+        .iter()
+        .map(|node| {
+            let group = match node.get("recursion_group") {
+                Some(label) => nodes
+                    .iter()
+                    .filter(|member| member.get("recursion_group") == Some(label))
+                    .collect(),
+                None => Vec::new(),
+            };
+            (node, group)
+        })
+        .collect()
+}
+
+/// `f(x: Int[0, 9])`, FR-092's self-recursive G4 to G6.
+fn recursive_f() -> CheckedPackage {
+    let recursive = FunctionDeclaration::new(
+        "f",
+        vec![(
+            "x".to_owned(),
+            TypeForm::builtin(BuiltinType::Int, SPAN)
+                .with_bounds(vec!["0".to_owned(), "9".to_owned()]),
+        )],
+        boolean(),
+        Some(name("x")),
+        Expression::If {
+            condition: Box::new(Expression::Binary {
+                operator: BinaryOperator::Greater,
+                left: Box::new(name("x")),
+                right: Box::new(Expression::Integer(0_i64.into())),
+            }),
+            then: Box::new(Expression::Call {
+                name: "f".to_owned(),
+                arguments: vec![Expression::Binary {
+                    operator: BinaryOperator::Subtract,
+                    left: Box::new(name("x")),
+                    right: Box::new(Expression::Integer(1_i64.into())),
+                }],
+            }),
+            otherwise: Box::new(Expression::Boolean(true)),
+        },
+    );
+    package(vec![recursive])
+}
+
+/// Every node of `package` as the emission arm writes it, in graph order,
+/// including the nodes the pinned IR's vocabulary makes it omit (a
+/// parameter node, and the functions and records that name one).
+fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
+    let graph = package.graph();
+    let mut recorded = recorded_occurrences(graph).expect("every role is FR-322's");
+    let candidates: Vec<Candidate<'_>> = graph
+        .semantic_graph()
+        .nodes()
+        .map(|node| Candidate::of(node, recorded.remove(&node.key()).unwrap_or_default()))
+        .collect();
+    let all: Vec<&Candidate<'_>> = candidates.iter().collect();
+    graph_order(&all)
+        .into_iter()
+        .map(|candidate| serde_json::to_value(candidate.wire_node().unwrap()).unwrap())
+        .collect()
+}
+
+/// The packages of TC-416 steps 1, 5 and 6.
+fn tc_416_packages() -> [CheckedPackage; 3] {
+    [
+        package(vec![both(), nb(), h(), f(), t()]),
+        recursive_f(),
+        tree(),
+    ]
+}
+
+/// TC-416 steps 1, 2 and 5 (FR-093-AC-7): each node the emission arm writes,
+/// rebuilt from the written node by FR-322's application rule or FR-092's
+/// structural rule, keys to its `node_id`, recursion-group members by their
+/// place in graph order.
+#[trace("FR-093-AC-7", "TC-416")]
+#[test]
+fn every_written_node_recomputes_to_its_node_id() {
+    for package in tc_416_packages() {
+        let nodes = written_nodes(&package);
+        assert!(!nodes.is_empty());
+        for (node, group) in with_groups(&nodes) {
+            assert_eq!(
+                json!(rebuilt_key(node, &group)),
+                node["node_id"]["digest"],
+                "{node}"
+            );
+        }
+    }
+}
+
+/// TC-416 step 5 (FR-093-AC-7): a recursion group's members carry the group
+/// digest as their label and are written together in ordinal order: the
+/// recursive `f`'s three members under FR-092's label, and `Tree`'s three.
+#[trace("FR-093-AC-7", "TC-416")]
+#[test]
+fn recursion_group_members_are_written_in_ordinal_order() {
+    for (package, label) in [
+        (
+            recursive_f(),
+            Some("0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50"),
+        ),
+        (tree(), None),
+    ] {
+        let expected: BTreeMap<String, usize> = package
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .filter_map(|node| {
+                node.recursion()
+                    .map(|group| (node.key().to_string(), group.ordinal()))
+            })
+            .collect();
+        let nodes = written_nodes(&package);
+        let members: Vec<(usize, &Value)> = nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| node.get("recursion_group").is_some())
+            .collect();
+        assert_eq!(members.len(), 3);
+        assert_eq!(members[2].0 - members[0].0, 2, "the members are contiguous");
+        for (ordinal, (_, member)) in members.iter().enumerate() {
+            assert_eq!(
+                expected[member["node_id"]["digest"].as_str().unwrap()],
+                ordinal
+            );
+            assert_eq!(member["recursion_group"], members[0].1["recursion_group"]);
+        }
+        if let Some(label) = label {
+            assert_eq!(members[0].1["recursion_group"], json!(label));
+        }
+    }
+}
+
+/// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
+/// test-side walker: body reference targets, operation member declarations,
+/// and a `bounded_domain` node's semantic type.
+fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
+    fn walk(term: &Value, found: &mut BTreeSet<String>) {
+        match term {
+            Value::Object(members) => {
+                if members.get("term") == Some(&json!("reference")) {
+                    found.insert(members["target"]["digest"].as_str().unwrap().to_owned());
+                }
+                if let Some(declaration) = members
+                    .get("operation")
+                    .and_then(|operation| operation.get("member"))
+                    .and_then(|member| member.get("declaration"))
+                {
+                    found.insert(declaration["digest"].as_str().unwrap().to_owned());
+                }
+                members.values().for_each(|value| walk(value, found));
+            }
+            Value::Array(items) => items.iter().for_each(|item| walk(item, found)),
+            _ => {}
+        }
+    }
+    let mut found = BTreeSet::new();
+    walk(&node["body"], &mut found);
+    if node["node_tag"] == "bounded_domain" {
+        found.insert(node["semantic_type"]["digest"].as_str().unwrap().to_owned());
+    }
+    found
+        .into_iter()
+        .map(|digest| json!({"domain": "quire.checked-semantic-node/v1", "digest": digest}))
+        .collect()
+}
+
+/// TC-416 step 6 (FR-093-AC-12): every written node's `dependencies` equal
+/// the list the rules rebuild from the node as written. `Tree`'s three group
+/// members each list exactly one other member, and together form one
+/// cycle (G7 lists G9, G8 lists G7, G9 lists G8).
+#[trace("FR-093-AC-12", "TC-416")]
+#[test]
+fn dependencies_are_the_lists_the_rules_rebuild() {
+    for package in tc_416_packages() {
+        for node in written_nodes(&package) {
+            assert_eq!(
+                node["dependencies"],
+                json!(rebuilt_dependencies(&node)),
+                "{node}"
+            );
+        }
+    }
+    let nodes = written_nodes(&tree());
+    let members: Vec<&Value> = nodes
+        .iter()
+        .filter(|node| node.get("recursion_group").is_some())
+        .collect();
+    let digest = |id: &Value| id["digest"].as_str().unwrap().to_owned();
+    let ids: BTreeSet<String> = members
+        .iter()
+        .map(|node| digest(&node["node_id"]))
+        .collect();
+    let mut next = BTreeMap::new();
+    for member in &members {
+        let dependencies = member["dependencies"].as_array().unwrap();
+        assert_eq!(dependencies.len(), 1, "{member}");
+        assert!(ids.contains(&digest(&dependencies[0])));
+        next.insert(digest(&member["node_id"]), digest(&dependencies[0]));
+    }
+    let start = digest(&members[0]["node_id"]);
+    let mut at = start.clone();
+    for _ in 0..3 {
+        at = next[&at].clone();
+    }
+    assert_eq!(at, start, "the group's dependencies form one cycle");
+}
+
+/// TC-416 step 4 (FR-093-AC-9): every emitted node has at least one
+/// occurrence, each is exactly an occurrence `check` recorded, and each
+/// maps to its region. `t`'s literal `true` has three `expression`
+/// occurrences.
+#[trace("FR-093-AC-9", "TC-416")]
+#[test]
+fn every_emitted_node_has_its_recorded_occurrences() {
+    let package = package(vec![t(), f()]);
+    let emission = emit(&package);
+    let wire = wire(&emission);
+    let recorded: BTreeSet<(String, String, u64)> = package
+        .graph()
+        .occurrences()
+        .map(|(key, origin, _)| (key.to_string(), origin.role().to_string(), origin.ordinal()))
+        .collect();
+    let mut literal_expressions = 0;
+    for node in nodes(&wire) {
+        let occurrences = node["occurrences"].as_array().unwrap();
+        assert!(!occurrences.is_empty(), "{node}");
+        for occurrence in occurrences {
+            let key = (
+                node["node_id"]["digest"].as_str().unwrap().to_owned(),
+                occurrence["role"].as_str().unwrap().to_owned(),
+                occurrence["ordinal"].as_u64().unwrap(),
+            );
+            assert!(recorded.contains(&key), "{key:?}");
+        }
+        if node["semantic_form"] == "literal" && node["body"]["value"] == json!(true) {
+            literal_expressions += occurrences
+                .iter()
+                .filter(|occurrence| occurrence["role"] == "expression")
+                .count();
+        }
+    }
+    assert_eq!(literal_expressions, 4, "three in t, one in f");
+    let entries = wire["source_map"].as_array().unwrap();
+    let occurrences: usize = nodes(&wire)
+        .iter()
+        .map(|node| node["occurrences"].as_array().unwrap().len())
+        .sum();
+    assert_eq!(entries.len(), occurrences);
+    for entry in entries {
+        assert_eq!(
+            entry["regions"],
+            json!([{
+                "source": wire["lock"]["sources"][0],
+                "start": 0,
+                "end": TEXT.len(),
+            }])
+        );
+    }
+}
+
+/// IR-280: IR's v2 vocabulary has no `value`/`parameter` form. A package
+/// holding `both(a, b)` and `t` writes `t` and omits `both`: its parameter
+/// nodes by form, and each node naming one after it. The rest is admitted.
+#[trace("FR-093-AC-7", "TC-416")]
+#[test]
+fn a_form_ir_lacks_is_omitted_and_everything_else_is_written() {
+    let package = package(vec![both(), t()]);
+    let both_key = package.graph().function_identity("both").unwrap();
+    let emission = emit(&package);
+    let parameters: Vec<&OmittedNode> = emission
+        .omitted
+        .iter()
+        .filter(|omission| {
+            omission.cause
+                == OmissionCause::UnsupportedForm {
+                    node_tag: NodeTag::Value,
+                    semantic_form: "parameter",
+                }
+        })
+        .collect();
+    assert_eq!(parameters.len(), 2, "a and b: {:?}", emission.omitted);
+    let both_node = emission
+        .omitted
+        .iter()
+        .find(|omission| *omission.node.digest == both_key.to_string())
+        .expect("both is omitted");
+    assert!(matches!(
+        both_node.cause,
+        OmissionCause::NamesOmittedNode(_)
+    ));
+    let exports = verified_exports(&emission);
+    assert!(exports.contains_key("t"));
+    assert!(!exports.contains_key("both"));
+}
+
+/// FR-322: a node carries `declaration` exactly when it has a
+/// `declaration` occurrence. `check` records none for a declared record, so
+/// `Tree` is omitted, and its sequence and bound, which name it, after it.
+#[trace("FR-093-AC-9", "TC-416")]
+#[test]
+fn a_declaration_without_its_occurrence_is_omitted() {
+    let package = tree();
+    let record = package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .find(|node| node.declaration().is_some())
+        .expect("Tree's record node")
+        .key();
+    let emission = emit(&package);
+    assert!(matches!(
+        read_back(&emission),
+        V2ReadOutcome::Verified { .. }
+    ));
+    let omitted = emission.omitted;
+    let causes: BTreeMap<String, &OmissionCause> = omitted
+        .iter()
+        .map(|omission| (omission.node.digest.to_string(), &omission.cause))
+        .collect();
+    assert_eq!(
+        causes.get(&record.to_string()),
+        Some(&&OmissionCause::DeclarationOccurrenceMismatch)
+    );
+    let members = package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .filter(|node| node.recursion().is_some() && node.key() != record);
+    for member in members {
+        assert!(
+            matches!(
+                causes[&member.key().to_string()],
+                OmissionCause::NamesOmittedNode(_)
+            ),
+            "{}",
+            member.key()
+        );
+    }
+}
+
+/// The pinned IR reader keys an application node in a recursion group by
+/// the bare group label, not FR-322's `{ordinal, size}`, so it would refuse
+/// the whole package as `stale-node-key`. `g(): Boolean { if true then true
+/// else g() }` puts two application nodes in `g`'s group: they are omitted,
+/// `g` with them, and the rest is admitted.
+#[trace("FR-093-AC-7", "TC-416")]
+#[test]
+fn a_recursion_group_holding_an_application_is_omitted() {
+    let g = function(
+        "g",
+        &[],
+        Expression::If {
+            condition: Box::new(Expression::Boolean(true)),
+            then: Box::new(Expression::Boolean(true)),
+            otherwise: Box::new(Expression::Call {
+                name: "g".to_owned(),
+                arguments: Vec::new(),
+            }),
+        },
+    );
+    let package = package(vec![g, t()]);
+    let members: BTreeSet<String> = package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .filter(|node| node.recursion().is_some())
+        .map(|node| node.key().to_string())
+        .collect();
+    let g_key = package.graph().function_identity("g").unwrap().to_string();
+    assert!(members.contains(&g_key), "g is in its own group");
+    let emission = emit(&package);
+    let causes: BTreeMap<String, &OmissionCause> = emission
+        .omitted
+        .iter()
+        .map(|omission| (omission.node.digest.to_string(), &omission.cause))
+        .collect();
+    let omitted: BTreeSet<String> = causes.keys().cloned().collect();
+    assert!(members.is_subset(&omitted), "{causes:?}");
+    assert!(causes
+        .values()
+        .any(|cause| **cause == OmissionCause::RecursiveApplication));
+    let exports = verified_exports(&emission);
+    assert!(exports.contains_key("t"));
+    assert!(!exports.contains_key("g"));
+}
+
+/// FR-322 admits no empty semantic graph: an empty package refuses with no
+/// bytes.
+#[trace("FR-093-AC-7", "TC-416")]
+#[test]
+fn a_package_with_nothing_writable_refuses() {
+    let empty = emit_package(&package(Vec::new()), whole_unit).unwrap_err();
+    assert_eq!(
+        empty,
+        EmitRefusal::NothingToEmit {
+            omitted: Vec::new()
+        }
+    );
+    assert_eq!(empty.code(), Code::UnsupportedProjection);
+}
+
+/// An occurrence the caller's region conversion cannot place refuses the
+/// emission, naming the occurrence.
+#[trace("FR-093-AC-9", "TC-416")]
+#[test]
+fn an_unplaced_occurrence_refuses() {
+    let refusal = emit_package(&package(vec![t()]), |_| None).unwrap_err();
+    assert!(
+        matches!(refusal, EmitRefusal::UnlocatedOccurrence { .. }),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), Code::UnsupportedProjection);
+    // IR refuses an empty region (`start >= end`), so it places nothing.
+    let empty = emit_package(&package(vec![t()]), |_| {
+        Some(SourceRegion::new(source(), 3, 3).unwrap())
+    })
+    .unwrap_err();
+    assert!(
+        matches!(empty, EmitRefusal::UnlocatedOccurrence { .. }),
+        "{empty:?}"
+    );
+}
+
+/// TC-416 step 3 (FR-093-CON-2): the `package` crate's non-test code calls
+/// no node body term constructor, no node key function and no `NodeKey`
+/// constructor. A source scan: the property is the absence of a call.
+#[trace("FR-093-CON-2", "TC-416")]
+#[test]
+fn the_package_crate_builds_no_term_and_mints_no_key() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let forbidden = [
+        "SemanticTerm::reference(",
+        "SemanticTerm::binding(",
+        "SemanticTerm::literal(",
+        "node_key(",
+        "group_keys(",
+        "NodeKey::from_digest(",
+        "NodeKey::from(",
+    ];
+    let mut scanned = 0;
+    for file in ["lib.rs", "checked.rs", "checked_v2.rs", "emit.rs"] {
+        let text = std::fs::read_to_string(root.join(file)).unwrap();
+        let shipped = text.split("#[cfg(test)]").next().unwrap();
+        for token in forbidden {
+            assert!(!shipped.contains(token), "{file} calls {token}");
+        }
+        scanned += 1;
+    }
+    assert_eq!(scanned, 4);
+}

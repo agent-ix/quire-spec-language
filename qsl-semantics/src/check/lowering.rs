@@ -71,6 +71,7 @@ use crate::value::member::Member;
 use crate::value::quantity::UnitTable;
 
 mod model;
+mod wire;
 
 pub use model::{AdmittedModel, ForeignView, ModelClause};
 
@@ -114,6 +115,12 @@ impl NodeRecursion {
     /// The group digest.
     pub fn group(&self) -> &[u8; 32] {
         &self.group
+    }
+
+    /// The group's FR-322 `recursion_group` label: the group digest in
+    /// lowercase hex (FR-092).
+    pub fn label(&self) -> String {
+        super::node_key::hex(&self.group)
     }
 
     /// The node's ordinal: its rank in the group order.

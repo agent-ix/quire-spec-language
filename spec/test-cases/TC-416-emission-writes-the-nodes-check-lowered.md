@@ -76,10 +76,7 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
 ## Status
 
-Planned; QSL-6 S1b, after QSL-156 A4b merges. `qsl-package/src/emit.rs`
-refuses every non-empty graph. Emission needs the edition lock evidence
-(ADR-011 §2.4), and step 7's text and IEEE operations need a law from it.
-Step 7's admission half also waits on IR's v2 reader reading ADR-013 QC-24's
-`value`/`parameter` and function nodes and QC-25's model nodes: IR's closed
-`ValueForm` at `c0ba691` has no `parameter`, and it refuses such a package as
-`invalid_semantic_graph`.
+Steps 1 to 6 implemented in `qsl-package/src/emit/tests.rs` (QSL-6 S1b).
+Step 7 is not: its admission half waits on IR's v2 reader reading ADR-013
+QC-24's `value`/`parameter` and function nodes and QC-25's model nodes (IR's
+closed `ValueForm` has no `parameter`, IR-280).

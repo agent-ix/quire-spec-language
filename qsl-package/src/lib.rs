@@ -5,9 +5,8 @@
 //! `quire.checked-package/v2` I2 byte reader (`checked_v2`, ADR-011 §4) and
 //! the v2 emitter (`emit`, ADR-011 T-8, M-4).
 //!
-//! This crate depends on layer 3 (`qsl-semantics`), F (`qsl-foundation`) and
-//! `quire-contract-model` for the v2 wire vocabulary, and names K
-//! (`quire-exact`) only in its tests. It never names the root crate or a
+//! This crate depends on layer 3 (`qsl-semantics`), F (`qsl-foundation`), K
+//! (`quire-exact`) and `quire-contract-model` for the v2 wire vocabulary. It never names the root crate or a
 //! SEAM-1 module (`checking`, `linking`, `native_model`, or the root crate's
 //! native-v1 `package`): Cargo refuses the first, and the root crate is the
 //! only home of the second. The layer-5 evaluator and every later layer

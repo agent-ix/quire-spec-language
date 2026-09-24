@@ -1209,6 +1209,15 @@ impl CheckedGraph {
         self.occurrences.resolve(identity, origin)
     }
 
+    /// ADR-013 O-07: every occurrence `check` recorded, as (node, origin,
+    /// location), ascending by node and role, each role in ordinal order.
+    /// FR-093: every lowered node has at least one.
+    pub fn occurrences(
+        &self,
+    ) -> impl Iterator<Item = (quire_exact::NodeKey, quire_exact::Origin, &Location)> {
+        self.occurrences.iter()
+    }
+
     /// One admitted function's own name, checked body and evaluation slot
     /// count, by its index in the package -- the index a checked
     /// `NodeKind::Call` or dispatch candidate names. The accessor

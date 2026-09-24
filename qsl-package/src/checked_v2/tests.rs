@@ -1262,8 +1262,10 @@ fn every_occurrence_role_is_spelled_as_ir_serializes_it() {
         (R::Generated, "generated"),
     ] {
         assert_eq!(super::role_spelling(&role), spelling);
+        assert_eq!(super::occurrence_role(spelling), Some(role.clone()));
         assert_eq!(serde_json::to_value(&role).unwrap(), json!(spelling));
     }
+    assert_eq!(super::occurrence_role("reference"), None);
 }
 
 /// Every JSON object in `value` that has a `RawSourceRef`/artifact-ref

@@ -390,8 +390,9 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // is fixed: layer 3, F, K (the kernel occurrence `Origin` the
             // I2 reader keys the v2 source map by, ADR-013 O-07, QSL-159),
             // the v2 wire contract, `quire-canonical` (ADR-013 §2's one
-            // RFC 8785 encoder, for the `package_id` preimage, QSL-194) and
-            // `thiserror`. `serde_json` and `sha2` are used by its tests only.
+            // RFC 8785 encoder, for the `package_id` preimage, QSL-194),
+            // `serde` (the emitter's wire envelope, QSL-6) and `thiserror`.
+            // `serde_json` and `sha2` are used by its tests only.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(
@@ -402,6 +403,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "quire-canonical",
                     "quire-contract-model",
                     "quire-exact",
+                    "serde",
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"

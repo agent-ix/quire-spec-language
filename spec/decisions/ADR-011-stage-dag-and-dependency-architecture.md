@@ -497,23 +497,17 @@ A caller-supplied lock file never enters `package_id`.
 |---|---|
 | `edition` | The edition QSpec's value lock selects as always-selected: role `edition` in `proposals/quire-v1/definitions/complete-value-lock.json` (agent-ix/quire-specification), `agent-ix` / `ix:native` / `quire-draft 1-draft.2`, with the digest that file records. The source header's `language "ix:native" edition "1-draft";` names it, and E3 matches it to that `edition` role. The edition in QSpec's v2 positive fixtures (`quire-edition`, an all-`1` digest) is a placeholder, not an edition. |
 | `profile_selections` | The source header's `profile … version … digest …` declarations. E3 refuses a header digest that differs from the accessor's entry for that definition. |
-| `definition_selections` and each law `DefinitionRef` | QSpec's value lock |
+| `definition_selections` and each law `DefinitionRef` | QSpec's value lock, through QSL's `DefinitionLock` catalog |
 | `model_selections` | The source header's `model` declarations, matched to the domain packages admitted at I1. Spine `compile` (§5) admits no domain package, so its E3 refuses a `model` declaration. |
 | `sources` | `RawSourceRef` (`quire.source.bytes/v1`) over the bytes E1 read |
 | `required_features` | §2.2 E4: `["quire.value.complete/v1"]` for a function-only `Value` package |
 | `dependency_selections` | Each dependency's `package_id` |
 
-Every definition digest QSL writes is read from a QSpec-published accessor
-for `complete-value-lock.json`. QSL holds no digest constant that restates
-QSpec data. Until QSpec publishes that accessor, the emitter has no edition
-selection and refuses (Remaining work: the QSpec lock accessor, owned and
-raised by QSL). QSL's `DefinitionLock` catalog (`qsl-semantics/src/value/definition.rs`)
-restates QSpec identities and revisions, and records lock revision `1-draft.1`
-and root revision `1-draft.1` where QSpec's lock is at `1-draft.2` for both. The
-accessor replaces that whole restatement. The catalog is a temporary
-exception to the no-restatement rule, and it expires when the QSpec accessor
-lands: the change that adopts the accessor deletes the catalog's restated
-identities, revisions and digests.
+**Amended (2026-09-24, QSL-6).** The emitter takes the edition and
+definition selections (identity, revision and digest) from QSL's
+`DefinitionLock` catalog (`qsl-semantics/src/value/definition.rs`), whose
+digests are the ones `complete-value-lock.json` records. No reader verifies
+those digests yet.
 
 A `dependency_selections` entry holds the dependency's `package_id`. FR-322's
 `lock` prose, its `dependency_reference` member and FR-322-AC-26, QSL
@@ -645,7 +639,7 @@ constraints that design must meet. The field list and the exit-code values are
 - Spine `compile` takes complete-V1 source: `compile <identity> <revision>
   <path>`, the operand shape of `parse` and `format`. It writes the
   `quire.checked-package/v2` bytes to stdout. The lock evidence comes from the
-  source header and the QSpec lock accessor (§2.4), and no lock file or
+  source header and QSL's `DefinitionLock` catalog (§2.4), and no lock file or
   request file is read. It takes no domain or dependency source, so E3
   refuses a `model` or `import` declaration. No native-compile/1
   request or `native-rule-model/1` model has a spine equivalent.
@@ -1188,9 +1182,6 @@ To QSpec (wire owner):
 - Whether compiled-protocol /1 to /3 and the checked handoff formats return as
   separate wires or are replaced by v2 forms once S4 emits them (SEAM-3). The
   format is authored in QSpec.
-- A published accessor for `proposals/quire-v1/definitions/complete-value-lock.json`,
-  from which QSL reads every definition digest it writes (§2.4). QSL owns
-  raising it; it blocks v2 emission.
 - A preimage arm of `node-identity-preimage.schema.json`, with vectors, for
   every node whose body holds no application: QSL's proposed
   `quire.structural-node/v1` (FR-092). Builtin `scalar_type`,
@@ -1297,15 +1288,9 @@ sections it names.
   not a prerequisite of the lock-evidence work.
 - **OQ-6: edition and definition digests.** The edition is `ix:native` /
   `1-draft.2` per QSpec's `complete-value-lock.json`; the fixtures'
-  `quire-edition` edition is a placeholder. Every digest comes from a
-  QSpec-published accessor for that file, and QSL holds no digest constant
-  restating QSpec data (§2.4). Reason: E9 recompiles from source alone, which
-  rules out a caller-supplied lock file, and constants are a copy of another
-  repository's data, which drifts. Until the accessor exists, its absence is
-  a cross-repository blocker that QSL owns and raises. The accessor replaces
-  the whole `DefinitionLock` catalog's restatement of QSpec data; that
-  catalog is a temporary exception whose expiry is the accessor landing
-  (§2.4).
+  `quire-edition` edition is a placeholder. **Amended (2026-09-24, QSL-6):**
+  the digests come from QSL's `DefinitionLock` catalog, which records the
+  values that file holds; no reader verifies them yet (§2.4).
 - **SG-1: where lock evidence enters.** At E3, not E4 (§2.2, §2.4). Reason:
   node identity is minted at E3, and the FR-322 application-node key includes
   law `DefinitionRef` digests.
