@@ -49,6 +49,12 @@ selection whose alias is `v`.
    `Option`s around `Boolean`, and one with five. Check the recursive `f` of
    FR-092 vectors G4 to G6 and the same declaration named `g`, calling `g`,
    in one unit.
+   On a spawned thread with a 2 MiB stack, at the default limits, check a
+   chain of 30 records, each `record Ci { next?: C{i+1}; }`, the last into
+   `record Leaf { label: Text[0, 8; nfc]; }`, alone and with an equality
+   over `C0`; check the same chain 1,000 records long, alone and with the
+   equality, at the default limits, at the maximum depth with nodes and work
+   unlimited, and at a depth limit of 16.
 6. Key QSpec's `enum-status` and `enum-status-ready` preimages from
    `node-identity-vectors.json`, read at run time from `QSPEC_DIR` (the opt-in
    `make conformance` gate).
@@ -85,6 +91,10 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
   `f`/`g` unit refuses with `unknown_required_feature`/`unsupported-feature`
   naming the regions of `f` and `g`, and no member of either group has a
   key; each conditional's preimage alone keys to G5.
+  The 30-record chain checks, alone and with the equality, and the thread
+  completes. The 1,000-record chain refuses under every limit set, each
+  refusal `resource_exhausted` naming the depth limit set, and the thread
+  completes.
 - Step 6: each key equals the recorded `sha256`, and each preimage's
   `version` is its nominal one.
 - Step 7: T10 and T9, T12 and T11, D5, D3, D4 (differing from D3), and L3

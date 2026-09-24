@@ -117,9 +117,10 @@ Building a type node and lowering a checked expression each walk a tree
 whose depth the check stage's depth limit bounds (`CheckingLimits`, at most
 `MAX_CHECKING_DEPTH`; ADR-011 §2.3). A walk that would pass the limit
 refuses with `resource_exhausted`/`insufficient-next-charge` naming the depth
-limit (`CheckCause::ResourceExhausted`), and yields no key. Within the limit
-a type node's walk returns its node or a refusal and never overflows the
-thread's stack, however long the chain of declared composites it follows.
+limit (`CheckCause::ResourceExhausted`), and yields no key. A type node's
+walk uses stack that does not grow with the nesting of the options,
+collections and declared composites it follows; only the depth limit bounds
+that nesting.
 
 A declared node's qualified name, a binding name and a `semantic_form` are
 never empty: S2 builds identifiers from non-empty tokens. A preimage that

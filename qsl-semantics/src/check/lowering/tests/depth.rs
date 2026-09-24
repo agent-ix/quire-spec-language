@@ -99,7 +99,7 @@ fn check_on_small_stack(
         })
         .expect("the check thread spawns")
         .join()
-        .expect("the check completes on a 2 MiB stack")
+        .expect("the check thread panicked instead of returning a result")
 }
 
 /// Every refusal is the depth limit `limit`, and there is at least one.
@@ -118,7 +118,7 @@ fn assert_depth_refusals(refusals: &[CheckRefusal], limit: u64) {
     }
 }
 
-/// The record nodes of a checked chain, by name.
+/// How many `record` nodes a checked package holds.
 fn record_nodes(graph: &CheckedGraph) -> usize {
     graph
         .semantic_graph()
@@ -184,9 +184,9 @@ fn a_1000_record_chain_refuses_on_the_depth_limit_on_a_small_stack() {
     }
 }
 
-/// A 63-record cycle, `C62`'s field back into `C0`, is one recursion group
-/// holding all 63 records (and the `option` node over each), and checks on a small stack at the
-/// maximum depth.
+/// A 63-record cycle, `C62`'s field back into `C0`, checks on a small stack
+/// at the maximum depth as one recursion group holding all 63 records and
+/// the `option` node over each.
 #[trace("FR-092-AC-7", "TC-413")]
 #[test]
 fn a_63_record_cycle_checks_as_one_group_on_a_small_stack() {
@@ -204,15 +204,27 @@ fn a_63_record_cycle_checks_as_one_group_on_a_small_stack() {
     ));
     let checked = check_on_small_stack(records, Vec::new(), CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the cycle checks: {refusals:?}"));
+    let form_count = |form: &str| {
+        checked
+            .semantic_graph()
+            .nodes()
+            .filter(|node| node.semantic_form() == form)
+            .count()
+    };
+    assert_eq!(form_count("record"), 63);
+    assert_eq!(form_count("option"), 63);
     let members: Vec<&SemanticNode> = checked
         .semantic_graph()
         .nodes()
-        .filter(|node| node.semantic_form() == "record")
+        .filter(|node| node.recursion().is_some())
         .collect();
-    assert_eq!(members.len(), 63);
+    assert_eq!(members.len(), 126, "every record and option is a member");
     let groups: BTreeSet<[u8; 32]> = members
         .iter()
-        .map(|node| *node.recursion().expect("a group member").group())
+        .filter_map(|node| node.recursion().map(|recursion| *recursion.group()))
         .collect();
     assert_eq!(groups.len(), 1, "one recursion group");
+    assert!(members.iter().all(|node| node
+        .recursion()
+        .is_some_and(|recursion| recursion.size() == 126)));
 }
