@@ -4,3 +4,4 @@
 //! the same shape as the root crate's `it` target.
 
 mod route_registry;
+mod routing;

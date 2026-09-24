@@ -20,8 +20,20 @@
 //! pending outcome (FR-076). Every disposition -- `supported`,
 //! `requires-bound`, `unsupported` (warned) and `invalid-request` -- is
 //! settled downstream by `quire-contract-codegen`'s `negotiate_*`
-//! (ADR-012 §7.2, quire-contract-codegen#86); this module's return types
-//! carry no such variant.
+//! (ADR-012 §7.2, quire-contract-codegen#86). The routing step
+//! ([`routing`], FR-057) reads those settled dispositions back as input
+//! data and gives a target only to a `supported` item; it produces no
+//! disposition of its own.
+//!
+//! A backend registers from the labels its FR-331 provider manifest states
+//! ([`BackendDescriptor::admit`], FR-057-AC-8): each advertised kind and
+//! mode is admitted under the same exact-label rules as a requested pair,
+//! and an absent or unknown kind or an unknown mode refuses the whole
+//! registration, keyed by backend identity. A candidate is the ADR-013
+//! O-19 `backend{identity, manifest_digest}` value ([`Candidate`]); its
+//! digest is typed to domain `quire.tool-manifest.jcs/v1`
+//! ([`ManifestDigest`]), and reading one from its wire parts checks that
+//! domain before the digest bytes (ADR-013 C-27).
 //!
 //! The registry is an ordinary value (FR-075 "The registry is an ordinary
 //! value, not ambient state"; FR-075-CON-1): it is built by the
@@ -31,10 +43,12 @@
 //! records the gates (`make route-lint`, `cargo deny check bans`) that hold
 //! both of those.
 
+pub mod routing;
+
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
-use qsl_foundation::digest::ByteDigest;
+use qsl_foundation::digest::{parse_lower_hex32, DigestDomain, DigestRecord, UnknownDigestDomain};
 use qsl_foundation::CatalogCode;
 use qsl_semantics::check::Capability;
 
@@ -105,6 +119,159 @@ pub enum Mode {
     Unbounded,
 }
 
+impl Mode {
+    /// Both FR-290 modes. The order carries no meaning; the slice exists so
+    /// [`Mode::from_wire`] derives from [`Mode::to_wire`] rather than
+    /// restating the two labels.
+    pub const ALL: &'static [Mode] = &[Mode::Bounded, Mode::Unbounded];
+
+    /// The FR-290 wire spelling: exactly `bounded` or `unbounded`.
+    pub const fn to_wire(self) -> &'static str {
+        match self {
+            Mode::Bounded => "bounded",
+            Mode::Unbounded => "unbounded",
+        }
+    }
+
+    /// Read a mode from its exact FR-290 wire spelling, with no
+    /// normalization or default. Any other label (FR-290 "a mode outside
+    /// these two") is `None`; [`BackendDescriptor::admit`] turns that into
+    /// `invalid_capability`/`unknown-mode`.
+    pub fn from_wire(label: &str) -> Option<Mode> {
+        Mode::ALL
+            .iter()
+            .copied()
+            .find(|mode| mode.to_wire() == label)
+    }
+}
+
+/// The digest of a backend's own FR-331 provider manifest (FR-075 Inputs),
+/// always in FR-201 domain `quire.tool-manifest.jcs/v1` (ADR-013 O-19).
+///
+/// The domain is fixed by construction: [`ManifestDigest::from_digest`]
+/// mints in that domain, and [`ManifestDigest::from_wire`] refuses any
+/// other. The registry receives the digest already computed and never
+/// computes it (FR-075 Inputs).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ManifestDigest(DigestRecord);
+
+impl ManifestDigest {
+    /// The one FR-201 domain a manifest digest is in.
+    pub const DOMAIN: DigestDomain = DigestDomain::ToolManifestJcsV1;
+
+    /// Wrap an already-computed `quire.tool-manifest.jcs/v1` digest.
+    pub fn from_digest(bytes: [u8; 32]) -> Self {
+        Self(DigestRecord::mint(Self::DOMAIN, bytes))
+    }
+
+    /// Read a manifest digest from its wire parts: a domain label and a
+    /// 64-lowercase-hex digest (the `DigestRecord` wire convention, C-16).
+    ///
+    /// The domain is checked first (ADR-013 C-27): an absent domain, an
+    /// unknown label, or any FR-201 domain other than
+    /// `quire.tool-manifest.jcs/v1` refuses before the digest string is
+    /// read.
+    pub fn from_wire(
+        domain: Option<&str>,
+        digest_hex: &str,
+    ) -> Result<Self, InvalidManifestDigest> {
+        let Some(label) = domain else {
+            return Err(InvalidManifestDigest::AbsentDomain);
+        };
+        let domain = label
+            .parse::<DigestDomain>()
+            .map_err(InvalidManifestDigest::UnknownDomain)?;
+        if domain != Self::DOMAIN {
+            return Err(InvalidManifestDigest::WrongDomain(domain));
+        }
+        if digest_hex.len() != 64 {
+            return Err(InvalidManifestDigest::WrongLength(digest_hex.len()));
+        }
+        parse_lower_hex32(digest_hex)
+            .map(Self::from_digest)
+            .ok_or(InvalidManifestDigest::NotLowerHex)
+    }
+
+    /// The domain-labelled digest record. Its domain is always
+    /// [`ManifestDigest::DOMAIN`]; its `hex()` is the wire digest string.
+    pub fn record(&self) -> DigestRecord {
+        self.0
+    }
+}
+
+/// [`ManifestDigest::from_wire`]'s refusal (ADR-013 C-27).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum InvalidManifestDigest {
+    /// The wire digest names no domain (FR-201-AC-3: never defaulted).
+    #[error("manifest digest names no domain")]
+    AbsentDomain,
+    /// The wire digest names a label FR-201 does not define.
+    #[error("{0}")]
+    UnknownDomain(#[source] UnknownDigestDomain),
+    /// The wire digest names an FR-201 domain other than
+    /// `quire.tool-manifest.jcs/v1`.
+    #[error("manifest digest domain {0} is not quire.tool-manifest.jcs/v1")]
+    WrongDomain(DigestDomain),
+    /// The domain is right; the digest string is not exactly 64
+    /// characters.
+    #[error("manifest digest is {0} characters, not exactly 64")]
+    WrongLength(usize),
+    /// The domain is right; the digest string is not lowercase hex (FR-201
+    /// admits no case folding).
+    #[error("manifest digest is not exactly 64 lowercase hexadecimal digits")]
+    NotLowerHex,
+}
+
+/// A candidate: the `(backend identity, manifest digest)` pair of a
+/// registered backend (FR-290 "Candidate set and negotiation"), which is
+/// also the ADR-013 O-19 `backend{identity, manifest_digest}` value.
+///
+/// Ordering is derived over `(id, manifest_digest)` in that field order:
+/// bytewise by identity, then by digest, as FR-290 orders candidates.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Candidate {
+    id: BackendId,
+    manifest_digest: ManifestDigest,
+}
+
+impl Candidate {
+    /// Pair a backend identity with its manifest digest.
+    pub fn new(id: BackendId, manifest_digest: ManifestDigest) -> Self {
+        Self {
+            id,
+            manifest_digest,
+        }
+    }
+
+    /// Read the O-19 `backend` member from its wire parts (ADR-013 C-27):
+    /// the identity is kept verbatim, and the digest's domain is checked
+    /// before its bytes ([`ManifestDigest::from_wire`]).
+    ///
+    /// The inverse is total: `id().as_str()`,
+    /// `manifest_digest().record().domain().as_str()` and
+    /// `manifest_digest().record().hex()`.
+    pub fn from_wire(
+        identity: &str,
+        digest_domain: Option<&str>,
+        digest_hex: &str,
+    ) -> Result<Self, InvalidManifestDigest> {
+        Ok(Self::new(
+            BackendId::new(identity),
+            ManifestDigest::from_wire(digest_domain, digest_hex)?,
+        ))
+    }
+
+    /// The backend identity.
+    pub fn id(&self) -> &BackendId {
+        &self.id
+    }
+
+    /// The digest of that backend's FR-331 provider manifest.
+    pub fn manifest_digest(&self) -> ManifestDigest {
+        self.manifest_digest
+    }
+}
+
 /// One backend's registration (FR-075 Inputs): its identity, the digest of
 /// its own FR-331 provider manifest, its pinned tool, and the
 /// `(capability kind, mode)` pairs it advertises.
@@ -114,45 +281,109 @@ pub enum Mode {
 /// (ADR-013 T-7).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BackendDescriptor {
-    id: BackendId,
-    manifest_digest: ByteDigest,
+    backend: Candidate,
     tool: ToolIdentity,
     advertises: HashSet<(Capability, Mode)>,
 }
 
 impl BackendDescriptor {
-    /// Build a descriptor from its FR-331 provider-manifest fields. A
-    /// backend supplies one descriptor per registration, so `id` carries
-    /// exactly one `manifest_digest` and one `tool` at a time (FR-075
-    /// Inputs).
+    /// Build a descriptor from already-typed FR-331 provider-manifest
+    /// fields. A backend supplies one descriptor per registration, so its
+    /// identity carries exactly one manifest digest and one `tool` at a
+    /// time (FR-075 Inputs).
     pub fn new(
-        id: BackendId,
-        manifest_digest: ByteDigest,
+        backend: Candidate,
         tool: ToolIdentity,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
     ) -> Self {
         Self {
-            id,
-            manifest_digest,
+            backend,
             tool,
             advertises: advertises.into_iter().collect(),
         }
     }
 
-    /// This descriptor's backend identity.
-    pub fn id(&self) -> &BackendId {
-        &self.id
+    /// Build a descriptor from the advertised `(kind, mode)` labels exactly
+    /// as the backend's provider manifest states them (FR-057 "Stage
+    /// ownership", FR-290 "Advertised mode", ADR-013 C-28).
+    ///
+    /// Each kind is admitted under the same rule as a requested pair: exact
+    /// byte equality with one FR-290 label, no normalization or default.
+    /// Any failing pair refuses the whole registration, keyed by
+    /// `backend` (identity, then manifest digest):
+    ///
+    /// - kind `None` (absent or `null`): `invalid_capability`/`absent-kind`;
+    /// - kind not an FR-290 label: `invalid_capability`/`unknown-kind`,
+    ///   carrying the received bytes;
+    /// - mode `None`, or other than `bounded`/`unbounded`:
+    ///   `invalid_capability`/`unknown-mode`, carrying the received bytes
+    ///   when there are any.
+    ///
+    /// **First-failure rule.** A refusal names one cause (FR-290: "refuse
+    /// that registration with `invalid_capability` (`absent-kind`,
+    /// `unknown-kind` or `unknown-mode`)"). When more than one pair fails,
+    /// the cause reported is the first failure in the order the pairs are
+    /// given, and within one pair the kind is checked before the mode, so a
+    /// pair whose kind and mode are both bad reports its kind. FR-290 treats
+    /// the advertised pairs as a set and does not rank causes; this order
+    /// is this function's own, stated here so it is deterministic for one
+    /// manifest. Whether the refusal is reported at all never depends on
+    /// order.
+    ///
+    /// A refused descriptor never exists, so it contributes nothing to any
+    /// registry.
+    pub fn admit<'a>(
+        backend: Candidate,
+        tool: ToolIdentity,
+        advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
+    ) -> Result<Self, RegistrationRefusal> {
+        let refuse = |cause| RegistrationRefusal {
+            backend: backend.clone(),
+            cause,
+        };
+        let mut advertises = HashSet::new();
+        for (kind, mode) in advertised {
+            let kind = kind.ok_or_else(|| refuse(RegistrationCause::AbsentKind))?;
+            let kind = Capability::from_wire(kind).map_err(|unknown| {
+                refuse(RegistrationCause::UnknownKind(
+                    unknown.received().to_owned(),
+                ))
+            })?;
+            let mode = mode
+                .and_then(Mode::from_wire)
+                .ok_or_else(|| refuse(RegistrationCause::UnknownMode(mode.map(str::to_owned))))?;
+            advertises.insert((kind, mode));
+        }
+        Ok(Self {
+            backend,
+            tool,
+            advertises,
+        })
     }
 
-    /// The digest of this backend's own FR-331 provider manifest.
-    pub fn manifest_digest(&self) -> ByteDigest {
-        self.manifest_digest
+    /// This descriptor's backend identity.
+    pub fn id(&self) -> &BackendId {
+        &self.backend.id
+    }
+
+    /// This backend as a candidate: its identity and the digest of its own
+    /// FR-331 provider manifest.
+    pub fn candidate(&self) -> &Candidate {
+        &self.backend
     }
 
     /// This backend's pinned tool identity, carried unread (see the type's
     /// own doc).
     pub fn tool(&self) -> &ToolIdentity {
         &self.tool
+    }
+
+    /// Every advertised `(kind, mode)` pair, in no particular order: the
+    /// data the FR-331 `manifest` restates per registered backend (FR-057
+    /// "Stage ownership"). Mode is carried for `negotiate_*`; candidate
+    /// computation never reads it (FR-075).
+    pub fn advertises(&self) -> impl Iterator<Item = (Capability, Mode)> + '_ {
+        self.advertises.iter().copied()
     }
 
     /// Whether this descriptor advertises `kind`, in any mode -- mode
@@ -187,26 +418,74 @@ impl BackendDescriptor {
     }
 }
 
-/// A registration the [`Registry`] refuses outright (ADR-012 §5.2 row 1;
-/// FR-075-AC-4): a repeated `BackendId`. Structurally distinct from
-/// [`CandidateOutcome`] (FR-076-AC-3, TC-198) -- a caller cannot mistake a
-/// registration refusal for an empty candidate set or an unknown-backend
-/// marker by pattern-matching alone.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("invalid_capability/duplicate-backend: {identity} is already registered")]
+/// Why a registration is refused: the FR-290 registration causes, all
+/// under code `invalid_capability` (FR-057-AC-8).
+///
+/// `Ord` exists only so [`RegistrationRefusal`] can order refusals under
+/// one backend deterministically; it ranks no cause above another.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum RegistrationCause {
+    /// The registration repeats an identity the registry already holds
+    /// (ADR-012 §5.2 row 1; FR-075-AC-4).
+    DuplicateBackend,
+    /// An advertised pair names no kind.
+    AbsentKind,
+    /// An advertised kind is not byte-equal to an FR-290 label; carries the
+    /// exact received bytes.
+    UnknownKind(String),
+    /// An advertised mode is absent, or neither `bounded` nor `unbounded`;
+    /// carries the exact received bytes, `None` when there were none.
+    UnknownMode(Option<String>),
+}
+
+impl RegistrationCause {
+    /// The catalog cause under `invalid_capability`.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::DuplicateBackend => "duplicate-backend",
+            Self::AbsentKind => "absent-kind",
+            Self::UnknownKind(_) => "unknown-kind",
+            Self::UnknownMode(_) => "unknown-mode",
+        }
+    }
+}
+
+/// A registration refused outright, keyed by backend identity (FR-290
+/// "Advertised mode", "Candidate set and negotiation"; FR-057-AC-8).
+/// Structurally distinct from [`CandidateOutcome`] (FR-076-AC-3, TC-198) --
+/// a caller cannot mistake a registration refusal for an empty candidate
+/// set or an unknown-backend marker by pattern-matching alone.
+///
+/// Carries the refused registration's whole [`Candidate`], not only its
+/// identity, so refusals order as FR-290 reports them: bytewise by backend
+/// identity, then by manifest digest (`Ord` is derived over `(backend,
+/// cause)` in that field order).
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, thiserror::Error)]
+#[error("invalid_capability/{}: registration of {} refused", cause.as_str(), backend.id)]
 pub struct RegistrationRefusal {
-    identity: BackendId,
+    backend: Candidate,
+    cause: RegistrationCause,
 }
 
 impl RegistrationRefusal {
-    /// The identity that was already registered.
+    /// The identity whose registration was refused.
     pub fn identity(&self) -> &BackendId {
-        &self.identity
+        &self.backend.id
     }
 
-    /// Always `invalid_capability`/`duplicate-backend` (FR-075-AC-4).
+    /// The refused registration's identity and manifest digest.
+    pub fn backend(&self) -> &Candidate {
+        &self.backend
+    }
+
+    /// Why it was refused.
+    pub fn cause(&self) -> &RegistrationCause {
+        &self.cause
+    }
+
+    /// `invalid_capability` with this refusal's cause.
     pub fn catalog_code(&self) -> CatalogCode {
-        CatalogCode::new("invalid_capability", "duplicate-backend")
+        CatalogCode::new("invalid_capability", self.cause.as_str())
     }
 }
 
@@ -221,7 +500,7 @@ impl RegistrationRefusal {
 pub struct CandidateSet {
     kind: Capability,
     requested_backend: Option<BackendId>,
-    candidates: Vec<(BackendId, ByteDigest)>,
+    candidates: Vec<Candidate>,
 }
 
 impl CandidateSet {
@@ -240,7 +519,7 @@ impl CandidateSet {
     /// registration order (FR-075-AC-2). Empty when no registrant
     /// advertises `kind` (FR-076): an ordinary, well-formed value, never a
     /// refusal or a hold.
-    pub fn candidates(&self) -> &[(BackendId, ByteDigest)] {
+    pub fn candidates(&self) -> &[Candidate] {
         &self.candidates
     }
 
@@ -296,17 +575,25 @@ impl Registry {
     /// leaves the existing registration unchanged and in effect
     /// (FR-075-AC-4). A capability kind outside the FR-290 vocabulary, or a
     /// mode other than `bounded`/`unbounded`, cannot reach this function at
-    /// all: both are excluded by the [`Capability`] and [`Mode`] types
-    /// themselves, so this registry adds no rule for them (ADR-012 §5.2's
-    /// own note on that row: "this record adds nothing").
+    /// all: a [`BackendDescriptor`] holds only typed [`Capability`] and
+    /// [`Mode`] values, and [`BackendDescriptor::admit`] refuses such labels
+    /// before a descriptor exists.
     pub fn register(&mut self, descriptor: BackendDescriptor) -> Result<(), RegistrationRefusal> {
-        if self.0.contains_key(&descriptor.id) {
+        if self.0.contains_key(descriptor.id()) {
             return Err(RegistrationRefusal {
-                identity: descriptor.id,
+                backend: descriptor.backend,
+                cause: RegistrationCause::DuplicateBackend,
             });
         }
-        self.0.insert(descriptor.id.clone(), descriptor);
+        self.0.insert(descriptor.id().clone(), descriptor);
         Ok(())
+    }
+
+    /// Every registered descriptor, in registry (identity-sorted) order:
+    /// the registry snapshot the FR-331 `manifest` restates, one descriptor
+    /// per registered backend (FR-057 "Stage ownership").
+    pub fn descriptors(&self) -> impl Iterator<Item = &BackendDescriptor> {
+        self.0.values()
     }
 
     /// Every registered backend's identity, in registry (sorted) order.
@@ -331,7 +618,7 @@ impl Registry {
                 None => CandidateOutcome::UnknownBackend(id.clone()),
                 Some(descriptor) => {
                     let candidates = if descriptor.advertises_kind(kind) {
-                        vec![(descriptor.id.clone(), descriptor.manifest_digest)]
+                        vec![descriptor.backend.clone()]
                     } else {
                         Vec::new()
                     };
@@ -343,11 +630,11 @@ impl Registry {
                 }
             },
             None => {
-                let mut candidates: Vec<(BackendId, ByteDigest)> = self
+                let mut candidates: Vec<Candidate> = self
                     .0
                     .values()
                     .filter(|descriptor| descriptor.advertises_kind(kind))
-                    .map(|descriptor| (descriptor.id.clone(), descriptor.manifest_digest))
+                    .map(|descriptor| descriptor.backend.clone())
                     .collect();
                 candidates.sort();
                 CandidateOutcome::Candidates(CandidateSet {
@@ -366,8 +653,11 @@ mod tests {
 
     use super::*;
 
-    fn digest(byte: u8) -> ByteDigest {
-        ByteDigest::of(&[byte])
+    fn candidate(id: &str, digest_byte: u8) -> Candidate {
+        Candidate::new(
+            BackendId::new(id),
+            ManifestDigest::from_digest([digest_byte; 32]),
+        )
     }
 
     fn descriptor(
@@ -376,8 +666,7 @@ mod tests {
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
     ) -> BackendDescriptor {
         BackendDescriptor::new(
-            BackendId::new(id),
-            digest(digest_byte),
+            candidate(id, digest_byte),
             ToolIdentity::new("tool"),
             advertises,
         )
@@ -484,11 +773,80 @@ mod tests {
         else {
             panic!("expected a computed candidate set");
         };
-        let ids: Vec<&str> = set.candidates().iter().map(|(id, _)| id.as_str()).collect();
+        let ids: Vec<&str> = set
+            .candidates()
+            .iter()
+            .map(|candidate| candidate.id().as_str())
+            .collect();
         assert_eq!(
             ids,
             ["A", "B"],
             "candidates are sorted bytewise by identity"
         );
+    }
+
+    /// ADR-013 C-27: the O-19 `backend` member round-trips, identity kept
+    /// verbatim. No FR yet carries C-27 (QSL-46 comment, 2026-09-22), so
+    /// this test is untraced.
+    #[test]
+    fn backend_member_round_trips_through_its_wire_parts() {
+        let original = candidate(" Kani/1 ", 0xab);
+        let record = original.manifest_digest().record();
+        let read = Candidate::from_wire(
+            original.id().as_str(),
+            Some(record.domain().as_str()),
+            &record.hex(),
+        )
+        .expect("a quire.tool-manifest.jcs/v1 member reads back");
+        assert_eq!(read, original);
+        assert_eq!(read.id().as_str(), " Kani/1 ", "identity is not normalized");
+    }
+
+    /// ADR-013 C-27 adverse case: a wrong digest domain refuses, and the
+    /// domain is checked before the digest bytes -- a malformed digest
+    /// under a wrong domain still reports the domain.
+    #[test]
+    fn backend_member_with_a_wrong_digest_domain_refuses_before_the_bytes() {
+        let hex = "ab".repeat(32);
+        let wrong = DigestDomain::SourceBytesV1;
+        assert_eq!(
+            Candidate::from_wire("kani", Some(wrong.as_str()), &hex),
+            Err(InvalidManifestDigest::WrongDomain(wrong))
+        );
+        assert_eq!(
+            Candidate::from_wire("kani", Some(wrong.as_str()), "not-hex"),
+            Err(InvalidManifestDigest::WrongDomain(wrong))
+        );
+        assert_eq!(
+            Candidate::from_wire("kani", None, &hex),
+            Err(InvalidManifestDigest::AbsentDomain)
+        );
+        assert!(matches!(
+            Candidate::from_wire("kani", Some("tool-manifest"), &hex),
+            Err(InvalidManifestDigest::UnknownDomain(_))
+        ));
+        assert!(matches!(
+            Candidate::from_wire(
+                "kani",
+                Some(ManifestDigest::DOMAIN.as_str()),
+                &"AB".repeat(32)
+            ),
+            Err(InvalidManifestDigest::NotLowerHex)
+        ));
+        assert!(matches!(
+            Candidate::from_wire("kani", Some(ManifestDigest::DOMAIN.as_str()), "ab"),
+            Err(InvalidManifestDigest::WrongLength(2))
+        ));
+    }
+
+    /// FR-290 "Advertised mode": exactly `bounded` and `unbounded`, read
+    /// with no normalization.
+    #[test]
+    fn mode_reads_only_its_two_exact_labels() {
+        assert_eq!(Mode::from_wire("bounded"), Some(Mode::Bounded));
+        assert_eq!(Mode::from_wire("unbounded"), Some(Mode::Unbounded));
+        for label in ["finite", "Bounded", " bounded", ""] {
+            assert_eq!(Mode::from_wire(label), None, "{label:?}");
+        }
     }
 }

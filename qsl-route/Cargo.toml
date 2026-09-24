@@ -9,7 +9,7 @@ description = "ADR-011 §6.1 layer R: the #185 capability-backend registry and r
 
 # ADR-011 §6.1 layer R may depend on "4, 3, F, K"; `route` names only layer
 # 3 (`qsl_semantics::check::Capability`) and F (`qsl_foundation`'s
-# `ByteDigest` and `CatalogCode`). The root crate's
+# `DigestRecord`, `DigestDomain` and `CatalogCode`). The root crate's
 # `tests/it/family_outcome_layering.rs` (TC-390) asserts that this table
 # names no other workspace crate.
 [dependencies]

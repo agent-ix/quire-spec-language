@@ -368,9 +368,17 @@ follows this requirement's admitted-vocabulary table for every kind except
 four-member request enum did. Which family records which capability kind is
 open under QSL-29.
 
-FR-057-AC-3 and FR-057-AC-5 through FR-057-AC-10 are not yet backed by
-tests traced to them. Remaining work: #213 lands the carrier-version refusal
-(AC-3) and composed-linker admission of a received clause/capability pair;
-the post-E7 routing step (AC-6, AC-9) is still to land on the `route`
-registry. TC-154 and TC-155, and the admission portion of TC-153 (including
-AC-7 and AC-10), are planned under those tickets.
+QSL-46 adds registration from advertised labels
+(`qsl_route::BackendDescriptor::admit`, refusing `absent-kind`,
+`unknown-kind` and `unknown-mode` keyed by backend identity) and the routing
+step (`qsl_route::routing`), which takes settled dispositions as data and
+gives a target only to a `supported` item. FR-057-AC-6 and FR-057-AC-8 are
+backed by TC-155 steps 3 to 6 (`qsl-route/tests/it/routing.rs`).
+
+FR-057-AC-3, FR-057-AC-5, FR-057-AC-7, FR-057-AC-9 and FR-057-AC-10 are not
+yet backed by tests traced to them. Remaining work: #213 lands the
+carrier-version refusal (AC-3) and composed-linker admission of a received
+clause/capability pair. AC-9 (TC-155 step 7) needs a run-result input to
+routing, which `route` does not take; it is owned by QSL-226. TC-154, the
+rest of TC-155, and the admission portion of TC-153 (including AC-7 and
+AC-10), are planned under those tickets.

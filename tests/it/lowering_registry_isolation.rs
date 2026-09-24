@@ -41,7 +41,9 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::digest::ByteDigest;
-use qsl_route::{BackendDescriptor, BackendId, Mode, Registry, ToolIdentity};
+use qsl_route::{
+    BackendDescriptor, BackendId, Candidate, ManifestDigest, Mode, Registry, ToolIdentity,
+};
 use qsl_semantics::check::Capability;
 use quire_spec_language::lowering::{lower_for, LoweringLimits, ProjectionTarget};
 use quire_spec_language::native_model::NativeModel;
@@ -81,8 +83,10 @@ fn kani_backend_registry() -> Registry {
     let mut registry = Registry::new();
     registry
         .register(BackendDescriptor::new(
-            BackendId::new("kani"),
-            ByteDigest::of(b"kani-manifest"),
+            Candidate::new(
+                BackendId::new("kani"),
+                ManifestDigest::from_digest(ByteDigest::of(b"kani-manifest").as_bytes()),
+            ),
             ToolIdentity::new("kani"),
             [(Capability::OperationContract, Mode::Bounded)],
         ))
