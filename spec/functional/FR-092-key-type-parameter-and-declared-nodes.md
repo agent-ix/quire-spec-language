@@ -17,6 +17,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-093
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-094
+    type: traces_to
 ---
 # FR-092: Key type, parameter, value and declared function nodes with the structural-node preimage
 
@@ -79,7 +81,7 @@ The preimage is one JSON object with these members:
 | Member | Value |
 |---|---|
 | `version` | `"quire.structural-node/v1"` |
-| `owner` | Present exactly when `declaration` is not `null`: the declaring node's QSpec `Owner` (ADR-013 O-04). A `Value` declaration compiled from source carries its unit's `SourceOwner`, `{kind: "source", authority, identity}`. Absent otherwise. |
+| `owner` | Present exactly when `declaration` is not `null` or the node is model-owned: the declaring node's QSpec `Owner` (ADR-013 O-04). A `Value` declaration compiled from source carries its unit's `SourceOwner`, `{kind: "source", authority, identity}`. A model-owned node carries `ModelOwner` and a `null` `declaration` ([FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)). Absent otherwise. |
 | `node_tag` | The node's FR-322 `node_tag`. |
 | `semantic_form` | The node's FR-322 `semantic_form`. |
 | `semantic_type` | The `NodeId` (`{domain: "quire.checked-semantic-node/v1", digest}`) of the node's semantic type, or `null` when the node's semantic type is the node itself. |
@@ -89,8 +91,8 @@ The preimage is one JSON object with these members:
 
 The members, the `group_reference` rule and the term shapes are those of
 `quire.application-node/v1`, with three differences: the `version`, the
-`owner` member of a declared node, and a `null` `semantic_type` for a
-self-typed node. A `scalar_type` and a `composite_type` node are their own
+`owner` member of a declared or model-owned node, and a `null`
+`semantic_type` for a self-typed node. A `scalar_type` and a `composite_type` node are their own
 semantic type, so this `null` keeps their preimage acyclic.
 
 A number never appears in a preimage as a JSON number except `recursion`'s
@@ -125,10 +127,12 @@ self-edge; its members' order is FR-322's graph order. Two in-group nodes of
 different groups can have equal preimages, because a `group_reference`
 names a position, not a node: two recursive functions `f` and `g` with the
 same body shape give their in-group expression nodes one preimage.
-`check` SHALL refuse a package in which two distinct nodes have equal
-preimages and are not the same node, with `unknown_required_feature`/
+`check` SHALL refuse a package in which two in-group nodes of different
+recursion groups have equal preimages, with `unknown_required_feature`/
 `unsupported-feature` naming both nodes' source regions, and yield no key for
 either (FR-092-OQ-1).
+Two nodes outside any recursion group with equal preimages are one node,
+keyed once (FR-093's content addressing).
 
 ### Type nodes
 
@@ -169,9 +173,11 @@ A type alias introduces no type node. A type form that names an alias lowers
 to the node of the alias's resolved type (FR-091 resolves the alias to that
 type).
 
-An enum type is its QSpec nominal node (rule 1). A quantity type is its unit's
-nominal node (rule 1). `Reference<T>` and `Population<T>[N]` type nodes are
-the `StateModel` family's.
+An enum type is its QSpec nominal node (rule 1). A quantity type, a
+`Reference<T>` and a `Population<T>[N]` type node are keyed as
+[FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
+fixes: a declared unit's quantity type is the unit's nominal node, and the
+others are structural nodes.
 
 ### Parameter nodes
 
@@ -224,6 +230,10 @@ owner. The root expression and every application inside the body are their
 own `expression` nodes, keyed by `quire.application-node/v1`. They carry no
 `declaration`, so their preimage carries no owner, and their keys equal
 QSpec's application-node vectors for the same node.
+
+A clause function that `check` synthesizes from a domain package clause has
+this shape with a `ModelOwner`, a `null` `declaration` and a `clause` binding
+([FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)).
 
 ### Golden vectors
 
@@ -543,6 +553,9 @@ Key: `e13010a50a476f31b5955ef7ac6e008d83a7af661b0ff1d52c9fd6b7c1966ed3`
   the unit's `SourceOwner` input, the resolved types and aliases.
 - [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md): the
   expression, literal and value nodes a function's body references.
+- [FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md):
+  model-owned nodes (`ModelOwner`), the `Reference`, `Population` and
+  quantity type nodes, and clause functions.
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
   §5.1: no catch-all arm in a family dispatch.
 - `SourceOwner`'s `authority` on QSL's source identity is #213 S-4

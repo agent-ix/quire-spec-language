@@ -15,6 +15,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-065
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-094
+    type: traces_to
 ---
 # FR-093: Lower checked Value expressions to FR-322 nodes with catalogued operations
 
@@ -154,15 +156,19 @@ to `x`'s node.
 | `Fold{identity: None}` (`reduce<A>`) | `collection` | `quire.op.collection.reduce` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: binding{name: x, value: ref(step)}}]` |
 | `Size` | `collection` | `quire.op.collection.size` | member `type_argument` of `T(node)` | `[ref(c)]` |
 | `Contains` | `collection` | `quire.op.collection.contains` | leaves `inner:0` | `[ref(c), ref(v)]` |
-| `Attribute{reference, name}` (`deref(r).f`) | `deref`, then `query` | the node `quire.op.model.deref` over `[ref(r)]`, and over it `quire.op.record.project` | the projection's member `field{declaration: the object type's node, name: f}` | the projection's `[ref(deref node)]` |
-| `AllInstances` | `query` | `quire.op.model.all_instances` | member `type_argument` of the queried type's node | `[ref(p)]` |
-| `Lookup{absence}` | `query` | `quire.op.model.lookup` | mode `absence` = the authored mode; member `type_argument` of the queried type's node | `[ref(p), ref(r)]` |
-| `Dispatch{receiver, arguments}` | `call` | `quire.op.model.dispatch_call` | member `operation{declaration: the declaring model node, name: member}` | `[ref(receiver), ref(a0), ...]` |
+| `Attribute{reference, name}` (`deref(r).f`) | `deref`, then `query` | the node `quire.op.model.deref` over `[ref(r)]`, whose `result_type` is the model node of `r`'s object type `T`, and over it `quire.op.record.project` | the projection's member `field{declaration: T's model node, name: f}` | the projection's `[ref(deref node)]` |
+| `AllInstances` | `query` | `quire.op.model.all_instances` | member `type_argument` of the queried type's model node | `[ref(p)]` |
+| `Lookup{absence}` | `query` | `quire.op.model.lookup` | mode `absence` = the authored mode; member `type_argument` of the queried type's model node | `[ref(p), ref(r)]` |
+| `Dispatch{receiver, arguments}` | `call` | `quire.op.model.dispatch_call` | member `operation{declaration: the model node of the receiver's static object type, name: member}` | `[ref(receiver), ref(a0), ...]` |
 | `Pre` | `pre` | `quire.op.state.pre` | | `[ref(e)]` |
 
 A `Coerce` exists only for a narrowing: an integer whose type an `Int[..]`
 contains is admitted with no node, and a `ConvertScalar` whose operand type
 equals its target builds no node; its parent references the operand's node.
+
+The model nodes, the `Reference<T>` and `Population<T>[N]` type nodes and
+the model rows' vectors E4 to E9 are
+[FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)'s.
 
 A `binding` names its binder with the source name, and the binder's parameter
 node (FR-092) has that name and the binder's level. For `fold` and `reduce`,
@@ -218,6 +224,9 @@ no key of its own.
   O-04, O-07 (occurrences), QC-24.
 - [FR-065](FR-065-migrate-function-application-to-checked-family.md): the
   function declaration and call identities this lowering keys.
+- [FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md):
+  the model declaration nodes the model rows' members name, and the
+  `Reference`, `Population` and quantity type nodes.
 - QSpec: the `complete-value-lock.json` accessor (ADR-011 §2.4). Until it is
   published, a node whose operation needs a law refuses (AC-6); nodes
   without laws are keyed. The two-name `fold`/`reduce` binder and the

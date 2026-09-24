@@ -195,6 +195,9 @@ operational validation remains outside this audit-only plan.
 | TC-414 | Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner | Unit | P1 | FR-092-AC-4, FR-092-AC-5, FR-092-AC-6, FR-092-AC-10 | 🚧 Planned; QSL-156 A4b |
 | TC-415 | Each checked Value expression lowers to its FR-322 node with its catalogued operation | Unit | P1 | FR-093-AC-1, FR-093-AC-2, FR-093-AC-3, FR-093-AC-4, FR-093-AC-5, FR-093-AC-6, FR-093-AC-8 | 🚧 Planned; QSL-156 A4b; step 6 needs the QSpec lock accessor |
 | TC-416 | The v2 emission arm writes the nodes check lowered, and each emitted node recomputes to its node id | Integration | P1 | FR-093-AC-7, FR-093-AC-9 | 🚧 Planned; QSL-6 S1b after QSL-156 A4b |
+| TC-417 | Model declaration, Reference and Population nodes key to the golden vectors under ModelOwner | Unit | P1 | FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 | 🚧 Planned; QSL-156 A4b |
+| TC-418 | Clause function nodes key to the golden vectors with the operation member's ModelOwner | Unit | P1 | FR-094-AC-5 | 🚧 Planned; QSL-156 A4b |
+| TC-419 | A declared unit's quantity type is its unit node, and a compound unit's keys to the golden vectors | Unit | P1 | FR-094-AC-6, FR-094-AC-7 | 🚧 Planned; QSL-156 A4b; QSpec unit vectors under `make conformance` |
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 
@@ -497,3 +500,10 @@ carries the lowering of checked expressions to FR-322 application nodes, with
 vectors E1 to E3 and the ownership split: QSL-156 A4b lowers and keys in
 `check`, and QSL-6 S1b serializes. TC-415 backs AC-1 to AC-6 and AC-8, and
 TC-416 AC-7 and AC-9. All four are `🚧 Planned`.
+[FR-094](functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
+keys the nodes those two leave to the model layer: model declaration nodes
+and clause functions under QSpec's `ModelOwner`, the `Reference<T>` and
+`Population<T>[N]` type nodes, and quantity type nodes for declared and
+compound units, with vectors M1 to M5, R1 to R5, S1 to S3, PO1 to PO3, P5
+to P8, L4, E4 to E10, C1 to C6 and U1 to U4. TC-417 backs AC-1 to AC-4 and AC-7, TC-418
+AC-5 and TC-419 AC-6 and AC-7. All three are `🚧 Planned`.

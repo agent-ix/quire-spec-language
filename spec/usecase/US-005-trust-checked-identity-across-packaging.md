@@ -13,6 +13,8 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-093
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-094
+    type: exercises
   - target: "ix://agent-ix/quire-spec-language/StR-001"
     type: traces_to
 ---
@@ -75,3 +77,4 @@ depends on that attribution (replay, diagnostics, proof obligations).
 - [FR-066](../functional/FR-066-document-family-migration-recipe.md)
 - [FR-092](../functional/FR-092-key-type-parameter-and-declared-nodes.md)
 - [FR-093](../functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
+- [FR-094](../functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
