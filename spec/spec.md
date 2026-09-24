@@ -353,7 +353,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 
 | Artifact | Type | Status |
 | --- | --- | --- |
-| [FR-001](functional/FR-001-read-exact-source.md) | FR | Draft; AC-5 to AC-9 (the caller-named four-label `RawSourceRef` for every source admission, S0 refusal regions, render-time line and column; TC-424) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
+| [FR-001](functional/FR-001-read-exact-source.md) | FR | Draft; AC-5 to AC-10 (the caller-named four-label `RawSourceRef` for every source admission, S0 refusal regions, render-time line and column; TC-424) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
 | [FR-002](functional/FR-002-parse-native-units.md) | FR | Draft |
 | [FR-003](functional/FR-003-format-native-source.md) | FR | Draft |
 | [FR-004](functional/FR-004-verify-source-maps.md) | FR | Draft |
@@ -402,7 +402,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-028](functional/FR-028-run-selected-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-029](functional/FR-029-export-executable-projection.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-030](functional/FR-030-consume-quire-extraction.md) | FR | Implemented; tested in the native-workflow test matrix |
-| [FR-031](functional/FR-031-run-extracted-native-source.md) | FR | Implemented; tested in the native-workflow test matrix |
+| [FR-031](functional/FR-031-run-extracted-native-source.md) | FR | Implemented; tested in the native-workflow test matrix; FR-031-AC-5 (four source labels on the body record, TC-430) specified under QSL-233 for ADR-013 §7 S-4b, not implemented |
 | [FR-032](functional/FR-032-realize-config-version-workflow.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-033](functional/FR-033-lower-bounded-integer-ir.md) | FR | Implemented; tested in the native-lowering test matrix |
 | [FR-034](functional/FR-034-project-state-scalars.md) | FR | Implemented; tested in the native-lowering test matrix |

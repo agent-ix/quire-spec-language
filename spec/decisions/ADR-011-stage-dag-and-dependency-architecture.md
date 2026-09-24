@@ -184,7 +184,7 @@ flowchart LR
 
 | Stage | Output role | Owner repository and module | AD-016 arrow |
 |---|---|---|---|
-| S0 Source | Source bytes with `SourceIdentity` and revision | QSL `source` | none |
+| S0 Source | Source bytes with `SourceIdentity` (authority, identity, revision namespace and value; FR-001) | QSL `source` | none |
 | S1 Lossless CST | Exact, recovering concrete syntax tree | QSL `cst` (the `qsl-cst` crate: `qsl_cst::cst`, `qsl_cst::grammar`, and its private parser) | none |
 | S2 Parsed semantic forms | Unchecked syntactic forms per family, each with a span. No semantic identity. | QSL `forms` (the `qsl-forms` crate) | arrow 1 input ("Source AST") |
 | S3 Checked semantic graph | Checked nodes with minted node ids and declaration identities, resolved against admitted domain packages and dependency import views | QSL `check` (today `value::expression` check, `check::checked_dispatch`, `value::library`) over `model` | arrow 1 output |

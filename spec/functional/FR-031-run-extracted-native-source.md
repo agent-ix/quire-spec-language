@@ -17,7 +17,8 @@ When a native-run/1 request selects program extraction in an enabled build, the 
 ## Inputs
 
 With the quire-extraction feature, program accepts an optional closed extraction
-record containing body: {identity, revision, document, formal_revision}. The
+record containing body: {authority, identity, revision_namespace, revision,
+document, formal_revision}. The
 ordinary program source selects the digest-verified original Markdown document;
 its identity must satisfy Quire's existing SourceLocus schema.
 The body record assigns distinct native and formal identities to its derived
@@ -71,6 +72,7 @@ The command shall preserve existing byte/file/runtime limits and fresh retries.
 | FR-031-AC-2 | Invalid/unsupported native bodies and unavailable extraction retain original identity, authored selection and actual producer/compiler failure data. | Test |
 | FR-031-AC-3 | Malformed extraction descriptors, multiple bindings, unsupported mode combinations, stale original bytes and disabled-feature requests refuse without successful execution; mode failures have distinct codes and clause-count details before file I/O. | Test |
 | FR-031-AC-4 | Original line and runtime limits return incomplete, a fresh request succeeds, and ordinary native command behavior remains unchanged. | Test |
+| FR-031-AC-5 | A native-run/1 extraction request whose body record names `authority` `agent-ix`, `identity` `b`, `revision_namespace` `git`, `revision` `1`, `document` and `formal_revision` runs; the same request without the body's `authority` refuses at the request stage with `invalid-request` and exits 20. | Test (TC-430) |
 
 ## Dependencies
 
@@ -79,4 +81,4 @@ The command shall preserve existing byte/file/runtime limits and fresh retries.
 
 ## Status
 
-The four-label identity is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.
+FR-031-AC-5, the four-label identity, is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.

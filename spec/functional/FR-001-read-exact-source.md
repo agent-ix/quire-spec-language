@@ -60,26 +60,33 @@ no region otherwise (`quire.native.diagnostics/v1` common structured
 context: "Unavailable context is explicitly unavailable; byte zero, an empty
 path or a name-search match cannot masquerade as a located failure"):
 
-- Invalid UTF-8 and NUL refuse at a region under the `RawSourceRef` of the
-  offered bytes: the four labels and the `quire.source.bytes/v1` digest of
-  the bytes offered. Invalid UTF-8 is the empty region at the end of the
-  longest valid prefix; NUL is the one-byte region of the first NUL.
-- An unnamed source (an empty or blank label or path) and input beyond the
-  byte ceiling refuse with no region. The first has no label set to name the
-  source by, and the second is refused without reading or hashing the bytes
-  past the ceiling.
+- Invalid UTF-8, a BOM and NUL refuse at a region under a `RawSourceRef`
+  minted for the refusal over the offered bytes: the four labels and the
+  `quire.source.bytes/v1` digest of the bytes offered. Only these refusals
+  mint a reference over bytes that were not admitted. Invalid UTF-8 is the
+  empty region at the end of the longest valid prefix; a BOM is the region
+  of its three bytes at 0; NUL is the one-byte region of the first NUL.
+- An unnamed source (an empty or blank label or path), input beyond the
+  byte ceiling, and a digest mismatch under verified intake refuse with no
+  region. The first has no label set to name the source by. The second is
+  refused without hashing the offered bytes. The third concerns the bytes
+  as a whole, not a position in them.
 
-This changes current behaviour, which places both of the last two refusals
-at byte 0. The native-v1 `Diagnostic` hosted in F, which requires a span,
-keeps its own rendering: it is lane-private (ADR-013 §6) and this
-requirement neither fixes nor extends it.
+This changes current behaviour, which places the unnamed-source, byte-budget
+and digest-mismatch refusals at byte 0. The native-v1 `Diagnostic` hosted in
+F requires a span. For a refusal with no region it keeps rendering byte 0.
+That is retained lane-private debt (ADR-013 §6), recorded here so no
+implementer mistakes it for this requirement's behaviour; this requirement
+neither fixes nor extends it.
 
 ### Line and column are derived when rendered
 
 A `SourceRegion` holds bytes only. A renderer derives the one-based line and
 Unicode scalar column of each end from the admitted source bytes the
 region's `RawSourceRef` names, as FR-010's "original byte and scalar
-coordinates" require. No region stores them.
+coordinates" require. No region stores them. A refusal region over offered
+bytes that were not admitted (invalid UTF-8, BOM, NUL) renders over the
+longest valid UTF-8 prefix of those bytes, which contains the region.
 
 ### Admission mints the source reference
 
@@ -124,8 +131,9 @@ identity gives every source-owned declaration a different key.
   `quire.source.bytes/v1` digest to equal the reference's digest, as
   ADR-013 C-13 requires. The recompiled package therefore names each source
   exactly as the proving run did, which keeps its declaration keys and its
-  `package_id` (US-005). The executor is ADR-013 TK-01 (ADR-011 E9); it
-  does not exist yet, and this behaviour is built with it.
+  `package_id` (US-005). The executor is ADR-013 TK-01; it
+  does not exist yet, and this behaviour is built with it. It is the replay
+  module's recompilation path, the S8 row of ADR-011 §2.
 
 ### Runtime artifacts are not sources
 
@@ -147,7 +155,8 @@ revision namespace and value part of every immutable key
 | FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire`, revision namespace `git`, revision value `3f2a` and bytes `b` carries a `RawSourceRef` whose authority, identity, revision namespace and value read exactly those labels and whose digest is the `quire.source.bytes/v1` digest of `b`. Admitting the same bytes under revision value `3f2b` gives a `RawSourceRef` that differs only in the revision value. | Test (TC-424) |
 | FR-001-AC-6 | Admission refuses with `invalid_source_identity`, and admits nothing, when exactly one of the authority, identity, revision namespace or revision value is empty, and again when it is a single space. | Test (TC-424) |
 | FR-001-AC-7 | Package declarations holding one record `Point` with field `x: Int[0, 9]`, checked under the source reference of bytes `b` admitted as authority `a`, identity `u`, revision (`git`, `1`), and again under the reference of bytes `b'` admitted as `a`, `u`, (`git`, `2`), give `Point` the same node key. Checked under the reference of `b` admitted as authority `c`, identity `u`, revision (`git`, `1`), they give `Point` a different key, and under the reference of `b` admitted as authority `a`, identity `v`, revision (`git`, `1`), a third key. | Test (TC-424) |
-| FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`, `git`, `1`) refuse with a region `[1, 1)` under the `RawSourceRef` of those three bytes, and bytes `ab\0c` with the region `[2, 3)` under theirs. Admission with an empty revision namespace, and admission of five bytes under a four-byte ceiling, each refuse with no region, not a region at byte 0. | Test (TC-424) |
+| FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`, `git`, `1`) refuse with the region `[1, 1)` under the `RawSourceRef` of those three bytes, and bytes `ab\0c` with the region `[2, 3)` under theirs. | Test (TC-424) |
+| FR-001-AC-10 | Admission with an empty revision namespace, admission of five bytes under a four-byte ceiling, and verified intake of bytes whose digest differs from the selected one each refuse with no region, not a region at byte 0. | Test (TC-424) |
 | FR-001-AC-9 | A renderer given the region `[4, 7)` of admitted source `ab\ncdéf` reports start line 2, column 2 and end line 2, column 4, derived from the admitted bytes; the region itself holds only its `RawSourceRef`, 4 and 7. | Test (TC-424) |
 
 ## Dependencies

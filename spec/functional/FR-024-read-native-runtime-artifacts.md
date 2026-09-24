@@ -24,9 +24,9 @@ Borrowed input bytes, a role-specific SnapshotRef or InvocationRef, and existing
 ArtifactLimits. The admitted envelope is native-state-input/1, with the exact
 fields and value variants defined in the native runtime input contract. Its
 identity carries the four labels of [FR-018](FR-018-construct-native-runtime-inputs.md)
-as required members; bytes naming only `identity` and `revision` refuse with
-`invalid_runtime_input`/`missing-member`, the catalog row for a missing
-member of runtime input. The contract is prerelease and carries no version
+as required members; bytes naming only `identity` and `revision` refuse at
+the envelope stage with `invalid_runtime_input`, retaining the JSON error that
+names the missing member. The contract is prerelease and carries no version
 change for this.
 
 ## Outputs
@@ -89,7 +89,7 @@ model-aware execution remain reader/constructor/runtime responsibilities.
 | FR-024-AC-3 | Every admitted value variant decodes exactly; direct and nested decoding of each public runtime record rejects positional arrays and unknown, missing or duplicate fields. Invalid identifier, numeric, digest and local-index values refuse while vector duplicates remain intact; explicit null invocation results are admitted but omitted results refuse. | Test |
 | FR-024-AC-4 | Byte and structural limits return incomplete without partial artifacts; fresh reads can succeed and actual execution of reread snapshots/invocations preserves truth and frame refusals. | Test |
 | FR-024-AC-5 | The local schema accepts actual snapshot/invocation encodings and all ten value variants, preserves null results and vector duplicates, and rejects wrong envelope/body pairing, malformed/unknown/missing record fields and invalid scalar ranges/spellings. Controls demonstrate schema-valid data still refused by byte selection, exact wire decoding or structural construction. | Test |
-| FR-024-AC-6 | Snapshot bytes naming all four labels read back to an artifact whose reference retains them, and the local schema accepts them. The same bytes without `authority`, and again without `revision_namespace`, refuse with `invalid_runtime_input`/`missing-member` naming that member, and the schema rejects them. | Test (TC-431) |
+| FR-024-AC-6 | Snapshot bytes naming all four labels read back to an artifact whose reference retains them, and the local schema accepts them. The same bytes without `authority`, and again without `revision_namespace`, each read under a reference whose digest is the edited bytes' digest, refuse at the envelope stage with `invalid_runtime_input` whose retained JSON error names that member, and the schema rejects them. | Test (TC-431) |
 
 ## Dependencies
 

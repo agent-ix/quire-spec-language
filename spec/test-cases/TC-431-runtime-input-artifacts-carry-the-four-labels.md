@@ -26,8 +26,9 @@ Scope: FR-018-AC-8, FR-024-AC-6.
    namespace.
 3. Read the step 1 bytes back under their reference, and validate them
    against the local schema.
-4. Read the same bytes without `authority`, then without
-   `revision_namespace`.
+4. Remove `authority`, then `revision_namespace`, from the step 1 bytes,
+   and read each edited copy under a reference whose digest is that copy's
+   digest, so the read passes the selection stage.
 
 Tag the tests `#[trace("TC-431", "FR-018-AC-8")]` and
 `#[trace("TC-431", "FR-024-AC-6")]`.
@@ -39,8 +40,9 @@ Tag the tests `#[trace("TC-431", "FR-018-AC-8")]` and
 - Step 2: each refuses with `invalid_source_identity`.
 - Step 3: the artifact's reference retains the four labels, and the schema
   accepts the bytes.
-- Step 4: each refuses with `invalid_runtime_input`/`missing-member` naming
-  that member, and the schema rejects the bytes.
+- Step 4: each refuses at the envelope stage with `invalid_runtime_input`,
+  whose retained JSON error names that member, and the schema rejects the
+  bytes.
 
 ## Status
 
