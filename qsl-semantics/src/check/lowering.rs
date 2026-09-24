@@ -1188,9 +1188,11 @@ impl<'a> Lowering<'a> {
     /// function's key. Every node that no region denotes gets its one
     /// `generated` occurrence (FR-093), at `root`.
     pub(crate) fn finish(self, root: &Location) -> Lowered {
+        let enclosing = enclosing_declarations(&self.graph, self.occurrences);
         for key in self.graph.nodes.keys() {
             if !self.occurrences.has(*key) {
-                self.occurrences.record(*key, "generated", root.clone());
+                let at = enclosing.get(key).unwrap_or(root);
+                self.occurrences.record(*key, "generated", at.clone());
             }
         }
         Lowered {
@@ -3710,7 +3712,83 @@ pub(crate) fn type_declaration(name: &str) -> Location {
     }
 }
 
-/// The package root location a `generated` occurrence names.
+/// The nodes `node` names: its semantic type and every node its body
+/// references.
+fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
+    let mut named: Vec<NodeKey> = node.content.semantic_type.into_iter().collect();
+    let mut terms = vec![&node.content.body];
+    while let Some(term) = terms.pop() {
+        match term {
+            SemanticTerm::Literal { ty, .. } => named.push(ty.0),
+            SemanticTerm::Reference { target } => named.push(target.0),
+            SemanticTerm::Application {
+                result_type,
+                arguments,
+                ..
+            } => {
+                named.push(result_type.0);
+                terms.extend(arguments);
+            }
+            SemanticTerm::Aggregate { members } => terms.extend(members),
+            SemanticTerm::Binding { value, .. } => terms.push(value),
+        }
+    }
+    named
+}
+
+/// FR-096: for each node a declaration names, directly or through other
+/// nodes, the root of the least such declaration (a function body or
+/// measure). A `generated` occurrence of the node is placed there: the node
+/// has no source position of its own, and IR requires a region for every
+/// occurrence. A node no declaration reaches has no entry.
+fn enclosing_declarations(
+    graph: &SemanticGraph,
+    occurrences: &OccurrenceMap<Location>,
+) -> BTreeMap<NodeKey, Location> {
+    let mut anchors: BTreeMap<NodeKey, Location> = BTreeMap::new();
+    for (key, _, location) in occurrences.iter() {
+        // Only a function body or measure resolves to a region (FR-096).
+        if !matches!(
+            location.origin,
+            Origin::Body { .. } | Origin::Measure { .. }
+        ) {
+            continue;
+        }
+        let root = Location {
+            origin: location.origin.clone(),
+            path: Vec::new(),
+        };
+        match anchors.entry(key) {
+            btree_map::Entry::Vacant(entry) => {
+                entry.insert(root);
+            }
+            btree_map::Entry::Occupied(mut entry) => {
+                if root < *entry.get() {
+                    entry.insert(root);
+                }
+            }
+        }
+    }
+    // Relax along the naming edges until no anchor lowers. Each anchor only
+    // decreases, over the finitely many declaration roots, so this ends.
+    let mut work: Vec<NodeKey> = anchors.keys().copied().collect();
+    while let Some(key) = work.pop() {
+        let (Some(node), Some(anchor)) = (graph.nodes.get(&key), anchors.get(&key).cloned()) else {
+            continue;
+        };
+        for named in named_nodes(node) {
+            let lowers = anchors.get(&named).is_none_or(|current| anchor < *current);
+            if lowers {
+                anchors.insert(named, anchor.clone());
+                work.push(named);
+            }
+        }
+    }
+    anchors
+}
+
+/// The package root location a `generated` occurrence names when no
+/// declaration reaches its node.
 pub(crate) fn generated_location() -> Location {
     Location {
         origin: Origin::Expression,
