@@ -200,16 +200,20 @@ impl Budget {
     }
 
     fn identity(&mut self, identity: &SourceIdentity) -> Result<()> {
+        // FR-018: the four labels of FR-001, each non-empty and not only
+        // whitespace.
         for (name, value) in [
+            ("authority", identity.authority.as_str()),
             ("identity", identity.identity.as_str()),
+            ("revision_namespace", identity.revision_namespace.as_str()),
             ("revision", identity.revision.as_str()),
         ] {
             self.field(name, |budget| {
                 budget.text(value)?;
-                if value.is_empty() {
+                if value.trim().is_empty() {
                     return Err(budget.failure(
                         Code::InvalidSourceIdentity,
-                        "native input identity and revision must be nonempty",
+                        "native input authority, identity, revision namespace and revision must be nonempty",
                     ));
                 }
                 Ok(())

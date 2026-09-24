@@ -26,6 +26,11 @@ complete TC-090.
 
 ## Frozen positive vectors
 
+QSL-233 (ADR-013 §7 S-4b) regenerated the three families: the manifest's
+`source` gained `authority` (`agent-ix`) and `revision_namespace` (`draft`),
+the four source labels of FR-001, so every canonical and package byte string
+and every identity digest changed (FR-021-AC-1).
+
 The `minimal`, `controls` and `multiple` families each contain exact native
 source, canonical JSON bytes, complete package JSON bytes and the expected
 domain-prefixed SHA-256 in a `.sha256` file. JSON files have no final newline;
@@ -37,9 +42,9 @@ fixtures or substitutes the package compiler.
 
 | Family | Canonical SHA-256 |
 | --- | --- |
-| minimal | `1f2de52410e43349c2528140e94952e4a888d209dcc8cb2ad783fef0683ebb61` |
-| controls | `a07beb9fa48bc4742df3f51fdc74bc6938c53ad4de4842c3b134c2ef6035ca8f` |
-| multiple | `ebafb411e9a74f33b5685403ae45d8f8b3e6e223c4a0afff5d7ec3485304b2d7` |
+| minimal | `d32fe8abfce4f244d618bb9aaa4ae3d682976768de848e40a6d70041a55ed075` |
+| controls | `47398e63f9746c622a8577b16fab876dba194cb2e7d30fe04fe359bdc8b62aae` |
+| multiple | `ded21240a09f3d81f2bf30d5f77c28c27275d25c9b08b922b6afd68668cd7604` |
 
 The Rust maintenance example `examples/author_native_package_vectors.rs` writes
 candidate files from the independent recipe above. It calls model admission

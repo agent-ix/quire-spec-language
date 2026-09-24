@@ -33,7 +33,9 @@ fn symbol(name: &str) -> ir::SymbolName {
 
 fn identity(case: Case, role: &str) -> SourceIdentity {
     SourceIdentity {
+        authority: "agent-ix".into(),
         identity: format!("ix://example/config-version/{role}/{}", case.id()),
+        revision_namespace: "example".into(),
         revision: "1".into(),
     }
 }
@@ -42,7 +44,9 @@ fn identity(case: Case, role: &str) -> SourceIdentity {
 pub fn model() -> io::Result<NativeModel> {
     let source = Source::read(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: "ix://example/config-version/model".into(),
+            revision_namespace: "example".into(),
             revision: "1".into(),
         },
         "model.json",
@@ -172,7 +176,8 @@ fn snapshot(
 }
 
 fn source_selection(file: &str, identity: &SourceIdentity, text: &str, document: &str) -> Value {
-    json!({"file":file,"identity":identity.identity,"revision":identity.revision,
+    json!({"file":file,"authority":identity.authority,"identity":identity.identity,
+        "revision_namespace":identity.revision_namespace,"revision":identity.revision,
         "digest":ByteDigest::of(text.as_bytes()).to_string(),"document":document,"formal_revision":1})
 }
 
@@ -342,7 +347,8 @@ fn write_markdown(
         &format!("Markdown{}", program.document),
     );
     let extracted = identity(case, "extracted");
-    selected["extraction"] = json!({"body":{"identity":extracted.identity,
+    selected["extraction"] = json!({"body":{"authority":extracted.authority,
+        "identity":extracted.identity,"revision_namespace":extracted.revision_namespace,
         "revision":extracted.revision,"document":format!("Extracted{}", program.document),"formal_revision":1}});
     write_json(directory, "markdown-run.json", &job)
 }

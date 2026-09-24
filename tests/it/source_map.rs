@@ -8,7 +8,9 @@ use quire_spec_language::{parse_source, Limits};
 fn source(id: &str, text: &str) -> Source {
     Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: id.into(),
+            revision_namespace: "test".into(),
             revision: "fixture:1".into(),
         },
         format!("{id}.txt"),
@@ -63,7 +65,9 @@ fn exact_bytes_digest_is_checked_before_correspondence() {
         "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
     let id = SourceIdentity {
+        authority: "test".into(),
         identity: "original".into(),
+        revision_namespace: "test".into(),
         revision: "1".into(),
     };
     let original = Source::read_verified(id.clone(), "x", b"abc", digest, 100).unwrap();
@@ -96,7 +100,9 @@ fn exact_bytes_digest_is_checked_before_correspondence() {
 fn a_caller_raised_byte_limit_is_enforced_as_given() {
     use qsl_foundation::source::MAX_SOURCE_BYTES;
     let id = SourceIdentity {
+        authority: "test".into(),
         identity: "raised".into(),
+        revision_namespace: "test".into(),
         revision: "1".into(),
     };
     let raised = MAX_SOURCE_BYTES + 16;
@@ -209,6 +215,55 @@ fn layout_mapping_returns_discontiguous_exact_regions() {
     assert!(error.is_incomplete());
 }
 
+/// ADR-013 C-21 (QSL-233): an embedded-body span maps to document regions
+/// that keep the document's own `RawSourceRef`, never the body's, and the
+/// discontiguous parts stay separate.
+#[trace("TC-014")]
+#[test]
+fn embedded_body_spans_map_to_regions_under_the_document_reference() {
+    let original = source("original", "head😀\r\n  α <= 2\r\n\tβ\r\nend");
+    let body = source("body", "α <= 2\nβ");
+    let start = original.text().find("  α").unwrap();
+    let alpha = original.text().find('α').unwrap();
+    let beta = original.text().find('β').unwrap();
+    let line = body.text().find('\n').unwrap();
+    let region = Span {
+        start,
+        end: original.text().find("end").unwrap(),
+    };
+    let map = SourceMap::verify(
+        original.clone(),
+        body.clone(),
+        region,
+        vec![
+            segment(0, alpha, line),
+            segment(line, alpha + line + 1, 1),
+            segment(line + 1, beta, 2),
+        ],
+        layout(),
+        3,
+    )
+    .unwrap();
+    let whole = Span {
+        start: 0,
+        end: body.text().len(),
+    };
+    let regions = map.map_regions(&body, whole).unwrap();
+    assert_eq!(regions.len(), 3);
+    for region in &regions {
+        assert_eq!(region.source(), original.reference());
+        assert_ne!(region.source(), body.reference());
+    }
+    let located: Vec<_> = regions
+        .iter()
+        .map(|region| original.render(region).unwrap())
+        .collect();
+    assert_eq!(located, map.map_span(&body, whole).unwrap());
+    assert_eq!(bytes(&original, &located), body.text());
+    // A span of another source maps to nothing.
+    assert!(map.map_regions(&original, whole).is_none());
+}
+
 #[trace("TC-014", "TC-184", "FR-004-AC-2", "FR-134-AC-3")]
 #[test]
 fn omitted_keywords_internal_whitespace_and_newlines_refuse() {
@@ -266,7 +321,9 @@ fn original_and_body_identity_revision_and_bytes_must_match() {
     assert!(map.map_span(&foreign, Span { start: 0, end: 1 }).is_err());
     let revision = Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: "body".into(),
+            revision_namespace: "test".into(),
             revision: "fixture:2".into(),
         },
         "body.txt",

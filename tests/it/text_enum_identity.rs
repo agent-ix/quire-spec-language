@@ -174,7 +174,9 @@ fn complete_source(declarations: &str) -> String {
 fn parse(text: &str) -> ParsedSource {
     qsl_cst::parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:tc-186".into(),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         "tc-186.native",
@@ -198,7 +200,7 @@ fn t05b_text_without_bounds_is_invalid_syntax_at_source_recognition() {
     let diagnostic = &unbounded.diagnostics()[0];
     assert_eq!(diagnostic.code, Code::InvalidSyntax);
     let at = unbounded_text.find("Text;").unwrap() + "Text".len();
-    assert_eq!(diagnostic.span.start.byte, at);
+    assert_eq!(diagnostic.byte_span().unwrap().start, at);
 }
 
 #[trace("TC-186", "FR-141-AC-3", "FR-141-AC-4")]

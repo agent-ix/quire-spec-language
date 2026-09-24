@@ -692,7 +692,9 @@ impl Inputs {
             .sources
             .iter()
             .map(|source| w::NativeSource {
+                authority: source.identity().authority.clone(),
                 identity: source.identity().identity.clone(),
+                revision_namespace: source.identity().revision_namespace.clone(),
                 revision: source.identity().revision.clone(),
             })
             .collect();

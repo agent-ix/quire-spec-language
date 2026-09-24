@@ -285,7 +285,9 @@ mod tests {
     fn parse(text: &str) -> ParsedSource {
         qsl_cst::parse(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "test:format".into(),
+                revision_namespace: "test".into(),
                 revision: "1".into(),
             },
             "format.quire",

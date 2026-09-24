@@ -20,7 +20,7 @@ use qsl_semantics::value::declaration::{
 use qsl_semantics::value::{DefinitionReference, DefinitionRevision};
 use quire_exact::{NodeKey, Presence, TextProfile, TextType, ValueType};
 
-use crate::check::owner;
+use crate::check::source;
 
 const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
@@ -147,7 +147,7 @@ fn equality_package(
         types: TypeEnvironment::new(declarations, []).expect("FR-143 admits the records"),
         functions: vec![eq],
         lock_evidence: LockEvidence::default().with_text_profile(text_profile()),
-        ..PackageDeclarations::new(owner())
+        ..PackageDeclarations::new(source())
     }
 }
 

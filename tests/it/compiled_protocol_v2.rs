@@ -3086,8 +3086,11 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // embedded document bytes, which legitimately shrinks the
             // charged input bytes. `byte_work` includes the bytes of
             // `docs/compiled-protocol-v1.md`, the contract document the
-            // fixture embeds, so an edit to that document moves it.
-            (4_814, 2_581, 1_169_401, 85_188)
+            // fixture embeds, so an edit to that document moves it. QSL-233
+            // added the native source's `authority` and `revision_namespace`
+            // to each of the four sources, which moves every figure but
+            // `references`.
+            (4_822, 2_581, 1_170_618, 85_376)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),

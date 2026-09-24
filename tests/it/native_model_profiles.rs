@@ -36,7 +36,9 @@ fn named_source(text: &str, native: &str, formal: &str) -> FormalSource {
     FormalSource::new(
         Source::read(
             SourceIdentity {
+                authority: "test".into(),
                 identity: native.into(),
+                revision_namespace: "test".into(),
                 revision: "1".into(),
             },
             "model.json",
@@ -708,7 +710,9 @@ fn historical(model: &NativeModel) -> quire_spec_language::ParsedUnit {
     let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"{}\" version \"1\" digest \"{}\";\ninvariant Rule on M::Node at current {{ true }}", model.environment().owner().package().as_str(), model.digest());
     parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "native:historical".into(),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         "historical.native",
@@ -773,7 +777,9 @@ fn historical_linking_refuses_only_selected_v2_artifacts() {
 fn with_namespace(text: &str, inspect: impl FnOnce(&SyntaxNamespace)) {
     let sources = [Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: "native:composed".into(),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         "composed.native",

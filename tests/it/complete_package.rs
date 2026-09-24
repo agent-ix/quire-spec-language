@@ -101,7 +101,9 @@ fn compiled_model() -> ModelArtifact {
 fn parse_fixture(identity: &str, path: &str, source: &str) -> ParsedSource {
     parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: identity.into(),
+            revision_namespace: "test".into(),
             revision: "r1".into(),
         },
         path,
@@ -309,7 +311,9 @@ fn exact_profile_resolution_refuses_unknown_stale_and_missing_dependencies() {
         .replacen("version \"1\"", "version \"stale\"", 1);
     let stale_parsed = complete::parse_with_catalog(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:stale-profile-parse".into(),
+            revision_namespace: "test".into(),
             revision: "r1".into(),
         },
         "stale.native",

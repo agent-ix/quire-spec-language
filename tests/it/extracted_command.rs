@@ -282,6 +282,35 @@ mod enabled {
         }
     }
 
+    /// TC-430 step 5 (FR-031-AC-5): an extraction body record naming the
+    /// four labels runs; the same record without `authority` refuses at
+    /// the request stage with `invalid-request`.
+    #[test]
+    #[trace("TC-430", "FR-031-AC-5")]
+    fn extraction_bodies_carry_the_four_source_labels() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut job =
+            setup::write_extracted(directory.path(), setup::Case::Aggregate(2), false).unwrap();
+        let body = &mut job["request"]["program"]["extraction"]["body"];
+        body["authority"] = json!("agent-ix");
+        body["identity"] = json!("b");
+        body["revision_namespace"] = json!("git");
+        body["revision"] = json!("1");
+        let (code, result, stdout) = invoke(directory.path(), "run", &job);
+        assert_eq!(code, 0, "{result}");
+        assert!(stdout);
+
+        job["request"]["program"]["extraction"]["body"]
+            .as_object_mut()
+            .unwrap()
+            .remove("authority");
+        let (code, result, stdout) = invoke(directory.path(), "run", &job);
+        assert_eq!(code, 20, "{result}");
+        assert!(!stdout);
+        assert_eq!(result["stage"], "request");
+        assert_eq!(result["code"], "invalid-request");
+    }
+
     fn missing_model_job(directory: &Path) -> Value {
         let mut job = setup::write_extracted(directory, setup::Case::Aggregate(2), false).unwrap();
         job["request"]["models"][0]["source"]["file"] = json!("missing-model.json");

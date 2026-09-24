@@ -83,16 +83,8 @@ impl RuntimeReference {
             Self::Snapshot(_) => 0,
             Self::Invocation(_) => 1,
         };
-        (
-            kind(self),
-            &self.identity().identity,
-            &self.identity().revision,
-        )
-            .cmp(&(
-                kind(other),
-                &other.identity().identity,
-                &other.identity().revision,
-            ))
+        (kind(self), self.identity())
+            .cmp(&(kind(other), other.identity()))
             .then_with(|| self.digest().to_string().cmp(&other.digest().to_string()))
     }
 }

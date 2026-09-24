@@ -8,7 +8,7 @@ use serde_json::json;
 #[trace("TC-056", "FR-018-AC-3", "FR-018-AC-4")]
 fn empty_invocation_has_exact_independent_field_order_and_digest_spelling() {
     let artifact = Invocation::new(identity(), invocation(), ArtifactLimits::default()).unwrap();
-    let expected = r#"{"version":"native-state-input/1","kind":"invocation","identity":{"identity":"snapshot:current","revision":"1"},"body":{"models":[],"context":{"model":{"package":"example/runtime","requirement":"RuntimeModel","revision":1},"name":"Node"},"operation":"step","anchor":"step","self_object":{"model":{"package":"example/runtime","requirement":"RuntimeModel","revision":1},"record":"Node","universe":"nodes","key":""},"pre":{"identity":{"identity":"snapshot:current","revision":"1"},"digest":"0000000000000000000000000000000000000000000000000000000000000000"},"post":{"identity":{"identity":"snapshot:current","revision":"1"},"digest":"0000000000000000000000000000000000000000000000000000000000000000"},"parameters":[],"result":null,"created":[],"deleted":[],"arena":[]}}"#;
+    let expected = r#"{"version":"native-state-input/1","kind":"invocation","identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"body":{"models":[],"context":{"model":{"package":"example/runtime","requirement":"RuntimeModel","revision":1},"name":"Node"},"operation":"step","anchor":"step","self_object":{"model":{"package":"example/runtime","requirement":"RuntimeModel","revision":1},"record":"Node","universe":"nodes","key":""},"pre":{"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"digest":"0000000000000000000000000000000000000000000000000000000000000000"},"post":{"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"digest":"0000000000000000000000000000000000000000000000000000000000000000"},"parameters":[],"result":null,"created":[],"deleted":[],"arena":[]}}"#;
     assert_eq!(artifact.bytes(), expected.as_bytes());
     assert_eq!(artifact.digest(), ByteDigest::of(expected.as_bytes()));
     assert_eq!(artifact.reference().digest(), artifact.digest());
@@ -25,7 +25,9 @@ fn label_and_observation_family_preserves_exact_bytes_on_repeat() {
                 (ir::StateObservation::Post, "post"),
             ] {
                 let selected = SourceIdentity {
+                    authority: "agent-ix".into(),
                     identity: label.into(),
+                    revision_namespace: "git".into(),
                     revision: revision.into(),
                 };
                 let mut draft = empty();
@@ -38,7 +40,7 @@ fn label_and_observation_family_preserves_exact_bytes_on_repeat() {
                 // Authored envelope/field order; the specified serde_json string
                 // primitive supplies escaping, not the constructor's object layout.
                 let expected = format!(
-                    "{{\"version\":\"native-state-input/1\",\"kind\":\"snapshot\",\"identity\":{{\"identity\":{},\"revision\":{}}},\"body\":{{\"observation\":\"{}\",\"models\":[],\"populations\":[],\"values\":[],\"arena\":[]}}}}",
+                    "{{\"version\":\"native-state-input/1\",\"kind\":\"snapshot\",\"identity\":{{\"authority\":\"agent-ix\",\"identity\":{},\"revision_namespace\":\"git\",\"revision\":{}}},\"body\":{{\"observation\":\"{}\",\"models\":[],\"populations\":[],\"values\":[],\"arena\":[]}}}}",
                     serde_json::to_string(label).unwrap(),
                     serde_json::to_string(revision).unwrap(),
                     name,

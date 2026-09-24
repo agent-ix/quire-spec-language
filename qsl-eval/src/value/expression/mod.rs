@@ -447,7 +447,7 @@ mod tests {
     fn s6a_invariant_breaks_are_internal_faults_not_panics() {
         let graph = PackageDeclarations {
             functions: vec![identity_function()],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("id(x: Integer[0,10]): Integer[0,10] = x checks cleanly");
@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms() {
         let empty = qsl_package::CheckedPackage::link(
-            PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            PackageDeclarations::new(qsl_semantics::check::fixture_source())
                 .check(CheckingLimits::default())
                 .expect("an empty package checks cleanly"),
         );
@@ -571,7 +571,7 @@ mod tests {
 
         let graph = PackageDeclarations {
             functions: vec![identity_function()],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("id(x: Integer[0,10]): Integer[0,10] = x checks cleanly");

@@ -102,7 +102,9 @@ pub(crate) fn request_source<'a>(
     let text = rewrite(text);
     let unit = parse(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: "test:runtime-rule".into(),
+            revision_namespace: "git".into(),
             revision: "7".into(),
         },
         "runtime-rule.native",
@@ -198,7 +200,9 @@ pub(crate) fn draft(model: &NativeModel) -> SnapshotDraft {
 pub(crate) fn snapshot(draft: SnapshotDraft) -> Snapshot {
     Snapshot::new(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: "test:runtime-current".into(),
+            revision_namespace: "git".into(),
             revision: "1".into(),
         },
         draft,
@@ -257,7 +261,9 @@ pub(crate) fn recorded(
         snapshots.push(
             Snapshot::new(
                 SourceIdentity {
+                    authority: "agent-ix".into(),
                     identity: format!("test:runtime-{label}"),
+                    revision_namespace: "git".into(),
                     revision: "1".into(),
                 },
                 draft,
@@ -286,7 +292,9 @@ pub(crate) fn recorded(
     change(&mut invocation);
     let invocation = Invocation::new(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: "test:runtime-step".into(),
+            revision_namespace: "git".into(),
             revision: "1".into(),
         },
         invocation,

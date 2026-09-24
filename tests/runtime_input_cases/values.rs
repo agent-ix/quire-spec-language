@@ -151,8 +151,7 @@ fn invocation_encodes_every_original_binding_without_claiming_validity() {
     assert_eq!(artifact.reference().digest(), artifact.digest());
     let model = json!({"package":"example/runtime","requirement":"RuntimeModel","revision":1});
     let object = json!({"model":model,"record":"Node","universe":"nodes","key":"new"});
-    let selection =
-        json!({"identity":{"identity":"snapshot:current","revision":"1"},"digest":"0".repeat(64)});
+    let selection = json!({"identity":{"authority":"agent-ix","identity":"snapshot:current","revision_namespace":"git","revision":"1"},"digest":"0".repeat(64)});
     let expected = json!({
         "models":[{"model":model,"digest":"0".repeat(64)}],
         "context":{"model":model,"name":"Node"},

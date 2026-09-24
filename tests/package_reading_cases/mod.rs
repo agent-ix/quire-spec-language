@@ -55,7 +55,9 @@ fn rule<'a>(models: &'a [NativeModel], kind: &str, expression: &str) -> NativePa
     let text = format!("language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"example/rule-tests\" version \"1\" digest \"{}\";\n{kind} Rule on {context} {{ {expression} }}\n", models[0].digest());
     let unit = parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:reader-rule".into(),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         "reader-rule.native",

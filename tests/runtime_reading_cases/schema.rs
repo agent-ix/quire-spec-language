@@ -17,6 +17,11 @@ fn schema() -> JSONSchema {
         .expect("the local runtime schema must compile without external resolution")
 }
 
+/// Whether the local schema accepts `value`.
+pub(super) fn validates(value: &Value) -> bool {
+    schema().is_valid(value)
+}
+
 fn populated_inputs() -> RuntimeInput {
     let model = setup::native_rule_model::parts().model();
     let mut draft = full_snapshot().draft().clone();

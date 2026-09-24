@@ -428,7 +428,7 @@ fn check_on_small_stack(
                 ],
                 types: types(),
                 aliases: vec![("Total".to_owned(), ValueType::Integer)],
-                ..PackageDeclarations::new(fixture_owner())
+                ..PackageDeclarations::new(fixture_source())
             }
             .check(limits)
         })
@@ -534,7 +534,7 @@ fn a_1000_level_nesting_of_every_form_refuses_on_the_depth_limit() {
 #[trace("FR-093-AC-14", "TC-415")]
 #[test]
 fn a_postcondition_pre_over_1000_levels_refuses_on_a_small_stack() {
-    let graph = PackageDeclarations::new(fixture_owner())
+    let graph = PackageDeclarations::new(fixture_source())
         .check(CheckingLimits::default())
         .expect("an empty package checks");
     let refusals = std::thread::scope(|scope| {

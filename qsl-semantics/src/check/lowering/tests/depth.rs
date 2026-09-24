@@ -93,7 +93,7 @@ fn check_on_small_stack(
                 types: TypeEnvironment::new(records, []).expect("FR-143 admits the chain"),
                 functions,
                 lock_evidence: LockEvidence::default().with_text_profile(text_definition()),
-                ..PackageDeclarations::new(fixture_owner())
+                ..PackageDeclarations::new(fixture_source())
             }
             .check(limits)
         })

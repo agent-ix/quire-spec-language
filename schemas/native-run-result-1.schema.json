@@ -18,7 +18,13 @@
     "source": {
       "type": "object",
       "properties": {
+        "authority": {
+          "type": "string"
+        },
         "identity": {
+          "type": "string"
+        },
+        "revision_namespace": {
           "type": "string"
         },
         "revision": {
@@ -35,7 +41,9 @@
         }
       },
       "required": [
+        "authority",
         "identity",
+        "revision_namespace",
         "revision",
         "digest",
         "path",
@@ -81,7 +89,13 @@
         "source": {
           "type": "object",
           "properties": {
+            "authority": {
+              "type": "string"
+            },
             "identity": {
+              "type": "string"
+            },
+            "revision_namespace": {
               "type": "string"
             },
             "revision": {
@@ -89,7 +103,9 @@
             }
           },
           "required": [
+            "authority",
             "identity",
+            "revision_namespace",
             "revision"
           ],
           "additionalProperties": false

@@ -146,7 +146,7 @@ fn package(
         types: TypeEnvironment::new(records, []).expect("FR-143 admits the records"),
         functions,
         lock_evidence: lock,
-        ..PackageDeclarations::new(fixture_owner())
+        ..PackageDeclarations::new(fixture_source())
     }
 }
 

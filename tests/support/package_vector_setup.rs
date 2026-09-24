@@ -63,7 +63,9 @@ pub(crate) fn cases() -> [Vector; 3] {
 pub(crate) fn checked<'a>(vector: &Vector, models: &'a [NativeModel]) -> CheckedPackage<'a> {
     let unit = parse(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: vector.identity.into(),
+            revision_namespace: "draft".into(),
             revision: vector.revision.into(),
         },
         vector.name,

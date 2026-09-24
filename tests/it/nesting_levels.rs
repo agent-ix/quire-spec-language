@@ -10,7 +10,9 @@ use quire_spec_language::{parse, parse_native, Limits, ParsedUnit};
 
 fn identity(id: &str) -> SourceIdentity {
     SourceIdentity {
+        authority: "test".into(),
         identity: format!("test:{id}"),
+        revision_namespace: "test".into(),
         revision: "1".into(),
     }
 }

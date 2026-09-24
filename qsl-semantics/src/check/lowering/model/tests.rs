@@ -19,7 +19,7 @@ use sha2::{Digest, Sha256};
 use super::super::{generated_location, LockEvidence, Lowering, SemanticGraph, SemanticNode};
 use super::*;
 use crate::check::checked_dispatch::{checked_dispatch_operation, DispatchRoot, OperationClauses};
-use crate::check::family::fixtures::{empty_scope, fixture_owner};
+use crate::check::family::fixtures::{empty_scope, fixture_source};
 use crate::check::family::OccurrenceMap;
 use crate::check::{CheckedGraph, CheckingLimits, PackageDeclarations};
 use crate::model::accounting::{Meter, ModelNormalizationLimits};
@@ -331,7 +331,7 @@ fn check(acme: &Acme, functions: Vec<FunctionDeclaration>) -> CheckedGraph {
         types: types(acme),
         models: vec![acme.model.clone()],
         functions,
-        ..PackageDeclarations::new(fixture_owner())
+        ..PackageDeclarations::new(fixture_source())
     }
     .check(CheckingLimits::default())
     .unwrap_or_else(|refusals| panic!("the acme functions check: {refusals:?}"))
@@ -423,7 +423,7 @@ fn dispatch_with(acme: &Acme, root: &str, clauses: &OperationClauses) -> Package
             closure: GeneralizationClosure::Closed,
         },
         clauses,
-        fixture_owner(),
+        fixture_source(),
         &mut meter,
     )
     .unwrap_or_else(|refusal| panic!("{root} links and checks: {refusal:?}"));
@@ -446,7 +446,7 @@ fn lower<T>(
     let scope = empty_scope();
     let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
-    let owner = fixture_owner();
+    let owner = crate::check::SourceOwner::from(&fixture_source());
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
     let mut lowering = Lowering::new(
         &scope,
@@ -1057,7 +1057,7 @@ mod quantities {
                 builtin(BuiltinType::Boolean),
                 body,
             )],
-            ..PackageDeclarations::new(fixture_owner())
+            ..PackageDeclarations::new(fixture_source())
         };
         let plain = check_declarations(package(Expression::Boolean(true)));
         let graph = plain.semantic_graph();
@@ -1172,7 +1172,7 @@ mod quantities {
                     operand: Box::new(name("a")),
                 },
             )],
-            ..PackageDeclarations::new(fixture_owner())
+            ..PackageDeclarations::new(fixture_source())
         });
         let convert = applications(checked.semantic_graph(), "quire.op.quantity.convert");
         assert_eq!(convert.len(), 1);

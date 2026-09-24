@@ -17,9 +17,11 @@ use quire_exact::{
 use serde_json::{json, Value as Json};
 
 use super::*;
-use crate::check::family::fixtures::{empty_scope, fixture_owner, scope_with};
+use crate::check::family::fixtures::{admitted_source, empty_scope, fixture_source, scope_with};
 use crate::check::{CheckedGraph, CheckedTypeNode, CheckingLimits, PackageDeclarations};
 use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
+use qsl_foundation::source::provenance::RawSourceRef;
+use qsl_foundation::SourceIdentity;
 
 mod binder_scope;
 mod depth;
@@ -172,7 +174,7 @@ fn builtin_and_anonymous_type_nodes_match_t1_to_t8() {
     ];
     let (graph, keys) = type_nodes(
         &empty_scope(),
-        &fixture_owner(),
+        &SourceOwner::from(&fixture_source()),
         &cases
             .iter()
             .map(|(_, value_type)| value_type.clone())
@@ -246,7 +248,7 @@ fn rational_decimal_and_declared_composite_nodes_match_their_vectors() {
 
     let (graph, keys) = type_nodes(
         &scope,
-        &fixture_owner(),
+        &SourceOwner::from(&fixture_source()),
         &[
             rational_9(),
             decimal,
@@ -263,7 +265,7 @@ fn rational_decimal_and_declared_composite_nodes_match_their_vectors() {
 
     let (explicit_graph, explicit_keys) = type_nodes(
         &explicit_scope,
-        &fixture_owner(),
+        &SourceOwner::from(&fixture_source()),
         &[ValueType::Composite(explicit)],
     );
     assert_vector(&explicit_graph, explicit_keys[0], "D4");
@@ -292,11 +294,12 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
         .unwrap(),
         Vec::new(),
     );
-    let w = SourceOwner::new("a", "w").unwrap();
+    let w = admitted_source(SourceIdentity::new("a", "w", "git", "1"), b"");
     let types = [ValueType::Composite(point), int(0, 9)];
-    let (under_u, u_keys) = type_nodes(&scope, &fixture_owner(), &types);
-    let (again, again_keys) = type_nodes(&scope, &fixture_owner(), &types);
-    let (under_w, w_keys) = type_nodes(&scope, &w, &types);
+    let u = SourceOwner::from(&fixture_source());
+    let (under_u, u_keys) = type_nodes(&scope, &u, &types);
+    let (again, again_keys) = type_nodes(&scope, &u, &types);
+    let (under_w, w_keys) = type_nodes(&scope, &SourceOwner::from(&w), &types);
 
     assert_vector(&under_u, u_keys[0], "D1");
     assert_vector(&again, again_keys[0], "D1");
@@ -317,7 +320,7 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
         None,
         Expression::Boolean(true),
     );
-    for owner in [fixture_owner(), w] {
+    for owner in [fixture_source(), w] {
         let graph = check_under(owner, vec![g1.clone()]).expect("g1 checks");
         let parameter = parameter_named(graph.semantic_graph(), "x");
         assert_eq!(
@@ -347,7 +350,7 @@ fn a_type_nested_past_the_depth_limit_refuses() {
                 None,
                 Expression::Boolean(true),
             )],
-            ..PackageDeclarations::new(fixture_owner())
+            ..PackageDeclarations::new(fixture_source())
         }
         .check(limits)
     };
@@ -498,7 +501,7 @@ fn recursive_records_key_to_g2_g3_and_g7_to_g9() {
         let types = TypeEnvironment::new([record], []).expect("FR-143 admits the record");
         let checked = PackageDeclarations {
             types,
-            ..PackageDeclarations::new(fixture_owner())
+            ..PackageDeclarations::new(fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("the record checks");
@@ -571,7 +574,7 @@ fn equality_and_contains_over_a_recursive_record_without_text_have_no_leaves() {
     let checked = PackageDeclarations {
         types: list_types(),
         functions: vec![eq, has],
-        ..PackageDeclarations::new(fixture_owner())
+        ..PackageDeclarations::new(fixture_source())
     }
     .check(CheckingLimits::default())
     .expect("equality and contains over List check");
@@ -681,7 +684,7 @@ fn keying_a_recursion_group_is_charged_to_the_work_budget() {
     let checked = |budget: u64| {
         PackageDeclarations {
             functions: ring(k),
-            ..PackageDeclarations::new(fixture_owner())
+            ..PackageDeclarations::new(fixture_source())
         }
         .check(CheckingLimits::default().with_work_budget(budget))
     };
@@ -770,7 +773,7 @@ fn a_declared_records_node_id_is_its_key_not_its_handle() {
         .expect("Point admits");
         let checked = PackageDeclarations {
             types,
-            ..PackageDeclarations::new(fixture_owner())
+            ..PackageDeclarations::new(fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("Point checks");
@@ -811,7 +814,7 @@ fn an_alias_introduces_no_type_node() {
             None,
             Expression::Boolean(true),
         )],
-        ..PackageDeclarations::new(fixture_owner())
+        ..PackageDeclarations::new(fixture_source())
     }
     .check(CheckingLimits::default())
     .expect("g checks");
@@ -901,18 +904,18 @@ fn function(
 }
 
 fn check_under(
-    owner: SourceOwner,
+    source: RawSourceRef,
     functions: Vec<FunctionDeclaration>,
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     PackageDeclarations {
         functions,
-        ..PackageDeclarations::new(owner)
+        ..PackageDeclarations::new(source)
     }
     .check(CheckingLimits::default())
 }
 
 fn check(functions: Vec<FunctionDeclaration>) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    check_under(fixture_owner(), functions)
+    check_under(fixture_source(), functions)
 }
 
 /// The parameter node whose `name` binding is `name`.
@@ -1453,7 +1456,7 @@ fn a_law_comes_only_from_the_lock_evidence() {
     let graph = PackageDeclarations {
         functions: vec![te],
         lock_evidence: LockEvidence::default().with_text_profile(definition.clone()),
-        ..PackageDeclarations::new(fixture_owner())
+        ..PackageDeclarations::new(fixture_source())
     }
     .check(CheckingLimits::default())
     .expect("text-profile evidence admits the equality");
@@ -1870,7 +1873,7 @@ fn record_projection_and_record_values_name_their_record_node() {
     let graph = PackageDeclarations {
         types,
         functions: vec![project, build],
-        ..PackageDeclarations::new(fixture_owner())
+        ..PackageDeclarations::new(fixture_source())
     }
     .check(CheckingLimits::default())
     .expect("the record fixtures check");
@@ -1896,4 +1899,56 @@ fn record_projection_and_record_values_name_their_record_node() {
     assert_eq!(y["value"]["value_kind"], "none");
     assert_eq!(y["value"]["value"], Json::Null);
     assert_eq!(y["value"]["type"]["digest"], json!(vector_key("T5")));
+}
+
+/// TC-424 step 3 (FR-001-AC-7): a record's node key depends on its unit's
+/// authority and identity, taken from the unit's `RawSourceRef`, and not on
+/// the revision or the bytes.
+#[trace("TC-424", "FR-001-AC-7")]
+#[test]
+fn a_declaration_key_follows_the_authority_and_identity_not_the_revision() {
+    let point_key = |source: RawSourceRef| {
+        let point = NodeKey::from_digest([4; 32]);
+        let graph = PackageDeclarations {
+            types: TypeEnvironment::new(
+                [CompositeDeclaration::new(
+                    point,
+                    "Point",
+                    CompositeShape::Record(vec![FieldDeclaration::new(
+                        "x",
+                        int(0, 9),
+                        Presence::Required,
+                    )]),
+                )],
+                [],
+            )
+            .unwrap(),
+            ..PackageDeclarations::new(source.clone())
+        }
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("Point checks: {refusals:?}"));
+        assert_eq!(graph.source(), &source);
+        let keys: Vec<_> = graph
+            .checked_type_nodes()
+            .filter_map(|node| match node {
+                CheckedTypeNode::Composite { node } => Some(*node),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(keys.len(), 1, "one composite");
+        keys[0]
+    };
+    let under = |authority, identity, revision, bytes: &[u8]| {
+        point_key(admitted_source(
+            SourceIdentity::new(authority, identity, "git", revision),
+            bytes,
+        ))
+    };
+    let first = under("a", "u", "1", b"b");
+    assert_eq!(first, under("a", "u", "2", b"b'"));
+    let other_authority = under("c", "u", "1", b"b");
+    let other_identity = under("a", "v", "1", b"b");
+    assert_ne!(first, other_authority);
+    assert_ne!(first, other_identity);
+    assert_ne!(other_authority, other_identity);
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-004: checked body-to-document byte correspondence; no Markdown or wire decoding.
+use crate::source::provenance::SourceRegion;
 use crate::source::{LocatedSpan, Source, SourceIdentity, Span};
 
 /// Hard ceiling on selected correspondence segments.
@@ -95,7 +96,7 @@ impl SourceMap {
         if original.identity() == body.identity() && original.digest() != body.digest() {
             return Err(fail(
                 SourceMapErrorCause::InvalidMap,
-                "original and extracted body reuse one identity/revision for different bytes",
+                "original and extracted body reuse one set of source labels for different bytes",
             ));
         }
         let mut body_cursor = 0;
@@ -195,6 +196,33 @@ impl SourceMap {
         source: &Source,
         span: Span,
     ) -> Result<Vec<LocatedSpan>, Box<SourceMapError>> {
+        Ok(self
+            .map_bytes(source, span)?
+            .into_iter()
+            .map(|region| {
+                self.original
+                    .locate(region)
+                    .expect("verified map subregion")
+            })
+            .collect())
+    }
+
+    /// ADR-013 C-21: an embedded-body span to its document regions, each
+    /// under the document's own `RawSourceRef` (FR-001), in document order.
+    /// Discontiguous regions stay separate, exactly as [`SourceMap::map_span`]
+    /// maps them; a zero-width body span maps to one empty region. Refuses a
+    /// span of another source, and one that is not a body span, with
+    /// `None`.
+    pub fn map_regions(&self, source: &Source, span: Span) -> Option<Vec<SourceRegion>> {
+        self.map_bytes(source, span)
+            .ok()?
+            .into_iter()
+            .map(|region| self.original.region(region))
+            .collect()
+    }
+
+    /// The original byte ranges of a body span.
+    fn map_bytes(&self, source: &Source, span: Span) -> Result<Vec<Span>, Box<SourceMapError>> {
         let fail = |message: &str| {
             Box::new(SourceMapError {
                 cause: SourceMapErrorCause::InvalidMap,
@@ -212,7 +240,7 @@ impl SourceMap {
             || source.digest() != self.body.digest()
         {
             return Err(fail(
-                "span belongs to a different source identity, revision, path or bytes",
+                "span belongs to a different source label, path or bytes",
             ));
         }
         if self.body.slice(span).is_none() {
@@ -230,13 +258,10 @@ impl SourceMap {
                 },
                 |segment| segment.original.start + span.start - segment.body.start,
             );
-            return Ok(vec![self
-                .original
-                .locate(Span {
-                    start: byte,
-                    end: byte,
-                })
-                .expect("verified map boundary")]);
+            return Ok(vec![Span {
+                start: byte,
+                end: byte,
+            }]);
         }
         let mut regions: Vec<Span> = Vec::new();
         for segment in &self.segments[first..] {
@@ -252,14 +277,7 @@ impl SourceMap {
                 regions.push(Span { start, end });
             }
         }
-        Ok(regions
-            .into_iter()
-            .map(|region| {
-                self.original
-                    .locate(region)
-                    .expect("verified map subregion")
-            })
-            .collect())
+        Ok(regions)
     }
 }
 

@@ -63,7 +63,7 @@ can select an exact digest. Limits and accounting follow
 
 ## Status
 
-FR-018-AC-8 is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.
+FR-018-AC-8 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-431.
 
 Qualified construction API at c8fa41f, reviewed in SR-096. TC-055–057 pass with
 21 public API tests and a role-separation compile-fail doctest. Model-aware

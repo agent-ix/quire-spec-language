@@ -262,10 +262,13 @@ impl ResolvedSignatures {
 /// The closed declarations of one package that expressions resolve against.
 #[derive(Clone, Debug)]
 pub struct PackageDeclarations {
-    /// The declaring source unit's owner (ADR-013 O-04, FR-091): a required
-    /// E3 input, carried by every declared record, tuple and function node
-    /// key (FR-092). `check` holds no constant owner.
-    pub owner: super::node_key::SourceOwner,
+    /// The declaring source unit's `RawSourceRef` (FR-001), the reference
+    /// its caller named and S0 minted. Its authority and identity are the
+    /// unit's owner (ADR-013 O-04, FR-091), carried by every declared
+    /// record, tuple and function node key (FR-092); its revision and digest
+    /// enter no key. The checked graph carries it on for the lock's
+    /// `sources` entry (QSL-6 S1b). `check` holds no constant owner.
+    pub source: qsl_foundation::source::provenance::RawSourceRef,
     /// The package's lock evidence (ADR-011 §2.4): the law `DefinitionRef`s
     /// a lowered operation may name (FR-093).
     pub lock_evidence: super::lowering::LockEvidence,
@@ -307,11 +310,11 @@ pub struct PackageDeclarations {
 }
 
 impl PackageDeclarations {
-    /// A package declared by `owner`'s source unit, with no declaration yet
-    /// and no lock evidence.
-    pub fn new(owner: super::node_key::SourceOwner) -> Self {
+    /// A package declared by the source unit `source` names, with no
+    /// declaration yet and no lock evidence.
+    pub fn new(source: qsl_foundation::source::provenance::RawSourceRef) -> Self {
         Self {
-            owner,
+            source,
             lock_evidence: super::lowering::LockEvidence::default(),
             types: TypeEnvironment::default(),
             enums: Vec::new(),
@@ -325,6 +328,12 @@ impl PackageDeclarations {
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
         }
+    }
+
+    /// The unit's owner, `SourceOwner{authority, identity}` taken from its
+    /// `RawSourceRef` (FR-001).
+    pub fn owner(&self) -> super::node_key::SourceOwner {
+        super::node_key::SourceOwner::from(&self.source)
     }
 }
 

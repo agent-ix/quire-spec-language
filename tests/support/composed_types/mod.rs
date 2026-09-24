@@ -187,7 +187,9 @@ fn try_model_with(
     let text = serde_json::to_string_pretty(&document).unwrap();
     let source = Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: format!("model:{name}"),
+            revision_namespace: "test".into(),
             revision: "authored".into(),
         },
         format!("{name}.json"),
@@ -237,7 +239,9 @@ pub fn source(name: &str, model: &NativeModel, body: &str) -> Source {
     ));
     Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: format!("unit:{name}"),
+            revision_namespace: "test".into(),
             revision: "authored".into(),
         },
         format!("{name}.native"),

@@ -9,7 +9,9 @@ use qsl_foundation::{Phase, SourceIdentity, SyntaxLimit};
 
 fn identity(id: &str) -> SourceIdentity {
     SourceIdentity {
+        authority: "test".into(),
         identity: format!("test:{id}"),
+        revision_namespace: "test".into(),
         revision: "1".into(),
     }
 }
@@ -174,7 +176,10 @@ fn paren_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused() {
         assert_eq!(error.phase, Phase::Parse);
         let offending = function_prefix().len() + opens.len() - 1;
         assert_eq!(
-            (error.span.start.byte, error.span.end.byte),
+            (
+                error.byte_span().unwrap().start,
+                error.byte_span().unwrap().end
+            ),
             (offending, offending + 1)
         );
     });
@@ -197,7 +202,10 @@ fn option_type_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused()
         assert_eq!(refused_limit(&error), SyntaxLimit::NestingDepth { bound });
         let angle = prefix.len() - 1;
         assert_eq!(
-            (error.span.start.byte, error.span.end.byte),
+            (
+                error.byte_span().unwrap().start,
+                error.byte_span().unwrap().end
+            ),
             (angle, angle + 1)
         );
     });

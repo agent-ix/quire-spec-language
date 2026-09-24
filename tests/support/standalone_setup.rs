@@ -31,7 +31,8 @@ pub enum Case {
 }
 
 fn source(source: &FormalSource, file: &str) -> Value {
-    json!({"file":file,"identity":source.source().identity().identity,"revision":source.source().identity().revision,
+    json!({"file":file,"authority":source.source().identity().authority,"identity":source.source().identity().identity,
+        "revision_namespace":source.source().identity().revision_namespace,"revision":source.source().identity().revision,
         "digest":source.source().digest().to_string(),"document":source.identity().document().as_str(),"formal_revision":source.identity().revision().get()})
 }
 
@@ -199,7 +200,9 @@ pub fn write_extracted(directory: &Path, case: Case, crlf: bool) -> io::Result<V
     // The ordinary multi-clause fixture remains intact for the other commands.
     let unit = quire_spec_language::parse(
         qsl_foundation::SourceIdentity {
+            authority: "test".into(),
             identity: "test:fixture-selection".into(),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         "program.native",
@@ -219,10 +222,12 @@ pub fn write_extracted(directory: &Path, case: Case, crlf: bool) -> io::Result<V
     };
     let selected = &program["source"];
     program["extraction"] = json!({"body":{
-        "identity":selected["identity"],"revision":selected["revision"],
+        "authority":selected["authority"],"identity":selected["identity"],
+        "revision_namespace":selected["revision_namespace"],"revision":selected["revision"],
         "document":selected["document"],"formal_revision":selected["formal_revision"]
     }});
-    program["source"] = json!({"file":"rules.md","identity":"ix://example/runtime-rules/spec",
+    program["source"] = json!({"file":"rules.md","authority":"agent-ix",
+        "identity":"ix://example/runtime-rules/spec","revision_namespace":"authored",
         "revision":"authored:7","digest":qsl_foundation::ByteDigest::of(text.as_bytes()).to_string(),
         "document":"AuthoredRules","formal_revision":7});
     std::fs::write(directory.join("rules.md"), text)?;

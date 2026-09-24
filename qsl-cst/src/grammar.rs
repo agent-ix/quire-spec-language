@@ -1596,7 +1596,9 @@ mod tests {
         for compound in compounds {
             let parsed = parse(
                 SourceIdentity {
+                    authority: "test".into(),
                     identity: "test:compound-authority".into(),
+                    revision_namespace: "test".into(),
                     revision: compound.into(),
                 },
                 "compound.native",
@@ -1612,7 +1614,9 @@ mod tests {
 
             let refusal = parse(
                 SourceIdentity {
+                    authority: "test".into(),
                     identity: "test:compound-authority".into(),
+                    revision_namespace: "test".into(),
                     revision: format!("{compound}:below"),
                 },
                 "compound.native",
@@ -1624,8 +1628,8 @@ mod tests {
             )
             .unwrap_err();
             assert_eq!(refusal.code, qsl_foundation::Code::ResourceExhausted);
-            assert_eq!(refusal.span.start.byte, 0);
-            assert_eq!(refusal.span.end.byte, compound.len());
+            assert_eq!(refusal.byte_span().unwrap().start, 0);
+            assert_eq!(refusal.byte_span().unwrap().end, compound.len());
         }
     }
 
@@ -1642,7 +1646,9 @@ mod tests {
             let text = format!("{prefix}{word} {{ datum: Integer; }}");
             let parsed = parse(
                 SourceIdentity {
+                    authority: "test".into(),
                     identity: "test:reserved-word-authority".into(),
+                    revision_namespace: "test".into(),
                     revision: word.into(),
                 },
                 "reserved.native",
@@ -1655,7 +1661,7 @@ mod tests {
                 "reserved word `{word}` was admitted"
             );
             assert_eq!(
-                parsed.diagnostics()[0].span.start.byte,
+                parsed.diagnostics()[0].byte_span().unwrap().start,
                 prefix.len(),
                 "reserved word `{word}` refused at the wrong token"
             );

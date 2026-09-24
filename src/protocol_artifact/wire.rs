@@ -407,10 +407,14 @@ record! { /// Selected model artifact and exports, naming its domain package dir
         domain_package: Nullable<DomainPackage>
     }
 }
-record! { /// Editable native authority labels; these are not formal revisions.
+record! { /// The native source's four FR-001 labels; these are not formal revisions.
     NativeSource {
+        /// The authority that issues the native source's identity.
+        authority: String,
         /// The native source's own identity label.
         identity: String,
+        /// The revision system the native revision belongs to.
+        revision_namespace: String,
         /// The native source's own editable revision label.
         revision: String
     }
@@ -419,7 +423,7 @@ record! { /// Original source text, retained for hashing/loci and never reparsed
     Source {
         /// The artifact this source text was retrieved from.
         artifact: ArtifactRef,
-        /// The native identity/revision labels for this source.
+        /// The native source labels for this source.
         native: NativeSource,
         /// The source's own path, as recorded by its producer.
         path: String,

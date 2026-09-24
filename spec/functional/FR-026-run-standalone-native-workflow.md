@@ -108,4 +108,4 @@ including incomplete native, model, package and runtime input failures.
 
 ## Status
 
-FR-026-AC-6 is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.
+FR-026-AC-6 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-430.

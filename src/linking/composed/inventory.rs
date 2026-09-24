@@ -8,6 +8,7 @@ use super::{
     Exhaustion, InventoryIssue, NamespaceReport, ParsedSource, SyntaxNamespace, UnitId, Work,
 };
 use crate::syntax::composed::NativeUnit;
+use qsl_foundation::SourceIdentity;
 
 fn bytes(work: &mut Work, values: &[&str]) -> Result<(), Exhaustion> {
     for value in values {
@@ -31,47 +32,43 @@ pub(super) fn prepare(
         report.issues.push(InventoryIssue::EmptyInventory);
     }
 
-    let mut expected = BTreeMap::<(&str, &str), Vec<usize>>::new();
+    // FR-001: a source is named by all four of its labels.
+    let mut expected = BTreeMap::<&SourceIdentity, Vec<usize>>::new();
     for (index, entry) in inventory.units.iter().enumerate() {
         work.charge(Dimension::Units, 1)?;
         bytes(
             work,
             &[
                 &entry.authority,
+                &entry.identity.authority,
                 &entry.identity.identity,
+                &entry.identity.revision_namespace,
                 &entry.identity.revision,
             ],
         )?;
-        if entry.authority.trim().is_empty()
-            || entry.identity.identity.trim().is_empty()
-            || entry.identity.revision.trim().is_empty()
-        {
+        if entry.authority.trim().is_empty() || !entry.identity.is_named() {
             report
                 .issues
                 .push(InventoryIssue::InvalidExpectedSource { expected: index });
         }
-        expected
-            .entry((&entry.identity.identity, &entry.identity.revision))
-            .or_default()
-            .push(index);
+        expected.entry(&entry.identity).or_default().push(index);
     }
 
-    let mut supplied = BTreeMap::<(&str, &str), Vec<usize>>::new();
+    let mut supplied = BTreeMap::<&SourceIdentity, Vec<usize>>::new();
     for (index, source) in report.supplied.iter().enumerate() {
         work.charge(Dimension::Units, 1)?;
         bytes(
             work,
             &[
+                &source.identity().authority,
                 &source.identity().identity,
+                &source.identity().revision_namespace,
                 &source.identity().revision,
                 source.path(),
                 source.text(),
             ],
         )?;
-        supplied
-            .entry((&source.identity().identity, &source.identity().revision))
-            .or_default()
-            .push(index);
+        supplied.entry(source.identity()).or_default().push(index);
     }
 
     let mut correspondence_complete = true;
@@ -113,10 +110,7 @@ pub(super) fn prepare(
 
     let mut selections = Vec::new();
     for (index, source) in report.supplied.iter().enumerate() {
-        let selected = expected[&(
-            source.identity().identity.as_str(),
-            source.identity().revision.as_str(),
-        )][0];
+        let selected = expected[source.identity()][0];
         selections.push(selected);
         if source.digest() != inventory.units[selected].digest {
             report.issues.push(InventoryIssue::DigestMismatch {

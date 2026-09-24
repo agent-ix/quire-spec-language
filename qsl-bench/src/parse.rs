@@ -46,7 +46,9 @@ pub fn volume_source(functions: usize) -> String {
 pub fn parse(text: &str) -> Result<ParsedSource, Box<qsl_cst::CompleteDiagnostic>> {
     qsl_cst::parse(
         SourceIdentity {
+            authority: "agent-ix".into(),
             identity: IDENTITY.to_owned(),
+            revision_namespace: "bench".into(),
             revision: "1".to_owned(),
         },
         "bench.native",

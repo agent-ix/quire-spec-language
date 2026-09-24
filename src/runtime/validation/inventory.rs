@@ -48,7 +48,7 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
             let reference = self.reference(address);
             let identity = reference.identity();
             self.inventory
-                .entry((identity.identity.clone(), identity.revision.clone()))
+                .entry(identity.clone())
                 .or_default()
                 .push(address);
         }
@@ -63,7 +63,7 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
                     self.budget.issue(
                         Stage::Identity,
                         Code::InvalidRuntimeInput,
-                        "duplicate native input identity/revision in inventory",
+                        "duplicate native input source labels in inventory",
                     )?;
                 }
             }
@@ -75,10 +75,7 @@ impl<F: FnMut() -> bool> Validator<'_, '_, F> {
         self.budget.location.artifact = expected.clone();
         self.budget.location.path.clear();
         self.budget.visit()?;
-        let key = (
-            expected.identity().identity.clone(),
-            expected.identity().revision.clone(),
-        );
+        let key = expected.identity().clone();
         let Some(entries) = self.inventory.get(&key) else {
             self.budget.issue(
                 Stage::Observation,

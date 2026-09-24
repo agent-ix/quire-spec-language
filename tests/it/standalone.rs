@@ -675,3 +675,73 @@ fn absolute_and_parent_relative_operands_keep_selected_bytes() {
         );
     }
 }
+
+/// TC-430 steps 1-2 (FR-026-AC-6): the program source, model source and
+/// snapshot selection each carry the four labels, and the result renders
+/// them; a missing `authority` or `revision_namespace` refuses at the
+/// request stage, and a blank `authority` as `invalid_source_identity`.
+#[test]
+#[trace("TC-430", "FR-026-AC-6")]
+fn run_requests_and_results_carry_the_four_source_labels() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut job, _) = setup::write(directory.path(), setup::Case::Aggregate(2)).unwrap();
+    // The model source's revision label stays `draft:1`: the program's
+    // model import pins the model artifact, whose identity binds it.
+    for pointer in ["/request/program/source", "/request/models/0/source"] {
+        let source = job.pointer_mut(pointer).unwrap();
+        assert_eq!(source["authority"], "agent-ix", "{pointer}");
+        assert_eq!(source["revision_namespace"], "git", "{pointer}");
+    }
+    job["request"]["program"]["source"]["revision"] = json!("1");
+    save(directory.path(), &job);
+    let snapshot = &job["request"]["snapshots"][0]["reference"]["identity"];
+    assert_eq!(
+        (
+            &snapshot["authority"],
+            &snapshot["revision_namespace"],
+            &snapshot["revision"]
+        ),
+        (&json!("agent-ix"), &json!("git"), &json!("1"))
+    );
+    let (code, result, stdout) = invoke(directory.path());
+    assert_eq!(code, 0, "{result}");
+    assert!(stdout);
+    for (rendered, requested) in [
+        (&result["source"], &job["request"]["program"]["source"]),
+        (
+            &result["models"][0]["source"],
+            &job["request"]["models"][0]["source"],
+        ),
+    ] {
+        for label in ["authority", "identity", "revision_namespace", "revision"] {
+            assert_eq!(rendered[label], requested[label], "{label}");
+        }
+    }
+    assert_eq!(result["inputs"]["snapshots"][0]["identity"], *snapshot);
+
+    for pointer in [
+        "/request/program/source/authority",
+        "/request/snapshots/0/reference/identity/revision_namespace",
+    ] {
+        let mut changed = job.clone();
+        let (parent, member) = pointer.rsplit_once('/').unwrap();
+        changed
+            .pointer_mut(parent)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove(member);
+        save(directory.path(), &changed);
+        let (code, result, _) = invoke(directory.path());
+        assert_eq!(code, 20, "{pointer}: {result}");
+        assert_eq!(result["stage"], "request", "{pointer}");
+        assert_eq!(result["code"], "invalid-request", "{pointer}");
+    }
+
+    let mut blank = job.clone();
+    blank["request"]["program"]["source"]["authority"] = json!(" ");
+    save(directory.path(), &blank);
+    let (code, result, _) = invoke(directory.path());
+    assert_eq!(code, 20, "{result}");
+    assert_eq!(result["code"], "invalid_source_identity");
+}

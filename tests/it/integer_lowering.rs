@@ -359,7 +359,9 @@ fn target_refusals_and_exact_limits_remain_atomic_and_fresh() {
 }
 
 fn source(source: &quire_spec_language::formal_source::FormalSource, file: &str) -> Value {
-    json!({"file":file,"identity":source.source().identity().identity,
+    json!({"file":file,"authority":source.source().identity().authority,
+        "identity":source.source().identity().identity,
+        "revision_namespace":source.source().identity().revision_namespace,
         "revision":source.source().identity().revision,"digest":source.source().digest().to_string(),
         "document":source.identity().document().as_str(),"formal_revision":source.identity().revision().get()})
 }

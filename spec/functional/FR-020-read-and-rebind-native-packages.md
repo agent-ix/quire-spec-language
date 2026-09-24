@@ -72,7 +72,7 @@ digest cannot bypass derivation checks.
 
 ## Status
 
-The source bindings this reader checks carry the four source labels of FR-001; a package or binding naming two labels refuses. Specified under QSL-233 (ADR-013 §7 S-4b), not implemented.
+The source bindings this reader checks carry the four source labels of FR-001; a package or binding naming two labels refuses. Implemented under QSL-233 (ADR-013 §7 S-4b): the reader decodes and compares all four labels.
 
 Draft. This is compiler payload intake, not B's shared-reference reader, an
 independent consumer qualification or a general formal-model decoder.

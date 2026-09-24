@@ -429,7 +429,7 @@ mod family_contract_tests {
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::{
-        declaration, declaration_signature, declarations_for, empty_scope, fixture_owner, limits,
+        declaration, declaration_signature, declarations_for, empty_scope, fixture_source, limits,
         root_location, CheckingLimits, PackageDeclarations, Signatures, SCALAR_LIMITS_UNLIMITED,
     };
     use qsl_semantics::family::{DiagnosticSink, EvalOutcome, FamilyContract, ScopeStack};
@@ -482,7 +482,7 @@ mod family_contract_tests {
         // under owner (a, u), FR-092 vector F1.
         let expected = PackageDeclarations {
             functions: vec![form],
-            ..PackageDeclarations::new(fixture_owner())
+            ..PackageDeclarations::new(fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("f checks")
@@ -516,7 +516,7 @@ mod family_contract_tests {
     fn evaluate_faults_on_a_second_call_on_the_same_env() {
         let graph = PackageDeclarations {
             functions: vec![declaration("f", Expression::Boolean(true))],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks cleanly");
@@ -571,7 +571,7 @@ mod family_contract_tests {
     fn evaluate_returns_incomplete_when_the_meter_is_exhausted() {
         let graph = PackageDeclarations {
             functions: vec![declaration("f", Expression::Boolean(true))],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks cleanly, never Incomplete");
@@ -648,7 +648,7 @@ mod family_contract_tests {
                 decimal_division("rounding", "nearest-even"),
                 decimal_division("exact", "exact"),
             ],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("p / q with q in [1, 9] checks cleanly");
@@ -740,7 +740,7 @@ mod family_contract_tests {
                     },
                 ),
             ],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("callee and caller both check cleanly");
@@ -778,16 +778,17 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use qsl_forms::Expression;
+    use qsl_foundation::source::provenance::RawSourceRef;
     use qsl_semantics::check::{
-        declaration, fixture_owner, CheckingLimits, PackageDeclarations, SourceOwner,
+        admitted_source, declaration, fixture_source, CheckingLimits, PackageDeclarations,
     };
 
     /// `f`'s checked identity: its FR-092 function node key, declared by
     /// `owner`'s unit.
-    fn checked_identity(owner: SourceOwner) -> NodeKey {
+    fn checked_identity(source: RawSourceRef) -> NodeKey {
         PackageDeclarations {
             functions: vec![declaration("f", Expression::Boolean(true))],
-            ..PackageDeclarations::new(owner)
+            ..PackageDeclarations::new(source)
         }
         .check(CheckingLimits::default())
         .expect("one boolean-literal function checks")
@@ -809,7 +810,7 @@ mod tests {
     #[trace("TC-163", "FR-065-AC-2")]
     #[test]
     fn identity_survives_v2_round_trip() {
-        let after_check = checked_identity(fixture_owner());
+        let after_check = checked_identity(fixture_source());
         let name = QualifiedName::unqualified("f").unwrap();
         let bytes = emit_v2(&[(name.clone(), after_check)]);
         let decoded = decode_v2(&bytes).unwrap();
@@ -825,8 +826,11 @@ mod tests {
     #[test]
     fn equal_qualified_names_do_not_collapse_distinct_declarations() {
         let name = QualifiedName::unqualified("f").unwrap();
-        let first = checked_identity(fixture_owner());
-        let second = checked_identity(SourceOwner::new("a", "w").expect("a nonempty owner"));
+        let first = checked_identity(fixture_source());
+        let second = checked_identity(admitted_source(
+            qsl_foundation::SourceIdentity::new("a", "w", "git", "1"),
+            b"",
+        ));
         assert_ne!(
             first, second,
             "distinct declarations must not share a node id"

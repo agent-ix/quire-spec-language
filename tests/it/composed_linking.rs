@@ -17,7 +17,9 @@ profile S = "test:state-definition" version "1" digest "not-admitted";
 
 fn identity(authority: &str) -> SourceIdentity {
     SourceIdentity {
+        authority: "test".into(),
         identity: authority.into(),
+        revision_namespace: "test".into(),
         revision: "test:revision".into(),
     }
 }
@@ -638,4 +640,52 @@ on each (started: M::Trigger) when (Leaf()) {
         }
     }
     assert_eq!(entry(namespace, "Flow").references().len(), 21);
+}
+
+/// FR-001: two sources that differ only in their authority label are two
+/// distinct sources, each matched to its own inventory entry.
+#[test]
+#[trace("TC-424", "FR-001-AC-5")]
+fn sources_differing_only_in_authority_are_distinct() {
+    let read = |authority: &str, text: &str| {
+        Source::read(
+            SourceIdentity {
+                authority: authority.into(),
+                ..identity("shared")
+            },
+            format!("{authority}.native"),
+            text.as_bytes(),
+            Limits::default().source_bytes,
+        )
+        .unwrap()
+    };
+    let sources = [
+        read(
+            "first",
+            &predicates("predicate One using S (): Boolean { true }"),
+        ),
+        read(
+            "second",
+            &predicates("predicate Two using S (): Boolean { true }"),
+        ),
+    ];
+    let inventory = SourceInventory {
+        units: sources
+            .iter()
+            .map(|source| ExpectedSource {
+                authority: source.identity().authority.clone(),
+                identity: source.identity().clone(),
+                digest: source.digest(),
+            })
+            .collect(),
+        ..inventory(&sources)
+    };
+    let report = admit_namespace(
+        &inventory,
+        &sources,
+        WorkLimits::default(),
+        Limits::default(),
+    );
+    assert!(report.issues().is_empty(), "{:?}", report.issues());
+    assert_eq!(report.namespace().unwrap().units().len(), 2);
 }

@@ -61,7 +61,7 @@ fn node_ref(key: NodeKey) -> Json {
 fn type_key(value_type: &ValueType) -> NodeKey {
     type_nodes(
         &empty_scope(),
-        &fixture_owner(),
+        &crate::check::SourceOwner::from(&fixture_source()),
         std::slice::from_ref(value_type),
     )
     .1[0]
@@ -155,7 +155,7 @@ fn package(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         ],
         lock_evidence: LockEvidence::default().with_text_profile(text_definition()),
         ieee_profile: Some(ieee),
-        ..PackageDeclarations::new(fixture_owner())
+        ..PackageDeclarations::new(fixture_source())
     }
 }
 
@@ -620,7 +620,7 @@ fn enum_parameter_package(functions: usize) -> PackageDeclarations {
                 )
             })
             .collect(),
-        ..PackageDeclarations::new(fixture_owner())
+        ..PackageDeclarations::new(fixture_source())
     }
 }
 
@@ -712,7 +712,7 @@ fn a_tuple_value_is_a_value_node_over_its_arguments() {
     let checked = PackageDeclarations {
         types,
         functions: vec![make],
-        ..PackageDeclarations::new(fixture_owner())
+        ..PackageDeclarations::new(fixture_source())
     }
     .check(CheckingLimits::default())
     .expect("the tuple fixture checks");

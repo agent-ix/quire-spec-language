@@ -114,13 +114,12 @@ RFC 6901 JSON pointer.
 Specified and implemented under QSL-159. TC-420, TC-421 and TC-422 pass
 locally; TC-421's QSpec-fixture step runs under `make conformance`.
 
-Three parts of O-12 and C-21 are not built. Each needs a `RawSourceRef`
-for a source QSL reads itself. [FR-001](FR-001-read-exact-source.md) now
-states where it comes from: the caller supplies the authority, identity and
-revision namespace and value, and S0 mints the reference. ADR-013 §7 slice
-S-4b (QSL-233) builds it, together with two of the parts: replacing
-`LocatedSpan` in the canonical S0 to S2 diagnostics with `SourceRegion`, and
-C-21's embedded-body span to document region. The third part, check-stage
+ADR-013 §7 slice S-4b (QSL-233) built the `RawSourceRef` of a source QSL
+reads itself ([FR-001](FR-001-read-exact-source.md)), the `SourceRegion`
+that replaces `LocatedSpan` in the canonical S0 and S1 diagnostics
+(`SourceReadError`, `CompleteDiagnostic`; S2's forms refusal carries no
+span), and C-21's embedded-body span to document region
+(`SourceMap::map_regions`). The remaining part, check-stage
 regions, is [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)'s
 `check::Location` resolution in slice S-5b. It also needs the parsed forms'
 expression spans (FR-091-AC-10, QSL-141).

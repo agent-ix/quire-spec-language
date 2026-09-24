@@ -229,8 +229,10 @@ mod tests {
             .ends_with(include_str!("protocol-handoff/workflow.body.native")));
         let c::NativeUnit::Composed(original) = quire_spec_language::parse_native(
             qsl_foundation::SourceIdentity {
+                authority: source.native.authority.clone(),
                 identity: source.native.identity.clone(),
-                revision: "1".into(),
+                revision_namespace: source.native.revision_namespace.clone(),
+                revision: source.native.revision.clone(),
             },
             "examples/protocol-handoff/workflow.native",
             &original_bytes,

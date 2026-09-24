@@ -81,4 +81,4 @@ The command shall preserve existing byte/file/runtime limits and fresh retries.
 
 ## Status
 
-FR-031-AC-5, the four-label identity, is specified under QSL-233 and not implemented; ADR-013 §7 slice S-4b builds it.
+FR-031-AC-5, the four-label identity, is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-430.

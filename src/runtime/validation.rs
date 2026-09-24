@@ -98,7 +98,8 @@ struct Validator<'input, 'model, F> {
     selection: &'input ExecutionSelection,
     budget: Budget<'input, F>,
     catalogs: &'input [Catalog<'model>],
-    inventory: BTreeMap<(String, String), Vec<Address>>,
+    /// Inventory entries keyed by their four source labels (FR-018).
+    inventory: BTreeMap<qsl_foundation::SourceIdentity, Vec<Address>>,
     selected: Selected,
     clause: Option<usize>,
     indexes: PopulationIndexes,

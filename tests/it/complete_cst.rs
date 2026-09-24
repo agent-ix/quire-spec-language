@@ -30,7 +30,9 @@ const SOURCE: &str = concat!(
 
 fn identity(revision: &str) -> SourceIdentity {
     SourceIdentity {
+        authority: "test".into(),
         identity: "test:complete-cst".into(),
+        revision_namespace: "test".into(),
         revision: revision.into(),
     }
 }
@@ -308,8 +310,8 @@ fn invalid_caller_edit_ranges_refuse_without_panicking() {
                 CompleteCause::Host(HostCause::EditRanges)
             )
         );
-        assert_eq!(refusal.span.start.byte, 0);
-        assert_eq!(refusal.span.end.byte, 0);
+        assert_eq!(refusal.byte_span().unwrap().start, 0);
+        assert_eq!(refusal.byte_span().unwrap().end, 0);
     }
 }
 
@@ -474,4 +476,56 @@ fn adjacent_half_open_edits_are_not_overlaps() {
     )
     .unwrap();
     assert_eq!(edited.source().text(), SOURCE);
+}
+
+/// FR-001: an edit keeps the source's authority, identity and revision
+/// namespace; one that changes the authority or the namespace, or names the
+/// same (namespace, revision), refuses as a foreign predecessor.
+#[trace("TC-424", "FR-001-AC-5")]
+#[test]
+fn an_edit_that_changes_a_source_label_refuses() {
+    let parsed = qsl_cst::parse(
+        identity("r1"),
+        "complete.native",
+        SOURCE.as_bytes(),
+        Limits::default(),
+    )
+    .unwrap();
+    let edit = SourceEdit {
+        range: Span { start: 0, end: 0 },
+        replacement: " ".into(),
+    };
+    for next in [
+        SourceIdentity {
+            authority: "other".into(),
+            ..identity("r2")
+        },
+        SourceIdentity {
+            revision_namespace: "other".into(),
+            ..identity("r2")
+        },
+        identity("r1"),
+    ] {
+        assert_eq!(
+            complete::apply_edits(
+                &parsed,
+                "r1",
+                next.clone(),
+                std::slice::from_ref(&edit),
+                Limits::default(),
+            )
+            .unwrap_err()
+            .cause,
+            CompleteCause::Host(HostCause::EditPredecessor),
+            "{next:?}"
+        );
+    }
+    assert!(complete::apply_edits(
+        &parsed,
+        "r1",
+        identity("r2"),
+        std::slice::from_ref(&edit),
+        Limits::default(),
+    )
+    .is_ok());
 }

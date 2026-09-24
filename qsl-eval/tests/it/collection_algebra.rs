@@ -804,7 +804,7 @@ mod checked {
         let levels = collection_type(CollectionKind::Set, ValueType::Enum(level.shape()), 0, 2);
         let package = package(PackageDeclarations {
             enums: vec![color.clone(), level.clone()],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         });
         let c = formed(
             &colors,
@@ -875,7 +875,7 @@ mod checked {
                 "M::Obj",
                 object_type("M::Obj"),
             )],
-            ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         });
         let holder_type = ValueType::Composite(key("Holder"));
         let holders = collection_type(CollectionKind::Set, holder_type.clone(), 0, 2);
@@ -947,7 +947,7 @@ mod checked {
     #[test]
     fn c11_converting_to_the_other_bound_admits_equality_without_loss() {
         let package = package(PackageDeclarations::new(
-            qsl_semantics::check::fixture_owner(),
+            qsl_semantics::check::fixture_source(),
         ));
         let x_type = collection_type(CollectionKind::Set, ValueType::Integer, 0, 2);
         let s_type = collection_type(CollectionKind::Set, ValueType::Integer, 0, 3);
@@ -990,7 +990,7 @@ mod checked {
     #[test]
     fn c12_collection_literals_take_their_unique_expected_type() {
         let package = package(PackageDeclarations::new(
-            qsl_semantics::check::fixture_owner(),
+            qsl_semantics::check::fixture_source(),
         ));
         let set = || literal_collection(CollectionKind::Set, &[2, 1]);
         assert_eq!(

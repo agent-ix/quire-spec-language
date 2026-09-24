@@ -12,7 +12,9 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Compl
 fn parse(revision: &str, text: &str) -> qsl_cst::ParsedSource {
     let parsed = qsl_cst::parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:cst-identity".into(),
+            revision_namespace: "test".into(),
             revision: revision.into(),
         },
         "identity.native",

@@ -34,19 +34,20 @@ fn independent_text_totals_include_all_metadata_and_value_strings() {
     snapshot.values.push(binding("state", 0));
     snapshot.arena = vec![ValueNode::Text { value: "x".into() }];
     let artifact = Snapshot::new(identity(), snapshot.clone(), ArtifactLimits::default()).unwrap();
-    // Labels 17; three owners 27 each; record/universe 9; key/field 2;
-    // State name 5; payload 1. Digests and fixed encoding tokens are output work.
-    assert_eq!(artifact.usage().text_bytes, 115);
+    // Labels 28 (agent-ix, snapshot:current, git, 1); three owners 27 each;
+    // record/universe 9; key/field 2; State name 5; payload 1. Digests and
+    // fixed encoding tokens are output work.
+    assert_eq!(artifact.usage().text_bytes, 126);
     let error = Snapshot::new(
         identity(),
         snapshot,
         ArtifactLimits {
-            artifact_bytes: 114,
+            artifact_bytes: 125,
             ..ArtifactLimits::default()
         },
     )
     .unwrap_err();
-    assert_eq!(error.usage.text_bytes, 114);
+    assert_eq!(error.usage.text_bytes, 125);
     assert_eq!(error.usage.artifact_bytes, 0);
     assert_eq!(
         error.path,
@@ -83,20 +84,20 @@ fn independent_text_totals_include_all_metadata_and_value_strings() {
     ];
     let artifact =
         Invocation::new(identity(), operation.clone(), ArtifactLimits::default()).unwrap();
-    // Labels 17 + model 27 + context 31 + operation/anchor 8 + self 36
-    // + pre/post labels 34 + parameter 30 + deltas 78 + payload/record 38
+    // Labels 28 + model 27 + context 31 + operation/anchor 8 + self 36
+    // + pre/post labels 56 + parameter 30 + deltas 78 + payload/record 38
     // + reference 37 + enum/variant 29.
-    assert_eq!(artifact.usage().text_bytes, 365);
+    assert_eq!(artifact.usage().text_bytes, 398);
     let error = Invocation::new(
         identity(),
         operation,
         ArtifactLimits {
-            artifact_bytes: 364,
+            artifact_bytes: 397,
             ..ArtifactLimits::default()
         },
     )
     .unwrap_err();
-    assert_eq!(error.usage.text_bytes, 364);
+    assert_eq!(error.usage.text_bytes, 397);
     assert_eq!(error.usage.artifact_bytes, 0);
     assert_eq!(
         error.path,
@@ -365,7 +366,11 @@ fn exact_hard_output_bytes_and_escaped_text_expansion_are_bounded() {
         let artifact = Snapshot::new(identity(), draft.clone(), ArtifactLimits::default()).unwrap();
         assert_eq!(
             artifact.usage().text_bytes,
-            identity().identity.len() + 1 + text.len()
+            identity().authority.len()
+                + identity().identity.len()
+                + identity().revision_namespace.len()
+                + 1
+                + text.len()
         );
         let exact = limits_from(&artifact);
         assert_eq!(
@@ -391,7 +396,9 @@ fn exact_hard_output_bytes_and_escaped_text_expansion_are_bounded() {
 #[trace("TC-057", "TC-056", "FR-018-AC-6", "FR-018-AC-7")]
 fn oversized_text_stops_before_encoding_and_retains_original_labels() {
     let selected = SourceIdentity {
+        authority: "test".into(),
         identity: "a".into(),
+        revision_namespace: "test".into(),
         revision: "b".into(),
     };
     let mut draft = empty();
@@ -400,7 +407,8 @@ fn oversized_text_stops_before_encoding_and_retains_original_labels() {
     }];
     let error = Snapshot::new(selected.clone(), draft, ArtifactLimits::default()).unwrap_err();
     assert_eq!(error.identity, selected);
-    assert_eq!(error.usage.text_bytes, 2);
+    // The four labels: `test`, `a`, `test`, `b`.
+    assert_eq!(error.usage.text_bytes, 10);
     assert_eq!(error.usage.artifact_bytes, 0);
     assert_eq!(
         error.path,
@@ -411,12 +419,15 @@ fn oversized_text_stops_before_encoding_and_retains_original_labels() {
         ]
     );
     let oversized = SourceIdentity {
+        authority: "test".into(),
         identity: "x".repeat(1_048_577),
+        revision_namespace: "test".into(),
         revision: "1".into(),
     };
     let error = Snapshot::new(oversized.clone(), empty(), ArtifactLimits::default()).unwrap_err();
     assert_eq!(error.identity, oversized);
-    assert_eq!(error.usage.text_bytes, 0);
+    // Only the authority, `test`, is charged before the identity refuses.
+    assert_eq!(error.usage.text_bytes, 4);
     assert_eq!(error.usage.artifact_bytes, 0);
     assert_eq!(error.code, Code::ResourceExhausted);
     assert_eq!(

@@ -222,7 +222,9 @@ mod tests {
         // producer-owned and reach the output unchanged.
         let original = qsl_foundation::Source::read(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "ix://example/rules/spec".into(),
+                revision_namespace: "test".into(),
                 revision: "draft:1".into(),
             },
             "rules.md",

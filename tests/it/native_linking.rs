@@ -15,7 +15,9 @@ use quire_spec_language::{link, link_native, parse, Limits, LinkLimits, ParsedUn
 fn read(text: &str) -> ParsedUnit {
     parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:native-linking".into(),
+            revision_namespace: "test".into(),
             revision: "draft:1".into(),
         },
         "native-linking.native",

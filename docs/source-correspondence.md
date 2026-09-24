@@ -10,7 +10,8 @@ the original Quire output remains available unchanged.
 
 ## Loading and parsing
 
-`Source::read` accepts explicit source identity/revision/path and bounded UTF-8
+`Source::read` accepts the four explicit source labels of FR-001 (authority,
+identity, revision namespace, revision), a path and bounded UTF-8
 bytes, preserving the original content. The source stores its actual SHA-256;
 `Source::read_verified` additionally compares it with an independently selected
 expected ByteDigest. Digests bind bytes only and use sha2 0.10.9, the same pinned
@@ -38,7 +39,7 @@ validates all of the following before returning an immutable map:
 - corresponding original bytes are identical and appear monotonically inside
   the selected original region, with no overlap;
 - skipped original bytes are admitted by the explicitly selected Layout policy;
-- original and body do not reuse one identity/revision for different bytes;
+- original and body do not reuse one set of source labels for different bytes;
 - the map is within the caller's segment budget and the 50,000 segment ceiling.
 
 Default Layout admits only verbatim correspondence. Three independent flags can

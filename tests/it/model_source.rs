@@ -23,7 +23,9 @@ fn source(text: &str, revision: &str) -> FormalSource {
     FormalSource::new(
         Source::read(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "test:rule-model".into(),
+                revision_namespace: "test".into(),
                 revision: revision.into(),
             },
             "model.json",

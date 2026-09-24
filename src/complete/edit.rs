@@ -105,9 +105,15 @@ fn apply_edits_selected(
             message,
         )
     };
-    if source.identity().revision != expected_revision
-        || new_identity.identity != source.identity().identity
-        || new_identity.revision == source.identity().revision
+    // An edit keeps the source's authority, identity and revision
+    // namespace, and names a different revision (FR-001's four labels).
+    let old = source.identity();
+    if old.revision != expected_revision
+        || new_identity.authority != old.authority
+        || new_identity.identity != old.identity
+        || new_identity.revision_namespace != old.revision_namespace
+        || (&new_identity.revision_namespace, &new_identity.revision)
+            == (&old.revision_namespace, &old.revision)
     {
         return Err(failure(
             CompleteCode::InvalidSourceIdentity,

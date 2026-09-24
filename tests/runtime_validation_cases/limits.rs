@@ -67,7 +67,9 @@ fn unselected_artifact_bytes_count_but_their_objects_are_not_inspected() {
     ];
     let unselected = Snapshot::new(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:unselected".into(),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         unselected,
@@ -578,7 +580,9 @@ fn exact_aggregate_hard_bytes_succeed_and_next_byte_stops_before_indexing() {
         });
         Snapshot::new(
             SourceIdentity {
+                authority: "test".into(),
                 identity: format!("test:unselected-{index}"),
+                revision_namespace: "test".into(),
                 revision: "1".into(),
             },
             data,
@@ -636,7 +640,9 @@ fn maximum_inventory_and_selected_object_counts_can_complete() {
         offered.snapshots.push(
             Snapshot::new(
                 SourceIdentity {
+                    authority: "test".into(),
                     identity: format!("test:extra-{index}"),
+                    revision_namespace: "test".into(),
                     revision: "1".into(),
                 },
                 draft(&models[0]),

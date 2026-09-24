@@ -306,7 +306,9 @@ mod tests {
 
     fn identity() -> SourceIdentity {
         SourceIdentity {
+            authority: "test".into(),
             identity: "ix://example/runtime-rules/spec".into(),
+            revision_namespace: "test".into(),
             revision: "draft:7".into(),
         }
     }
@@ -335,7 +337,9 @@ mod tests {
     fn body_identities() -> SourceIdentities {
         SourceIdentities {
             native: SourceIdentity {
+                authority: "test".into(),
                 identity: "test:quire-body".into(),
+                revision_namespace: "test".into(),
                 revision: "body:7".into(),
             },
             formal: ir::SourceIdentity::new(

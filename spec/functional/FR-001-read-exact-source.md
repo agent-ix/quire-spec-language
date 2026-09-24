@@ -174,7 +174,12 @@ revision namespace and value part of every immutable key
 
 ## Status
 
-Draft. AC-1 to AC-4 describe the existing reader. AC-5 to AC-7 are specified
-under QSL-233 and not implemented: `SourceIdentity`
-(`qsl-foundation/src/source.rs`) holds an identity and a one-string revision,
-and no source carries a `RawSourceRef`. ADR-013 §7 slice S-4b builds them.
+Draft. AC-1 to AC-4 describe the existing reader. AC-5 to AC-10 are
+implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-424:
+`SourceIdentity` (`qsl-foundation/src/source.rs`) carries the four labels,
+admission mints the source's `RawSourceRef`, S0 refusals carry a
+`SourceRegion` or none, `Source::render` and `render_offered` derive line and
+column, and `PackageDeclarations::new` takes the unit's `RawSourceRef`. The
+native-v1 `Diagnostic` still renders a region-less refusal at byte 0 (the
+debt recorded above). The replay executor's recompilation under the
+reference's labels is ADR-013 TK-01's.

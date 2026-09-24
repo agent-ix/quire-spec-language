@@ -374,11 +374,15 @@ pub(super) fn serialize_identity<S: Serializer>(
 ) -> Result<S::Ok, S::Error> {
     #[derive(Serialize)]
     struct Labels<'a> {
+        authority: &'a str,
         identity: &'a str,
+        revision_namespace: &'a str,
         revision: &'a str,
     }
     Labels {
+        authority: &identity.authority,
         identity: &identity.identity,
+        revision_namespace: &identity.revision_namespace,
         revision: &identity.revision,
     }
     .serialize(serializer)

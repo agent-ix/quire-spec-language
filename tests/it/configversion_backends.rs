@@ -51,7 +51,9 @@ fn compile_config<'m>(
     let source = &program["source"];
     let unit = parse(
         SourceIdentity {
+            authority: source["authority"].as_str().unwrap().into(),
             identity: source["identity"].as_str().unwrap().into(),
+            revision_namespace: source["revision_namespace"].as_str().unwrap().into(),
             revision: source["revision"].as_str().unwrap().into(),
         },
         "program.native",
@@ -145,7 +147,9 @@ fn snapshot(
     };
     Snapshot::new(
         SourceIdentity {
+            authority: "test".into(),
             identity: identity.into(),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         SnapshotDraft {
@@ -199,7 +203,9 @@ fn runtime_pair(
     );
     let invocation = Invocation::new(
         SourceIdentity {
+            authority: "test".into(),
             identity: format!("{stem}/invocation"),
+            revision_namespace: "test".into(),
             revision: "1".into(),
         },
         InvocationDraft {

@@ -101,7 +101,9 @@ mod tests {
         "#;
         let NativeUnit::Composed(unit) = parse_native(
             SourceIdentity {
+                authority: "test".into(),
                 identity: "arena-order".into(),
+                revision_namespace: "test".into(),
                 revision: "1".into(),
             },
             "arena.native",

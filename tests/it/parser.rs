@@ -11,7 +11,9 @@ fn document(expression: &str) -> String {
 fn read(bytes: &[u8], limits: Limits) -> Result<ParsedUnit, Box<qsl_foundation::Diagnostic>> {
     parse(
         SourceIdentity {
+            authority: "test".into(),
             identity: "test:source".into(),
+            revision_namespace: "test".into(),
             revision: "test:revision-7".into(),
         },
         "test.native",

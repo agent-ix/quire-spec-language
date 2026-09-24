@@ -43,7 +43,9 @@ fn text(model: &NativeModel, expression: &str) -> String {
 fn source(identity: &str, path: &str, text: &str) -> Source {
     Source::read(
         SourceIdentity {
+            authority: "test".into(),
             identity: identity.into(),
+            revision_namespace: "test".into(),
             revision: "7".into(),
         },
         path,

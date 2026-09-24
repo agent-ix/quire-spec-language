@@ -138,8 +138,9 @@ pub use node_key::{
 // the layer-5 evaluator's tests reach them without widening the items.
 #[cfg(any(test, feature = "test-support"))]
 pub use family::fixtures::{
-    check_context, declaration, declaration_signature, declarations_for, empty_scope,
-    fixture_owner, limits, measure_resolved, root_location, scope_with, SCALAR_LIMITS_UNLIMITED,
+    admitted_source, check_context, declaration, declaration_signature, declarations_for,
+    empty_scope, fixture_source, limits, measure_resolved, root_location, scope_with,
+    SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
@@ -288,6 +289,9 @@ fn function_state<'a>(
 /// ```
 #[derive(Debug)]
 pub struct CheckedGraph {
+    /// FR-001: the checked unit's `RawSourceRef`, for the lock's `sources`
+    /// entry (QSL-6 S1b).
+    source: qsl_foundation::source::provenance::RawSourceRef,
     scope: Scope,
     functions: CheckedFunctions,
     dispatch_tables: Vec<DispatchTable>,
@@ -657,7 +661,8 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        let owner = self.owner;
+        let source = self.source;
+        let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
         let models = self.models;
         // FR-094 (ADR-013 O-01): a check selects one version of each domain
@@ -1012,6 +1017,7 @@ impl PackageDeclarations {
                 .collect(),
         );
         Ok(CheckedGraph {
+            source,
             scope,
             functions,
             dispatch_tables,
@@ -1025,6 +1031,12 @@ impl PackageDeclarations {
 }
 
 impl CheckedGraph {
+    /// FR-001: the `RawSourceRef` of the unit this package was checked
+    /// from, the lock's `sources` entry (QSpec FR-322 `PackageLock`).
+    pub fn source(&self) -> &qsl_foundation::source::provenance::RawSourceRef {
+        &self.source
+    }
+
     /// FR-092/FR-093: every lowered, keyed node of this package's functions.
     pub fn semantic_graph(&self) -> &SemanticGraph {
         &self.semantic_graph
@@ -1270,7 +1282,7 @@ mod tests {
     fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
         PackageDeclarations {
             functions,
-            ..PackageDeclarations::new(family::fixtures::fixture_owner())
+            ..PackageDeclarations::new(family::fixtures::fixture_source())
         }
     }
 
@@ -1296,7 +1308,7 @@ mod tests {
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
-            ..PackageDeclarations::new(family::fixtures::fixture_owner())
+            ..PackageDeclarations::new(family::fixtures::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("one record declaration checks cleanly");
@@ -1343,7 +1355,7 @@ mod tests {
         let types = TypeEnvironment::new([composite], []).expect("one record admits cleanly");
         let graph = PackageDeclarations {
             types,
-            ..PackageDeclarations::new(family::fixtures::fixture_owner())
+            ..PackageDeclarations::new(family::fixtures::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("a package-qualified declared name checks cleanly");
@@ -1432,7 +1444,7 @@ mod tests {
         }];
         let graph = PackageDeclarations {
             enums,
-            ..PackageDeclarations::new(family::fixtures::fixture_owner())
+            ..PackageDeclarations::new(family::fixtures::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect("one enum declaration checks cleanly");
@@ -1627,7 +1639,7 @@ mod tests {
         resolved_signatures.insert(0, (Vec::new(), ValueType::Boolean));
         let refusals = PackageDeclarations {
             resolved_signatures,
-            ..PackageDeclarations::new(family::fixtures::fixture_owner())
+            ..PackageDeclarations::new(family::fixtures::fixture_source())
         }
         .check(CheckingLimits::default())
         .expect_err("index 0 names no function");

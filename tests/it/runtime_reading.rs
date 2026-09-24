@@ -22,10 +22,7 @@ use serde_json::{json, Value};
 
 fn selected(bytes: &[u8]) -> SnapshotRef {
     SnapshotRef::new(
-        SourceIdentity {
-            identity: "test:runtime-current".into(),
-            revision: "1".into(),
-        },
+        SourceIdentity::new("agent-ix", "test:runtime-current", "git", "1"),
         ByteDigest::of(bytes),
     )
     .unwrap()
@@ -115,7 +112,7 @@ fn reads_refuse_stale_selections_and_incompatible_envelopes_before_body_decoding
             Mismatch::Kind => ("kind", json!("invocation"), Code::InvalidRuntimeInput),
             Mismatch::Identity => (
                 "identity",
-                json!({"identity":"foreign", "revision":"1"}),
+                json!({"authority":"test", "identity":"foreign", "revision_namespace":"test", "revision":"1"}),
                 Code::StaleDependency,
             ),
         };
@@ -141,7 +138,9 @@ fn reads_refuse_stale_selections_and_incompatible_envelopes_before_body_decoding
                 assert_eq!(
                     actual,
                     SourceIdentity {
+                        authority: "test".into(),
                         identity: "foreign".into(),
+                        revision_namespace: "test".into(),
                         revision: "1".into()
                     }
                 );
@@ -437,5 +436,51 @@ fn reread_snapshots_and_invocations_reach_actual_native_execution() {
         )
         .unwrap();
         assert!(Invocation::read_verified(&expected, &bytes, ArtifactLimits::default()).is_err());
+    }
+}
+
+/// TC-431 step 3-4 (FR-024-AC-6): four-label snapshot bytes read back under
+/// their reference and satisfy the schema; the same bytes without
+/// `authority` or `revision_namespace`, read under their own digest, refuse
+/// at the envelope stage with `invalid_runtime_input` naming the member.
+#[test]
+#[trace("TC-431", "FR-024-AC-6")]
+fn two_label_snapshot_bytes_refuse_at_the_envelope() {
+    let labels = SourceIdentity::new("agent-ix", "s", "git", "1");
+    let snapshot = Snapshot::new(
+        labels.clone(),
+        full_snapshot().draft().clone(),
+        ArtifactLimits::default(),
+    )
+    .unwrap();
+    let read = Snapshot::read_verified(
+        &snapshot.reference(),
+        snapshot.bytes(),
+        ArtifactLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(read.reference().identity(), &labels);
+    let original: Value = serde_json::from_slice(snapshot.bytes()).unwrap();
+    assert!(schema::validates(&original));
+
+    for member in ["authority", "revision_namespace"] {
+        let mut wire = original.clone();
+        wire["identity"].as_object_mut().unwrap().remove(member);
+        assert!(!schema::validates(&wire), "{member}");
+        let bytes = serde_json::to_vec(&wire).unwrap();
+        let expected = SnapshotRef::new(labels.clone(), ByteDigest::of(&bytes)).unwrap();
+        let failure =
+            Snapshot::read_verified(&expected, &bytes, ArtifactLimits::default()).unwrap_err();
+        assert_eq!(failure.code, Code::InvalidRuntimeInput, "{member}");
+        assert_eq!(failure.stage, InputReadStage::Envelope, "{member}");
+        match failure.cause {
+            InputReadCause::Envelope(ref error) => assert!(
+                error
+                    .to_string()
+                    .contains(&format!("missing field `{member}`")),
+                "{member}: {error}"
+            ),
+            ref cause => panic!("{member}: {cause:?}"),
+        }
     }
 }

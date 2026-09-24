@@ -6,9 +6,10 @@
 
 use qsl_eval::value::{CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
+use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    CheckRefusal, CheckedGraph, CheckingLimits, EnumBinding, PackageDeclarations, SourceOwner,
+    CheckRefusal, CheckedGraph, CheckingLimits, EnumBinding, PackageDeclarations,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -33,10 +34,19 @@ pub const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-/// The source owner every benchmark package is declared under (FR-092:
-/// a package's declared nodes carry their unit's `SourceOwner`).
-pub(crate) fn owner() -> SourceOwner {
-    SourceOwner::new("agent-ix", "qsl-bench").expect("a nonempty owner")
+/// The source reference every benchmark package is declared under: the
+/// empty unit admitted as (`agent-ix`, `qsl-bench`, `bench`, `1`). Its
+/// authority and identity are the declared nodes' owner (FR-001, FR-092).
+pub(crate) fn source() -> RawSourceRef {
+    qsl_foundation::Source::read(
+        qsl_foundation::SourceIdentity::new("agent-ix", "qsl-bench", "bench", "1"),
+        "qsl-bench",
+        b"",
+        0,
+    )
+    .expect("a named empty unit is admitted")
+    .reference()
+    .clone()
 }
 
 fn integer() -> TypeForm {
@@ -81,7 +91,7 @@ pub fn call_chain(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::new(owner())
+        ..PackageDeclarations::new(source())
     }
 }
 
@@ -103,7 +113,7 @@ pub fn independent(functions: usize) -> PackageDeclarations {
         .collect();
     PackageDeclarations {
         functions: declarations,
-        ..PackageDeclarations::new(owner())
+        ..PackageDeclarations::new(source())
     }
 }
 
@@ -191,7 +201,7 @@ pub fn enum_members(functions: usize, binding: &EnumBinding) -> PackageDeclarati
     PackageDeclarations {
         functions: declarations,
         enums: vec![binding.clone()],
-        ..PackageDeclarations::new(owner())
+        ..PackageDeclarations::new(source())
     }
 }
 
