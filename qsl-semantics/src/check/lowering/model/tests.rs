@@ -496,7 +496,13 @@ fn a_relationship_keys_to_its_relation_node() {
 /// parameters, their type nodes and the model rows are P5, PO1 (over S1),
 /// P6, E4 (S2), E5 (R1), E6 (R3), E7, E8 and E9; `Population<Order>[5]` and
 /// `Population<Invoice>[3]` are PO2 and PO3.
-#[trace("FR-094-AC-3", "FR-094-AC-4", "TC-417")]
+///
+/// FR-093-AC-8: the checked `Attribute`, `AllInstances`, `Lookup` (both
+/// absence modes) and `Dispatch` nodes lower to their rows' operation,
+/// member, mode and arguments. A `Pre` node is checked only in a standalone
+/// postcondition expression, which `check` does not lower into the package
+/// graph.
+#[trace("FR-094-AC-3", "FR-094-AC-4", "TC-417", "FR-093-AC-8", "TC-415")]
 #[test]
 fn population_reference_and_model_rows_match_their_vectors() {
     let acme = admitted("1.0.0");
