@@ -8,6 +8,9 @@
 //! and one function `eq(a: R0, b: R0): Boolean { a = b }`. The structural
 //! equality's leaf list (FR-093 "Text leaves") holds one leaf per simple
 //! path through the cluster, on the order of `(n - 1)!` leaves.
+//!
+//! [`deep_wide`] is the QSL-214 review's long-path shape: few enough leaves
+//! for the node ceiling, but each under a long path of long field names.
 
 use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
 use qsl_semantics::check::{LockEvidence, PackageDeclarations};
@@ -66,17 +69,72 @@ fn text_profile() -> DefinitionReference {
 
 /// `records` mutually referencing, Text-reachable records and one
 /// structural equality over `R0`.
+pub fn text_cluster(records: usize) -> PackageDeclarations {
+    let declarations: Vec<_> = (0..records).map(|index| record(index, records)).collect();
+    equality_package(declarations, "R0")
+}
+
+/// The review's deep-and-wide chain length.
+pub const DEEP_WIDE_CHAIN: usize = 46;
+
+/// The review's deep-and-wide tree depth: `2^16` = 65,536 text leaves.
+pub const DEEP_WIDE_LEVELS: usize = 17;
+
+/// A `chain`-record chain `C0 .. C{chain-1}` of optional fields into a
+/// binary tree `T0 .. T{levels-1}` of optional fields, whose last level
+/// holds one text field, every field name `name_bytes` long, and one
+/// structural equality over `C0`: `2^(levels - 1)` text leaves, each under
+/// a path of `2 * (chain + levels - 1) + 1` segments.
 ///
 /// # Panics
 ///
-/// Panics when FR-143 refuses the records, which a harness defect alone
-/// causes: every name is distinct and every field names a declared record.
-pub fn text_cluster(records: usize) -> PackageDeclarations {
-    let declarations: Vec<_> = (0..records).map(|index| record(index, records)).collect();
-    let r0 = || TypeForm::name("R0", SPAN);
+/// Panics when `name_bytes` is zero, or when FR-143 refuses the records,
+/// which a harness defect alone causes.
+pub fn deep_wide(chain: usize, levels: usize, name_bytes: usize) -> PackageDeclarations {
+    assert!(name_bytes > 0, "a field name is at least one byte");
+    let name = |tag: char| format!("{tag}{}", "x".repeat(name_bytes - 1));
+    let optional = |field: String, to: usize| {
+        FieldDeclaration::new(field, ValueType::Composite(handle(to)), Presence::Optional)
+    };
+    let mut declarations: Vec<CompositeDeclaration> = (0..chain)
+        .map(|at| {
+            CompositeDeclaration::new(
+                handle(at),
+                format!("C{at}"),
+                CompositeShape::Record(vec![optional(name('c'), at + 1)]),
+            )
+        })
+        .collect();
+    declarations.extend((0..levels).map(|level| {
+        let at = chain + level;
+        let fields = if level + 1 < levels {
+            vec![optional(name('l'), at + 1), optional(name('r'), at + 1)]
+        } else {
+            let label = TextType::new(0, 8, TextProfile::Nfc).expect("a valid text type");
+            vec![FieldDeclaration::new(
+                name('t'),
+                ValueType::Text(label),
+                Presence::Required,
+            )]
+        };
+        CompositeDeclaration::new(
+            handle(at),
+            format!("T{level}"),
+            CompositeShape::Record(fields),
+        )
+    }));
+    equality_package(declarations, "C0")
+}
+
+/// `declarations` and one structural equality over `compared`.
+fn equality_package(
+    declarations: Vec<CompositeDeclaration>,
+    compared: &str,
+) -> PackageDeclarations {
+    let operand = || TypeForm::name(compared, SPAN);
     let eq = FunctionDeclaration::new(
         "eq",
-        vec![("a".to_owned(), r0()), ("b".to_owned(), r0())],
+        vec![("a".to_owned(), operand()), ("b".to_owned(), operand())],
         TypeForm::builtin(BuiltinType::Boolean, SPAN),
         None,
         Expression::Binary {
@@ -86,7 +144,7 @@ pub fn text_cluster(records: usize) -> PackageDeclarations {
         },
     );
     PackageDeclarations {
-        types: TypeEnvironment::new(declarations, []).expect("FR-143 admits the cluster"),
+        types: TypeEnvironment::new(declarations, []).expect("FR-143 admits the records"),
         functions: vec![eq],
         lock_evidence: LockEvidence::default().with_text_profile(text_profile()),
         ..PackageDeclarations::new(owner())
@@ -101,5 +159,10 @@ mod tests {
     #[test]
     fn a_small_cluster_checks_at_default_limits() {
         assert!(check(text_cluster(3)).is_ok());
+    }
+
+    #[test]
+    fn a_small_deep_wide_package_checks_at_default_limits() {
+        assert!(check(deep_wide(2, 3, 4)).is_ok());
     }
 }

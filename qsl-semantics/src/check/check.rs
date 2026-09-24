@@ -82,26 +82,23 @@ use quire_exact::{Value, ValueType};
 pub const MAX_CHECKING_DEPTH: u64 = 128;
 
 /// NFR-011's default checking node ceiling: twice NFR-001's default
-/// syntax-node ceiling (50,000). A package checked from one source unit
-/// types at most as many expression nodes as that unit has syntax nodes, so
-/// typing can use one half; the other half is for FR-093's text and
-/// recursion leaves, each of which costs one unit.
+/// syntax-node ceiling (50,000). It is one budget for the typed expression
+/// nodes and FR-093's text and recursion leaves together; the factor of two
+/// is the rationale for its size, not a split the checker enforces.
 pub const DEFAULT_CHECKING_NODES: u64 = 100_000;
 
-/// NFR-011's default checking work budget: ten work units per default node
-/// unit. Checking charges one unit per lowered node built, per recursion
-/// group keyed and per composite a text-leaf walk enters, plus each
-/// declaration's preimage writes; the largest recorded checker input (an
-/// 8,000-function call chain, 16,000 nodes) charges 160,000.
-pub const DEFAULT_CHECKING_WORK_BUDGET: u64 = 1_000_000;
-
 /// NFR-011's default per-declaration preimage byte ceiling: NFR-007's
-/// default package byte ceiling (16 MiB), sixteen times NFR-001's default
-/// source ceiling. A declaration's length-prefixed preimage writes each
-/// source string once, plus a tag and an eight-byte prefix per expression
-/// node, so it grows linearly with the source bytes and nodes NFR-001
-/// bounds.
+/// default package byte ceiling (16 MiB).
 pub const DEFAULT_CHECKING_INPUT_BYTES: u64 = 16_777_216;
+
+/// NFR-011's default checking work budget: the preimage byte ceiling
+/// divided by the fewest bytes one charged preimage write produces (one,
+/// for a flag). A declaration charges one work unit per write, so no single
+/// declaration reaches this budget before its preimage reaches
+/// [`DEFAULT_CHECKING_INPUT_BYTES`]. The same budget bounds the key bytes
+/// FR-093's text-leaf walk materializes: each leaf charges its path's key
+/// bytes.
+pub const DEFAULT_CHECKING_WORK_BUDGET: u64 = DEFAULT_CHECKING_INPUT_BYTES;
 
 /// The node admission limits this checker declares before accepting a
 /// package (NFR-011). Every ceiling is used as given, above or below its

@@ -309,5 +309,6 @@ bench-probe:
 	for n in 250 1000 2000 4000 8000; do $(BENCH_PROBE) check chain $$n || exit 1; done
 	for n in 1000 5000; do $(BENCH_PROBE) check independent $$n || exit 1; done
 	for n in 3 4 5 6 7 8 9 10 11 12; do $(BENCH_PROBE) check text-cluster $$n || exit 1; done
+	for b in 1 64 256; do $(BENCH_PROBE) check deep-wide $$b || exit 1; done
 	for n in 1 1000; do $(BENCH_PROBE) eval $$n || exit 1; done
 	$(BENCH_PROBE) model 4000 4 100

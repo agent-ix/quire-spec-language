@@ -570,7 +570,7 @@ fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
         CheckCause::ResourceExhausted {
             stage: CheckingStage::Typing,
             kind: CheckingLimitKind::Nodes,
-            limit: crate::check::DEFAULT_CHECKING_NODES,
+            limit: 100_000,
         }
     );
     assert_eq!(refusals[0].cause.cause(), Some("insufficient-next-charge"));
@@ -598,7 +598,7 @@ fn a_checked_result_records_its_effective_limits() {
             defaults.input_bytes(),
             defaults.work_budget()
         ),
-        (100_000, 128, 16_777_216, 1_000_000)
+        (100_000, 128, 16_777_216, 16_777_216)
     );
     let checked = eq_over_node(vector_lock(), defaults).expect("eq over Node checks");
     assert_eq!(checked.effective_limits(), defaults);
@@ -624,4 +624,90 @@ fn a_checked_result_records_its_effective_limits() {
             .expect("a Boolean name checks");
         assert_eq!(expression.effective_limits(), limits);
     }
+}
+
+/// TC-420 step 3 (NFR-011-M-3, NFR-011-M-4): `CheckingLimits::new` sets the
+/// node and depth ceilings and keeps the default input-byte and work
+/// ceilings.
+#[trace("NFR-011-M-3", "NFR-011-M-4", "TC-420")]
+#[test]
+fn new_keeps_the_default_byte_and_work_ceilings() {
+    let limits = CheckingLimits::new(7, 9).expect("9 is within the maximum depth");
+    assert_eq!(
+        (
+            limits.nodes(),
+            limits.depth(),
+            limits.input_bytes(),
+            limits.work_budget()
+        ),
+        (7, 9, 16_777_216, 16_777_216)
+    );
+}
+
+/// A `chain`-record chain of optional fields named `name` into a binary
+/// tree of `levels` levels of optional fields, whose last level holds a
+/// text field: `2^(levels - 1)` text leaves, each under a path of about
+/// `2 * (chain + levels)` segments.
+fn deep_wide(chain: usize, levels: usize, name: &str) -> Vec<CompositeDeclaration> {
+    let link = |to: String| ValueType::Composite(handle(&to));
+    let mut records: Vec<CompositeDeclaration> = (0..chain)
+        .map(|at| {
+            let next = if at + 1 < chain {
+                format!("C{}", at + 1)
+            } else {
+                "T0".to_owned()
+            };
+            record(&format!("C{at}"), vec![optional(name, link(next))])
+        })
+        .collect();
+    records.extend((0..levels).map(|level| {
+        let fields = if level + 1 < levels {
+            let next = format!("T{}", level + 1);
+            vec![
+                optional(&format!("{name}l"), link(next.clone())),
+                optional(&format!("{name}r"), link(next)),
+            ]
+        } else {
+            vec![required(name, text(8, TextProfile::Nfc))]
+        };
+        record(&format!("T{level}"), fields)
+    }));
+    records
+}
+
+/// TC-420 step 5 (NFR-011-M-4): a leaf list whose count fits the node
+/// ceiling but whose paths are long -- 65,536 text leaves under 256-byte
+/// field names, each path 35 segments -- refuses at the default ceilings
+/// on the work budget, which each leaf's materialized key bytes are
+/// charged to, and yields no node. (The chain is one record long: a
+/// 30-record chain overflows a debug test thread's 2 MiB stack in
+/// composite lowering, before any leaf walk; `qsl-bench`'s `deep-wide`
+/// probe runs the reviewer's 46-record chain in release.)
+#[trace("NFR-011-M-4", "TC-420")]
+#[test]
+fn long_leaf_paths_refuse_on_the_default_work_budget() {
+    let name = format!("n{}", "x".repeat(255));
+    let refusals = eq_over(
+        deep_wide(1, 17, &name),
+        "C0",
+        vector_lock(),
+        CheckingLimits::default(),
+    )
+    .expect_err("the leaves' key bytes pass the default work budget");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::ResourceExhausted {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::WorkBudget,
+            limit: 16_777_216,
+        }
+    );
+    // The same shape with one-letter names and a shorter tree fits.
+    eq_over(
+        deep_wide(4, 5, "n"),
+        "C0",
+        vector_lock(),
+        CheckingLimits::default(),
+    )
+    .expect("sixteen short leaves check");
 }

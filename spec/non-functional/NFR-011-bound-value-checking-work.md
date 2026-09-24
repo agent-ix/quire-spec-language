@@ -43,65 +43,117 @@ domain bound (NFR-001).
 | Checking node ceiling | At most the selected ceiling (default 100000 units) per checked package | 100000 units by default | negative-abuse-testing |
 | Checking nesting depth | At most the selected ceiling (default 128 levels, also the maximum) per expression | 128 levels | negative-abuse-testing |
 | Declaration preimage bytes | At most the selected ceiling (default 16777216 bytes) per declaration | 16777216 bytes by default | negative-abuse-testing |
-| Checking work | At most the selected ceiling (default 1000000 work units) per checked package | 1000000 units by default | negative-abuse-testing |
+| Checking work | At most the selected ceiling (default 16777216 work units) per checked package | 16777216 units by default | negative-abuse-testing |
 
 ## Counter definitions
 
 - **Node unit.** Typing charges one unit for each expression node it types.
   The count covers the whole package, not each declaration (FR-062-AC-11).
   Lowering charges one unit for each text leaf and each recursion leaf that
-  FR-093's text-leaf walk appends.
+  FR-093's text-leaf walk appends. Typed nodes and leaves share the one
+  budget.
 - **Nesting level.** One level is one nested expression that typing enters.
   The same count bounds the depth of a text-leaf walk.
 - **Preimage byte.** FR-062's length-prefixed encoding of one parsed
   declaration: an eight-byte prefix and the bytes for each written string,
   eight bytes for each number and one byte for each flag.
-- **Work unit.** Each declaration charges its preimage write count. Lowering
-  charges one unit for each node it builds and each composite a text-leaf
-  walk enters. Keying a recursion group charges the group's key work.
+- **Work unit.** Each declaration charges one unit per preimage write.
+  Lowering charges one unit for each node it builds and each composite a
+  text-leaf walk enters. Keying a recursion group charges the group's key
+  work. Each leaf a text-leaf walk appends charges its key bytes: the
+  length of each segment's key spelling (`field:<name>`, `position:<n>`,
+  `inner`) along its path, plus `recursion:<d>` for a recursion leaf.
 
 ## Default derivation
 
 - **Nodes, 100000.** Twice NFR-001's default syntax-node ceiling of 50000.
   A package checked from one source unit types at most as many expression
-  nodes as that unit has syntax nodes. Typing can therefore use one half of
-  the ceiling, and the other half is left for FR-093's leaves.
-- **Nesting depth, 128.** The largest depth that keeps each recursive
-  checking pass within the host stack (`MAX_CHECKING_DEPTH`).
+  nodes as that unit has syntax nodes, so the factor of two leaves room for
+  at least as many FR-093 leaves as typed nodes. The checker does not split
+  the budget; typed nodes and leaves draw on it in the order they are
+  charged.
+- **Nesting depth, 128.** The largest depth the checker admits
+  (`MAX_CHECKING_DEPTH`). It keeps each recursive checking pass within a
+  release build's default thread stack. It does not bound composite
+  nesting in type lowering: in a debug build, a chain of about 30 or more
+  nested records can overflow a 2 MiB thread stack before this limit
+  applies (QSL-224).
 - **Preimage bytes, 16777216.** NFR-007's default package byte ceiling,
-  sixteen times NFR-001's default source ceiling. A declaration's encoding
-  writes each of its source strings once, plus a tag and an eight-byte
-  length prefix for each node. Its size therefore grows linearly with the
-  declaration's source bytes and nodes, both of which NFR-001 bounds.
-- **Work, 1000000.** Ten work units for each default node unit. The largest
-  recorded checker input is an 8000-function call chain. It uses 16000
-  nodes and charges 160000 work units.
+  sixteen times NFR-001's default source ceiling. A declaration's preimage
+  is not linear in its source: each parameter or result typed with an enum
+  writes one string per case, about 72 bytes each, so an enum reference of
+  one token can write kilobytes. The ceiling bounds one declaration's
+  preimage whatever its source length.
+- **Work, 16777216.** The preimage byte ceiling divided by the fewest bytes
+  one charged write produces (one, for a flag). A declaration charges one
+  work unit per write, and its preimage bytes are checked before those
+  writes are charged. A declaration's writes therefore never reach the work
+  ceiling before its preimage reaches the byte ceiling: the byte ceiling
+  binds first.
+
+The work ceiling is cumulative over the package, so it can bind before any
+one declaration reaches the byte ceiling. It does so only when the
+package's declarations together write more than 16777216 times. For
+example, 4000 functions each with one parameter over a 250-case enum write
+1068000 times, and the package checks. A package whose enum references write
+cases times references above that total, such as a 20000-case enum
+referenced by 1000 parameters, refuses on work.
+
+The same ceiling bounds FR-093's leaf output. The leaf count is at most the
+node ceiling, and the leaves' key bytes together are at most the work
+ceiling.
 
 Every existing fixture and conformance vector checks within these defaults.
-The largest recorded input uses 16% of the node ceiling and 16% of the work
-ceiling.
+The largest recorded checker input by node units is FR-093's eight-record
+cluster (95904 units, 96% of the node ceiling). The largest by work is an
+8000-function call chain (160000 units, 1% of the work ceiling).
 
 ## Cost at the defaults
 
 Width, not depth, is the risk. FR-093's leaf list over `n` mutually
 referencing records that can all reach a text type holds about `(n - 1)!`
-leaves. Each leaf costs one node unit, so the node ceiling, not `(n - 1)!`,
-bounds the walk. The walk holds at most one leaf per node unit, and each
-leaf's path is at most twice the depth ceiling in segments, so its memory
-grows at most linearly with `n` before it refuses.
+leaves. Long field names or deep paths make each leaf's key long. The walk
+shares every path prefix between the leaves under it, and it materializes
+no leaf path until the walk completes. A refused walk therefore holds its
+path tree, not one path per leaf.
 
-`qsl-bench/BASELINE.md` records the measured curve. At the defaults the
-8-record cluster checks, and every cluster from 9 to 12 records refuses on
-the node ceiling in about 0.1 s, with peak RSS under 100 MB.
+The enforced bound is on counts: at most 100000 leaves, and at most
+16777216 key bytes across all of them. Memory follows from these counts.
+`qsl-bench/BASELINE.md` records the measurements behind the figures below:
+
+- Every Text-reachable cluster from 9 to 12 records refuses on the node
+  ceiling in about 15 ms, with peak RSS about 18 MB.
+- The QSL-214 review's deep-and-wide shape is a 46-record chain into a
+  17-level binary tree, with 65536 leaves. With 1-, 64- and 256-byte field
+  names it refuses on the work ceiling in at most 17 ms, with peak RSS at
+  most 11.5 MB.
+- The largest admitted packages sit near a ceiling:
+  - The eight-record cluster (95904 leaves) peaks at 327 MB.
+  - A 4-record chain into the same tree charges 16.2 million key bytes and
+    peaks at 674 MB.
+- The measured rate is about 41 bytes of memory per charged key byte, plus
+  about 3.4 KB per leaf. From that rate, memory at the defaults is
+  estimated at about 1 GB. This is an estimate, not a bound the limits
+  enforce.
 
 ## Verification
 
-TC-420: at the default ceilings a nine-record Text-reachable cluster refuses,
-naming the node ceiling and its default bound. A checked package and a
-checked expression record the default ceilings, and record a caller's
-ceilings as given, above or below the defaults. The refusal at a
-caller-selected bound is covered for nodes by TC-381, for nesting depth by
-FR-062-AC-7, and for preimage bytes and work by FR-062-AC-5 (TC-160).
+TC-420 covers the defaults:
+
+- At the default ceilings, a nine-record Text-reachable cluster refuses,
+  naming the node ceiling and its default bound.
+- The review's long-path shape refuses, naming the work ceiling and its
+  default bound.
+- A package of 4000 enum-parameter functions checks at the defaults.
+- With the work ceiling at its default ratio to the byte ceiling, a
+  declaration past the byte ceiling refuses on bytes, not work.
+- `CheckingLimits::new` keeps the default byte and work ceilings.
+- A checked package and a checked expression record the default ceilings,
+  and record a caller's ceilings as given, above or below the defaults.
+
+The refusal at a caller-selected bound is covered for nodes by TC-381, for
+nesting depth by FR-062-AC-7, and for preimage bytes and work by FR-062-AC-5
+(TC-160).
 
 ## Dependencies
 

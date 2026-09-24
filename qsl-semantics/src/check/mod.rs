@@ -361,7 +361,11 @@ impl CheckedExpression {
         self.slots
     }
 
-    /// NFR-011: the ceilings this expression was checked under.
+    /// NFR-011: the ceilings this expression was checked under. A
+    /// standalone expression check applies the node and depth ceilings
+    /// only: it encodes no declaration preimage and charges no work, so the
+    /// input-byte and work ceilings are recorded here as given but were not
+    /// applied.
     pub fn effective_limits(&self) -> CheckingLimits {
         self.effective_limits
     }
