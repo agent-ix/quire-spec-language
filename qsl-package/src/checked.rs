@@ -66,6 +66,28 @@ use qsl_semantics::value::IDENTITY_LIMITS;
 /// decoded bytes is exposed at all; the only way to attempt it is the same
 /// private struct literal row 2's doctest already forecloses, so row 6 is
 /// covered by row 2 rather than carrying its own separate doctest.
+///
+/// TC-244 row 3 (FR-087-AC-2, R-10): a wire-admitted `VerifiedPackage`
+/// has no conversion into a `CheckedPackage`:
+/// ```compile_fail,E0277
+/// use qsl_package::CheckedPackage;
+/// use qsl_semantics::library::VerifiedPackage;
+/// fn forge(verified: VerifiedPackage) -> CheckedPackage {
+///     verified.into()
+/// }
+/// ```
+///
+/// TC-244 row 4: nor has an `ImportView`:
+/// ```compile_fail,E0277
+/// use qsl_package::CheckedPackage;
+/// use qsl_semantics::library::ImportView;
+/// fn forge(view: ImportView) -> CheckedPackage {
+///     view.into()
+/// }
+/// ```
+///
+/// Row 5, a `protocol_artifact`-read value, is at the root crate's
+/// `protocol_artifact::wire::Package`, the only crate that can name both.
 #[derive(Debug)]
 pub struct CheckedPackage {
     graph: CheckedGraph,

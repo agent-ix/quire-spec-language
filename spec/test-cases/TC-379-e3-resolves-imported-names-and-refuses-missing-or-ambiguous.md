@@ -40,4 +40,4 @@ missing or ambiguous name with the E3 refusal codes. Scope: FR-087-AC-13.
 
 ## Status
 
-Planned; no test backs this case.
+Planned; no test backs this case. It is blocked on a spec gap: FR-087 Status, AC-13.

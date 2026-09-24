@@ -604,7 +604,8 @@ the candidate presented, so `LibraryRefusal::StaleDependency` carries
 `import: ImportDeclaration`; AC-11 lists this payload change.
 
 Backed: FR-087-AC-3 (TC-253), FR-087-AC-4 (TC-254), FR-087-AC-5 (TC-245)
-and FR-087-AC-12 (TC-282). TC-253's steps are backed as follows. Steps 1, 2, 4 and 8 run on
+and FR-087-AC-12 (TC-282), and, below, AC-1, AC-2, AC-6, AC-8, AC-10 and
+AC-11. TC-253's steps are backed as follows. Steps 1, 2, 4 and 8 run on
 the wire path (`checked_v2` tests). Step 3 runs at the `library` level
 (`library::binding_tests`), because on the wire path IR refuses a
 non-recomputing `package_id` first and names it `stale_dependency`
@@ -646,16 +647,68 @@ name passed as `&[u8]`; a closure without type annotations, including one
 held in a `fn(&str) -> Option<WireNodeId>` variable; or a local variable's
 type inside a function body.
 
-AC-1 (constructor/field privacy across all five stage-output types) stays
-an Inspection criterion across all five types together and is not flipped
-here. For `VerifiedPackage` and `ImportView`, crate-external construction
+For `VerifiedPackage` and `ImportView`, crate-external construction
 is shown by `compile_fail` doctests: a struct literal of either type, and a
 call to `verify_binding` with a hand-built candidate. The doctests show only
 that a crate-external caller fails to compile; stable rustdoc does not check
-a `compile_fail` block's error code. Still to land: the retirement of
-`ResolvedSourcePackage` (AC-7) and E3 imported-name resolution (AC-13,
-TC-379, Planned). AC-2, AC-6, AC-8, AC-9, AC-10 and AC-11 have no traced
-test yet.
+a `compile_fail` block's error code.
+
+QSL-158 backs AC-1 (TC-243), AC-2 (TC-244), AC-6 (TC-255), AC-8 and AC-10
+(TC-247) and AC-11 (TC-281) with `xtask::typestate_scan`, a `syn` scan of
+the shipped code of the root crate and the layer crates (`#[cfg(test)]`
+items and test module files excluded), run by `make ci`:
+
+- AC-1: each of the five stage-output types has one definition in the
+  layer crates, in its owning module, with every field private and no type
+  or const generic parameter. The root crate's only namesakes are the two
+  lane-private types AC-8 and AC-10 name.
+- AC-2: `PackageDeclarations::check` and `CheckedPackage::link` are the
+  only functions returning an owned `CheckedGraph` or `CheckedPackage`, so
+  a `From` impl or decoder into either fails the scan. `compile_fail`
+  doctests cover TC-244 rows 1 to 5: rows 3 to 5 (`VerifiedPackage`,
+  `ImportView` and `protocol_artifact::AdmittedPackage` into checked
+  typestate) were confirmed, with `compile_fail` removed, to fail with
+  E0277.
+- AC-6: no shipped function in `library`, `qsl-package` or `qsl-replay`
+  mints a `NodeKey`. Every shipped mint is in `check` or is T12-B's one
+  debt entry, and no minting function names `WireNodeId`,
+  `PackageNodeKey`, `ImportView` or `VerifiedPackage`. TC-255 step 6's
+  transitive call-graph trace is not automated.
+- AC-8 and AC-10: the two `EmittedPackage`s are defined at their two paths
+  with no field in common. `src/package/features.rs` and `view.rs` import
+  `crate::checking::CheckedPackage`, and no root-crate file imports a
+  canonical and a lane-private namesake together.
+- AC-11: `value::library` and `value::package_identity` are gone, no
+  `ExportIdentity` exists, and `library` defines no `resolve_name` and no
+  field or variant holding a `NodeKey`.
+
+AC-7 (TC-246) and AC-13 (TC-379) are not delivered, because each depends
+on something no requirement defines:
+
+- **AC-7.** `ResolvedSourcePackage` is the output of
+  `complete::resolve_source_package`, which resolves a source's `profile`,
+  `import` and `model` selections against a `DefinitionCatalog` and a
+  `ModelCatalog`: the definition dependency closure, the definition/model
+  substitution refusals and the catalog limits. `VerifiedPackage` and
+  `ImportView` admit v2 package bytes by `package_id`, and neither resolves
+  a definition or a compiled model. The source `import` production selects
+  a definition, `qsl_foundation`'s `ImportSelection { definition:
+  DefinitionRef }`, not a library `package_id`. `DefinitionCatalog` and
+  `ModelCatalog` have no other user. Removing the type deletes that
+  resolution with no successor, which TC-246 step 4 forbids. ADR-011 §8
+  maps lane C2 to I2 and `library`, which covers library imports only; no
+  requirement or ADR-013 §7 slice owns the definition and model catalog
+  half.
+- **AC-13.** E3's rule is specified, but its input and the use of its
+  output are not. `PackageDeclarations`, the checker's input, carries no
+  import declaration. S2 produces none. The only source `import` form is
+  the definition selection above. A resolved `l::R` also has no checked
+  representation: `ImportView` exposes names and `WireNodeId`s and no
+  declaration shape (T-2), and `CheckedPackage`'s E4 dependency closure
+  stays empty until M-4. The resolution against an `ImportView`
+  (`check::imports::ImportedNames`) exists and names QSL-6 (ADR-011 M-4) as
+  its caller. Remaining work: QSL-6, once a source import form reaches
+  the checker.
 
 **Owner ruling on QSL-158 (2026-09-21): ADR-013 T-1 stands unamended.**
 `CheckedPackage` is canonically layer-4 `package`; `check`'s S3 output is
