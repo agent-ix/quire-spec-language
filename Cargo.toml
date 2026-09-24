@@ -2,6 +2,11 @@
 members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-bench"]
 resolver = "2"
 
+[workspace.dependencies]
+# ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation, pinned once for
+# every crate that encodes an identity (QSL-194).
+quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", rev = "0143a2b76be9a51941e95ee2613f2d5608d756fe" }
+
 [package]
 name = "quire-spec-language"
 version = "0.2.0"

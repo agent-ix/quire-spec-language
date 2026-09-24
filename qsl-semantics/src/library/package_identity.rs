@@ -15,6 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value};
 
 use crate::value::semantic_node::is_qualified_name;
+use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::NODE_KEY_DOMAIN;
 
@@ -363,16 +364,13 @@ fn declaration_mismatch(shape: &NodeShape) -> Option<PreimageDefect> {
 /// each nominal declaration in its `identity_projection`.
 ///
 /// Canonicity is enforced by requiring `bytes` to be byte-identical to the
-/// re-serialization of the JSON value they parse to: object members in
-/// ascending UTF-8 byte order, no insignificant whitespace and one string and
-/// number spelling per value. That is RFC 8785 JCS for every preimage whose
-/// member names are ASCII, which is every name this schema defines and every
-/// name QSpec 82f84d3 gives a projection node. It is stricter than JCS, never
-/// weaker: a preimage that JCS would order differently (member names outside
-/// ASCII, whose UTF-16 code-unit order differs from their UTF-8 byte order) is
-/// refused as [`PreimageDefect::NonCanonical`] rather than admitted under a
-/// second `package_id`. Admitting those names needs a real JCS encoder, which
-/// is the Complete-V1 writer's contract, not this reader's.
+/// RFC 8785 encoding of the JSON value they parse to, produced by
+/// `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC 8785
+/// implementation): object members in UTF-16 code-unit order, no
+/// insignificant whitespace and one string and number spelling per value. A
+/// member name outside ASCII is admitted exactly when it is in that order.
+/// A value with no RFC 8785 encoding (an integer no IEEE 754 double equals)
+/// has no canonical bytes and is refused as [`PreimageDefect::NonCanonical`].
 pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations, PreimageDefect> {
     let value: Value = serde_json::from_slice(bytes).map_err(|_| PreimageDefect::NotObject)?;
     let preimage = members(&value, &PREIMAGE_REQUIRED, &[]).map_err(|defect| match defect {
@@ -380,7 +378,7 @@ pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations
         MemberDefect::Missing(name) => PreimageDefect::MissingMember(name),
         MemberDefect::Unknown(name) => PreimageDefect::UnknownMember(name),
     })?;
-    if serde_json::to_vec(&value).ok().as_deref() != Some(bytes) {
+    if quire_canonical::to_vec(&value, LIMITS).ok().as_deref() != Some(bytes) {
         return Err(PreimageDefect::NonCanonical);
     }
     if preimage.get("version").and_then(Value::as_str) != Some(PACKAGE_ID_VERSION) {
@@ -515,6 +513,45 @@ mod tests {
 
     use super::fixtures::{hex, one_node_preimage};
     use super::*;
+
+    /// QSL-194 (ADR-013:113): the canonicity check is the `quire-canonical`
+    /// encoder's own output, so it admits a member name outside ASCII
+    /// exactly when the name is in RFC 8785's UTF-16 code-unit order. `😀`
+    /// (UTF-16 `D83D DE00`) sorts before U+E000 (`E000`) in RFC 8785, but
+    /// after it in UTF-8 byte order (`F0` > `EE`): the RFC 8785 order is
+    /// admitted, and the UTF-8 order the old re-serialize-and-compare check
+    /// required is refused as non-canonical. A trailing space, a repeated
+    /// member and a non-canonical number spelling stay refused.
+    #[trace("TC-227", "FR-307-AC-1")]
+    #[test]
+    fn canonicity_admits_a_non_ascii_member_name_in_rfc_8785_order() {
+        let mut preimage: Value =
+            serde_json::from_slice(&one_node_preimage(b"L::R", &["L", "R"])).unwrap();
+        preimage["edition"]["names"] = serde_json::json!({"\u{E000}": 1, "😀": 2});
+        let rfc_8785 = quire_canonical::to_vec(&preimage, LIMITS).unwrap();
+        let text = std::str::from_utf8(&rfc_8785).unwrap();
+        assert!(text.contains("{\"😀\":2,\"\u{E000}\":1}"), "{text}");
+        assert!(project_declarations(&rfc_8785).is_ok());
+
+        let utf8_order = serde_json::to_vec(&preimage).unwrap();
+        assert_ne!(utf8_order, rfc_8785);
+        assert_eq!(
+            project_declarations(&utf8_order).unwrap_err(),
+            PreimageDefect::NonCanonical
+        );
+
+        let mut spaced = rfc_8785.clone();
+        spaced.push(b' ');
+        assert_eq!(
+            project_declarations(&spaced).unwrap_err(),
+            PreimageDefect::NonCanonical
+        );
+        let float = text.replacen("\"\u{E000}\":1", "\"\u{E000}\":1.0", 1);
+        assert_eq!(
+            project_declarations(float.as_bytes()).unwrap_err(),
+            PreimageDefect::NonCanonical
+        );
+    }
 
     /// FR-307: the wire node id `library::package_identity` derives for a
     /// nominal declaration is the projection node's own `node_id` digest,

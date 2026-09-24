@@ -130,7 +130,7 @@ ci-clean-build:
 ci-docs:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
 
-ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe route-lint cargo-deny-bans ci-docs
+ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder
 
 # QSL-156 A4a: the FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
@@ -198,7 +198,7 @@ IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint arch-lint-duplicate-revisions-lane
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint arch-lint-duplicate-revisions-lane arch-lint-canonical-encoder
 
 arch-lint-direction:
 	cargo run --locked -p arch-lint -- direction \
@@ -218,12 +218,19 @@ arch-lint-duplicate-revisions-lane:
 	cargo run --locked -p arch-lint -- duplicate-revisions \
 		--lockfile integration/current-head/Cargo.lock
 
-# Runs the three checks that need only this repository (#249 review round 2
+# ADR-013 §2 (ADR-013:113, QSL-194): no second canonical encoder beside
+# `quire-canonical` -- a shipped file pairing a `serde_json` serializer with
+# a hash fails, named files excepted with their reason. Needs only this
+# repository and passes on it, so unlike the checks above it is part of `ci:`.
+arch-lint-canonical-encoder:
+	cargo run --locked -p arch-lint -- canonical-encoder --qsl .
+
+# Runs the four checks that need only this repository (#249 review round 2
 # L-2: `arch-lint-duplicate-revisions-lane` was previously checkable only on
 # request, with no target routinely enforcing R3's convergence).
 # `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE (see above) and is
 # run separately.
-arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions arch-lint-duplicate-revisions-lane
+arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions arch-lint-duplicate-revisions-lane arch-lint-canonical-encoder
 
 # FR-058 (ADR-011 §7.1 T-12, #215): the current-head integration lane. Not
 # part of `ci:` -- it needs network access to fetch each repository's

@@ -5,7 +5,7 @@ publish = false
 edition = "2021"
 rust-version = "1.98"
 license = "AGPL-3.0-or-later"
-description = "FR-059/FR-060/FR-061 architecture-conformance checks over the QSL/IR/RT/CG ecosystem."
+description = "FR-059/FR-060/FR-061 and ADR-013 §2 architecture-conformance checks over the QSL/IR/RT/CG ecosystem."
 
 # A workspace member of its own, like `xtask`, so its `syn`/`proc-macro2`
 # dependencies stay out of the `quire-spec-language` library's dependency

@@ -40,6 +40,7 @@ use std::collections::BTreeMap;
 
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::library::PackageId;
+use qsl_semantics::value::IDENTITY_LIMITS;
 
 /// S4 in-process checked package (ADR-013 T-1): this package's own checked
 /// declarations (a [`CheckedGraph`], S3's stage output) plus the checked
@@ -155,18 +156,14 @@ impl EmittedPackage {
         identity_preimage: &quire_contract_ir::CheckedPackageIdentityPreimageV2,
         bytes: Vec<u8>,
     ) -> Self {
-        // Matches IR's own `digest_json` procedure: re-serialize through
-        // `serde_json::Value` (whose `Map` sorts keys lexicographically
-        // without this crate's `preserve_order` feature) before hashing,
-        // rather than hashing the typed struct's own `Serialize` output
-        // directly, which would emit fields in declaration order, not RFC
-        // 8785 order.
-        let preimage_value = serde_json::to_value(identity_preimage).expect(
-            "CheckedPackageIdentityPreimageV2 is composed only of owned strings and vecs, \
-             which always serialize",
-        );
-        let preimage_bytes = serde_json::to_vec(&preimage_value)
-            .expect("a serde_json::Value re-serializes without error");
+        // RFC 8785 bytes from `quire-canonical` (ADR-013 §2, ADR-013:113:
+        // the one RFC 8785 implementation), encoded straight from the typed
+        // preimage: the encoder orders members itself. A preimage of owned
+        // strings and vectors always has an encoding, and `LIMITS` sets no
+        // byte ceiling; the one refusal left is a failed heap reservation,
+        // which the `serde_json` encoder this replaced aborted on.
+        let preimage_bytes = quire_canonical::to_vec(identity_preimage, IDENTITY_LIMITS)
+            .unwrap_or_else(|error| panic!("CheckedPackageIdentityPreimageV2 encodes: {error}"));
         Self {
             bytes,
             package_id: PackageId::of_preimage(&preimage_bytes),
@@ -257,5 +254,30 @@ mod tests {
         // Adverse (R-05): a node `check` never keyed resolves to nothing.
         let other = quire_exact::NodeKey::from_digest([8_u8; 32]);
         assert_eq!(package.graph().resolve_declaration(other), None);
+    }
+
+    /// QSL-194 golden vector for `package_id`
+    /// (`quire.package.semantic/v2`): the identity preimage's RFC 8785 text,
+    /// written out by hand, and its SHA-256. `EmittedPackage::new` encodes
+    /// IR's typed preimage through `quire-canonical`, and the `serde_json`
+    /// `Value` round trip it replaced emitted the same text, so the minted
+    /// `package_id` is unchanged.
+    #[trace("TC-253", "FR-087-AC-3")]
+    #[test]
+    fn package_id_matches_its_golden_vector() {
+        use sha2::{Digest as _, Sha256};
+        const TEXT: &str = r#"{"definition_selections":[],"dependency_selections":[],"edition":{"definition":{"authority":"pkg","digest":"1c3a0ee911df60393f84d48f2779a0d9c39df4bef16ac5dd6bb5c1620be1eda9","digest_domain":"quire.definition.bytes/v1","identity":"edition-def","revision":{"namespace":"semver","value":"1"}},"role":"edition"},"identity_projection":[{"body":{"term":"literal","type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":{"qualified_name":["R"]},"dependencies":[],"node_id":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"node_tag":"scalar_type","schema_version":"quire.checked-semantic-graph/v2","semantic_form":"boolean","semantic_type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"}}],"model_selections":[],"profile_selections":[],"required_features":[],"version":"quire.checked-package-id/v2"}"#;
+        const DIGEST: &str = "5023edc801f355fbf8299ff374a5e9e3b3fc50ca51961947eecc5b403367f6b4";
+        assert_eq!(format!("{:x}", Sha256::digest(TEXT.as_bytes())), DIGEST);
+        let preimage: quire_contract_ir::CheckedPackageIdentityPreimageV2 =
+            serde_json::from_str(TEXT).expect("the vector is a v2 identity preimage");
+        assert_eq!(
+            EmittedPackage::new(&preimage, Vec::new())
+                .package_id()
+                .hex(),
+            DIGEST
+        );
+        let value: serde_json::Value = serde_json::from_str(TEXT).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), TEXT);
     }
 }

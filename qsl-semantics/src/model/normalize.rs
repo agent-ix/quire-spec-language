@@ -210,15 +210,18 @@ use crate::model::accounting::{
     Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
 };
 use crate::model::conformance::generals_by_specific;
+use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, PopulationRecord,
 };
 use crate::model::key::{
-    digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId,
-    EffectiveIdExt, Fact, RULE_INHERIT, RULE_QUALIFY, RULE_REDEFINE,
+    canonical_len, sha256_and_len, DeclarationKey, EffectiveDeclarationPreimage,
+    EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, RuleRefWire, RULE_INHERIT,
+    RULE_QUALIFY, RULE_REDEFINE,
 };
 use qsl_foundation::diagnostic::Code;
 use quire_exact::length_amount;
+use serde::Serialize;
 
 /// Re-exported from [`crate::model::refusal`] (#141 finding 4): that module
 /// is lower-level than this one so [`crate::model::key`] can depend on the
@@ -466,7 +469,7 @@ struct ViewBody {
     /// exact `normalize.hash` charge order (`value-accounting.md`:495).
     /// Non-empty by type: a domain package with no declared object type
     /// still gets one universe, with empty `root_types`. Not part of the
-    /// view's own preimage (`to_json`), so it adds no identity of its own.
+    /// view's own preimage (`wire`), so it adds no identity of its own.
     universes: ObjectUniverses,
     /// Every declared object type's position in `universes`: its own
     /// connected component's universe.
@@ -477,46 +480,28 @@ struct ViewBody {
 }
 
 impl ViewBody {
-    /// The view preimage under `model_selection`: the package's own header
-    /// and every declaration, never the universes or populations.
-    fn to_json(&self, model_selection: &DomainPackageRef) -> serde_json::Value {
-        use serde_json::{Map, Value};
-        let mut object = Map::new();
-        object.insert(
-            "version".to_owned(),
-            Value::String(crate::model::key::EFFECTIVE_VIEW_DOMAIN.to_owned()),
-        );
-        object.insert("model_selection".to_owned(), model_selection.to_json());
-        object.insert(
-            "rules".to_owned(),
-            Value::Object({
-                let mut rules = Map::new();
-                rules.insert(
-                    "identity".to_owned(),
-                    Value::String(crate::model::key::RULES_IDENTITY.to_owned()),
-                );
-                rules.insert(
-                    "revision".to_owned(),
-                    Value::String(crate::model::key::RULES_REVISION.to_owned()),
-                );
-                rules
-            }),
-        );
-        object.insert(
-            "declarations".to_owned(),
-            Value::Array(
-                self.declarations
-                    .iter()
-                    .map(|entry| {
-                        let mut e = Map::new();
-                        e.insert("effective_id".to_owned(), entry.effective_id.to_json());
-                        e.insert("preimage".to_owned(), entry.preimage.to_json());
-                        Value::Object(e)
-                    })
-                    .collect(),
-            ),
-        );
-        Value::Object(object)
+    /// The view's `quire.model.effective-view/v1` preimage form under
+    /// `model_selection`: `{version, model_selection, rules, declarations}`,
+    /// each declaration `{effective_id, preimage}` -- the package's own
+    /// header and every declaration, never the universes, populations or
+    /// `visible` bits.
+    fn wire<'a>(&'a self, model_selection: &'a DomainPackageRef) -> EffectiveViewWire<'a> {
+        EffectiveViewWire {
+            version: crate::model::key::EFFECTIVE_VIEW_DOMAIN,
+            model_selection: model_selection.wire(),
+            rules: RuleRefWire {
+                identity: crate::model::key::RULES_IDENTITY,
+                revision: crate::model::key::RULES_REVISION,
+            },
+            declarations: self
+                .declarations
+                .iter()
+                .map(|entry| ViewEntryWire {
+                    effective_id: EffectiveIdWire::from(&entry.effective_id),
+                    preimage: entry.preimage.wire(),
+                })
+                .collect(),
+        }
     }
 }
 
@@ -635,20 +620,22 @@ impl EffectiveView {
         })
     }
 
-    fn to_json(&self) -> serde_json::Value {
-        self.body.to_json(self.model_selection())
+    fn wire(&self) -> EffectiveViewWire<'_> {
+        self.body.wire(self.model_selection())
     }
 
-    /// This view's `quire.model.effective-view/v1` identity.
+    /// This view's `quire.model.effective-view/v1` identity, encoded by
+    /// `quire-canonical` (ADR-013 §2, ADR-013:113: one RFC 8785
+    /// implementation).
     pub fn identity(&self) -> EffectiveId {
-        digest_of(&self.to_json())
+        EffectiveId::from_digest(sha256_and_len(&self.wire()).0)
     }
 
-    /// The exact JCS bytes of this view (for `normalize.hash` accounting,
-    /// and for tests asserting an exact hashed-byte length against a
-    /// ground-truth vector).
-    pub fn jcs_bytes(&self) -> Vec<u8> {
-        jcs_bytes(&self.to_json())
+    /// The length of this view's RFC 8785 bytes (for `normalize.hash`
+    /// accounting, and for tests asserting an exact hashed-byte length
+    /// against a ground-truth vector), counted by the encoder.
+    pub fn canonical_len(&self) -> u64 {
+        canonical_len(&self.wire())
     }
 
     /// Whether `declarations` is correctly sorted ascending by effective
@@ -686,35 +673,52 @@ pub struct ObjectUniverse {
 }
 
 impl ObjectUniverse {
-    fn to_json(&self) -> serde_json::Value {
-        use serde_json::{Map, Value};
-        let mut object = Map::new();
-        object.insert(
-            "version".to_owned(),
-            Value::String(crate::model::key::OBJECT_UNIVERSE_DOMAIN.to_owned()),
-        );
-        object.insert("model_selection".to_owned(), self.model_selection.to_json());
-        object.insert(
-            "root_types".to_owned(),
-            Value::Array(self.root_types.iter().map(EffectiveId::to_json).collect()),
-        );
-        Value::Object(object)
+    /// This universe's `quire.model.object-universe/v1` preimage form:
+    /// `{version, model_selection, root_types}`.
+    fn wire(&self) -> ObjectUniverseWire<'_> {
+        ObjectUniverseWire {
+            version: crate::model::key::OBJECT_UNIVERSE_DOMAIN,
+            model_selection: self.model_selection.wire(),
+            root_types: self.root_types.iter().map(EffectiveIdWire::from).collect(),
+        }
     }
 
     /// This universe's `quire.model.object-universe/v1` identity (ADR-013
     /// §8 OQ-C ruling: a `UniverseId`, not an `EffectiveId` -- the two
     /// digests use the same SHA-256 computation over the same preimage
     /// shape, differing only in which kernel newtype carries the result).
+    /// Encoded by `quire-canonical` (ADR-013 §2, ADR-013:113).
     pub fn identity(&self) -> quire_exact::UniverseId {
-        crate::model::key::universe_digest_of(&self.to_json())
+        quire_exact::UniverseId::from_digest(sha256_and_len(&self.wire()).0)
     }
 
-    /// The exact JCS bytes of this universe (for `normalize.hash` accounting,
-    /// and for tests asserting an exact hashed-byte length against a
-    /// ground-truth vector).
-    pub fn jcs_bytes(&self) -> Vec<u8> {
-        jcs_bytes(&self.to_json())
+    /// The length of this universe's RFC 8785 bytes (for `normalize.hash`
+    /// accounting, and for tests asserting an exact hashed-byte length
+    /// against a ground-truth vector), counted by the encoder.
+    pub fn canonical_len(&self) -> u64 {
+        canonical_len(&self.wire())
     }
+}
+
+#[derive(Serialize)]
+struct EffectiveViewWire<'a> {
+    version: &'static str,
+    model_selection: DomainPackageRefWire<'a>,
+    rules: RuleRefWire,
+    declarations: Vec<ViewEntryWire<'a>>,
+}
+
+#[derive(Serialize)]
+struct ViewEntryWire<'a> {
+    effective_id: EffectiveIdWire,
+    preimage: EffectiveDeclarationWire<'a>,
+}
+
+#[derive(Serialize)]
+struct ObjectUniverseWire<'a> {
+    version: &'static str,
+    model_selection: DomainPackageRefWire<'a>,
+    root_types: Vec<EffectiveIdWire>,
 }
 
 struct Index {
@@ -1172,7 +1176,7 @@ struct PendingFact {
 /// One declaration awaiting replayed `normalize.declaration`/`normalize.hash`,
 /// already in final charge order (see `build`'s declaration assembly).
 struct PendingDeclaration {
-    jcs_len: u64,
+    hashed_bytes: u64,
 }
 
 struct Built {
@@ -1667,7 +1671,7 @@ fn build(
     let mut phase3_facts = Vec::new();
     let mut type_preimages: HashMap<DeclarationKey, EffectiveDeclarationPreimage> = HashMap::new();
     let mut type_effective_ids: HashMap<DeclarationKey, EffectiveId> = HashMap::new();
-    let mut type_jcs_lens: HashMap<DeclarationKey, u64> = HashMap::new();
+    let mut type_hashed_bytes: HashMap<DeclarationKey, u64> = HashMap::new();
     let mut member_preimages: HashMap<
         (DeclarationKey, DeclarationKey),
         EffectiveDeclarationPreimage,
@@ -1762,12 +1766,12 @@ fn build(
             original: type_key.clone(),
             derivation,
         };
-        // One `to_json` build serves both the identity (needed immediately,
-        // as this type's members' owner) and the JCS length phase 5 needs
-        // later (PR #140 F10).
-        let (owner_effective_id, type_jcs_len) = preimage.identity_and_jcs_len();
+        // One encoding serves both the identity (needed immediately, as this
+        // type's members' owner) and the RFC 8785 length phase 5 needs later
+        // (PR #140 F10).
+        let (owner_effective_id, type_hashed) = preimage.identity_and_canonical_len();
         type_effective_ids.insert(type_key.clone(), owner_effective_id);
-        type_jcs_lens.insert(type_key.clone(), type_jcs_len);
+        type_hashed_bytes.insert(type_key.clone(), type_hashed);
         type_preimages.insert(type_key.clone(), preimage);
 
         // Phase 2: members declared directly on this type.
@@ -2021,7 +2025,7 @@ fn build(
         let preimage = type_preimages.remove(type_key).expect("built above");
         let effective_id = type_effective_ids[type_key];
         declarations.push(PendingDeclaration {
-            jcs_len: type_jcs_lens[type_key],
+            hashed_bytes: type_hashed_bytes[type_key],
         });
         entries.push(ViewEntry {
             effective_id,
@@ -2045,8 +2049,8 @@ fn build(
     for key in member_keys {
         let visible = !hidden.contains(&key);
         let preimage = member_preimages.remove(&key).expect("built above");
-        let (effective_id, jcs_len) = preimage.identity_and_jcs_len();
-        declarations.push(PendingDeclaration { jcs_len });
+        let (effective_id, hashed_bytes) = preimage.identity_and_canonical_len();
+        declarations.push(PendingDeclaration { hashed_bytes });
         entries.push(ViewEntry {
             effective_id,
             preimage,
@@ -3032,7 +3036,7 @@ fn charge_all(
         )?;
         meter.charge(
             Charge::new(ChargePoint::NormalizeHash)
-                .size(LimitKind::HashedBytes, declaration.jcs_len),
+                .size(LimitKind::HashedBytes, declaration.hashed_bytes),
         )?;
     }
 
@@ -3040,14 +3044,14 @@ fn charge_all(
     // by its first root type identity, then the effective view preimage" --
     // the view's universes are already in that order (`build`'s own sort).
     for universe in built.view.universes.iter() {
-        meter.charge(Charge::new(ChargePoint::NormalizeHash).size(
-            LimitKind::HashedBytes,
-            length_amount(universe.jcs_bytes().len()),
-        ))?;
+        meter.charge(
+            Charge::new(ChargePoint::NormalizeHash)
+                .size(LimitKind::HashedBytes, universe.canonical_len()),
+        )?;
     }
     meter.charge(Charge::new(ChargePoint::NormalizeHash).size(
         LimitKind::HashedBytes,
-        length_amount(jcs_bytes(&built.view.to_json(&domain_package.model_selection)).len()),
+        canonical_len(&built.view.wire(&domain_package.model_selection)),
     ))?;
     Ok(())
 }

@@ -835,11 +835,9 @@ pub mod fixtures {
     //! module's tests and the layer-5 evaluator's catalog tests
     //! (`value::expression::causes`), which reach it across the QSL-181
     //! crate boundary through `test-support`.
-    use serde_json::Value;
-
     use super::{ModelRefusalCause, OfferedSelection};
     use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
-    use crate::model::key::{digest_of, DeclarationKey};
+    use crate::model::key::DeclarationKey;
     use qsl_foundation::source::{LocatedSpan, Position};
     use quire_exact::UniverseId;
 
@@ -848,7 +846,10 @@ pub mod fixtures {
     }
 
     fn effective_id() -> crate::model::key::EffectiveId {
-        digest_of(&Value::Null)
+        // The SHA-256 of the RFC 8785 text `null`: any fixed digest serves.
+        crate::model::key::EffectiveId::from_digest(
+            qsl_foundation::ByteDigest::of(b"null").as_bytes(),
+        )
     }
 
     fn universe_id() -> UniverseId {

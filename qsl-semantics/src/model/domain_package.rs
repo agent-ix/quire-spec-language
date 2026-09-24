@@ -528,21 +528,26 @@ impl std::fmt::Debug for DomainPackageRef {
     }
 }
 
+/// A [`DomainPackageRef`]'s preimage form inside the model identities
+/// (`quire.model.*`, `quire.population-id/v1`).
+#[derive(serde::Serialize)]
+pub(super) struct DomainPackageRefWire<'a> {
+    identity: &'a str,
+    version: &'a str,
+    digest_domain: &'static str,
+    digest: String,
+}
+
 impl DomainPackageRef {
-    pub(super) fn to_json(&self) -> serde_json::Value {
-        use serde_json::{Map, Value};
-        let mut object = Map::new();
-        object.insert("identity".to_owned(), Value::String(self.identity.clone()));
-        object.insert("version".to_owned(), Value::String(self.version.clone()));
-        object.insert(
-            "digest_domain".to_owned(),
-            Value::String(super::key::SHA256_JCS_DIGEST_DOMAIN.to_owned()),
-        );
-        object.insert(
-            "digest".to_owned(),
-            Value::String(super::key::hex(&self.digest)),
-        );
-        Value::Object(object)
+    /// This selection's FR-321 preimage form: `{identity, version,
+    /// digest_domain, digest}`, the digest lowercase hex.
+    pub(super) fn wire(&self) -> DomainPackageRefWire<'_> {
+        DomainPackageRefWire {
+            identity: &self.identity,
+            version: &self.version,
+            digest_domain: super::key::SHA256_JCS_DIGEST_DOMAIN,
+            digest: super::key::hex(&self.digest),
+        }
     }
 
     /// A `test/orders` version-`1` selection whose digest is the SHA-256 of
@@ -568,11 +573,10 @@ impl DomainPackageRef {
         placeholder: impl Into<String>,
         version: impl Into<String>,
     ) -> Self {
-        use sha2::{Digest, Sha256};
         Self {
             identity: "test/orders".to_owned(),
             version: version.into(),
-            digest: Sha256::digest(placeholder.into().as_bytes()).into(),
+            digest: qsl_foundation::ByteDigest::of(placeholder.into().as_bytes()).as_bytes(),
         }
     }
 }

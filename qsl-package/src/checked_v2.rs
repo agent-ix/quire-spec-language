@@ -94,6 +94,7 @@ use qsl_semantics::library::{
     declared_exports, verify_binding, LibraryName, LibraryPackage, LibraryRefusal, PackageId,
     PinnedRequest, SupportedV2Wire, VerifiedPackage,
 };
+use qsl_semantics::value::IDENTITY_LIMITS;
 
 #[cfg(test)]
 mod tests;
@@ -204,11 +205,11 @@ pub(crate) enum V2ReadRefusal {
     /// names, never its already-IR-checked `package_id`).
     #[error(transparent)]
     Structural(#[from] LibraryRefusal),
-    /// This reader's own re-serialization of an admitted wire's identity
-    /// preimage failed. Practically unreachable: IR has already decoded
-    /// the preimage into typed Rust structs it itself just re-serialized
-    /// without error one line earlier (`admit_value`'s own lossless-decode
-    /// check). Kept as its own honest QSL-side variant rather than a
+    /// `quire-canonical` refused to encode an admitted wire's identity
+    /// preimage. Practically unreachable: IR has already decoded the
+    /// preimage into typed Rust structs it itself just re-serialized without
+    /// error (`admit_value`'s own lossless-decode check), and those bytes
+    /// were canonical. Kept as its own honest QSL-side variant rather than a
     /// fabricated `Envelope(CheckedPackageRefusal{MalformedWire, ..})`: IR
     /// never actually reported this, and blaming IR's own wire vocabulary
     /// for this crate's own serialization defect would misattribute the
@@ -326,6 +327,21 @@ pub(crate) enum V2ReadOutcome {
     Incomplete(V2ReadIncomplete),
 }
 
+/// `preimage`'s RFC 8785 bytes, encoded by `quire-canonical` (ADR-013 §2,
+/// ADR-013:113) under a byte ceiling of the reader's own `artifact_bytes`.
+/// Refuses with the encoder's reason.
+fn canonical_preimage(
+    preimage: &quire_contract_ir::CheckedPackageIdentityPreimageV2,
+    artifact_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    let limits = quire_canonical::Limits::new(
+        u64::try_from(artifact_bytes).unwrap_or(u64::MAX),
+        IDENTITY_LIMITS.max_depth(),
+    )
+    .map_err(|error| error.to_string())?;
+    quire_canonical::to_vec(preimage, limits).map_err(|error| error.to_string())
+}
+
 /// Read and verify `bytes` as a `quire.checked-package/v2` artifact claiming
 /// library identity `identity`/`version` (ADR-011 §4 I2, all three verified-
 /// binding conditions). A wire artifact carries no library identity or
@@ -360,29 +376,16 @@ pub(crate) fn read_checked_package_v2(
             if !package.lock().dependency_selections.is_empty() {
                 return V2ReadOutcome::Refused(V2ReadRefusal::UnsupportedDependencySelections);
             }
-            let preimage_value = match serde_json::to_value(package.identity_preimage()) {
-                Ok(value) => value,
-                Err(error) => {
-                    return V2ReadOutcome::Refused(V2ReadRefusal::Preimage(error.to_string()))
-                }
-            };
-            // `preimage_value` is a `serde_json::Value` decoded from bytes
-            // IR already verified are the whole wire's exact canonical form
-            // (its own `NoncanonicalWire` check re-serializes the entire
-            // document and compares it byte-for-byte against the input).
-            // Canonical form is compositional: re-serializing this already-
-            // parsed sub-value with `serde_json`'s own (key-sorted, no
-            // inserted whitespace) `Value` representation reproduces the
-            // same substring of canonical bytes IR's own `package_id`
-            // recompute already hashed -- not a fresh, independent claim
-            // about RFC 8785 in general, only about bytes IR itself already
-            // certified.
-            let preimage_bytes = match serde_json::to_vec(&preimage_value) {
-                Ok(bytes) => bytes,
-                Err(error) => {
-                    return V2ReadOutcome::Refused(V2ReadRefusal::Preimage(error.to_string()))
-                }
-            };
+            // The preimage's RFC 8785 bytes, from `quire-canonical` (ADR-013
+            // §2, ADR-013:113: the one RFC 8785 implementation), encoded
+            // straight from IR's typed preimage: the encoder orders members
+            // itself. They are a canonical substring of the wire IR just
+            // admitted, so they fit its byte ceiling.
+            let preimage_bytes =
+                match canonical_preimage(package.identity_preimage(), limits.artifact_bytes) {
+                    Ok(bytes) => bytes,
+                    Err(reason) => return V2ReadOutcome::Refused(V2ReadRefusal::Preimage(reason)),
+                };
             let package_id = PackageId::of_preimage(&preimage_bytes);
             // L2: cross-check this reader's own recompute against IR's
             // already-verified `package_id.digest` (see the module doc).

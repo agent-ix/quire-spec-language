@@ -36,13 +36,14 @@
 //! ([`LiteralValue`]); FR-092 spells an integer as its canonical decimal
 //! string and a rational as `"n/d"`, never as a JSON number.
 //!
-//! Canonical bytes: the typed preimage is converted to a `serde_json::Value`
-//! and serialized, as every other QSL identity site does until QSL-194 moves
-//! them to one RFC 8785 implementation. `serde_json`'s map is ordered by key
-//! (this crate does not enable `preserve_order`), every preimage key is a
-//! fixed ASCII schema name, so byte order equals RFC 8785's UTF-16 code-unit
-//! order; strings use `serde_json`'s escaping, which matches RFC 8785 for the
-//! ASCII escapes it emits. The only JSON numbers in a preimage are
+//! Canonical bytes: the typed preimage, each signature round and the group
+//! digest's array are encoded by `quire-canonical`, the one RFC 8785
+//! implementation (ADR-013 §2, ADR-013:113), which orders members itself. The
+//! group order's shapes are the one place a preimage is rewritten rather than
+//! built: its canonical bytes are read back into a `serde_json::Value`, whose
+//! placeholders are removed (and, for the anonymous shape, whose `owner` and
+//! `declaration` are cleared) before the shape is encoded again. The only
+//! JSON numbers in a preimage are
 //! `recursion`'s size and ordinal, a `group_reference` ordinal and an
 //! `operation.member` position; each is refused when RFC 8785 cannot render
 //! it exactly (outside the IEEE-754 safe range) rather than hashed. No
@@ -62,9 +63,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use qsl_foundation::ByteDigest;
 use serde::Serialize;
-use serde_json::Value;
-use sha2::{Digest, Sha256};
+
+use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile};
@@ -757,13 +759,15 @@ pub enum NodeKeyRefusal {
     /// node's literals are typed at builtin scalars.
     #[error("a type position names a member of the node's own recursion group")]
     GroupMemberAtTypePosition,
-    /// The typed preimage failed to convert to a JSON value. Unreachable for
-    /// these types (every map key is a fixed string and no `Serialize` impl
-    /// here errors), but `serde_json::to_value` is fallible and this module
-    /// does not panic on an input path.
-    #[error("the preimage failed to serialize: {reason}")]
-    Serialize {
-        /// `serde_json`'s own message.
+    /// `quire-canonical` refused to encode a preimage, a shape or a
+    /// signature round. Unreachable for these types (every member name is a
+    /// fixed string, every number is checked against RFC 8785's exact range
+    /// first, and no `Serialize` impl here errors) short of a failed heap
+    /// reservation, but encoding is fallible and this module does not panic
+    /// on an input path.
+    #[error("the preimage has no RFC 8785 encoding: {reason}")]
+    Encode {
+        /// The encoder's own message.
         reason: String,
     },
 }
@@ -805,8 +809,8 @@ pub(crate) fn application_node_key(
 /// body contains an application, else the FR-092 structural-node preimage,
 /// with `recursion` `null`.
 pub(crate) fn node_key(node: &NodeInput<'_>) -> Result<KeyedPreimage, NodeKeyRefusal> {
-    let (value, _) = preimage_value(node, Walk::OUTSIDE, None)?;
-    Ok(keyed(value.to_string().into_bytes()))
+    let (preimage, _) = typed_preimage(node, Walk::OUTSIDE, None)?;
+    keyed(&preimage)
 }
 
 /// The keys of one recursion group's members (FR-092 "Recursion groups").
@@ -864,16 +868,11 @@ pub(crate) fn group_keys(
     let mut anonymous_shapes = Vec::with_capacity(count);
     let mut targets = Vec::with_capacity(count);
     for member in members {
-        let (mut shape, _) = preimage_value(member, Walk { group: &positions }, None)?;
-        let mut member_targets = Vec::new();
-        shape_targets(&mut shape, &mut member_targets, count)?;
-        full_shapes.push(shape.to_string());
-        if let Value::Object(map) = &mut shape {
-            map.insert("declaration".to_owned(), Value::Null);
-            map.remove("owner");
-        }
-        anonymous_shapes.push(shape.to_string());
-        targets.push(member_targets);
+        let (preimage, _) = typed_preimage(member, Walk { group: &positions }, None)?;
+        let shapes = shape::member_shapes(&canonical_bytes(&preimage)?, count)?;
+        full_shapes.push(shapes.full);
+        anonymous_shapes.push(shapes.anonymous);
+        targets.push(shapes.targets);
     }
     // 3-4. One refinement pass per kind of shape, then the order.
     let anonymous = refine(&anonymous_shapes, &targets, work, charge)?;
@@ -915,16 +914,14 @@ pub(crate) fn group_keys(
             ordinal,
             size,
         };
-        let (value, _) = preimage_value(
+        let (preimage, _) = typed_preimage(
             &members[*member],
             Walk { group: &ordinal_of },
             Some(recursion),
         )?;
-        local.push(Value::String(hex(&Sha256::digest(
-            value.to_string().as_bytes(),
-        ))));
+        local.push(hex(&canonical_sha256(&preimage)?));
     }
-    let digest: [u8; 32] = Sha256::digest(Value::Array(local).to_string().as_bytes()).into();
+    let digest = canonical_sha256(&local)?;
     let digest_hex = hex(&digest);
     charge(work)?;
     let mut keys = Vec::with_capacity(count);
@@ -934,8 +931,8 @@ pub(crate) fn group_keys(
             ordinal: *ordinal,
             size,
         };
-        let (value, _) = preimage_value(member, Walk { group: &ordinal_of }, Some(recursion))?;
-        keys.push(keyed(value.to_string().into_bytes()));
+        let (preimage, _) = typed_preimage(member, Walk { group: &ordinal_of }, Some(recursion))?;
+        keys.push(keyed(&preimage)?);
     }
     Ok(GroupKeys {
         members: keys,
@@ -959,7 +956,7 @@ fn refine(
     charge(work)?;
     let initial: Vec<String> = shapes
         .iter()
-        .map(|shape| hex(&Sha256::digest(shape.as_bytes())))
+        .map(|shape| hex(&ByteDigest::of(shape.as_bytes()).as_bytes()))
         .collect();
     let distinct = |signatures: &[String]| signatures.iter().collect::<BTreeSet<_>>().len();
     let mut previous = initial.clone();
@@ -973,11 +970,11 @@ fn refine(
                 .iter()
                 .map(|target| previous.get(*target).ok_or(NodeKeyRefusal::InvalidGroup))
                 .collect::<Result<Vec<_>, _>>()?;
-            let round = serde_json::json!({
-                "shape": shape,
-                "targets": round_targets,
-            });
-            next.push(hex(&Sha256::digest(round.to_string().as_bytes())));
+            let round = SignatureRound {
+                shape,
+                targets: round_targets,
+            };
+            next.push(hex(&canonical_sha256(&round)?));
         }
         let stable = distinct(&next) == distinct(&previous);
         previous = next;
@@ -988,40 +985,12 @@ fn refine(
     Ok(previous)
 }
 
-/// Remove each placeholder's ordinal from `value`, in RFC 8785 order (a
-/// `serde_json` map iterates its keys sorted, which is RFC 8785's order for
-/// these ASCII names), appending it to `targets`. Every ordinal is a
-/// member's position, below `count`.
-fn shape_targets(
-    value: &mut Value,
-    targets: &mut Vec<usize>,
-    count: usize,
-) -> Result<(), NodeKeyRefusal> {
-    match value {
-        Value::Object(map) => {
-            if map.get("term").and_then(Value::as_str) == Some("group_reference") {
-                let target = map
-                    .remove("ordinal")
-                    .as_ref()
-                    .and_then(Value::as_u64)
-                    .and_then(|ordinal| usize::try_from(ordinal).ok())
-                    .filter(|target| *target < count)
-                    .ok_or(NodeKeyRefusal::InvalidGroup)?;
-                targets.push(target);
-                return Ok(());
-            }
-            for member in map.values_mut() {
-                shape_targets(member, targets, count)?;
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                shape_targets(item, targets, count)?;
-            }
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
-    }
-    Ok(())
+/// One refinement round's input: `{shape, targets}`, the member's initial
+/// signature and its targets' previous-round signatures.
+#[derive(Serialize)]
+struct SignatureRound<'a> {
+    shape: &'a str,
+    targets: Vec<&'a String>,
 }
 
 /// Lowercase hex, the spelling FR-092 gives every digest inside a preimage
@@ -1039,19 +1008,39 @@ fn hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn keyed(preimage: Vec<u8>) -> KeyedPreimage {
-    let key = NodeKey::from_digest(Sha256::digest(&preimage).into());
-    KeyedPreimage { preimage, key }
+/// `preimage`'s RFC 8785 bytes and the node key they hash to.
+fn keyed(preimage: &Preimage<'_>) -> Result<KeyedPreimage, NodeKeyRefusal> {
+    let preimage = canonical_bytes(preimage)?;
+    let key = NodeKey::from_digest(ByteDigest::of(&preimage).as_bytes());
+    Ok(KeyedPreimage { preimage, key })
 }
 
-/// `node`'s preimage as a JSON value, with `walk` rewriting references to
-/// its group's members, and whether it has an application. A structural
-/// preimage's `recursion` keeps `group`; an application preimage's drops it.
-fn preimage_value(
-    node: &NodeInput<'_>,
+/// `value`'s RFC 8785 bytes, from `quire-canonical` (ADR-013 §2,
+/// ADR-013:113: the one RFC 8785 implementation).
+pub(super) fn canonical_bytes(value: &impl Serialize) -> Result<Vec<u8>, NodeKeyRefusal> {
+    quire_canonical::to_vec(value, LIMITS).map_err(|error| NodeKeyRefusal::Encode {
+        reason: error.to_string(),
+    })
+}
+
+/// The SHA-256 of `value`'s RFC 8785 bytes, hashed by `quire-canonical` as
+/// it encodes (ADR-013:113).
+fn canonical_sha256(value: &impl Serialize) -> Result<[u8; 32], NodeKeyRefusal> {
+    quire_canonical::sha256(value, LIMITS)
+        .map(|digest| *digest.as_bytes())
+        .map_err(|error| NodeKeyRefusal::Encode {
+            reason: error.to_string(),
+        })
+}
+
+/// `node`'s typed preimage, with `walk` rewriting references to its group's
+/// members, and whether it has an application. A structural preimage's
+/// `recursion` keeps `group`; an application preimage's drops it.
+fn typed_preimage<'a>(
+    node: &NodeInput<'a>,
     walk: Walk<'_>,
     recursion: Option<RecursionPreimage>,
-) -> Result<(Value, bool), NodeKeyRefusal> {
+) -> Result<(Preimage<'a>, bool), NodeKeyRefusal> {
     if node.semantic_form.is_empty() {
         return Err(NodeKeyRefusal::EmptySemanticForm);
     }
@@ -1104,10 +1093,7 @@ fn preimage_value(
         recursion,
         body,
     };
-    let value = serde_json::to_value(&preimage).map_err(|error| NodeKeyRefusal::Serialize {
-        reason: error.to_string(),
-    })?;
-    Ok((value, has_application))
+    Ok((preimage, has_application))
 }
 
 #[derive(Serialize)]
@@ -1399,6 +1385,8 @@ impl Walk<'_> {
         })
     }
 }
+
+mod shape;
 
 #[cfg(test)]
 mod tests;

@@ -27,13 +27,13 @@ use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use super::semantic_node::{
     check_terms, is_qualified_name, preimage_digest, refuse, resolve, retains, wire_index,
     CanonicalNodeId, CanonicalOwner, CanonicalRational, InvalidSemanticGraph, NodeIdDocument,
     NodeIdentityPreimage, NodeOwner, OwnerSelection, RationalDocument, SemanticGraphCause,
 };
+use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN};
 
@@ -782,7 +782,9 @@ struct CanonicalCompound {
 }
 
 /// The compound-arm [`UnitId`] of exactly these terms: the SHA-256 of their
-/// JCS `quire.value.compound-unit/v1` preimage.
+/// JCS `quire.value.compound-unit/v1` preimage, encoded and hashed by
+/// `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC 8785
+/// implementation).
 fn compound_id<'a, K: Into<CanonicalNodeId>>(
     terms: impl IntoIterator<Item = (K, &'a Integer)>,
 ) -> UnitId {
@@ -796,9 +798,13 @@ fn compound_id<'a, K: Into<CanonicalNodeId>>(
             .collect(),
         version: COMPOUND_UNIT_DOMAIN,
     };
-    let bytes = serde_json::to_vec(&preimage)
-        .expect("a struct of strings, vectors and a constant always serializes to JSON");
-    UnitId::compound(Sha256::digest(bytes).into())
+    // A struct of strings, arrays and a constant always has an RFC 8785
+    // encoding, and `LIMITS` sets no byte ceiling; the one refusal left is a
+    // failed heap reservation, which the `serde_json` encoder this replaced
+    // aborted the process on.
+    let digest = quire_canonical::sha256(&preimage, LIMITS)
+        .unwrap_or_else(|error| panic!("a compound-unit preimage encodes: {error}"));
+    UnitId::compound(*digest.as_bytes())
 }
 
 /// A schema-valid `quire.value.compound-unit/v1` preimage, as spelled.

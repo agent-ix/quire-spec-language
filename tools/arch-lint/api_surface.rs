@@ -447,7 +447,7 @@ fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
 /// literal, and every literal is [`Token::Other`], so a pattern named inside a
 /// comment or a string never matches.
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum Token {
+pub(crate) enum Token {
     Ident(String),
     Punct(char),
     /// The opening delimiter of a `( ... )` group.
@@ -458,15 +458,15 @@ enum Token {
 
 /// A [`Token`] and the 1-based source line it starts on.
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LocatedToken {
-    token: Token,
-    line: usize,
+pub(crate) struct LocatedToken {
+    pub(crate) token: Token,
+    pub(crate) line: usize,
 }
 
 /// Flatten `stream` depth-first into `out`, descending into every group --
 /// macro arguments included -- so a call split across lines or written
 /// inside `vec![...]` is one contiguous token run.
-fn flatten_tokens(stream: proc_macro2::TokenStream, out: &mut Vec<LocatedToken>) {
+pub(crate) fn flatten_tokens(stream: proc_macro2::TokenStream, out: &mut Vec<LocatedToken>) {
     for tree in stream {
         let line = tree.span().start().line;
         match tree {
@@ -501,12 +501,12 @@ fn flatten_tokens(stream: proc_macro2::TokenStream, out: &mut Vec<LocatedToken>)
 /// A rule's call pattern compiled to a token sequence: `"NodeKey::from_digest"`
 /// is `NodeKey`, `:`, `:`, `from_digest`; a trailing `(`, as in
 /// `"node_key_of("`, requires an opening parenthesis next.
-struct CallPattern {
+pub(crate) struct CallPattern {
     tokens: Vec<Token>,
 }
 
 impl CallPattern {
-    fn compile(pattern: &str) -> Self {
+    pub(crate) fn compile(pattern: &str) -> Self {
         let (path, call) = match pattern.strip_suffix('(') {
             Some(path) => (path, true),
             None => (pattern, false),
@@ -556,7 +556,10 @@ impl CallPattern {
 /// bare-function pattern preceded by `fn` is that function's own definition,
 /// not a call, and is skipped (FR-060 Behavior: "the helper's own `fn
 /// node_key_of(` definition line is not a mint").
-fn pattern_match_lines(tokens: &[LocatedToken], patterns: &[CallPattern]) -> BTreeSet<usize> {
+pub(crate) fn pattern_match_lines(
+    tokens: &[LocatedToken],
+    patterns: &[CallPattern],
+) -> BTreeSet<usize> {
     let mut lines = BTreeSet::new();
     for (start, located) in tokens.iter().enumerate() {
         let is_definition = start.checked_sub(1).is_some_and(
@@ -576,7 +579,7 @@ fn pattern_match_lines(tokens: &[LocatedToken], patterns: &[CallPattern]) -> BTr
 /// an `impl` method, `struct`, `enum`, `trait`, `static` or `const`), 1-based
 /// and inclusive of the item's own first and last line -- FR-060 Behavior,
 /// "T12-B and T12-C: shipped code and debt lists".
-fn cfg_test_lines(parsed: &syn::File) -> BTreeSet<usize> {
+pub(crate) fn cfg_test_lines(parsed: &syn::File) -> BTreeSet<usize> {
     struct CfgTestVisitor {
         lines: BTreeSet<usize>,
     }
@@ -795,7 +798,9 @@ fn scan_shipped_file(
 /// it, is test-only even though the file itself carries no `#[cfg(test)]`.
 /// A declaration with a `#[path]` attribute is not resolved, so its file is
 /// still scanned.
-fn cfg_test_module_declarations(modules: &[(PathBuf, String)]) -> Result<BTreeSet<String>> {
+pub(crate) fn cfg_test_module_declarations(
+    modules: &[(PathBuf, String)],
+) -> Result<BTreeSet<String>> {
     fn collect(items: &[syn::Item], prefix: &str, in_test: bool, out: &mut BTreeSet<String>) {
         for item in items {
             let syn::Item::Mod(module) = item else {
@@ -825,7 +830,7 @@ fn cfg_test_module_declarations(modules: &[(PathBuf, String)]) -> Result<BTreeSe
     Ok(declared)
 }
 
-fn walk_rs_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+pub(crate) fn walk_rs_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     let entries = fs::read_dir(root).map_err(|error| Error::io(root, error))?;
     for entry in entries {
         let entry = entry.map_err(|error| Error::io(root, error))?;
@@ -983,7 +988,7 @@ pub(crate) fn evaluate(
 /// elsewhere; the crate that defines a constructor calling its own inherent
 /// `impl` is not a "caller"), and `qsl-attrs` is a proc-macro crate with no
 /// dependency on `quire-exact` at all.
-fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
+pub(crate) fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
     match role {
         Role::Cg => vec![scan_root.join("src")],
         Role::Qsl => [

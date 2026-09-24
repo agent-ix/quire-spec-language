@@ -575,6 +575,18 @@ fn a_body_deeper_than_the_checking_limit_is_refused() {
     );
 }
 
+/// QSL-194: a recursion group member whose body is at the checking limit,
+/// application arguments nested `MAX_CHECKING_DEPTH` deep (about twice as
+/// many JSON levels), keys: reading its shape back from its RFC 8785 bytes
+/// is not bounded by `serde_json`'s default 128-level parse limit.
+#[test]
+fn a_group_member_at_the_checking_limit_keys() {
+    let at_limit = (1..MAX_CHECKING_DEPTH).fold(reference(1), |inner, _| add(vec![inner]));
+    assert!(application_node_key(&node(&at_limit)).is_ok());
+    let keys = keys_of(&[in_group(&at_limit)], &[key(50)]).expect("the member keys");
+    assert_eq!(keys.members.len(), 1);
+}
+
 /// M1: the operation encoding (law, all three mode kinds, a `position`
 /// member, `position:N`/`inner`/`field:` leaf segments) and literal terms
 /// (integer, text with an escaped quote, null), pinned against

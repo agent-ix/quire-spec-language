@@ -5,16 +5,15 @@
 //! supplies: `{package, node, digest_domain: "sha256-jcs"}`, the domain
 //! package identity and the IR node identity (`model-complete.md`, "Identity
 //! domains"). Every QSL-derived identity is SHA-256 over the RFC 8785 JCS
-//! bytes of a schema-valid preimage,
-//! built here as a `serde_json::Value`: `serde_json::Map` is a `BTreeMap`
-//! (this crate selects no `preserve_order` feature), so `serde_json::to_vec`
-//! already emits ascending-key, whitespace-free bytes for every ASCII member
-//! name this schema defines, which is RFC 8785 JCS for these preimages.
-use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
+//! bytes of a schema-valid preimage. Each preimage is a typed, borrowed
+//! `Serialize` view below (`*Wire`), encoded by `quire-canonical`, the one
+//! RFC 8785 implementation (ADR-013 §2, ADR-013:113); the encoder orders
+//! members itself, so a view's field order carries no meaning.
+use qsl_foundation::ByteDigest;
+use serde::Serialize;
 
 use crate::model::refusal::ModelRefusalCause;
-use quire_exact::length_amount;
+use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 /// The kernel's canonical `EffectiveId` (ADR-013 O-05, QC-15): 32 bytes in
 /// domain `quire.model.effective-declaration/v1`, minted only through
@@ -22,7 +21,7 @@ use quire_exact::length_amount;
 /// path so every existing `crate::model::key::EffectiveId` import keeps
 /// working unchanged; this crate no longer defines a second, model-owned
 /// copy of the type (ADR-013 §9 Consequences names this fold explicitly).
-/// [`EffectiveIdExt`] below adds this module's own formatting/serialization
+/// [`EffectiveIdExt`] below adds this module's own formatting
 /// conveniences, which cannot be inherent methods on a foreign-crate type
 /// (Rust's orphan rule) and so live as a local extension trait instead --
 /// one place for all of them, rather than ad hoc hex-building at each call
@@ -99,16 +98,22 @@ impl DeclarationKey {
         }
     }
 
-    pub(super) fn to_json(&self) -> Value {
-        let mut object = Map::new();
-        object.insert("package".to_owned(), Value::String(self.package.clone()));
-        object.insert("node".to_owned(), Value::String(self.node.clone()));
-        object.insert(
-            "digest_domain".to_owned(),
-            Value::String(SHA256_JCS_DIGEST_DOMAIN.to_owned()),
-        );
-        Value::Object(object)
+    /// This key's `$defs.DeclarationKey` preimage view.
+    pub(super) fn wire(&self) -> DeclarationKeyWire<'_> {
+        DeclarationKeyWire {
+            package: &self.package,
+            node: &self.node,
+            digest_domain: SHA256_JCS_DIGEST_DOMAIN,
+        }
     }
+}
+
+/// A [`DeclarationKey`]'s preimage form: `{package, node, digest_domain}`.
+#[derive(Serialize)]
+pub(super) struct DeclarationKeyWire<'a> {
+    package: &'a str,
+    node: &'a str,
+    digest_domain: &'static str,
 }
 
 /// A rule reference: `{identity, revision}`.
@@ -120,18 +125,19 @@ pub struct RuleRef {
     pub revision: &'static str,
 }
 
+/// A [`RuleRef`]'s preimage form: `{identity, revision}`.
+#[derive(Serialize)]
+pub(super) struct RuleRefWire {
+    pub(super) identity: &'static str,
+    pub(super) revision: &'static str,
+}
+
 impl RuleRef {
-    pub(super) fn to_json(&self) -> Value {
-        let mut object = Map::new();
-        object.insert(
-            "identity".to_owned(),
-            Value::String(self.identity.to_owned()),
-        );
-        object.insert(
-            "revision".to_owned(),
-            Value::String(self.revision.to_owned()),
-        );
-        Value::Object(object)
+    fn wire(&self) -> RuleRefWire {
+        RuleRefWire {
+            identity: self.identity,
+            revision: self.revision,
+        }
     }
 }
 
@@ -146,47 +152,55 @@ pub struct Fact {
     pub inputs: Vec<DeclarationKey>,
 }
 
+/// A [`Fact`]'s preimage form: `{ordinal, rule, inputs}`, the ordinal a
+/// decimal string.
+#[derive(Serialize)]
+struct FactWire<'a> {
+    ordinal: String,
+    rule: RuleRefWire,
+    inputs: Vec<DeclarationKeyWire<'a>>,
+}
+
 impl Fact {
-    pub(super) fn to_json(&self) -> Value {
-        let mut object = Map::new();
-        object.insert(
-            "ordinal".to_owned(),
-            Value::String(self.ordinal.to_string()),
-        );
-        object.insert("rule".to_owned(), self.rule.to_json());
-        object.insert(
-            "inputs".to_owned(),
-            Value::Array(self.inputs.iter().map(DeclarationKey::to_json).collect()),
-        );
-        Value::Object(object)
+    fn wire(&self) -> FactWire<'_> {
+        FactWire {
+            ordinal: self.ordinal.to_string(),
+            rule: self.rule.wire(),
+            inputs: self.inputs.iter().map(DeclarationKey::wire).collect(),
+        }
     }
 }
 
-/// [`EffectiveId`]'s formatting and JSON-serialization conveniences owned by
-/// this module (ADR-013 O-05's model side), not by the kernel: the kernel
-/// type has one public constructor (`from_digest`) and no preimage or JSON
-/// knowledge at all (ADR-013 T-6: "the kernel imports none of them").
+/// [`EffectiveId`]'s formatting conveniences owned by this module (ADR-013
+/// O-05's model side), not by the kernel: the kernel type has one public
+/// constructor (`from_digest`) and no preimage or JSON knowledge at all
+/// (ADR-013 T-6: "the kernel imports none of them").
 pub trait EffectiveIdExt {
     /// The first eight hex digits, as TC-195's vectors abbreviate identities.
     fn short_hex(&self) -> String;
-    /// This identity's `{domain, digest}` wire form
-    /// (`model-effective-declaration.schema.json`).
-    fn to_json(&self) -> Value;
 }
 
 impl EffectiveIdExt for EffectiveId {
     fn short_hex(&self) -> String {
         hex(&self.as_bytes()[..4])
     }
+}
 
-    fn to_json(&self) -> Value {
-        let mut object = Map::new();
-        object.insert(
-            "domain".to_owned(),
-            Value::String(EFFECTIVE_DECLARATION_DOMAIN.to_owned()),
-        );
-        object.insert("digest".to_owned(), Value::String(self.to_string()));
-        Value::Object(object)
+/// An [`EffectiveId`]'s `{domain, digest}` preimage form
+/// (`model-effective-declaration.schema.json`). A local view rather than a
+/// `Serialize` impl, which the orphan rule forbids on the kernel type.
+#[derive(Serialize)]
+pub(super) struct EffectiveIdWire {
+    domain: &'static str,
+    digest: String,
+}
+
+impl From<&EffectiveId> for EffectiveIdWire {
+    fn from(id: &EffectiveId) -> Self {
+        Self {
+            domain: EFFECTIVE_DECLARATION_DOMAIN,
+            digest: id.to_string(),
+        }
     }
 }
 
@@ -204,47 +218,50 @@ pub struct EffectiveDeclarationPreimage {
     pub derivation: Vec<Fact>,
 }
 
+/// An [`EffectiveDeclarationPreimage`]'s preimage form: `{version,
+/// owner_effective_type, original, derivation}`, `owner_effective_type`
+/// `null` for an effective type.
+#[derive(Serialize)]
+pub(super) struct EffectiveDeclarationWire<'a> {
+    version: &'static str,
+    owner_effective_type: Option<EffectiveIdWire>,
+    original: DeclarationKeyWire<'a>,
+    derivation: Vec<FactWire<'a>>,
+}
+
 impl EffectiveDeclarationPreimage {
-    /// This preimage's schema-valid JSON form (PR #140 F10: `pub(super)` so
-    /// `crate::model::normalize` can reuse it directly instead of
-    /// round-tripping through JCS bytes and back).
-    pub(super) fn to_json(&self) -> Value {
-        let mut object = Map::new();
-        object.insert(
-            "version".to_owned(),
-            Value::String(EFFECTIVE_DECLARATION_DOMAIN.to_owned()),
-        );
-        object.insert(
-            "owner_effective_type".to_owned(),
-            match &self.owner_effective_type {
-                Some(id) => id.to_json(),
-                None => Value::Null,
-            },
-        );
-        object.insert("original".to_owned(), self.original.to_json());
-        object.insert(
-            "derivation".to_owned(),
-            Value::Array(self.derivation.iter().map(Fact::to_json).collect()),
-        );
-        Value::Object(object)
+    /// This preimage's schema-valid form (`pub(super)` so
+    /// `crate::model::normalize` embeds it in the effective view).
+    pub(super) fn wire(&self) -> EffectiveDeclarationWire<'_> {
+        EffectiveDeclarationWire {
+            version: EFFECTIVE_DECLARATION_DOMAIN,
+            owner_effective_type: self
+                .owner_effective_type
+                .as_ref()
+                .map(EffectiveIdWire::from),
+            original: self.original.wire(),
+            derivation: self.derivation.iter().map(Fact::wire).collect(),
+        }
     }
 
-    /// This preimage's `quire.model.effective-declaration/v1` identity.
+    /// This preimage's `quire.model.effective-declaration/v1` identity,
+    /// encoded by `quire-canonical` (ADR-013 §2, ADR-013:113: one RFC 8785
+    /// implementation).
     pub fn identity(&self) -> EffectiveId {
-        digest_of(&self.to_json())
+        self.identity_and_canonical_len().0
     }
 
-    /// The exact JCS bytes of this preimage (for `normalize.hash` accounting).
-    pub fn jcs_bytes(&self) -> Vec<u8> {
-        jcs_bytes(&self.to_json())
+    /// The length of this preimage's RFC 8785 bytes (for `normalize.hash`
+    /// accounting), counted by the encoder.
+    pub fn canonical_len(&self) -> u64 {
+        canonical_len(&self.wire())
     }
 
-    /// This preimage's identity and its JCS byte length, from one `to_json`
-    /// build rather than two (PR #140 F10: `identity()` and `jcs_bytes()`
-    /// each independently rebuilt the same JSON value).
-    pub(super) fn identity_and_jcs_len(&self) -> (EffectiveId, u64) {
-        let bytes = jcs_bytes(&self.to_json());
-        (digest_of_bytes(&bytes), length_amount(bytes.len()))
+    /// This preimage's identity and its RFC 8785 byte length, from one
+    /// encoding: the encoder hashes as it encodes and returns the count.
+    pub(super) fn identity_and_canonical_len(&self) -> (EffectiveId, u64) {
+        let (digest, len) = sha256_and_len(&self.wire());
+        (EffectiveId::from_digest(digest), len)
     }
 
     /// Whether `derivation` is well-formed: every fact's `ordinal` matches
@@ -301,27 +318,45 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// The exact RFC 8785 JCS bytes of `value` under this crate's canonical
-/// `serde_json::Value` serialization.
-pub(super) fn jcs_bytes(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(value).expect("a constructed preimage value always serializes")
+/// The SHA-256 digest of `preimage`'s RFC 8785 bytes and their length, from
+/// one encoding by `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC
+/// 8785 implementation). Every preimage here is a top-level object, which the
+/// encoder buffers whole before it reaches any sink, so collecting the bytes
+/// and hashing them after costs no extra copy of note.
+///
+/// Every preimage this module and `normalize`/`population` hand here is a
+/// typed view of strings, `null`s, arrays and objects with fixed ASCII member
+/// names: it has an RFC 8785 encoding, and [`LIMITS`] sets no byte ceiling
+/// and a depth far above any view's fixed nesting. The one refusal left is a
+/// failed heap reservation for an object's buffered members, which the
+/// `serde_json` encoder this replaced aborted the process on; this panics
+/// with the encoder's reason instead.
+pub(super) fn sha256_and_len(preimage: &impl Serialize) -> ([u8; 32], u64) {
+    let bytes = quire_canonical::to_vec(preimage, LIMITS)
+        .unwrap_or_else(|error| panic!("a typed identity preimage encodes: {error}"));
+    let len = quire_exact::length_amount(bytes.len());
+    (ByteDigest::of(&bytes).as_bytes(), len)
 }
 
-/// The SHA-256 digest of `value`'s JCS bytes, as an [`EffectiveId`].
-pub(super) fn digest_of(value: &Value) -> EffectiveId {
-    digest_of_bytes(&jcs_bytes(value))
+/// The length of `preimage`'s RFC 8785 bytes, counted by `quire-canonical`
+/// while it encodes into a discarding sink. No `serde_json::Value` is built
+/// and nothing is kept once the call returns; while it runs, the encoder
+/// still buffers each open object's members to sort them (a top-level
+/// object in full), as every encoding does. Refuses only as
+/// [`sha256_and_len`] does.
+pub(super) fn canonical_len(preimage: &impl Serialize) -> u64 {
+    quire_canonical::encode(
+        &mut quire_canonical::WriteSink(std::io::sink()),
+        preimage,
+        LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("a typed identity preimage encodes: {error}"))
 }
 
-/// The SHA-256 digest of already-serialized JCS `bytes`, as an [`EffectiveId`].
-fn digest_of_bytes(bytes: &[u8]) -> EffectiveId {
-    EffectiveId::from_digest(Sha256::digest(bytes).into())
-}
-
-/// The SHA-256 digest of `value`'s JCS bytes, as a
-/// [`quire_exact::UniverseId`] (ADR-013 §8 OQ-C ruling). Shares
-/// [`jcs_bytes`] with [`digest_of`]: the two differ only in which digest
-/// domain's preimage `value` already encodes (`OBJECT_UNIVERSE_DOMAIN` vs.
-/// `EFFECTIVE_DECLARATION_DOMAIN`), not in the SHA-256 computation itself.
-pub(super) fn universe_digest_of(value: &Value) -> quire_exact::UniverseId {
-    quire_exact::UniverseId::from_digest(Sha256::digest(jcs_bytes(value)).into())
+/// The SHA-256 of `bytes` exactly as given, with no canonicalization: intake's
+/// check-3 digest of package bytes that did not parse, which have no RFC 8785
+/// form. Kept here, beside the canonical digests, so intake -- which reads
+/// JSON -- names no hasher itself (arch-lint `canonical-encoder`).
+pub(super) fn raw_bytes_digest(bytes: &[u8]) -> [u8; 32] {
+    ByteDigest::of(bytes).as_bytes()
 }

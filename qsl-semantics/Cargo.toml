@@ -28,7 +28,10 @@ qsl-forms = { path = "../qsl-forms" }
 qsl-foundation = { path = "../qsl-foundation" }
 quire-exact = { path = "../quire-exact" }
 serde_json = { version = "=1.0.151", features = ["unbounded_depth", "raw_value"] }
-sha2 = "=0.10.9"
+# ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation. Every QSL
+# normalized identity encodes through it (QSL-194); arch-lint's
+# `canonical-encoder` check refuses a second encoder.
+quire-canonical = { workspace = true }
 serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
 agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "1572ba4ba8fad0e94e9a0b19a569f82a5181b488" }
@@ -39,6 +42,10 @@ agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data",
 tempfile = "=3.27.0"
 
 [dev-dependencies]
+# Tests only: they take independent digests to check the identity encoders
+# against. Shipped code hashes through `quire-canonical` or
+# `qsl_foundation::ByteDigest` (QSL-194); TC-390 asserts sha2 stays here.
+sha2 = "=0.10.9"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
 # `tests/it/{ieee_profiles,quantities}.rs` build expected big-integer values.
 num-bigint = "=0.4.8"
