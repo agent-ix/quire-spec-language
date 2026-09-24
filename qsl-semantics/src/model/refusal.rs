@@ -21,24 +21,22 @@ use qsl_foundation::source::LocatedSpan;
 use quire_exact::UniverseId;
 
 /// The offered model selection at a `foreign-model-selection` refusal's
-/// three sites (#163 review finding: a revision-only mismatch must stay
-/// distinguishable in the typed cause, not just in `detail`'s text).
+/// two sites (#163 review finding: each offered value stays distinguishable
+/// in the typed cause, not just in `detail`'s text).
 ///
-/// The effective-view site (`crate::model::population::admit_binding`'s
-/// `view.model_selection != domain_package.model_selection` check) has the offered
-/// selection's own full `DomainPackageRef`, so it carries that. The population-
-/// document site (the same function's `modelIdentity` check) has only the
-/// document's declared `modelIdentity` string — a `PopulationDocument`
-/// carries no full `DomainPackageRef` of its own — so it carries that string
-/// instead, never a substituted or partially-populated `DomainPackageRef`. The
-/// population-declaration site (the same function's population-key
-/// resolution, FR-153's "Its declaration key must belong to the binding's
-/// ModelSelection") has only the caller-supplied population `DeclarationKey`,
-/// so it carries that.
+/// The population-document site (`crate::model::population::admit_binding`'s
+/// `modelIdentity` check) has only the document's declared `modelIdentity`
+/// string — a `PopulationDocument` carries no full `DomainPackageRef` of its
+/// own — so it carries that string instead, never a substituted or
+/// partially-populated `DomainPackageRef`. The population-declaration site
+/// (the same function's population-key resolution, FR-153's "Its
+/// declaration key must belong to the binding's ModelSelection") has only
+/// the caller-supplied population `DeclarationKey`, so it carries that.
+/// There is no effective-view site: an effective view carries its own
+/// domain package, so admission has no second package to compare it with
+/// (QSL-204).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OfferedSelection {
-    /// The effective view's own model selection, in full.
-    View(DomainPackageRef),
     /// The population document's declared `modelIdentity`.
     Document(String),
     /// The caller-supplied population declaration key.
@@ -235,11 +233,11 @@ pub enum ModelRefusalCause {
         /// The contended or unreachable redefinition target.
         target: DeclarationKey,
     },
-    /// A population document or effective view names a model selection
+    /// A population document or population key names a model selection
     /// other than the admitting domain package's.
     ForeignModelSelection {
-        /// The offered model selection: full at the effective-view site,
-        /// `modelIdentity` only at the population-document site.
+        /// The offered model selection: the document's `modelIdentity`, or
+        /// the population key that names no declaration of the package.
         actual: OfferedSelection,
         /// The admitting domain package's model selection, in full.
         expected: DomainPackageRef,

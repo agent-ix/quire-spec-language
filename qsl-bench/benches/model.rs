@@ -9,12 +9,11 @@
 //!   includes that parse) and `intake::read_records` (FCD's validator and
 //!   the per-node reader, over the parsed document).
 //! - `model/normalize/<n>`: FR-150 normalization under unlimited limits.
-//! - `model/object_universe_of/<n>`: the unmetered rebuild F5 names
-//!   (`normalize::build` under `UNLIMITED`), called alone.
 //! - `model/admit_binding/<n>` and `model/admit_invocation/<n>`: FR-153
 //!   admission of a fixed 100-member population, directly and as one
-//!   unchanged invocation (pre and post). F5's comparison: admission
-//!   against `object_universe_of`, and invocation against binding.
+//!   unchanged invocation (pre and post). Admission reads its object
+//!   universe from the effective view and never normalizes (QSL-204), so
+//!   neither figure scales with `model/normalize/<n>`.
 //! - `model/conformance/resolve_redefinition_target/<n>`: one model
 //!   conformance call, which builds `ConformanceIndex` over the whole
 //!   package every time (QSL-202).
@@ -35,10 +34,10 @@ use qsl_bench::model::{
     resolve_root_field_redefinition, view, ModelShape,
 };
 use qsl_bench::widen;
-use qsl_semantics::model::normalize::object_universe_of;
 use qsl_semantics::model::population::{all_instances, AdmissionOutcome, AllInstancesOutcome};
 use quire_exact::Meter;
 use std::hint::black_box;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Object types per package (each also declares one field record).
@@ -94,17 +93,18 @@ fn normalization_and_admission(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(4));
     for types in TYPES {
-        let domain_package = intake(&offer(model::document(shape(types))))
-            .expect("the generated document passes intake");
+        let domain_package = Arc::new(
+            intake(&offer(model::document(shape(types))))
+                .expect("the generated document passes intake"),
+        );
         let effective = view(&domain_package);
-        let root = model::key(&chain_type(0));
         let document = population_document(shape(types), ADMITTED_MEMBERS);
         assert!(matches!(
-            admit_population(&domain_package, &effective, &document),
+            admit_population(&effective, &document),
             AdmissionOutcome::Admitted(_)
         ));
         assert!(matches!(
-            admit_unchanged_invocation(&domain_package, &effective, &document),
+            admit_unchanged_invocation(&effective, &document),
             AdmissionOutcome::Admitted(_)
         ));
         assert!(resolve_root_field_redefinition(&domain_package).is_ok());
@@ -115,21 +115,14 @@ fn normalization_and_admission(c: &mut Criterion) {
             |b, package| b.iter(|| view(black_box(package))),
         );
         group.bench_with_input(
-            BenchmarkId::new("object_universe_of", types),
-            &domain_package,
-            |b, package| {
-                b.iter(|| black_box(object_universe_of(black_box(package), &root)).is_ok())
-            },
-        );
-        group.bench_with_input(
             BenchmarkId::new("admit_binding", types),
-            &domain_package,
-            |b, package| b.iter(|| admit_population(package, &effective, &document)),
+            &effective,
+            |b, effective| b.iter(|| admit_population(effective, &document)),
         );
         group.bench_with_input(
             BenchmarkId::new("admit_invocation", types),
-            &domain_package,
-            |b, package| b.iter(|| admit_unchanged_invocation(package, &effective, &document)),
+            &effective,
+            |b, effective| b.iter(|| admit_unchanged_invocation(effective, &document)),
         );
         group.bench_with_input(
             BenchmarkId::new("conformance/resolve_redefinition_target", types),

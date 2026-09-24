@@ -349,6 +349,21 @@ baseline does not show the per-frame cost changing with depth.
 - **Unlimited limits.** The rebuild calls `build` with
   `ModelNormalizationLimits::UNLIMITED` (`normalize.rs:2974`, `:2998`). This is
   read from code, not timed. The timing confirms the cost.
+- **Fixed by QSL-204 (PR #387).** Admission now reads the package and its
+  object universe from the effective view the caller normalized under its own
+  limits, and does no normalization. The `model/object_universe_of/<n>` bench
+  is gone with the function it timed. The rows above are kept as history.
+  Back-to-back A/B in one session, base `f157f346` against PR head, criterion
+  point estimates:
+
+  | Bench | Base | QSL-204 | Change |
+  |---|---|---|---|
+  | `model/admit_binding/250` | 7.82 ms | 0.322 ms | −95.8% |
+  | `model/admit_invocation/250` | 16.04 ms | 0.666 ms | −95.7% |
+  | `model/admit_binding/1000` | 42.64 ms | 1.29 ms | −97.4% |
+  | `model/admit_invocation/1000` | 87.65 ms | 1.65 ms | −98.1% |
+  | `model/admit_binding/4000` | 318.3 ms | 8.31 ms | −97.4% |
+  | `model/admit_invocation/4000` | 608.3 ms | 14.94 ms | −97.5% |
 
 ### F6: model queries do O(N×A) conformance work. Confirmed on both axes.
 

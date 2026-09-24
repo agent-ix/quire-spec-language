@@ -31,6 +31,7 @@
 //! all `depth` generalization steps per member.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::conformance::{resolve_redefinition_target, RedefinitionTargetOutcome};
@@ -40,7 +41,9 @@ use qsl_semantics::model::domain_package::{
 };
 use qsl_semantics::model::intake::{admit, meaning, read_records, PackageDocument};
 use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
-use qsl_semantics::model::normalize::{normalize, EffectiveView, ModelRefusal, NormalizeOutcome};
+use qsl_semantics::model::normalize::{
+    normalize_shared, EffectiveView, ModelRefusal, NormalizeOutcome,
+};
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::model::population::{
     admit_binding, admit_invocation, AdmissionMeter, AdmissionOutcome, InvocationContext,
@@ -261,14 +264,19 @@ pub fn intake(offer: &Offer) -> Result<DomainPackage, IntakeFailure> {
     Ok(DomainPackage::new(selection, records))
 }
 
-/// FR-150 normalization of `domain_package` under unlimited limits.
+/// FR-150 normalization of `domain_package` under unlimited limits. The
+/// package is shared into the view, never copied, so the timed work is
+/// normalization alone.
 ///
 /// # Panics
 ///
 /// Panics when normalization does not complete: every generated shape is a
 /// valid, acyclic, single-component package.
-pub fn view(domain_package: &DomainPackage) -> EffectiveView {
-    match normalize(domain_package, ModelNormalizationLimits::UNLIMITED) {
+pub fn view(domain_package: &Arc<DomainPackage>) -> EffectiveView {
+    match normalize_shared(
+        Arc::clone(domain_package),
+        ModelNormalizationLimits::UNLIMITED,
+    ) {
         NormalizeOutcome::Completed(view) => view,
         other => panic!("the generated package normalizes: {other:?}"),
     }
@@ -292,14 +300,9 @@ pub fn population_document(shape: ModelShape, members: usize) -> PopulationDocum
 
 /// FR-153 binding admission of `document` into `Pop`, with a closed
 /// subtype closure and a declared maximum of `document`'s own size.
-pub fn admit_population(
-    domain_package: &DomainPackage,
-    view: &EffectiveView,
-    document: &PopulationDocument,
-) -> AdmissionOutcome {
+pub fn admit_population(view: &EffectiveView, document: &PopulationDocument) -> AdmissionOutcome {
     let mut meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     admit_binding(
-        domain_package,
         view,
         document,
         &key("Pop"),
@@ -315,7 +318,6 @@ pub fn admit_population(
 /// [`admit_population`] done at both instants, plus a frame check that
 /// passes.
 pub fn admit_unchanged_invocation(
-    domain_package: &DomainPackage,
     view: &EffectiveView,
     document: &PopulationDocument,
 ) -> AdmissionOutcome {
@@ -325,7 +327,6 @@ pub fn admit_unchanged_invocation(
     let mut post_meter = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
     admit_invocation(
         InvocationContext {
-            domain_package,
             view,
             population: &population,
             subtype_closure: GeneralizationClosure::Closed,
@@ -349,15 +350,11 @@ pub fn admit_unchanged_invocation(
 /// # Panics
 ///
 /// Panics when intake or admission refuses: every generated shape is valid.
-pub fn admitted(shape: ModelShape, members: usize) -> (DomainPackage, PopulationBinding) {
+pub fn admitted(shape: ModelShape, members: usize) -> (Arc<DomainPackage>, PopulationBinding) {
     let domain_package =
-        intake(&offer(document(shape))).expect("the generated document passes intake");
+        Arc::new(intake(&offer(document(shape))).expect("the generated document passes intake"));
     let effective = view(&domain_package);
-    match admit_population(
-        &domain_package,
-        &effective,
-        &population_document(shape, members),
-    ) {
+    match admit_population(&effective, &population_document(shape, members)) {
         AdmissionOutcome::Admitted(binding) => (domain_package, binding),
         other => panic!("the generated population admits: {other:?}"),
     }
@@ -418,7 +415,7 @@ mod tests {
         assert!(resolve_root_field_redefinition(&domain_package).is_ok());
         let effective = view(&domain_package);
         assert!(matches!(
-            admit_unchanged_invocation(&domain_package, &effective, &population_document(shape, 1)),
+            admit_unchanged_invocation(&effective, &population_document(shape, 1)),
             AdmissionOutcome::Admitted(_)
         ));
     }

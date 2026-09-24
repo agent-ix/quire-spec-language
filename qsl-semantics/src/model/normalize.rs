@@ -204,13 +204,14 @@
 )]
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::model::accounting::{
     Charge, ChargePoint, Incomplete, LimitKind, Meter, ModelNormalizationLimits,
 };
 use crate::model::conformance::generals_by_specific;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, PopulationRecord,
 };
 use crate::model::key::{
     digest_of, jcs_bytes, DeclarationKey, EffectiveDeclarationPreimage, EffectiveId,
@@ -427,17 +428,31 @@ pub struct ViewEntry {
 }
 
 /// A `quire.model.effective-view/v1` result: every effective declaration a
-/// [`DomainPackageRef`] admits, sorted ascending by effective identity.
+/// [`DomainPackage`] admits, sorted ascending by effective identity, together
+/// with the domain package it was normalized from.
 ///
-/// Both fields are private; [`normalize`] is this type's only constructor, so
-/// a caller cannot hand-build or alter a view (its `declarations` cannot be
-/// substituted for some other domain package's while keeping a matching
-/// `model_selection` header) and admission never needs to re-normalize a
-/// caller-supplied view to trust it.
+/// Every field is private and [`normalize`]/[`normalize_shared`] are this
+/// type's only constructors, so a view always carries the exact
+/// [`DomainPackage`] its declarations, type identities and object universes
+/// were computed from. A caller cannot pair a view with some other package:
+/// population admission reads the package from the view itself (QSL-204), so
+/// there is no second package whose correspondence to the view would need
+/// checking or re-normalizing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectiveView {
-    /// The model selection this view was normalized under.
-    model_selection: DomainPackageRef,
+    /// The domain package this view was normalized from. Shared, never
+    /// copied, by every [`crate::model::population::PopulationBinding`]
+    /// admitted against this view.
+    domain_package: Arc<DomainPackage>,
+    /// Everything normalization computed from `domain_package`.
+    body: ViewBody,
+}
+
+/// What normalization computes for an [`EffectiveView`], apart from the
+/// package itself. `build` produces this alone, so a normalization that is
+/// refused or runs out of limits never copies or retains the package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ViewBody {
     /// Every admitted declaration, ascending by [`EffectiveId`].
     declarations: Vec<ViewEntry>,
     /// Every top-level declaration's effective identity, keyed by its
@@ -445,37 +460,33 @@ pub struct EffectiveView {
     /// entries with no owner effective type. Derived from `declarations` at
     /// construction, so it adds no identity of its own.
     type_identities: BTreeMap<DeclarationKey, EffectiveId>,
+    /// The object universes this normalization produced, one per connected
+    /// component of the object-type supertype graph (ADR-013 §8 OQ-E),
+    /// ascending by each universe's own first root type identity -- the
+    /// exact `normalize.hash` charge order (`value-accounting.md`:495).
+    /// Non-empty by type: a domain package with no declared object type
+    /// still gets one universe, with empty `root_types`. Not part of the
+    /// view's own preimage (`to_json`), so it adds no identity of its own.
+    universes: ObjectUniverses,
+    /// Every declared object type's position in `universes`: its own
+    /// connected component's universe.
+    universe_index_by_type: BTreeMap<DeclarationKey, usize>,
+    /// Every `Population` record of the package, keyed by its own
+    /// declaration key.
+    populations: BTreeMap<DeclarationKey, PopulationEntry>,
 }
 
-impl EffectiveView {
-    /// The model selection this view was normalized under.
-    pub fn model_selection(&self) -> &DomainPackageRef {
-        &self.model_selection
-    }
-
-    /// Every admitted declaration, ascending by [`EffectiveId`].
-    pub fn declarations(&self) -> &[ViewEntry] {
-        &self.declarations
-    }
-
-    /// Every top-level declaration's effective identity, keyed by its
-    /// original producer [`DeclarationKey`]; member declarations (those with
-    /// an owner effective type) are excluded. This is the one
-    /// `DeclarationKey` -> [`EffectiveId`] correspondence for declared types:
-    /// FR-143's reference type component (ADR-013 O-05) and FR-153's
-    /// population type catalog both read it. Normalization computes it once.
-    pub fn type_identities(&self) -> &BTreeMap<DeclarationKey, EffectiveId> {
-        &self.type_identities
-    }
-
-    fn to_json(&self) -> serde_json::Value {
+impl ViewBody {
+    /// The view preimage under `model_selection`: the package's own header
+    /// and every declaration, never the universes or populations.
+    fn to_json(&self, model_selection: &DomainPackageRef) -> serde_json::Value {
         use serde_json::{Map, Value};
         let mut object = Map::new();
         object.insert(
             "version".to_owned(),
             Value::String(crate::model::key::EFFECTIVE_VIEW_DOMAIN.to_owned()),
         );
-        object.insert("model_selection".to_owned(), self.model_selection.to_json());
+        object.insert("model_selection".to_owned(), model_selection.to_json());
         object.insert(
             "rules".to_owned(),
             Value::Object({
@@ -507,6 +518,126 @@ impl EffectiveView {
         );
         Value::Object(object)
     }
+}
+
+/// One `Population` record of a view's package, with the position in the
+/// view's universes of the universe its bindings are admitted into
+/// (ADR-013 §8 OQ-E: its first member type's component, or the first
+/// universe when it declares no member type).
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PopulationEntry {
+    record: PopulationRecord,
+    universe_index: usize,
+}
+
+/// A population declaration as an [`EffectiveView`] resolves it for
+/// admission: the package's own record and the object universe its bindings
+/// are admitted into.
+#[derive(Clone, Copy, Debug)]
+pub struct ViewPopulation<'a> {
+    /// The package's own `Population` record.
+    pub record: &'a PopulationRecord,
+    /// The object universe this population's bindings are admitted into.
+    pub universe: &'a ObjectUniverse,
+}
+
+/// A non-empty, ordered list of object universes: the first, then the rest.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ObjectUniverses {
+    first: ObjectUniverse,
+    rest: Vec<ObjectUniverse>,
+}
+
+impl ObjectUniverses {
+    /// The universe at `index` in ascending order, if any.
+    fn get(&self, index: usize) -> Option<&ObjectUniverse> {
+        match index.checked_sub(1) {
+            None => Some(&self.first),
+            Some(rest_index) => self.rest.get(rest_index),
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &ObjectUniverse> {
+        std::iter::once(&self.first).chain(&self.rest)
+    }
+}
+
+impl EffectiveView {
+    /// The domain package this view was normalized from.
+    pub fn domain_package(&self) -> &DomainPackage {
+        &self.domain_package
+    }
+
+    /// The shared handle to [`EffectiveView::domain_package`], for a binding
+    /// that keeps the package alive beyond this view.
+    pub(crate) fn shared_domain_package(&self) -> &Arc<DomainPackage> {
+        &self.domain_package
+    }
+
+    /// The model selection this view was normalized under.
+    pub fn model_selection(&self) -> &DomainPackageRef {
+        &self.domain_package.model_selection
+    }
+
+    /// Every admitted declaration, ascending by [`EffectiveId`].
+    pub fn declarations(&self) -> &[ViewEntry] {
+        &self.body.declarations
+    }
+
+    /// Every top-level declaration's effective identity, keyed by its
+    /// original producer [`DeclarationKey`]; member declarations (those with
+    /// an owner effective type) are excluded. This is the one
+    /// `DeclarationKey` -> [`EffectiveId`] correspondence for declared types:
+    /// FR-143's reference type component (ADR-013 O-05) and FR-153's
+    /// population type catalog both read it. Normalization computes it once.
+    pub fn type_identities(&self) -> &BTreeMap<DeclarationKey, EffectiveId> {
+        &self.body.type_identities
+    }
+
+    /// Every object universe this view's normalization produced, one per
+    /// connected component of the object-type supertype graph (ADR-013 §8
+    /// OQ-E), ascending by each universe's own first root type identity.
+    /// Always yields at least one universe.
+    pub fn object_universes(&self) -> impl Iterator<Item = &ObjectUniverse> {
+        self.body.universes.iter()
+    }
+
+    /// `type_key`'s own object universe (ADR-013 §8 OQ-E): the universe of
+    /// the connected component of the object-type supertype graph that
+    /// contains `type_key`. `None` when `type_key` names no declared object
+    /// type of the normalized domain package.
+    pub fn object_universe_of(&self, type_key: &DeclarationKey) -> Option<&ObjectUniverse> {
+        self.body
+            .universe_index_by_type
+            .get(type_key)
+            .and_then(|index| self.body.universes.get(*index))
+    }
+
+    /// The first object universe, ascending by first root type identity:
+    /// the sole universe of a domain package whose object-type supertype
+    /// graph has exactly one connected component. A domain package with
+    /// more than one component still yields a single universe here rather
+    /// than refusing; callers that need a *specific* type's universe call
+    /// [`EffectiveView::object_universe_of`], and callers that need every
+    /// universe call [`EffectiveView::object_universes`].
+    pub fn object_universe(&self) -> &ObjectUniverse {
+        &self.body.universes.first
+    }
+
+    /// The `Population` record of this view's domain package declared under
+    /// `key`, with the object universe its bindings are admitted into, or
+    /// `None` when the package declares no population under `key`.
+    pub fn population(&self, key: &DeclarationKey) -> Option<ViewPopulation<'_>> {
+        let entry = self.body.populations.get(key)?;
+        Some(ViewPopulation {
+            record: &entry.record,
+            universe: self.body.universes.get(entry.universe_index)?,
+        })
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        self.body.to_json(self.model_selection())
+    }
 
     /// This view's `quire.model.effective-view/v1` identity.
     pub fn identity(&self) -> EffectiveId {
@@ -524,7 +655,7 @@ impl EffectiveView {
     /// identity — TC-195 N10's `unsorted-view` mutation, "refused by the
     /// semantic check" over an already-constructed view (PR #140 F5).
     pub fn validate_order(&self) -> Result<(), ModelRefusal> {
-        for pair in self.declarations.windows(2) {
+        for pair in self.body.declarations.windows(2) {
             if pair[0].effective_id > pair[1].effective_id {
                 return Err(ModelRefusal {
                     code: Code::InvalidModelBinding,
@@ -1077,22 +1208,13 @@ struct Built {
     /// checking: no later stage runs or charges").
     phase3_refusals: Vec<ModelRefusal>,
     declarations: Vec<PendingDeclaration>,
-    view: EffectiveView,
-    /// Every object universe this domain package normalizes to, one per
-    /// connected component of the object-type supertype graph (ADR-013 §8
-    /// OQ-E), ascending by each universe's own first root type identity --
-    /// the exact `normalize.hash` charge order (`value-accounting.md`:495).
-    /// Never empty: a domain package with no declared object type still
-    /// gets one universe, with empty `root_types`, matching the single
-    /// whole-package universe every domain package produced before OQ-E was
-    /// implemented (the identity a single-component model hashes to is
-    /// unchanged by this partition -- see `tests/it/model_normalization.rs`'s
-    /// pinned-digest regression test).
-    universes: Vec<ObjectUniverse>,
-    /// `universes`' own index, keyed by every declared object type's key.
-    /// Every key `Index::types` names appears here exactly once, pointing at
-    /// its own connected component's entry in `universes`.
-    universe_index_by_type: BTreeMap<DeclarationKey, usize>,
+    /// The effective view's body, carrying every object universe this
+    /// domain package normalizes to (`ViewBody::universes`' own doc), but
+    /// not the package: [`normalize`] attaches that only to a completed
+    /// view. A single-component model's universe identity is unchanged by
+    /// OQ-E's per-component partition -- see
+    /// `tests/it/model_normalization.rs`'s pinned-digest regression test.
+    view: ViewBody,
     /// Every phase-4 `normalize.redefinition-check` charge's own exact
     /// `work_units` amount (`m + r`, `value-accounting.md:455`), one entry
     /// per redefining member in the entire domain package (field and operation
@@ -1478,6 +1600,20 @@ fn validate_references(domain_package: &DomainPackage, index: &Index) -> Vec<Mod
     refusals
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many times [`build`] has run on this thread. Observation only: it
+    /// changes no result. Unit tests read it through [`build_calls`] to
+    /// count how often a caller normalizes a package (QSL-204).
+    static BUILD_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times [`build`] has run on the current thread (test-only).
+#[cfg(test)]
+pub(crate) fn build_calls() -> usize {
+    BUILD_CALLS.with(std::cell::Cell::get)
+}
+
 /// Pass one: build the complete normalization, refusing outright on a real
 /// defect and bounding ancestor-path enumeration against `limits` (PR #140
 /// F1) so a diamond-generalization domain-package cannot force unbounded work before
@@ -1486,6 +1622,8 @@ fn build(
     domain_package: &DomainPackage,
     limits: &ModelNormalizationLimits,
 ) -> Result<Built, ModelRefusal> {
+    #[cfg(test)]
+    BUILD_CALLS.with(|calls| calls.set(calls.get() + 1));
     validate_selection(domain_package)?;
     let index = Index::build(domain_package);
     // QSL #199: every `normalize.record` charge (one per IR node, in node
@@ -1504,16 +1642,19 @@ fn build(
             phase3_facts: Vec::new(),
             phase3_refusals: Vec::new(),
             declarations: Vec::new(),
-            view: EffectiveView {
-                model_selection: domain_package.model_selection.clone(),
+            view: ViewBody {
                 declarations: Vec::new(),
                 type_identities: BTreeMap::new(),
+                universes: ObjectUniverses {
+                    first: ObjectUniverse {
+                        model_selection: domain_package.model_selection.clone(),
+                        root_types: Vec::new(),
+                    },
+                    rest: Vec::new(),
+                },
+                universe_index_by_type: BTreeMap::new(),
+                populations: BTreeMap::new(),
             },
-            universes: vec![ObjectUniverse {
-                model_selection: domain_package.model_selection.clone(),
-                root_types: Vec::new(),
-            }],
-            universe_index_by_type: BTreeMap::new(),
             redefinition_check_work: Vec::new(),
             phase4_fact_count: 0,
             conflict_check_work: Vec::new(),
@@ -1945,39 +2086,67 @@ fn build(
     // by its first root type identity". A component with no root type at
     // all (every member's `supertypes[]` is non-empty, i.e. a pure cycle)
     // can only arise on a package phase 3 already refuses -- `charge_all`
-    // and `object_universe`/`object_universes` both report that refusal
-    // before this order is ever charged or read, so `None` sorting first is
+    // reports that refusal before this order is ever charged, and a refused
+    // normalization yields no view to read it from, so `None` sorting first is
     // an arbitrary but harmless placement, never observed on a successful
     // normalization.
     components.sort_by_key(|(_, universe)| universe.root_types.first().copied());
-    // A domain package with no declared object type at all still produces
-    // exactly one (empty) universe, matching every domain package's
-    // behavior before OQ-E's per-component partition existed.
-    if components.is_empty() {
-        components.push((
-            Vec::new(),
-            ObjectUniverse {
-                model_selection: domain_package.model_selection.clone(),
-                root_types: Vec::new(),
-            },
-        ));
-    }
     let mut universe_index_by_type: BTreeMap<DeclarationKey, usize> = BTreeMap::new();
     for (component_index, (members, _)) in components.iter().enumerate() {
         for member in members {
             universe_index_by_type.insert(member.clone(), component_index);
         }
     }
-    let universes: Vec<ObjectUniverse> = components.into_iter().map(|(_, u)| u).collect();
+    let mut ordered = components.into_iter().map(|(_, universe)| universe);
+    // A domain package with no declared object type at all still produces
+    // exactly one (empty) universe, matching every domain package's
+    // behavior before OQ-E's per-component partition existed.
+    let first = ordered.next().unwrap_or_else(|| ObjectUniverse {
+        model_selection: domain_package.model_selection.clone(),
+        root_types: Vec::new(),
+    });
+    let universes = ObjectUniverses {
+        first,
+        rest: ordered.collect(),
+    };
+
+    // Each population's bindings are admitted into its first member type's
+    // universe, or the first universe when it declares no member type.
+    // Intake has already refused a member type that is not a declared
+    // object type (`UnknownPopulationMemberType`), so every member type
+    // here has a universe.
+    let populations = domain_package
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::Population(population) => Some(population),
+            _ => None,
+        })
+        .map(|population| {
+            let universe_index = population
+                .member_types
+                .first()
+                .map_or(0, |type_key| universe_index_by_type[type_key]);
+            (
+                population.key.clone(),
+                PopulationEntry {
+                    record: population.clone(),
+                    universe_index,
+                },
+            )
+        })
+        .collect();
 
     let type_identities = type_keys
         .iter()
         .map(|key| (key.clone(), type_effective_ids[key]))
         .collect();
-    let view = EffectiveView {
-        model_selection: domain_package.model_selection.clone(),
+    let view = ViewBody {
         declarations: entries,
         type_identities,
+        universes,
+        universe_index_by_type,
+        populations,
     };
 
     Ok(Built {
@@ -1987,8 +2156,6 @@ fn build(
         phase3_refusals,
         declarations,
         view,
-        universes,
-        universe_index_by_type,
         redefinition_check_work,
         phase4_fact_count,
         conflict_check_work,
@@ -2871,8 +3038,8 @@ fn charge_all(
 
     // `value-accounting.md`:495: "each object universe preimage ascending
     // by its first root type identity, then the effective view preimage" --
-    // `built.universes` is already in that order (`build`'s own sort).
-    for universe in &built.universes {
+    // the view's universes are already in that order (`build`'s own sort).
+    for universe in built.view.universes.iter() {
         meter.charge(Charge::new(ChargePoint::NormalizeHash).size(
             LimitKind::HashedBytes,
             length_amount(universe.jcs_bytes().len()),
@@ -2880,7 +3047,7 @@ fn charge_all(
     }
     meter.charge(Charge::new(ChargePoint::NormalizeHash).size(
         LimitKind::HashedBytes,
-        length_amount(built.view.jcs_bytes().len()),
+        length_amount(jcs_bytes(&built.view.to_json(&domain_package.model_selection)).len()),
     ))?;
     Ok(())
 }
@@ -2897,6 +3064,10 @@ fn charge_all(
 /// checks over the already-parsed [`DomainPackage`] itself, not byte-level
 /// digest checks against admitted package bytes, so they run here rather
 /// than waiting on that future intake.
+///
+/// A completed view owns a copy of `domain_package`; only a completed
+/// normalization makes that copy. A caller that already holds the package in
+/// an [`Arc`] calls [`normalize_shared`] instead, which makes none.
 pub fn normalize(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
@@ -2905,13 +3076,43 @@ pub fn normalize(
     outcome
 }
 
-/// A meter constructed to run `domain_package` under [`ModelNormalizationLimits::UNLIMITED`]
-/// and expose its admitted-charge sequence, for tests that assert the exact
-/// charge order alongside [`normalize`]'s result.
+/// [`normalize`] over a package the caller already shares: a completed view
+/// holds `domain_package` itself, with no copy.
+pub fn normalize_shared(
+    domain_package: Arc<DomainPackage>,
+    limits: ModelNormalizationLimits,
+) -> NormalizeOutcome {
+    let (body, _meter) = normalize_body(&domain_package, limits);
+    into_outcome(body, || domain_package)
+}
+
+/// [`normalize`], also returning the meter that ran `domain_package` under
+/// `limits`, exposing its admitted-charge sequence for tests that assert the
+/// exact charge order alongside the result.
+///
+/// Charging runs in two passes: `build` computes every phase to completion
+/// first (bounding only ancestor-path enumeration, by
+/// `limits.ancestor_steps`), and `charge_all` then replays the exact
+/// `ModelNormalizationLimitsV1` charge sequence against the finished result.
+/// The counted limits therefore bound what normalization admits, not the
+/// work `build` has already done by the time a charge is denied.
 pub fn normalize_with_meter(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
 ) -> (NormalizeOutcome, Meter) {
+    let (body, meter) = normalize_body(domain_package, limits);
+    (
+        into_outcome(body, || Arc::new(domain_package.clone())),
+        meter,
+    )
+}
+
+/// `build` then `charge_all`: the completed view's body, or the denial that
+/// stopped it.
+fn normalize_body(
+    domain_package: &DomainPackage,
+    limits: ModelNormalizationLimits,
+) -> (Result<ViewBody, ChargeAllDenial>, Meter) {
     let mut meter = Meter::new(limits);
     let mut built = match build(domain_package, &limits) {
         Ok(built) => built,
@@ -2919,107 +3120,33 @@ pub fn normalize_with_meter(
         // decided before any charge at all, so it is always the sole entry.
         Err(refusal) => {
             return (
-                NormalizeOutcome::Refused(Refusals::new(refusal, Vec::new())),
+                Err(ChargeAllDenial::Refused(Refusals::new(refusal, Vec::new()))),
                 meter,
             )
         }
     };
-    let outcome = match charge_all(domain_package, &mut built, &mut meter) {
-        Ok(()) => NormalizeOutcome::Completed(built.view),
+    let body = charge_all(domain_package, &mut built, &mut meter).map(|()| built.view);
+    (body, meter)
+}
+
+/// The outcome of a normalization whose completed body is paired with the
+/// package `package` supplies, called only when normalization completed.
+fn into_outcome(
+    body: Result<ViewBody, ChargeAllDenial>,
+    package: impl FnOnce() -> Arc<DomainPackage>,
+) -> NormalizeOutcome {
+    match body {
+        Ok(body) => NormalizeOutcome::Completed(EffectiveView {
+            domain_package: package(),
+            body,
+        }),
         Err(ChargeAllDenial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
         // `ChargeAllDenial::Refused` already carries `Refusals` (L1
-        // finding, PR #228 round 2 review): `charge_all`'s own three raise
-        // sites each build it directly from an already-checked non-empty
-        // `Vec`, so there is nothing left to convert, and nothing left to
-        // panic over, here.
+        // finding, PR #228 round 2 review): every raise site builds it
+        // directly from an already-checked non-empty source, so there is
+        // nothing left to convert, and nothing left to panic over, here.
         Err(ChargeAllDenial::Refused(refusals)) => NormalizeOutcome::Refused(refusals),
-    };
-    (outcome, meter)
-}
-
-/// Every stage-ordered refusal bundle a freshly [`build`] result carries,
-/// checked in `build`'s own deferred order (`intake_refusals`, then
-/// `phase3_refusals`, then `phase4_refusals` -- see the module docs),
-/// factored out of [`object_universe`]/[`object_universes`]/
-/// [`object_universe_of`] so all three check it identically.
-fn built_refusals(built: &mut Built) -> Result<(), Refusals> {
-    for refusals in [
-        std::mem::take(&mut built.intake_refusals),
-        std::mem::take(&mut built.phase3_refusals),
-        std::mem::take(&mut built.phase4_refusals),
-    ] {
-        // `Refusals::try_from` in an `if let` (L1 finding, PR #228 round 2
-        // review): no `.expect()` needed -- an empty stage's refusal `Vec`
-        // simply does not match `Ok`, so the loop moves on to the next
-        // stage instead.
-        if let Ok(refusals) = Refusals::try_from(refusals) {
-            return Err(refusals);
-        }
     }
-    Ok(())
-}
-
-/// Every object universe `domain_package` normalizes to, one per connected
-/// component of the object-type supertype graph (ADR-013 §8 OQ-E), ascending
-/// by each universe's own first root type identity -- independent of
-/// `charge_all`'s bookkeeping (test and caller convenience; recomputes via
-/// `build`, under [`ModelNormalizationLimits::UNLIMITED`]). Under
-/// `UNLIMITED` nothing ever runs out, so `build`'s own deferred refusal-vec
-/// fields are surfaced here directly rather than replayed through
-/// `charge_all` (see `built_refusals`). Returns [`Refusals`] rather than a
-/// bare `Vec<ModelRefusal>` (M2 finding, PR #228 round 2 review): every
-/// `Err` here already comes from a non-empty source, so the type itself
-/// carries that guarantee forward to callers. Never returns an empty `Vec`
-/// (see `Built::universes`'s own doc).
-pub fn object_universes(domain_package: &DomainPackage) -> Result<Vec<ObjectUniverse>, Refusals> {
-    let mut built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)
-        .map_err(|refusal| Refusals::new(refusal, Vec::new()))?;
-    built_refusals(&mut built)?;
-    Ok(built.universes)
-}
-
-/// `type_key`'s own object universe (ADR-013 §8 OQ-E): the universe of the
-/// connected component of the object-type supertype graph that contains
-/// `type_key`, never every root type in the domain package. `type_key` must
-/// name a declared object type of `domain_package` -- a population's
-/// `member_types` entry, for instance, which `build`'s own intake pass
-/// already validates (`UnknownPopulationMemberType`) before this function's
-/// own `build` call can succeed with no refusals; a `type_key` a *validated*
-/// `domain_package` never declared is a caller programming error, not a data
-/// error to refuse.
-///
-/// # Panics
-///
-/// Panics if `domain_package` normalizes with no refusals and `type_key`
-/// does not name one of its declared object types.
-pub fn object_universe_of(
-    domain_package: &DomainPackage,
-    type_key: &DeclarationKey,
-) -> Result<ObjectUniverse, Refusals> {
-    let mut built = build(domain_package, &ModelNormalizationLimits::UNLIMITED)
-        .map_err(|refusal| Refusals::new(refusal, Vec::new()))?;
-    built_refusals(&mut built)?;
-    let index = *built
-        .universe_index_by_type
-        .get(type_key)
-        .unwrap_or_else(|| {
-            panic!("{type_key:?} is not a declared object type of this domain package")
-        });
-    Ok(built.universes[index].clone())
-}
-
-/// The sole object universe of a domain package whose object-type supertype
-/// graph has exactly one connected component (test and caller convenience).
-/// A domain package with more than one component still returns a single
-/// [`ObjectUniverse`] -- ascending by first root type identity, the same
-/// order [`object_universes`] returns -- rather than refusing; callers that
-/// need a *specific* type's universe call [`object_universe_of`], and
-/// callers that need every universe call [`object_universes`].
-pub fn object_universe(domain_package: &DomainPackage) -> Result<ObjectUniverse, Refusals> {
-    Ok(object_universes(domain_package)?
-        .into_iter()
-        .next()
-        .expect("object_universes never returns an empty Vec"))
 }
 
 #[cfg(test)]
@@ -3053,9 +3180,23 @@ mod tests {
     #[test]
     fn n10_unsorted_view_refuses_by_the_semantic_check() {
         let view = EffectiveView {
-            model_selection: DomainPackageRef::fixture("test/orders"),
-            declarations: vec![entry(2), entry(1)],
-            type_identities: BTreeMap::new(),
+            domain_package: Arc::new(DomainPackage::new(
+                DomainPackageRef::fixture("test/orders"),
+                Vec::new(),
+            )),
+            body: ViewBody {
+                declarations: vec![entry(2), entry(1)],
+                type_identities: BTreeMap::new(),
+                universes: ObjectUniverses {
+                    first: ObjectUniverse {
+                        model_selection: DomainPackageRef::fixture("test/orders"),
+                        root_types: Vec::new(),
+                    },
+                    rest: Vec::new(),
+                },
+                universe_index_by_type: BTreeMap::new(),
+                populations: BTreeMap::new(),
+            },
         };
         let refusal = view
             .validate_order()
@@ -3067,5 +3208,41 @@ mod tests {
             }
         );
         assert_eq!(refusal.code, Code::InvalidModelBinding);
+    }
+
+    /// QSL-204 review (PR #387, LOW-1): `normalize_shared` puts the caller's
+    /// own `Arc` into the completed view instead of copying the package, and
+    /// yields the same view as the borrowing `normalize`.
+    #[test]
+    #[trace("TC-195")]
+    fn normalize_shared_keeps_the_callers_package_without_copying() {
+        let domain_package = Arc::new(DomainPackage::new(
+            DomainPackageRef::fixture("test/orders"),
+            vec![DomainPackageRecord::ObjectType(
+                crate::model::domain_package::ObjectTypeRecord {
+                    key: DeclarationKey::fixture("model.A"),
+                    interface_features: None,
+                    abstract_type: false,
+                    supertypes: Vec::new(),
+                },
+            )],
+        ));
+        let NormalizeOutcome::Completed(shared) = normalize_shared(
+            Arc::clone(&domain_package),
+            ModelNormalizationLimits::UNLIMITED,
+        ) else {
+            panic!("the one-type package normalizes");
+        };
+        assert!(Arc::ptr_eq(shared.shared_domain_package(), &domain_package));
+        let NormalizeOutcome::Completed(borrowed) =
+            normalize(&domain_package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("the one-type package normalizes");
+        };
+        assert!(!Arc::ptr_eq(
+            borrowed.shared_domain_package(),
+            &domain_package
+        ));
+        assert_eq!(shared, borrowed);
     }
 }

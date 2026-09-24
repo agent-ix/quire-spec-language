@@ -16,8 +16,8 @@ use qsl_semantics::model::domain_package::{
 };
 use qsl_semantics::model::key::{DeclarationKey, EffectiveId, RULE_REDEFINE};
 use qsl_semantics::model::normalize::{
-    normalize, normalize_with_meter, object_universe, object_universe_of, object_universes,
-    ModelRefusal, ModelRefusalCause, NormalizeOutcome, ObjectUniverse, Refusals,
+    normalize, normalize_with_meter, ModelRefusal, ModelRefusalCause, NormalizeOutcome,
+    ObjectUniverse, Refusals,
 };
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
@@ -693,10 +693,14 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
     let rerun = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
     assert_eq!(view.identity(), rerun.identity());
 
-    let universe = qsl_semantics::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
+        .object_universe()
+        .clone();
     assert_eq!(universe.root_types, vec![type_a.effective_id]);
     assert!(is_sha256_hex(&universe.identity().to_string()));
-    let universe_rerun = qsl_semantics::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe_rerun = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
+        .object_universe()
+        .clone();
     assert_eq!(universe.identity(), universe_rerun.identity());
 }
 
@@ -747,7 +751,9 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
     let rerun = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
     assert_eq!(view.identity(), rerun.identity());
 
-    let universe = qsl_semantics::model::normalize::object_universe(&fixture_f2()).unwrap();
+    let universe = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED)
+        .object_universe()
+        .clone();
     assert!(is_sha256_hex(&universe.identity().to_string()));
 }
 
@@ -784,11 +790,15 @@ fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe
     assert_eq!(v1_ids, v2_ids);
 
     assert!(is_sha256_hex(&view.identity().to_string()));
-    let universe = qsl_semantics::model::normalize::object_universe(&domain_package).unwrap();
+    let universe = completed(&domain_package, ModelNormalizationLimits::UNLIMITED)
+        .object_universe()
+        .clone();
     assert!(is_sha256_hex(&universe.identity().to_string()));
     // Different from version 1's own view/universe: the model selection
     // changed.
-    let universe_v1 = qsl_semantics::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe_v1 = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
+        .object_universe()
+        .clone();
     assert_ne!(view.identity(), v1.identity());
     assert_ne!(universe.identity(), universe_v1.identity());
 }
@@ -890,7 +900,9 @@ fn n01_one_less_work_unit_is_incomplete_at_the_view_hash() {
 #[test]
 fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_digest() {
     let view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
-    let universe = qsl_semantics::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
+        .object_universe()
+        .clone();
 
     let selection_digest = qsl_semantics::model::key::hex(&fixture_f1().model_selection.digest);
 
@@ -908,7 +920,7 @@ fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_
 
 /// ADR-013 §8 OQ-E identity proof: F1 (`A`, `B -> A`, one connected
 /// component) and F2 (`A`, `B -> A`, `C -> A`, `D -> B`/`D -> C`, still one
-/// connected component) each hash to exactly the digest `object_universe`
+/// connected component) each hash to exactly the digest the object universe
 /// produced before OQ-E's per-connected-component partition existed --
 /// computed on this branch's own pre-fix commit
 /// (`git worktree add --detach <tmp> HEAD`, then a throwaway test printing
@@ -920,14 +932,18 @@ fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_
 #[trace("TC-195", "FR-150-AC-6")]
 #[test]
 fn oqe_a_single_connected_component_hashes_to_the_pre_partition_digest() {
-    let f1_universe = object_universe(&fixture_f1()).unwrap();
+    let f1_universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
+        .object_universe()
+        .clone();
     assert_eq!(
         f1_universe.identity().to_string(),
         "91320bde391435b02cd2c5c7bd7ef1ab77f3b3d369ff1130c949d5df33f33469",
         "F1's universe digest must not move for a model with one connected component"
     );
 
-    let f2_universe = object_universe(&fixture_f2()).unwrap();
+    let f2_universe = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED)
+        .object_universe()
+        .clone();
     assert_eq!(
         f2_universe.identity().to_string(),
         "749e472d8614a59dda09e59b561091abe7e05ea6986bedfda065b839e5232a19",
@@ -955,27 +971,23 @@ fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
         .records
         .push(object_type("ix://test/orders/E", vec![]));
 
-    let universes = object_universes(&domain_package).unwrap();
+    let view = completed(&domain_package, ModelNormalizationLimits::UNLIMITED);
+    let universes: Vec<&ObjectUniverse> = view.object_universes().collect();
     assert_eq!(
         universes.len(),
         2,
         "one universe per connected component: {{A, B}} and {{E}}"
     );
 
-    let view = completed(&domain_package, ModelNormalizationLimits::UNLIMITED);
     let type_a = find_type(&view, "ix://test/orders/A").effective_id;
     let type_e = find_type(&view, "ix://test/orders/E").effective_id;
 
-    let ab_universe = object_universe_of(
-        &domain_package,
-        &DeclarationKey::fixture("ix://test/orders/A"),
-    )
-    .unwrap();
-    let e_universe = object_universe_of(
-        &domain_package,
-        &DeclarationKey::fixture("ix://test/orders/E"),
-    )
-    .unwrap();
+    let ab_universe = view
+        .object_universe_of(&DeclarationKey::fixture("ix://test/orders/A"))
+        .unwrap();
+    let e_universe = view
+        .object_universe_of(&DeclarationKey::fixture("ix://test/orders/E"))
+        .unwrap();
     assert_ne!(
         ab_universe.identity(),
         e_universe.identity(),
@@ -985,17 +997,17 @@ fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
     assert_eq!(e_universe.root_types, vec![type_e]);
 
     // `B`'s own universe agrees with `A`'s: they share a component.
-    let b_universe = object_universe_of(
-        &domain_package,
-        &DeclarationKey::fixture("ix://test/orders/B"),
-    )
-    .unwrap();
+    let b_universe = view
+        .object_universe_of(&DeclarationKey::fixture("ix://test/orders/B"))
+        .unwrap();
     assert_eq!(b_universe.identity(), ab_universe.identity());
 
     // Every returned universe is one of the two per-type universes above --
     // `object_universes` and `object_universe_of` agree.
-    let identities: std::collections::BTreeSet<_> =
-        universes.iter().map(ObjectUniverse::identity).collect();
+    let identities: std::collections::BTreeSet<_> = universes
+        .iter()
+        .map(|universe| universe.identity())
+        .collect();
     assert!(identities.contains(&ab_universe.identity()));
     assert!(identities.contains(&e_universe.identity()));
 }
@@ -2182,7 +2194,9 @@ fn n01_charges_the_exact_ground_truth_sequence_in_order() {
     assert_eq!(member_a_x.preimage.jcs_bytes().len(), 500);
     assert_eq!(member_b_x.preimage.jcs_bytes().len(), 583);
 
-    let universe = qsl_semantics::model::normalize::object_universe(&fixture_f1()).unwrap();
+    let universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
+        .object_universe()
+        .clone();
     assert_eq!(universe.jcs_bytes().len(), 349);
     assert_eq!(view.jcs_bytes().len(), 2941);
 

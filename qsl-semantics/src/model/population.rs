@@ -65,8 +65,9 @@
 //! # Binding/domain package correspondence
 //!
 //! A [`PopulationBinding`]'s fields are private; [`admit_binding`] is its
-//! only constructor, and it stores the admitted `DomainPackage` itself (as an
-//! `Arc`, cheap to clone) alongside the universe of the binding's own declared
+//! only constructor, and it stores the admitted `DomainPackage` itself -- the
+//! effective view's own package, shared through the same `Arc` rather than
+//! copied (QSL-204) -- alongside the universe of the binding's own declared
 //! type's connected component (ADR-013 §8 OQ-E) -- never a single universe
 //! for the whole domain package.
 //! [`all_instances`] and [`lookup`] read that bound domain package — neither takes a
@@ -143,8 +144,7 @@ use crate::model::domain_package::{
 };
 use crate::model::key::{hex, jcs_bytes, DeclarationKey, EffectiveId};
 use crate::model::normalize::{
-    object_universe, object_universe_of, EffectiveView, ModelRefusal, ModelRefusalCause,
-    OfferedSelection,
+    EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, ViewPopulation,
 };
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
@@ -438,7 +438,7 @@ pub struct PopulationMember {
 /// population's extent (FR-153, FR-208:50) is not part of this runtime
 /// document; it is declared once, statically, on the domain package's own
 /// [`crate::model::domain_package::PopulationRecord`], which [`admit_binding`]
-/// resolves from `domain_package.records` by key.
+/// resolves through the effective view by key.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationDocument {
     /// The document's own declared `modelIdentity`, which must name the
@@ -731,44 +731,37 @@ pub enum AdmissionOutcome {
     Incomplete(AdmissionIncomplete),
 }
 
-/// Admits `document` against `domain_package`/`view`/`population_key` into a
+/// Admits `document` against `view`/`population_key` into a
 /// [`PopulationBinding`], per FR-153's "Environment key and closure". Decides,
-/// without a charge and in order, `view`'s correspondence to `domain_package`,
-/// the `modelIdentity` check, `population_key`'s own resolution against
-/// `domain_package.records`, object closure (the resolved
+/// without a charge and in order, the `modelIdentity` check,
+/// `population_key`'s own resolution against the view's domain package,
+/// object closure (the resolved
 /// [`crate::model::domain_package::PopulationRecord::extent`]) and subtype
 /// closure; then charges
 /// `binding.member` for each member record in document order, deciding
 /// foreign-type and then duplicate-collapse/conflicting-identity after each
 /// charge. Stops at the first refusal or denied charge.
 ///
-/// `view` and `domain_package` are supplied separately (`view` is FR-150's own
-/// already-normalized, already-charged effective view of `domain_package`, computed
-/// by the caller under `ModelNormalizationLimitsV1` before this call), so
-/// nothing before this check ensures the two actually correspond: a caller
-/// could pass a `view` normalized from a different domain package than the one named
-/// here. Re-normalizing `domain_package` here to check would duplicate the caller's
-/// own already-charged normalization work under the wrong meter (this
-/// module's own "Two independent meters" docs), so this compares the two
-/// values' own `model_selection` headers instead — the same closed-catalog
-/// `foreign_reference`/`foreign-model-selection` cause the `modelIdentity`
-/// check below already uses for a DomainPackageRef-key mismatch, and the same
-/// boundary this crate already trusts at that check (`identity`
-/// without content verification) — comparing the *full* header rather than
-/// only `identity` so a version-only divergence is caught too.
+/// `view` is FR-150's own already-normalized, already-charged effective view,
+/// computed by the caller under `ModelNormalizationLimitsV1` before this
+/// call. It carries the exact domain package it was normalized from
+/// ([`EffectiveView::domain_package`]), and admission reads that package,
+/// its declarations and its object universes from the view alone (QSL-204):
+/// there is no second, caller-supplied package that could disagree with the
+/// view, and admission does no normalization work of its own. A package over
+/// the caller's normalization limits never yields a view to admit against.
 ///
 /// `population_key` is a key, not a caller-supplied
 /// [`crate::model::domain_package::PopulationRecord`]:
 /// FR-153's "Its declaration key must belong to the binding's ModelSelection"
-/// means the population's declared extent is a fact of `domain_package`
+/// means the population's declared extent is a fact of the domain package
 /// itself, never a value the caller states independently of it. This
-/// function resolves the record from `domain_package.records` and refuses
+/// function resolves the record through the view and refuses
 /// `foreign_reference`/`foreign-model-selection` when no `Population` record
 /// there carries that key, so a caller cannot claim an extent, or select some
-/// other package's population declaration, that `domain_package` did not
-/// itself declare.
+/// other package's population declaration, that the package did not itself
+/// declare.
 pub fn admit_binding(
-    domain_package: &DomainPackage,
     view: &EffectiveView,
     document: &PopulationDocument,
     population_key: &DeclarationKey,
@@ -778,7 +771,6 @@ pub fn admit_binding(
 ) -> AdmissionOutcome {
     admit_binding_as(
         InvocationContext {
-            domain_package,
             view,
             population: population_key,
             subtype_closure,
@@ -796,12 +788,9 @@ pub fn admit_binding(
 /// [`AdmissionRole::Direct`], and [`admit_invocation`] calls it directly
 /// (bypassing the public [`admit_binding`]) with [`AdmissionRole::Pre`]/
 /// [`AdmissionRole::Post`] for its own two constituent bindings. Takes
-/// [`InvocationContext`] rather than its five constituent fields: that type
+/// [`InvocationContext`] rather than its constituent fields: that type
 /// already exists to bundle exactly this admission surface for
-/// [`admit_invocation`]'s own two calls, so reusing it here (instead of a
-/// separate five-parameter list plus `document`/`role`/`meter`) keeps this
-/// function within the crate's argument-count convention with no
-/// `#[allow(clippy::too_many_arguments)]`.
+/// [`admit_invocation`]'s own two calls.
 fn admit_binding_as(
     context: InvocationContext<'_>,
     document: &PopulationDocument,
@@ -809,26 +798,13 @@ fn admit_binding_as(
     meter: &mut AdmissionMeter,
 ) -> AdmissionOutcome {
     let InvocationContext {
-        domain_package,
         view,
         population: population_key,
         subtype_closure,
         declared_maximum,
     } = context;
+    let domain_package = view.domain_package();
     let ancestor_steps = meter.limits().ancestor_steps;
-    if *view.model_selection() != domain_package.model_selection {
-        return AdmissionOutcome::Refused(ModelRefusal {
-            code: Code::ForeignReference,
-            cause: ModelRefusalCause::ForeignModelSelection {
-                actual: OfferedSelection::View(view.model_selection().clone()),
-                expected: domain_package.model_selection.clone(),
-            },
-            detail: format!(
-                "effective view was normalized under model selection {}, not the admitting domain package's {}",
-                view.model_selection().identity, domain_package.model_selection.identity
-            ),
-        });
-    }
     if document.model_identity != domain_package.model_selection.identity {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
@@ -842,15 +818,14 @@ fn admit_binding_as(
             ),
         });
     }
-    let Some(population) = domain_package
-        .records
-        .iter()
-        .find_map(|record| match record {
-            DomainPackageRecord::Population(population) if population.key == *population_key => {
-                Some(population)
-            }
-            _ => None,
-        })
+    // ADR-013 §8 OQ-E: the view resolves the population together with its
+    // own universe -- its first declared member type's connected component,
+    // never the whole domain package's, or the first universe when it
+    // declares no member type (FR-153 never requires one).
+    let Some(ViewPopulation {
+        record: population,
+        universe,
+    }) = view.population(population_key)
     else {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
@@ -897,28 +872,7 @@ fn admit_binding_as(
             ),
         });
     }
-
-    // ADR-013 §8 OQ-E: this binding's universe is its own declared type's
-    // connected component, never the whole domain package's -- a population
-    // with no declared member type at all (FR-153 never requires one) has
-    // no type of its own to key that lookup on, so it falls back to
-    // `object_universe`'s whole-package convenience instead.
-    let universe_result = match population.member_types.first() {
-        Some(type_key) => object_universe_of(domain_package, type_key),
-        None => object_universe(domain_package),
-    };
-    let universe = match universe_result {
-        Ok(universe) => universe.identity(),
-        // `object_universe`/`object_universe_of` return their full
-        // charge-ordered refusal bundle (L2 finding, PR #228 review); this
-        // FR-153 admission path stays single-refusal
-        // (`AdmissionOutcome::Refused`'s own shape, unchanged here), so only
-        // the first is surfaced, exactly as before this fix.
-        // `Refusals::into_first` reads it directly (M2 finding, PR #228
-        // round 2 review): `Refusals` is non-empty by construction, so there
-        // is no empty case left to `.expect()` past.
-        Err(refusals) => return AdmissionOutcome::Refused(refusals.into_first()),
-    };
+    let universe = universe.identity();
 
     // Indexed once, not re-scanned per member: `view.declarations()` and
     // `admitted` would otherwise each be linearly searched per member,
@@ -1167,7 +1121,7 @@ fn admit_binding_as(
     }
 
     AdmissionOutcome::Admitted(PopulationBinding {
-        domain_package: Arc::new(domain_package.clone()),
+        domain_package: Arc::clone(view.shared_domain_package()),
         universe,
         members: admitted,
         declared_maximum,
@@ -1188,16 +1142,15 @@ fn admit_binding_as(
 /// bindings: the same domain package, effective view, population declaration,
 /// subtype closure and declared maximum -- the same population role,
 /// admitted at the invocation's two instants. Grouped into one type rather
-/// than five parameters so `admit_invocation` stays within this crate's
+/// than separate parameters so `admit_invocation` stays within this crate's
 /// argument-count convention.
 #[derive(Clone, Copy)]
 pub struct InvocationContext<'a> {
-    /// The domain package both instants are admitted against.
-    pub domain_package: &'a DomainPackage,
-    /// The domain package's already-normalized, already-charged effective view.
+    /// The already-normalized, already-charged effective view both instants
+    /// are admitted against; it carries its own domain package.
     pub view: &'a EffectiveView,
-    /// The population role's own declaration key, resolved against
-    /// `domain_package.records` by each [`admit_binding`] call
+    /// The population role's own declaration key, resolved against the
+    /// view's domain package by each [`admit_binding`] call
     /// ([`admit_binding`]'s own `population_key` doc).
     pub population: &'a DeclarationKey,
     /// The model selection's subtype closure.
@@ -1228,7 +1181,7 @@ pub struct InvocationDelta<'a> {
 }
 
 /// Admits one operation invocation's pre and post [`PopulationDocument`]s
-/// against the same `domain_package`/`view`/`population`/`subtype_closure`/
+/// against the same `view`/`population`/`subtype_closure`/
 /// `declared_maximum` (the same population role, at the invocation's two
 /// instants), then
 /// enforces `declared.effect`'s FR-151 frame
@@ -1989,5 +1942,140 @@ pub fn lookup(
             }
             LookupOutcome::Completed(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::*;
+    use crate::model::accounting::ModelNormalizationLimits;
+    use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
+    use crate::model::normalize::{build_calls, normalize, NormalizeOutcome};
+
+    fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {
+        DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: DeclarationKey::fixture(identity),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: supertypes
+                .iter()
+                .map(|key| DeclarationKey::fixture(*key))
+                .collect(),
+        })
+    }
+
+    /// `model.A`, `model.B -> model.A` and a closed population over both.
+    fn domain_package() -> DomainPackage {
+        DomainPackage::new(
+            DomainPackageRef::fixture("bundle.qsl204"),
+            vec![
+                object_type("model.A", &[]),
+                object_type("model.B", &["model.A"]),
+                DomainPackageRecord::Population(PopulationRecord {
+                    key: DeclarationKey::fixture("model.pop"),
+                    member_types: vec![
+                        DeclarationKey::fixture("model.A"),
+                        DeclarationKey::fixture("model.B"),
+                    ],
+                    extent: Extent::Closed,
+                }),
+            ],
+        )
+    }
+
+    fn document() -> PopulationDocument {
+        PopulationDocument {
+            model_identity: "test/orders".to_owned(),
+            members: vec![
+                PopulationMember {
+                    object: "a1".to_owned(),
+                    type_identity: DeclarationKey::fixture("model.A"),
+                    field_values: Vec::new(),
+                },
+                PopulationMember {
+                    object: "b1".to_owned(),
+                    type_identity: DeclarationKey::fixture("model.B"),
+                    field_values: Vec::new(),
+                },
+            ],
+        }
+    }
+
+    /// QSL-204: admission reads its object universe from the caller's
+    /// already-metered effective view and never normalizes the domain
+    /// package itself -- neither a direct [`admit_binding`] nor an
+    /// [`admit_invocation`], which admits a pre and a post document. The
+    /// counter is `normalize::build`'s own per-thread call count, so any
+    /// reintroduced normalization on the admission path turns this red.
+    ///
+    /// Mutation used: restoring the pre-QSL-204 `build`-backed universe
+    /// lookup in `admit_binding_as` made `admit_binding` count one build
+    /// and `admit_invocation` two.
+    #[test]
+    #[trace("TC-198", "FR-153-AC-1")]
+    fn admission_never_normalizes_the_domain_package() {
+        let domain_package = domain_package();
+        let before_normalize = build_calls();
+        let view = match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("expected a completed view, got {other:?}"),
+        };
+        assert_eq!(
+            build_calls() - before_normalize,
+            1,
+            "normalize builds exactly once"
+        );
+        let population = DeclarationKey::fixture("model.pop");
+        let context = InvocationContext {
+            view: &view,
+            population: &population,
+            subtype_closure: GeneralizationClosure::Closed,
+            declared_maximum: None,
+        };
+
+        let before_binding = build_calls();
+        let binding = admit_binding(
+            &view,
+            &document(),
+            &population,
+            GeneralizationClosure::Closed,
+            None,
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        );
+        let AdmissionOutcome::Admitted(binding) = binding else {
+            panic!("expected an admitted binding, got {binding:?}");
+        };
+        assert_eq!(build_calls(), before_binding, "admit_binding never builds");
+        assert_eq!(
+            *binding.universe(),
+            view.object_universe().identity(),
+            "the binding's universe is the view's own"
+        );
+
+        let before_invocation = build_calls();
+        let effect = OperationEffect::default();
+        let invocation = admit_invocation(
+            context,
+            &document(),
+            &document(),
+            &InvocationDelta {
+                effect: &effect,
+                declared_created: &[],
+                declared_deleted: &[],
+            },
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+            &mut AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED),
+        );
+        assert!(
+            matches!(invocation, AdmissionOutcome::Admitted(_)),
+            "expected an admitted invocation, got {invocation:?}"
+        );
+        assert_eq!(
+            build_calls(),
+            before_invocation,
+            "admit_invocation never builds, for either instant"
+        );
     }
 }
