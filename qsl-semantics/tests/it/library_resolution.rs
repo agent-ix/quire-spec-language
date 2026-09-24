@@ -486,17 +486,11 @@ fn with_preimage(bytes: Box<[u8]>, exports: &[&str]) -> LibraryPackage {
 }
 
 #[trace("TC-227", "FR-307-AC-5")]
+#[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution() {
     let valid = preimage_value(projection("L@1"));
     let node_r = projection_node("L@1::R", Some("R"));
-    let node_s = projection_node("L@1::S", Some("S"));
-    let (low, high) = if hex("L@1::R") < hex("L@1::S") {
-        (node_r.clone(), node_s)
-    } else {
-        (node_s, node_r.clone())
-    };
-
     let mut wrong_version = valid.clone();
     wrong_version["version"] = json!("quire.checked-package-id/v1");
     let mut missing_member = valid.clone();
@@ -512,8 +506,13 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
     let mut wrong_domain = valid.clone();
     wrong_domain["identity_projection"][0]["node_id"]["domain"] = json!("quire.other/v1");
     let empty = preimage_value(Vec::new());
-    let descending = preimage_value(vec![high, low]);
     let repeated = preimage_value(vec![node_r.clone(), node_r.clone()]);
+    // A duplicate id two positions apart, not adjacent: `[R, S, R]`.
+    let repeated_apart = preimage_value(vec![
+        node_r.clone(),
+        projection_node("L@1::S", Some("S")),
+        node_r.clone(),
+    ]);
     let mut spaced = jcs(&valid).into_vec();
     spaced.insert(1, b' ');
 
@@ -588,11 +587,21 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
         ),
         (jcs(&empty), &[], PreimageDefect::EmptyProjection),
         (
-            jcs(&descending),
+            jcs(&repeated),
             &[],
-            PreimageDefect::NodeOrder { index: 1 },
+            PreimageDefect::DuplicateNode {
+                index: 1,
+                node: wire_node("L@1::R"),
+            },
         ),
-        (jcs(&repeated), &[], PreimageDefect::NodeOrder { index: 1 }),
+        (
+            jcs(&repeated_apart),
+            &[],
+            PreimageDefect::DuplicateNode {
+                index: 2,
+                node: wire_node("L@1::R"),
+            },
+        ),
         (
             spaced.into_boxed_slice(),
             &["R"],
@@ -845,6 +854,79 @@ fn l08_c_a_mismatch_ranks_before_an_ambiguity_at_an_earlier_node() {
     };
     assert_library_refusal(
         resolve_libraries(&importer, std::slice::from_ref(&malformed)),
+        &expected,
+        Code::InvalidPackage,
+        LibraryCause::DeclarationNominalMismatch,
+    );
+}
+
+/// QSL-232 (QSpec FR-322-AC-14): the projection keeps graph order, so a
+/// projection in descending node-id order is admitted. Declaration checks
+/// still visit nodes in ascending node-id digest order (FR-322-AC-21), so an
+/// ambiguity reports both nodes in ascending order whatever the projection
+/// order.
+#[trace("TC-227", "FR-307-AC-5")]
+#[test]
+fn l08_d_projection_order_is_graph_order_and_checks_visit_ascending_node_ids() {
+    let mut descending = projection("L'@1");
+    descending.reverse();
+    assert_eq!(descending.len(), 2);
+    let admitted = with_preimage(jcs(&preimage_value(descending)), &["R", "S"]);
+    let importer = over_l("P", "1", admitted.package_id);
+    assert!(resolve_libraries(&importer, std::slice::from_ref(&admitted)).is_ok());
+
+    let mut second_r = projection_node("L@1::S", Some("R"));
+    second_r["nominal_identity_preimage"]["qualified_declaration"] = json!(["R"]);
+    let first_r = projection_node("L@1::R", Some("R"));
+    let (low, high) = if hex("L@1::R") < hex("L@1::S") {
+        (
+            (first_r, wire_node("L@1::R")),
+            (second_r, wire_node("L@1::S")),
+        )
+    } else {
+        (
+            (second_r, wire_node("L@1::S")),
+            (first_r, wire_node("L@1::R")),
+        )
+    };
+    let ambiguous = with_preimage(jcs(&preimage_value(vec![high.0, low.0])), &[]);
+    let importer = over_l("P", "1", id("L@1"));
+    let expected = LibraryRefusal::InvalidPreimage {
+        library: name("L"),
+        defect: PreimageDefect::AmbiguousDeclaration {
+            name: "R".to_owned(),
+            nodes: [low.1, high.1],
+        },
+    };
+    assert_library_refusal(
+        resolve_libraries(&importer, std::slice::from_ref(&ambiguous)),
+        &expected,
+        Code::AmbiguousDeclaration,
+        LibraryCause::AmbiguousName,
+    );
+
+    // Two nodes that both fail declaration-nominal-mismatch, in descending
+    // projection order: the refusal names the lower node id.
+    let mismatched = |label: &str| {
+        let mut node = projection_node(label, Some("R"));
+        node["declaration"] = json!({"qualified_name": ["M"]});
+        (hex(label), node)
+    };
+    let mut both = vec![mismatched("L@1::R"), mismatched("L@1::S")];
+    both.sort_by(|left, right| right.0.cmp(&left.0));
+    let lower = WireNodeId::from_hex(&both[1].0).unwrap();
+    let nodes: Vec<Value> = both.into_iter().map(|(_, node)| node).collect();
+    let mismatch = with_preimage(jcs(&preimage_value(nodes)), &[]);
+    let expected = LibraryRefusal::InvalidPreimage {
+        library: name("L"),
+        defect: PreimageDefect::DeclarationNominalMismatch {
+            node: lower,
+            declared: Some("M".to_owned()),
+            nominal: "R".to_owned(),
+        },
+    };
+    assert_library_refusal(
+        resolve_libraries(&importer, std::slice::from_ref(&mismatch)),
         &expected,
         Code::InvalidPackage,
         LibraryCause::DeclarationNominalMismatch,

@@ -284,23 +284,28 @@ fn accepts_valid_bytes() {
 }
 
 /// A wire whose projection declares `exports` (label, qualified name), each
-/// a self-typed boolean scalar with a `declaration`-role occurrence.
+/// a self-typed boolean scalar with a `declaration`-role occurrence, in
+/// ascending node-id order.
 fn envelope_declaring(exports: &[(&str, &str)]) -> (Value, Value) {
-    // `library`'s identity-preimage check requires ascending node-id order;
-    // IR does not (QSL-232).
     let mut sorted = exports.to_vec();
     sorted.sort_by_key(|(label, _)| hex(label));
+    envelope_in_graph_order(&sorted)
+}
+
+/// A wire whose graph and projection hold `exports` in exactly the given
+/// order (FR-322: the projection keeps the graph's node order).
+fn envelope_in_graph_order(exports: &[(&str, &str)]) -> (Value, Value) {
     let mut preimage = identity_preimage(vec![]);
-    preimage["identity_projection"] = sorted
+    preimage["identity_projection"] = exports
         .iter()
         .map(|(label, export)| projection_node(label, export))
         .collect();
     let mut envelope = valid_envelope(&preimage);
-    envelope["semantic_graph"]["nodes"] = sorted
+    envelope["semantic_graph"]["nodes"] = exports
         .iter()
         .map(|(label, export)| graph_node(label, export))
         .collect();
-    envelope["source_map"] = sorted
+    envelope["source_map"] = exports
         .iter()
         .zip(0_u64..)
         .map(|((label, _), start)| {
@@ -313,6 +318,36 @@ fn envelope_declaring(exports: &[(&str, &str)]) -> (Value, Value) {
         })
         .collect();
     (preimage, envelope)
+}
+
+/// QSpec FR-322-AC-14 (QSL-232): the projection keeps the semantic graph's
+/// node order, and that order is part of `package_id`. The same two exports
+/// in ascending and in descending node-id order are both admitted, under two
+/// different `package_id`s, and export the same declarations.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn reversed_node_order_is_admitted_under_a_different_package_id() {
+    let mut exports = vec![("pkg::Y", "A"), ("pkg::Z", "B")];
+    exports.sort_by_key(|(label, _)| hex(label));
+    let admitted = |exports: &[(&str, &str)]| {
+        let (preimage, envelope) = envelope_in_graph_order(exports);
+        match read(&jcs(&envelope), &pinned_for(&preimage)) {
+            V2ReadOutcome::Verified { package, .. } => package,
+            other => panic!("expected Verified, got {other:?}"),
+        }
+    };
+    let ascending = admitted(&exports);
+    exports.reverse();
+    let descending = admitted(&exports);
+    assert_ne!(ascending.package_id(), descending.package_id());
+    let names = |package: qsl_semantics::library::VerifiedPackage| {
+        package
+            .into_import_view()
+            .exports()
+            .map(|(name, key)| (name.to_owned(), key.node))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names(ascending), names(descending));
 }
 
 /// The `ImportView` of the verified wire declaring `exports`.
@@ -1271,30 +1306,11 @@ fn locked_artifacts(value: &Value, evidence: &mut CheckedPackageEvidence) {
     }
 }
 
-/// ADR-013 C-14 over QSpec's published positive `quire.checked-package/v2`
-/// fixtures, read at run time from
-/// `$QSPEC_DIR/proposals/checked-package-v2/fixtures/positive-*.json`: IR's
-/// v2 reader admits each fixture, and every one of its `source_map` entries
-/// looks up in [`package_source_map`]'s map, by its occurrence key, to
-/// exactly its wire regions, while each node's occurrences number exactly
-/// its entries. Evidence treats each fixture's own locked artifacts as
-/// current and its required features as supported.
-///
-/// The fixtures go through IR's reader and this module's conversion, not
-/// the whole I2 read: `library`'s identity-preimage check refuses three of
-/// the five for `identity_projection` order (`PreimageDefect::NodeOrder`),
-/// which IR admits. That disagreement is `library`'s, not the source map's;
-/// the whole read is covered by `a_verified_read_carries_the_wire_source_map`.
-///
-/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
-/// requires it. Nothing of QSpec is copied into this repository.
-#[trace("TC-421", "FR-095-AC-3")]
-#[test]
-fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
-    let Some(qspec) = std::env::var_os("QSPEC_DIR") else {
-        println!("skipped: QSPEC_DIR not set");
-        return;
-    };
+/// The published QSpec checked-package-v2 fixture directory under
+/// `$QSPEC_DIR`, and its `positive-*.json` fixtures in name order; `None`
+/// when `QSPEC_DIR` is unset.
+fn qspec_v2_fixtures() -> Option<(std::path::PathBuf, Vec<std::path::PathBuf>)> {
+    let qspec = std::env::var_os("QSPEC_DIR")?;
     let directory = std::path::Path::new(&qspec).join("proposals/checked-package-v2/fixtures");
     let mut paths: Vec<_> = std::fs::read_dir(&directory)
         .unwrap_or_else(|error| panic!("reading {}: {error}", directory.display()))
@@ -1311,30 +1327,64 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
         "{} holds no positive fixture",
         directory.display()
     );
+    Some((directory, paths))
+}
+
+fn read_fixture(path: &std::path::Path) -> Value {
+    let bytes =
+        std::fs::read(path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
+}
+
+/// QSL's whole I2 read of the fixture `envelope`, pinned at the
+/// `package_id` its own identity preimage recomputes to. Evidence treats
+/// the fixture's own locked artifacts as current and its required features
+/// as supported. The published fixture is pretty-printed; the wire is its
+/// canonical form.
+fn read_fixture_wire(envelope: &Value) -> (PackageId, V2ReadOutcome) {
+    let mut evidence = CheckedPackageEvidence::new();
+    locked_artifacts(&envelope["lock"], &mut evidence);
+    locked_artifacts(&envelope["diagnostics"], &mut evidence);
+    for feature in envelope["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    let package_id = PackageId::of_preimage(&jcs(&envelope["identity_preimage"]));
+    let outcome = read_checked_package_v2(
+        &jcs(envelope),
+        identity("pkg"),
+        "1".to_owned(),
+        V2ReadLimits::default(),
+        &evidence,
+        &pin("1", package_id),
+    );
+    (package_id, outcome)
+}
+
+/// ADR-013 C-14 over QSpec's published positive `quire.checked-package/v2`
+/// fixtures, read at run time from
+/// `$QSPEC_DIR/proposals/checked-package-v2/fixtures/positive-*.json`: QSL's
+/// whole I2 read (`read_checked_package_v2`) admits each fixture, and every
+/// one of its `source_map` entries looks up in the verified read's package
+/// source map, by its occurrence key, to exactly its wire regions, while
+/// each node's occurrences number exactly its entries.
+///
+/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
+/// requires it. Nothing of QSpec is copied into this repository.
+#[trace("TC-421", "FR-095-AC-3")]
+#[test]
+fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
+    let Some((_, paths)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
     let mut looked_up = 0_usize;
     for path in &paths {
-        let bytes = std::fs::read(path)
-            .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
-        let envelope: Value = serde_json::from_slice(&bytes)
-            .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()));
-        let mut evidence = CheckedPackageEvidence::new();
-        locked_artifacts(&envelope["lock"], &mut evidence);
-        locked_artifacts(&envelope["diagnostics"], &mut evidence);
-        for feature in envelope["lock"]["required_features"].as_array().unwrap() {
-            evidence.support_feature(feature.as_str().unwrap());
-        }
-        // The published fixture is pretty-printed; the wire is its
-        // canonical form.
-        let admitted = match quire_contract_ir::read_checked_package(
-            &jcs(&envelope),
-            V2ReadLimits::default().for_ir(),
-            &evidence,
-        ) {
-            quire_contract_ir::CheckedPackageDispatchResult::AdmittedV2(package) => package,
-            other => panic!("{}: expected AdmittedV2, got {other:?}", path.display()),
+        let envelope = read_fixture(path);
+        let source_map = match read_fixture_wire(&envelope).1 {
+            V2ReadOutcome::Verified { source_map, .. } => source_map,
+            other => panic!("{}: expected Verified, got {other:?}", path.display()),
         };
-        let source_map = super::package_source_map(admitted.source_map())
-            .unwrap_or_else(|defect| panic!("{}: {defect}", path.display()));
         let entries = envelope["source_map"].as_array().unwrap();
         let mut per_node = std::collections::BTreeMap::<WireNodeId, usize>::new();
         for entry in entries {
@@ -1382,5 +1432,81 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
     println!(
         "conformance: {looked_up} source-map entries over {} positive fixtures",
         paths.len()
+    );
+}
+
+/// QSL-232: QSL's whole I2 read (`read_checked_package_v2`) admits every
+/// published positive `quire.checked-package/v2` fixture under the
+/// `package_id` its own identity preimage recomputes to. Three of the five
+/// fixtures carry an `identity_projection` in graph order that is not
+/// ascending by node id (QSpec FR-322-AC-14 makes that order part of the
+/// id). Each published structural mutation of `positive-all-families.json`
+/// still refuses with its expected cause.
+///
+/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
+/// requires it. Nothing of QSpec is copied into this repository.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
+    let Some((directory, paths)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let mut unsorted = 0_usize;
+    for path in &paths {
+        let envelope = read_fixture(path);
+        let digests: Vec<&str> = envelope["identity_preimage"]["identity_projection"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|node| node["node_id"]["digest"].as_str().unwrap())
+            .collect();
+        if !digests.is_sorted() {
+            unsorted += 1;
+        }
+        match read_fixture_wire(&envelope) {
+            (package_id, V2ReadOutcome::Verified { package, .. }) => {
+                assert_eq!(package.package_id(), package_id, "{}", path.display());
+            }
+            (_, other) => panic!("{}: expected Verified, got {other:?}", path.display()),
+        }
+    }
+    assert!(
+        unsorted > 0,
+        "no positive fixture carries a non-ascending identity_projection"
+    );
+    println!(
+        "conformance: {} positive fixtures through QSL's full I2 read ({unsorted} in non-ascending projection order)",
+        paths.len()
+    );
+
+    let adverse = read_fixture(&directory.join("adverse.json"));
+    let base = read_fixture(&directory.join("positive-all-families.json"));
+    let mutations = adverse["structural_mutations"].as_array().unwrap();
+    for mutation in mutations {
+        let id = mutation["id"].as_str().unwrap();
+        let expected = match mutation["outcome"].as_str().unwrap() {
+            "refused:unknown_contract_version" => CheckedPackageRefusalCode::UnknownContractVersion,
+            "refused:digest_domain_mismatch" => CheckedPackageRefusalCode::DigestDomainMismatch,
+            "refused:unsupported_node_tag" => CheckedPackageRefusalCode::UnsupportedNodeTag,
+            "refused:invalid_semantic_graph" => CheckedPackageRefusalCode::InvalidSemanticGraph,
+            other => panic!("{id}: unmapped adverse outcome {other}"),
+        };
+        let mut candidate = base.clone();
+        *candidate
+            .pointer_mut(mutation["pointer"].as_str().unwrap())
+            .unwrap_or_else(|| panic!("{id}: pointer exists")) = mutation["replacement"].clone();
+        let (_, outcome) = read_fixture_wire(&candidate);
+        assert!(
+            matches!(
+                &outcome,
+                V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal)) if refusal.code == expected
+            ),
+            "{id}: expected Refused(Envelope({expected:?})), got {outcome:?}"
+        );
+    }
+    println!(
+        "conformance: {} adverse mutations refused with their expected causes",
+        mutations.len()
     );
 }
