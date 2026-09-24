@@ -48,8 +48,7 @@ pub mod routing;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
-use qsl_foundation::digest::InvalidDigestRecord;
-pub use qsl_foundation::digest::ManifestDigest;
+pub use qsl_foundation::digest::{InvalidDigestRecord, ManifestDigest};
 use qsl_foundation::CatalogCode;
 use qsl_semantics::check::Capability;
 

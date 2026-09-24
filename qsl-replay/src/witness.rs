@@ -815,15 +815,8 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             declared_domains: Some(self.declared_domains.clone()),
             backend: Some((
                 self.backend.identity().to_owned(),
-                Some(
-                    self.backend
-                        .manifest_digest()
-                        .record()
-                        .domain()
-                        .as_str()
-                        .to_owned(),
-                ),
-                self.backend.manifest_digest().record().hex(),
+                Some(self.backend.manifest_digest().domain().as_str().to_owned()),
+                self.backend.manifest_digest().hex(),
             )),
             trace_position: Some(self.trace_position.clone()),
             source: Some(self.source.clone()),
@@ -1063,30 +1056,41 @@ mod envelope_tests {
     fn backend_digest_in_the_required_domain_reconstructs() {
         let envelope = WitnessEnvelope::reconstruct(full_packet(0)).unwrap();
         assert_eq!(
-            envelope.backend().manifest_digest().record().domain(),
+            envelope.backend().manifest_digest().domain(),
             DigestDomain::ToolManifestJcsV1
         );
     }
 
-    /// QSL-227 (ADR-013 C-27): a `backend` digest in a recognized FR-201
-    /// domain other than `quire.tool-manifest.jcs/v1` refuses with the same
-    /// typed cause the reader already uses for a source-digest domain
-    /// mismatch (`tc_181_refuses_an_out_of_domain_digest`), and the domain is
-    /// checked before the digest bytes: pairing the wrong domain with
-    /// malformed hex still reports the domain mismatch, not a hex-encoding
-    /// problem.
+    /// FR-070-AC-6 (TC-181, digest-domain half; QSL-227, ADR-013 C-27): a
+    /// `backend` digest in a recognized FR-201 domain other than
+    /// `quire.tool-manifest.jcs/v1` refuses with the same typed cause the
+    /// reader already uses for a source-digest domain mismatch
+    /// (`tc_181_refuses_an_out_of_domain_digest`), pinned to the exact
+    /// `WrongDomain` cause so a different refusal variant cannot pass. The
+    /// domain is checked before the digest bytes: pairing the wrong domain
+    /// with malformed hex still reports the same domain mismatch, not a
+    /// hex-encoding problem.
+    #[trace("TC-181", "FR-070-AC-6")]
     #[test]
     fn backend_digest_in_any_other_fr201_domain_refuses() {
+        let wrong_domain = WitnessRefusal::DigestDomainMismatch(
+            "backend",
+            InvalidDigestRecord::WrongDomain {
+                expected: DigestDomain::ToolManifestJcsV1,
+                found: DigestDomain::SourceBytesV1,
+            },
+        );
+
         let mut packet = full_packet(0);
         packet.backend = Some((
             "kani-backend-1".to_owned(),
             Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
             DigestRecord::mint(DigestDomain::SourceBytesV1, digest(7)).hex(),
         ));
-        assert!(matches!(
+        assert_eq!(
             WitnessEnvelope::reconstruct(packet),
-            Err(WitnessRefusal::DigestDomainMismatch("backend", _))
-        ));
+            Err(wrong_domain.clone())
+        );
 
         let mut packet_with_bad_hex = full_packet(0);
         packet_with_bad_hex.backend = Some((
@@ -1094,10 +1098,10 @@ mod envelope_tests {
             Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
             "not-hex".to_owned(),
         ));
-        assert!(matches!(
+        assert_eq!(
             WitnessEnvelope::reconstruct(packet_with_bad_hex),
-            Err(WitnessRefusal::DigestDomainMismatch("backend", _))
-        ));
+            Err(wrong_domain)
+        );
     }
 
     /// FR-070-AC-7 (TC-181, bound half): an oversized encoding refuses, and

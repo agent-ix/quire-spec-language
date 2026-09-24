@@ -447,15 +447,8 @@ impl ReplayRequest {
                 .as_bytes(),
             backend: (
                 self.backend.identity().to_owned(),
-                Some(
-                    self.backend
-                        .manifest_digest()
-                        .record()
-                        .domain()
-                        .as_str()
-                        .to_owned(),
-                ),
-                self.backend.manifest_digest().record().hex(),
+                Some(self.backend.manifest_digest().domain().as_str().to_owned()),
+                self.backend.manifest_digest().hex(),
             ),
             state_environment: self.state_environment.clone(),
             accounting_limits: self.accounting_limits,
@@ -675,7 +668,7 @@ mod tests {
     fn backend_digest_in_the_required_domain_decodes() {
         let request = ReplayRequest::decode(wire(1)).unwrap();
         assert_eq!(
-            request.backend().manifest_digest().record().domain(),
+            request.backend().manifest_digest().domain(),
             DigestDomain::ToolManifestJcsV1
         );
     }
@@ -683,25 +676,28 @@ mod tests {
     /// QSL-227 (ADR-013 C-27): a `backend` digest in a recognized FR-201
     /// domain other than `quire.tool-manifest.jcs/v1` refuses with the same
     /// typed cause the reader already uses for a byte-provision domain
-    /// mismatch, and the domain is checked before the digest bytes: pairing
-    /// the wrong domain with malformed hex still reports the domain
-    /// mismatch, not a hex-encoding problem.
+    /// mismatch, pinned to the exact `WrongDomain` cause so a different
+    /// refusal variant cannot pass, and the domain is checked before the
+    /// digest bytes: pairing the wrong domain with malformed hex still
+    /// reports the same domain mismatch, not a hex-encoding problem. No
+    /// FR-071 AC names the replay request's `backend` member, so this test
+    /// is untraced here; it is recorded at ADR-013 C-27 instead.
     #[test]
     fn backend_digest_in_any_other_fr201_domain_refuses() {
+        let wrong_domain =
+            ReplayRequestRefusal::DigestDomainMismatch(InvalidDigestRecord::WrongDomain {
+                expected: DigestDomain::ToolManifestJcsV1,
+                found: DigestDomain::SourceBytesV1,
+            });
+
         let mut bad_domain = wire(1);
         bad_domain.backend.1 = Some(DigestDomain::SourceBytesV1.as_str().to_owned());
-        assert!(matches!(
-            ReplayRequest::decode(bad_domain),
-            Err(ReplayRequestRefusal::DigestDomainMismatch(_))
-        ));
+        assert_eq!(ReplayRequest::decode(bad_domain), Err(wrong_domain.clone()));
 
         let mut bad_domain_and_hex = wire(1);
         bad_domain_and_hex.backend.1 = Some(DigestDomain::SourceBytesV1.as_str().to_owned());
         bad_domain_and_hex.backend.2 = "not-hex".to_owned();
-        assert!(matches!(
-            ReplayRequest::decode(bad_domain_and_hex),
-            Err(ReplayRequestRefusal::DigestDomainMismatch(_))
-        ));
+        assert_eq!(ReplayRequest::decode(bad_domain_and_hex), Err(wrong_domain));
     }
 
     /// FR-071-AC-3 (TC-187): the selected-function accessor and wire field

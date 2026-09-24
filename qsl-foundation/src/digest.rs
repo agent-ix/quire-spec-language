@@ -522,6 +522,20 @@ impl ManifestDigest {
     pub fn record(&self) -> DigestRecord {
         self.0
     }
+
+    /// This digest's domain: always [`ManifestDigest::DOMAIN`]. A shortcut
+    /// for `self.record().domain()`, for callers that only want the domain
+    /// label (e.g. re-encoding the wire `{identity, domain, digest}` triple)
+    /// without naming [`Self::record`].
+    pub fn domain(&self) -> DigestDomain {
+        Self::DOMAIN
+    }
+
+    /// The unprefixed 64-lowercase-hex digest string (C-16). A shortcut for
+    /// `self.record().hex()`.
+    pub fn hex(&self) -> String {
+        self.0.hex()
+    }
 }
 
 /// A node id exactly as it travels on the wire (a v2 node key's 64
