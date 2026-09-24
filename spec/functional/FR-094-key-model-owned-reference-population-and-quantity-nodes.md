@@ -214,6 +214,11 @@ these differences:
   invariant. The `match` that spells it is over `DeclaredClauseKind`, which
   has no postcondition arm.
 
+An operation's postconditions are lowered by the `ProtocolClause` family
+with its checked operation header (ADR-012 §3, §4.3; #218), which gives each
+its node, owner and clause binding. The `Pre` reads inside a postcondition
+key by FR-093's `Pre` row.
+
 The name `check` gives a clause function (such as
 `ix://acme/orders/Order/size.precondition`) is a lookup label and appears in
 no preimage member except as the owner's `node` where the two coincide: a
@@ -714,7 +719,10 @@ corrected under QSL-211. Implemented on the QSL-156 slice A4b branch, pending me
 records the model correspondence, `check::checked_dispatch_operation` gives
 each clause function its `ModelOwner` and `DeclaredClauseKind`, and the unit
 scope keeps its formed units until lowering has keyed them. TC-417, TC-418
-and TC-419 back AC-1 to AC-7, CON-1 and CON-2 there. The A4b test of
+and TC-419 back AC-1 to AC-7, CON-1 and CON-2 there. QSL-212 placed an
+operation's postconditions with `ProtocolClause`, so the clause functions
+this requirement keys are exactly the invariant, precondition and body
+functions `DeclaredClauseKind` names. The A4b test of
 AC-5's `2.0.0` half asserts only the owner and a key other than C1, because
 the earlier C3 held the `1.0.0` receiver P7; the corrected C3, over P9, is
 the key it reaches.
