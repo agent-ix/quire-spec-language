@@ -368,10 +368,9 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
                 quire_exact::Outcome::Incomplete(incomplete),
             ));
         }
-        let callables = super::callables(env.package);
         let evaluation = super::evaluate::Machine::new(
             env.package.graph().scope(),
-            &callables,
+            env.package.graph(),
             env.objects,
             meter,
             env.package.graph().dispatch_tables(),
@@ -431,7 +430,7 @@ mod family_contract_tests {
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::{
         declaration, declaration_signature, declarations_for, empty_scope, fixture_owner, limits,
-        root_location, CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED,
+        root_location, CheckingLimits, PackageDeclarations, Signatures, SCALAR_LIMITS_UNLIMITED,
     };
     use qsl_semantics::family::{DiagnosticSink, EvalOutcome, FamilyContract, ScopeStack};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -455,9 +454,10 @@ mod family_contract_tests {
         let scope = empty_scope();
         let location = root_location();
         let own_signature = declaration_signature("f");
+        let signatures = Signatures::default();
         let declarations = declarations_for(
             &scope,
-            &[],
+            &signatures,
             &own_signature,
             &[],
             CheckingLimits::default(),

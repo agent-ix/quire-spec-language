@@ -290,6 +290,12 @@ pub(crate) struct Lowering<'a> {
     functions: Vec<Option<NodeKey>>,
     /// Each declared composite's node key, by its declaration key.
     composites: BTreeMap<NodeKey, NodeKey>,
+    /// The `functions` slots and `composites` entries written since the
+    /// last settle, the only keys that settle can still resolve (QSL-205:
+    /// a settle per function group resolves its own keys, not every key
+    /// the package has so far).
+    unsettled_functions: Vec<usize>,
+    unsettled_composites: Vec<NodeKey>,
     /// Composites whose node is being built.
     composites_in_progress: Vec<NodeKey>,
     /// The placeholder naming each composite in progress that reached
@@ -685,6 +691,8 @@ impl<'a> Lowering<'a> {
             occurrences,
             functions: vec![None; function_count],
             composites: BTreeMap::new(),
+            unsettled_functions: Vec::new(),
+            unsettled_composites: Vec::new(),
             composites_in_progress: Vec::new(),
             composite_placeholders: BTreeMap::new(),
             functions_open: false,
@@ -1144,6 +1152,7 @@ impl<'a> Lowering<'a> {
             self.placeholders.insert(placeholder, Some(key));
         }
         self.composites.insert(declaration, key);
+        self.unsettled_composites.push(declaration);
         if self.composites_in_progress.is_empty() && !self.functions_open {
             self.settle()?;
         }
@@ -1342,6 +1351,7 @@ impl<'a> Lowering<'a> {
                 let placeholder = self.placeholder();
                 if let Some(slot) = self.functions.get_mut(*index) {
                     *slot = Some(placeholder);
+                    self.unsettled_functions.push(*index);
                 }
                 placeholders.push(placeholder);
             }
@@ -1372,6 +1382,8 @@ impl<'a> Lowering<'a> {
         let placeholders = std::mem::take(&mut self.placeholders);
         let drafts = std::mem::take(&mut self.drafts);
         let occurrences = std::mem::take(&mut self.draft_occurrences);
+        let unsettled_functions = std::mem::take(&mut self.unsettled_functions);
+        let unsettled_composites = std::mem::take(&mut self.unsettled_composites);
         self.composite_placeholders.clear();
         let mut aliases = BTreeMap::new();
         for (placeholder, built) in placeholders {
@@ -1477,11 +1489,17 @@ impl<'a> Lowering<'a> {
             }
         };
         let root = generated_location();
-        for key in self.functions.iter_mut().flatten() {
-            *key = resolve(*key).map_err(|()| unresolved(&root))?;
+        // A key an earlier settle resolved names no draft or placeholder of
+        // this one, so only the keys written since then can change.
+        for index in unsettled_functions {
+            if let Some(Some(key)) = self.functions.get_mut(index) {
+                *key = resolve(*key).map_err(|()| unresolved(&root))?;
+            }
         }
-        for key in self.composites.values_mut() {
-            *key = resolve(*key).map_err(|()| unresolved(&root))?;
+        for declaration in unsettled_composites {
+            if let Some(key) = self.composites.get_mut(&declaration) {
+                *key = resolve(*key).map_err(|()| unresolved(&root))?;
+            }
         }
         for (key, role, location) in occurrences {
             let key = resolve(key).map_err(|()| unresolved(&location))?;
@@ -1678,6 +1696,7 @@ impl<'a> Lowering<'a> {
         };
         if let Some(slot) = self.functions.get_mut(index) {
             *slot = Some(key);
+            self.unsettled_functions.push(index);
         }
         Ok(key)
     }
