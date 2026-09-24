@@ -338,18 +338,58 @@ impl DigestRecord {
     /// distinct from an unrecognized label, which is
     /// [`InvalidDigestRecord::UnknownDomain`]).
     pub fn from_wire(domain: Option<&str>, digest_hex: &str) -> Result<Self, InvalidDigestRecord> {
-        let Some(domain) = domain else {
-            return Err(InvalidDigestRecord::AbsentDomain);
-        };
-        let domain = domain
-            .parse::<DigestDomain>()
-            .map_err(InvalidDigestRecord::UnknownDomain)?;
+        let domain = parse_domain_label(domain)?;
+        Self::from_domain_and_hex(domain, digest_hex)
+    }
+
+    /// Read a wire digest member that a reader restricts to exactly one
+    /// FR-201 domain (ADR-013 C-27: "each reader" that names a required
+    /// domain for a position checks it, before the digest bytes). The
+    /// domain label is checked first: an absent domain, an unrecognized
+    /// label, or a recognized FR-201 domain that is merely not `expected`
+    /// all refuse ([`InvalidDigestRecord::WrongDomain`] for the last case)
+    /// before `digest_hex` is read at all.
+    pub fn from_wire_expecting(
+        expected: DigestDomain,
+        domain: Option<&str>,
+        digest_hex: &str,
+    ) -> Result<Self, InvalidDigestRecord> {
+        let domain = parse_domain_label(domain)?;
+        if domain != expected {
+            return Err(InvalidDigestRecord::WrongDomain {
+                expected,
+                found: domain,
+            });
+        }
+        Self::from_domain_and_hex(domain, digest_hex)
+    }
+
+    /// Shared tail of [`Self::from_wire`] and [`Self::from_wire_expecting`]
+    /// once the domain label itself is settled: validate and parse the hex
+    /// digest.
+    fn from_domain_and_hex(
+        domain: DigestDomain,
+        digest_hex: &str,
+    ) -> Result<Self, InvalidDigestRecord> {
         if digest_hex.len() != 64 {
             return Err(InvalidDigestRecord::WrongLength(digest_hex.len()));
         }
         let bytes = parse_lower_hex32(digest_hex).ok_or(InvalidDigestRecord::NotLowerHex)?;
         Ok(Self { domain, bytes })
     }
+}
+
+/// Parse a wire digest member's domain label (shared by [`DigestRecord::from_wire`]
+/// and [`DigestRecord::from_wire_expecting`]): `None` is FR-201-AC-3's absent
+/// domain, and a label FR-201 does not define is
+/// [`InvalidDigestRecord::UnknownDomain`].
+fn parse_domain_label(domain: Option<&str>) -> Result<DigestDomain, InvalidDigestRecord> {
+    let Some(label) = domain else {
+        return Err(InvalidDigestRecord::AbsentDomain);
+    };
+    label
+        .parse::<DigestDomain>()
+        .map_err(InvalidDigestRecord::UnknownDomain)
 }
 
 /// A single lowercase-hex ASCII digit's value, or `None` for anything else
@@ -402,6 +442,18 @@ pub enum InvalidDigestRecord {
     /// The wire member named a domain label FR-201 does not define.
     #[error("{0}")]
     UnknownDomain(#[source] UnknownDigestDomain),
+    /// [`DigestRecord::from_wire_expecting`] only: the wire member named a
+    /// recognized FR-201 domain, but not the one this reader requires at
+    /// this position (ADR-013 C-27) -- distinct from
+    /// [`Self::UnknownDomain`], which never resolved to any FR-201 domain
+    /// at all.
+    #[error("digest domain {found} is not the required {expected}")]
+    WrongDomain {
+        /// The domain this reader requires at this position.
+        expected: DigestDomain,
+        /// The domain the wire member actually named.
+        found: DigestDomain,
+    },
     /// The digest string is not exactly 64 characters (a prefixed form such
     /// as `ByteDigest`'s own `sha256:`-prefixed spelling is one instance of
     /// this: its 71-character text never parses as FR-322's unprefixed
@@ -418,13 +470,71 @@ pub enum InvalidDigestRecord {
 
 impl InvalidDigestRecord {
     /// Whether this refusal is genuinely about the digest's *domain*
-    /// (absent, or naming a label FR-201 does not define) as opposed to the
-    /// digest string's own encoding (wrong length, not lowercase hex). A
+    /// (absent, naming a label FR-201 does not define, or -- from
+    /// [`DigestRecord::from_wire_expecting`] -- naming a recognized FR-201
+    /// domain that is merely not the one this reader requires) as opposed to
+    /// the digest string's own encoding (wrong length, not lowercase hex). A
     /// caller rendering a catalog cause for this refusal must not spell a
     /// malformed-encoding case as `digest-domain-mismatch`: the domain named
     /// no problem at all in that case.
     pub fn is_domain_mismatch(&self) -> bool {
-        matches!(self, Self::AbsentDomain | Self::UnknownDomain(_))
+        matches!(
+            self,
+            Self::AbsentDomain | Self::UnknownDomain(_) | Self::WrongDomain { .. }
+        )
+    }
+}
+
+/// A backend's own FR-331 provider-manifest digest (ADR-013 O-19), always in
+/// FR-201 domain `quire.tool-manifest.jcs/v1`. Relocated here (QSL-227) from
+/// `qsl_route`, whose own module doc named it as the O-19 `backend` member's
+/// digest half: `qsl_route::Candidate` (layer R) and `qsl_replay::Backend`
+/// (layer 6) cannot depend on each other (ADR-011 §6.1), but both depend on
+/// this F crate, so the one domain-checked type lives here and both readers
+/// share it -- exactly the reasoning that already relocated [`WireNodeId`]
+/// from `replay` to this module.
+///
+/// The domain is fixed by construction: [`ManifestDigest::from_digest`]
+/// mints in that domain, and [`ManifestDigest::from_wire`] refuses any
+/// other (ADR-013 C-27, checked before the digest bytes).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ManifestDigest(DigestRecord);
+
+impl ManifestDigest {
+    /// The one FR-201 domain a manifest digest is in.
+    pub const DOMAIN: DigestDomain = DigestDomain::ToolManifestJcsV1;
+
+    /// Wrap an already-computed `quire.tool-manifest.jcs/v1` digest.
+    pub fn from_digest(bytes: [u8; 32]) -> Self {
+        Self(DigestRecord::mint(Self::DOMAIN, bytes))
+    }
+
+    /// Read a manifest digest from its wire parts: a domain label and a
+    /// 64-lowercase-hex digest (the `DigestRecord` wire convention, C-16).
+    /// The domain is checked before the digest bytes (ADR-013 C-27), via
+    /// [`DigestRecord::from_wire_expecting`].
+    pub fn from_wire(domain: Option<&str>, digest_hex: &str) -> Result<Self, InvalidDigestRecord> {
+        DigestRecord::from_wire_expecting(Self::DOMAIN, domain, digest_hex).map(Self)
+    }
+
+    /// The domain-labelled digest record. Its domain is always
+    /// [`ManifestDigest::DOMAIN`]; its `hex()` is the wire digest string.
+    pub fn record(&self) -> DigestRecord {
+        self.0
+    }
+
+    /// This digest's domain: always [`ManifestDigest::DOMAIN`]. A shortcut
+    /// for `self.record().domain()`, for callers that only want the domain
+    /// label (e.g. re-encoding the wire `{identity, domain, digest}` triple)
+    /// without naming [`Self::record`].
+    pub fn domain(&self) -> DigestDomain {
+        Self::DOMAIN
+    }
+
+    /// The unprefixed 64-lowercase-hex digest string (C-16). A shortcut for
+    /// `self.record().hex()`.
+    pub fn hex(&self) -> String {
+        self.0.hex()
     }
 }
 
@@ -653,6 +763,70 @@ mod digest_record_tests {
         assert_eq!(
             "sha256-jcs".parse::<DigestDomain>(),
             Ok(DigestDomain::Sha256Jcs)
+        );
+    }
+
+    /// QSL-227 positive control: [`DigestRecord::from_wire_expecting`] reads
+    /// back a digest whose domain matches the one the reader requires.
+    #[test]
+    fn from_wire_expecting_admits_the_required_domain() {
+        let record = DigestRecord::mint(DigestDomain::ToolManifestJcsV1, bytes(0xcd));
+        let read = DigestRecord::from_wire_expecting(
+            DigestDomain::ToolManifestJcsV1,
+            Some(DigestDomain::ToolManifestJcsV1.as_str()),
+            &record.hex(),
+        )
+        .expect("the required domain reads back");
+        assert_eq!(read, record);
+    }
+
+    /// QSL-227 (ADR-013 C-27) adverse case: a recognized FR-201 domain other
+    /// than the one a reader requires refuses as
+    /// [`InvalidDigestRecord::WrongDomain`], distinct from
+    /// [`InvalidDigestRecord::UnknownDomain`] -- and the domain is checked
+    /// before the digest bytes, so a wrong domain paired with malformed hex
+    /// still reports the domain mismatch.
+    #[test]
+    fn from_wire_expecting_refuses_any_other_domain_before_the_bytes() {
+        let wrong = DigestDomain::SourceBytesV1;
+        assert_eq!(
+            DigestRecord::from_wire_expecting(
+                DigestDomain::ToolManifestJcsV1,
+                Some(wrong.as_str()),
+                &"ab".repeat(32),
+            ),
+            Err(InvalidDigestRecord::WrongDomain {
+                expected: DigestDomain::ToolManifestJcsV1,
+                found: wrong,
+            })
+        );
+        assert_eq!(
+            DigestRecord::from_wire_expecting(
+                DigestDomain::ToolManifestJcsV1,
+                Some(wrong.as_str()),
+                "not-hex",
+            ),
+            Err(InvalidDigestRecord::WrongDomain {
+                expected: DigestDomain::ToolManifestJcsV1,
+                found: wrong,
+            }),
+            "the domain is checked before the hex bytes"
+        );
+        assert_eq!(
+            DigestRecord::from_wire_expecting(
+                DigestDomain::ToolManifestJcsV1,
+                None,
+                &"ab".repeat(32)
+            ),
+            Err(InvalidDigestRecord::AbsentDomain)
+        );
+        assert!(
+            InvalidDigestRecord::WrongDomain {
+                expected: DigestDomain::ToolManifestJcsV1,
+                found: wrong,
+            }
+            .is_domain_mismatch(),
+            "a recognized-but-wrong domain is still a domain mismatch, not an encoding problem"
         );
     }
 }

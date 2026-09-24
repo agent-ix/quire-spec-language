@@ -11,7 +11,7 @@
 
 use crate::bounds::{BoundExceeded, MAX_ENCODED_BYTES};
 use crate::identity::Backend;
-use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::digest::ManifestDigest;
 
 /// One of the seven ADR-013 O-16 categories an FR-331 proof column can
 /// produce (ADR-013 O-16 category table; FR-069). `Category` in
@@ -275,8 +275,10 @@ pub struct BackendProviderSource {
     pub capability_vocabulary: Option<String>,
     /// The provider identity, as the FR-331 manifest states it.
     pub backend_identity: String,
-    /// The FR-331 manifest's digest (ADR-013 O-19).
-    pub manifest_digest: DigestRecord,
+    /// The FR-331 manifest's digest (ADR-013 O-19), always domain
+    /// `quire.tool-manifest.jcs/v1` (QSL-227: [`ManifestDigest`] cannot be
+    /// constructed with any other domain).
+    pub manifest_digest: ManifestDigest,
     /// The executor/tool pin the manifest carries alongside `backend`.
     pub tool_pin: String,
     /// The per-item terminal records this envelope reports.
@@ -291,7 +293,7 @@ fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
     source.contract_version.len()
         + source.capability_vocabulary.as_deref().map_or(0, str::len)
         + source.backend_identity.len()
-        + source.manifest_digest.as_bytes().len()
+        + source.manifest_digest.record().as_bytes().len()
         + source.tool_pin.len()
         + source
             .items
@@ -372,10 +374,9 @@ pub struct EmptyEnvelopeSet;
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::DigestDomain;
 
-    fn manifest_digest() -> DigestRecord {
-        DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [0x11; 32])
+    fn manifest_digest() -> ManifestDigest {
+        ManifestDigest::from_digest([0x11; 32])
     }
 
     fn source(items: Vec<TerminalRecord>) -> BackendProviderSource {
@@ -560,9 +561,9 @@ mod tests {
         // Step 4: a mutated manifest digest is a different `Backend`, never
         // silently regenerated to match.
         let mut mutated = original.clone();
-        let mut bytes = *manifest_digest().as_bytes();
+        let mut bytes = *manifest_digest().record().as_bytes();
         bytes[0] ^= 0xFF;
-        mutated.manifest_digest = DigestRecord::mint(DigestDomain::ToolManifestJcsV1, bytes);
+        mutated.manifest_digest = ManifestDigest::from_digest(bytes);
         let mutated_envelopes = read_backend_provider_envelope(&mutated).unwrap();
         assert_ne!(
             mutated_envelopes[0].backend().manifest_digest(),
