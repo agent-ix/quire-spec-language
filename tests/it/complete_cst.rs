@@ -3,7 +3,7 @@
 //! apply_edits}`). The layer-1-only CST construction/recovery tests that used to
 //! live here moved to `qsl-cst/tests/it/complete_cst.rs` (QSL-178 review F3).
 use ix_trace_rs::trace;
-use qsl_cst::{CompleteCause, CompleteCode, HostCause, Limits};
+use qsl_cst::{CompleteCause, CompleteCode, HostCause, Limits, SourceChange};
 use qsl_foundation::{SourceIdentity, Span};
 use quire_spec_language::complete::{self, SourceEdit};
 
@@ -67,11 +67,20 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
         edited.diagnostics()
     );
     assert_ne!(parsed.source().digest(), edited.source().digest());
-    assert!(parsed
+    let map = parsed
         .cst()
-        .nodes()
-        .iter()
-        .any(|node| parsed.cst().reuse_candidate(node, edited.cst()).is_some()));
+        .reuse_map(
+            edited.cst(),
+            SourceChange {
+                range: Span {
+                    start,
+                    end: start + 4,
+                },
+                inserted: "false".len(),
+            },
+        )
+        .expect("the edited source is this edit applied");
+    assert!(map.iter().any(Option::is_some));
     let replaced = parsed
         .cst()
         .node_covering(Span {
@@ -79,10 +88,7 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
             end: start + 4,
         })
         .unwrap();
-    assert!(parsed
-        .cst()
-        .reuse_candidate(replaced, edited.cst())
-        .is_none());
+    assert_eq!(map[replaced.identity().node.get()], None);
 }
 
 #[trace("TC-222", "FR-302-AC-3")]
@@ -126,7 +132,23 @@ fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
         })
         .unwrap();
     assert_eq!(original.production(), unchanged.production());
-    assert!(parsed.cst().may_reuse(original, inserted.cst(), unchanged));
+    let map = parsed
+        .cst()
+        .reuse_map(
+            inserted.cst(),
+            SourceChange {
+                range: Span {
+                    start: record_start,
+                    end: record_start,
+                },
+                inserted: "record Earlier { datum: Integer; }\r\n".len(),
+            },
+        )
+        .expect("the edited source is this edit applied");
+    assert_eq!(
+        map[original.identity().node.get()],
+        Some(unchanged.identity().node)
+    );
     assert!(parsed
         .cst()
         .ancestor_productions(original)
@@ -174,7 +196,23 @@ fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
         })
         .unwrap();
     assert_eq!(original.production(), unchanged.production());
-    assert!(parsed.cst().may_reuse(original, edited.cst(), unchanged));
+    let map = parsed
+        .cst()
+        .reuse_map(
+            edited.cst(),
+            SourceChange {
+                range: Span {
+                    start: label - 1,
+                    end: label - 1,
+                },
+                inserted: 1,
+            },
+        )
+        .expect("the edited source is this edit applied");
+    assert_eq!(
+        map[original.identity().node.get()],
+        Some(unchanged.identity().node)
+    );
 }
 
 #[trace("Task-047")]

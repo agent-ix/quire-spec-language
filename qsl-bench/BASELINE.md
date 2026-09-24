@@ -177,15 +177,14 @@ The smaller sizes were measured once each by the probe:
 
 **QSL-200 has landed.** A parse no longer hashes per-node data. A node's
 identity is the revision digest, its span and its arena index; the structural
-path is derived from parent links on request, and reuse is decided on request
-by comparing productions, byte slices and ancestor paths. The only identity
-hash is the document-revision preimage, once per parse.
-`LosslessCst::identity_hashed_bytes` reports that count: 144 bytes for every
-input below, whatever its node count.
+path is derived from parent links on request, and reuse is a one-to-one span
+mapping over typed productions (`LosslessCst::reuse_map`). A parse computes
+one identity digest, over the document-revision labels, whatever its node
+count; qsl-cst's own unit test counts the digest calls.
 
-- `cst/parse/<input>` times the whole parse.
-- `cst/sha256/<input>` times one SHA-256 over a buffer of
-  `identity_hashed_bytes` bytes.
+- `cst/parse/<input>` times the whole parse. Throughput is source bytes.
+- The `cst/sha256/<input>` rows timed the per-node digests QSL-200 removed and
+  are gone with them. `qsl-bench-probe cst` now prints node counts only.
 
 The tables below were measured at 89326999, before QSL-200, when every node
 carried a SHA-256 `StableNodeId` over its whole source slice and every

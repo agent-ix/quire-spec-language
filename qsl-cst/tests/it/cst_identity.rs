@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! CST identity: a revision digest, a span and a structural path derived on
-//! request, with reuse decided on request by typed comparison. Parsing does
-//! no per-node hashing and copies no per-node path.
+//! request, with reuse decided by a one-to-one span mapping over typed
+//! productions. The digest count and the name-independence of reuse are
+//! unit tests beside `LosslessCst` in `src/cst.rs`.
 use ix_trace_rs::trace;
-use qsl_cst::Limits;
-use qsl_cst::{CstElement, CstNode, LosslessCst, NodeIdentity, Production};
-use qsl_foundation::SourceIdentity;
+use qsl_cst::{CstElement, CstNode, Limits, LosslessCst, NodeIdentity, Production, SourceChange};
+use qsl_foundation::{SourceIdentity, Span};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
 
@@ -34,20 +34,6 @@ fn functions(count: usize) -> String {
     text
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
-#[test]
-fn a_parse_hashes_no_per_node_data() {
-    let small = parse("r1", &functions(1));
-    let large = parse("r1", &functions(200));
-    assert!(large.cst().nodes().len() > 100 * small.cst().nodes().len());
-    // Only the revision labels and the source digest are hashed, so the
-    // count is the same however many nodes the parse built.
-    assert_eq!(
-        small.cst().identity_hashed_bytes(),
-        large.cst().identity_hashed_bytes()
-    );
-}
-
 // Identities are fixed-size values: nothing per node holds a copied path or
 // ancestor list. A type that owned a `Vec` could not be `Copy`.
 #[trace("TC-222", "FR-302-AC-1")]
@@ -62,7 +48,7 @@ fn node_identity_is_a_fixed_size_value() {
 /// children down from the root.
 fn paths_from_the_root(cst: &LosslessCst) -> Vec<Option<Vec<u32>>> {
     let mut paths = vec![None; cst.nodes().len()];
-    let root = cst.root().identity().node;
+    let root = cst.root().identity().node.get();
     let mut pending = vec![(root, Vec::new())];
     while let Some((index, path)) = pending.pop() {
         let children = cst.nodes()[index]
@@ -91,7 +77,7 @@ fn structural_paths_are_derived_from_parent_links_on_request() {
     for node in cst.nodes() {
         assert_eq!(
             Some(cst.structural_path(node)),
-            expected[node.identity().node]
+            expected[node.identity().node.get()]
         );
         assert_eq!(
             cst.ancestor_productions(node).count(),
@@ -100,54 +86,67 @@ fn structural_paths_are_derived_from_parent_links_on_request() {
     }
 }
 
-/// The FR-302 reuse rule restated over production *positions* in the
-/// closed inventory instead of production values: the same decision under
-/// a relabelling that shares nothing with the variant names.
-fn relabelled_reuse(
-    before: &LosslessCst,
-    node: &CstNode,
-    after: &LosslessCst,
-    candidate: &CstNode,
-) -> bool {
-    let label = |production: Production| {
-        Production::all()
-            .iter()
-            .position(|known| *known == production)
-            .expect("closed inventory")
-    };
-    let bytes = |cst: &LosslessCst, node: &CstNode| {
-        cst.source().text().as_bytes()[node.span().start..node.span().end].to_vec()
-    };
-    let labels = |cst: &LosslessCst, node: &CstNode| {
-        std::iter::once(label(node.production()))
-            .chain(cst.ancestor_productions(node).map(label))
-            .collect::<Vec<_>>()
-    };
-    bytes(before, node) == bytes(after, candidate)
-        && labels(before, node) == labels(after, candidate)
+/// The `Primary` nodes of the unit, in source order.
+fn primaries(cst: &LosslessCst) -> Vec<&CstNode> {
+    let mut primaries: Vec<_> = cst
+        .nodes()
+        .iter()
+        .filter(|node| node.production() == Production::Primary)
+        .collect();
+    primaries.sort_by_key(|node| node.span().start);
+    primaries
 }
 
-// Reuse compares `Production` values and byte slices. Renaming a variant
-// changes neither, so every decision equals the one taken over name-free
-// labels.
+// In `x + x` the two operands have equal bytes, productions and ancestor
+// paths. Reuse keeps each on its own counterpart, never both on one, for an
+// edit before, between and after them.
 #[trace("TC-222", "FR-302-AC-3")]
 #[test]
-fn reuse_decisions_do_not_depend_on_production_names() {
-    let before = parse("r1", &functions(2));
-    let after = parse("r2", &functions(2).replace("x + 1", "x + 7"));
-    let (before, after) = (before.cst(), after.cst());
-    let mut reused = 0_usize;
-    let mut refused = 0_usize;
-    for node in before.nodes() {
-        for candidate in after.nodes() {
-            let decision = before.may_reuse(node, after, candidate);
-            assert_eq!(decision, relabelled_reuse(before, node, after, candidate));
-            if decision {
-                reused += 1;
-            } else {
-                refused += 1;
-            }
+fn reuse_is_one_to_one_between_equal_operands() {
+    let text =
+        format!("{HEADER}function f using Complete (x: Integer): Integer pure {{ x + x }}\n");
+    let first = text.find("x + x").expect("body");
+    let second = first + "x + ".len();
+    let before = parse("r1", &text);
+    for (at, removed, replacement) in [
+        (first, 0, "  "),
+        (first + "x ".len(), 1, "-"),
+        (second + 1, 0, " "),
+    ] {
+        let edited = format!("{}{replacement}{}", &text[..at], &text[at + removed..]);
+        let after = parse("r2", &edited);
+        let change = SourceChange {
+            range: Span {
+                start: at,
+                end: at + removed,
+            },
+            inserted: replacement.len(),
+        };
+        let map = before
+            .cst()
+            .reuse_map(after.cst(), change)
+            .expect("the edited source is this edit applied");
+        let mut targets: Vec<_> = map.iter().flatten().collect();
+        let reused = targets.len();
+        targets.sort_unstable();
+        targets.dedup();
+        assert_eq!(targets.len(), reused, "no two nodes share one successor");
+
+        let old = primaries(before.cst());
+        let new = primaries(after.cst());
+        assert_eq!((old.len(), new.len()), (2, 2));
+        for (old, new) in old.iter().zip(&new) {
+            assert_eq!(map[old.identity().node.get()], Some(new.identity().node));
         }
     }
-    assert!(reused > 0 && refused > 0);
+    // A successor that is not the stated edit maps nothing.
+    let unrelated = parse("r3", &text.replace("x + x", "x * x"));
+    let change = SourceChange {
+        range: Span {
+            start: first,
+            end: first,
+        },
+        inserted: 0,
+    };
+    assert!(before.cst().reuse_map(unrelated.cst(), change).is_none());
 }
