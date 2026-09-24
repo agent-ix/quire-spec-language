@@ -197,13 +197,9 @@ unfinished subject's body is never represented as checked (FR-057,
 "Family-body admission"). Assessment selections are retained as provenance and
 are never written back into the static subject.
 
-A request is inapplicable when its capability kind is not defined for the
-requested declaration's family. The kind-to-family mapping `report` applies
-(`requests::families`) is provisional and not normative. It follows FR-057's
-admitted-vocabulary table for every kind except `finite-replay`, which it maps
-to the protocol family as the retired four-member request enum did, and the
-question of which family records
-which capability kind is open under QSL-29.
+A request is inapplicable when its capability kind does not apply to the
+requested declaration's family under FR-057's "Kind applicability" table,
+which `requests::families` implements.
 
 The requested capability vocabulary, its version, its refusals and the split
 between admission, registration and negotiation are specified in

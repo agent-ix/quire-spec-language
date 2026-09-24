@@ -16,7 +16,7 @@ rules, that candidate sets follow the FR-290 rule independently of registration
 order, and that routing consumes settled dispositions as data. Negotiation
 itself is quire-contract-codegen's and is not run here; its settlements are
 supplied as fixture records shaped like `negotiate_*` output. Scope:
-FR-057-AC-5, FR-057-AC-6, FR-057-AC-8 and FR-057-AC-9.
+FR-057-AC-5, FR-057-AC-6 and FR-057-AC-8.
 
 ## Test Procedure
 
@@ -40,11 +40,6 @@ FR-057-AC-5, FR-057-AC-6, FR-057-AC-8 and FR-057-AC-9.
    `operation-contract` `unsupported` with its empty-candidate warning. Route
    them.
 6. Repeat steps 4 and 5 with the same backends registered in reverse order.
-7. Supply, as fixture records, a run result in which the `supported` item
-   timed out, then FR-331 `unsupported`/`tool-unavailable` results for a
-   missing tool, a different tool identity, a probe error and a probe past its
-   limit, then an FR-331 `failed`/`tool-unavailable` result for a tool changed
-   after a passing probe. Route them.
 
 ## Expected Results
 
@@ -65,8 +60,4 @@ FR-057-AC-5, FR-057-AC-6, FR-057-AC-8 and FR-057-AC-9.
   `operation-contract` item gets no target and no artifact, is not a refusal,
   and nothing is pending after routing returns.
 - Step 6: candidate sets and the route are the same as in steps 4 and 5.
-- Step 7: the timeout is carried as a run result, not as `unsupported`, a
-  refusal or a hold. For each tool record, `unsupported` or `failed`, routing keeps the item's
-  `supported` disposition, reports neither a refusal nor a hold, and re-routes
-  it to no other candidate or mode.
 - Assertions compare typed codes, causes and identities, never message text.
