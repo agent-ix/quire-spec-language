@@ -127,10 +127,12 @@ self-edge; its members' order is FR-322's graph order. Two in-group nodes of
 different groups can have equal preimages, because a `group_reference`
 names a position, not a node: two recursive functions `f` and `g` with the
 same body shape give their in-group expression nodes one preimage.
-`check` SHALL refuse a package in which two distinct nodes have equal
-preimages and are not the same node, with `unknown_required_feature`/
+`check` SHALL refuse a package in which two in-group nodes of different
+recursion groups have equal preimages, with `unknown_required_feature`/
 `unsupported-feature` naming both nodes' source regions, and yield no key for
 either (FR-092-OQ-1).
+Two nodes outside any recursion group with equal preimages are one node,
+keyed once (FR-093's content addressing).
 
 ### Type nodes
 

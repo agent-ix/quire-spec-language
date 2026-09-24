@@ -13,7 +13,7 @@ relationships:
 Verify that a quantity of a declared unit is typed by that unit's QSpec
 nominal node with no wrapper node, that a compound unit's type node lists its
 terms in the compound-unit preimage's order, and that a compound unit the
-unit table does not hold is an internal fault.
+check stage's unit scope does not hold is an internal fault.
 
 This catches a wrapper node that splits a declared unit's quantity type from
 its unit, terms emitted in source order instead of canonical order, and a
@@ -29,9 +29,10 @@ read at run time from `QSPEC_DIR` (the opt-in `make conformance` gate).
 
 1. Check a parameter typed as a quantity of the declared unit `metre`. Read
    its semantic type, and list the graph's `compound_unit` nodes.
-2. Build the type nodes of the compound units `metre^2`, `second^-1 metre^1`
-   (terms supplied in that order), the dimensionless unit and `metre^1`.
-3. Key a quantity type whose compound `UnitId` the unit table does not hold.
+2. Over `a` (a quantity of `metre`) and `t` (a quantity of `second`), check
+   `a * a`, `a / t`, `a / a` and `a * a / a`, and read each result type node.
+3. Key a quantity type whose compound `UnitId` the check stage's unit scope
+   does not hold.
 4. Scan the `UnitId`-domain `match` for a `_` arm.
 
 Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.

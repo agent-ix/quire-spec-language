@@ -504,6 +504,6 @@ TC-416 AC-7 and AC-9. All four are `🚧 Planned`.
 keys the nodes those two leave to the model layer: model declaration nodes
 and clause functions under QSpec's `ModelOwner`, the `Reference<T>` and
 `Population<T>[N]` type nodes, and quantity type nodes for declared and
-compound units, with vectors M1 to M4, R1 to R3, S1, S2, PO1, PO2, P5 to P7,
-E4 to E9, C1 to C4 and U1 to U4. TC-417 backs AC-1 to AC-4 and AC-7, TC-418
+compound units, with vectors M1 to M5, R1 to R5, S1 to S3, PO1 to PO3, P5
+to P8, L4, E4 to E10, C1 to C6 and U1 to U4. TC-417 backs AC-1 to AC-4 and AC-7, TC-418
 AC-5 and TC-419 AC-6 and AC-7. All three are `🚧 Planned`.

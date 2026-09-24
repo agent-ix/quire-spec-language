@@ -35,8 +35,13 @@ The receiver parameter of each candidate is `self: Reference<M::Order>`.
 2. Repeat step 1 under `acme/orders` `2.0.0`.
 3. Run it for `Order.count` with the authored precondition `true`, under
    `1.0.0`.
-4. Search every clause function preimage for the substring `.precondition`.
-5. Scan the clause-kind spelling `match` for a `_` arm.
+4. Add `Sub.size`, which redefines `Order.size` with the authored
+   precondition `false` and receiver `self: Reference<M::Sub>`. Run
+   `checked_dispatch_operation` for `Order.size` and for `Sub.size`. Read the
+   receiver parameter node, `Sub.size`'s authored and effective precondition
+   functions from both runs, and `Order.size`'s authored function.
+5. Rebuild step 1 with the synthesized labels changed, and read the keys.
+6. Scan the `DeclaredClauseKind` spelling `match` for a `_` arm.
 
 Tag the tests `#[trace("FR-094-AC-5", "TC-418")]`.
 
@@ -48,8 +53,13 @@ Tag the tests `#[trace("FR-094-AC-5", "TC-418")]`.
   `declaration` `null`.
 - Step 2: the precondition keys to C3.
 - Step 3: the precondition keys to C4.
-- Step 4: no preimage contains it.
-- Step 5: no `_` arm.
+- Step 4: the receiver parameter keys to P8, `Sub.size`'s authored
+  precondition to C5 and its effective precondition to C6 in both runs, each
+  one node; the effective function's body references E10, and its owner's
+  `node` is `ix://acme/orders/Sub/size`. `Order.size`'s authored function
+  keys to C1.
+- Step 5: the keys equal step 1's.
+- Step 6: no `_` arm.
 
 ## Status
 

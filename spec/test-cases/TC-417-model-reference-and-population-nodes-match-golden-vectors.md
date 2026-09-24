@@ -31,7 +31,7 @@ Scope: FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 (its
 Every fixture admits the domain package `acme/orders` that FR-094's Golden
 vectors section describes, at version `1.0.0` unless a step says otherwise,
 with `M::Order`, `M::Invoice` and `M::Sub` resolving to its object types.
-`Sub` has supertype `Order` and redefines neither `total` nor `size`.
+`Sub` has supertype `Order`, inherits `total` and redefines `size`.
 
 1. Check `function g using v(r: Reference<M::Order>, s: Reference<M::Invoice>): Boolean pure { true }`.
    Read the type nodes of `r` and `s`, their model nodes, and the model
@@ -43,12 +43,14 @@ with `M::Order`, `M::Invoice` and `M::Sub` resolving to its object types.
    `lookup<M::Order>(p, r) absent undefined`,
    `lookup<M::Order>(p, r) absent empty`, `deref(r).total` and `r.size()`.
    Read each parameter node, type node and application node.
-5. Check `p: Population<M::Order>[5]`, and read its type node.
+5. Check `p: Population<M::Order>[5]` and `q: Population<M::Invoice>[3]`, and
+   read their type nodes.
 6. Check `deref(s).total` and `s.size()` over `s: Reference<M::Sub>`, and read
    each member's `declaration`.
 7. Call the model-node keying function with an `EffectiveId` that no admitted
    view's `type_identities` holds, and with a `DeclarationKey` whose `package`
-   is `acme/other`.
+   is `acme/other`, and with a `DeclarationKey` whose `node` is empty. Call
+   the record-kind `match` with a field member record.
 8. Scan the model-declaration-node `match` for a `_` arm, and scan every
    model-owned preimage for an owner of kind `source` or `definition`.
 
@@ -65,10 +67,11 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
 - Step 4: P5 over PO1, whose `semantic_type` is S1, and P6. E4 with
   `result_type` S2, E5 with R1, E6 with R3, E7 and E8 (member `field` naming
   M1 and `total`) and E9 (member `operation` naming M1 and `size`).
-- Step 5: PO2.
-- Step 6: both members name `Sub`'s model node, not M1.
-- Step 7: each refuses as an internal fault naming that value, and yields no
-  key.
+- Step 5: PO2 and PO3, which differs from PO1.
+- Step 6: `s`'s type node is R4, and both members name `Sub`'s model node
+  M5, not M1.
+- Step 7: each of the four refuses as an internal fault naming that value,
+  and yields no key.
 - Step 8: no `_` arm, and no `source` or `definition` owner.
 
 ## Status
