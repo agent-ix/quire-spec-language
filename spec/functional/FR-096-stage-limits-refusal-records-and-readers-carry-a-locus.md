@@ -108,20 +108,22 @@ respectively.
 actual counter at the failed charge, and an optional `Locus`. Its catalog
 code is its kind's.
 
-Every ceiling of compiler stages S1 to S4, the I2 reader and a family
+Every ceiling of compiler stages S2 to S4, the I2 reader and a family
 `check` is a stage limit and SHALL be reported as `LimitExceeded`, never as
 `resource_exhausted`. The `quire.native.diagnostics/v1`
-`stage_limit_exceeded` row (revision `1-draft.6`) names exactly these
-surfaces, and the catalog keeps `resource_exhausted` for the caller's
+`stage_limit_exceeded` row (revision `1-draft.6`) names these surfaces,
+together with S1, `replay` and `route`, and the catalog keeps `resource_exhausted` for the caller's
 work-budget meter, adding that a semantic maximum is not a caller work
 budget. The check stage's `CheckingLimits` ceilings (nesting depth, node
 count, declaration input bytes and work, NFR-011) are therefore stage
-limits. S1's syntax budgets (`SyntaxLimit`, FR-035) migrate under QSL-236
-once STD-95 answers the S1 token cause; this requirement does not rule on
-them. The native-v1 parser's budgets (FR-002-AC-4) are lane-private
-(ADR-013 §6). S4, the `replay` facade and the `route` module have
-no stage limit yet; their owners specify one with its locus when they add
-it.
+limits. Three sets of ceilings migrate under QSL-236 once STD-95 answers,
+and this requirement does not rule on them: S1's syntax budgets
+(`SyntaxLimit`, FR-035), the complete-V1 package-graph resolution limit
+(`ResolutionCause::InsufficientNextCharge`), and the `replay` envelope
+readers' encoded-byte bound (`BoundExceeded`). The native-v1 parser's
+budgets (FR-002-AC-4) report through the lane-private native-v1 `Code`
+(ADR-013 §6 Diagnostics row). S4 and the `route` module have no stage limit
+yet; their owners specify one with its locus when they add it.
 
 Each producer's locus is the position at which its charge failed:
 
@@ -129,7 +131,7 @@ Each producer's locus is the position at which its charge failed:
 | --- | --- | --- |
 | S2 (`forms`) | nesting depth (FR-091-AC-9) | `Locus::Region` over the span of the first node past the bound, under the unit's `RawSourceRef` |
 | S3, a family `check`, for a declaration as a whole | the contract's nesting entry, and the declaration's preimage input bytes, node count and work charge | `Locus::Region` over that declaration's span |
-| S3, `Typer` and lowering, under `CheckingLimits` | nesting depth, and the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `check::Location` |
+| S3, `Typer` and lowering, under `CheckingLimits` | nesting depth, and the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `check::Location`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
 | S3, package checking, under `CheckingLimits` | a declaration's input bytes and the package's work (NFR-011) | `Locus::Region` over the declaration being charged |
 | I2 reader, IR's reported limits | IR's `Bytes`, `Depth`, `Nodes` and `Work` as input bytes, nesting depth, node count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
 
@@ -219,7 +221,7 @@ name.
 | FR-096-AC-8 | A `RefusalRecord` built from an S6a `Evaluation` whose outcome is a kernel `Refused` carries the code QSL's kernel map gives that cause, category refusal, and the evaluation's resolved locus. | Test (TC-428) |
 | FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. | Test (TC-429) |
 | FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test (TC-429) |
-| FR-096-AC-11 | A function whose body is `not not not true` (four nodes deep), checked through `ValueFunctionFamily::check` with `CheckingLimits` depth 3, returns `StageFailure::Limit` with kind nesting depth, bound 3, actual 4, and `Locus::Region` over the span of `true`, reported as `stage_limit_exceeded`/`nesting-depth-exceeded`. With depth 4 and nothing else changed, it returns no nesting-depth limit. | Test (TC-378) |
+| FR-096-AC-11 | A function whose body is the source text `not not not true` (four nodes deep), parsed under a unit reference so its forms carry spans and checked through `ValueFunctionFamily::check` with `CheckingLimits` depth 3, returns `StageFailure::Limit` with kind nesting depth, bound 3, actual 4, and `Locus::Region` over the span of `true`, reported as `stage_limit_exceeded`/`nesting-depth-exceeded`. With depth 4 and nothing else changed, it returns no nesting-depth limit. The same depth stop inside an FR-151 synthesized function carries no locus. | Test (TC-378) |
 
 ## Dependencies
 

@@ -128,9 +128,9 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 - Step 10: 127 levels check and 128 stop with
   `stage_limit_exceeded`/`nesting-depth-exceeded`, bound 128.
   Each form checks at its deepest admitted nesting, except the unguarded
-  `value` chain, which refuses there as an unproved presence, and refuses
-  naming the depth limit one level deeper. Every 1,000-deep form refuses
-  naming the depth limit in force. The first `pre` refuses as a forbidden
+  `value` chain, which refuses there as an unproved presence, and stops with
+  `nesting-depth-exceeded` one level deeper. Every 1,000-deep form refuses
+  with `nesting-depth-exceeded` at the depth limit in force. The first `pre` refuses as a forbidden
   pre-read and the second on the depth limit. No check aborts.
 - Step 11: each read after its binder's body refuses with
   `missing_declaration`/`missing-name` naming the name read. Each form

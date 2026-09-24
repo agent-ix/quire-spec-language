@@ -160,7 +160,7 @@ operational validation remains outside this audit-only plan.
 | TC-378 | A real recursive-descent fixture shows the nesting-depth limit is the proximate cause of a function-declaration refusal | Unit | P1 | FR-062-AC-7, FR-096-AC-11 | 🚧 Planned; QSL-160 (S-5b) |
 | TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Planned; QSL-158 (PR #299 review, finding 2): blocked by ADR-011 §2's interim rule and QSL-6; see FR-087 Status |
 | TC-380 | The function-declaration contract check refuses an ill-typed declaration and admits a well-typed one | Unit | P1 | FR-065-AC-7 | ✅ Passed locally (QSL-148, PR #303) |
-| TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | ✅ Passed locally (PR #303 review round 3, finding F1) |
+| TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | 🚧 Partly passed: the whole-package count passes locally (PR #303 review round 3, finding F1); the `Limit` outcome is pending S-5b (QSL-160) |
 | TC-382 | S6a returns each kernel outcome unchanged in FamilyOutcome::Evaluated | Unit | P1 | FR-090-AC-1 | ✅ Passed locally |
 | TC-384 | S6a invariant breaks are InternalFaults, not panics or refusals | Unit | P1 | FR-090-AC-3 | ✅ Passed locally |
 | TC-385 | S6a's input type admits no Relation, and FamilyOutcome has exactly two arms | Unit | P1 | FR-090-AC-4 | ✅ Passed locally |
@@ -201,7 +201,7 @@ operational validation remains outside this audit-only plan.
 | TC-420 | Occurrence keys and source regions are lexical values, and every checked node has an occurrence | Unit | P1 | FR-095-AC-1, FR-095-AC-2 | ✅ Passed locally |
 | TC-421 | The package source map carries the wire's source map, and a location resolves or refuses by cause | Integration | P1 | FR-095-AC-3, FR-095-AC-4 | ✅ Passed locally; step 4 (QSpec positive fixtures) under `make conformance` |
 | TC-422 | Each Locus variant resolves to regions by its own rule, and the artifact pointer is RFC 6901 | Unit | P1 | FR-095-AC-5, FR-095-AC-6 | ✅ Passed locally |
-| TC-423 | The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result | Unit | P1 | NFR-011-M-1 (node refusal: step 1), NFR-011-M-2 (step 3), NFR-011-M-3 (byte refusal before work: step 4), NFR-011-M-4 (work refusal: step 5; enum package admitted: step 4) | ✅ Passed locally; QSL-214 |
+| TC-423 | The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result | Unit | P1 | NFR-011-M-1 (node refusal: step 1), NFR-011-M-2 (step 3), NFR-011-M-3 (byte refusal before work: step 4), NFR-011-M-4 (work refusal: step 5; enum package admitted: step 4) | 🚧 Partly passed: ceilings bind and are recorded locally (QSL-214); the `stage_limit_exceeded` outcome is pending S-5b (QSL-160) |
 | TC-424 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7 | 🚧 Planned; QSL-233 (S-4b) |
 | TC-425 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | 🚧 Planned; QSL-233 (S-4b) |
 | TC-426 | A check location resolves to the region of the unit it was read from, or to none | Unit | P1 | FR-096-AC-1 | 🚧 Planned; QSL-160 (S-5b) |

@@ -328,18 +328,19 @@ they exist in the delivered code today:
 - FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
   `QualifiedName` lookup is implemented (`qsl-eval/src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
-- FR-062-AC-11: backed (`TC-381`):
+- FR-062-AC-11: partly backed (`TC-381`): the whole-package count passes;
+  the `Limit` outcome is pending S-5b.
   `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
   (`qsl-eval/tests/it/total_functions.rs`). The test observes the stop as
   `Refused{ResourceExhausted}`; its `StageFailure::Limit` outcome, amended
   here, is ADR-013 §7 slice S-5b's (QSL-160, FR-096).
 
-Three of this requirement's eleven Acceptance Criteria are backed (AC-2,
-AC-5, AC-11). AC-5's two tagged tests are
+Two of this requirement's eleven Acceptance Criteria are backed (AC-2 and
+AC-5), and AC-11 is partly backed. AC-5's two tagged tests are
 `stage_limits_restored_kinds_refuse_one_below_the_real_metric`
 (`qsl-semantics/src/check/family.rs`, `checking_tests`) and
 `evaluate_returns_incomplete_when_the_meter_is_exhausted`
 (`qsl-eval/src/value/expression/family.rs`; PR #303 review round 3, finding F3).
 The other eight are unbacked, for the
-reasons above -- not silently. AC-7 in particular stays unbacked pending a
-FR-096 (QSL-160), as its row above describes.
+reasons above -- not silently. AC-7 in particular stays unbacked until
+FR-096 (QSL-160) lands, as its row above describes.

@@ -23,8 +23,9 @@ Scope: FR-062-AC-7, FR-096-AC-11.
 
 ## Test Procedure
 
-1. Build a function declaration whose body is `Not(Not(Not(true)))` (three
-   `Not`s wrapping a `Boolean` leaf, four nodes deep) and check it through
+1. Parse a function declaration whose body is the source text
+   `not not not true` (three `Not`s wrapping a `Boolean` leaf, four nodes
+   deep) under a unit reference, so its forms carry spans, and check it through
    `ValueFunctionFamily::check` with the `CheckingLimits` nesting depth
    configured to 3.
 2. Check the identical declaration again with the limit configured to 4 and
@@ -55,23 +56,9 @@ location and early-return-on-first-error behavior. Both the side-walk and
 the test that exercised it are deleted.
 
 `real_checker_depth_limit_is_the_proximate_cause`
-(`qsl-semantics/src/check/family.rs`, `checking_tests`, untagged)
-demonstrates the real mechanism this test case's fixture needs: a body
-nested to depth D (`Not(Not(Not(true)))`) checked through
-`ValueFunctionFamily::check`, which now drives `Typer` via
-`check_declaration_body` (QSL-148), refuses at `Typer`'s own
-pre-existing `CheckingLimits.depth` configured to 3 and admits at 4,
-varying only the limit by exactly one -- satisfying this test case's
-Test Procedure and Expected Results as literally written. It stays
-untagged for FR-062-AC-7 because the refusal it demonstrates surfaces as
-`StageFailure::Refused` (a `Typer`-level `CheckCause::ResourceExhausted`),
-not the `StageFailure::Limit` outcome AC-7's wording names, and it bounds
-`Typer`'s own depth counter, not `CheckContext`'s
-`StageLimits.nesting_depth` (which `nesting_depth_limit_is_the_proximate_
-cause`, below, still covers at one charge per top-level declaration).
-Making AC-7 itself backed would require threading `&mut CheckContext`
-through every recursive arm of `Typer::infer_form`, not just `Call` --
-see FR-062's own Status section for AC-7 for the full reasoning.
+(`qsl-semantics/src/check/family.rs`, `checking_tests`, untagged) shows the
+bound is the proximate cause today, but through `StageFailure::Refused`
+(`CheckCause::ResourceExhausted`) with no locus.
 [FR-096](../functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
 (QSL-160) resolves it: the `CheckingLimits` depth is a stage limit, so the
 family returns `Typer`'s depth stop as `StageFailure::Limit` with a
