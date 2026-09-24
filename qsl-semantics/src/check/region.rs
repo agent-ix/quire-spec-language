@@ -1,0 +1,306 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-096: a check [`Location`] resolves to a [`SourceRegion`] of the unit
+//! its declaration was read from.
+//!
+//! `Origin::Body{index}` starts at the body of function `index`, and
+//! `Origin::Measure{index}` at its `decreases` measure. Each path step `i`
+//! moves to child `i`, numbered as `Expression::children` numbers them, and
+//! the region is the span the node reached carries (FR-091-AC-10) under the
+//! unit's `RawSourceRef`. A declaration with no form spans (one built by
+//! hand, or synthesized for FR-151 dispatch) and `Origin::Expression` have
+//! no region: no region of the unit names a position in a tree not read
+//! from it.
+
+use qsl_forms::DeclarationSpans;
+use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
+use qsl_foundation::Span;
+
+use super::{CheckedGraph, Location, Origin, PackageDeclarations};
+
+/// The region `location` names, given each function's form spans by
+/// declaration index.
+fn resolve<'s>(
+    source: &RawSourceRef,
+    spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
+    location: &Location,
+) -> Option<SourceRegion> {
+    let span = match &location.origin {
+        Origin::Body { index, .. } => spans(*index)?.body.at(&location.path)?,
+        Origin::Measure { index, .. } => spans(*index)?.measure.as_ref()?.at(&location.path)?,
+        Origin::Expression => return None,
+    };
+    region(source, span)
+}
+
+/// `span` as a region of `source`.
+fn region(source: &RawSourceRef, span: Span) -> Option<SourceRegion> {
+    let start = u64::try_from(span.start).ok()?;
+    let end = u64::try_from(span.end).ok()?;
+    SourceRegion::new(source.clone(), start, end).ok()
+}
+
+impl PackageDeclarations {
+    /// FR-096: the region of this unit that `location` names, or `None`
+    /// for a position in a tree not read from it.
+    pub fn region(&self, location: &Location) -> Option<SourceRegion> {
+        resolve(
+            &self.source,
+            |index| self.functions.get(index)?.spans(),
+            location,
+        )
+    }
+
+    /// FR-096: the region of function `index`'s whole declaration form, or
+    /// `None` when it was not read from this unit.
+    pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
+        let spans = self.functions.get(index)?.spans()?;
+        region(&self.source, spans.declaration)
+    }
+}
+
+impl CheckedGraph {
+    /// FR-096: the region of the checked unit that `location` names, by the
+    /// same rule as [`PackageDeclarations::region`], so a consumer holding
+    /// only the checked package resolves an `Evaluation.location`.
+    pub fn region(&self, location: &Location) -> Option<SourceRegion> {
+        resolve(
+            &self.source,
+            |index| self.form_spans.get(index)?.as_ref(),
+            location,
+        )
+    }
+
+    /// FR-096: the region of function `index`'s whole declaration form, or
+    /// `None` when it was not read from this unit.
+    pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
+        let spans = self.form_spans.get(index)?.as_ref()?;
+        region(&self.source, spans.declaration)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use qsl_forms::{
+        BinaryOperator, BuiltinType, DeclarationSpans, DeclaredClauseKind, Expression,
+        ExpressionSpans, FunctionDeclaration, TypeForm,
+    };
+    use qsl_foundation::source::provenance::SourceRegion;
+    use qsl_foundation::{SourceIdentity, Span};
+
+    use super::super::family::fixtures::admitted_source;
+    use super::super::{CheckingLimits, Location, Origin, PackageDeclarations};
+
+    const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
+        profile \"ix:value\" as v;\n\
+        function f using v(a: Boolean, b: Int[0, 10], c: Int[0, 10], d: Int[0, 10], \
+        n: Int[0, 10]): Int[0, 20] pure decreases(n) { if a then b else c + d }\n";
+
+    /// The span of the only occurrence of `text` in [`UNIT`] at or after
+    /// `from`.
+    fn find(text: &str, from: usize) -> Span {
+        let start = from
+            + UNIT[from..]
+                .find(text)
+                .expect("fixture text is in the unit");
+        Span {
+            start,
+            end: start + text.len(),
+        }
+    }
+
+    fn int_form() -> TypeForm {
+        TypeForm::builtin(BuiltinType::Int, Span { start: 0, end: 0 })
+            .with_bounds(vec!["0".into(), "10".into()])
+    }
+
+    fn name(text: &str) -> Box<Expression> {
+        Box::new(Expression::Name(text.into()))
+    }
+
+    /// `f`, with the spans of its form read from [`UNIT`]: the body
+    /// `if a then b else c + d` and the measure `n`.
+    fn function_f() -> FunctionDeclaration {
+        let body = Expression::If {
+            condition: name("a"),
+            then: name("b"),
+            otherwise: Box::new(Expression::Binary {
+                operator: BinaryOperator::Add,
+                left: name("c"),
+                right: name("d"),
+            }),
+        };
+        let parameters = ["b", "c", "d", "n"]
+            .into_iter()
+            .map(|parameter| (parameter.to_owned(), int_form()))
+            .chain([(
+                "a".to_owned(),
+                TypeForm::builtin(BuiltinType::Boolean, Span { start: 0, end: 0 }),
+            )])
+            .collect();
+        let result = TypeForm::builtin(BuiltinType::Int, Span { start: 0, end: 0 })
+            .with_bounds(vec!["0".into(), "20".into()]);
+
+        let whole = find("if a then b else c + d", 0);
+        let mut body_spans = ExpressionSpans::new(whole);
+        let root = body_spans.root();
+        body_spans.push_child(root, find("a", whole.start)).unwrap();
+        body_spans.push_child(root, find("b", whole.start)).unwrap();
+        let add = body_spans
+            .push_child(root, find("c + d", whole.start))
+            .unwrap();
+        body_spans.push_child(add, find("c", whole.start)).unwrap();
+        body_spans.push_child(add, find("d", whole.start)).unwrap();
+        let measure = find("(n)", 0);
+        let spans = DeclarationSpans {
+            declaration: Span {
+                start: find("function", 0).start,
+                end: whole.end + " }".len(),
+            },
+            body: body_spans,
+            measure: Some(ExpressionSpans::new(Span {
+                start: measure.start + 1,
+                end: measure.end - 1,
+            })),
+        };
+        FunctionDeclaration::new(
+            "f",
+            parameters,
+            result,
+            Some(Expression::Name("n".into())),
+            body,
+        )
+        .with_spans(spans)
+        .expect("the spans have the body's and the measure's shape")
+    }
+
+    fn unit() -> PackageDeclarations {
+        let source = admitted_source(SourceIdentity::new("a", "u", "git", "1"), UNIT.as_bytes());
+        PackageDeclarations {
+            functions: vec![function_f()],
+            ..PackageDeclarations::new(source)
+        }
+    }
+
+    fn body(path: &[usize]) -> Location {
+        Location {
+            origin: Origin::Body {
+                function: "f".into(),
+                index: 0,
+            },
+            path: path.to_vec(),
+        }
+    }
+
+    fn measure(path: &[usize]) -> Location {
+        Location {
+            origin: Origin::Measure {
+                function: "f".into(),
+                index: 0,
+            },
+            path: path.to_vec(),
+        }
+    }
+
+    /// The unit bytes a region names.
+    fn text(region: &SourceRegion) -> &'static str {
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        &UNIT[start..end]
+    }
+
+    /// TC-426 step 2: each location follows its path to its own node, so
+    /// the region's bytes are that expression's source text, under the
+    /// unit's reference, from the declarations and from the checked package
+    /// alike.
+    #[trace("TC-426", "FR-096-AC-1", "FR-091-AC-10")]
+    #[test]
+    fn a_check_location_resolves_to_the_source_text_of_its_node() {
+        let declarations = unit();
+        let reference = declarations.source.clone();
+        let cases = [
+            (body(&[]), "if a then b else c + d"),
+            (body(&[2]), "c + d"),
+            (body(&[2, 1]), "d"),
+            (body(&[0]), "a"),
+            (measure(&[]), "n"),
+        ];
+        for (location, expected) in &cases {
+            let region = declarations
+                .region(location)
+                .unwrap_or_else(|| panic!("{location:?} resolves"));
+            assert_eq!(text(&region), *expected, "{location:?}");
+            assert_eq!(region.source(), &reference);
+        }
+        let declaration = declarations.declaration_region(0).unwrap();
+        assert!(text(&declaration).starts_with("function f using v("));
+        assert!(text(&declaration).ends_with("c + d }"));
+
+        let checked = declarations
+            .check(CheckingLimits::default())
+            .expect("the unit checks");
+        for (location, expected) in &cases {
+            let region = checked
+                .region(location)
+                .unwrap_or_else(|| panic!("{location:?} resolves in the checked package"));
+            assert_eq!(text(&region), *expected, "{location:?}");
+            assert_eq!(region.source(), &reference);
+        }
+        assert_eq!(checked.declaration_region(0), Some(declaration));
+    }
+
+    /// TC-426 step 4 and FR-096's two no-region cases: a standalone
+    /// expression, and a function not read from the unit (an FR-151
+    /// synthesized one carries no form spans). A path naming no node, and
+    /// an index naming no function, have none either.
+    #[trace("TC-426", "FR-096-AC-1")]
+    #[test]
+    fn a_position_not_read_from_the_unit_has_no_region() {
+        let mut declarations = unit();
+        declarations.functions.push(FunctionDeclaration::clause(
+            "synthesized",
+            Vec::new(),
+            TypeForm::builtin(BuiltinType::Boolean, Span { start: 0, end: 0 }),
+            None,
+            Expression::Boolean(true),
+            DeclaredClauseKind::Precondition,
+        ));
+        let synthesized = Location {
+            origin: Origin::Body {
+                function: "synthesized".into(),
+                index: 1,
+            },
+            path: Vec::new(),
+        };
+        let standalone = Location {
+            origin: Origin::Expression,
+            path: Vec::new(),
+        };
+        let unresolved = [
+            synthesized,
+            standalone,
+            body(&[3]),
+            body(&[2, 1, 0]),
+            measure(&[0]),
+            Location {
+                origin: Origin::Body {
+                    function: "f".into(),
+                    index: 9,
+                },
+                path: Vec::new(),
+            },
+        ];
+        for location in &unresolved {
+            assert_eq!(declarations.region(location), None, "{location:?}");
+        }
+        assert_eq!(declarations.declaration_region(1), None);
+
+        let checked = declarations
+            .check(CheckingLimits::default())
+            .expect("the unit checks");
+        for location in &unresolved {
+            assert_eq!(checked.region(location), None, "{location:?}");
+        }
+        assert_eq!(checked.declaration_region(1), None);
+    }
+}
