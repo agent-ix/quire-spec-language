@@ -9,7 +9,7 @@
         "namespace": "example-output",
         "value": "2"
       },
-      "digest": "sha256:7dfd15dd0e5c88e1d73d43d56d47350047b4bbc0f801748995740faaf1c8c119",
+      "digest": "sha256:dd72d7781bd9cc9b7a47f2475a8971bd5f273280a14dc1b8018068e6e61ba5c7",
       "wire": {
         "identity": "quire.compiled-protocol",
         "version": "2"
@@ -60,7 +60,7 @@
           "namespace": "crate-version",
           "value": "0.2.0"
         },
-        "digest": "sha256:37028fecc9647d58f32f124df94dea0835d6b05c478d043698f1cbe881970c7d",
+        "digest": "sha256:4337aff94e768b3963040aa50f16d463403248c6ccd4c39b1569ee3f319ca305",
         "wire": {
           "identity": "text/rust",
           "version": "1"
@@ -91,7 +91,9 @@
             }
           },
           "native": {
+            "authority": "agent-ix",
             "identity": "ix://agent-ix/quire-spec-language/examples/protocol-handoff/predicates",
+            "revision_namespace": "example",
             "revision": "1"
           },
           "path": "examples/protocol-handoff/predicates.native",
@@ -166,7 +168,9 @@
             }
           },
           "native": {
+            "authority": "agent-ix",
             "identity": "ix://agent-ix/quire-spec-language/examples/protocol-handoff/state",
+            "revision_namespace": "example",
             "revision": "1"
           },
           "path": "examples/protocol-handoff/state.native",
@@ -267,7 +271,9 @@
             }
           },
           "native": {
+            "authority": "agent-ix",
             "identity": "ix://agent-ix/quire-spec-language/examples/protocol-handoff/temporal-v2",
+            "revision_namespace": "example",
             "revision": "1"
           },
           "path": "examples/protocol-handoff/temporal-v2.native",
@@ -362,7 +368,9 @@
             }
           },
           "native": {
+            "authority": "agent-ix",
             "identity": "ix://agent-ix/quire-spec-language/examples/protocol-handoff/workflow",
+            "revision_namespace": "example",
             "revision": "1"
           },
           "path": "examples/protocol-handoff/workflow.native",
@@ -433,7 +441,9 @@
           }
         },
         "native": {
+          "authority": "agent-ix",
           "identity": "ix://agent-ix/quire-spec-language/examples/protocol-handoff/model",
+          "revision_namespace": "example",
           "revision": "1"
         },
         "path": "examples/protocol-handoff/model.json",
