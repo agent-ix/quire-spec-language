@@ -45,7 +45,7 @@ If source is malformed or remains after the last complete declaration, then the 
 
 If a selected edition is unavailable, then the parser SHALL return the typed unknown-edition diagnostic at the header selection.
 
-If a syntax budget is exhausted, then the parser SHALL return a stage limit, reported as `stage_limit_exceeded`, without an admitted unit. A syntax budget is an S1 stage limit, not a caller work budget (`quire.native.diagnostics/v1` `stage_limit_exceeded` row, revision `1-draft.6`; [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)).
+If a syntax budget is exhausted, then the parser SHALL return resource_exhausted without an admitted unit.
 
 The compiler SHALL preserve the historical `0-draft` grammar and profile behavior for historical selections.
 
@@ -71,7 +71,7 @@ opaque strings or inferring kinds from diagnostic messages.
 | FR-035-AC-2 | Precedence, nonchained comparisons and temporal relations match the shared grammar; temporal syntax in a value argument, malformed family bodies and trailing garbage refuse without a successful unit. | Test (TC-113) |
 | FR-035-AC-3 | A model member spelled `result` or `retry` parses in its qualified position; the same reserved spelling as a native binder refuses in the composed edition. An identifier newly reserved there retains its historical `0-draft` treatment. | Test (TC-113) |
 | FR-035-AC-4 | CRLF, comments and escaped multibyte text retain exact original bytes and correct byte spans; an escaped string's decoded offset cannot replace its source location. | Test (TC-113) |
-| FR-035-AC-5 | Exact syntax limits admit the otherwise valid unit; the next required token/node/nesting step above a lowered limit returns `stage_limit_exceeded` (`node-count-exceeded` for a token or node, `nesting-depth-exceeded` for nesting), with no recovery path bypass. | Test (TC-113) |
+| FR-035-AC-5 | Exact syntax limits admit the otherwise valid unit; the next required token/node/nesting step above a lowered limit returns resource_exhausted, with no recovery path bypass. | Test (TC-113) |
 | FR-035-AC-6 | Historical source, formatted output, refusal codes and package identities retain their frozen expectations; a composed selector is never silently replaced with the historical profile. | Test (TC-113) |
 
 ## Dependencies

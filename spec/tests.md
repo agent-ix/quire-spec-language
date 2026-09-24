@@ -205,7 +205,7 @@ operational validation remains outside this audit-only plan.
 | TC-424 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7 | 🚧 Planned; QSL-233 (S-4b) |
 | TC-425 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | 🚧 Planned; QSL-233 (S-4b) |
 | TC-426 | A check location resolves to the region of the unit it was read from, or to none | Unit | P1 | FR-096-AC-1 | 🚧 Planned; QSL-160 (S-5b) |
-| TC-427 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5, FR-096-AC-12 | 🚧 Planned; QSL-160 (S-5b) |
+| TC-427 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5 | 🚧 Planned; QSL-160 (S-5b) |
 | TC-428 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8 | 🚧 Planned; QSL-160 (S-5b) |
 | TC-429 | The I2 reader locates its version refusal and its limits in the artifact | Integration | P1 | FR-096-AC-9, FR-096-AC-10 | 🚧 Planned; QSL-160 (S-5b); needs three IR reader changes |
 

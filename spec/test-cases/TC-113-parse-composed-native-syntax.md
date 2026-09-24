@@ -39,7 +39,6 @@ authored choreography fixture and balanced-but-incomplete refusal controls.
 
 The composed forms produce typed, located syntax with no linked or checked claim.
 Malformed forms return their typed source-bound diagnostics; budget failures are
-`stage_limit_exceeded` (FR-035-AC-5; ADR-013 §7 slice S-5b, QSL-160, until
-which the parser reports them as resource_exhausted). All historical expectations remain byte-for-byte unchanged.
+resource_exhausted. All historical expectations remain byte-for-byte unchanged.
 Each step has unconditional assertions; a missing declaration or absent error
 object fails the test rather than skipping the check.

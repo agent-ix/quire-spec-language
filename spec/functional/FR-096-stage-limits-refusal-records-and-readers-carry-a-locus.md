@@ -115,11 +115,11 @@ Every ceiling of compiler stages S1 to S4, the I2 reader and a family
 surfaces, and the catalog keeps `resource_exhausted` for the caller's
 work-budget meter, adding that a semantic maximum is not a caller work
 budget. The check stage's `CheckingLimits` ceilings (nesting depth, node
-count, declaration input bytes and work, NFR-011) and S1's syntax budgets
-(FR-035) are therefore stage limits. S0's source-byte ceiling
-(FR-001-AC-4) is not: S0 is not one of the row's surfaces. The native-v1
-parser's budgets (FR-002-AC-4) are lane-private (ADR-013 §6) and keep
-`resource_exhausted`. S4, the `replay` facade and the `route` module have
+count, declaration input bytes and work, NFR-011) are therefore stage
+limits. S1's syntax budgets (`SyntaxLimit`, FR-035) migrate under QSL-236
+once STD-95 answers the S1 token cause; this requirement does not rule on
+them. The native-v1 parser's budgets (FR-002-AC-4) are lane-private
+(ADR-013 §6). S4, the `replay` facade and the `route` module have
 no stage limit yet; their owners specify one with its locus when they add
 it.
 
@@ -127,7 +127,6 @@ Each producer's locus is the position at which its charge failed:
 
 | Producer | Limits | Locus |
 | --- | --- | --- |
-| S1 (`qsl-cst`) | nesting depth; CST node and token count, both node count (a token is a CST leaf) (FR-035-AC-5) | `Locus::Region` over the span of the token or node whose entry failed the charge, under the source's `RawSourceRef` |
 | S2 (`forms`) | nesting depth (FR-091-AC-9) | `Locus::Region` over the span of the first node past the bound, under the unit's `RawSourceRef` |
 | S3, a family `check`, for a declaration as a whole | the contract's nesting entry, and the declaration's preimage input bytes, node count and work charge | `Locus::Region` over that declaration's span |
 | S3, `Typer` and lowering, under `CheckingLimits` | nesting depth, and the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `check::Location` |
@@ -221,7 +220,6 @@ name.
 | FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. | Test (TC-429) |
 | FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test (TC-429) |
 | FR-096-AC-11 | A function whose body is `not not not true` (four nodes deep), checked through `ValueFunctionFamily::check` with `CheckingLimits` depth 3, returns `StageFailure::Limit` with kind nesting depth, bound 3, actual 4, and `Locus::Region` over the span of `true`, reported as `stage_limit_exceeded`/`nesting-depth-exceeded`. With depth 4 and nothing else changed, it returns no nesting-depth limit. | Test (TC-378) |
-| FR-096-AC-12 | S1 over a source nested one bracket pair past its nesting bound `N` returns a limit with kind nesting depth, bound `N`, actual `N + 1`, and `Locus::Region` over the span of the bracket that opened the pair past the bound, under the source's `RawSourceRef`. | Test (TC-427) |
 
 ## Dependencies
 
@@ -244,9 +242,9 @@ name.
   (`qsl-cst/src/diagnostic.rs`, `qsl-semantics/src/complete/package.rs`).
   Emitting any `LimitExceeded` this requirement specifies is gated on QSL's
   claim reaching `1-draft.6`, the revision FR-322 selects (ADR-013 O-17).
-- [FR-035](FR-035-parse-composed-native-units.md) AC-5 and
-  [NFR-011](../non-functional/NFR-011-bound-value-checking-work.md): the S1
-  syntax budgets and the `CheckingLimits` ceilings.
+  Remaining work: QSL-236.
+- [NFR-011](../non-functional/NFR-011-bound-value-checking-work.md): the
+  `CheckingLimits` ceilings.
 - IR (`agent-ix/quire-contract-ir`, `quire-contract-model`'s
   `checked_package`), conformance work with no ticket (ADR-013 §7). AC-9
   and AC-10 need all three:
@@ -265,14 +263,15 @@ name.
   kinds. `stage_limit_exceeded` has four causes, and none names edges,
   occurrences or diagnostics. The catalog forbids a producer from choosing
   a broader cause to discard a distinction it knows. ADR-013 QC-28 carries
-  the question, and S-5b's I2 limit conversion waits on it.
+  the question, and S-5b's I2 limit conversion waits on it. Remaining work:
+  QSL-236.
 
 ## Status
 
 Specified under QSL-160. Not implemented. `LimitExceeded`, `StageFailure`
 and `Staged` are `qsl-semantics`'s `family::outcome` types, with no locus
 and no actual counter. `RefusalRecord` and `catalog_fields` do not exist.
-The `CheckingLimits` ceilings and S1's syntax budgets surface as
+The `CheckingLimits` ceilings surface as
 `resource_exhausted`, and `Typer`'s depth stop as `StageFailure::Refused`.
 `ModelRefusalCause::AbsentKey` carries the key but not the population
 binding, and `WrongSnapshotCause::WrongAnchor` carries neither anchor
