@@ -189,3 +189,107 @@ fn keying_each_content_once_keeps_every_key_and_preimage() {
     assert!(grouped > 500, "{grouped} grouped nodes");
     assert_eq!(lower_hex(&corpus.finalize()), CORPUS_DIGEST);
 }
+
+/// Every content in one hash bucket.
+fn one_bucket(_: &NodeContent) -> u64 {
+    0
+}
+
+/// `value_types` built in turn by one lowering hashing contents by `hash`:
+/// each type's key, and every node's key and preimage.
+fn built_types(
+    scope: &Scope,
+    value_types: &[ValueType],
+    hash: fn(&NodeContent) -> u64,
+) -> (Vec<NodeKey>, Vec<(NodeKey, Vec<u8>)>) {
+    let owner = fixture_owner();
+    let lock = LockEvidence::default();
+    let mut occurrences = OccurrenceMap::default();
+    let location = generated_location();
+    let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
+    let mut lowering = Lowering::new(
+        scope,
+        &owner,
+        &[],
+        scope.types().units().clone(),
+        &lock,
+        crate::check::MAX_CHECKING_DEPTH,
+        0,
+        &mut occurrences,
+        &mut meter,
+    )
+    .with_content_hash(hash);
+    let keys = value_types
+        .iter()
+        .map(|value_type| {
+            lowering
+                .type_node(value_type, &location)
+                .expect("the type keys")
+        })
+        .collect();
+    let nodes = lowering
+        .finish(&location)
+        .graph
+        .nodes()
+        .map(|node| (node.key(), node.preimage().to_vec()))
+        .collect();
+    (keys, nodes)
+}
+
+/// QSL-221: a content takes a key only when a node or draft holds that
+/// same content, never because its hash matches. With every content in
+/// one hash bucket, the keys and preimages are the ones the default hash
+/// gives, across scalars, bounded, option, collection and declared types,
+/// a recursive record (drafts and a recursion group) and repeated builds.
+#[trace("FR-092-AC-1", "FR-092-AC-11", "TC-413")]
+#[test]
+fn a_hash_collision_never_takes_another_contents_key() {
+    let pair = NodeKey::from_digest([1; 32]);
+    let list = NodeKey::from_digest([5; 32]);
+    let scope = scope_with(
+        TypeEnvironment::new(
+            [
+                CompositeDeclaration::new(
+                    pair,
+                    "Pair",
+                    CompositeShape::Tuple(vec![int(0, 9), ValueType::Boolean]),
+                ),
+                CompositeDeclaration::new(
+                    list,
+                    "List",
+                    CompositeShape::Record(vec![
+                        FieldDeclaration::new("head", int(0, 9), Presence::Required),
+                        FieldDeclaration::new(
+                            "next",
+                            ValueType::Composite(list),
+                            Presence::Optional,
+                        ),
+                    ]),
+                ),
+            ],
+            [],
+        )
+        .expect("the types admit"),
+        Vec::new(),
+    );
+    let once = [
+        ValueType::Boolean,
+        ValueType::Integer,
+        int(0, 9),
+        int(1, 9),
+        ValueType::option(int(0, 9)),
+        sequence(int(0, 9), Some((0, 5))),
+        sequence(ValueType::Boolean, None),
+        rational_9(),
+        ValueType::Composite(pair),
+        ValueType::Composite(list),
+        ValueType::option(ValueType::Composite(list)),
+    ];
+    // Each type twice, so the second build of every content is a lookup.
+    let value_types: Vec<ValueType> = once.iter().chain(&once).cloned().collect();
+    let expected = built_types(&scope, &value_types, content_hash);
+    let collided = built_types(&scope, &value_types, one_bucket);
+    assert!(expected.1.len() > 10, "{} nodes", expected.1.len());
+    assert_eq!(collided.0, expected.0, "type keys");
+    assert_eq!(collided.1, expected.1, "every node's key and preimage");
+}

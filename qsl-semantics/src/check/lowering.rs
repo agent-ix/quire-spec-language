@@ -37,6 +37,15 @@
 use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap};
 use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
 
+/// How [`Lowering`] hashes a node's content to find its key.
+type ContentHash = fn(&NodeContent) -> u64;
+
+/// The content hash lowering uses: std's `DefaultHasher`, seeded the same
+/// on every run.
+fn content_hash(content: &NodeContent) -> u64 {
+    BuildHasherDefault::<DefaultHasher>::default().hash_one(content)
+}
+
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
     Identifier, Integer, Meter, NodeKey, OrderingOperator, Presence, TextProfile, Value, ValueType,
@@ -342,8 +351,9 @@ pub(crate) struct Lowering<'a> {
     /// encoding and SHA-256. A hash names at most one key: a colliding
     /// content is keyed in full and replaces the entry.
     keys: HashMap<u64, NodeKey>,
-    /// The hasher of [`Self::keys`].
-    content_hashes: BuildHasherDefault<DefaultHasher>,
+    /// The hash of [`Self::keys`]; the tests put every content in one
+    /// bucket through [`Self::with_content_hash`].
+    content_hash: ContentHash,
     /// Occurrences of drafts, recorded once the drafts are keyed.
     draft_occurrences: Vec<(NodeKey, &'static str, Location)>,
     /// Each keyed recursion-group member by the key its content would have
@@ -1079,7 +1089,7 @@ impl<'a> Lowering<'a> {
             placeholder_count: 0,
             drafts: BTreeMap::new(),
             keys: HashMap::new(),
-            content_hashes: BuildHasherDefault::default(),
+            content_hash,
             draft_occurrences: Vec::new(),
             rebuilt_members: BTreeMap::new(),
             group_of: BTreeMap::new(),
@@ -1096,6 +1106,14 @@ impl<'a> Lowering<'a> {
     pub(crate) fn with_node_limit(mut self, limit: u64, used: u64) -> Self {
         self.node_limit = limit;
         self.node_budget = limit.saturating_sub(used);
+        self
+    }
+
+    /// Hash contents by `hash` (tests: a colliding hash shows that a key is
+    /// taken only for equal content, never for an equal hash).
+    #[cfg(test)]
+    fn with_content_hash(mut self, hash: ContentHash) -> Self {
+        self.content_hash = hash;
         self
     }
 
@@ -1201,7 +1219,7 @@ impl<'a> Lowering<'a> {
         content: NodeContent,
     ) -> Result<NodeKey, CheckRefusal> {
         self.charge(1, location)?;
-        let hash = self.content_hashes.hash_one(&content);
+        let hash = (self.content_hash)(&content);
         let known = self
             .keys
             .get(&hash)

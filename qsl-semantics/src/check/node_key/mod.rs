@@ -263,7 +263,7 @@ impl Serialize for NodeRef {
         let digits = HexDigest::of(self.0.as_bytes());
         Wire {
             domain: NODE_KEY_DOMAIN,
-            digest: digits.as_str().map_err(serde::ser::Error::custom)?,
+            digest: digits.as_str(),
         }
         .serialize(serializer)
     }
@@ -1028,20 +1028,15 @@ impl HexDigest {
         Self(digits)
     }
 
-    /// The digits as text. Every digit is ASCII, so this never fails.
-    fn as_str(&self) -> Result<&str, std::str::Utf8Error> {
-        std::str::from_utf8(&self.0)
+    /// The digits as text.
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.0).expect("every hex digit is ASCII, so the digits are UTF-8")
     }
 }
 
 /// [`HexDigest`] as an owned string.
 fn hex(bytes: &[u8; 32]) -> String {
-    HexDigest::of(bytes)
-        .0
-        .iter()
-        .copied()
-        .map(char::from)
-        .collect()
+    String::from(HexDigest::of(bytes).as_str())
 }
 
 /// `preimage`'s RFC 8785 bytes and the node key they hash to.
