@@ -494,12 +494,24 @@ impl Charge {
 }
 
 /// A per-request scalar meter.
+///
+/// **A count, not a log (QSL-206).** A production meter holds only fixed-size
+/// state: the ten counters, the number of admitted charges and, for an
+/// injected denial, the number of admissions at the denied point. Admitting a
+/// charge never allocates, so the meter that bounds an evaluation's work does
+/// not itself grow with that work. The ordered charge log
+/// ([`Meter::admitted_charges`]) exists only under the `test-support`
+/// feature, which only a dev-dependency may enable (TC-243's
+/// `no_shipped_dependency_enables_test_support`).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Meter {
     limits: ScalarLimits,
     consumed: [u64; 10],
-    occurrences: Vec<(ChargePoint, u64)>,
     denial: Option<InjectedDenial>,
+    /// Admissions so far at `denial`'s point; zero when no denial is set.
+    denied_point_admissions: u64,
+    admissions: u64,
+    #[cfg(feature = "test-support")]
     admitted: Vec<ChargePoint>,
 }
 
@@ -509,15 +521,19 @@ impl Meter {
         Self {
             limits,
             consumed: [0; 10],
-            occurrences: Vec::new(),
             denial: None,
+            denied_point_admissions: 0,
+            admissions: 0,
+            #[cfg(feature = "test-support")]
             admitted: Vec::new(),
         }
     }
 
-    /// Add the qualification seam that denies one exact named charge.
+    /// Add the qualification seam that denies one exact named charge. The
+    /// occurrence counts admissions at the denied point from this call on.
     pub fn with_injected_denial(mut self, denial: InjectedDenial) -> Self {
         self.denial = Some(denial);
+        self.denied_point_admissions = 0;
         self
     }
 
@@ -531,16 +547,16 @@ impl Meter {
         self.consumed[kind.index()]
     }
 
-    /// Every admitted charge point in admission order.
-    pub fn admitted_charges(&self) -> &[ChargePoint] {
-        &self.admitted
+    /// How many charges this meter has admitted.
+    pub fn admission_count(&self) -> u64 {
+        self.admissions
     }
 
-    fn occurrence(&self, point: ChargePoint) -> u64 {
-        self.occurrences
-            .iter()
-            .find(|(seen, _)| *seen == point)
-            .map_or(0, |(_, count)| *count)
+    /// Every admitted charge point in admission order. Test-only: a
+    /// production meter keeps [`Self::admission_count`], not a log.
+    #[cfg(feature = "test-support")]
+    pub fn admitted_charges(&self) -> &[ChargePoint] {
+        &self.admitted
     }
 
     fn incomplete(&self, kind: LimitKind, next: Integer, point: ChargePoint) -> Incomplete {
@@ -559,7 +575,7 @@ impl Meter {
         match self.denial {
             Some(denial)
                 if denial.point == point
-                    && self.occurrence(point).checked_add(1) == Some(denial.occurrence) =>
+                    && self.denied_point_admissions.checked_add(1) == Some(denial.occurrence) =>
             {
                 let consumed = self.consumed(LimitKind::WorkUnits);
                 Err(Incomplete {
@@ -617,10 +633,11 @@ impl Meter {
     }
 
     fn admit(&mut self, point: ChargePoint) {
-        match self.occurrences.iter_mut().find(|(seen, _)| *seen == point) {
-            Some((_, count)) => *count = count.saturating_add(1),
-            None => self.occurrences.push((point, 1)),
+        if self.denial.is_some_and(|denial| denial.point == point) {
+            self.denied_point_admissions = self.denied_point_admissions.saturating_add(1);
         }
+        self.admissions = self.admissions.saturating_add(1);
+        #[cfg(feature = "test-support")]
         self.admitted.push(point);
     }
 
@@ -718,5 +735,75 @@ mod tests {
         assert_eq!(denial.limit, 8);
         assert_eq!(denial.consumed, 0);
         assert_eq!(meter.consumed(LimitKind::IntegerBits), 0);
+    }
+
+    fn unlimited() -> ScalarLimits {
+        ScalarLimits {
+            integer_bits: u64::MAX,
+            ..tight_limits()
+        }
+    }
+
+    /// QSL-206 AC 2: a production meter owns no heap memory, however many
+    /// charges it admits. A type with no drop glue owns no `Vec`, `Box` or
+    /// `String`, so its heap size is zero at every charge count; the
+    /// admission count still grows with every charge. Built only without
+    /// `test-support` (`cargo test -p quire-exact`, which `make ci` runs):
+    /// with it, the meter keeps its ordered charge log, which allocates.
+    #[cfg(not(feature = "test-support"))]
+    #[test]
+    fn production_meter_heap_is_constant_as_charges_grow() {
+        assert!(
+            !std::mem::needs_drop::<Meter>(),
+            "a production Meter must hold no heap-owning field"
+        );
+        let mut meter = Meter::new(unlimited());
+        let mut admitted = 0_u64;
+        for target in [1_u64, 1_000, 100_000] {
+            while admitted < target {
+                meter
+                    .charge(Charge::new(ChargePoint::FunctionCall))
+                    .expect("an unlimited meter admits every charge");
+                admitted += 1;
+            }
+            assert_eq!(meter.admission_count(), target);
+            assert_eq!(meter.consumed(LimitKind::WorkUnits), target);
+        }
+    }
+
+    /// QSL-206: the injected denial counts only the denied point's
+    /// admissions, without the per-point occurrence table it replaced. The
+    /// third `function.call` is denied, whatever other points were admitted
+    /// in between; a denial set after earlier charges counts from then on.
+    #[test]
+    fn injected_denial_counts_only_its_own_point() {
+        let denial = InjectedDenial {
+            point: ChargePoint::FunctionCall,
+            occurrence: 3,
+        };
+        let mut meter = Meter::new(unlimited()).with_injected_denial(denial);
+        for _ in 0..2 {
+            meter
+                .charge(Charge::new(ChargePoint::FunctionCall))
+                .expect("occurrences 1 and 2 are admitted");
+            meter
+                .charge(Charge::new(ChargePoint::CollectionVisit))
+                .expect("another point never counts toward the denial");
+        }
+        let denied = meter
+            .charge(Charge::new(ChargePoint::FunctionCall))
+            .expect_err("occurrence 3 is denied");
+        assert_eq!(denied.charge_point, ChargePoint::FunctionCall);
+        assert_eq!(meter.admission_count(), 4);
+
+        let mut late = Meter::new(unlimited());
+        late.charge(Charge::new(ChargePoint::FunctionCall))
+            .expect("no denial is set yet");
+        let mut late = late.with_injected_denial(InjectedDenial {
+            point: ChargePoint::FunctionCall,
+            occurrence: 1,
+        });
+        late.charge(Charge::new(ChargePoint::FunctionCall))
+            .expect_err("the first occurrence after the denial is set is denied");
     }
 }

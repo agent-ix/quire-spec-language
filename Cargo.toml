@@ -78,6 +78,10 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 # workspace path dependency, dev-only, so it adds no edge to any shipped
 # build (PR #300 review, QSL-158 S-3b).
 xtask = { path = "xtask" }
+# QSL-206: the ordered charge log (`Meter::admitted_charges`) the
+# charge-sequence tests assert. A production meter keeps a count only; only
+# this dev-dependency enables `test-support`.
+quire-exact = { path = "quire-exact", features = ["test-support"] }
 quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "5e2a6a994d2107f36294078ad202467a4c66bb75" }
 quire-contract-ir-historical = { package = "quire-contract-ir", git = "https://github.com/agent-ix/quire-contract-ir", rev = "04eb6f849c03be23177d373549c6c272551f957d" }
 # TC-251's signature scanner (`tests/it/name_resolution_confinement.rs`)

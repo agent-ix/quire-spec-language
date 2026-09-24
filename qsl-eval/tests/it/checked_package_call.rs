@@ -280,3 +280,42 @@ fn call_to_an_unknown_function_is_refused() {
         Err(CallFailure::Input(InputRefusal::UnknownFunction(name))) if name == "missing"
     ));
 }
+
+/// QSL-206 AC 1: `CheckedPackage::call` charges the top-level call's own
+/// `function.call` to the caller's meter. `one(a) = a` makes no other
+/// charge, so each call adds exactly one `function.call` to `meter`, and two
+/// calls on one meter accumulate. Before QSL-206 the charge went to a meter
+/// `call` created and dropped, so `meter` stayed empty.
+#[test]
+fn call_charges_the_top_level_function_call_to_the_callers_meter() {
+    let objects = ObjectEnvironment::default();
+    let package = link(
+        declarations(vec![function_one()])
+            .check(CheckingLimits::default())
+            .unwrap(),
+    );
+    let mut meter = Meter::new(UNLIMITED);
+    for calls in 1..=2_u64 {
+        let one = package
+            .call(
+                &QualifiedName::unqualified("one").unwrap(),
+                vec![Value::Integer(Integer::from(5_i64))],
+                &objects,
+                &mut meter,
+            )
+            .unwrap();
+        assert_eq!(
+            format!("{:?}", evaluated(one)),
+            format!(
+                "{:?}",
+                Outcome::Completed(Value::Integer(Integer::from(5_i64)))
+            )
+        );
+        assert_eq!(meter.admission_count(), calls);
+        assert_eq!(meter.consumed(quire_exact::LimitKind::WorkUnits), calls);
+    }
+    assert_eq!(
+        meter.admitted_charges(),
+        [quire_exact::ChargePoint::FunctionCall; 2]
+    );
+}

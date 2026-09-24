@@ -265,15 +265,15 @@ fn decode_hex_32(hex: &str) -> Option<[u8; 32]> {
 
 /// `ValueFunctionFamily`'s real evaluation environment (ADR-012 §2's
 /// `evaluate` hook, FR-062-AC-1/AC-6): the checked package `checked`'s
-/// identity resolves against, the caller's object environment and its own
-/// accounting meter -- all borrowed for the one call, never owned by the
-/// family marker type. [`super::CheckedPackageEvaluation::call`] is this
+/// identity resolves against and the caller's object environment -- both
+/// borrowed for the one call, never owned by the family marker type. The
+/// meter is not part of it: the hook's own `meter` parameter meters the
+/// whole call (QSL-206). [`super::CheckedPackageEvaluation::call`] is this
 /// environment's one real (non-test) constructor.
 pub(crate) struct EvaluationEnv<'a> {
     pub(crate) package: &'a super::CheckedPackage,
     pub(crate) objects: &'a qsl_semantics::model::object_environment::ObjectEnvironment,
     pub(crate) arguments: Option<Vec<Value>>,
-    pub(crate) local_meter: &'a mut quire_exact::Meter,
     /// The last hook call's `Evaluation.location` (FR-090-OQ-3 ruling): the
     /// hook's `EvalOutcome` holds no location, so the hook records it here
     /// on every `Ok` return and [`super::CheckedPackage::call`] reads it.
@@ -289,13 +289,11 @@ impl<'a> EvaluationEnv<'a> {
         package: &'a super::CheckedPackage,
         objects: &'a qsl_semantics::model::object_environment::ObjectEnvironment,
         arguments: Vec<Value>,
-        local_meter: &'a mut quire_exact::Meter,
     ) -> Self {
         Self {
             package,
             objects,
             arguments: Some(arguments),
-            local_meter,
             location: None,
             losses: Vec::new(),
         }
@@ -308,29 +306,23 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
     type Key = NodeKey;
 
     /// FR-062-AC-6: reads only `checked` (a bare identity) and `env`'s
-    /// checked package/object environment/meter -- no CST, token or
-    /// display string. `meter` (the shared kernel meter every family's
-    /// `evaluate` takes) is genuinely charged now (QSL-153): one
-    /// `ChargePoint::FunctionCall` -- "one checked function call"'s own
-    /// documented meaning, matching what this hook is about to run -- per
-    /// call, denied into `Ok(EvalOutcome::Kernel(Outcome::Incomplete(_)))`
-    /// exactly when the caller-configured `meter` cannot afford it
-    /// (FR-090-AC-1).
+    /// checked package/object environment -- no CST, token or display
+    /// string. `meter` (the shared kernel meter every family's `evaluate`
+    /// takes) is charged one `ChargePoint::FunctionCall` -- "one checked
+    /// function call"'s own documented meaning, matching what this hook is
+    /// about to run -- per call, denied into
+    /// `Ok(EvalOutcome::Kernel(Outcome::Incomplete(_)))` exactly when the
+    /// caller-configured `meter` cannot afford it (FR-090-AC-1).
     ///
-    /// **This is the top-level call's one and only `function.call` charge
-    /// (PR #302 review finding 2).** An earlier version *also* charged
-    /// `function.call` a second time, against `env.local_meter`, inside
-    /// `Machine::run` itself (a `call: bool` flag charged once up front
-    /// whenever the root was a function body) -- the same named point,
-    /// charged twice for one logical call, against two different meter
-    /// instances. `Machine::run` no longer takes that flag; see its own doc.
-    /// `Value`'s own value-level evaluation still charges `env.local_meter`
-    /// (its pre-existing accounting meter, `quire_exact::Meter` since
-    /// QSL-166 -- the same type as `meter`, a separate instance) for every
-    /// *nested* call and value operation the body performs, unchanged by
-    /// this contract; the two meters bound two different things (this
-    /// hook's own admission to run at all, versus the work its body does
-    /// once running), and neither restates the other's charge.
+    /// **One meter for the whole call (QSL-206).** The body then runs
+    /// against that same `meter`, which charges every nested call and value
+    /// operation. So the caller's meter counts the top-level call's own
+    /// `function.call`, first, followed by everything the body does. An
+    /// earlier version ran the body against a second meter held in `env`
+    /// and charged the top-level call to a meter `CheckedPackage::call`
+    /// created and then dropped, so the caller never saw that charge.
+    /// `Machine::run` charges no entry-level `function.call` of its own
+    /// (PR #302 review finding 2), so the call is still charged exactly once.
     ///
     /// **`location` and `losses` are recorded in `env` (FR-090-OQ-3
     /// ruling).** The hook's `EvalOutcome` holds neither (ADR-012 §2). The
@@ -381,7 +373,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
             env.package.graph().scope(),
             &callables,
             env.objects,
-            env.local_meter,
+            meter,
             env.package.graph().dispatch_tables(),
         )
         .run(function.body, function.slots, arguments)?;
@@ -445,13 +437,6 @@ mod family_contract_tests {
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use qsl_semantics::value::declaration::TypeEnvironment;
     use quire_exact::Meter;
-
-    // `EvaluationEnv::local_meter` (`ValueFunctionFamily::evaluate`'s
-    // pre-existing accounting path) and `ReferenceEvaluation::evaluate`'s
-    // own `_meter` parameter are both `quire_exact::Meter` since QSL-166
-    // (previously two distinct types with the same name in different
-    // crates) -- `evaluate_faults_on_a_second_call_on_the_same_env` still
-    // needs two separate *instances*, one per role.
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
     /// implementation, reachable through the trait, not a free-standing
@@ -542,12 +527,11 @@ mod family_contract_tests {
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
-        let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut env = EvaluationEnv::new(&package, &objects, Vec::new(), &mut local_meter);
-        let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+        let mut env = EvaluationEnv::new(&package, &objects, Vec::new());
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        ValueFunctionFamily::evaluate(&identity, &mut env, &mut meter)
             .expect("first call, with real arguments still present, evaluates cleanly");
-        let fault = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+        let fault = ValueFunctionFamily::evaluate(&identity, &mut env, &mut meter)
             .expect_err("second call on the same env, arguments already consumed, must fault");
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(
@@ -598,14 +582,13 @@ mod family_contract_tests {
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
-        let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut env = EvaluationEnv::new(&package, &objects, Vec::new(), &mut local_meter);
+        let mut env = EvaluationEnv::new(&package, &objects, Vec::new());
         let exhausted_limits = quire_exact::ScalarLimits {
             work_units: 0,
             ..SCALAR_LIMITS_UNLIMITED
         };
-        let mut contract_meter = Meter::new(exhausted_limits);
-        let outcome = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
+        let mut meter = Meter::new(exhausted_limits);
+        let outcome = ValueFunctionFamily::evaluate(&identity, &mut env, &mut meter)
             .expect("a denied admission charge is Ok(EvalOutcome::Kernel(Incomplete)), not Err");
         match outcome {
             EvalOutcome::Kernel(quire_exact::Outcome::Incomplete(record)) => {
@@ -683,13 +666,7 @@ mod family_contract_tests {
                 0,
             ))
         };
-        let mut local_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut env = EvaluationEnv::new(
-            &package,
-            &objects,
-            vec![decimal(1), decimal(3)],
-            &mut local_meter,
-        );
+        let mut env = EvaluationEnv::new(&package, &objects, vec![decimal(1), decimal(3)]);
         let mut unlimited = Meter::new(SCALAR_LIMITS_UNLIMITED);
 
         let first = ValueFunctionFamily::evaluate(&rounding, &mut env, &mut unlimited)
@@ -743,19 +720,15 @@ mod family_contract_tests {
         );
     }
 
-    /// PR #302 review finding 2: a *nested* nested call denies against
-    /// `env.local_meter` (real production behaviour, not the contract-level
-    /// `meter` parameter's own admission charge exercised above) surfaces as
-    /// the pre-existing kernel `Outcome::Incomplete`, inside
-    /// `EvalOutcome::Kernel`, from `Machine::run`'s own `charge_call` --
-    /// never the top-level admission's own `Incomplete` path. `caller`'s
-    /// body calls `callee`; with
-    /// `local_meter`'s `work_units` already exhausted, the nested call
-    /// inside `caller`'s own body (not the top-level call to `caller`
-    /// itself, which the unlimited `contract_meter` here admits) is what is
-    /// denied.
+    /// PR #302 review finding 2, QSL-206: a *nested* call's denied
+    /// `function.call` surfaces as the kernel `Outcome::Incomplete`, inside
+    /// `EvalOutcome::Kernel`, from `Machine::run`'s own `charge_call` -- not
+    /// from the top-level admission. `caller`'s body calls `callee`. The
+    /// meter allows one work unit: the top-level call to `caller` spends it,
+    /// on the same meter the body runs against, so the nested call to
+    /// `callee` is the one denied, with one unit already consumed.
     #[test]
-    fn evaluate_returns_incomplete_when_a_nested_calls_local_meter_is_exhausted() {
+    fn evaluate_returns_incomplete_when_a_nested_call_exhausts_the_meter() {
         let graph = PackageDeclarations {
             functions: vec![
                 declaration("callee", Expression::Boolean(true)),
@@ -778,23 +751,24 @@ mod family_contract_tests {
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
-        let exhausted_limits = quire_exact::ScalarLimits {
-            work_units: 0,
+        let mut env = EvaluationEnv::new(&package, &objects, Vec::new());
+        let mut meter = Meter::new(quire_exact::ScalarLimits {
+            work_units: 1,
             ..SCALAR_LIMITS_UNLIMITED
-        };
-        let mut local_meter = Meter::new(exhausted_limits);
-        let mut env = EvaluationEnv::new(&package, &objects, Vec::new(), &mut local_meter);
-        let mut contract_meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let outcome = ValueFunctionFamily::evaluate(&identity, &mut env, &mut contract_meter)
-            .expect(
-            "the top-level call's own admission charge is against contract_meter, unlimited here",
-        );
+        });
+        let outcome = ValueFunctionFamily::evaluate(&identity, &mut env, &mut meter)
+            .expect("a denied nested charge is Ok(EvalOutcome::Kernel(Incomplete)), not Err");
+        match outcome {
+            EvalOutcome::Kernel(quire_exact::Outcome::Incomplete(record)) => {
+                assert_eq!(record.charge_point, quire_exact::ChargePoint::FunctionCall);
+                assert_eq!(record.limit_kind, quire_exact::LimitKind::WorkUnits);
+                assert_eq!(record.consumed, 1, "the top-level call spent the one unit");
+            }
+            other => panic!("expected EvalOutcome::Kernel(Outcome::Incomplete(_)), got {other:?}"),
+        }
         assert!(
-            matches!(
-                outcome,
-                EvalOutcome::Kernel(quire_exact::Outcome::Incomplete(_))
-            ),
-            "expected kernel Outcome::Incomplete from the nested call's own denied charge, got {outcome:?}"
+            env.location.is_some(),
+            "the nested call's denial is located in the body"
         );
     }
 }

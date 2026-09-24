@@ -245,7 +245,7 @@ enum Task<'a> {
     /// FR-151 (TC-196 D06): the pushed frame's own effective-precondition
     /// body has just evaluated; decide it, then continue to the selected
     /// candidate's own body.
-    DispatchGuard(Box<DispatchGuard>),
+    DispatchGuard(Box<DispatchGuard<'a>>),
     /// Restore the anchor a `pre(..)` or a `Call` saved before evaluating its
     /// operand/callee body.
     RestoreAnchor(Anchor),
@@ -253,18 +253,17 @@ enum Task<'a> {
 
 /// A dispatched call's linked candidate body, awaiting its effective
 /// precondition's decision (TC-196 D06).
-struct DispatchGuard {
+struct DispatchGuard<'a> {
     body_function: usize,
     arguments: Vec<Value>,
     /// The `precondition-false` payload to report if the guard fails.
     failure: PreconditionFailure,
-    /// The dispatched `receiver.member(args)` call's own location -- the
-    /// `NodeKind::Dispatch` node that pushed this guard, never the guard
-    /// task's own (locationless) `Task` variant. A `Task::DispatchGuard`
-    /// carries no `&'a Node`, so without this field `Machine::run`'s
-    /// location lookup falls back to the whole expression's root and
-    /// `precondition-false`'s `UndefinedRecord` reports the wrong locus.
-    location: Location,
+    /// The `NodeKind::Dispatch` node that pushed this guard: the dispatched
+    /// `receiver.member(args)` call, whose location `Machine::run` reports
+    /// if the guard fails. Without it, the location lookup falls back to
+    /// the whole expression's root and `precondition-false`'s
+    /// `UndefinedRecord` reports the wrong locus.
+    node: &'a Node,
 }
 
 /// Which population an `allInstances`/`lookup` reads: the ambient post
@@ -345,19 +344,13 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// Evaluate `root` with `arguments` in its first slots.
     ///
     /// **No entry-level `function.call` charge here (PR #302 review finding
-    /// 2).** An earlier version took a `call: bool` and charged
-    /// `function.call` against `self.meter` (`env.local_meter`) once, up
-    /// front, whenever the root was a function body -- the exact same named
-    /// charge `ValueFunctionFamily::evaluate` (`family.rs`) now charges
-    /// against its own contract-level `meter` parameter for that same
-    /// top-level call, against a *different* meter instance. Charging the
-    /// same point twice for one logical call, even against two different
-    /// meters, is not two real facts -- it is one fact restated twice.
-    /// `evaluate`'s own charge is the top-level call's sole admission
-    /// charge now; every *nested* `NodeKind::Call`/dispatch site this
-    /// method's own task loop reaches still charges `function.call` against
-    /// `self.meter` (`charge_call`, called directly at those sites) --
-    /// those are genuinely separate calls, not a restatement of this one.
+    /// 2).** `ValueFunctionFamily::evaluate` (`family.rs`) charges the
+    /// top-level call's `function.call` to the caller's meter, then runs this
+    /// machine against that same meter (QSL-206), so a charge here would
+    /// count the one call twice. Every *nested* `NodeKind::Call`/dispatch
+    /// site this method's own task loop reaches charges `function.call`
+    /// against `self.meter` (`charge_call`, called directly at those sites)
+    /// -- those are genuinely separate calls.
     ///
     /// **`Err(InternalFault)` (FR-090-AC-10).** [`Self::resolve_population`]
     /// returns `Err(Stop::Fault(_))` rather than a `Refusal` when a
@@ -380,18 +373,20 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.frames.push(frame);
         self.tasks.push(Task::Eval(root));
         while let Some(task) = self.tasks.pop() {
-            let location = match &task {
+            // QSL-206: the task's node, borrowed from the checked tree, not
+            // its `Location`: a location is cloned only when a halt reports
+            // one, never once per task.
+            let located: &'a Node = match &task {
                 Task::Eval(node)
                 | Task::Apply(node)
                 | Task::Branch(node)
                 | Task::Short(node)
                 | Task::Retain(node)
-                | Task::ChargeElement(node) => Some(node.location()),
-                Task::Iterate(iteration) => Some(iteration.node.location()),
-                Task::DispatchGuard(guard) => Some(&guard.location),
-                Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) => None,
+                | Task::ChargeElement(node) => node,
+                Task::Iterate(iteration) => iteration.node,
+                Task::DispatchGuard(guard) => guard.node,
+                Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) => root,
             };
-            let location = location.cloned().unwrap_or_else(|| root.location().clone());
             if let Err(halt) = self.step(task) {
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
@@ -399,10 +394,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                     // like a `Stop`, at the task that produced it.
                     Halt::Family(result) => Ok(Evaluation {
                         outcome: FamilyOutcome::FamilyEvaluated(result),
-                        location: Some(location),
+                        location: Some(located.location().clone()),
                         losses: Vec::new(),
                     }),
-                    Halt::Stop(stop) => Ok(Self::stopped(stop, &location)),
+                    Halt::Stop(stop) => Ok(Self::stopped(stop, located.location())),
                 };
             }
         }
@@ -632,7 +627,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     body_function,
                     arguments,
                     failure,
-                    location: _,
+                    node: _,
                 } = *guard;
                 let holds = self.pop_boolean()?;
                 self.frames.pop().ok_or_else(invariant)?;
@@ -1200,7 +1195,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                                 selected,
                                 receiver: reference,
                             },
-                            location: node.location().clone(),
+                            node,
                         })));
                         self.tasks.push(Task::Eval(callable.body));
                         return Ok(());
@@ -1623,20 +1618,15 @@ mod tests {
         let (package, identity) = population_function_package();
         let objects = ObjectEnvironment::default();
         let unresolved_id = PopulationId::from_digest([7; 32]);
-        let mut local_meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let mut env = crate::value::expression::family::EvaluationEnv::new(
             &package,
             &objects,
             vec![Value::Population(unresolved_id)],
-            &mut local_meter,
         );
-        let mut contract_meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
-        let fault = qsl_semantics::check::ValueFunctionFamily::evaluate(
-            &identity,
-            &mut env,
-            &mut contract_meter,
-        )
-        .expect_err("an unresolved population id must fault, never evaluate");
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let fault =
+            qsl_semantics::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut meter)
+                .expect_err("an unresolved population id must fault, never evaluate");
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(fault.category(), Category::InternalFailure);
         assert_eq!(
@@ -1659,20 +1649,15 @@ mod tests {
         let objects = ObjectEnvironment::default()
             .with_population(binding)
             .unwrap();
-        let mut local_meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let mut env = crate::value::expression::family::EvaluationEnv::new(
             &package,
             &objects,
             vec![Value::Population(id)],
-            &mut local_meter,
         );
-        let mut contract_meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
-        let fault = qsl_semantics::check::ValueFunctionFamily::evaluate(
-            &identity,
-            &mut env,
-            &mut contract_meter,
-        )
-        .expect_err("a mismatched declared maximum must fault, never evaluate");
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let fault =
+            qsl_semantics::check::ValueFunctionFamily::evaluate(&identity, &mut env, &mut meter)
+                .expect_err("a mismatched declared maximum must fault, never evaluate");
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(fault.category(), Category::InternalFailure);
         assert_eq!(

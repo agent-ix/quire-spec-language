@@ -47,6 +47,10 @@ num-traits = "=0.2.19"
 syn = { version = "=2.0.119", features = ["full", "visit"] }
 # Line numbers in that scan's findings, the same way `xtask` reads them.
 proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
+# QSL-206: the ordered charge log (`Meter::admitted_charges`) the
+# charge-sequence tests assert. A production meter keeps a count only; only
+# this dev-dependency enables `test-support`.
+quire-exact = { path = "../quire-exact", features = ["test-support"] }
 
 [[test]]
 name = "it"
