@@ -7,7 +7,9 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span};
-use qsl_source::{extract, Cause, Limits, PreflightFailure, Selection, SemanticContext};
+use qsl_source::{
+    extract, Cause, Limits, PreflightFailure, Selection, SemanticContext, MAX_LINES,
+};
 use quire_rs::semantic::{extract_clauses, read_semantic_block, BundleIndex};
 use serde_json::json;
 
@@ -193,25 +195,29 @@ fn source_coordinates_and_limits_keep_exact_boundaries_and_fresh_retries() {
         "\n".repeat(4096),
         document("true", false).text()
     ));
-    let error = extract(
-        many_lines,
-        &ctx,
-        selection(),
-        Limits {
-            lines: usize::MAX,
-            source_bytes: usize::MAX,
-        },
-    )
-    .unwrap_err();
+    // The default line ceiling refuses it, naming that ceiling; a caller
+    // who raises the ceiling gets it enforced as given, not clamped back.
+    let error = extract(many_lines.clone(), &ctx, selection(), Limits::default()).unwrap_err();
     assert_eq!(error.code(), Code::ResourceExhausted);
     assert!(error.extraction().is_none());
     let Cause::Preflight(actual) = &error.cause else {
-        panic!("expected hard line ceiling");
+        panic!("expected the default line ceiling");
     };
     assert!(matches!(
         **actual,
-        PreflightFailure::SourceLines { maximum: 4096, .. }
+        PreflightFailure::SourceLines {
+            maximum: MAX_LINES,
+            ..
+        }
     ));
+    let raised = Limits {
+        lines: many_lines.position(many_lines.text().len()).unwrap().line,
+        ..Limits::default()
+    };
+    assert!(
+        extract(many_lines, &ctx, selection(), raised).is_ok(),
+        "a caller-raised line ceiling must be used as given"
+    );
 }
 
 #[test]
