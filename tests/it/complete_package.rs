@@ -645,6 +645,7 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
         dependency_edges: 0,
         depth: 1,
         artifact_bytes,
+        single_artifact_bytes: artifact_bytes,
     };
     assert!(DefinitionCatalog::with_limits(definitions.clone(), exact).is_ok());
     assert_eq!(
@@ -876,6 +877,7 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         dependency_edges: PackageLimits::default().dependency_edges + 1,
         depth: PackageLimits::default().depth + 1,
         artifact_bytes: PackageLimits::default().artifact_bytes + 1,
+        single_artifact_bytes: PackageLimits::default().single_artifact_bytes + 1,
     };
     assert_eq!(
         resolve_parsed(&parsed, &catalog, &models, raised)
@@ -968,4 +970,97 @@ fn resolution_causes_match_the_complete_cause_catalog() {
             );
         }
     }
+}
+
+/// QSL-199: the size of one definition or compiled-model artifact is a
+/// caller limit (`PackageLimits::single_artifact_bytes`), not a fixed 1 MiB
+/// ceiling refused as invalid bytes. An artifact one byte past the default
+/// is built, refused at catalog admission naming the kind and the bound, and
+/// admitted once the caller raises the limit to its size.
+#[trace("TC-180", "FR-131-AC-2")]
+#[test]
+fn single_artifact_bytes_is_a_caller_limit_naming_its_bound() {
+    let default = PackageLimits::default();
+    let oversized = vec![b'x'; default.single_artifact_bytes + 1];
+    let definition = Definition::from_exact_bytes(
+        &READER_AUTHORITY,
+        "acme.large",
+        "1",
+        DefinitionRole::MethodPlan,
+        BTreeSet::new(),
+        BTreeSet::new(),
+        &oversized,
+    )
+    .expect("size is a catalog limit, not an invalid-bytes refusal");
+    let model = ModelArtifact::from_exact_bytes(&READER_AUTHORITY, "acme.large", "1", &oversized)
+        .expect("size is a catalog limit, not an invalid-bytes refusal");
+    let expected = PackageError::ResourceLimit {
+        kind: PackageLimitKind::SingleArtifactBytes,
+        limit: default.single_artifact_bytes,
+    };
+    assert_eq!(
+        DefinitionCatalog::with_limits(vec![definition.clone()], default).unwrap_err(),
+        expected
+    );
+    assert_eq!(
+        ModelCatalog::with_limits(vec![model.clone()], default).unwrap_err(),
+        expected
+    );
+    assert_eq!(
+        expected.to_string(),
+        format!(
+            "package resource limit exceeded: single_artifact_bytes (limit {})",
+            default.single_artifact_bytes
+        )
+    );
+
+    let raised = PackageLimits {
+        single_artifact_bytes: oversized.len(),
+        ..default
+    };
+    assert!(DefinitionCatalog::with_limits(vec![definition], raised).is_ok());
+    assert!(ModelCatalog::with_limits(vec![model], raised).is_ok());
+}
+
+/// QSL-199: resolution checks `single_artifact_bytes` under its own limits,
+/// whatever limits the catalog was built under.
+#[trace("TC-180", "FR-131-AC-2")]
+#[test]
+fn resolution_enforces_its_own_single_artifact_bytes() {
+    let default = PackageLimits::default();
+    let mut definitions = complete_definitions();
+    definitions[0] = Definition::from_exact_bytes(
+        &READER_AUTHORITY,
+        definitions[0].exact().identity(),
+        "1",
+        DefinitionRole::Source,
+        BTreeSet::new(),
+        CapabilityId::complete_inventory().into_iter().collect(),
+        &vec![b'x'; default.single_artifact_bytes + 1],
+    )
+    .unwrap();
+    let model = compiled_model();
+    let parsed = resolved_source(&definitions, &model);
+    let raised = PackageLimits {
+        single_artifact_bytes: default.single_artifact_bytes + 1,
+        ..default
+    };
+    let catalog = DefinitionCatalog::with_limits(definitions, raised).unwrap();
+    let models = ModelCatalog::new(vec![model]).unwrap();
+
+    let refusal = resolve_parsed(&parsed, &catalog, &models, default).unwrap_err();
+    assert_eq!(refusal.code, Code::ResourceExhausted);
+    assert_eq!(
+        refusal.cause,
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::SingleArtifactBytes,
+            limit: default.single_artifact_bytes,
+        }
+    );
+    assert_eq!(
+        resolve_parsed(&parsed, &catalog, &models, raised)
+            .unwrap()
+            .effective_limits(),
+        raised
+    );
 }

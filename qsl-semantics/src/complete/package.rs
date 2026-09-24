@@ -74,7 +74,7 @@ impl ModelArtifact {
         version: impl Into<String>,
         exact_bytes: &[u8],
     ) -> Result<Self, PackageError> {
-        if exact_bytes.is_empty() || exact_bytes.len() > qsl_foundation::source::MAX_SOURCE_BYTES {
+        if exact_bytes.is_empty() {
             return Err(PackageError::InvalidModelArtifactBytes);
         }
         let exact = ModelRef::new(
@@ -174,6 +174,8 @@ pub enum PackageLimitKind {
     Depth,
     /// [`PackageLimits::artifact_bytes`].
     ArtifactBytes,
+    /// [`PackageLimits::single_artifact_bytes`].
+    SingleArtifactBytes,
 }
 
 impl std::fmt::Display for PackageLimitKind {
@@ -184,6 +186,7 @@ impl std::fmt::Display for PackageLimitKind {
             Self::DependencyEdges => "dependency_edges",
             Self::Depth => "depth",
             Self::ArtifactBytes => "artifact_bytes",
+            Self::SingleArtifactBytes => "single_artifact_bytes",
         })
     }
 }
@@ -206,6 +209,23 @@ pub struct PackageLimits {
     /// Maximum total artifact byte count (definitions plus models) admitted
     /// into one resolved package or catalog.
     pub artifact_bytes: usize,
+    /// Maximum byte count of any one definition or compiled-model artifact
+    /// admitted into one resolved package or catalog.
+    pub single_artifact_bytes: usize,
+}
+
+impl PackageLimits {
+    /// Refuses one artifact of `len` bytes past
+    /// [`Self::single_artifact_bytes`].
+    fn check_single_artifact(&self, len: usize) -> Result<(), PackageError> {
+        if len > self.single_artifact_bytes {
+            return Err(PackageError::ResourceLimit {
+                kind: PackageLimitKind::SingleArtifactBytes,
+                limit: self.single_artifact_bytes,
+            });
+        }
+        Ok(())
+    }
 }
 
 impl Default for PackageLimits {
@@ -215,6 +235,7 @@ impl Default for PackageLimits {
             dependency_edges: 16_384,
             depth: 256,
             artifact_bytes: 16 * qsl_foundation::source::MAX_SOURCE_BYTES,
+            single_artifact_bytes: qsl_foundation::source::MAX_SOURCE_BYTES,
         }
     }
 }
@@ -233,7 +254,7 @@ impl Definition {
     ) -> Result<Self, PackageError> {
         let identity = identity.into();
         let version = version.into();
-        if exact_bytes.is_empty() || exact_bytes.len() > qsl_foundation::source::MAX_SOURCE_BYTES {
+        if exact_bytes.is_empty() {
             return Err(PackageError::InvalidDefinitionArtifactBytes);
         }
         let exact = DefinitionRef::new(
@@ -289,6 +310,7 @@ impl DefinitionCatalog {
         let mut bytes = 0_usize;
         let mut catalog = Self::default();
         for definition in definitions {
+            limits.check_single_artifact(definition.exact_bytes.len())?;
             edges = edges.checked_add(definition.dependencies.len()).ok_or(
                 PackageError::ResourceLimit {
                     kind: PackageLimitKind::DependencyEdges,
@@ -367,6 +389,7 @@ impl ModelCatalog {
         let mut bytes = 0_usize;
         let mut catalog = Self::default();
         for model in models {
+            limits.check_single_artifact(model.exact_bytes.len())?;
             bytes =
                 bytes
                     .checked_add(model.exact_bytes.len())
@@ -1058,6 +1081,15 @@ pub fn resolve_source_package(
         .or_else(|| selections.imports.first().map(|selection| selection.span))
         .or_else(|| selections.models.first().map(|selection| selection.span))
         .unwrap_or(Span { start: 0, end: 0 });
+    for len in resolved
+        .values()
+        .map(|definition| definition.exact_bytes.len())
+        .chain(resolved_models.values().map(|model| model.exact_bytes.len()))
+    {
+        limits
+            .check_single_artifact(len)
+            .map_err(|cause| refusal(Code::ResourceExhausted, artifact_span, cause))?;
+    }
     let resolved_artifact_bytes = resolved
         .values()
         .try_fold(0_usize, |total, definition| {
@@ -1296,7 +1328,9 @@ pub enum PackageError {
     /// Definition version was empty or outside its bound.
     #[error("invalid definition version")]
     InvalidDefinitionVersion,
-    /// Supplied definition artifact bytes were empty or exceeded the hard ceiling.
+    /// Supplied definition artifact bytes were empty. Size is a caller
+    /// limit ([`PackageLimits::single_artifact_bytes`]), checked where the
+    /// artifact is admitted into a catalog or resolved package.
     #[error("invalid exact definition artifact bytes")]
     InvalidDefinitionArtifactBytes,
     /// Compiled-model identity was empty or outside its bound.
@@ -1305,7 +1339,9 @@ pub enum PackageError {
     /// Compiled-model version was empty or outside its bound.
     #[error("invalid compiled-model version")]
     InvalidModelVersion,
-    /// Supplied compiled-model document bytes were empty or too large.
+    /// Supplied compiled-model document bytes were empty. Size is a caller
+    /// limit ([`PackageLimits::single_artifact_bytes`]), checked where the
+    /// artifact is admitted into a catalog or resolved package.
     #[error("invalid exact compiled-model document bytes")]
     InvalidModelArtifactBytes,
     /// An exact definition appeared more than once in a catalog.
