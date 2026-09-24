@@ -7,7 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
-use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
+use qsl_forms::{
+    BinaryOperator, BuiltinType, DeclarationSpans, Expression, ExpressionSpans,
+    FunctionDeclaration, TypeForm,
+};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_semantics::check::{CheckingLimits, NodeTag, PackageDeclarations};
 use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
@@ -860,4 +863,73 @@ fn the_package_crate_builds_no_term_and_mints_no_key() {
         scanned += 1;
     }
     assert_eq!(scanned, 4);
+}
+
+/// `t` read from [`TEXT`]: its form carries the span of its declaration and
+/// of every body node (FR-091-AC-10).
+fn t_read_from_text() -> FunctionDeclaration {
+    let text = std::str::from_utf8(TEXT).unwrap();
+    let find = |needle: &str, from: usize| {
+        let start = from + text[from..].find(needle).unwrap();
+        qsl_foundation::Span {
+            start,
+            end: start + needle.len(),
+        }
+    };
+    let whole = find("if true then true else true", 0);
+    let mut body = ExpressionSpans::new(whole).unwrap();
+    let mut from = whole.start + "if".len();
+    for _ in 0..3 {
+        let literal = find("true", from);
+        body.push_child(body.root(), literal).unwrap();
+        from = literal.end;
+    }
+    t().with_spans(DeclarationSpans {
+        declaration: qsl_foundation::Span {
+            start: 0,
+            end: TEXT.len(),
+        },
+        body,
+        measure: None,
+    })
+    .expect("the spans fit t")
+}
+
+/// QSL-239 (FR-096, ADR-013 O-12): `emit_checked` places every occurrence
+/// through the checked unit's own form spans, with no caller conversion.
+/// The package reads back Verified, and each region's bytes are the source
+/// text of an expression of `t`: its whole body, or one `true` literal.
+#[trace("FR-096-AC-1", "FR-091-AC-10", "TC-426")]
+#[test]
+fn emit_checked_places_occurrences_at_the_form_spans() {
+    let emission = emit_checked(&package(vec![t_read_from_text()])).expect("t emits");
+    assert!(matches!(
+        read_back(&emission),
+        V2ReadOutcome::Verified { .. }
+    ));
+    let wire = wire(&emission);
+    let entries = wire["source_map"].as_array().unwrap();
+    assert!(!entries.is_empty());
+    let mut texts = BTreeSet::new();
+    for entry in entries {
+        for region in entry["regions"].as_array().unwrap() {
+            assert_eq!(region["source"], wire["lock"]["sources"][0]);
+            let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
+            let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
+            texts.insert(std::str::from_utf8(&TEXT[start..end]).unwrap().to_owned());
+        }
+    }
+    assert!(texts.contains("if true then true else true"), "{texts:?}");
+    assert!(texts.contains("true"), "{texts:?}");
+    for text in &texts {
+        assert!(
+            ["if true then true else true", "true"].contains(&text.as_str()),
+            "{text:?} is no expression of t"
+        );
+    }
+    // A package whose form carries no spans has no region to place.
+    assert!(matches!(
+        emit_checked(&package(vec![t()])),
+        Err(EmitRefusal::UnlocatedOccurrence { .. })
+    ));
 }
