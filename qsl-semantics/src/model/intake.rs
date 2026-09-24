@@ -245,7 +245,7 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// converted from the lexeme the document carried with `serde_json`'s own
 /// number parser, so it equals what `serde_json::from_slice` would have read
 /// -- except an integer outside ±2^53, which is held as the IEEE 754 double
-/// RFC 8785 canonicalizes it as ([`number_of`]). A number with no finite
+/// RFC 8785 canonicalizes it as (`number_of`). A number with no finite
 /// value (`1e400`) refuses. A lone UTF-16
 /// surrogate escape refuses too: RFC 8785 (via RFC 7493) admits none, and the
 /// reader would otherwise replace it with U+FFFD, so two different documents
@@ -253,7 +253,7 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 ///
 /// The `sha256-jcs` digest is taken here, once, by `quire-canonical` (ADR-013
 /// §2, ADR-013:113: the one RFC 8785 implementation) under
-/// [`INTAKE_DIGEST_LIMITS`], and [`admit`]'s check 3 compares it.
+/// `INTAKE_DIGEST_LIMITS`, and [`admit`]'s check 3 compares it.
 #[derive(Debug, Clone)]
 pub struct PackageDocument {
     /// `{"ir": <document>}`: the bundle `agent_ix_semantic_ir::decide` reads
