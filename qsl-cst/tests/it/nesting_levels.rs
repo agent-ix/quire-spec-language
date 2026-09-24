@@ -4,7 +4,7 @@
 //! ceilings; see `tests/it/nesting_levels.rs` in the root crate for the
 //! native parser.
 use ix_trace_rs::trace;
-use qsl_cst::{CompleteCode, CompleteDiagnostic, Limits, ParsedSource};
+use qsl_cst::{CompleteCode, CompleteDiagnostic, Limits, ParsedSource, Production};
 use qsl_foundation::{Phase, SourceIdentity, SyntaxLimit};
 
 fn identity(id: &str) -> SourceIdentity {
@@ -64,7 +64,7 @@ fn on_bounded_stack<F: FnOnce() + Send + 'static>(run: F) {
 fn refused_limit(error: &CompleteDiagnostic) -> SyntaxLimit {
     assert_eq!(error.code, CompleteCode::ResourceExhausted, "{error}");
     let limit = error
-        .limit
+        .limit()
         .expect("a syntax refusal carries its typed limit");
     assert_eq!(error.message, limit.to_string());
     limit
@@ -98,6 +98,20 @@ fn let_value_chain(elements: usize) -> String {
         "{}x{}",
         "let v = ".repeat(elements),
         " in x".repeat(elements)
+    ))
+}
+fn if_condition_chain(elements: usize) -> String {
+    function(&format!(
+        "{}x{}",
+        "if ".repeat(elements),
+        " then x else x".repeat(elements)
+    ))
+}
+fn if_then_chain(elements: usize) -> String {
+    function(&format!(
+        "{}x{}",
+        "if true then ".repeat(elements),
+        " else x".repeat(elements)
     ))
 }
 fn always_chain(elements: usize) -> String {
@@ -254,6 +268,8 @@ fn longest_chains_parse_and_one_longer_names_a_ceiling() {
         assert_longest_chain("let", 4_164, let_chain);
         assert_longest_chain("if", 2_271, if_chain);
         assert_longest_chain("let value", 4_164, let_value_chain);
+        assert_longest_chain("if condition", 2_173, if_condition_chain);
+        assert_longest_chain("if then", 2_271, if_then_chain);
     });
 }
 
@@ -291,11 +307,12 @@ fn a_deep_cst_renders_and_resolves_identities_on_a_bounded_stack() {
         assert_eq!(cst.render(), text.as_bytes());
         let root = cst.root();
         assert_eq!(cst.render_node(root).expect("own node"), text.as_bytes());
+        // The operand under every `not` is the deepest node.
         let deepest = cst
             .nodes()
             .iter()
-            .max_by_key(|node| cst.structural_path(node).len())
-            .expect("nodes");
+            .find(|node| node.production() == Production::Primary)
+            .expect("the operand");
         assert!(cst.structural_path(deepest).len() > 20_000);
     });
 }
@@ -326,6 +343,8 @@ fn probe_longest_chains_at_default_ceilings() {
             ("let", let_chain),
             ("if", if_chain),
             ("let value", let_value_chain),
+            ("if condition", if_condition_chain),
+            ("if then", if_then_chain),
             ("always", always_chain),
             ("temporal implies", temporal_implies_chain),
             ("temporal not", temporal_not_chain),

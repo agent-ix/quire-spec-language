@@ -15,7 +15,9 @@
 //! recursive-descent native parser). So a green run means the rewrite
 //! produced identical trees, spans, recoveries and diagnostics for every
 //! generated input. Resource refusals are out of scope: no generated input
-//! comes near a ceiling. To re-record after an intended change, run with
+//! comes near a ceiling. The default run checks the first 1,000 inputs of
+//! each family; `make test-differential` checks all 30,000. To re-record
+//! after an intended change, run that target with
 //! `QSL_DIFFERENTIAL_RECORD=1` and review the diff.
 use std::fmt::Write as _;
 
@@ -24,7 +26,10 @@ use qsl_cst::{CstElement, Limits as CompleteLimits};
 use qsl_foundation::{ByteDigest, SourceIdentity};
 use quire_spec_language::{parse_native, Limits};
 
+/// The full run: 10,000 inputs per family, 300 buckets.
 const INPUTS_PER_FAMILY: usize = 10_000;
+/// The always-on run: the first 1,000 inputs of each family, 30 buckets.
+const QUICK_INPUTS_PER_FAMILY: usize = 1_000;
 const BUCKET: usize = 100;
 const BASELINE: &str = include_str!("../fixtures/parser-differential/baseline.txt");
 
@@ -434,11 +439,12 @@ fn bucket_digests(
     seed: u64,
     generate: fn(&mut Rng) -> String,
     render: fn(&str) -> String,
+    inputs: usize,
 ) -> Vec<String> {
     let mut rng = Rng(seed);
     let mut lines = Vec::new();
     let mut bucket = Vec::new();
-    for index in 0..INPUTS_PER_FAMILY {
+    for index in 0..inputs {
         let text = generate(&mut rng);
         let text = mutate(&mut rng, text);
         bucket.extend_from_slice(render(&text).as_bytes());
@@ -455,36 +461,45 @@ fn bucket_digests(
     lines
 }
 
-fn all_digests() -> Vec<String> {
-    let mut lines = bucket_digests("complete", 0x5eed_0001, complete_unit, render_complete);
+fn all_digests(inputs: usize) -> Vec<String> {
+    let mut lines = bucket_digests(
+        "complete",
+        0x5eed_0001,
+        complete_unit,
+        render_complete,
+        inputs,
+    );
     lines.extend(bucket_digests(
         "historical",
         0x5eed_0002,
         historical_unit,
         render_native,
+        inputs,
     ));
     lines.extend(bucket_digests(
         "composed",
         0x5eed_0003,
         composed_unit,
         render_native,
+        inputs,
     ));
     lines
 }
 
-#[trace("TC-012", "TC-222", "FR-302-AC-1", "FR-302-AC-2")]
-#[test]
-fn both_parsers_match_the_recorded_baseline_on_generated_units() {
-    let lines = all_digests();
-    if std::env::var_os("QSL_DIFFERENTIAL_RECORD").is_some() {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/parser-differential/baseline.txt"
-        );
-        std::fs::write(path, lines.join("\n") + "\n").expect("record the baseline");
-        return;
-    }
-    let baseline: Vec<&str> = BASELINE.lines().collect();
+/// Compare the first `inputs` of each family with the baseline's buckets
+/// for them.
+fn assert_matches_baseline(inputs: usize) {
+    let lines = all_digests(inputs);
+    let buckets = inputs / BUCKET;
+    let baseline: Vec<&str> = BASELINE
+        .lines()
+        .filter(|line| {
+            line.split(' ')
+                .nth(1)
+                .and_then(|bucket| bucket.parse::<usize>().ok())
+                .is_some_and(|bucket| bucket < buckets)
+        })
+        .collect();
     assert_eq!(baseline.len(), lines.len(), "baseline bucket count");
     let differing: Vec<&str> = lines
         .iter()
@@ -498,6 +513,29 @@ fn both_parsers_match_the_recorded_baseline_on_generated_units() {
         differing.len(),
         differing.first()
     );
+}
+
+#[trace("TC-012", "TC-222", "FR-302-AC-1", "FR-302-AC-2")]
+#[test]
+fn both_parsers_match_the_recorded_baseline_on_generated_units() {
+    assert_matches_baseline(QUICK_INPUTS_PER_FAMILY);
+}
+
+// The whole baseline: `make test-differential`.
+#[trace("TC-012", "TC-222", "FR-302-AC-1", "FR-302-AC-2")]
+#[test]
+#[ignore = "30,000 inputs; run by `make test-differential`"]
+fn both_parsers_match_the_whole_recorded_baseline() {
+    if std::env::var_os("QSL_DIFFERENTIAL_RECORD").is_some() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/parser-differential/baseline.txt"
+        );
+        let lines = all_digests(INPUTS_PER_FAMILY);
+        std::fs::write(path, lines.join("\n") + "\n").expect("record the baseline");
+        return;
+    }
+    assert_matches_baseline(INPUTS_PER_FAMILY);
 }
 
 // The generator must exercise both outcomes and every family.
