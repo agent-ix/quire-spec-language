@@ -8,14 +8,15 @@ license = "AGPL-3.0-or-later"
 description = "ADR-011 §6.1 layer 4: the S4 checked-package typestate, the quire.checked-package/v2 emitter and the I2 byte reader."
 
 # ADR-011 §6.1 layer 4 depends on "3, F, K; `quire-contract-model` for v2
-# wire constants and round-trip tests only". This crate names K
-# (`quire-exact`) only in its tests, so K is a dev-dependency here (ADR-011
-# §7.1: a dependency needed only by tests is a dev dependency). The root
-# crate's `tests/it/family_outcome_layering.rs` (TC-390) asserts that this
-# table names no other workspace crate.
+# wire constants and round-trip tests only". The root crate's
+# `tests/it/family_outcome_layering.rs` (TC-390) asserts that this table
+# names no other workspace crate.
 [dependencies]
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-semantics = { path = "../qsl-semantics" }
+# K: the I2 reader keys the v2 source map by the kernel occurrence `Origin`
+# (ADR-013 O-07).
+quire-exact = { path = "../quire-exact" }
 # The v2 wire vocabulary: the identity-preimage types the emitter builds and
 # IR's `checked_package` v2 reader the I2 byte reader delegates to.
 quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "dbb2e22d577b56fed5c27e81e584370acdf02512" }
@@ -35,7 +36,6 @@ qsl-forms = { path = "../qsl-forms" }
 # `no_shipped_dependency_enables_test_support` refuses a normal or build
 # dependency that does.
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
-quire-exact = { path = "../quire-exact" }
 # The tests build v2 wires and golden preimages as JSON; shipped code encodes
 # through `quire-canonical` only (QSL-194).
 serde_json = "=1.0.151"

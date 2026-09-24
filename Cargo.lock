@@ -1421,6 +1421,8 @@ dependencies = [
 name = "qsl-foundation"
 version = "0.1.0"
 dependencies = [
+ "ix-trace-rs",
+ "quire-exact",
  "serde",
  "sha2",
  "thiserror",

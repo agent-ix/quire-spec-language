@@ -251,10 +251,9 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
 /// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
 /// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4,
-/// QSL-182) names exactly `qsl-foundation`, `qsl-semantics`,
-/// `quire-contract-model`, `serde_json` and `thiserror` in `[dependencies]`;
-/// its `[dev-dependencies]` may also name `quire-exact` and the lower layer
-/// `qsl-forms`, so K is a test-only edge there. `qsl-route` (layer R,
+/// QSL-182) names exactly `qsl-foundation`, `qsl-semantics` and
+/// `quire-exact` among the workspace crates in `[dependencies]`; its
+/// `[dev-dependencies]` may also name the lower layer `qsl-forms`. `qsl-route` (layer R,
 /// QSL-184) names exactly `qsl-foundation`, `qsl-semantics` and `thiserror`
 /// in `[dependencies]`, and has no `[build-dependencies]`. `qsl-eval` (layer
 /// 5, QSL-183) names exactly `qsl-attrs`, `qsl-foundation`, `qsl-package`,
@@ -312,8 +311,8 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         ),
         (
             "qsl-package",
-            &["qsl-foundation", "qsl-semantics"][..],
-            &["qsl-forms", "quire-exact"][..],
+            &["qsl-foundation", "qsl-semantics", "quire-exact"][..],
+            &["qsl-forms"][..],
         ),
         (
             "qsl-route",
@@ -388,10 +387,11 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         if crate_name == "qsl-package" {
             // Layer 4 (QSL-182): "3, F, K; `quire-contract-model` for v2 wire
             // constants and round-trip tests only". The whole shipped table
-            // is fixed: layer 3, F, the v2 wire contract, `quire-canonical`
-            // (ADR-013 §2's one RFC 8785 encoder, for the `package_id`
-            // preimage, QSL-194) and `thiserror`. K, `serde_json` and `sha2`
-            // are used by its tests only.
+            // is fixed: layer 3, F, K (the kernel occurrence `Origin` the
+            // I2 reader keys the v2 source map by, ADR-013 O-07, QSL-159),
+            // the v2 wire contract, `quire-canonical` (ADR-013 §2's one
+            // RFC 8785 encoder, for the `package_id` preimage, QSL-194) and
+            // `thiserror`. `serde_json` and `sha2` are used by its tests only.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(
@@ -401,6 +401,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "qsl-semantics",
                     "quire-canonical",
                     "quire-contract-model",
+                    "quire-exact",
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"

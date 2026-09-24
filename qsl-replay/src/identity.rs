@@ -11,15 +11,9 @@
 //!   `value::expression`, which this change must not touch (M-5 is
 //!   splitting that module concurrently) and cannot depend on before it
 //!   merges. This module's copy is #231's own, scoped to `replay` only.
-//! - [`OccurrenceKey`] (O-07) has no landed canonical type either; only the
-//!   *checked* domain sibling (`quire_exact::Location`) exists.
-//!   `OccurrenceKey` reuses the kernel's own `Role`/`Origin` pair for its
-//!   role/ordinal half, since that part carries no checked-only
-//!   restriction; its node half is `qsl_foundation::digest::WireNodeId` (O-04,
-//!   relocated there by QSL-158 S-3a per ADR-011 `:588`'s `F` foundation
-//!   layer placement -- imported directly from `digest` below, not
-//!   re-exported back out under this module's own path, so `replay`'s own
-//!   layer-6-depends-on-F edge stays the only edge to it).
+//! - O-07's occurrence key and O-12's source region have their canonical
+//!   home in `qsl_foundation::source::provenance` (#213 S-4, QSL-159);
+//!   this crate carries them from there.
 //! - [`ObligationIdentity`] (O-09) is CG-computed (AD-016 arrow 5, no QSL
 //!   ticket); QSL only ever carries the digest CG mints, never hashes one
 //!   itself, mirroring `quire_exact`'s own opaque digest identities.
@@ -31,35 +25,7 @@
 use std::fmt;
 
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
-use quire_exact::{Identifier, Origin};
-
-/// ADR-013 O-07: an occurrence key -- `(node id, role, ordinal)` -- keeping
-/// two source occurrences of a structurally identical node apart. Reuses
-/// the kernel's own `quire_exact::Origin` (`role`, `ordinal`) for the
-/// role/ordinal half; only the node half is wire-level here (see
-/// [`WireNodeId`]).
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct OccurrenceKey {
-    node: WireNodeId,
-    origin: Origin,
-}
-
-impl OccurrenceKey {
-    /// Name an occurrence by wire node id, role and ordinal.
-    pub fn new(node: WireNodeId, origin: Origin) -> Self {
-        Self { node, origin }
-    }
-
-    /// The occurrence's wire node id.
-    pub fn node(&self) -> WireNodeId {
-        self.node
-    }
-
-    /// The occurrence's role and ordinal.
-    pub fn origin(&self) -> &Origin {
-        &self.origin
-    }
-}
+use quire_exact::Identifier;
 
 /// ADR-013 O-09: the CG-computed digest identifying one Kani obligation --
 /// the digest over every `KaniObligationIdentity` member except
@@ -148,9 +114,16 @@ impl fmt::Display for QualifiedName {
 /// the shape is stated in one place rather than repeated per call site.
 pub type SourceDigestWire = (String, String, String, Option<String>, String);
 
-/// ADR-013 O-07: names a source document a proved package or one of its
-/// dependencies was generated from -- authority, identity, revision, and
-/// its `quire.source.bytes/v1` digest (`crate::digest`).
+/// One entry of an envelope's `source_digests` list (QSpec FR-323: "the
+/// `RawSourceRef` digest of every source and definition document a replay
+/// recompiles") -- authority, identity, revision and digest. It admits any
+/// FR-201 domain and a one-string revision, so it is not the O-07
+/// `qsl_foundation::source::provenance::RawSourceRef`, whose digest is
+/// `quire.source.bytes/v1` only and whose revision is QSpec's
+/// `{namespace, value}`. FR-323 calls a definition document's digest a
+/// `RawSourceRef` digest while QSpec's `RawSourceRef` schema admits only
+/// `quire.source.bytes/v1`; the two types stay apart until QSpec settles
+/// that.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RawSourceRef {
     authority: String,
@@ -323,15 +296,6 @@ mod tests {
         .unwrap();
         assert_eq!(name.to_string(), "a.b");
         assert_eq!(name.segments().len(), 2);
-    }
-
-    #[test]
-    fn occurrence_key_same_node_distinct_ordinal_are_unequal() {
-        let node = WireNodeId::from_digest(digest(1));
-        let a = OccurrenceKey::new(node, Origin::new("reference".into(), 0));
-        let b = OccurrenceKey::new(node, Origin::new("reference".into(), 1));
-        assert_ne!(a, b);
-        assert_eq!(a.node(), b.node());
     }
 
     #[test]

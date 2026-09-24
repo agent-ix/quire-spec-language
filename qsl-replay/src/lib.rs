@@ -18,11 +18,11 @@
 //! # Provisional local types
 //!
 //! Several members these envelopes carry have a canonical home ADR-013
-//! assigns to #213 slices S-3/S-4: O-07's occurrence key beyond the kernel
-//! `quire_exact::Origin`/`Location` pair, O-09's obligation identity, O-11's
-//! `QualifiedName` and O-12's resolved region. `identity` defines this
-//! crate's own minimal versions with the shape ADR-013 specifies, and names
-//! the ticket that absorbs each one.
+//! assigns to #213 slices S-3/S-4. O-07's occurrence key and O-12's source
+//! region are `qsl_foundation::source::provenance`'s (S-4, QSL-159), and
+//! this crate re-exports them for CG. O-09's obligation identity and O-11's
+//! `QualifiedName` are still `identity`'s own minimal versions, with the
+//! shape ADR-013 specifies; `identity` names the ticket that absorbs each.
 
 #![forbid(unsafe_code)]
 
@@ -35,21 +35,27 @@ mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
 pub use identity::{
-    Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, OccurrenceKey,
-    ProfileSelection, QualifiedName, RawSourceRef, TracePosition,
+    Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
+    QualifiedName, RawSourceRef, TracePosition,
 };
 pub use proof_result::{
     read_backend_provider_envelope, BackendProviderSource, EmptyEnvelopeSet, IncompleteCause,
     InconclusiveCause, ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
     TerminalRecord, TerminalValue, ToolPin, UnavailabilityCause,
 };
+// The O-07 occurrence key and O-12 source region these envelopes carry
+// (#213 S-4), re-exported so CG, which reaches QSL only through this crate
+// (ADR-011 FB-05), can name and read them. The re-export is read-only:
+// their constructors' inputs (`qsl_foundation`'s `RawSourceRef`, `Revision`
+// and `InvalidProvenance`) are not re-exported, and CG builds neither type.
+pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 pub use request::{
     ByteProvision, ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits,
     StateEnvironment,
 };
 pub use result::{
     read_bounded, DisagreementCause, EvaluatedValue, InputArmResult, InputSettlement, ReplayResult,
-    ResolvedRegion, SeparatingWitnessRecord, Verdict, WitnessArmResult, WitnessSettlement,
+    SeparatingWitnessRecord, Verdict, WitnessArmResult, WitnessSettlement,
 };
 pub use witness::{
     CanonicalAssignment, DecodeRefusal, FamilyPayload, MalformedTranscript, NoPayload,

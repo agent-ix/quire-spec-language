@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-001: immutable exact source bytes, integrity and checked scalar coordinates.
+//!
+//! [`provenance`] holds ADR-013 O-07/O-12's occurrence key, source region
+//! and package source map.
 use crate::ByteDigest;
 use std::sync::Arc;
+
+pub mod provenance;
 
 /// Authored identity/revision, separate from path and any later semantic digest.
 /// These are opaque caller labels, not validated shared artifact references.
