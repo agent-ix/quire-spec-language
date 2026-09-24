@@ -50,6 +50,7 @@ use crate::model::domain_package::{
 };
 use crate::model::key::{hex, jcs_bytes, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
+use crate::model::refusal::IntakeLimit;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::{LocatedSpan, Position};
 
@@ -237,15 +238,16 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// read the derived view, so the three can never disagree about what the
 /// document is.
 ///
-/// The reader's bounds carry over: nesting deeper than
-/// `agent_ix_semantic_ir::json::MAX_DEPTH` (200) or input larger than
-/// `json::MAX_INPUT_BYTES` does not parse. The derived view keeps the reader's
+/// The reader's two limits, `json::MAX_INPUT_BYTES` and `json::MAX_DEPTH`,
+/// refuse as [`ModelRefusalCause::IntakeLimitExceeded`] naming the limit,
+/// never as a malformed document. The derived view keeps the reader's
 /// last-wins resolution of a repeated member name, and each number is
 /// converted from the lexeme the document carried with `serde_json`'s own
 /// number parser, so it equals what `serde_json::from_slice` would have read.
-/// A number `serde_json` cannot represent (`1e400`) does not parse. The reader
-/// replaces a lone UTF-16 surrogate escape with U+FFFD, so a JCS digest here
-/// is taken over that already-replaced value.
+/// A number `serde_json` cannot represent (`1e400`) refuses. A lone UTF-16
+/// surrogate escape refuses too: RFC 8785 (via RFC 7493) admits none, and the
+/// reader would otherwise replace it with U+FFFD, so two different documents
+/// would share one tree and one JCS digest.
 #[derive(Debug, Clone)]
 pub struct PackageDocument {
     /// `{"ir": <document>}`: the bundle `agent_ix_semantic_ir::decide` reads
@@ -257,11 +259,24 @@ pub struct PackageDocument {
 }
 
 impl PackageDocument {
-    /// Parses package document bytes once. Bytes that are not UTF-8, do not
-    /// parse as JSON within the reader's bounds, or carry a number
-    /// `serde_json` cannot represent refuse `invalid_model_binding`/
-    /// `malformed-declaration` against the document root `$`.
+    /// Parses package document bytes once.
+    ///
+    /// Input over `json::MAX_INPUT_BYTES`, or a value enclosed by
+    /// `json::MAX_DEPTH` or more arrays and objects, refuses
+    /// `resource_exhausted`/`intake-limit-exceeded` naming the limit and its
+    /// bound. Bytes that are not UTF-8, do not parse as JSON, carry a lone
+    /// surrogate escape or carry a number `serde_json` cannot represent
+    /// refuse `invalid_model_binding`/`malformed-declaration` against the
+    /// document root `$`.
     pub fn parse(bytes: &[u8]) -> Result<Self, ModelRefusal> {
+        use agent_ix_semantic_ir::json::{MAX_DEPTH, MAX_INPUT_BYTES};
+        if bytes.len() > MAX_INPUT_BYTES {
+            return Err(limit_exceeded(IntakeLimit::InputBytes, MAX_INPUT_BYTES));
+        }
+        let scan = ByteScan::of(bytes);
+        if scan.too_deep {
+            return Err(limit_exceeded(IntakeLimit::NestingDepth, MAX_DEPTH));
+        }
         let root_malformed =
             |detail: String| malformed_declaration("$".to_owned(), None, None, detail);
         let text = std::str::from_utf8(bytes).map_err(|err| {
@@ -272,6 +287,11 @@ impl PackageDocument {
                 "package document bytes do not parse as JSON for agent-ix-semantic-ir: {err}"
             ))
         })?;
+        if let Some(offset) = scan.lone_surrogate {
+            return Err(root_malformed(format!(
+                "package document carries a lone UTF-16 surrogate escape at byte {offset}"
+            )));
+        }
         let tree = value_of(&ir).map_err(|lexeme| {
             root_malformed(format!(
                 "package document number {lexeme} has no serde_json representation"
@@ -287,6 +307,109 @@ impl PackageDocument {
     pub fn tree(&self) -> &Value {
         &self.tree
     }
+}
+
+/// ADR-011 Limits: a package document reached `limit`, whose bound is
+/// `bound`.
+fn limit_exceeded(limit: IntakeLimit, bound: usize) -> ModelRefusal {
+    ModelRefusal {
+        code: Code::ResourceExhausted,
+        cause: ModelRefusalCause::IntakeLimitExceeded { limit, bound },
+        detail: format!(
+            "package document exceeds intake's {} limit of {bound}",
+            limit.as_str()
+        ),
+    }
+}
+
+/// What one pass over package bytes finds that the reader's own result does
+/// not say: whether the reader will refuse at its depth limit (its
+/// `JsonError` carries no kind), and whether a string carries a lone
+/// surrogate escape (the reader replaces one silently).
+///
+/// The depth rule mirrors `agent_ix_semantic_ir::json`'s reader: it refuses
+/// when it starts a value already enclosed by `MAX_DEPTH` arrays and
+/// objects. A member name counts as that value's start, since a member
+/// always carries one. The scan runs over any bytes, well-formed or not;
+/// `lone_surrogate` is only meaningful once the reader has accepted them.
+struct ByteScan {
+    /// The reader will refuse these bytes at its nesting limit.
+    too_deep: bool,
+    /// The byte offset of the first lone surrogate escape (`\uD800`-
+    /// `\uDFFF` not in a high-then-low pair).
+    lone_surrogate: Option<usize>,
+}
+
+impl ByteScan {
+    fn of(bytes: &[u8]) -> Self {
+        use agent_ix_semantic_ir::json::MAX_DEPTH;
+        let mut scan = Self {
+            too_deep: false,
+            lone_surrogate: None,
+        };
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut at = 0usize;
+        while let Some(&byte) = bytes.get(at) {
+            if in_string {
+                match byte {
+                    b'"' => in_string = false,
+                    b'\\' if bytes.get(at + 1) == Some(&b'u') => {
+                        let unit = utf16_escape(bytes, at);
+                        let paired_low = utf16_escape(bytes, at + 6).is_some_and(is_low_surrogate);
+                        match unit {
+                            Some(unit) if is_high_surrogate(unit) && paired_low => at += 6,
+                            Some(unit) if is_high_surrogate(unit) || is_low_surrogate(unit) => {
+                                scan.lone_surrogate.get_or_insert(at);
+                            }
+                            _ => {}
+                        }
+                        at += 6;
+                        continue;
+                    }
+                    // Any other escape is two bytes; skipping the second
+                    // keeps an escaped quote from closing the string.
+                    b'\\' => at += 1,
+                    _ => {}
+                }
+            } else {
+                match byte {
+                    b']' | b'}' => depth = depth.saturating_sub(1),
+                    b' ' | b'\t' | b'\n' | b'\r' | b',' | b':' => {}
+                    _ if depth >= MAX_DEPTH => {
+                        scan.too_deep = true;
+                        return scan;
+                    }
+                    b'[' | b'{' => depth += 1,
+                    b'"' => in_string = true,
+                    // A scalar's bytes; none opens or closes anything.
+                    _ => {}
+                }
+            }
+            at += 1;
+        }
+        scan
+    }
+}
+
+/// The UTF-16 code unit of a `\uXXXX` escape starting at `at`, when four
+/// hex digits follow it.
+fn utf16_escape(bytes: &[u8], at: usize) -> Option<u16> {
+    let escape = bytes.get(at..at + 6)?;
+    let (prefix, digits) = escape.split_at(2);
+    if prefix != b"\\u" || !digits.iter().all(u8::is_ascii_hexdigit) {
+        return None;
+    }
+    let digits = std::str::from_utf8(digits).ok()?;
+    u16::from_str_radix(digits, 16).ok()
+}
+
+fn is_high_surrogate(unit: u16) -> bool {
+    (0xD800..0xDC00).contains(&unit)
+}
+
+fn is_low_surrogate(unit: u16) -> bool {
+    (0xDC00..0xE000).contains(&unit)
 }
 
 /// `json` as a `serde_json::Value`, or the first number lexeme `serde_json`
@@ -379,9 +502,21 @@ pub fn admit(
             ),
         });
     };
-    // A parse failure is not itself a refusal here: bytes that do not parse
+    // A document over one of the parse limits has no parsed form to take a
+    // JCS digest of, so check 3 cannot tell whether it matches: that refuses
+    // naming the limit (ADR-011 Limits), not as a digest mismatch. Any other
+    // parse failure is not itself a refusal here: bytes that do not parse
     // are digested raw by check 3, and supply no identity/version to check 4.
-    let document = PackageDocument::parse(bytes).ok();
+    let document = match PackageDocument::parse(bytes) {
+        Ok(document) => Some(document),
+        Err(
+            refusal @ ModelRefusal {
+                cause: ModelRefusalCause::IntakeLimitExceeded { .. },
+                ..
+            },
+        ) => return Err(refusal),
+        Err(_) => None,
+    };
     check_package_digest(offered, bytes, document.as_ref())?;
     // The package's own declared identity/version, read defensively: bytes
     // that fail to parse or omit `package` simply supply no identity/version,
@@ -3777,5 +3912,289 @@ mod tests {
             .expect("a document within the reader's 200-deep bound admits under its JCS digest");
         assert_eq!(package_ref.digest, digest);
         assert_eq!(admitted.tree(), &document);
+    }
+
+    // PR #379 review F1: a lone UTF-16 surrogate escape refuses at the one
+    // parse. The reader would replace it with U+FFFD, so without this check
+    // `"\ud800"`, `"\udc00"` and `"�"` would read as one tree and admit
+    // under one JCS digest.
+
+    /// `text` refuses at the one parse as a lone surrogate at the offset of
+    /// `escape`'s first occurrence.
+    fn assert_lone_surrogate_refused(text: &str, escape: &str) {
+        let offset = text.find(escape).expect("the escape is in the text");
+        assert_eq!(
+            PackageDocument::parse(text.as_bytes()).unwrap_err(),
+            malformed_declaration(
+                "$".to_owned(),
+                None,
+                None,
+                format!("package document carries a lone UTF-16 surrogate escape at byte {offset}"),
+            ),
+            "{text}"
+        );
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_lone_high_surrogate_escape() {
+        assert_lone_surrogate_refused(r#"{"s":"\ud800"}"#, r"\ud800");
+        assert_lone_surrogate_refused(r#"{"s":"a\uD800b"}"#, r"\uD800");
+        // Followed by an escape that is not a low surrogate.
+        assert_lone_surrogate_refused(r#"{"s":"\ud800A"}"#, r"\ud800");
+        // Followed by a second high surrogate.
+        assert_lone_surrogate_refused(r#"{"s":"\ud800𐀀"}"#, r"\ud800");
+        // In a member name.
+        assert_lone_surrogate_refused(r#"{"\udbff":1}"#, r"\udbff");
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_lone_low_surrogate_escape() {
+        assert_lone_surrogate_refused(r#"{"s":"\udc00"}"#, r"\udc00");
+        assert_lone_surrogate_refused(r#"["ok", "\uDFFF"]"#, r"\uDFFF");
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_a_reversed_surrogate_pair() {
+        assert_lone_surrogate_refused(r#"{"s":"\ude00\ud83d"}"#, r"\ude00");
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn admits_a_valid_surrogate_pair_and_an_escaped_backslash_before_u() {
+        for text in [
+            r#"{"s":"😀"}"#,
+            r#"{"s":"😀 and 𐀀"}"#,
+            // `\\` is one escaped backslash; the `ud800` after it is text.
+            r#"{"s":"\\ud800"}"#,
+            r#"{"s":"\"😀\""}"#,
+        ] {
+            let document = PackageDocument::parse(text.as_bytes())
+                .unwrap_or_else(|refusal| panic!("{text} refused: {refusal:?}"));
+            assert_eq!(
+                document.tree(),
+                &serde_json::from_str::<Value>(text).unwrap(),
+                "{text}"
+            );
+        }
+    }
+
+    /// The reviewer's scenario: lone-surrogate bytes offered under the JCS
+    /// digest of the U+FFFD document no longer admit.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn a_lone_surrogate_no_longer_admits_under_the_replacement_character_digest() {
+        let replacement = serde_json::json!({
+            "package": {"identity": "acme/orders", "version": "1"},
+            "s": "\u{FFFD}",
+        });
+        let digest = digest_of(&jcs_bytes(&replacement));
+        let lone = br#"{"package":{"identity":"acme/orders","version":"1"},"s":"\ud800"}"#.to_vec();
+        let mut map = BTreeMap::new();
+        map.insert(digest, lone.clone());
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(refusal.code, Code::StaleDependency);
+        assert_eq!(
+            refusal.cause,
+            ModelRefusalCause::ByteDigestMismatch {
+                expected: digest,
+                actual: digest_of(&lone),
+            },
+            "unparseable bytes digest raw, so they cannot match a JCS digest"
+        );
+    }
+
+    // PR #379 review F2: a document over a parse limit that arrives with its
+    // correct JCS digest refuses naming the limit, not as a digest mismatch.
+
+    /// `depth` arrays nested around `inner`.
+    fn nested_arrays(depth: usize, inner: &str) -> String {
+        format!("{}{inner}{}", "[".repeat(depth), "]".repeat(depth))
+    }
+
+    /// The scan's depth rule agrees with the reader's own at the boundary.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn nesting_limit_matches_the_readers_own_boundary() {
+        let max = agent_ix_semantic_ir::json::MAX_DEPTH;
+        let cases = [
+            (nested_arrays(max - 1, "0"), true),
+            (nested_arrays(max, ""), true),
+            (nested_arrays(max, "0"), false),
+            (nested_arrays(max, "[]"), false),
+            (nested_arrays(max, "\"s\""), false),
+            (nested_arrays(max - 1, "{}"), true),
+            (nested_arrays(max - 1, r#"{"a":0}"#), false),
+            (nested_arrays(max + 50, "0"), false),
+        ];
+        for (text, within) in cases {
+            let label = &text[text.len() / 2 - 4..text.len() / 2 + 4];
+            assert_eq!(
+                agent_ix_semantic_ir::json::parse(&text).is_ok(),
+                within,
+                "the reader, around {label}"
+            );
+            assert_eq!(
+                !ByteScan::of(text.as_bytes()).too_deep,
+                within,
+                "the scan, around {label}"
+            );
+            match PackageDocument::parse(text.as_bytes()) {
+                Ok(_) => assert!(within, "{label}"),
+                Err(refusal) => {
+                    assert!(!within, "{label}: {refusal:?}");
+                    assert_eq!(refusal, limit_exceeded(IntakeLimit::NestingDepth, max));
+                }
+            }
+        }
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_an_overdeep_document_with_its_correct_digest_as_a_depth_limit() {
+        let max = agent_ix_semantic_ir::json::MAX_DEPTH;
+        let mut nested = serde_json::json!(0);
+        for _ in 0..max {
+            nested = serde_json::json!([nested]);
+        }
+        let document = serde_json::json!({
+            "package": {"identity": "acme/orders", "version": "1"},
+            "payload": nested,
+        });
+        let bytes = document.to_string().into_bytes();
+        let digest = digest_of(&jcs_bytes(&document));
+        let mut map = BTreeMap::new();
+        map.insert(digest, bytes);
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::ResourceExhausted,
+                cause: ModelRefusalCause::IntakeLimitExceeded {
+                    limit: IntakeLimit::NestingDepth,
+                    bound: max,
+                },
+                detail: format!("package document exceeds intake's nesting_depth limit of {max}"),
+            }
+        );
+    }
+
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_an_oversize_document_with_its_correct_digest_as_a_size_limit() {
+        let max = agent_ix_semantic_ir::json::MAX_INPUT_BYTES;
+        let head = r#"{"package":{"identity":"acme/orders","version":"1"},"pad":""#;
+        let tail = r#""}"#;
+        let pad = max + 1 - head.len() - tail.len();
+        let bytes = format!("{head}{}{tail}", "x".repeat(pad)).into_bytes();
+        assert_eq!(bytes.len(), max + 1);
+        let digest = digest_of(&jcs_bytes(&serde_json::from_slice(&bytes).unwrap()));
+        let mut map = BTreeMap::new();
+        map.insert(digest, bytes);
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::ResourceExhausted,
+                cause: ModelRefusalCause::IntakeLimitExceeded {
+                    limit: IntakeLimit::InputBytes,
+                    bound: max,
+                },
+                detail: format!("package document exceeds intake's input_bytes limit of {max}"),
+            }
+        );
+    }
+
+    /// PR #379 review F3: unparseable bytes supply no document, so even an
+    /// empty offered identity and version, whose raw digest matches, refuse
+    /// `wrong-model-selection`. Before `admit` required a parsed document,
+    /// the two empty strings compared equal and the bytes admitted.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn refuses_unparseable_bytes_under_an_empty_identity_and_version() {
+        let bytes = b"not json".to_vec();
+        let digest = digest_of(&bytes);
+        let mut map = BTreeMap::new();
+        map.insert(digest, bytes);
+        let (offered, digest_domain) = selection("", "", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(
+            refusal,
+            ModelRefusal {
+                code: Code::InvalidModelBinding,
+                cause: ModelRefusalCause::WrongModelSelection {
+                    selection: offered.clone(),
+                    actual_identity: String::new(),
+                    actual_version: String::new(),
+                },
+                detail: "domain package selection names @ but the package declares @".to_owned(),
+            }
+        );
+    }
+
+    /// PR #379 review F4: the tree and JCS bytes the one parse derives equal
+    /// what `serde_json::from_slice` reads from the same bytes, for numbers
+    /// at every edge, repeated member names and every string escape.
+    #[trace("TC-145", "FR-056-AC-2")]
+    #[test]
+    fn the_one_parse_reads_what_serde_json_reads() {
+        let cases = [
+            // Numbers.
+            "0",
+            "-0",
+            "-0.0",
+            "1.0",
+            "1e2",
+            "1E+2",
+            "1e-400",
+            "-1e-400",
+            "18446744073709551615",
+            "18446744073709551616",
+            "-9223372036854775808",
+            "-9223372036854775809",
+            "123456789012345678901234567890",
+            "5e-324",
+            "4.9e-324",
+            "1.7976931348623157e308",
+            "0.123456789012345678901234567890123456789012345678901234567890123456789012345",
+            r#"[0, -0, 1.5, -2, 3e-7, -1E-2]"#,
+            // Out of range for both: refused, never a different value.
+            "1e400",
+            "-1e400",
+            // Repeated member names: the last wins.
+            r#"{"a":1,"a":2}"#,
+            r#"{"a":{"x":1},"a":{"y":2}}"#,
+            r#"{"o":{"a":1,"a":[1]},"o":{"a":2,"b":3,"a":{"c":4}}}"#,
+            r#"{"a":1,"a":2}"#,
+            r#"{"a":1,"a":2}"#,
+            r#"{"😀":1,"😀":2}"#,
+            // Every string escape, and surrogate pairs.
+            r#""\" \\ \/ \b \f \n \r \t""#,
+            r#""\u0000 \u001f \u007f é € ￿ �""#,
+            r#""😀 𝄞 􏿿 𐀀""#,
+            r#""é 😀 raw""#,
+            r#"{"k\"ey":"v\\al","\/":"\n"}"#,
+        ];
+        for text in cases {
+            let expected = serde_json::from_slice::<Value>(text.as_bytes());
+            match (PackageDocument::parse(text.as_bytes()), expected) {
+                (Ok(document), Ok(expected)) => {
+                    assert_eq!(document.tree(), &expected, "{text}");
+                    assert_eq!(jcs_bytes(document.tree()), jcs_bytes(&expected), "{text}");
+                }
+                (Err(_), Err(_)) => assert!(text.ends_with("1e400"), "{text}: both refused"),
+                (parsed, expected) => {
+                    panic!("{text}: the one parse gave {parsed:?}, serde_json gave {expected:?}")
+                }
+            }
+        }
     }
 }
