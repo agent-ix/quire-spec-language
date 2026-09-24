@@ -13,7 +13,7 @@
 //! `check` on an ill-typed declaration returned `Ok` regardless. `check` now
 //! calls [`check_declaration_body`] itself, inside the one `FamilyContract`
 //! entry point, and returns the crate's real, located [`CheckRefusal`]
-//! through [`crate::family::StageFailure::Refused`] when the body or measure
+//! through [`StageFailure::Refused`] when the body or measure
 //! does not type or is not statically defined; `PackageDeclarations::check`
 //! reaches that verdict only by calling the contract, not by a second,
 //! parallel call of its own. [`Application`] is `Value`'s
@@ -56,6 +56,7 @@ use qsl_forms::{
     FunctionDeclaration,
 };
 use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, StageFailure, Staged};
 // QSL-148: the relocated function-application/-declaration checking code
 // below needs `check.rs`'s own `Typer`/`Signature`/`bind_parameters` (the
 // general typer this family delegates to for a body or a call's
@@ -1166,8 +1167,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // recursive descent below is charged against -- see
         // `Application`'s own doc for why the two are not unified in
         // this change.
-        cx.enter_nesting()
-            .map_err(crate::family::StageFailure::Limit)?;
+        cx.enter_nesting().map_err(StageFailure::Limit)?;
         // FR-062-AC-3 "no side door": the scope stack is pushed and popped
         // around this one check (`cx.scopes.enter`/`leave` below), not just
         // read.
@@ -1184,7 +1184,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
             Err(refusal) => {
                 cx.scopes.leave();
                 cx.leave_nesting();
-                return Err(crate::family::StageFailure::Refused(refusal));
+                return Err(StageFailure::Refused(refusal));
             }
         };
         // QSL-153: the measured byte length and node count
@@ -1209,7 +1209,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         {
             cx.scopes.leave();
             cx.leave_nesting();
-            return Err(crate::family::StageFailure::Limit(exceeded));
+            return Err(StageFailure::Limit(exceeded));
         }
         // PR #302 review finding 3: `WorkBudget` is a `Limit` outcome
         // produced by a denied charge against `cx.meter` -- the *shared
@@ -1231,12 +1231,26 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         ) {
             cx.scopes.leave();
             cx.leave_nesting();
-            return Err(crate::family::StageFailure::Limit(
-                crate::family::LimitExceeded::new(
-                    crate::family::StageLimitKind::WorkBudget,
-                    incomplete.limit,
-                ),
-            ));
+            // The meter's own report: the charge carries work units only, so
+            // the denied counter is `work_units`, and the refused charge
+            // would have taken its cumulative spend to what was consumed
+            // plus the denied amount -- this declaration's charge, a `u64`.
+            debug_assert_eq!(
+                incomplete.limit_kind,
+                quire_exact::LimitKind::WorkUnits,
+                "a declaration-check charge carries work units only"
+            );
+            let denied = incomplete.next_charge.to_u64();
+            debug_assert_eq!(
+                denied,
+                Some(metrics.work_budget),
+                "the denied amount is this declaration's charge"
+            );
+            return Err(StageFailure::Limit(LimitExceeded::new(
+                LimitKind::WorkBudget,
+                incomplete.limit,
+                u128::from(incomplete.consumed) + u128::from(denied.unwrap_or(metrics.work_budget)),
+            )));
         }
         // QSL-148: the real typing and static-definedness verdict, made
         // here -- inside the contract's own `check` -- rather than by a
@@ -1289,8 +1303,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // paired `enter`/`leave` calls, with the `?` moved after both, so
         // every return path -- success or refusal -- balances the scope
         // stack and the nesting depth identically.
-        let body = checked_body.map_err(crate::family::StageFailure::Refused)?;
-        Ok(crate::family::Staged::new(CheckedDeclaration { body }))
+        let body = checked_body.map_err(StageFailure::Refused)?;
+        Ok(Staged::new(CheckedDeclaration { body }))
     }
 }
 
@@ -1911,7 +1925,7 @@ pub(crate) mod checking_tests {
             "an Integer body against a declared Boolean result must refuse through the contract",
         );
         match refused {
-            crate::family::StageFailure::Refused(refusal) => assert!(
+            StageFailure::Refused(refusal) => assert!(
                 matches!(
                     refusal.cause,
                     CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
@@ -2007,12 +2021,13 @@ pub(crate) mod checking_tests {
         assert_eq!(diagnostics_b.entries().len(), 1);
     }
 
-    /// **Untagged.** Guards the top-level declaration-entry charge alone
-    /// (limit 0 refuses, limit 1 admits a leaf-bodied declaration) --
-    /// narrower than FR-062-AC-7, whose own fixture-at-depth-D requirement
-    /// [`real_checker_depth_limit_is_the_proximate_cause`] below addresses
-    /// (see that test's own doc for why it is untagged, rather than
+    /// Guards the top-level declaration-entry charge alone (limit 0
+    /// refuses with actual counter 1, limit 1 admits a leaf-bodied
+    /// declaration). Not tagged for FR-062-AC-7, whose own fixture-at-depth-D
+    /// requirement [`real_checker_depth_limit_is_the_proximate_cause`] below
+    /// addresses (see that test's own doc for why it is untagged, rather than
     /// retagged onto this narrower charge).
+    #[trace("TC-432", "FR-062-AC-12")]
     #[test]
     fn nesting_depth_limit_is_the_proximate_cause() {
         let scope = empty_scope();
@@ -2043,11 +2058,13 @@ pub(crate) mod checking_tests {
             &mut scopes,
         );
         let form = declaration("f", Expression::Boolean(true));
-        let refused = ValueFunctionFamily::check(&form, &mut cx);
-        assert!(matches!(
-            refused,
-            Err(crate::family::StageFailure::Limit(_))
-        ));
+        // The refused entry would have reached depth 1 against a bound of 0.
+        match ValueFunctionFamily::check(&form, &mut cx) {
+            Err(StageFailure::Limit(exceeded)) => {
+                assert_eq!(exceeded, LimitExceeded::new(LimitKind::NestingDepth, 0, 1));
+            }
+            other => panic!("expected a nesting-depth Limit outcome, got {other:?}"),
+        }
 
         tight.nesting_depth = 1;
         let mut cx = CheckContext::new(
@@ -2074,6 +2091,7 @@ pub(crate) mod checking_tests {
     /// `work_units` charge (PR #302 review finding 3), not a `StageLimits`
     /// field -- see `work_budget_kind_refuses_from_a_denied_meter_charge`.
     #[trace("TC-160", "FR-062-AC-5")]
+    #[trace("TC-432", "FR-062-AC-12")]
     #[test]
     fn stage_limits_restored_kinds_refuse_one_below_the_real_metric() {
         let scope = empty_scope();
@@ -2097,7 +2115,7 @@ pub(crate) mod checking_tests {
             input_bytes: u64::MAX,
             node_count: u64::MAX,
         };
-        let check_kind = |limits: StageLimits, expected_kind: crate::family::StageLimitKind| {
+        let check_kind = |limits: StageLimits, expected: LimitExceeded| {
             let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
             let mut diagnostics = DiagnosticSink::default();
             let mut scopes = ScopeStack::default();
@@ -2109,10 +2127,10 @@ pub(crate) mod checking_tests {
                 &mut scopes,
             );
             match ValueFunctionFamily::check(&form, &mut cx) {
-                Err(crate::family::StageFailure::Limit(exceeded)) => {
-                    assert_eq!(exceeded.kind, expected_kind);
+                Err(StageFailure::Limit(exceeded)) => {
+                    assert_eq!(exceeded, expected);
                 }
-                other => panic!("expected a Limit outcome naming {expected_kind:?}, got {other:?}"),
+                other => panic!("expected {expected:?}, got {other:?}"),
             }
         };
         let admits = |limits: StageLimits| {
@@ -2134,7 +2152,11 @@ pub(crate) mod checking_tests {
                 input_bytes: metrics.input_bytes - 1,
                 ..base
             },
-            crate::family::StageLimitKind::InputBytes,
+            LimitExceeded::new(
+                LimitKind::InputBytes,
+                metrics.input_bytes - 1,
+                u128::from(metrics.input_bytes),
+            ),
         );
         admits(StageLimits {
             input_bytes: metrics.input_bytes,
@@ -2146,23 +2168,69 @@ pub(crate) mod checking_tests {
                 node_count: metrics.node_count - 1,
                 ..base
             },
-            crate::family::StageLimitKind::NodeCount,
+            LimitExceeded::new(
+                LimitKind::NodeCount,
+                metrics.node_count - 1,
+                u128::from(metrics.node_count),
+            ),
         );
         admits(StageLimits {
             node_count: metrics.node_count,
             ..base
         });
+
+        // A bound of 0, far below a larger declaration's measured counters:
+        // the reported counter is the measured metric, not the bound plus
+        // one.
+        let larger = declaration(
+            "f",
+            Expression::If {
+                condition: Box::new(Expression::Boolean(true)),
+                then: Box::new(Expression::Boolean(false)),
+                otherwise: Box::new(Expression::Boolean(true)),
+            },
+        );
+        let measured = measure_resolved(&empty_scope(), &larger);
+        assert!(measured.input_bytes > 1 && measured.node_count > 1);
+        let limit_of = |limits: StageLimits| {
+            let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+            let mut diagnostics = DiagnosticSink::default();
+            let mut scopes = ScopeStack::default();
+            let mut cx = CheckContext::new(
+                &declarations,
+                limits,
+                &mut meter,
+                &mut diagnostics,
+                &mut scopes,
+            );
+            match ValueFunctionFamily::check(&larger, &mut cx) {
+                Err(StageFailure::Limit(exceeded)) => exceeded,
+                other => panic!("expected a Limit outcome, got {other:?}"),
+            }
+        };
+        let bytes = limit_of(StageLimits {
+            input_bytes: 0,
+            ..base
+        });
+        assert_eq!(bytes.kind(), LimitKind::InputBytes);
+        assert_eq!(bytes.configured_bound(), 0);
+        assert_eq!(bytes.actual(), u128::from(measured.input_bytes));
+        let nodes = limit_of(StageLimits {
+            node_count: 0,
+            ..base
+        });
+        assert_eq!(nodes.kind(), LimitKind::NodeCount);
+        assert_eq!(nodes.configured_bound(), 0);
+        assert_eq!(nodes.actual(), u128::from(measured.node_count));
     }
 
-    /// PR #302 review finding 3: `WorkBudget` is a real `Limit` outcome
-    /// produced by a *denied `cx.meter` charge* in `check` -- not by
-    /// comparing the preimage's own write count against a `StageLimits`
-    /// field (that field's own meaning was "how many times the encoder
-    /// wrote," never a caller-configured budget). A `cx.meter` whose
-    /// `work_units` limit is already exhausted denies `check`'s own
-    /// `ChargePoint::DeclarationCheck` charge on the first checked
-    /// declaration, mapped to `StageLimitKind::WorkBudget`; the same
-    /// declaration against a meter with real headroom admits.
+    /// PR #302 review finding 3: `WorkBudget` is a `Limit` outcome from a
+    /// denied `cx.meter` charge, cumulative across every declaration
+    /// checked against one meter. A budget one below one declaration's
+    /// charge `w`, and a budget of 0, each refuse with actual counter `w`;
+    /// a budget of exactly `w` admits the first check and refuses the
+    /// second with actual counter `2w`.
+    #[trace("TC-432", "FR-062-AC-12")]
     #[test]
     fn work_budget_kind_refuses_from_a_denied_meter_charge() {
         let scope = empty_scope();
@@ -2178,44 +2246,52 @@ pub(crate) mod checking_tests {
             &location,
         );
         let form = declaration("f", Expression::Boolean(true));
+        let charge = measure_resolved(&empty_scope(), &form).work_budget;
+        assert!(charge > 0);
         let limits = StageLimits {
             nesting_depth: 128,
             input_bytes: u64::MAX,
             node_count: u64::MAX,
         };
-
-        let exhausted_limits = quire_exact::ScalarLimits {
-            work_units: 0,
-            ..SCALAR_LIMITS_UNLIMITED
-        };
-        let mut meter = Meter::new(exhausted_limits);
-        let mut diagnostics = DiagnosticSink::default();
-        let mut scopes = ScopeStack::default();
-        let mut cx = CheckContext::new(
-            &declarations,
-            limits,
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        match ValueFunctionFamily::check(&form, &mut cx) {
-            Err(crate::family::StageFailure::Limit(exceeded)) => {
-                assert_eq!(exceeded.kind, crate::family::StageLimitKind::WorkBudget);
+        // The stage limit `check` reached against `meter`, or `None` when
+        // it admitted the declaration.
+        let limit_of = |meter: &mut Meter| {
+            let mut diagnostics = DiagnosticSink::default();
+            let mut scopes = ScopeStack::default();
+            let mut cx =
+                CheckContext::new(&declarations, limits, meter, &mut diagnostics, &mut scopes);
+            match ValueFunctionFamily::check(&form, &mut cx) {
+                Ok(_) => None,
+                Err(StageFailure::Limit(exceeded)) => Some(exceeded),
+                Err(StageFailure::Refused(refusal)) => panic!("unexpected refusal {refusal:?}"),
             }
-            other => panic!("expected a Limit outcome naming WorkBudget, got {other:?}"),
-        }
+        };
+        let budget = |work_units| {
+            Meter::new(quire_exact::ScalarLimits {
+                work_units,
+                ..SCALAR_LIMITS_UNLIMITED
+            })
+        };
+        let work_limit = |bound: u64, actual: u128| {
+            Some(LimitExceeded::new(LimitKind::WorkBudget, bound, actual))
+        };
 
-        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut diagnostics = DiagnosticSink::default();
-        let mut scopes = ScopeStack::default();
-        let mut cx = CheckContext::new(
-            &declarations,
-            limits,
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
+        assert_eq!(
+            limit_of(&mut budget(charge - 1)),
+            work_limit(charge - 1, u128::from(charge))
         );
-        assert!(ValueFunctionFamily::check(&form, &mut cx).is_ok());
+        // A budget of 0, below the charge: the counter is the charge, not
+        // the budget plus one.
+        let empty = limit_of(&mut budget(0)).expect("a zero budget refuses");
+        assert_eq!(empty.kind(), LimitKind::WorkBudget);
+        assert_eq!(empty.actual(), u128::from(charge));
+
+        let mut meter = budget(charge);
+        assert_eq!(limit_of(&mut meter), None);
+        assert_eq!(
+            limit_of(&mut meter),
+            work_limit(charge, 2 * u128::from(charge))
+        );
     }
 
     /// FR-062-AC-7's fixture-at-depth-D requirement, backed against
@@ -2277,7 +2353,7 @@ pub(crate) mod checking_tests {
         let refused = ValueFunctionFamily::check(&form, &mut cx)
             .expect_err("a depth limit of 3 must refuse a body nested 4 deep");
         match refused {
-            crate::family::StageFailure::Refused(refusal) => assert!(
+            StageFailure::Refused(refusal) => assert!(
                 matches!(
                     refusal.cause,
                     CheckCause::ResourceExhausted {

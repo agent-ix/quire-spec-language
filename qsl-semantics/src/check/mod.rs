@@ -106,6 +106,7 @@ use quire_exact::Identifier;
 
 use crate::family::FamilyContract;
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
+use qsl_foundation::diagnostic::{LimitKind, StageFailure};
 use quire_exact::ValueType;
 
 pub use check::Scope;
@@ -836,12 +837,12 @@ impl PackageDeclarations {
             match family::ValueFunctionFamily::check(&function, &mut contract_cx) {
                 Ok(staged) => {
                     // The real typing/definedness verdict travels out
-                    // through `Staged::value` itself (a `CheckedDeclaration`
+                    // through `Staged::into_value` itself (a `CheckedDeclaration`
                     // carrying both the minted identity and the real checked
                     // body -- PR #303 review, finding N3), not a side
                     // channel: no `.expect(...)` unwrap of a slot `check`
                     // might not have filled.
-                    let checked = staged.value;
+                    let checked = staged.into_value();
                     // PR #303 review round 3, finding F1: advance the
                     // package's running node total from this admitted
                     // declaration's own final count, so the next
@@ -850,33 +851,33 @@ impl PackageDeclarations {
                     nodes_used = checked.body.nodes_used;
                     drafts.push((signatures.as_slice()[index].clone(), checked.body));
                 }
-                Err(crate::family::StageFailure::Limit(limit)) => {
+                Err(StageFailure::Limit(limit)) => {
                     // PR #262 review (coordinator round 3, finding 4):
                     // `limit.kind` is matched, not read past into a
                     // hardcoded `CheckingLimitKind::Depth` -- this exhaustive
                     // match (not a `_` catch-all) is what forces a real
-                    // decision here, not a guess, now that `StageLimitKind`
+                    // decision here, not a guess, now that `LimitKind`
                     // has grown three more variants (QSL-153). `NodeCount`
                     // maps onto the pre-existing `CheckingLimitKind::Nodes`
                     // (both name "how many expression nodes"); `InputBytes`
                     // and `WorkBudget` have no pre-existing counterpart in
                     // this older `Typer`-era enum, so QSL-153 adds one each.
-                    let kind = match limit.kind {
-                        crate::family::StageLimitKind::NestingDepth => CheckingLimitKind::Depth,
-                        crate::family::StageLimitKind::NodeCount => CheckingLimitKind::Nodes,
-                        crate::family::StageLimitKind::InputBytes => CheckingLimitKind::InputBytes,
-                        crate::family::StageLimitKind::WorkBudget => CheckingLimitKind::WorkBudget,
+                    let kind = match limit.kind() {
+                        LimitKind::NestingDepth => CheckingLimitKind::Depth,
+                        LimitKind::NodeCount => CheckingLimitKind::Nodes,
+                        LimitKind::InputBytes => CheckingLimitKind::InputBytes,
+                        LimitKind::WorkBudget => CheckingLimitKind::WorkBudget,
                     };
                     refusals.push(CheckRefusal {
                         location: location.clone(),
                         cause: CheckCause::ResourceExhausted {
                             stage: CheckingStage::Typing,
                             kind,
-                            limit: limit.configured_bound,
+                            limit: limit.configured_bound(),
                         },
                     });
                 }
-                Err(crate::family::StageFailure::Refused(refusal)) => {
+                Err(StageFailure::Refused(refusal)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted { .. });
                     refusals.push(refusal);
                     if exhausted {

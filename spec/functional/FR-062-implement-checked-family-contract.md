@@ -190,6 +190,7 @@ outcome.
 | FR-062-AC-9 | Given a checked item requiring more than one v2 node, a fault injected partway through `package`'s emission (after the first node, before the last) yields no v2 bytes for that item and a refusal, never a package containing only the emitted-so-far nodes; a test that reads the v2 bytes after such a fault finds either a complete node set for the item or the item absent entirely, never a declaration node with no body. | Test (TC-160) |
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
 | FR-062-AC-11 | The package-wide `CheckingLimits` node budget is separate from the per-declaration `StageLimits::node_count` limit of FR-062-AC-5, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4, 128)` admits a package holding `a` alone; with `CheckingLimits::new(100, 128)` it admits a package holding both; with `CheckingLimits::new(4, 128)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
+| FR-062-AC-12 | A family `check` that reaches one of its four stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the depth the refused entry would reach for nesting depth, the measured preimage byte length for input bytes, the measured expression-node count for node count, and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
 
 ## Dependencies
 
@@ -328,6 +329,14 @@ they exist in the delivered code today:
 - FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
   `QualifiedName` lookup is implemented (`qsl-eval/src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
+- FR-062-AC-12: backed (`TC-432`, QSL-160 part 1):
+  `nesting_depth_limit_is_the_proximate_cause`,
+  `stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
+  `work_budget_kind_refuses_from_a_denied_meter_charge`
+  (`qsl-semantics/src/check/family.rs`, `checking_tests`). The counter is
+  not yet reported past `check`: package checking still reports these
+  limits as `resource_exhausted` under catalog revision `1-draft.3`.
+  Remaining work: QSL-236.
 - FR-062-AC-11: partly backed (`TC-381`): the whole-package count passes;
   the `Limit` outcome is pending S-5b.
   `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
@@ -335,8 +344,8 @@ they exist in the delivered code today:
   `Refused{ResourceExhausted}`; its `StageFailure::Limit` outcome, amended
   here, is ADR-013 §7 slice S-5b's (QSL-160, FR-096).
 
-Two of this requirement's eleven Acceptance Criteria are backed (AC-2 and
-AC-5), and AC-11 is partly backed. AC-5's two tagged tests are
+Three of this requirement's twelve Acceptance Criteria are backed (AC-2,
+AC-5 and AC-12), and AC-11 is partly backed. AC-5's two tagged tests are
 `stage_limits_restored_kinds_refuse_one_below_the_real_metric`
 (`qsl-semantics/src/check/family.rs`, `checking_tests`) and
 `evaluate_returns_incomplete_when_the_meter_is_exhausted`

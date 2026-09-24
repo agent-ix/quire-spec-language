@@ -394,7 +394,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
 // gives `Value`'s function-declaration family a real `Cause` at last:
 // `ValueFunctionFamily::Cause = qsl_semantics::check::CheckRefusal`
 // (`qsl_semantics::check::family`), returned through
-// `qsl_semantics::family::StageFailure::Refused` when `check` genuinely refuses
+// `qsl_foundation::diagnostic::StageFailure::Refused` when `check` genuinely refuses
 // (an ill-typed or undefined body). `CheckRefusal`'s own `catalog_code()`
 // mapping (`CheckCause::code`/`CheckCause::cause`, `src/check/refusal.rs`)
 // already exists and is exhaustive by construction -- it is `Value`'s

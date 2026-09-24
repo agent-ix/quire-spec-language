@@ -200,6 +200,8 @@ pub struct ReplayRequestWire {
 const REQUEST_CONTRACT_VERSION: &str = "quire.native-runtime/v1";
 const KNOWN_CAPABILITY_VOCABULARY: &str = "quire.capability-kind/v1";
 const KNOWN_SEMANTIC_PROFILES: &[&str] = &["quire.profile.v1"];
+/// The role a semantic-profile selection fills in a replay request.
+const SEMANTIC_PROFILE_ROLE: &str = "replay.semantic_profile_selections";
 
 /// [`ReplayRequest::decode`]'s structured refusal.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -212,11 +214,21 @@ pub enum ReplayRequestRefusal {
     #[error("invalid_capability/unsupported-version: capability_vocabulary is not the admitted quire.capability-kind/v1")]
     UnknownCapabilityVocabulary,
     /// A profile selection names a semantic profile outside the closed
-    /// known set.
+    /// known set: catalog `unknown_profile`/`unsupported-selection`
+    /// (revision `1-draft.3`), not a capability-vocabulary refusal. It
+    /// retains the supplied selection and the role it was supplied for, as
+    /// that catalog row requires.
     #[error(
-        "invalid_capability/unsupported-version: semantic profile {0:?} is outside the closed set"
+        "unknown_profile/unsupported-selection: semantic profile {:?} (value {:?}) is outside the closed set for role {required_role}",
+        selection.profile(),
+        selection.value()
     )]
-    UnknownSemanticProfile(String),
+    UnknownSemanticProfile {
+        /// The supplied selection.
+        selection: ProfileSelection,
+        /// The role the selection was supplied for.
+        required_role: &'static str,
+    },
     /// A digest names a domain outside the closed FR-201 set, or supplies no
     /// domain at all.
     #[error("stale_dependency/digest-domain-mismatch: {0}")]
@@ -320,9 +332,10 @@ impl ReplayRequest {
         }
         for selection in &wire.profile_selections {
             if !KNOWN_SEMANTIC_PROFILES.contains(&selection.profile()) {
-                return Err(ReplayRequestRefusal::UnknownSemanticProfile(
-                    selection.profile().to_owned(),
-                ));
+                return Err(ReplayRequestRefusal::UnknownSemanticProfile {
+                    selection: selection.clone(),
+                    required_role: SEMANTIC_PROFILE_ROLE,
+                });
             }
         }
 
@@ -686,10 +699,23 @@ mod tests {
             "quire.profile.unknown/v1".to_owned(),
             "x".to_owned(),
         )];
-        assert!(matches!(
-            ReplayRequest::decode(bad_profile),
-            Err(ReplayRequestRefusal::UnknownSemanticProfile(_))
-        ));
+        // The refusal reports the catalog's profile-selection code and
+        // cause, and retains the supplied selection and its required role.
+        let refused = ReplayRequest::decode(bad_profile).map(|_| ()).unwrap_err();
+        let ReplayRequestRefusal::UnknownSemanticProfile {
+            selection,
+            required_role,
+        } = &refused
+        else {
+            panic!("expected UnknownSemanticProfile, got {refused:?}");
+        };
+        assert_eq!(selection.profile(), "quire.profile.unknown/v1");
+        assert_eq!(selection.value(), "x");
+        assert_eq!(*required_role, "replay.semantic_profile_selections");
+        assert_eq!(
+            refused.to_string(),
+            "unknown_profile/unsupported-selection: semantic profile \"quire.profile.unknown/v1\" (value \"x\") is outside the closed set for role replay.semantic_profile_selections"
+        );
 
         let mut bad_capability = wire(1);
         bad_capability.capability_vocabulary = Some("quire.capability-kind/v2-draft".to_owned());

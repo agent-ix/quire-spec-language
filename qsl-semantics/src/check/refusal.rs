@@ -129,10 +129,12 @@ pub enum CheckingLimitKind {
     /// Expression nesting depth.
     Depth,
     /// A checked-family declaration's own preimage byte length (QSL-153,
-    /// `crate::family::StageLimitKind::InputBytes`).
+    /// `qsl_foundation::diagnostic::LimitKind::InputBytes`).
     InputBytes,
-    /// A checked-family declaration's own preimage field-write count
-    /// (QSL-153, `crate::family::StageLimitKind::WorkBudget`).
+    /// Cumulative checking work: the checked-family contract meter's
+    /// spend across every declaration checked against it (QSL-153,
+    /// `qsl_foundation::diagnostic::LimitKind::WorkBudget`), and lowering's
+    /// `declaration.check` charges.
     WorkBudget,
 }
 

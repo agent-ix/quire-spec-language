@@ -210,6 +210,7 @@ operational validation remains outside this audit-only plan.
 | TC-429 | The I2 reader locates its version refusal and its limits in the artifact | Integration | P1 | FR-096-AC-9, FR-096-AC-10 | 🚧 Planned; QSL-160 (S-5b); needs three IR reader changes |
 | TC-430 | Native run and compile requests and their outputs carry the four source labels | Integration | P1 | FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 | 🚧 Planned; QSL-233 (S-4b) |
 | TC-431 | Runtime input artifacts carry the four labels, and two-label bytes refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | 🚧 Planned; QSL-233 (S-4b) |
+| TC-432 | A family check's stage limit names its kind, bound and actual counter, and the counter is where the limit stops | Unit | P1 | FR-062-AC-12 | ✅ Passed locally (QSL-160 part 1) |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

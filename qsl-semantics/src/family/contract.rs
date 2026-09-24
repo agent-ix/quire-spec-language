@@ -5,6 +5,7 @@
 //! (`value::expression::s6a`, ADR-011 §6.2 `family` row).
 
 use super::outcome::CheckOutcome;
+use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
 use quire_exact::Meter;
 
 /// A diagnostic a family's `check` records against the scope it was raised
@@ -93,7 +94,7 @@ impl ScopeStack {
 /// - **Consumer**: `CheckContext::check_input_bytes` and
 ///   `CheckContext::check_node_count` each compare their metric against
 ///   this struct's matching field and return
-///   `StageLimitKind`'s matching variant
+///   `LimitKind`'s matching variant
 ///   on the first one exceeded, exactly like `enter_nesting`'s own
 ///   `NestingDepth` case -- `ValueFunctionFamily::check`
 ///   (`crate::check::family`) calls both before minting succeeds, so a
@@ -107,7 +108,7 @@ impl ScopeStack {
 /// times the encoder wrote" is not a caller-configured budget in any
 /// meaningful sense; two declarations of equal real complexity could differ
 /// in write count for reasons internal to the encoding, not to any resource
-/// a caller actually wants to bound. `StageLimitKind::WorkBudget` is
+/// a caller actually wants to bound. `LimitKind::WorkBudget` is
 /// restored instead through `CheckContext::meter` -- the *shared kernel*
 /// budget every family's `check` already receives (FR-062 "checked input"):
 /// `ValueFunctionFamily::check` charges it one `ChargePoint::
@@ -186,11 +187,14 @@ impl<'a, D> CheckContext<'a, D> {
     /// host stack. Bounds the caller's own explicit recursion (an iterative
     /// walk with an explicit counter satisfies this identically to native
     /// recursion, ADR-011 §2.3).
-    pub(crate) fn enter_nesting(&mut self) -> Result<(), super::outcome::LimitExceeded> {
+    pub(crate) fn enter_nesting(&mut self) -> Result<(), LimitExceeded> {
         if self.depth >= self.limits.nesting_depth {
-            return Err(super::outcome::LimitExceeded::new(
-                super::outcome::StageLimitKind::NestingDepth,
+            // The refused entry would have taken the depth one level past
+            // the current one.
+            return Err(LimitExceeded::new(
+                LimitKind::NestingDepth,
                 self.limits.nesting_depth,
+                u128::from(self.depth) + 1,
             ));
         }
         self.depth += 1;
@@ -205,14 +209,12 @@ impl<'a, D> CheckContext<'a, D> {
     /// `StageLimits`'s own doc) once it exceeds `limits.input_bytes`
     /// (QSL-153, restoring the deleted `input_bytes` field with a real
     /// consumer).
-    pub(crate) fn check_input_bytes(
-        &self,
-        amount: u64,
-    ) -> Result<(), super::outcome::LimitExceeded> {
+    pub(crate) fn check_input_bytes(&self, amount: u64) -> Result<(), LimitExceeded> {
         if amount > self.limits.input_bytes {
-            return Err(super::outcome::LimitExceeded::new(
-                super::outcome::StageLimitKind::InputBytes,
+            return Err(LimitExceeded::new(
+                LimitKind::InputBytes,
                 self.limits.input_bytes,
+                u128::from(amount),
             ));
         }
         Ok(())
@@ -220,14 +222,12 @@ impl<'a, D> CheckContext<'a, D> {
 
     /// Refuse `amount` (a declaration's own visited `Expression` node
     /// count) once it exceeds `limits.node_count` (QSL-153).
-    pub(crate) fn check_node_count(
-        &self,
-        amount: u64,
-    ) -> Result<(), super::outcome::LimitExceeded> {
+    pub(crate) fn check_node_count(&self, amount: u64) -> Result<(), LimitExceeded> {
         if amount > self.limits.node_count {
-            return Err(super::outcome::LimitExceeded::new(
-                super::outcome::StageLimitKind::NodeCount,
+            return Err(LimitExceeded::new(
+                LimitKind::NodeCount,
                 self.limits.node_count,
+                u128::from(amount),
             ));
         }
         Ok(())
@@ -242,7 +242,7 @@ impl<'a, D> CheckContext<'a, D> {
 /// FR-062's own amended Acceptance Criteria). `requirements` (the
 /// contract's sixth part) and a typed refusal `Cause` are deferred -- see
 /// `crate::family`'s module doc for `requirements`, and
-/// [`super::outcome::StageFailure`]'s doc for `Cause`. Both are real
+/// [`qsl_foundation::diagnostic::StageFailure`]'s doc for `Cause`. Both are real
 /// ADR-012 §2 design parts QSL-152 owns (FR-062-AC-1/AC-4/AC-6/AC-8/AC-9),
 /// added against a real instance rather than guessed here.
 ///
@@ -271,7 +271,7 @@ pub trait FamilyContract {
     /// This family's checked payload, carrying identity and provenance.
     type Checked;
     /// This family's typed refusal cause (ADR-012 §5.1 S4), returned through
-    /// [`super::outcome::StageFailure::Refused`] -- see that variant's own
+    /// [`qsl_foundation::diagnostic::StageFailure::Refused`] -- see that variant's own
     /// doc for why #214 shipped with no way to construct one and QSL-148
     /// (`Value`'s function family) is the first real instance.
     type Cause;
@@ -286,7 +286,7 @@ pub trait FamilyContract {
 
     /// Check `form` against `cx`, returning the checked node, a typed
     /// refusal or a limit outcome (FR-062 "structured outcome", per
-    /// [`super::outcome::StageFailure`]'s own doc). `check` reads nothing
+    /// [`qsl_foundation::diagnostic::StageFailure`]'s own doc). `check` reads nothing
     /// outside `cx` and `form`, and is given no way to mutate anything except
     /// `cx`'s meter, diagnostic sink and scope stack (FR-062-AC-3, PR #303
     /// review finding N3) -- `Self::Declarations` is read-only through
