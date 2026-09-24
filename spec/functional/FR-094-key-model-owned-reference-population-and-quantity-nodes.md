@@ -306,7 +306,7 @@ unless the row says otherwise, and declares object type
 operations `size(): Integer`, `count(): Integer` and
 `scaled(n: Integer): Integer`, object type `ix://acme/orders/Invoice`, object
 type `ix://acme/orders/Sub` with supertype `Order`, which redefines `size`, and
-`scaled` as `scaled(m: Integer)`, and relationship
+redefines `scaled` as `scaled(m: Integer)`; and relationship
 `ix://acme/orders/billedTo`. `M::Order`, `M::Invoice` and
 `M::Sub` name those object types. A
 vector that names another vector's key uses the digest that vector gives, and

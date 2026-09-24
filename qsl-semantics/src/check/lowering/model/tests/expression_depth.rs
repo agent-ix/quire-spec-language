@@ -5,8 +5,7 @@
 //! nested precondition a redefinition inherits through the dispatch bridge,
 //! each checked on a 2 MiB thread at the deepest nesting the default limits
 //! admit and refused on the depth limit one level deeper and 1,000 levels
-//! deep. Before QSL-231 the bridge's parameter renaming aborted a 2 MiB
-//! debug thread at 274 nested levels, and its clause copies at 953.
+//! deep.
 
 use qsl_foundation::absence::AbsenceMode;
 
