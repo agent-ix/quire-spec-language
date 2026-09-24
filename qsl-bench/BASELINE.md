@@ -516,6 +516,7 @@ The session is recorded as four collections under
   `qsl203-ab-b-probe-v1.json`. Wall time and peak RSS are separate
   `quantity` dimensions.
 
+
 `quoin report --since 67f44989` compares A with B for both plans.
 
 ### Per-component cost of the termination pass
@@ -711,6 +712,115 @@ The session is recorded as four collections under
   `qsl205-ab-b-probe-v1.json`. Wall time and peak RSS are separate
   `quantity` dimensions.
 
+## QSL-202: one `ModelIndex` per package. Improvement on conformance, admission and `allInstances`; normalize unchanged.
+
+QSL-202 replaced the model layer's per-call maps with one `ModelIndex`
+(`qsl-semantics/src/model/index.rs`), built once per package:
+
+- Normalization builds it and keeps it in the `EffectiveView`. Dispatch
+  linking and population admission read it from the view, and every
+  `PopulationBinding` shares it and the view's type catalog by `Arc`.
+- Conformance is read from each type's ancestry, computed once per type and
+  kept. Before, every conformance decision walked the ancestors again.
+- The reverse type catalog is built once per normalization. Before,
+  `value::model_query` rebuilt it on every query, and admission copied the
+  forward catalog into every binding.
+- The conformance checks take the index. Before, each check built its own.
+
+It was measured by the claim rule above, in one session on 2026-09-24, 02:47
+to 03:47 (UTC-7):
+
+- A is `5c93a3a1` (origin/main) and B is `9d5ccdfd` (the fix). Each side has
+  its own worktree and target directory.
+- The rounds ran A1, B1, A2, B2 … A5, B5, one `make bench-model` each.
+- Load average (1-minute) ranged from 4.9 to 19.0. Other agents' builds and
+  benchmarks ran on the machine during the session.
+- **The apparatus changed for one benchmark.** The conformance checks now
+  take a `ModelIndex`, so `resolve_root_field_redefinition` in `src/model.rs`
+  takes the view's index, and `benches/model.rs` passes it. On A,
+  `model/conformance/resolve_redefinition_target/<n>` times an index build
+  over the whole package plus one check. On B it times one check against the
+  shared index. The row measures the ticket's claim, that the build runs once
+  per package and not once per check. It is not a like-for-like speedup of
+  one check. B's index build is inside `model/normalize/<n>`. Every other
+  benchmark calls the same `src/model.rs` functions on both sides.
+
+Each figure is a criterion point estimate of one call. **Margin** is max(the
+stated variance in the model table above, the session's MAD/median).
+
+| Benchmark | A, 5 rounds | B, 5 rounds | A median | B median | Gain | Margin | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `model/intake/admit/1000` | 30.1 ms, 27.2 ms, 26.9 ms, 33.8 ms, 31.3 ms | 38.8 ms, 24.8 ms, 28.9 ms, 24.8 ms, 27.2 ms | 30.1 ms | 27.2 ms | 10% | 9% | improvement |
+| `model/intake/admit/250` | 5.82 ms, 6.91 ms, 5.03 ms, 5.24 ms, 7.6 ms | 4.89 ms, 5.11 ms, 5.9 ms, 6.54 ms, 8.04 ms | 5.82 ms | 5.9 ms | -1% | 14% | no change |
+| `model/intake/admit/4000` | 117 ms, 93.4 ms, 111 ms, 110 ms, 113 ms | 116 ms, 121 ms, 125 ms, 121 ms, 103 ms | 111 ms | 121 ms | -9% | 6% | regression |
+| `model/intake/parse/1000` | 30.9 ms, 32.2 ms, 31.4 ms, 29.2 ms, 23.7 ms | 21.1 ms, 25.8 ms, 29 ms, 30.3 ms, 26.2 ms | 30.9 ms | 26.2 ms | 15% | 12% | improvement |
+| `model/intake/parse/250` | 5.57 ms, 4.47 ms, 4.66 ms, 6.29 ms, 7.29 ms | 6.63 ms, 7.45 ms, 10.3 ms, 10.4 ms, 8.06 ms | 5.57 ms | 8.06 ms | -45% | 18% | regression |
+| `model/intake/parse/4000` | 120 ms, 94.7 ms, 102 ms, 141 ms, 118 ms | 142 ms, 97.9 ms, 108 ms, 121 ms, 98.3 ms | 118 ms | 108 ms | 9% | 13% | no change |
+| `model/intake/read_records/1000` | 79.7 ms, 60.4 ms, 70.9 ms, 83.6 ms, 87.9 ms | 89.1 ms, 59.1 ms, 63.2 ms, 78.8 ms, 61.8 ms | 79.7 ms | 63.2 ms | 21% | 10% | improvement |
+| `model/intake/read_records/250` | 7.8 ms, 7.22 ms, 7.29 ms, 8.69 ms, 8.61 ms | 6.84 ms, 7.55 ms, 9.92 ms, 11 ms, 11.6 ms | 7.8 ms | 9.92 ms | -27% | 17% | regression |
+| `model/intake/read_records/4000` | 3.3 s, 1.04 s, 4.98 s, 2.31 s, 2.94 s | 1.98 s, 1.44 s, 3.77 s, 3.73 s, 1.88 s | 2.94 s | 1.98 s | 33% | 51% | no change |
+| `model/admit_binding/1000` | 1.34 ms, 890 µs, 2.36 ms, 1.8 ms, 1.45 ms | 180 µs, 105 µs, 104 µs, 104 µs, 191 µs | 1.45 ms | 105 µs | 93% | 25% | improvement |
+| `model/admit_binding/250` | 374 µs, 398 µs, 478 µs, 521 µs, 393 µs | 93.1 µs, 93.1 µs, 148 µs, 107 µs, 125 µs | 398 µs | 107 µs | 73% | 13% | improvement |
+| `model/admit_binding/4000` | 14.6 ms, 10.6 ms, 18.9 ms, 9.31 ms, 11.7 ms | 477 µs, 192 µs, 182 µs, 278 µs, 271 µs | 11.7 ms | 271 µs | 98% | 29% | improvement |
+| `model/admit_invocation/1000` | 2.92 ms, 2 ms, 5.21 ms, 3.87 ms, 4.33 ms | 415 µs, 271 µs, 255 µs, 341 µs, 309 µs | 3.87 ms | 309 µs | 92% | 25% | improvement |
+| `model/admit_invocation/250` | 790 µs, 704 µs, 1.17 ms, 1.2 ms, 834 µs | 220 µs, 223 µs, 292 µs, 222 µs, 278 µs | 834 µs | 223 µs | 73% | 16% | improvement |
+| `model/admit_invocation/4000` | 32.2 ms, 20.3 ms, 28.6 ms, 44.5 ms, 37.8 ms | 484 µs, 400 µs, 424 µs, 418 µs, 562 µs | 32.2 ms | 424 µs | 99% | 17% | improvement |
+| `model/all_instances/members/1000` | 2.25 ms, 2.06 ms, 2.93 ms, 2.97 ms, 2.99 ms | 450 µs, 406 µs, 657 µs, 771 µs, 591 µs | 2.93 ms | 591 µs | 80% | 24% | improvement |
+| `model/all_instances/members/250` | 568 µs, 543 µs, 903 µs, 644 µs, 587 µs | 374 µs, 115 µs, 135 µs, 123 µs, 87 µs | 587 µs | 123 µs | 79% | 10% | improvement |
+| `model/all_instances/members/4000` | 12 ms, 9.31 ms, 18.2 ms, 12 ms, 10.6 ms | 2.69 ms, 2.03 ms, 6.85 ms, 2.7 ms, 3.47 ms | 12 ms | 2.7 ms | 77% | 25% | improvement |
+| `model/all_instances/own/1` | 340 µs, 311 µs, 358 µs, 462 µs, 466 µs | 385 µs, 385 µs, 364 µs, 311 µs, 440 µs | 358 µs | 385 µs | -8% | 16% | no change |
+| `model/all_instances/own/120` | 570 µs, 324 µs, 462 µs, 419 µs, 1.02 ms | 330 µs, 343 µs, 457 µs, 757 µs, 433 µs | 462 µs | 433 µs | 6% | 23% | no change |
+| `model/all_instances/own/32` | 447 µs, 325 µs, 458 µs, 434 µs, 429 µs | 324 µs, 331 µs, 363 µs, 661 µs, 1 ms | 434 µs | 363 µs | 16% | 11% | improvement |
+| `model/all_instances/own/8` | 337 µs, 332 µs, 406 µs, 372 µs, 316 µs | 348 µs, 365 µs, 1.02 ms, 314 µs, 415 µs | 337 µs | 365 µs | -8% | 14% | no change |
+| `model/all_instances/root/1` | 520 µs, 546 µs, 806 µs, 797 µs, 572 µs | 503 µs, 525 µs, 485 µs, 570 µs, 566 µs | 572 µs | 525 µs | 8% | 9% | no change |
+| `model/all_instances/root/120` | 46.6 ms, 33.3 ms, 39.9 ms, 34.8 ms, 37.2 ms | 599 µs, 402 µs, 491 µs, 1.23 ms, 598 µs | 37.2 ms | 598 µs | 98% | 18% | improvement |
+| `model/all_instances/root/32` | 11.3 ms, 8.15 ms, 17.3 ms, 11.3 ms, 10.3 ms | 412 µs, 415 µs, 637 µs, 446 µs, 425 µs | 11.3 ms | 425 µs | 96% | 9% | improvement |
+| `model/all_instances/root/8` | 2.42 ms, 2.14 ms, 4.53 ms, 2.94 ms, 3.02 ms | 557 µs, 419 µs, 622 µs, 421 µs, 516 µs | 2.94 ms | 516 µs | 82% | 18% | improvement |
+| `model/conformance/resolve_redefinition_target/1000` | 3.9 ms, 1.47 ms, 2.6 ms, 2.19 ms, 3.76 ms | 495 ns, 316 ns, 342 ns, 299 ns, 363 ns | 2.6 ms | 342 ns | 100% | 44% | improvement |
+| `model/conformance/resolve_redefinition_target/250` | 313 µs, 291 µs, 363 µs, 558 µs, 360 µs | 360 ns, 295 ns, 373 ns, 318 ns, 414 ns | 360 µs | 360 ns | 100% | 14% | improvement |
+| `model/conformance/resolve_redefinition_target/4000` | 26.5 ms, 27.8 ms, 27.1 ms, 28.6 ms, 31.9 ms | 306 ns, 358 ns, 355 ns, 306 ns, 381 ns | 27.8 ms | 355 ns | 100% | 14% | improvement |
+| `model/normalize/1000` | 79.8 ms, 70.7 ms, 98.3 ms, 127 ms, 94.1 ms | 122 ms, 88.4 ms, 93.6 ms, 77.6 ms, 124 ms | 94.1 ms | 93.6 ms | 1% | 17% | no change |
+| `model/normalize/250` | 18.3 ms, 14.5 ms, 16.8 ms, 18.9 ms, 17.7 ms | 14.4 ms, 14.4 ms, 22.7 ms, 17.2 ms, 19.4 ms | 17.7 ms | 17.2 ms | 3% | 25% | no change |
+| `model/normalize/4000` | 553 ms, 458 ms, 756 ms, 601 ms, 568 ms | 729 ms, 383 ms, 639 ms, 365 ms, 534 ms | 568 ms | 534 ms | 6% | 28% | no change |
+| `model/query/evaluate_all_instances/1000` | 2.49 ms, 2.67 ms, 4.54 ms, 3.16 ms, 3.3 ms | 505 µs, 457 µs, 818 µs, 1.17 ms, 879 µs | 3.16 ms | 818 µs | 74% | 38% | improvement |
+| `model/query/evaluate_all_instances/250` | 788 µs, 629 µs, 1.01 ms, 917 µs, 691 µs | 193 µs, 143 µs, 145 µs, 110 µs, 123 µs | 788 µs | 143 µs | 82% | 16% | improvement |
+| `model/query/evaluate_all_instances/4000` | 9.32 ms, 9.84 ms, 15.9 ms, 14.7 ms, 9.48 ms | 2.01 ms, 2.22 ms, 4.84 ms, 3.46 ms, 4.61 ms | 9.84 ms | 3.46 ms | 65% | 36% | improvement |
+
+Reading the table:
+
+- **Conformance.** One check costs about 350 ns at every package size, where
+  it cost 360 µs to 27.8 ms with the per-check index build.
+- **`allInstances` over the ancestor axis.** At 120 ancestors,
+  `allInstances<C0>` over 1,000 members drops from 37.2 ms to 598 µs. The
+  root query now costs about what the `own` query costs at every depth, since
+  each member type's ancestry is computed once. The `own` rows, which walk
+  nothing on either side, show no change except `own/32`, whose margin is
+  small.
+- **Admission.** `admit_binding` and `admit_invocation` no longer copy the
+  view's type catalog or rebuild the supertype map per binding, so they no
+  longer scale with the package: 271 µs and 424 µs at 4,000 types.
+- **Normalize.** No change at any size. The index build replaces the
+  normalizer's own index, and phase 4's per-type record scan is cheap on this
+  input, which declares no redefinition.
+- **Intake.** Three intake rows read as regressions and three as
+  improvements under the rule.
+  `PackageDocument::parse` is byte-identical source on both sides, and
+  `read_records` differs only in no longer keeping the unread
+  `has_own_precondition` flag. Those rows are session noise at this load, not
+  a QSL-202 effect.
+
+Output is unchanged: a dump of the effective-view identity, each universe's
+identity, every declaration identity, the full normalization charge sequence
+and counters, binding and invocation population identities, members,
+`allInstances` and `lookup` at every chain level and the model-query bridge
+result, over 20 generated shapes under 8 `ancestor_steps` limits (38,124
+lines, including 55 refused or incomplete normalizations), is byte-identical
+between A and B.
+
+The two sides are stored as quoin measurement collections under
+`spec/evidence/measurements/qsl202-ab-a-model-v2.json` and
+`qsl202-ab-b-model-v2.json`.
+
 ## Engineering-assurance record
 
 The same benchmark set is recorded as engineering-assurance MeasurementPlans,
@@ -752,5 +862,6 @@ the findings.
   model types. The 4,000 and 8,000 chains are one-shot probe runs.
 - **The native S1 parser.** `src/parser.rs`, which QSL-197 also changes, is not
   benchmarked. Only `qsl_cst::parse` is.
-- **`reverse_catalog` in the type count.** It is measured at 1,000 types only.
-  It scales with the binding's type count, which the member sweep holds fixed.
+- **The query bridge's catalog lookup in the type count.** It is measured at
+  1,000 types only. Since QSL-202 it is a lookup in a catalog built once per
+  normalization, not a per-query rebuild.

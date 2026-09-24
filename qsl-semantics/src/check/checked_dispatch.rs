@@ -1043,8 +1043,8 @@ pub fn checked_dispatch_operation(
     // (ascending effective identity), deduplicated (#176: `link_dispatch`
     // links one entry per conforming subtype in `view`; the
     // reflexive entry for the operation's own declared owner is one of
-    // them, since `type_conforms(s, t)` is `true` for `s == t` -- see
-    // `conformance::type_conforms`). Feeds every exposing static type's own
+    // them, since conformance is `true` for `s == t` -- see
+    // `ModelIndex::conforms`). Feeds every exposing static type's own
     // [`DispatchOperation`] entry below, so a call whose receiver's static
     // type is any type this dispatch is exposed through -- the operation's
     // own declared owner or any conforming subtype that exposes it by
