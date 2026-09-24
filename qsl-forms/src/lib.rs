@@ -28,9 +28,11 @@
 //! ADR-013 O-14/C-26). See `syntax::TypeForm`'s own doc.
 
 mod dispatch;
+mod spans;
 mod syntax;
 
 pub use dispatch::{build_form, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm};
+pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
     Accumulation, BinaryOperator, BinderQuery, BuiltinType, ClauseKind, DeclaredClauseKind,
     Expression, FieldInitializer, FunctionDeclaration, TypeForm, TypeFormHead,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #![allow(
     dead_code,
-    reason = "no production caller yet: the S4 pipeline that calls emit_package with source regions is ADR-011 §4's round trip (QSL-6 slice S3); until then only this crate's tests call it"
+    reason = "no production caller yet: the S4 pipeline that calls emit_checked is ADR-011 §4's round trip (QSL-6 slice S3); until then only this crate's tests call it"
 )]
 //! ADR-011 T-8 (M-4, QSL-6), slice S1b: the S4 v2 emitter, [`CheckedPackage`]
 //! -> [`EmittedPackage`] (the `quire.checked-package/v2` bytes with their own
@@ -33,11 +33,12 @@
 //! # Source regions
 //!
 //! FR-322 maps every occurrence to at least one byte region. `check` records
-//! each occurrence at a `check::Location` (a declaration and a child path),
-//! and the S2 form spans that turn a `Location` into a region do not exist
-//! yet (ADR-013 O-12). The caller therefore supplies that conversion; an
-//! occurrence it cannot place, or places at an empty region, refuses the
-//! whole emission ([`EmitRefusal::UnlocatedOccurrence`]).
+//! each occurrence at a `check::Location` (a declaration and a child path).
+//! [`emit_checked`] places it through the checked unit's own form spans
+//! (`CheckedGraph::region`, FR-096, ADR-013 O-12); [`emit_package`] takes
+//! the conversion as a parameter. An occurrence that cannot be placed, or is
+//! placed at an empty region, refuses the whole emission
+//! ([`EmitRefusal::UnlocatedOccurrence`]).
 //!
 //! # Omitted nodes
 //!
@@ -612,6 +613,14 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
     EmitRefusal::Encoding {
         reason: error.to_string(),
     }
+}
+
+/// Emit `package` as `quire.checked-package/v2` bytes (FR-322), placing each
+/// occurrence at the region of the checked unit its location names
+/// (`CheckedGraph::region`, FR-096).
+pub(crate) fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+    let graph = package.graph();
+    emit_package(package, |location| graph.region(location))
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`

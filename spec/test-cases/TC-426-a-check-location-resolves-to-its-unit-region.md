@@ -42,4 +42,6 @@ Tag the tests `#[trace("TC-426", "FR-096-AC-1")]`.
 
 ## Status
 
-Planned. ADR-013 §7 slice S-5b (QSL-160), after S-4b and FR-091-AC-10.
+Steps 2 and 4 are backed by `qsl-semantics` `check::region` tests (QSL-239).
+Step 3 (a body embedded in a document, C-21) is not: package declarations
+carry the unit's `RawSourceRef` only, not the embedding's source map.

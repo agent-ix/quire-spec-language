@@ -88,6 +88,7 @@ mod ir;
 mod lowering;
 mod node_key;
 mod refusal;
+mod region;
 mod termination;
 mod type_form;
 
@@ -318,6 +319,9 @@ pub struct CheckedGraph {
     semantic_graph: lowering::SemanticGraph,
     /// NFR-011: the ceilings this package was checked under.
     effective_limits: CheckingLimits,
+    /// FR-096: each function's form spans, by declaration index, so a
+    /// `Location` resolves to a region of the checked unit.
+    form_spans: Vec<Option<qsl_forms::DeclarationSpans>>,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -662,6 +666,11 @@ impl PackageDeclarations {
             return Err(refusals);
         }
         let source = self.source;
+        let form_spans = self
+            .functions
+            .iter()
+            .map(|function| function.spans().cloned())
+            .collect();
         let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
         let models = self.models;
@@ -1026,6 +1035,7 @@ impl PackageDeclarations {
             type_nodes,
             semantic_graph,
             effective_limits: limits,
+            form_spans,
         })
     }
 }

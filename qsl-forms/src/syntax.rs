@@ -11,6 +11,8 @@ use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::Span;
 use quire_exact::{CollectionKind, Integer};
 
+use super::spans::{DeclarationSpans, SpansMismatch};
+
 /// A builtin type keyword a [`TypeForm`] can be headed by, other than a
 /// collection kind (see [`TypeFormHead::Collection`]). Closed: `check`'s
 /// resolution matches it exhaustively (FR-091-CON-2).
@@ -697,6 +699,9 @@ pub struct FunctionDeclaration {
     /// candidate's body or precondition callable by plain name unless this
     /// is also `false`).
     callable_by_name: bool,
+    /// The form's byte spans (FR-091-AC-10), when it was read from a source
+    /// unit. A declaration built by hand or synthesized (FR-151) has none.
+    spans: Option<DeclarationSpans>,
 }
 
 impl FunctionDeclaration {
@@ -717,6 +722,7 @@ impl FunctionDeclaration {
             body,
             clause_kind: ClauseKind::Body,
             callable_by_name: true,
+            spans: None,
         }
     }
 
@@ -749,6 +755,7 @@ impl FunctionDeclaration {
             body,
             clause_kind: clause_kind.into(),
             callable_by_name: false,
+            spans: None,
         }
     }
 
@@ -763,6 +770,26 @@ impl FunctionDeclaration {
     /// declaration: `true` for [`Self::new`], `false` for [`Self::clause`].
     pub fn callable_by_name(&self) -> bool {
         self.callable_by_name
+    }
+
+    /// This declaration read from a source unit, with its form's spans
+    /// (FR-091-AC-10). Refused when the body spans do not have the body's
+    /// shape, the measure spans the measure's, or either lies outside the
+    /// declaration's span.
+    pub fn with_spans(mut self, spans: DeclarationSpans) -> Result<Self, SpansMismatch> {
+        spans.fit(&self.body, self.measure.as_ref())?;
+        self.spans = Some(spans);
+        Ok(self)
+    }
+
+    /// The form's byte spans, when it was read from a source unit and they
+    /// still fit its body and measure. `body` and `measure` are public, so
+    /// an edit after [`Self::with_spans`] can change the tree's shape; the
+    /// spans are then withheld rather than let a path reach the wrong node.
+    pub fn spans(&self) -> Option<&DeclarationSpans> {
+        self.spans
+            .as_ref()
+            .filter(|spans| spans.fit(&self.body, self.measure.as_ref()).is_ok())
     }
 }
 
@@ -871,6 +898,7 @@ mod tests {
                 body: _,
                 clause_kind: _,
                 callable_by_name: _,
+                spans: _,
             } = value;
             "FunctionDeclaration"
         }
