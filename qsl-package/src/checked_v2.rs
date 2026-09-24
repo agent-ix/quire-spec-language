@@ -100,12 +100,23 @@ use qsl_semantics::library::{
 mod tests;
 
 /// The two ceilings this reader itself enforces (see the module doc's
-/// "Ceilings" section); elevated options clamp to the defaults.
-#[derive(Clone, Copy, Debug)]
+/// "Ceilings" section). A caller-supplied ceiling is used as given -- an
+/// implementation ceiling is not a domain bound (NFR-001); [`Self::default`]
+/// is only the fail-closed starting point a caller who supplies none gets
+/// (ADR-011 §7.3, QSL-199). `depth` above `Self::default().depth` (128) has
+/// no practical effect: `read_checked_package_v2`'s own module doc records
+/// that IR's `strict_json_value` parses with `serde_json::Deserializer`,
+/// which never calls `disable_recursion_limit`, so serde_json's own fixed
+/// 128-container recursion cap refuses a deeper wire (as
+/// `Refused(Envelope(MalformedWire))`) before this ceiling is ever
+/// consulted -- a separate, out-of-scope hard ceiling in a third-party
+/// dependency, not this type's own clamp.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct V2ReadLimits {
-    /// Offered bytes, at most 16 MiB.
+    /// Offered bytes. Defaults to 16 MiB.
     pub(crate) artifact_bytes: usize,
-    /// Entered JSON containers, at most 128.
+    /// Entered JSON containers. Defaults to 128; see this type's own doc for
+    /// why raising it has no practical effect.
     pub(crate) depth: usize,
 }
 
@@ -119,12 +130,13 @@ impl Default for V2ReadLimits {
 }
 
 impl V2ReadLimits {
+    /// The effective limits: exactly what the caller supplied. Kept as a
+    /// named step (rather than removed outright) so every existing call site
+    /// stays a one-line, self-describing "this is the ceiling actually in
+    /// force" marker; it no longer clamps a caller-supplied ceiling down to
+    /// [`Self::default`] (ADR-011 §7.3, QSL-199).
     fn bounded(self) -> Self {
-        let hard = Self::default();
-        Self {
-            artifact_bytes: self.artifact_bytes.min(hard.artifact_bytes),
-            depth: self.depth.min(hard.depth),
-        }
+        self
     }
 }
 
@@ -265,7 +277,15 @@ pub(crate) enum V2ReadOutcome {
     /// (FR-087-AC-1, AC-3): a supported schema version, a recomputed
     /// `package_id` equal to the declared one, and an identity listed in
     /// the caller's `pinned` library lock or pinned request.
-    Verified(VerifiedPackage),
+    Verified {
+        /// The verified package.
+        package: VerifiedPackage,
+        /// The exact [`V2ReadLimits`] this read actually ran under -- a
+        /// caller's own ceiling when one was supplied, [`V2ReadLimits::default`]
+        /// otherwise. Recorded so a caller-raised ceiling is visible with the
+        /// result it produced (ADR-011 §7.3, QSL-199).
+        effective_limits: V2ReadLimits,
+    },
     /// A named defect in the input.
     Refused(V2ReadRefusal),
     /// A resource ceiling stopped the reader first.
@@ -381,7 +401,10 @@ pub(crate) fn read_checked_package_v2(
             // verified_binding_witness.rs` fails on any other.
             let admitted = SupportedV2Wire::attest_ir_admitted_v2();
             match verify_binding(admitted, candidate, pinned) {
-                Ok(verified) => V2ReadOutcome::Verified(verified),
+                Ok(verified) => V2ReadOutcome::Verified {
+                    package: verified,
+                    effective_limits: limits,
+                },
                 Err(refusal) => V2ReadOutcome::Refused(V2ReadRefusal::Structural(refusal)),
             }
         }

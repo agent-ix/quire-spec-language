@@ -12,8 +12,8 @@ use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, ProfileCatalog}
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::complete::{
     resolve_source_package, CapabilityId, Definition, DefinitionCatalog, DefinitionRole, Facet,
-    ModelArtifact, ModelCatalog, PackageError, PackageLimits, PackageRefusal, ReaderAuthority,
-    ResolutionCause, ResolvedSourcePackage, SourceAuthority, SourceDigest,
+    ModelArtifact, ModelCatalog, PackageError, PackageLimitKind, PackageLimits, PackageRefusal,
+    ReaderAuthority, ResolutionCause, ResolvedSourcePackage, SourceAuthority, SourceDigest,
 };
 use quire_spec_language::command::{resolve_parsed_source, SourcePackageRefusal};
 use quire_spec_language::complete;
@@ -654,7 +654,10 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
             },
         )
         .unwrap_err(),
-        PackageError::ResourceLimit
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::Definitions,
+            limit: definitions.len() - 1,
+        }
     );
     assert_eq!(
         DefinitionCatalog::with_limits(
@@ -665,7 +668,10 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
             },
         )
         .unwrap_err(),
-        PackageError::ResourceLimit
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::ArtifactBytes,
+            limit: artifact_bytes - 1,
+        }
     );
 
     let model = compiled_model();
@@ -689,7 +695,13 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
     )
     .unwrap_err();
     assert_eq!(artifact_refusal.code, Code::ResourceExhausted);
-    assert_eq!(artifact_refusal.cause, PackageError::ResourceLimit);
+    assert_eq!(
+        artifact_refusal.cause,
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::ArtifactBytes,
+            limit: resolved_artifact_bytes - 1,
+        }
+    );
     assert_eq!(
         artifact_refusal.cause_tag,
         ResolutionCause::InsufficientNextCharge
@@ -707,7 +719,13 @@ fn catalog_and_resolution_resource_limits_have_exact_boundaries() {
     )
     .unwrap_err();
     assert_eq!(refusal.code, Code::ResourceExhausted);
-    assert_eq!(refusal.cause, PackageError::ResourceLimit);
+    assert_eq!(
+        refusal.cause,
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::Definitions,
+            limit: 1,
+        }
+    );
 }
 
 #[trace("TC-180", "FR-131-AC-1", "FR-131-AC-2")]
@@ -768,7 +786,10 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         )
         .unwrap_err()
         .cause,
-        PackageError::ResourceLimit
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::DependencyEdges,
+            limit: 1,
+        }
     );
     assert_eq!(
         resolve_parsed(
@@ -779,7 +800,10 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
         )
         .unwrap_err()
         .cause,
-        PackageError::ResourceLimit
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::Depth,
+            limit: 2,
+        }
     );
 }
 

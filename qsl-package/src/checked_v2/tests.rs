@@ -269,7 +269,7 @@ fn accepts_valid_bytes() {
     let preimage = identity_preimage(vec![]);
     let bytes = jcs(&valid_envelope(&preimage));
     match read(&bytes, &pinned_for(&preimage)) {
-        V2ReadOutcome::Verified(package) => {
+        V2ReadOutcome::Verified { package, .. } => {
             assert_eq!(package.library(), &identity("pkg"));
             assert_eq!(package.version(), "1");
             assert_eq!(
@@ -316,7 +316,7 @@ fn envelope_declaring(exports: &[(&str, &str)]) -> (Value, Value) {
 fn import_view_of(exports: &[(&str, &str)]) -> (PackageId, ImportView) {
     let (preimage, envelope) = envelope_declaring(exports);
     let verified = match read(&jcs(&envelope), &pinned_for(&preimage)) {
-        V2ReadOutcome::Verified(package) => package,
+        V2ReadOutcome::Verified { package, .. } => package,
         other => panic!("expected Verified, got {other:?}"),
     };
     let package_id = verified.package_id();
@@ -757,7 +757,7 @@ fn exact_selected_limits_admit_the_boundary() {
         &evidence(None),
         &pinned_for(&preimage),
     );
-    assert!(matches!(outcome, V2ReadOutcome::Verified(_)));
+    assert!(matches!(outcome, V2ReadOutcome::Verified { .. }));
 }
 
 #[test]
@@ -801,7 +801,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         &pinned_for(&preimage),
     );
     assert!(
-        matches!(outcome, V2ReadOutcome::Verified(_)),
+        matches!(outcome, V2ReadOutcome::Verified { .. }),
         "expected Verified at the exact depth boundary, got {outcome:?}"
     );
 

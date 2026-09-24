@@ -163,8 +163,29 @@ pub struct Definition {
     exact_bytes: Box<[u8]>,
 }
 
-/// Explicit package-graph accounting limits, independently bounded by hard
-/// implementation ceilings.
+/// Which [`PackageLimits`] ceiling (or the canonical semantic-identity
+/// encoding's own internal byte ceiling) a [`PackageError::ResourceLimit`]
+/// names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PackageLimitKind {
+    /// [`PackageLimits::definitions`].
+    Definitions,
+    /// [`PackageLimits::dependency_edges`].
+    DependencyEdges,
+    /// [`PackageLimits::depth`].
+    Depth,
+    /// [`PackageLimits::artifact_bytes`].
+    ArtifactBytes,
+    /// The canonical semantic-identity encoding's own internal byte ceiling
+    /// (`qsl_foundation::source::MAX_SOURCE_BYTES`), independent of any
+    /// caller-supplied [`PackageLimits`] field.
+    CanonicalEncoding,
+}
+
+/// Explicit package-graph accounting limits. A caller-supplied ceiling is
+/// used as given -- an implementation ceiling is not a domain bound
+/// (NFR-001); [`Self::default`] is only the fail-closed starting point a
+/// caller who supplies none gets (ADR-011 §7.3, QSL-199).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PackageLimits {
     /// Maximum number of exact definitions (or model artifacts) admitted into
@@ -193,14 +214,13 @@ impl Default for PackageLimits {
 }
 
 impl PackageLimits {
+    /// The effective limits: exactly what the caller supplied. Kept as a
+    /// named step (rather than removed outright) so every existing call site
+    /// stays a one-line, self-describing "this is the ceiling actually in
+    /// force" marker; it no longer clamps a caller-supplied ceiling down to
+    /// [`Self::default`] (ADR-011 §7.3, QSL-199).
     fn bounded(self) -> Self {
-        let hard = Self::default();
-        Self {
-            definitions: self.definitions.min(hard.definitions),
-            dependency_edges: self.dependency_edges.min(hard.dependency_edges),
-            depth: self.depth.min(hard.depth),
-            artifact_bytes: self.artifact_bytes.min(hard.artifact_bytes),
-        }
+        self
     }
 }
 
@@ -259,14 +279,17 @@ impl DefinitionCatalog {
         Self::with_limits(definitions, PackageLimits::default())
     }
 
-    /// Build a catalog under explicit lower accounting limits.
+    /// Build a catalog under explicit accounting limits.
     pub fn with_limits(
         definitions: Vec<Definition>,
         limits: PackageLimits,
     ) -> Result<Self, PackageError> {
         let limits = limits.bounded();
         if definitions.len() > limits.definitions {
-            return Err(PackageError::ResourceLimit);
+            return Err(PackageError::ResourceLimit {
+                kind: PackageLimitKind::Definitions,
+                limit: limits.definitions,
+            });
         }
         let mut edges = 0_usize;
         let mut bytes = 0_usize;
@@ -274,12 +297,27 @@ impl DefinitionCatalog {
         for definition in definitions {
             edges = edges
                 .checked_add(definition.dependencies.len())
-                .ok_or(PackageError::ResourceLimit)?;
+                .ok_or(PackageError::ResourceLimit {
+                    kind: PackageLimitKind::DependencyEdges,
+                    limit: limits.dependency_edges,
+                })?;
             bytes = bytes
                 .checked_add(definition.exact_bytes.len())
-                .ok_or(PackageError::ResourceLimit)?;
-            if edges > limits.dependency_edges || bytes > limits.artifact_bytes {
-                return Err(PackageError::ResourceLimit);
+                .ok_or(PackageError::ResourceLimit {
+                    kind: PackageLimitKind::ArtifactBytes,
+                    limit: limits.artifact_bytes,
+                })?;
+            if edges > limits.dependency_edges {
+                return Err(PackageError::ResourceLimit {
+                    kind: PackageLimitKind::DependencyEdges,
+                    limit: limits.dependency_edges,
+                });
+            }
+            if bytes > limits.artifact_bytes {
+                return Err(PackageError::ResourceLimit {
+                    kind: PackageLimitKind::ArtifactBytes,
+                    limit: limits.artifact_bytes,
+                });
             }
             if catalog
                 .definitions
@@ -321,23 +359,32 @@ impl ModelCatalog {
         Self::with_limits(models, PackageLimits::default())
     }
 
-    /// Build a compiled-model catalog under explicit lower accounting limits.
+    /// Build a compiled-model catalog under explicit accounting limits.
     pub fn with_limits(
         models: Vec<ModelArtifact>,
         limits: PackageLimits,
     ) -> Result<Self, PackageError> {
         let limits = limits.bounded();
         if models.len() > limits.definitions {
-            return Err(PackageError::ResourceLimit);
+            return Err(PackageError::ResourceLimit {
+                kind: PackageLimitKind::Definitions,
+                limit: limits.definitions,
+            });
         }
         let mut bytes = 0_usize;
         let mut catalog = Self::default();
         for model in models {
             bytes = bytes
                 .checked_add(model.exact_bytes.len())
-                .ok_or(PackageError::ResourceLimit)?;
+                .ok_or(PackageError::ResourceLimit {
+                    kind: PackageLimitKind::ArtifactBytes,
+                    limit: limits.artifact_bytes,
+                })?;
             if bytes > limits.artifact_bytes {
-                return Err(PackageError::ResourceLimit);
+                return Err(PackageError::ResourceLimit {
+                    kind: PackageLimitKind::ArtifactBytes,
+                    limit: limits.artifact_bytes,
+                });
             }
             if catalog
                 .models
@@ -389,6 +436,7 @@ pub struct ResolvedSourcePackage {
     bundle: CompleteBundle,
     definitions: BTreeMap<DefinitionRef, Arc<Definition>>,
     models: BTreeMap<ModelRef, Arc<ModelArtifact>>,
+    effective_limits: PackageLimits,
 }
 
 impl ResolvedSourcePackage {
@@ -409,6 +457,13 @@ impl ResolvedSourcePackage {
     /// semantic-definition closure.
     pub fn models(&self) -> &BTreeMap<ModelRef, Arc<ModelArtifact>> {
         &self.models
+    }
+    /// The exact [`PackageLimits`] this resolution actually ran under -- a
+    /// caller's own ceiling when one was supplied, [`PackageLimits::default`]
+    /// otherwise. Recorded so a caller-raised ceiling is visible with the
+    /// result it produced (ADR-011 §7.3, QSL-199).
+    pub fn effective_limits(&self) -> PackageLimits {
+        self.effective_limits
     }
 }
 
@@ -833,7 +888,10 @@ pub fn resolve_source_package(
         return Err(refusal(
             Code::ResourceExhausted,
             Span { start: 0, end: 0 },
-            PackageError::ResourceLimit,
+            PackageError::ResourceLimit {
+                kind: PackageLimitKind::Definitions,
+                limit: limits.definitions,
+            },
         ));
     }
 
@@ -907,7 +965,10 @@ pub fn resolve_source_package(
                     return Err(refusal(
                         Code::ResourceExhausted,
                         span,
-                        PackageError::ResourceLimit,
+                        PackageError::ResourceLimit {
+                            kind: PackageLimitKind::Definitions,
+                            limit: limits.definitions,
+                        },
                     ));
                 }
                 resolved.insert(selected.clone(), catalog.definitions[&selected].clone());
@@ -940,19 +1001,32 @@ pub fn resolve_source_package(
                 return Err(refusal(
                     Code::ResourceExhausted,
                     span,
-                    PackageError::ResourceLimit,
+                    PackageError::ResourceLimit {
+                        kind: PackageLimitKind::Depth,
+                        limit: limits.depth,
+                    },
                 ));
             }
             traversed_edges = traversed_edges
                 .checked_add(definition.dependencies.len())
                 .ok_or_else(|| {
-                    refusal(Code::ResourceExhausted, span, PackageError::ResourceLimit)
+                    refusal(
+                        Code::ResourceExhausted,
+                        span,
+                        PackageError::ResourceLimit {
+                            kind: PackageLimitKind::DependencyEdges,
+                            limit: limits.dependency_edges,
+                        },
+                    )
                 })?;
             if traversed_edges > limits.dependency_edges {
                 return Err(refusal(
                     Code::ResourceExhausted,
                     span,
-                    PackageError::ResourceLimit,
+                    PackageError::ResourceLimit {
+                        kind: PackageLimitKind::DependencyEdges,
+                        limit: limits.dependency_edges,
+                    },
                 ));
             }
             active.push(selected.clone());
@@ -1008,7 +1082,10 @@ pub fn resolve_source_package(
         return Err(refusal(
             Code::ResourceExhausted,
             artifact_span,
-            PackageError::ResourceLimit,
+            PackageError::ResourceLimit {
+                kind: PackageLimitKind::ArtifactBytes,
+                limit: limits.artifact_bytes,
+            },
         ));
     }
 
@@ -1105,6 +1182,7 @@ pub fn resolve_source_package(
         bundle,
         definitions: resolved,
         models: resolved_models,
+        effective_limits: limits,
     })
 }
 
@@ -1148,7 +1226,7 @@ fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
         PackageError::DefinitionCycle(_) => Tag::DefinitionCycle,
         PackageError::MissingCapability(_) => Tag::UnsupportedFeature,
         PackageError::UnknownCapability(_) => Tag::UnknownFeature,
-        PackageError::CanonicalSize | PackageError::ResourceLimit => Tag::InsufficientNextCharge,
+        PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => Tag::InsufficientNextCharge,
         PackageError::MissingFacet(_) => Tag::FeatureSetMismatch,
     }
 }
@@ -1159,7 +1237,7 @@ fn identity_refusal(
     cause: PackageError,
 ) -> PackageRefusal {
     let code = match &cause {
-        PackageError::CanonicalSize | PackageError::ResourceLimit => Code::ResourceExhausted,
+        PackageError::CanonicalSize | PackageError::ResourceLimit { .. } => Code::ResourceExhausted,
         _ => Code::InvalidPackage,
     };
     refusal(authority, code, span, cause)
@@ -1179,13 +1257,19 @@ fn field(output: &mut Vec<u8>, name: &str, value: &[u8]) -> Result<(), PackageEr
     let added = 16_usize
         .checked_add(name.len())
         .and_then(|size| size.checked_add(value.len()))
-        .ok_or(PackageError::ResourceLimit)?;
+        .ok_or(PackageError::ResourceLimit {
+            kind: PackageLimitKind::CanonicalEncoding,
+            limit: qsl_foundation::source::MAX_SOURCE_BYTES,
+        })?;
     if output
         .len()
         .checked_add(added)
         .is_none_or(|size| size > qsl_foundation::source::MAX_SOURCE_BYTES)
     {
-        return Err(PackageError::ResourceLimit);
+        return Err(PackageError::ResourceLimit {
+            kind: PackageLimitKind::CanonicalEncoding,
+            limit: qsl_foundation::source::MAX_SOURCE_BYTES,
+        });
     }
     output.extend_from_slice(&name_len.to_be_bytes());
     output.extend_from_slice(name.as_bytes());
@@ -1286,9 +1370,15 @@ pub enum PackageError {
     /// Canonical length cannot be represented by the versioned wire encoding.
     #[error("canonical field exceeds the u64 wire length domain")]
     CanonicalSize,
-    /// Package input exceeds the closed implementation ceiling.
-    #[error("complete package resource limit exceeded")]
-    ResourceLimit,
+    /// Package input reached the configured [`PackageLimits`] ceiling (or the
+    /// canonical semantic-identity encoding's own internal byte ceiling).
+    #[error("package resource limit exceeded: {kind:?} (limit {limit})")]
+    ResourceLimit {
+        /// Which ceiling was reached.
+        kind: PackageLimitKind,
+        /// The configured bound in force when the ceiling was reached.
+        limit: usize,
+    },
     /// One required complete facet was omitted.
     #[error("complete V1 is missing facet {0:?}")]
     MissingFacet(Facet),
