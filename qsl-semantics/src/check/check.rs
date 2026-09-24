@@ -19,7 +19,7 @@
 //! `Typer::scope`/`Typer::signatures`/`Typer::type_named`/`Typer::check_as`
 //! accessors (widened from private to `pub(crate)` for exactly this one
 //! caller). `infer_form`'s `Expression::Call` arm makes one call into that
-//! function and holds no semantic logic of its own (FR-065-AC-4). This
+//! function and holds no semantic logic of its own (FR-065-CON-3). This
 //! module still owns function-declaration *typing*'s underlying engine
 //! (`bind_parameters`, `check_declared_type`, `check_as`), because a
 //! function body is an arbitrary `Expression` and checking one still needs

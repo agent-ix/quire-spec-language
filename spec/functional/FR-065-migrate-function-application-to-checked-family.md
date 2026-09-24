@@ -20,14 +20,16 @@ relationships:
 
 Function declaration and application is the sole representative family this
 ticket migrates onto the checked-family contract of
-[FR-062](FR-062-implement-checked-family-contract.md). QSL SHALL check,
-package and evaluate the `Value` family's function-declaration and
-function-application forms exclusively through that contract and `Value`'s
-own family check code (Behavior: the contract's `check` hook and `Value`'s
-application check). QSL SHALL carry their identity and provenance through the
-checked-package boundary unchanged (Behavior: identity and provenance). QSL
-SHALL reach callers only through the checked-package producer this
-requirement builds (Behavior: the public API and #240's precondition). Each
+[FR-062](FR-062-implement-checked-family-contract.md).
+QSL SHALL check, package and evaluate the `Value` family's
+function-declaration and function-application forms exclusively through that
+contract and `Value`'s own family check code (Behavior: the contract's
+`check` hook and `Value`'s application check).
+QSL SHALL carry their identity and provenance through the checked-package
+boundary unchanged (Behavior: identity and provenance).
+QSL SHALL expose these forms to callers only through the checked-package
+producer this requirement builds (Behavior: the public API and #240's
+precondition). Each
 form has one S3 checker (FR-065-CON-2), and the S3 typer's `Call` arm is a
 thin dispatch seam into `Value`'s application check (FR-065-CON-3, ADR-012
 §4.3).
@@ -326,23 +328,18 @@ delivered code today:
   `occurrence_span_survives_link_and_a_corrupted_alternate_differs`, was
   deleted as self-corrupting in the PR #262 review round, finding F6, and
   not replaced). Owner: QSL-154.
-- FR-065-AC-4: backed by behaviour (`TC-376`); the four tests carry
-  `#[trace("TC-376")]` and the `FR-065-AC-4` tag is pending (remaining work:
-  QSL-148's implementation PR, which also updates `Typer::infer_form`'s doc
-  comment in `typing.rs` to cite FR-065-CON-3 and ADR-012 §4.3 in place of
-  the earlier AC-4 and AC-5 text). Amended by QSL-148's spec lane to a
+- FR-065-AC-4: backed (`TC-376`). Amended by QSL-148's spec lane to a
   behavioural criterion; the thin-arm rule it used to test by code shape is
   FR-065-CON-3, verified by inspection, per the
   [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
-  (Peter, 2026-09-22): tests cover behaviour, never a refactor's shape).
-  `check_application_accepts_a_well_typed_call`,
+  (Peter, 2026-09-22). `check_application_accepts_a_well_typed_call`,
   `check_application_refuses_wrong_arity`,
   `check_application_refuses_an_unknown_name` and
   `check_application_refuses_a_type_mismatched_argument`
   (`qsl-semantics/src/check/family.rs`, `checking_tests`, tagged
-  `#[trace("TC-376")]`) each check an `Expression::Call` through
-  `Typer::infer`, so each fails when `Application`'s resolution, arity check
-  or parameter typing is removed.
+  `#[trace("TC-376", "FR-065-AC-4")]`) each check an `Expression::Call`
+  through `Typer::infer`, so each fails when `Application`'s resolution,
+  arity check or parameter typing is removed.
 - FR-065-AC-5: unbacked; a test is needed (`TC-164`). The criterion is
   amended by QSL-148's spec lane: it requires the same call verdict from a
   declaration body checked through `PackageDeclarations::check` and from a
@@ -376,8 +373,7 @@ delivered code today:
   operation vectors under the opt-in `make conformance`.
 
 Four of this requirement's eight Acceptance Criteria are backed (AC-2,
-identity/provenance; AC-4, the application check's verdicts, AC tag
-pending; AC-7, the
+identity/provenance; AC-4, the application check's verdicts; AC-7, the
 contract `check` hook's typing verdict and F1; AC-8, on the A4b branch); the
 other four (AC-1, AC-3, AC-5, AC-6) are unbacked, for the reasons above.
 `TC-164`, `TC-165` and `TC-166` have zero tests each in the delivered code.

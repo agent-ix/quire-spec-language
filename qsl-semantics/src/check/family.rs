@@ -632,7 +632,7 @@ impl<'a> TargetTypes<'a> {
     }
 }
 /// QSL-148: `Value`'s family check code for function application
-/// (FR-065-AC-4's "one call into `Value`'s family check code"), relocated
+/// (FR-065-AC-4; the typer's `Call` arm calls it once, FR-065-CON-3), relocated
 /// here from `check.rs`'s deleted `Typer::call`. The algorithm is unchanged
 /// -- name resolution against `typer.signatures()`, an arity check, a check
 /// of every argument against its parameter type, then a tuple-constructor
@@ -1611,7 +1611,7 @@ pub(crate) mod checking_tests {
     /// function is admitted through [`Application`] -- `Value`'s
     /// relocated family check code, not `Typer::call` (deleted) -- and
     /// produces a `NodeKind::Call` node of the declared result type.
-    #[trace("TC-376")]
+    #[trace("TC-376", "FR-065-AC-4")]
     #[test]
     fn check_application_accepts_a_well_typed_call() {
         let scope = empty_scope();
@@ -1638,7 +1638,7 @@ pub(crate) mod checking_tests {
     /// TC-376/FR-065-AC-4: a call with the wrong number of arguments is
     /// refused (`ill_typed`/`type-mismatch`) by [`Application::resolve`] itself,
     /// not admitted and caught somewhere else.
-    #[trace("TC-376")]
+    #[trace("TC-376", "FR-065-AC-4")]
     #[test]
     fn check_application_refuses_wrong_arity() {
         let scope = empty_scope();
@@ -1664,7 +1664,7 @@ pub(crate) mod checking_tests {
     /// TC-376/FR-065-AC-4: a call naming no declared function and no tuple
     /// constructor is refused `missing-name`, exactly as `Typer::call` (now
     /// deleted) used to refuse it.
-    #[trace("TC-376")]
+    #[trace("TC-376", "FR-065-AC-4")]
     #[test]
     fn check_application_refuses_an_unknown_name() {
         let scope = empty_scope();
@@ -1692,7 +1692,7 @@ pub(crate) mod checking_tests {
     /// `ill_typed`/`type-mismatch` by the application check itself, the same
     /// path `check_application_refuses_wrong_arity` exercises for the
     /// arity case above.
-    #[trace("TC-376")]
+    #[trace("TC-376", "FR-065-AC-4")]
     #[test]
     fn check_application_refuses_a_type_mismatched_argument() {
         let scope = empty_scope();

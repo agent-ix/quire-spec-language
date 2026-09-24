@@ -43,7 +43,7 @@ Backed, all four steps: `check_application_accepts_a_well_typed_call`,
 `check_application_refuses_an_unknown_name` and
 `check_application_refuses_a_type_mismatched_argument`
 (`qsl-semantics/src/check/family.rs`, `checking_tests`), all tagged
-`#[trace("TC-376")]`. Each builds an `Expression::Call` and checks it
+`#[trace("TC-376", "FR-065-AC-4")]`. Each builds an `Expression::Call` and checks it
 through `Typer::infer`, so each fails when `Application`'s callee
 resolution, arity check or parameter typing is removed.
 

@@ -199,6 +199,7 @@ relocated to `tests/`, `xtask` or anywhere else instead of being deleted.
 | FR-067-CON-1 | This requirement's implementation adds the `forms` core module and deletes `LoweredSourceGraph`, `LoweredDeclaration` and `lower_source_graph` in the same change, from every Rust source and build-input file (`src/`, `tests/`, `benches/`, `xtask/`, `examples/`); no change under this requirement leaves both the S2 forms core and any of these three symbols present in any of those directories at once. This constraint does not reach `spec/` or `docs/`, which name the three symbols by design. | Process | Test |
 | FR-067-CON-2 | This requirement's scope (M-3a) is the `forms` core, its dispatch entry table, the SEAM-5 retirement, and the `value::expression::syntax` module move. It adds no family's grammar production function and no family-specific parsed-form-enum variant (M-3b); each family's own migration ticket adds its own production function and enum variant when that family migrates onto S2 forms. | Design | Inspection |
 | FR-067-CON-3 | The `value::expression::syntax` module move relocates the `Expression` enum and its seven sibling types without changing any variant, field or method on any of them; a change under this requirement that alters one of these types' shape while moving it does not satisfy this constraint. | Design | Test (TC-169) |
+| FR-067-CON-4 | Each entry in the forms core's dispatch table makes exactly one call into its family's production function and holds no branch, lookup or loop of its own (ADR-012 §4.3). | Design | Inspection |
 
 ## Acceptance Criteria
 
@@ -206,7 +207,7 @@ relocated to `tests/`, `xtask` or anywhere else instead of being deleted.
 | --- | --- | --- |
 | FR-067-AC-1 | Given a lossless CST with no error or recovery node, whose leading-token kind has an entry in the forms core's dispatch table, the forms stage returns a parsed form built from that CST. Given the same CST with one node marked as a recovery node, the forms stage returns a refusal with diagnostics and no parsed-form value, even though the same dispatch-table entry exists. A test using a test-only leading-token-kind variant and a stub production function demonstrates both branches, so the seam is exercised without depending on any family having migrated onto S2 forms. | Test (TC-167) |
 | FR-067-AC-2 | A parsed form exposes an accessor for the span of its originating CST node and no accessor whose return type is `NodeKey`, `DeclarationKey`, or any other type ADR-013 O-03, O-04 or O-07 defines as a check-time-minted identity (`DeclarationKey` is ADR-013 O-03, per ADR-011 §2.2's E3 row "ADR-013 O-03, C-02"); a test that attempts to call such an accessor on a parsed form fails to compile, because none exists on the type. This criterion checks the absence of accessors returning this named set of identity types; it is not a claim that no accessor of any other shape could leak positional information that behaves like an identity. | Test (TC-167) |
-| FR-067-AC-3 | Each entry in the forms core's dispatch table makes exactly one call into its family's production function and holds no other conditional, lookup or loop; a code-shape test (an AST or line-count check against a fixed budget, the same style FR-065-AC-4 applies to `infer_form`) fails if a future change adds branching logic directly inside a dispatch-table entry instead of inside the family production function it calls. | Test (TC-167) |
+| FR-067-AC-3 | Given a lossless CST with no error or recovery node whose leading token selects no dispatch-table entry (in M-3a every real spelling does, for example `record`), the forms stage refuses with `NoDispatchEntry` and returns no parsed form. | Test (TC-167) |
 | FR-067-AC-4 | The forms core's dispatch table's `match` over the leading-token-kind enum, and the parsed-form enum it produces, are among FR-063's checked-in seam locations; adding a variant to either enum without a matching arm at every FR-063-listed seam produces `E0004` at that seam, demonstrated by FR-063's seam probe (FR-063-AC-1, FR-063-AC-6) on every full-gate run, not re-verified here by source inspection. | Test (TC-161) |
 | FR-067-AC-5 | After this requirement's implementation lands, `LoweredSourceGraph`, `LoweredDeclaration` and `lower_source_graph` are absent from the compiled crate's public and crate-internal symbols and from `complete::mod`'s re-export list; a grep-equivalent symbol scan over the compiled crate confirms the absence of all three names. This criterion alone is weak — rustc emits no symbol for an unreferenced non-generic struct, so this scan can pass while `LoweredDeclaration` still exists in source — and FR-067-AC-6's source-reference scan is the load-bearing check for that gap, not this one. | Test (TC-168) |
 | FR-067-AC-6 | Every Rust source and build-input file — `src/`, `tests/`, `benches/`, `xtask/` and `examples/`, not `src/` alone — contains zero source references to `lower_source_graph`, `LoweredSourceGraph` or `LoweredDeclaration`. This scan does not reach `spec/` or `docs/`, which name the three symbols by design. The pre-migration test that exercised `lower_source_graph` directly (`complete::package_tests`) is deleted in the same change: not left calling a now-missing symbol, not left disabled behind `#[ignore]` or a feature gate, and not relocated to `tests/` or `xtask` instead of deleted. A change that moves `lower_source_graph` and its test out of `src/` into `tests/` or `xtask` does not satisfy this criterion, even though it would satisfy a `src/`-only scan. | Test (TC-168) |
@@ -277,3 +278,17 @@ SEAM-1's native and SEAM-2's composed `syntax`/`parser` modules (the
 top-level `syntax`/`parser`, distinct from `value::expression::syntax`) are
 unaffected by this requirement and retire per lane under ADR-011 §7.3
 M-6a to M-6e.
+
+**FR-067-AC-3 is a behavioural criterion (QSL-148, 2026-09-24).** It was
+verified by a code-shape test, which the
+[testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
+(Peter, 2026-09-22) does not admit. It now states the no-entry refusal;
+building a form through an entry is FR-067-AC-1.
+`no_dispatch_entry_refuses_a_clean_cst_with_no_matching_leading_token`
+(`qsl-forms/src/dispatch.rs`) backs it and carries the `FR-067-AC-3` tag. Its
+fixture token `record` becomes a `Value` entry under FR-091, which moves the
+fixture to a spelling no family claims. The thin-entry rule is FR-067-CON-4,
+verified by inspection. The syn-based shape test
+`dispatch_entry_is_a_single_thin_call` in the same file carries no trace tag
+and backs no criterion; remaining work: delete it (QSL-148 implementation
+PR).

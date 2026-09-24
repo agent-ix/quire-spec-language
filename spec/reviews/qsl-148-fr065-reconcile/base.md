@@ -74,9 +74,8 @@ The TC-376 Passed row is backed by a test for every step. The FR-065-AC-4
 
 ## Resolution
 
-- FND-001: FR-065's Status marks AC-4 backed by behaviour with the
-  `FR-065-AC-4` trace tag pending, as remaining work for QSL-148's
-  implementation PR.
+- FND-001: the four TC-376 tests now carry
+  `#[trace("TC-376", "FR-065-AC-4")]`, and FR-065's Status says so.
 - FND-002: TC-164 now names the `check_clause_expression` arguments, compares
   verdicts by refusal cause only and expects exactly one refusal in step 2.
 - FND-003: FR-065-AC-5 and TC-164 step 4 add the `decreases` measure position

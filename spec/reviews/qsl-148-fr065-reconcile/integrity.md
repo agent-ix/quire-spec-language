@@ -77,8 +77,9 @@ about stale text left around the edited paragraphs.
 - FND-003: FR-065-CON-1 names `Expression::Call`'s arm.
 - FND-004: the Status paragraph now names `check::lowering` keying as the
   minting site and drops the deleted symbols.
-- FND-005: recorded in FR-065's Status as remaining work for QSL-148's
-  implementation PR (a code doc comment; this change edits spec files only).
+- FND-005: the `infer_form` doc comment (`typing.rs`), `check.rs`'s module
+  doc and `Application`'s doc now cite FR-065-CON-3, the amended AC-4 and
+  AC-5, and ADR-012 §4.3 (comment-only change).
 - FND-006: the Behavior text and Dependencies bullet say SEAM-2 is deleted one
   family at a time and the last family ticket deletes the remainder.
 - FND-007: FR-065-OQ-1 cites ADR-011 §7.3's M-6a row for the 2026-09-19

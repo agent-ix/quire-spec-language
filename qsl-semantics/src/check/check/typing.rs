@@ -579,27 +579,18 @@ impl<'a> Typer<'a> {
     /// FR-065's dispatch seam over [`Expression`] (ADR-012 §4.3): start
     /// inferring `expression`'s type, its nesting level already entered.
     ///
-    /// **`Expression::Call` is thin (QSL-148).** Its arm resolves the call
-    /// through [`Application::resolve`] -- `Value`'s family check code for
-    /// function application -- and holds no semantic logic of its own
-    /// (FR-065-AC-4): no name resolution or arity check runs directly in
-    /// this arm. Each argument is then checked against
-    /// [`Application::parameter`] and the node is built by
-    /// [`Application::finish`].
+    /// **`Expression::Call` is thin (FR-065-CON-3).** Its arm makes one call
+    /// into [`Application::resolve`] -- `Value`'s application check -- and
+    /// holds no name, arity or argument-type logic of its own. Each argument
+    /// is then checked against [`Application::parameter`] under this typer's
+    /// clause kind, and the node is built by [`Application::finish`].
+    /// FR-065-AC-4 states the verdicts that check gives; FR-065-AC-5 states
+    /// that a call gets the same verdict from a declaration body, a
+    /// `decreases` measure and a clause expression.
     ///
-    /// **`Expression::Call` itself is still present in [`Expression`]
-    /// (FR-065-AC-5 remains unmet for this reason).** FR-065-AC-5 requires
-    /// the composed checker's input form-kind enum to carry neither a
-    /// function-declaration nor a function-application variant once this
-    /// requirement lands; `Expression::Call` is that variant, and it has not
-    /// been removed. An earlier version of this doc argued a call should
-    /// stay because it is "an ordinary, nestable operand of every other
-    /// `Value` form" -- that argument reasons about a migration that has
-    /// not happened, not about one AC-5 already excuses, and FR-065-AC-5's
-    /// own text says plainly that a variant left in place "with or without
-    /// an arm for it, does not satisfy this criterion." See FR-065's own
-    /// Status section for why AC-5 stays recorded unbacked rather than
-    /// retagged onto what this arm's own shape does satisfy.
+    /// `Expression::Call` is `Value`'s variant of the one [`Expression`]
+    /// enum: its owning family is the family whose check its arm calls
+    /// (ADR-012 §4.3).
     ///
     /// `#[deny(...)]` (FR-063's residual paragraph, carried into the
     /// QSL-25 implementation by owner ruling): a future change that wants
