@@ -855,6 +855,12 @@ struct Matched {
     children: std::ops::Range<usize>,
     /// Matches in this subtree, itself included: the CST nodes it lowers to.
     size: usize,
+    /// Bracket depth the production was entered at; with `production` and
+    /// `start`, the memo key.
+    depth: usize,
+    /// The match stored before this one at the same `start`: the memo is
+    /// one list per position, threaded through the store.
+    earlier: Option<usize>,
 }
 
 /// A completed match not yet adopted by the production that encloses it.
@@ -865,16 +871,6 @@ struct Pending {
     /// Subtree sizes of this and every earlier pending match, summed, so the
     /// matches made since any pending length are counted in O(1).
     total: usize,
-}
-
-/// A production that matched at a position and bracket depth: the position
-/// after it and its stored match.
-#[derive(Clone, Copy, Debug)]
-struct Memo {
-    production: Production,
-    depth: usize,
-    end: usize,
-    node: usize,
 }
 
 /// The engine's result for a matched unit: the match store and its root.
@@ -1005,7 +1001,7 @@ const WORK_PER_TOKEN: usize = 256;
 ///
 /// A production's outcome is a function of the production, position and
 /// bracket depth alone, so a match is memoized under that key and reused by
-/// reference. `matches`, `links` and `memo` are append-only for one
+/// reference. `matches` and `links` are append-only for one
 /// [`Self::production`] call; each entry costs at least one charged step, so
 /// their size is bounded by the work budget.
 struct Engine<'a> {
@@ -1017,8 +1013,9 @@ struct Engine<'a> {
     matches: Vec<Matched>,
     links: Vec<usize>,
     pending: Vec<Pending>,
-    /// Matched productions by start position, for positions `0..=tokens`.
-    memo: Vec<Vec<Memo>>,
+    /// The latest stored match starting at each position `0..=tokens`, the
+    /// head of that position's memo list.
+    memo: Vec<Option<usize>>,
     steps: usize,
     maximum_steps: usize,
     farthest: usize,
@@ -1038,7 +1035,7 @@ impl<'a> Engine<'a> {
             matches: Vec::new(),
             links: Vec::new(),
             pending: Vec::new(),
-            memo: vec![Vec::new(); tokens.len().saturating_add(1)],
+            memo: vec![None; tokens.len().saturating_add(1)],
             steps: 0,
             maximum_steps: tokens
                 .len()
@@ -1101,7 +1098,7 @@ impl<'a> Engine<'a> {
         self.matches.clear();
         self.links.clear();
         self.pending.clear();
-        self.memo.iter_mut().for_each(Vec::clear);
+        self.memo.fill(None);
         let mut step = Step::Production(production, position, 0);
         loop {
             step = match step {
@@ -1144,15 +1141,17 @@ impl<'a> Engine<'a> {
         }
         // Reuse, not copy: the memoized match joins this attempt by
         // reference, one step for the whole subtree.
-        let memoized = self.memo.get(position).and_then(|entries| {
-            entries
-                .iter()
-                .find(|memo| memo.production == production && memo.depth == depth)
-                .copied()
-        });
-        if let Some(memo) = memoized {
-            self.adopt_later(memo.node);
-            return Step::Return(Outcome::Match(memo.end));
+        let mut cursor = self.memo.get(position).copied().flatten();
+        while let Some(node) = cursor {
+            let Some(matched) = self.matches.get(node) else {
+                break;
+            };
+            if matched.production == production && matched.depth == depth {
+                let end = matched.end;
+                self.adopt_later(node);
+                return Step::Return(Outcome::Match(end));
+            }
+            cursor = matched.earlier;
         }
         let grammar = self.grammar;
         let Some(rule) = grammar.get(&production) else {
@@ -1259,22 +1258,20 @@ impl<'a> Engine<'a> {
                     );
                     self.pending.truncate(first);
                     let node = self.matches.len();
+                    let earlier = self
+                        .memo
+                        .get_mut(position)
+                        .and_then(|head| head.replace(node));
                     self.matches.push(Matched {
                         production,
                         start: position,
                         end,
                         children: links..self.links.len(),
                         size: descendants + 1,
+                        depth,
+                        earlier,
                     });
                     self.adopt_later(node);
-                    if let Some(entries) = self.memo.get_mut(position) {
-                        entries.push(Memo {
-                            production,
-                            depth,
-                            end,
-                            node,
-                        });
-                    }
                     Step::Return(Outcome::Match(end))
                 }
                 other => Step::Return(other),
