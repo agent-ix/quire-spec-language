@@ -1,0 +1,495 @@
+{
+  "collectionId": "qsl205-ab-a-probe-v1",
+  "configDigest": "sha256:fe7e13db5c4590d89331241aa3b8975cf7619b752818638d3cf06a90c27aded6",
+  "environment": {
+    "loads": [
+      {
+        "loadavg": "11.08 13.36 13.18",
+        "round": 1,
+        "when": "before"
+      },
+      {
+        "loadavg": "10.89 12.28 12.79",
+        "round": 1,
+        "when": "after"
+      },
+      {
+        "loadavg": "10.66 11.98 12.64",
+        "round": 2,
+        "when": "before"
+      },
+      {
+        "loadavg": "13.10 12.99 12.97",
+        "round": 2,
+        "when": "after"
+      },
+      {
+        "loadavg": "11.64 12.51 12.80",
+        "round": 3,
+        "when": "before"
+      },
+      {
+        "loadavg": "12.05 12.33 12.69",
+        "round": 3,
+        "when": "after"
+      },
+      {
+        "loadavg": "11.57 12.37 12.68",
+        "round": 4,
+        "when": "before"
+      },
+      {
+        "loadavg": "8.23 10.86 12.10",
+        "round": 4,
+        "when": "after"
+      },
+      {
+        "loadavg": "5.60 9.53 11.55",
+        "round": 5,
+        "when": "before"
+      },
+      {
+        "loadavg": "7.81 9.18 11.19",
+        "round": 5,
+        "when": "after"
+      }
+    ],
+    "machine": "WSL2 Linux 6.18.33.2-microsoft-standard-WSL2, 20 logical CPUs, 62 GiB RAM",
+    "role": "baseline (A, origin/main)",
+    "session": "qsl205-ab: A = ddc0083e, B = 61dd8188, rounds A1 B1 A2 B2 ... A5 B5",
+    "sharedLoad": "QSL-205 interleaved A/B session, A and B alternating per round; other agents' QSL builds and benches ran on the same machine; loadavg recorded per round"
+  },
+  "observations": [
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "1000",
+        "quantity": "wall_time",
+        "shape": "chain"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.0933
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "1000",
+        "quantity": "peak_rss",
+        "shape": "chain"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "KiB",
+      "value": 15556
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "2000",
+        "quantity": "wall_time",
+        "shape": "chain"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.338
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "2000",
+        "quantity": "peak_rss",
+        "shape": "chain"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "KiB",
+      "value": 26816
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "4000",
+        "quantity": "wall_time",
+        "shape": "chain"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 1.232
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "4000",
+        "quantity": "peak_rss",
+        "shape": "chain"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "KiB",
+      "value": 48712
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "8000",
+        "quantity": "wall_time",
+        "shape": "chain"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 9.4
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "8000",
+        "quantity": "peak_rss",
+        "shape": "chain"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "KiB",
+      "value": 92904
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "1000",
+        "quantity": "wall_time",
+        "shape": "independent"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 0.1195
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "1000",
+        "quantity": "peak_rss",
+        "shape": "independent"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "KiB",
+      "value": 13128
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "5000",
+        "quantity": "wall_time",
+        "shape": "independent"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "s",
+      "value": 4.744
+    },
+    {
+      "definitionVersion": "qsl.bench.probe.check_wall_time_and_rss-v1",
+      "dimensions": {
+        "functions": "5000",
+        "quantity": "peak_rss",
+        "shape": "independent"
+      },
+      "metric": "qsl.bench.probe.check_wall_time_and_rss",
+      "planId": "MP-006",
+      "population": {
+        "complete": true,
+        "examined": 5,
+        "repetitions": 5
+      },
+      "shape": "scalar",
+      "state": "measured",
+      "unit": "KiB",
+      "value": 47608
+    }
+  ],
+  "rawEvidence": {
+    "probeNote": "qsl-bench-probe check <shape> <n>, one process per input per round: wall_s is one PackageDeclarations::check over the whole package; peak_rss_kib is VmHWM of that process",
+    "probeRounds": {
+      "chain/1000": [
+        {
+          "peak_rss_kib": 15556,
+          "round": 1,
+          "wall_s": 0.0906
+        },
+        {
+          "peak_rss_kib": 15576,
+          "round": 2,
+          "wall_s": 0.1206
+        },
+        {
+          "peak_rss_kib": 15560,
+          "round": 3,
+          "wall_s": 0.106
+        },
+        {
+          "peak_rss_kib": 15436,
+          "round": 4,
+          "wall_s": 0.0933
+        },
+        {
+          "peak_rss_kib": 15540,
+          "round": 5,
+          "wall_s": 0.09259999999999999
+        }
+      ],
+      "chain/2000": [
+        {
+          "peak_rss_kib": 26624,
+          "round": 1,
+          "wall_s": 0.3103
+        },
+        {
+          "peak_rss_kib": 26740,
+          "round": 2,
+          "wall_s": 0.4587
+        },
+        {
+          "peak_rss_kib": 26816,
+          "round": 3,
+          "wall_s": 0.35760000000000003
+        },
+        {
+          "peak_rss_kib": 26820,
+          "round": 4,
+          "wall_s": 0.29869999999999997
+        },
+        {
+          "peak_rss_kib": 26820,
+          "round": 5,
+          "wall_s": 0.338
+        }
+      ],
+      "chain/4000": [
+        {
+          "peak_rss_kib": 48712,
+          "round": 1,
+          "wall_s": 1.1056
+        },
+        {
+          "peak_rss_kib": 48696,
+          "round": 2,
+          "wall_s": 1.6687
+        },
+        {
+          "peak_rss_kib": 48524,
+          "round": 3,
+          "wall_s": 1.4981
+        },
+        {
+          "peak_rss_kib": 48720,
+          "round": 4,
+          "wall_s": 1.0900999999999998
+        },
+        {
+          "peak_rss_kib": 48868,
+          "round": 5,
+          "wall_s": 1.2315
+        }
+      ],
+      "chain/8000": [
+        {
+          "peak_rss_kib": 92932,
+          "round": 1,
+          "wall_s": 9.3996
+        },
+        {
+          "peak_rss_kib": 92756,
+          "round": 2,
+          "wall_s": 11.273299999999999
+        },
+        {
+          "peak_rss_kib": 92800,
+          "round": 3,
+          "wall_s": 12.6805
+        },
+        {
+          "peak_rss_kib": 93072,
+          "round": 4,
+          "wall_s": 4.362
+        },
+        {
+          "peak_rss_kib": 92904,
+          "round": 5,
+          "wall_s": 6.751399999999999
+        }
+      ],
+      "independent/1000": [
+        {
+          "peak_rss_kib": 13224,
+          "round": 1,
+          "wall_s": 0.1695
+        },
+        {
+          "peak_rss_kib": 13092,
+          "round": 2,
+          "wall_s": 0.1195
+        },
+        {
+          "peak_rss_kib": 13124,
+          "round": 3,
+          "wall_s": 0.1674
+        },
+        {
+          "peak_rss_kib": 13320,
+          "round": 4,
+          "wall_s": 0.10579999999999999
+        },
+        {
+          "peak_rss_kib": 13128,
+          "round": 5,
+          "wall_s": 0.1143
+        }
+      ],
+      "independent/5000": [
+        {
+          "peak_rss_kib": 47560,
+          "round": 1,
+          "wall_s": 7.1242
+        },
+        {
+          "peak_rss_kib": 47608,
+          "round": 2,
+          "wall_s": 6.299
+        },
+        {
+          "peak_rss_kib": 47752,
+          "round": 3,
+          "wall_s": 4.7435
+        },
+        {
+          "peak_rss_kib": 47972,
+          "round": 4,
+          "wall_s": 2.1029
+        },
+        {
+          "peak_rss_kib": 47552,
+          "round": 5,
+          "wall_s": 2.6155
+        }
+      ]
+    }
+  },
+  "schemaVersion": 2,
+  "scope": {
+    "axis": "checker-probe",
+    "inputs": 6,
+    "repetitions": 5
+  },
+  "sourceRevision": "ddc0083ecb494c44eb6ececbe127f6707a68874e",
+  "subject": "quire-spec-language qsl-bench-probe check",
+  "timestamp": "2026-09-24T08:37:47.000Z",
+  "toolIdentity": "qsl-bench-probe check <shape> <n>, one process per input",
+  "toolVersion": "rustc 1.94.1 (e408947bf 2026-03-25)",
+  "verificationStack": {
+    "artifacts": {
+      "Cargo.lock": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7"
+    },
+    "buildProfile": "release",
+    "capabilities": [
+      "probe.wall-time",
+      "probe.peak-rss"
+    ],
+    "executableDigest": "sha256:60abd156c9ee1ccfe4e70d1e93aa88efa869363d5ef462efb56eb6109f1fd5c7",
+    "lockDigest": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
+    "schemaVersion": "verification-stack-attestation-v1",
+    "sources": {
+      "quire-spec-language": {
+        "remote": "https://github.com/agent-ix/quire-spec-language",
+        "revision": "ddc0083ecb494c44eb6ececbe127f6707a68874e",
+        "sourceState": "clean"
+      }
+    },
+    "toolchains": {
+      "node": null,
+      "python": null,
+      "rust": "rustc 1.94.1 (e408947bf 2026-03-25)"
+    }
+  }
+}

@@ -584,6 +584,98 @@ variance is the MAD/median of the five per-round slopes.
 | 100 and 1,000 frames | 301 ns (11%) | 162 ns (2.1%) |
 | 1 and 1,000 frames | 295 ns (10%) | 160 ns (1.8%) |
 
+## QSL-205: checker lookups by map. Improvement on every checker benchmark; chain check near-linear.
+
+QSL-205 replaced the checker's linear lookups with maps built once:
+
+- `OccurrenceMap` keys spans by (node id, role); the next ordinal is that
+  key's span count.
+- `Scope` indexes type names, enum members (by enum name and case, parsed from
+  `E::m`) and model operations. `Signatures` indexes function names. No
+  formatted string is compared on a lookup path.
+- The duplicate-name check groups declarations by name in one pass.
+- `CheckedGraph` keeps its `Signatures` and an identity index. The evaluator
+  reads each callee from the graph by index, so no callable list is built per
+  evaluation.
+- Lowering's `settle` resolves only the keys written since the previous settle.
+  Before, it re-resolved every function and composite key per function group.
+  This was the next hot spot after the listed sites: 19% of self time at
+  8,000.
+
+It was measured by the claim rule above, in one session on 2026-09-24, 01:37 to
+01:53 (UTC-7):
+
+- A is `ddc0083e` (origin/main, after QSL-156 A4b) and B is `61dd8188` (the
+  fix). Each side has its own worktree and target directory.
+- The rounds ran A1, B1, A2, B2 … A5, B5. Each round ran one
+  `make bench-checker`, then `qsl-bench-probe check chain <n>` for 1,000,
+  2,000, 4,000 and 8,000 and `qsl-bench-probe check independent <n>` for 1,000
+  and 5,000, one process per input.
+- Load average ranged from 5.6 to 13.1. Other agents' QSL builds and benches
+  ran on the machine during the session.
+- The apparatus is unchanged: `benches/checker.rs`, `src/check.rs` and
+  `Cargo.toml` are byte-identical on both sides.
+
+A is much slower than QSL-203's B on the same inputs (chain of 1,000: 93 ms
+against 15.6 ms). A4b's lowering keys every node, and its cost is in both
+sides.
+
+What each figure counts:
+
+- **Wall time** is one `PackageDeclarations::check` over the whole package.
+  Criterion rows are criterion point estimates. Probe rows are one `check` per
+  process.
+- **Calls per declaration.** A chain of *n* has *n* − 1 calls, one per
+  declaration but the last. An independent package has none.
+- **Margin** is max(the stated variance, the session's MAD/median). Probe rows
+  have no stated variance, so their margin is the session's.
+
+| Benchmark | A, 5 rounds | B, 5 rounds | A median | B median | Gain | Margin | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `checker/chain/250` | 21.2, 20.4, 19.8, 15.9, 22.7 ms | 18.1, 17.9, 16.8, 14.1, 14.1 ms | 20.4 ms | 16.8 ms | 18% | 12% | improvement |
+| `checker/chain/1000` | 95.6, 109, 112, 93.4, 107 ms | 77.9, 69.7, 87.0, 58.3, 65.2 ms | 107 ms | 69.7 ms | 35% | 13% | improvement |
+| `checker/chain/2000` | 312, 513, 411, 297, 299 ms | 164, 140, 177, 123, 157 ms | 312 ms | 157 ms | 50% | 12% | improvement |
+| `checker/independent/1000` | 155, 150, 126, 108, 114 ms | 75.0, 96.1, 75.6, 66.9, 67.6 ms | 126 ms | 75.0 ms | 40% | 15% | improvement |
+| `checker/independent/5000` | 3.68, 4.50, 4.93, 2.34, 3.66 s | 394, 518, 361, 359, 353 ms | 3.68 s | 361 ms | 90% | 22% | improvement |
+| probe chain of 1,000 | 90.6, 121, 106, 93.3, 92.6 ms | 84.0, 99.0, 80.2, 78.9, 61.1 ms | 93.3 ms | 80.2 ms | 14% | 5% | improvement |
+| probe chain of 2,000 | 310, 459, 358, 299, 338 ms | 176, 166, 138, 135, 125 ms | 338 ms | 138 ms | 59% | 9% | improvement |
+| probe chain of 4,000 | 1.11, 1.67, 1.50, 1.09, 1.23 s | 408, 439, 288, 269, 259 ms | 1.23 s | 288 ms | 77% | 11% | improvement |
+| probe chain of 8,000 | 9.40, 11.3, 12.7, 4.36, 6.75 s | 899, 871, 624, 568, 578 ms | 9.40 s | 624 ms | 93% | 28% | improvement |
+| probe independent 1,000 | 170, 120, 167, 106, 114 ms | 123, 94.8, 70.2, 67.4, 73.4 ms | 120 ms | 73.4 ms | 39% | 11% | improvement |
+| probe independent 5,000 | 7.12, 6.30, 4.74, 2.10, 2.62 s | 733, 472, 379, 381, 368 ms | 4.74 s | 381 ms | 92% | 45% | improvement |
+
+**Growth per doubling on the chain.** B's probe medians grow 1.72, 2.08 and
+2.17 times from 1,000 to 8,000 (A: 3.62, 3.64 and 7.63). Taken round by round,
+B's ratios range over 1.68–2.09, 1.99–2.64 and 1.98–2.23. The 2.64 is round 1's
+2,000 to 4,000, under a load average of 13.
+
+Peak RSS, 5 rounds each. The RSS variance is below 0.5% on both sides.
+
+| Input | A median | B median | B / A |
+| --- | --- | --- | --- |
+| chain of 1,000 | 15,556 KiB | 16,236 KiB | 1.04 |
+| chain of 2,000 | 26,816 KiB | 27,800 KiB | 1.04 |
+| chain of 4,000 | 48,712 KiB | 51,004 KiB | 1.05 |
+| chain of 8,000 | 92,904 KiB | 96,992 KiB | 1.04 |
+| independent 1,000 | 13,128 KiB | 13,772 KiB | 1.05 |
+| independent 5,000 | 47,608 KiB | 50,208 KiB | 1.05 |
+
+The indexes cost about 4% more peak memory, growing linearly.
+
+A `perf record --call-graph dwarf` profile of B's `qsl-bench-probe check chain
+8000` puts 69% of samples, inclusive, in node keying (`node_key::node_key`: the
+canonical JSON preimage and its SHA-256), a fixed cost per node. The lookup
+sites are gone from the profile.
+
+The session is recorded as four collections under
+`spec/evidence/measurements/`, each holding every round and the load averages:
+
+- **Criterion rows (MP-002):** `qsl205-ab-a-checker-v2.json` and
+  `qsl205-ab-b-checker-v2.json`.
+- **Probe rows (MP-006):** `qsl205-ab-a-probe-v1.json` and
+  `qsl205-ab-b-probe-v1.json`. Wall time and peak RSS are separate
+  `quantity` dimensions.
+
 ## Engineering-assurance record
 
 The same benchmark set is recorded as engineering-assurance MeasurementPlans,
