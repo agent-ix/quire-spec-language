@@ -5,7 +5,7 @@ type: MeasurementPlan
 status: active
 owner: peter
 metric: qsl.bench.cst.wall_time
-definition_version: qsl.bench.cst.wall_time-v1
+definition_version: qsl.bench.cst.wall_time-v2
 stage: baseline
 ground_truth_kind: mechanical
 objective:
@@ -36,7 +36,7 @@ statistical_design:
     min-max range of the five repetitions is recorded beside it.
   decision_rule:
     comparator: lt
-    baseline: external-reference
+    baseline: prior-collection
 protected_apparatus:
   - qsl-bench/benches/cst.rs
   - qsl-bench/src/parse.rs
@@ -44,16 +44,24 @@ protected_apparatus:
 negative_controls:
   - kind: gain-within-noise
     description: >-
-      A later run counts as an improvement on a benchmark only when its
-      median over five repetitions is below that benchmark's baseline
-      median reduced by the benchmark's stated variance, in a back-to-back
-      A/B run against the baseline revision; a smaller change is recorded
-      as no change (QSL-196 acceptance criterion 3).
+      A candidate counts as an improvement on a benchmark only in one
+      interleaved session that alternates the baseline revision and the
+      candidate revision, five rounds each, on one machine: its median must
+      be below the baseline revision's same-session median by more than
+      the larger of the benchmark's stated variance in
+      qsl-bench/BASELINE.md and that session's own MAD/median. A smaller
+      change is recorded as no change (QSL-196 acceptance criterion 3). The
+      absolute baseline table is informational and is never the comparison
+      point.
   - kind: apparatus-edit
     description: >-
       The bench file, its input generator and the bench crate manifest are
       protected apparatus; a change that edits them re-baselines rather
       than claiming an improvement.
+  - kind: selective-reporting
+    description: >-
+      Every round of an interleaved session is recorded, both sides; a
+      session is not rerun until it passes.
   - kind: stale-evidence
     description: >-
       Every recorded collection names the exact source revision and the
@@ -68,10 +76,13 @@ relationships:
 
 ## Decision Use
 
-The baseline that QSL-202 to QSL-206 compare against. A performance change
-claims an improvement on a benchmark only when it clears this baseline by more
-than the benchmark's recorded uncertainty. The plan grades no release and gates
-no merge.
+The benchmark set and noise floor that QSL-202 to QSL-206 are judged
+against. A performance change claims an improvement on a benchmark only by
+beating the baseline revision in one interleaved same-session A/B run, by more
+than the larger of the benchmark's stated variance and that session's own
+MAD/median. The recorded baseline values are informational: on a shared
+machine the same code differs by up to half between sessions. The plan grades
+no release and gates no merge.
 
 ## Population
 
@@ -91,10 +102,11 @@ seconds per call.
 
 ## Interpretation
 
-The figures are wall time on a shared, loaded machine. They compare only with
-runs on the same machine under similar load. The decision rule's per-benchmark
-reference is external to this plan: the benchmark's baseline median multiplied
-by one minus its stated variance, both taken from `qsl-bench/BASELINE.md`.
+The figures are wall time on a shared, loaded machine. The decision rule's
+`prior-collection` is the baseline revision's collection from the same
+interleaved session, never the collection recorded here. The rule cannot state
+a relative margin per benchmark, so the margin, max(stated variance, session
+MAD/median), is applied as stated in `qsl-bench/BASELINE.md`.
 A refused input (a parse that returns `resource_exhausted`) is still timed. The
 time to reach the refusal is part of the baseline, and a fix that makes the
 input parse changes what the benchmark measures.

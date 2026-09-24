@@ -1,6 +1,6 @@
 {
-  "collectionId": "qsl196-baseline-evaluator-20260923",
-  "configDigest": "sha256:5d1acb8cd42989faacd0da7a880822824055bde15de55e72e2688e5030d89fad",
+  "collectionId": "qsl196-baseline-evaluator-v2",
+  "configDigest": "sha256:fe7e13db5c4590d89331241aa3b8975cf7619b752818638d3cf06a90c27aded6",
   "environment": {
     "loads": [
       {
@@ -59,7 +59,7 @@
   },
   "observations": [
     {
-      "definitionVersion": "qsl.bench.evaluator.wall_time-v1",
+      "definitionVersion": "qsl.bench.evaluator.wall_time-v2",
       "dimensions": {
         "benchmark": "evaluator/call_chain/1"
       },
@@ -73,10 +73,10 @@
       "shape": "scalar",
       "state": "measured",
       "unit": "s",
-      "value": 4.9953e-7
+      "value": 4.995e-7
     },
     {
-      "definitionVersion": "qsl.bench.evaluator.wall_time-v1",
+      "definitionVersion": "qsl.bench.evaluator.wall_time-v2",
       "dimensions": {
         "benchmark": "evaluator/call_chain/10"
       },
@@ -90,10 +90,10 @@
       "shape": "scalar",
       "state": "measured",
       "unit": "s",
-      "value": 0.0000035764999999999996
+      "value": 0.000003576
     },
     {
-      "definitionVersion": "qsl.bench.evaluator.wall_time-v1",
+      "definitionVersion": "qsl.bench.evaluator.wall_time-v2",
       "dimensions": {
         "benchmark": "evaluator/call_chain/100"
       },
@@ -107,10 +107,10 @@
       "shape": "scalar",
       "state": "measured",
       "unit": "s",
-      "value": 0.000035269
+      "value": 0.00003527
     },
     {
-      "definitionVersion": "qsl.bench.evaluator.wall_time-v1",
+      "definitionVersion": "qsl.bench.evaluator.wall_time-v2",
       "dimensions": {
         "benchmark": "evaluator/call_chain/1000"
       },
@@ -124,7 +124,7 @@
       "shape": "scalar",
       "state": "measured",
       "unit": "s",
-      "value": 0.00043877999999999994
+      "value": 0.0004388
     }
   ],
   "rawEvidence": {
@@ -272,15 +272,15 @@
   "toolVersion": "criterion 0.8.2; rustc 1.98.1 (48a229cea 2026-09-01)",
   "verificationStack": {
     "artifacts": {
-      "Cargo.lock": "sha256:9dc9cac7d466819dc9cac2cc97815531d269c85bd2dc22cea450c3ebe10bfd3b",
-      "qsl-bench/benches/evaluator.rs": "sha256:51b7c98a00fc80fbd81c3165cab60e9c85ac08ca0edaa2e2f1f484d46a562ad3"
+      "Cargo.lock": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
+      "qsl-bench/benches/evaluator.rs": "sha256:ca0837f85ea7a59be18947cde2715fdca824bcfa11b2e2755338f12db0a64087"
     },
     "buildProfile": "release",
     "capabilities": [
       "criterion.wall-time"
     ],
     "executableDigest": "sha256:a1bec2a6ffc9edc17d392e5ed92e1dac59aa90285d714fc3e51434d9bfd2edf3",
-    "lockDigest": "sha256:9dc9cac7d466819dc9cac2cc97815531d269c85bd2dc22cea450c3ebe10bfd3b",
+    "lockDigest": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
     "schemaVersion": "verification-stack-attestation-v1",
     "sources": {
       "quire-spec-language": {

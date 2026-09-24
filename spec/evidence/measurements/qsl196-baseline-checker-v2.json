@@ -1,6 +1,6 @@
 {
-  "collectionId": "qsl196-baseline-checker-20260923",
-  "configDigest": "sha256:5d1acb8cd42989faacd0da7a880822824055bde15de55e72e2688e5030d89fad",
+  "collectionId": "qsl196-baseline-checker-v2",
+  "configDigest": "sha256:fe7e13db5c4590d89331241aa3b8975cf7619b752818638d3cf06a90c27aded6",
   "environment": {
     "loads": [
       {
@@ -59,7 +59,7 @@
   },
   "observations": [
     {
-      "definitionVersion": "qsl.bench.checker.wall_time-v1",
+      "definitionVersion": "qsl.bench.checker.wall_time-v2",
       "dimensions": {
         "benchmark": "checker/chain/250"
       },
@@ -73,10 +73,10 @@
       "shape": "scalar",
       "state": "measured",
       "unit": "s",
-      "value": 0.005972900000000001
+      "value": 0.005973
     },
     {
-      "definitionVersion": "qsl.bench.checker.wall_time-v1",
+      "definitionVersion": "qsl.bench.checker.wall_time-v2",
       "dimensions": {
         "benchmark": "checker/chain/1000"
       },
@@ -90,10 +90,10 @@
       "shape": "scalar",
       "state": "measured",
       "unit": "s",
-      "value": 0.10377
+      "value": 0.1038
     },
     {
-      "definitionVersion": "qsl.bench.checker.wall_time-v1",
+      "definitionVersion": "qsl.bench.checker.wall_time-v2",
       "dimensions": {
         "benchmark": "checker/chain/2000"
       },
@@ -107,10 +107,10 @@
       "shape": "scalar",
       "state": "measured",
       "unit": "s",
-      "value": 0.56415
+      "value": 0.5642
     },
     {
-      "definitionVersion": "qsl.bench.checker.wall_time-v1",
+      "definitionVersion": "qsl.bench.checker.wall_time-v2",
       "dimensions": {
         "benchmark": "checker/independent/1000"
       },
@@ -124,10 +124,10 @@
       "shape": "scalar",
       "state": "measured",
       "unit": "s",
-      "value": 0.012043
+      "value": 0.01204
     },
     {
-      "definitionVersion": "qsl.bench.checker.wall_time-v1",
+      "definitionVersion": "qsl.bench.checker.wall_time-v2",
       "dimensions": {
         "benchmark": "checker/independent/5000"
       },
@@ -141,7 +141,7 @@
       "shape": "scalar",
       "state": "measured",
       "unit": "s",
-      "value": 0.22669999999999998
+      "value": 0.2267
     }
   ],
   "rawEvidence": {
@@ -321,15 +321,15 @@
   "toolVersion": "criterion 0.8.2; rustc 1.98.1 (48a229cea 2026-09-01)",
   "verificationStack": {
     "artifacts": {
-      "Cargo.lock": "sha256:9dc9cac7d466819dc9cac2cc97815531d269c85bd2dc22cea450c3ebe10bfd3b",
-      "qsl-bench/benches/checker.rs": "sha256:9b2ada4b96c4e9ccb383500378a8f9a47160f2c97f52c843a44d6ccbcaa196e9"
+      "Cargo.lock": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
+      "qsl-bench/benches/checker.rs": "sha256:3aa271b2d8ac8666ed9bb16dc2c41ae8c7bdec2f1e7c4d40cde5527f14e6654b"
     },
     "buildProfile": "release",
     "capabilities": [
       "criterion.wall-time"
     ],
     "executableDigest": "sha256:f48521e4d53712e6b0cc5b75effc9e8ad67bc7d0d834cb087607991eb46dc55d",
-    "lockDigest": "sha256:9dc9cac7d466819dc9cac2cc97815531d269c85bd2dc22cea450c3ebe10bfd3b",
+    "lockDigest": "sha256:3b6aefeb44df45654e3afdad456d1a1e75c9ec61f2dbec9cbf61a302d8f025f7",
     "schemaVersion": "verification-stack-attestation-v1",
     "sources": {
       "quire-spec-language": {
