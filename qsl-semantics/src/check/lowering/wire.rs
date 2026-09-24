@@ -11,6 +11,6 @@ use super::SemanticNode;
 impl SemanticNode {
     /// The node's FR-322 `body` as a JSON tree, for the v2 emitter.
     pub fn wire_body(&self) -> Result<serde_json::Value, serde_json::Error> {
-        serde_json::to_value(&self.body)
+        serde_json::to_value(self.body())
     }
 }
