@@ -494,6 +494,162 @@ impl Expression {
             }
         }
     }
+
+    /// Moves every direct subexpression that has children of its own onto
+    /// `stack`, leaving a childless placeholder or an empty `Vec` behind.
+    /// Childless subexpressions stay in place: their own drop never recurses.
+    fn detach_children(&mut self, stack: &mut Vec<Expression>) {
+        fn take(boxed: &mut Expression, stack: &mut Vec<Expression>) {
+            if !boxed.is_childless() {
+                stack.push(std::mem::replace(boxed, Expression::Boolean(false)));
+            }
+        }
+        match self {
+            Self::Boolean(_) | Self::Integer(_) | Self::Rational(..) | Self::Name(_) => {}
+            Self::Negate(operand)
+            | Self::Not(operand)
+            | Self::Present(operand)
+            | Self::Value(operand)
+            | Self::Deref(operand)
+            | Self::Flatten(operand)
+            | Self::Size(operand)
+            | Self::Field { operand, .. }
+            | Self::Convert { operand, .. }
+            | Self::AllInstances {
+                population: operand,
+                ..
+            }
+            | Self::Pre(operand) => take(operand, stack),
+            Self::Let {
+                value: first,
+                body: second,
+                ..
+            }
+            | Self::Binary {
+                left: first,
+                right: second,
+                ..
+            }
+            | Self::Query {
+                source: first,
+                body: second,
+                ..
+            }
+            | Self::Count {
+                source: first,
+                predicate: second,
+                ..
+            }
+            | Self::Sum {
+                source: first,
+                summand: second,
+                ..
+            }
+            | Self::Contains {
+                collection: first,
+                item: second,
+            }
+            | Self::Lookup {
+                population: first,
+                reference: second,
+                ..
+            } => {
+                take(first, stack);
+                take(second, stack);
+            }
+            Self::If {
+                condition,
+                then,
+                otherwise,
+            } => {
+                take(condition, stack);
+                take(then, stack);
+                take(otherwise, stack);
+            }
+            Self::Accumulate {
+                source,
+                step,
+                identity,
+                ..
+            } => {
+                take(source, stack);
+                take(step, stack);
+                if let Some(identity) = identity {
+                    take(identity, stack);
+                }
+            }
+            Self::Call { arguments, .. }
+            | Self::Collection {
+                elements: arguments,
+                ..
+            } => stack.append(arguments),
+            Self::Dispatch {
+                receiver,
+                arguments,
+                ..
+            } => {
+                take(receiver, stack);
+                stack.append(arguments);
+            }
+            Self::Record { fields, .. } => {
+                stack.extend(
+                    fields
+                        .drain(..)
+                        .filter_map(|(_, initializer)| match initializer {
+                            FieldInitializer::Value(expression) => Some(expression),
+                            FieldInitializer::Null => None,
+                        }),
+                );
+            }
+        }
+    }
+
+    /// Whether this form has no subexpressions at all.
+    fn is_childless(&self) -> bool {
+        match self {
+            Self::Boolean(_) | Self::Integer(_) | Self::Rational(..) | Self::Name(_) => true,
+            Self::Call { arguments, .. }
+            | Self::Collection {
+                elements: arguments,
+                ..
+            } => arguments.is_empty(),
+            Self::Record { fields, .. } => fields.is_empty(),
+            Self::Let { .. }
+            | Self::If { .. }
+            | Self::Binary { .. }
+            | Self::Negate(_)
+            | Self::Not(_)
+            | Self::Field { .. }
+            | Self::Present(_)
+            | Self::Value(_)
+            | Self::Deref(_)
+            | Self::Convert { .. }
+            | Self::Query { .. }
+            | Self::Flatten(_)
+            | Self::Accumulate { .. }
+            | Self::Count { .. }
+            | Self::Sum { .. }
+            | Self::Size(_)
+            | Self::Contains { .. }
+            | Self::AllInstances { .. }
+            | Self::Lookup { .. }
+            | Self::Dispatch { .. }
+            | Self::Pre(_) => false,
+        }
+    }
+}
+
+/// Drops an expression of any nesting depth in constant native stack: each
+/// subexpression that has children of its own is detached onto a heap stack
+/// first, so every node's own drop sees only childless operands.
+impl Drop for Expression {
+    fn drop(&mut self) {
+        let mut stack = Vec::new();
+        self.detach_children(&mut stack);
+        while let Some(mut expression) = stack.pop() {
+            expression.detach_children(&mut stack);
+        }
+    }
 }
 
 /// `function name using V(parameters): result pure [decreases(measure)] {
@@ -828,5 +984,189 @@ mod tests {
         // this module's own doc) walks direct subexpressions.
         let nested = Expression::Not(Box::new(Expression::Boolean(false)));
         assert_eq!(nested.children().len(), 1);
+    }
+
+    /// Nesting depth for the drop tests: well past the ~21,700 levels at
+    /// which a recursive drop overflows a 2 MiB debug thread.
+    const LEVELS: usize = 100_000;
+
+    fn leaf(name: &str) -> Expression {
+        Expression::Name(name.to_owned())
+    }
+
+    fn type_form() -> TypeForm {
+        TypeForm::name("T", Span { start: 0, end: 0 })
+    }
+
+    /// Builds `LEVELS` nested expressions with `wrap` on a 2 MiB thread,
+    /// checks the depth reached, and drops the tree on that same thread.
+    fn drop_on_small_stack(wrap: fn(Expression, usize) -> Expression) {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || {
+                let mut expression = leaf("bottom");
+                for level in 0..LEVELS {
+                    expression = wrap(expression, level);
+                }
+                let mut depth = 0;
+                let mut node = &expression;
+                while let Some(child) = node.children().into_iter().find(|c| !c.is_childless()) {
+                    depth += 1;
+                    node = child;
+                }
+                assert_eq!(depth, LEVELS - 1, "the tree is nested LEVELS deep");
+                drop(expression);
+            })
+            .expect("spawn the drop thread")
+            .join()
+            .expect("dropping a deep expression does not overflow the stack");
+    }
+
+    #[test]
+    fn deep_single_operand_forms_drop_on_a_small_stack() {
+        drop_on_small_stack(|inner, level| {
+            let operand = Box::new(inner);
+            match level % 11 {
+                0 => Expression::Negate(operand),
+                1 => Expression::Not(operand),
+                2 => Expression::Present(operand),
+                3 => Expression::Value(operand),
+                4 => Expression::Deref(operand),
+                5 => Expression::Flatten(operand),
+                6 => Expression::Size(operand),
+                7 => Expression::Pre(operand),
+                8 => Expression::Field {
+                    operand,
+                    field: "f".to_owned(),
+                },
+                9 => Expression::Convert {
+                    target: type_form(),
+                    operand,
+                },
+                _ => Expression::AllInstances {
+                    target: type_form(),
+                    population: operand,
+                },
+            }
+        });
+    }
+
+    #[test]
+    fn deep_two_operand_forms_drop_on_a_small_stack() {
+        drop_on_small_stack(|inner, level| {
+            // Alternate which operand carries the nesting.
+            let (first, second) = if level % 2 == 0 {
+                (Box::new(inner), Box::new(leaf("x")))
+            } else {
+                (Box::new(leaf("x")), Box::new(inner))
+            };
+            match (level / 2) % 7 {
+                0 => Expression::Let {
+                    name: "x".to_owned(),
+                    value: first,
+                    body: second,
+                },
+                1 => Expression::Binary {
+                    operator: BinaryOperator::And,
+                    left: first,
+                    right: second,
+                },
+                2 => Expression::Query {
+                    query: BinderQuery::Map,
+                    binder: "x".to_owned(),
+                    source: first,
+                    body: second,
+                },
+                3 => Expression::Count {
+                    result_type: "N".to_owned(),
+                    binder: "x".to_owned(),
+                    source: first,
+                    predicate: second,
+                },
+                4 => Expression::Sum {
+                    result_type: "N".to_owned(),
+                    binder: "x".to_owned(),
+                    source: first,
+                    summand: second,
+                },
+                5 => Expression::Contains {
+                    collection: first,
+                    item: second,
+                },
+                _ => Expression::Lookup {
+                    target: type_form(),
+                    population: first,
+                    reference: second,
+                    absence: AbsenceMode::Refused,
+                },
+            }
+        });
+    }
+
+    #[test]
+    fn deep_if_drops_on_a_small_stack() {
+        drop_on_small_stack(|inner, level| {
+            let mut operands = [leaf("c"), leaf("t"), leaf("e")];
+            operands[level % 3] = inner;
+            let [condition, then, otherwise] = operands;
+            Expression::If {
+                condition: Box::new(condition),
+                then: Box::new(then),
+                otherwise: Box::new(otherwise),
+            }
+        });
+    }
+
+    #[test]
+    fn deep_accumulate_drops_on_a_small_stack() {
+        drop_on_small_stack(|inner, level| {
+            let mut operands = [leaf("c"), leaf("s"), leaf("i")];
+            operands[level % 3] = inner;
+            let [source, step, identity] = operands;
+            Expression::Accumulate {
+                form: Accumulation::Fold,
+                accumulator_type: "A".to_owned(),
+                accumulator: "a".to_owned(),
+                binder: "x".to_owned(),
+                source: Box::new(source),
+                step: Box::new(step),
+                identity: Some(Box::new(identity)),
+            }
+        });
+    }
+
+    #[test]
+    fn deep_argument_lists_drop_on_a_small_stack() {
+        drop_on_small_stack(|inner, level| match level % 4 {
+            0 => Expression::Call {
+                name: "f".to_owned(),
+                arguments: vec![leaf("a"), inner],
+            },
+            1 => Expression::Collection {
+                kind: CollectionKind::Sequence,
+                elements: vec![inner, leaf("a")],
+            },
+            2 => Expression::Dispatch {
+                receiver: Box::new(inner),
+                member: "m".to_owned(),
+                arguments: vec![leaf("a")],
+            },
+            _ => Expression::Dispatch {
+                receiver: Box::new(leaf("r")),
+                member: "m".to_owned(),
+                arguments: vec![inner],
+            },
+        });
+    }
+
+    #[test]
+    fn deep_record_fields_drop_on_a_small_stack() {
+        drop_on_small_stack(|inner, _| Expression::Record {
+            name: "R".to_owned(),
+            fields: vec![
+                ("a".to_owned(), FieldInitializer::Null),
+                ("b".to_owned(), FieldInitializer::Value(inner)),
+            ],
+        });
     }
 }
