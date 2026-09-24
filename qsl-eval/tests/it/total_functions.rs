@@ -853,12 +853,6 @@ fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
         .unwrap()
 }
 
-/// FR-093-AC-6: the lock evidence selecting [`ieee_reference`] for the
-/// `ieee_profile` law role, which a lowered IEEE operation names.
-fn ieee_lock_evidence() -> qsl_semantics::check::LockEvidence {
-    qsl_semantics::check::LockEvidence::default().with_ieee_profile(ieee_reference())
-}
-
 fn ieee_reference() -> DefinitionReference {
     let lock = DefinitionLock::pinned();
     let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
@@ -947,7 +941,6 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
                 ),
             ],
             ieee_profile: Some(ieee_profile()),
-            lock_evidence: ieee_lock_evidence(),
             models: vec![obj_model()],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
         }
@@ -1408,7 +1401,6 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
             ),
         ],
         ieee_profile: Some(ieee_profile()),
-        lock_evidence: ieee_lock_evidence(),
         ..PackageDeclarations::new(qsl_semantics::check::fixture_owner())
     }
     .check(CheckingLimits::default())

@@ -121,6 +121,7 @@ fn type_nodes(
     let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
     let location = generated_location();
+    let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
     let mut lowering = Lowering::new(
         scope,
         owner,
@@ -130,6 +131,7 @@ fn type_nodes(
         crate::check::MAX_CHECKING_DEPTH,
         0,
         &mut occurrences,
+        &mut meter,
     );
     let keys = value_types
         .iter()
@@ -503,6 +505,64 @@ fn recursive_records_key_to_g2_g3_and_g7_to_g9() {
     }
 }
 
+/// `record List { next?: List; }`, with no text field.
+fn list_types() -> TypeEnvironment {
+    let list = NodeKey::from_digest([5; 32]);
+    TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            list,
+            "List",
+            CompositeShape::Record(vec![FieldDeclaration::new(
+                "next",
+                ValueType::Composite(list),
+                Presence::Optional,
+            )]),
+        )],
+        [],
+    )
+    .expect("FR-143 admits List")
+}
+
+/// TC-415 (FR-093-AC-3): structural equality and `contains` over the
+/// recursive `List`, which has no text leaf, check and carry no leaves; the
+/// leaf walk stops at the recursion instead of running to the depth limit.
+#[trace("FR-093-AC-3", "TC-415")]
+#[test]
+fn equality_and_contains_over_a_recursive_record_without_text_have_no_leaves() {
+    let list = || TypeForm::name("List", SPAN);
+    let eq = function(
+        "eq",
+        &[("a", list()), ("b", list())],
+        boolean(),
+        None,
+        binary(BinaryOperator::Equal, name_expr("a"), name_expr("b")),
+    );
+    let lists = TypeForm::collection(CollectionKind::Sequence, SPAN)
+        .with_arguments(vec![list()])
+        .with_bounds(vec!["0".into(), "3".into()]);
+    let has = function(
+        "has",
+        &[("s", lists), ("a", list())],
+        boolean(),
+        None,
+        Expression::Contains {
+            collection: Box::new(name_expr("s")),
+            item: Box::new(name_expr("a")),
+        },
+    );
+    let checked = PackageDeclarations {
+        types: list_types(),
+        functions: vec![eq, has],
+        ..PackageDeclarations::new(fixture_owner())
+    }
+    .check(CheckingLimits::default())
+    .expect("equality and contains over List check");
+    for identity in ["quire.op.structural.eq", "quire.op.collection.contains"] {
+        let node = application(checked.semantic_graph(), identity);
+        assert_eq!(node["body"]["operation"]["leaves"], json!([]), "{identity}");
+    }
+}
+
 /// TC-413 step 9 (FR-092-AC-11): in `h`, `h(x - 1) and h(x - 1)` calls `h`
 /// through one node, so `h`'s group has four nodes.
 #[trace("FR-092-AC-11", "TC-413")]
@@ -551,6 +611,91 @@ fn equal_recursive_calls_are_one_node() {
         forms,
         ["binary", "call", "conditional", "recursive_function"]
     );
+}
+
+/// A ring of `k` functions, `r0` calling `r1` ... calling `r0`, all with
+/// the body of `recursive` except the last, whose `else` is `false`.
+fn ring(k: usize) -> Vec<FunctionDeclaration> {
+    (0..k)
+        .map(|at| {
+            let mut function = recursive(&format!("r{at}"), &format!("r{}", (at + 1) % k));
+            if at + 1 == k {
+                if let Expression::If { otherwise, .. } = &mut function.body {
+                    **otherwise = Expression::Boolean(false);
+                }
+            }
+            function
+        })
+        .collect()
+}
+
+/// The work the checking stage's declaration checks charge for `functions`
+/// (`family::measure_declaration`, one `declaration.check` charge each).
+fn declaration_work(functions: &[FunctionDeclaration]) -> u64 {
+    let scope = empty_scope();
+    let location = generated_location();
+    let targets = crate::check::family::TargetTypes::new(&scope, &location);
+    functions
+        .iter()
+        .map(|function| {
+            let signature = crate::check::check::Signature {
+                name: function.name.clone(),
+                parameters: vec![("x".to_owned(), int(0, 9))],
+                result: ValueType::Boolean,
+                callable_by_name: true,
+            };
+            crate::check::family::measure_declaration(function, &signature, &targets)
+                .expect("the declaration measures")
+                .work_budget
+        })
+        .sum()
+}
+
+/// FR-092 "The group order": keying a recursion group charges the checking
+/// stage's work budget (`CheckingLimits::work_budget`) for every node built
+/// and every refinement round, so a ring of mutually recursive functions
+/// whose declarations fit the budget refuses `resource_exhausted` on the
+/// work budget when its keying does not.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn keying_a_recursion_group_is_charged_to_the_work_budget() {
+    let k = 8;
+    let checked = |budget: u64| {
+        PackageDeclarations {
+            functions: ring(k),
+            ..PackageDeclarations::new(fixture_owner())
+        }
+        .check(CheckingLimits::default().with_work_budget(budget))
+    };
+    assert!(checked(u64::MAX).is_ok(), "the ring checks unbounded");
+    let declared = declaration_work(&ring(k));
+    let refusals = checked(declared).expect_err("keying the ring exceeds the budget");
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            refusal.cause,
+            CheckCause::ResourceExhausted {
+                kind: CheckingLimitKind::WorkBudget,
+                limit,
+                ..
+            } if limit == declared
+        )),
+        "{refusals:?}"
+    );
+    // The smallest budget that checks the ring: the keying's share grows
+    // with rounds times members, beyond one unit per node.
+    let (mut refused, mut admitted) = (declared, declared.saturating_mul(64));
+    assert!(checked(admitted).is_ok());
+    while admitted - refused > 1 {
+        let middle = refused + (admitted - refused) / 2;
+        if checked(middle).is_ok() {
+            admitted = middle;
+        } else {
+            refused = middle;
+        }
+    }
+    let keying = admitted - declared;
+    let members = u64::try_from(3 * k).unwrap();
+    assert!(keying > members * members, "keying charged {keying}");
 }
 
 /// TC-413 step 5 (FR-092-AC-7): `f` and the same declaration named `g`

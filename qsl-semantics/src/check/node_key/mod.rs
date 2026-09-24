@@ -60,7 +60,7 @@
 //! a quire-specification checkout). QSpec is not public yet, so nothing of it
 //! is copied here; the test reads the vectors at run time.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -735,9 +735,16 @@ pub enum NodeKeyRefusal {
         /// The depth limit.
         limit: u64,
     },
-    /// A recursion group has no member, or names one member twice.
-    #[error("a recursion group is empty or names a member twice")]
+    /// A recursion group has no member, names one member twice, or a
+    /// placeholder names no member: an internal fault of the caller.
+    #[error("a recursion group is empty, names a member twice, or names no member")]
     InvalidGroup,
+    /// The checking stage's work budget cannot pay for keying a group.
+    #[error("keying the recursion group exceeds the work budget {limit}")]
+    WorkBudget {
+        /// The work budget.
+        limit: u64,
+    },
     /// A literal's `type`, an application's `result_type` or an operation
     /// member's `declaration` names a member of the node's own recursion
     /// group. FR-092: those positions name type and model nodes, which are
@@ -824,33 +831,37 @@ pub(crate) struct GroupKeys {
 /// No step reads a handle's value: the shapes write every in-group position
 /// as `{term: "group_reference"}`, so the order, ordinals, digest and keys
 /// are the same whatever handles name the members.
+///
+/// `charge` is called with the number of preimages or signature rounds
+/// each step hashes, before it hashes them, so a caller bounds the work
+/// (a refinement pass is up to `n` rounds of `n` hashes); its refusal ends
+/// the keying.
 pub(crate) fn group_keys(
     members: &[NodeInput<'_>],
     handles: &[NodeKey],
+    charge: &mut dyn FnMut(u64) -> Result<(), NodeKeyRefusal>,
 ) -> Result<GroupKeys, NodeKeyRefusal> {
-    let mut distinct = BTreeSet::new();
-    if members.is_empty()
-        || members.len() != handles.len()
-        || !handles.iter().all(|handle| distinct.insert(*handle))
-    {
+    let positions: BTreeMap<NodeKey, usize> = handles
+        .iter()
+        .enumerate()
+        .map(|(position, handle)| (*handle, position))
+        .collect();
+    if members.is_empty() || members.len() != handles.len() || positions.len() != handles.len() {
         return Err(NodeKeyRefusal::InvalidGroup);
     }
     let count = members.len();
+    let work = u64::try_from(count).map_err(|_| NodeKeyRefusal::InvalidGroup)?;
     // 1-2. Each member's full and anonymous shapes and its targets: the
-    // placeholders carry the target's input index as their ordinal, which
-    // `shape_targets` removes in RFC 8785 order.
-    let identity: Vec<usize> = (0..count).collect();
+    // placeholders carry the target's input position as their ordinal,
+    // which `shape_targets` removes in RFC 8785 order.
+    charge(work)?;
     let mut full_shapes = Vec::with_capacity(count);
     let mut anonymous_shapes = Vec::with_capacity(count);
     let mut targets = Vec::with_capacity(count);
     for member in members {
-        let walk = Walk {
-            group: handles,
-            ordinals: &identity,
-        };
-        let (mut shape, _) = preimage_value(member, walk, None)?;
+        let (mut shape, _) = preimage_value(member, Walk { group: &positions }, None)?;
         let mut member_targets = Vec::new();
-        shape_targets(&mut shape, &mut member_targets);
+        shape_targets(&mut shape, &mut member_targets, count)?;
         full_shapes.push(shape.to_string());
         if let Value::Object(map) = &mut shape {
             map.insert("declaration".to_owned(), Value::Null);
@@ -860,63 +871,65 @@ pub(crate) fn group_keys(
         targets.push(member_targets);
     }
     // 3-4. One refinement pass per kind of shape, then the order.
-    let anonymous = refine(&anonymous_shapes, &targets);
-    let full = refine(&full_shapes, &targets);
+    let anonymous = refine(&anonymous_shapes, &targets, work, charge)?;
+    let full = refine(&full_shapes, &targets, work, charge)?;
     let mut order: Vec<usize> = (0..count).collect();
     order.sort_by(|left, right| {
         (&anonymous[*left], &full[*left]).cmp(&(&anonymous[*right], &full[*right]))
     });
-    // 5. Equal full signatures are one class; a class's ordinal is its rank.
-    let mut classes: Vec<&str> = Vec::new();
+    // 5. Equal full signatures are one class; a class's ordinal is its rank,
+    // and its first member in the order represents it.
+    let mut classes: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut representatives = Vec::new();
     let mut ordinals = vec![0; count];
     for member in order {
-        let signature = full[member].as_str();
-        let ordinal = match classes.iter().position(|class| *class == signature) {
-            Some(ordinal) => ordinal,
-            None => {
-                classes.push(signature);
-                classes.len() - 1
-            }
-        };
+        let next = classes.len();
+        let ordinal = *classes.entry(full[member].as_str()).or_insert(next);
+        if ordinal == next {
+            representatives.push(member);
+        }
         ordinals[member] = ordinal;
     }
     let size = classes.len();
-    exact_integer(IntegerSite::RecursionSize, size as u64)?;
+    exact_integer(
+        IntegerSite::RecursionSize,
+        u64::try_from(size).map_err(|_| NodeKeyRefusal::InvalidGroup)?,
+    )?;
+    let ordinal_of: BTreeMap<NodeKey, usize> = handles
+        .iter()
+        .zip(&ordinals)
+        .map(|(handle, ordinal)| (*handle, *ordinal))
+        .collect();
     // The group digest: over each class's group-local preimage, in ordinal
     // order.
+    charge(work)?;
     let mut local = Vec::with_capacity(size);
-    for ordinal in 0..size {
-        let Some(member) = ordinals.iter().position(|of| *of == ordinal) else {
-            return Err(NodeKeyRefusal::InvalidGroup);
-        };
-        let walk = Walk {
-            group: handles,
-            ordinals: &ordinals,
-        };
+    for (ordinal, member) in representatives.iter().enumerate() {
         let recursion = RecursionPreimage {
             group: None,
             ordinal,
             size,
         };
-        let (value, _) = preimage_value(&members[member], walk, Some(recursion))?;
+        let (value, _) = preimage_value(
+            &members[*member],
+            Walk { group: &ordinal_of },
+            Some(recursion),
+        )?;
         local.push(Value::String(hex(&Sha256::digest(
             value.to_string().as_bytes(),
         ))));
     }
     let digest: [u8; 32] = Sha256::digest(Value::Array(local).to_string().as_bytes()).into();
     let digest_hex = hex(&digest);
+    charge(work)?;
     let mut keys = Vec::with_capacity(count);
     for (member, ordinal) in members.iter().zip(&ordinals) {
-        let walk = Walk {
-            group: handles,
-            ordinals: &ordinals,
-        };
         let recursion = RecursionPreimage {
             group: Some(digest_hex.clone()),
             ordinal: *ordinal,
             size,
         };
-        let (value, _) = preimage_value(member, walk, Some(recursion))?;
+        let (value, _) = preimage_value(member, Walk { group: &ordinal_of }, Some(recursion))?;
         keys.push(keyed(value.to_string().into_bytes()));
     }
     Ok(GroupKeys {
@@ -930,8 +943,15 @@ pub(crate) fn group_keys(
 }
 
 /// A refinement pass (FR-092 "The group order", step 3): each member's
-/// signature over `shapes`, lowercase hex.
-fn refine(shapes: &[String], targets: &[Vec<usize>]) -> Vec<String> {
+/// signature over `shapes`, lowercase hex. Each round charges `work`, the
+/// member count.
+fn refine(
+    shapes: &[String],
+    targets: &[Vec<usize>],
+    work: u64,
+    charge: &mut dyn FnMut(u64) -> Result<(), NodeKeyRefusal>,
+) -> Result<Vec<String>, NodeKeyRefusal> {
+    charge(work)?;
     let initial: Vec<String> = shapes
         .iter()
         .map(|shape| hex(&Sha256::digest(shape.as_bytes())))
@@ -941,52 +961,62 @@ fn refine(shapes: &[String], targets: &[Vec<usize>]) -> Vec<String> {
     // Each round before the last adds a distinct value, so at most one
     // round per member runs.
     for _ in 0..shapes.len() {
-        let next: Vec<String> = initial
-            .iter()
-            .zip(targets)
-            .map(|(shape, member_targets)| {
-                let round = serde_json::json!({
-                    "shape": shape,
-                    "targets": member_targets
-                        .iter()
-                        .filter_map(|target| previous.get(*target))
-                        .collect::<Vec<_>>(),
-                });
-                hex(&Sha256::digest(round.to_string().as_bytes()))
-            })
-            .collect();
+        charge(work)?;
+        let mut next = Vec::with_capacity(initial.len());
+        for (shape, member_targets) in initial.iter().zip(targets) {
+            let round_targets = member_targets
+                .iter()
+                .map(|target| previous.get(*target).ok_or(NodeKeyRefusal::InvalidGroup))
+                .collect::<Result<Vec<_>, _>>()?;
+            let round = serde_json::json!({
+                "shape": shape,
+                "targets": round_targets,
+            });
+            next.push(hex(&Sha256::digest(round.to_string().as_bytes())));
+        }
         let stable = distinct(&next) == distinct(&previous);
         previous = next;
         if stable {
             break;
         }
     }
-    previous
+    Ok(previous)
 }
 
 /// Remove each placeholder's ordinal from `value`, in RFC 8785 order (a
 /// `serde_json` map iterates its keys sorted, which is RFC 8785's order for
-/// these ASCII names), appending it to `targets`.
-fn shape_targets(value: &mut Value, targets: &mut Vec<usize>) {
+/// these ASCII names), appending it to `targets`. Every ordinal is a
+/// member's position, below `count`.
+fn shape_targets(
+    value: &mut Value,
+    targets: &mut Vec<usize>,
+    count: usize,
+) -> Result<(), NodeKeyRefusal> {
     match value {
         Value::Object(map) => {
             if map.get("term").and_then(Value::as_str) == Some("group_reference") {
-                if let Some(ordinal) = map.remove("ordinal").as_ref().and_then(Value::as_u64) {
-                    targets.push(usize::try_from(ordinal).unwrap_or(usize::MAX));
-                }
-                return;
+                let target = map
+                    .remove("ordinal")
+                    .as_ref()
+                    .and_then(Value::as_u64)
+                    .and_then(|ordinal| usize::try_from(ordinal).ok())
+                    .filter(|target| *target < count)
+                    .ok_or(NodeKeyRefusal::InvalidGroup)?;
+                targets.push(target);
+                return Ok(());
             }
             for member in map.values_mut() {
-                shape_targets(member, targets);
+                shape_targets(member, targets, count)?;
             }
         }
         Value::Array(items) => {
             for item in items {
-                shape_targets(item, targets);
+                shape_targets(item, targets, count)?;
             }
         }
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
+    Ok(())
 }
 
 /// Lowercase hex, the spelling FR-092 gives every digest inside a preimage
@@ -1265,24 +1295,21 @@ fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Membe
 /// contains an application, and enforces the depth and number bounds.
 #[derive(Clone, Copy)]
 struct Walk<'g> {
-    /// The handles naming the recursion group's members.
-    group: &'g [NodeKey],
-    /// The ordinal each member's `group_reference` carries, by position in
-    /// `group`.
-    ordinals: &'g [usize],
+    /// The recursion group's members by handle, each with the ordinal its
+    /// `group_reference` carries.
+    group: &'g BTreeMap<NodeKey, usize>,
 }
+
+/// The empty group of a node outside every recursion group.
+static NO_GROUP: BTreeMap<NodeKey, usize> = BTreeMap::new();
 
 impl Walk<'_> {
     /// The walk of a node outside every group.
-    const OUTSIDE: Walk<'static> = Walk {
-        group: &[],
-        ordinals: &[],
-    };
+    const OUTSIDE: Walk<'static> = Walk { group: &NO_GROUP };
 
     /// The `group_reference` ordinal of `key`, when it names a member.
     fn ordinal(&self, key: NodeKey) -> Option<usize> {
-        let position = self.group.iter().position(|member| *member == key)?;
-        self.ordinals.get(position).copied()
+        self.group.get(&key).copied()
     }
 
     /// Refuse `key` at a type position when it names a member.

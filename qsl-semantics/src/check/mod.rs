@@ -567,6 +567,20 @@ impl PackageDeclarations {
         let owner = self.owner;
         let lock_evidence = self.lock_evidence;
         let models = self.models;
+        // FR-094 (ADR-013 O-01): a check selects one version of each domain
+        // package identity, so a model owner names one declaration.
+        let mut selected = std::collections::BTreeSet::new();
+        if let Some(model) = models
+            .iter()
+            .find(|model| !selected.insert(model.selection().identity.as_str()))
+        {
+            return Err(vec![CheckRefusal {
+                location: root(Origin::Expression),
+                cause: CheckCause::InternalFault(Box::new(KeyFault::DuplicateModelSelection(
+                    model.selection().identity.clone(),
+                ))),
+            }]);
+        }
         if let Some((&index, _)) = self.model_clauses.range(self.functions.len()..).next() {
             return Err(vec![invalid_dispatch(
                 root(Origin::Expression),
@@ -843,6 +857,7 @@ impl PackageDeclarations {
             limits.depth(),
             drafts.len(),
             &mut occurrences,
+            &mut contract_meter,
         );
         for group in &order {
             let inputs: Vec<lowering::FunctionInput<'_>> = group

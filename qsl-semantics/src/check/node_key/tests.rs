@@ -249,6 +249,11 @@ fn preimage_bytes_are_pinned() {
     );
 }
 
+/// [`group_keys`] with unbounded work.
+fn keys_of(members: &[NodeInput<'_>], handles: &[NodeKey]) -> Result<GroupKeys, NodeKeyRefusal> {
+    group_keys(members, handles, &mut |_| Ok(()))
+}
+
 /// The input of an application node inside a group.
 fn in_group<'a>(body: &'a SemanticTerm) -> NodeInput<'a> {
     NodeInput {
@@ -273,8 +278,8 @@ fn group_references_are_rewritten_in_every_nested_term() {
         ],
     };
     let second = add(vec![reference(1)]);
-    let group = group_keys(&[in_group(&first), in_group(&second)], &[key(1), key(2)])
-        .expect("the group keys");
+    let group =
+        keys_of(&[in_group(&first), in_group(&second)], &[key(1), key(2)]).expect("the group keys");
 
     let preimage: Value = serde_json::from_slice(&group.members[0].preimage).expect("JSON");
 
@@ -309,12 +314,12 @@ fn the_key_does_not_depend_on_group_member_handles() {
         add(vec![reference(8), reference(9)]),
         add(vec![reference(7), reference(7)]),
     ];
-    let first = group_keys(
+    let first = keys_of(
         &[in_group(&first_bodies[0]), in_group(&first_bodies[1])],
         &[key(1), key(2)],
     )
     .expect("the group keys");
-    let second = group_keys(
+    let second = keys_of(
         &[in_group(&second_bodies[0]), in_group(&second_bodies[1])],
         &[key(7), key(8)],
     )
@@ -348,7 +353,7 @@ fn declaration_and_recursion_each_enter_the_key() {
         })
         .into();
     keys.push(
-        group_keys(&[in_group(&body)], &[key(1)])
+        keys_of(&[in_group(&body)], &[key(1)])
             .expect("a one-member group keys")
             .members[0]
             .key,
@@ -452,13 +457,13 @@ fn a_member_position_outside_the_exact_range_is_refused() {
 #[test]
 fn a_recursion_group_needs_members_with_distinct_handles() {
     let body = add(vec![reference(1)]);
-    assert_eq!(group_keys(&[], &[]), Err(NodeKeyRefusal::InvalidGroup));
+    assert_eq!(keys_of(&[], &[]), Err(NodeKeyRefusal::InvalidGroup));
     assert_eq!(
-        group_keys(&[in_group(&body), in_group(&body)], &[key(1), key(1)]),
+        keys_of(&[in_group(&body), in_group(&body)], &[key(1), key(1)]),
         Err(NodeKeyRefusal::InvalidGroup)
     );
     assert_eq!(
-        group_keys(&[in_group(&body)], &[key(1), key(2)]),
+        keys_of(&[in_group(&body)], &[key(1), key(2)]),
         Err(NodeKeyRefusal::InvalidGroup)
     );
 }
@@ -482,7 +487,7 @@ fn a_one_member_group_keys_to_g1() {
         body: &body,
     };
 
-    let group = group_keys(&[node], &[handle]).expect("G1 keys");
+    let group = keys_of(&[node], &[handle]).expect("G1 keys");
 
     let expected = r#"{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b14b","ordinal":0,"size":1},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}"#;
     assert_eq!(

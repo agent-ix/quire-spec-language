@@ -385,6 +385,7 @@ fn lower<T>(
     let lock = LockEvidence::default();
     let mut occurrences = OccurrenceMap::default();
     let owner = fixture_owner();
+    let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
     let mut lowering = Lowering::new(
         &scope,
         &owner,
@@ -394,6 +395,7 @@ fn lower<T>(
         crate::check::MAX_CHECKING_DEPTH,
         0,
         &mut occurrences,
+        &mut meter,
     );
     let built = build(&mut lowering);
     (built, lowering.finish(&generated_location()).graph)
@@ -809,6 +811,28 @@ fn a_clause_function_under_another_package_version_is_another_node() {
         json!(vector_key("P9").to_string())
     );
     assert_ne!(vector_key("C3"), vector_key("C1"));
+}
+
+/// FR-094: a check selects one version of each domain package identity;
+/// two admitted versions of `acme/orders` refuse as a broken invariant
+/// instead of keying owners from whichever comes first.
+#[trace("FR-094-AC-5", "TC-418")]
+#[test]
+fn two_admitted_versions_of_one_model_identity_refuse() {
+    let (first, second) = (admitted("1.0.0"), admitted("2.0.0"));
+    let mut declarations = dispatch(&first, "Order/size");
+    declarations.models.push(second.model.clone());
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("two versions of one identity refuse");
+    assert!(
+        matches!(
+            &refusals[0].cause,
+            CheckCause::InternalFault(fault)
+                if **fault == KeyFault::DuplicateModelSelection("acme/orders".to_owned())
+        ),
+        "{refusals:?}"
+    );
 }
 
 /// TC-418 step 4 (FR-094-AC-5): `Sub.size`'s authored precondition is C5 and

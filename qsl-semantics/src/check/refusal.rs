@@ -311,6 +311,22 @@ pub enum KeyFault {
     /// A literal of a value kind the `Value` family's checker never builds
     /// as a literal.
     UnbuiltLiteral,
+    /// A `ValueType::Composite` handle names no declaration of the check's
+    /// type environment.
+    UnknownComposite(quire_exact::NodeKey),
+    /// A recursion group handed to the group keying is empty, repeats a
+    /// member, or names no member at a group position.
+    InvalidGroup,
+    /// A node names a draft that dependency order never keyed.
+    UnresolvedDraft,
+    /// A record value's slots and its declaration's fields differ in
+    /// number.
+    RecordSlotCount,
+    /// An IEEE arithmetic node whose left operand is not an IEEE type.
+    UntypedIeeeOperand,
+    /// Two admitted domain packages share this identity: a check selects
+    /// one version of each (FR-094, ADR-013 O-01).
+    DuplicateModelSelection(String),
 }
 
 impl KeyFault {
@@ -325,6 +341,12 @@ impl KeyFault {
             Self::UnheldUnit(_) => "compound-unit-held",
             Self::UntargetedPopulation => "population-target-bound",
             Self::UnbuiltLiteral => "literal-kind-built",
+            Self::UnknownComposite(_) => "composite-declared",
+            Self::InvalidGroup => "recursion-group-well-formed",
+            Self::UnresolvedDraft => "draft-keyed-in-dependency-order",
+            Self::RecordSlotCount => "record-slots-match-fields",
+            Self::UntypedIeeeOperand => "ieee-operand-typed",
+            Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
         }
     }
 }

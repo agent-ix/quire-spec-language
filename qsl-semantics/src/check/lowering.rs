@@ -32,13 +32,13 @@
 //! `clause` binding, and quantity type nodes. `check` records each model
 //! declaration node it keys in the model correspondence.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use sha2::{Digest, Sha256};
 
 use quire_exact::{
-    ArithmeticOperator, CollectionKind, EffectiveId, Identifier, Integer, NodeKey,
-    OrderingOperator, TextProfile, Value, ValueType,
+    ArithmeticOperator, Charge, ChargePoint, CollectionKind, EffectiveId, Identifier, Integer,
+    Meter, NodeKey, OrderingOperator, TextProfile, Value, ValueType,
 };
 
 use super::check::Scope;
@@ -63,14 +63,17 @@ mod model;
 pub use model::{AdmittedModel, ForeignView, ModelClause};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
-/// `DefinitionRef` each profile law role selects. QSpec publishes no
+/// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no
 /// `complete-value-lock.json` accessor yet, so every production package
-/// supplies none, and each law-bearing operation refuses
-/// (`missing_declaration`/`missing-selection`, FR-093-AC-6).
+/// supplies none, and each text-law operation refuses
+/// (`missing_declaration`/`missing-selection`, FR-093-AC-6). The
+/// `ieee_profile` law is the package's one admitted IEEE profile
+/// (`PackageDeclarations::ieee_profile`, admitted against the definition
+/// lock by `DefinitionLock::admit_ieee_profile`), so the two cannot
+/// disagree.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LockEvidence {
     text_profile: Option<DefinitionReference>,
-    ieee_profile: Option<DefinitionReference>,
 }
 
 impl LockEvidence {
@@ -80,18 +83,8 @@ impl LockEvidence {
         self
     }
 
-    /// Lock evidence selecting `definition` for the `ieee_profile` role.
-    pub fn with_ieee_profile(mut self, definition: DefinitionReference) -> Self {
-        self.ieee_profile = Some(definition);
-        self
-    }
-
-    fn definition(&self, role: LawRole) -> Option<&DefinitionReference> {
-        match role {
-            LawRole::TextProfile => self.text_profile.as_ref(),
-            LawRole::IeeeProfile => self.ieee_profile.as_ref(),
-            LawRole::IntegerDivision | LawRole::TemporalProfile | LawRole::ProtocolProfile => None,
-        }
+    fn text_profile(&self) -> Option<&DefinitionReference> {
+        self.text_profile.as_ref()
     }
 }
 
@@ -318,6 +311,9 @@ pub(crate) struct Lowering<'a> {
     group_of: BTreeMap<NodeKey, [u8; 32]>,
     /// Each keyed group's declared members' regions, by group digest.
     group_regions: BTreeMap<[u8; 32], Vec<Location>>,
+    /// The checking stage's work meter (`CheckingLimits::work_budget`):
+    /// each node built and each group keyed charges it.
+    meter: &'a mut Meter,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -331,8 +327,26 @@ fn fault(location: &Location, fault: KeyFault) -> CheckRefusal {
     refuse(location, CheckCause::InternalFault(Box::new(fault)))
 }
 
+/// Charge `work` units to `meter` at `declaration.check`.
+fn charge_work(meter: &mut Meter, work: u64) -> Result<(), NodeKeyRefusal> {
+    meter
+        .charge(Charge::new(ChargePoint::DeclarationCheck).work(Integer::from(work)))
+        .map_err(|incomplete| NodeKeyRefusal::WorkBudget {
+            limit: incomplete.limit,
+        })
+}
+
 fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusal {
     match refusal {
+        NodeKeyRefusal::WorkBudget { limit } => refuse(
+            location,
+            CheckCause::ResourceExhausted {
+                stage: CheckingStage::Typing,
+                kind: CheckingLimitKind::WorkBudget,
+                limit,
+            },
+        ),
+        NodeKeyRefusal::InvalidGroup => fault(location, KeyFault::InvalidGroup),
         NodeKeyRefusal::TooDeep { limit } => refuse(
             location,
             CheckCause::ResourceExhausted {
@@ -408,6 +422,7 @@ impl<'a> Lowering<'a> {
         depth_limit: u64,
         function_count: usize,
         occurrences: &'a mut OccurrenceMap<Location>,
+        meter: &'a mut Meter,
     ) -> Self {
         Self {
             scope,
@@ -430,7 +445,14 @@ impl<'a> Lowering<'a> {
             draft_occurrences: Vec::new(),
             group_of: BTreeMap::new(),
             group_regions: BTreeMap::new(),
+            meter,
         }
+    }
+
+    /// Charge `work` units of checking work (`declaration.check`), refusing
+    /// `resource_exhausted` on the work budget at `location`.
+    fn charge(&mut self, work: u64, location: &Location) -> Result<(), CheckRefusal> {
+        charge_work(self.meter, work).map_err(|refusal| preimage_refusal(location, refusal))
     }
 
     /// The finished graph, its model correspondence entries and each
@@ -531,6 +553,7 @@ impl<'a> Lowering<'a> {
         owner: Option<Owner>,
         body: SemanticTerm,
     ) -> Result<NodeKey, CheckRefusal> {
+        self.charge(1, location)?;
         let keyed = node_key(&NodeInput {
             owner: owner.as_ref(),
             node_tag,
@@ -915,12 +938,21 @@ impl<'a> Lowering<'a> {
     }
 
     /// The text leaves of `value_type`, each with its path and profile, in
-    /// declaration order.
+    /// declaration order. `composites` holds the composites on the path
+    /// from the compared type down to `value_type`.
+    ///
+    /// A composite reached again along its own path is recursive (FR-143).
+    /// When no text leaf is reachable from it, the recursion adds no leaf
+    /// and the walk stops there. When one is, the leaf paths through the
+    /// recursion are unbounded and FR-093 names no finite form for them:
+    /// the walk goes on and ends at the depth limit, as before
+    /// (reported on QSL-156; the spec lane decides the leaf form).
     fn text_leaves(
         &self,
         value_type: &ValueType,
         path: &mut Vec<LeafSegment>,
         leaves: &mut Vec<(Vec<LeafSegment>, TextProfile)>,
+        composites: &mut Vec<NodeKey>,
         location: &Location,
         depth: u64,
     ) -> Result<(), CheckRefusal> {
@@ -929,46 +961,39 @@ impl<'a> Lowering<'a> {
             ValueType::Text(text) => leaves.push((path.clone(), text.profile())),
             ValueType::Option(payload) => {
                 path.push(LeafSegment::Inner);
-                self.text_leaves(payload, path, leaves, location, depth + 1)?;
+                self.text_leaves(payload, path, leaves, composites, location, depth + 1)?;
                 path.pop();
             }
             ValueType::Collection(collection) => {
                 path.push(LeafSegment::Inner);
-                self.text_leaves(collection.element(), path, leaves, location, depth + 1)?;
+                self.text_leaves(
+                    collection.element(),
+                    path,
+                    leaves,
+                    composites,
+                    location,
+                    depth + 1,
+                )?;
                 path.pop();
             }
             ValueType::Composite(declaration) => {
                 let Some(composite) = self.scope.types.composite(*declaration) else {
-                    return Ok(());
+                    return Err(fault(location, KeyFault::UnknownComposite(*declaration)));
                 };
-                match composite.shape() {
-                    CompositeShape::Record(fields) => {
-                        for field in fields {
-                            let name = Identifier::new(field.name()).map_err(|_| {
-                                refuse(
-                                    location,
-                                    CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
-                                )
-                            })?;
-                            path.push(LeafSegment::Field(name));
-                            self.text_leaves(
-                                field.value_type(),
-                                path,
-                                leaves,
-                                location,
-                                depth + 1,
-                            )?;
-                            path.pop();
-                        }
-                    }
-                    CompositeShape::Tuple(positions) => {
-                        for (position, value_type) in (0_u64..).zip(positions) {
-                            path.push(LeafSegment::Position(position));
-                            self.text_leaves(value_type, path, leaves, location, depth + 1)?;
-                            path.pop();
-                        }
-                    }
+                if composites.contains(declaration) && !self.reaches_text(value_type) {
+                    return Ok(());
                 }
+                composites.push(*declaration);
+                let walked = self.composite_leaves(
+                    composite.shape(),
+                    path,
+                    leaves,
+                    composites,
+                    location,
+                    depth,
+                );
+                composites.pop();
+                walked?;
             }
             ValueType::Boolean
             | ValueType::Integer
@@ -984,10 +1009,97 @@ impl<'a> Lowering<'a> {
         Ok(())
     }
 
+    /// The text leaves of a composite's fields or positions.
+    fn composite_leaves(
+        &self,
+        shape: &CompositeShape,
+        path: &mut Vec<LeafSegment>,
+        leaves: &mut Vec<(Vec<LeafSegment>, TextProfile)>,
+        composites: &mut Vec<NodeKey>,
+        location: &Location,
+        depth: u64,
+    ) -> Result<(), CheckRefusal> {
+        match shape {
+            CompositeShape::Record(fields) => {
+                for field in fields {
+                    let name = Identifier::new(field.name()).map_err(|_| {
+                        refuse(
+                            location,
+                            CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                        )
+                    })?;
+                    path.push(LeafSegment::Field(name));
+                    self.text_leaves(
+                        field.value_type(),
+                        path,
+                        leaves,
+                        composites,
+                        location,
+                        depth + 1,
+                    )?;
+                    path.pop();
+                }
+            }
+            CompositeShape::Tuple(positions) => {
+                for (position, value_type) in (0_u64..).zip(positions) {
+                    path.push(LeafSegment::Position(position));
+                    self.text_leaves(value_type, path, leaves, composites, location, depth + 1)?;
+                    path.pop();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether a text value is reachable inside a value of `value_type`,
+    /// each composite visited once.
+    fn reaches_text(&self, value_type: &ValueType) -> bool {
+        let mut visited = std::collections::BTreeSet::new();
+        let mut pending = vec![value_type];
+        while let Some(value_type) = pending.pop() {
+            match value_type {
+                ValueType::Text(_) => return true,
+                ValueType::Option(payload) => pending.push(payload),
+                ValueType::Collection(collection) => pending.push(collection.element()),
+                ValueType::Composite(declaration) => {
+                    if !visited.insert(*declaration) {
+                        continue;
+                    }
+                    match self.scope.types.composite(*declaration).map(|c| c.shape()) {
+                        Some(CompositeShape::Record(fields)) => {
+                            pending.extend(fields.iter().map(|field| field.value_type()));
+                        }
+                        Some(CompositeShape::Tuple(positions)) => pending.extend(positions),
+                        None => {}
+                    }
+                }
+                ValueType::Boolean
+                | ValueType::Integer
+                | ValueType::Int(_)
+                | ValueType::Rational(_)
+                | ValueType::Decimal(_)
+                | ValueType::Float(_)
+                | ValueType::Quantity(_)
+                | ValueType::Enum(_)
+                | ValueType::Reference(_)
+                | ValueType::Population(_) => {}
+            }
+        }
+        false
+    }
+
     /// The law of `role` the lock evidence selects, or the FR-093 refusal.
     fn law(&self, role: LawRole, location: &Location) -> Result<OperationLaw, CheckRefusal> {
-        self.lock
-            .definition(role)
+        let definition = match role {
+            LawRole::TextProfile => self.lock.text_profile(),
+            LawRole::IeeeProfile => self
+                .scope
+                .ieee_profile
+                .as_ref()
+                .map(|profile| profile.definition()),
+            LawRole::IntegerDivision | LawRole::TemporalProfile | LawRole::ProtocolProfile => None,
+        };
+        definition
             .map(|definition| OperationLaw {
                 role,
                 definition: definition.clone(),
@@ -1016,7 +1128,14 @@ impl<'a> Lowering<'a> {
             return Ok(Vec::new());
         };
         let mut found = Vec::new();
-        self.text_leaves(compared, &mut Vec::new(), &mut found, location, 0)?;
+        self.text_leaves(
+            compared,
+            &mut Vec::new(),
+            &mut found,
+            &mut Vec::new(),
+            location,
+            0,
+        )?;
         found
             .into_iter()
             .map(|(path, profile)| {
@@ -1059,7 +1178,7 @@ impl<'a> Lowering<'a> {
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let name_literal = self.text_literal(name, location)?;
-        let level_literal = self.integer_literal(Integer::from(level as u64), location)?;
+        let level_literal = self.integer_literal(Integer::from(level), location)?;
         let key = self.insert(
             location,
             NodeTag::Value,
@@ -1160,16 +1279,24 @@ impl<'a> Lowering<'a> {
             })
             .collect();
         let mut resolved: BTreeMap<NodeKey, NodeKey> = BTreeMap::new();
+        // A name of a draft that is keyed nowhere: dependency order keys
+        // every draft outside a component before the component.
+        let unresolved = |location: &Location| fault(location, KeyFault::UnresolvedDraft);
         for component in strongly_connected(&edges) {
             let members: Vec<NodeKey> = component.iter().map(|at| handles[*at]).collect();
+            let member_set: BTreeSet<NodeKey> = members.iter().copied().collect();
             // Names outside the component take their keys; names inside it
-            // stay the members' handles.
+            // stay the members' handles; other keys are not drafts.
+            let mut stranded = false;
             let mut substitute = |key: NodeKey| {
                 let key = alias(key);
-                if members.contains(&key) {
+                if member_set.contains(&key) {
                     key
+                } else if let Some(resolved) = resolved.get(&key) {
+                    *resolved
                 } else {
-                    resolved.get(&key).copied().unwrap_or(key)
+                    stranded |= position.contains_key(&key);
+                    key
                 }
             };
             let bodies: Vec<SemanticTerm> = component
@@ -1180,6 +1307,9 @@ impl<'a> Lowering<'a> {
                 .iter()
                 .map(|at| drafts[*at].semantic_type.map(&mut substitute))
                 .collect();
+            if stranded {
+                return Err(unresolved(&drafts[component[0]].location));
+            }
             let recursive =
                 component.len() > 1 || component.first().is_some_and(|at| edges[*at].contains(at));
             if recursive {
@@ -1207,18 +1337,25 @@ impl<'a> Lowering<'a> {
                 resolved.insert(handles[*at], key);
             }
         }
+        // Every draft is keyed now: a key that still names one is a fault.
         let resolve = |key: NodeKey| {
             let key = alias(key);
-            resolved.get(&key).copied().unwrap_or(key)
+            match resolved.get(&key) {
+                Some(resolved) => Ok(*resolved),
+                None if position.contains_key(&key) => Err(()),
+                None => Ok(key),
+            }
         };
+        let root = generated_location();
         for key in self.functions.iter_mut().flatten() {
-            *key = resolve(*key);
+            *key = resolve(*key).map_err(|()| unresolved(&root))?;
         }
         for key in self.composites.values_mut() {
-            *key = resolve(*key);
+            *key = resolve(*key).map_err(|()| unresolved(&root))?;
         }
         for (key, role, location) in occurrences {
-            self.occurrences.record(resolve(key), role, location);
+            let key = resolve(key).map_err(|()| unresolved(&location))?;
+            self.occurrences.record(key, role, location);
         }
         Ok(())
     }
@@ -1263,7 +1400,8 @@ impl<'a> Lowering<'a> {
                 body: &bodies[at],
             })
             .collect();
-        let keys = group_keys(&inputs, handles)
+        let meter = &mut *self.meter;
+        let keys = group_keys(&inputs, handles, &mut |work| charge_work(meter, work))
             .map_err(|refusal| preimage_refusal(&first.location, refusal))?;
         let regions: Vec<Location> = members
             .iter()
@@ -1284,13 +1422,12 @@ impl<'a> Lowering<'a> {
                 .unwrap_or_else(|| first.location.clone());
             return Err(refuse(&location, CheckCause::UnsupportedFeature { loci }));
         }
-        let mut to_key = |key: NodeKey| {
-            handles
-                .iter()
-                .position(|handle| *handle == key)
-                .and_then(|at| keys.members.get(at))
-                .map_or(key, |keyed| keyed.key)
-        };
+        let member_keys: BTreeMap<NodeKey, NodeKey> = handles
+            .iter()
+            .zip(&keys.members)
+            .map(|(handle, keyed)| (*handle, keyed.key))
+            .collect();
+        let mut to_key = |key: NodeKey| member_keys.get(&key).copied().unwrap_or(key);
         for (at, draft) in members.iter().enumerate() {
             let keyed = &keys.members[at];
             self.graph
@@ -1710,12 +1847,13 @@ impl<'a> Lowering<'a> {
                 self.application(node, Operator::Binary, plain(&identity), arguments)
             }
             NodeKind::Ieee(operator, left, right) => {
-                let width =
-                    if let ValueType::Float(quire_exact::IeeeWidth::Binary32) = &left.value_type {
-                        "float32"
-                    } else {
-                        "float64"
-                    };
+                let ValueType::Float(width) = &left.value_type else {
+                    return Err(fault(&node.location, KeyFault::UntypedIeeeOperand));
+                };
+                let width = match width {
+                    quire_exact::IeeeWidth::Binary32 => "float32",
+                    quire_exact::IeeeWidth::Binary64 => "float64",
+                };
                 let law = self.law(LawRole::IeeeProfile, &node.location)?;
                 let identity = format!("quire.op.ieee.{width}.{}", arithmetic_suffix(*operator));
                 let arguments = self.operands(&[left, right], binders, depth)?;
@@ -1924,6 +2062,9 @@ impl<'a> Lowering<'a> {
                         CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
                     ));
                 };
+                if fields.len() != slots.len() {
+                    return Err(fault(&node.location, KeyFault::RecordSlotCount));
+                }
                 let mut members = Vec::with_capacity(slots.len());
                 for (field, slot) in fields.iter().zip(slots) {
                     let value = match slot {

@@ -46,6 +46,8 @@
 //! `crate::check` -- layer 5 depending on layer 3 is the permitted
 //! direction (ADR-011 §6.1).
 
+use std::collections::BTreeMap;
+
 use quire_exact::{CollectionKind, Location, NodeKey, Origin, Role};
 
 use qsl_forms::{
@@ -989,6 +991,8 @@ pub(crate) struct Occurrence<S> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OccurrenceMap<S> {
     entries: Vec<Occurrence<S>>,
+    /// Each node's entries, by position in `entries`, in insertion order.
+    by_node: BTreeMap<NodeKey, Vec<usize>>,
 }
 
 // A hand-written `Default`, not `#[derive(Default)]`: the derive macro adds
@@ -998,6 +1002,7 @@ impl<S> Default for OccurrenceMap<S> {
     fn default() -> Self {
         Self {
             entries: Vec::new(),
+            by_node: BTreeMap::new(),
         }
     }
 }
@@ -1016,14 +1021,12 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
         // §9's target is a string selecting semantics; this compares one
         // already-typed value to another).
         let role = Role::new(role);
-        let ordinal = self
-            .entries
+        let positions = self.by_node.entry(identity).or_default();
+        let ordinal = positions
             .iter()
-            .filter(|occurrence| {
-                occurrence.location.node() == identity
-                    && occurrence.location.occurrence().role() == &role
-            })
-            .count() as u64;
+            .filter(|position| self.entries[**position].location.occurrence().role() == &role)
+            .fold(0_u64, |count, _| count.saturating_add(1));
+        positions.push(self.entries.len());
         let origin = Origin::new(role, ordinal);
         self.entries.push(Occurrence {
             location: Location::new(identity, origin.clone()),
@@ -1034,18 +1037,16 @@ impl<S: Clone + PartialEq> OccurrenceMap<S> {
 
     /// Whether any occurrence of `identity` is recorded.
     pub(crate) fn has(&self, identity: NodeKey) -> bool {
-        self.entries
-            .iter()
-            .any(|occurrence| occurrence.location.node() == identity)
+        self.by_node.contains_key(&identity)
     }
 
     /// The span recorded for `identity` at exactly `origin`, if any.
     pub(crate) fn resolve(&self, identity: NodeKey, origin: &Origin) -> Option<&S> {
-        self.entries
+        self.by_node
+            .get(&identity)?
             .iter()
-            .find(|occurrence| {
-                occurrence.location.node() == identity && occurrence.location.occurrence() == origin
-            })
+            .map(|position| &self.entries[*position])
+            .find(|occurrence| occurrence.location.occurrence() == origin)
             .map(|occurrence| &occurrence.span)
     }
 }
