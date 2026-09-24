@@ -748,10 +748,13 @@ backs AC-1 to AC-6, AC-8, AC-10, AC-11, AC-14, AC-15 and CON-1 there. The
 text-leaf walk (`text_leaves`) follows the Text leaves rules, charges each
 leaf to the node limit before any leaf's law is read, and keys the Recursive
 text-leaf vectors. A4b spells an integer literal as a decimal string and gives
-`quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is QSL-6 S1b: `qsl-package/src/emit.rs`
-refuses every non-empty graph (`ProjectionNotYetImplemented`), so AC-7, AC-9,
-AC-12, AC-13 and CON-2 (TC-416) are unbacked. AC-13's IR admission also
-waits on IR reading the ADR-013 QC-24 and QC-25 node shapes. The `dependencies` rule and
+`quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is QSL-6 S1b, in `qsl-package/src/emit.rs`:
+TC-416 backs AC-7, AC-9, AC-12 and CON-2 there. The emission omits a node
+whose form the pinned IR reader lacks (`value`/`parameter`, IR-280), a
+declared type node, for which `check` records no `declaration` occurrence,
+and every node that names an omitted one; AC-7 and AC-12 are checked on
+every node the arm writes, omitted or not. AC-13 is unbacked: its IR
+admission waits on IR reading the ADR-013 QC-24 and QC-25 node shapes. The `dependencies` rule and
 the fixture comparison are specified under QSL-225. Ownership, decided here: QSL-156 A4b builds
 the lowering and the keys in `check`; QSL-6 S1b serializes the lowered nodes
 and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`

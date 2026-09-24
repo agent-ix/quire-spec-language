@@ -23,6 +23,9 @@ quire-contract-ir = { package = "quire-contract-model", git = "https://github.co
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation; the
 # `package_id` preimage encodes through it (QSL-194).
 quire-canonical = { workspace = true }
+# The emitter writes its wire envelope as a `Serialize` struct over IR's
+# types; it encodes through `quire-canonical` only (QSL-194).
+serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
 
 [dev-dependencies]
@@ -36,8 +39,7 @@ qsl-forms = { path = "../qsl-forms" }
 # `no_shipped_dependency_enables_test_support` refuses a normal or build
 # dependency that does.
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
-# The tests build v2 wires and golden preimages as JSON; shipped code encodes
-# through `quire-canonical` only (QSL-194).
+# The tests build v2 wires and golden preimages as JSON.
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"
 

@@ -257,6 +257,23 @@ fn role_spelling(role: &CheckedOccurrenceRole) -> &'static str {
     }
 }
 
+/// Every FR-322 occurrence role.
+const OCCURRENCE_ROLES: [CheckedOccurrenceRole; 6] = [
+    CheckedOccurrenceRole::Declaration,
+    CheckedOccurrenceRole::Type,
+    CheckedOccurrenceRole::Expression,
+    CheckedOccurrenceRole::Anchor,
+    CheckedOccurrenceRole::Claim,
+    CheckedOccurrenceRole::Generated,
+];
+
+/// The occurrence role `spelling` names, the inverse of [`role_spelling`].
+pub(crate) fn occurrence_role(spelling: &str) -> Option<CheckedOccurrenceRole> {
+    OCCURRENCE_ROLES
+        .into_iter()
+        .find(|role| role_spelling(role) == spelling)
+}
+
 fn raw_source_ref(source: &CheckedArtifactRef) -> Result<RawSourceRef, SourceMapDefect> {
     let digest = DigestRecord::from_wire(Some(&source.digest_domain), &source.digest)?;
     let revision = Revision::new(&*source.revision.namespace, &*source.revision.value)?;

@@ -31,7 +31,7 @@
 //!
 //! `EmittedPackage`'s constructor ([`EmittedPackage::new`]) is the v2
 //! emitter (`CheckedPackage` -> these bytes, C-03), ADR-011 T-8 (M-4,
-//! QSL-6/#242, slice S1a): [`super::emit`], a sibling module of this one, so
+//! QSL-6/#242): [`super::emit`], a sibling module of this one, so
 //! it stays within this crate's `pub(super)` reach without being
 //! reachable from outside `qsl-package` (ADR-013 O-02: `package_id` is
 //! computed from the package, never accepted from a caller).
@@ -194,23 +194,20 @@ pub struct EmittedPackage {
 }
 
 impl EmittedPackage {
-    /// The v2 emitter's sole constructor (ADR-011 T-8, M-4, QSL-6/#242,
-    /// slice S1a). `identity_preimage` is IR's own typed
+    /// The v2 emitter's sole constructor (ADR-011 T-8, M-4, QSL-6).
+    /// `identity_preimage` is IR's own typed
     /// `CheckedPackageIdentityPreimageV2`, JCS-encoded inside this
     /// constructor before `package_id` is minted from those bytes
     /// (`PackageId::of_preimage`, ADR-013 O-02): there is no parameter
     /// through which a caller could instead supply arbitrary preimage
-    /// bytes, let alone an arbitrary `package_id` directly. `pub(super)`:
-    /// reachable from anywhere in `qsl-package` (in particular,
-    /// `emit`), never from outside it.
-    #[allow(
-        dead_code,
-        reason = "no caller yet: emit::emit_package has no success arm until QSL-6 slice S1b lands and calls this"
-    )]
-    pub(super) fn new(
+    /// bytes, let alone an arbitrary `package_id` directly. `encode` writes
+    /// the wire around the minted `package_id`. `pub(super)`: reachable from
+    /// anywhere in `qsl-package` (in particular, `emit`), never from outside
+    /// it.
+    pub(super) fn new<E>(
         identity_preimage: &quire_contract_ir::CheckedPackageIdentityPreimageV2,
-        bytes: Vec<u8>,
-    ) -> Self {
+        encode: impl FnOnce(PackageId) -> Result<Vec<u8>, E>,
+    ) -> Result<Self, E> {
         // RFC 8785 bytes from `quire-canonical` (ADR-013 §2, ADR-013:113:
         // the one RFC 8785 implementation), encoded straight from the typed
         // preimage: the encoder orders members itself. A preimage of owned
@@ -219,10 +216,11 @@ impl EmittedPackage {
         // which the `serde_json` encoder this replaced aborted on.
         let preimage_bytes = quire_canonical::to_vec(identity_preimage, IDENTITY_LIMITS)
             .unwrap_or_else(|error| panic!("CheckedPackageIdentityPreimageV2 encodes: {error}"));
-        Self {
-            bytes,
-            package_id: PackageId::of_preimage(&preimage_bytes),
-        }
+        let package_id = PackageId::of_preimage(&preimage_bytes);
+        Ok(Self {
+            bytes: encode(package_id)?,
+            package_id,
+        })
     }
 
     /// The emitted `quire.checked-package/v2` bytes.
@@ -327,7 +325,8 @@ mod tests {
         let preimage: quire_contract_ir::CheckedPackageIdentityPreimageV2 =
             serde_json::from_str(TEXT).expect("the vector is a v2 identity preimage");
         assert_eq!(
-            EmittedPackage::new(&preimage, Vec::new())
+            EmittedPackage::new(&preimage, |_| Ok::<_, std::convert::Infallible>(Vec::new()))
+                .unwrap_or_else(|never| match never {})
                 .package_id()
                 .hex(),
             DIGEST

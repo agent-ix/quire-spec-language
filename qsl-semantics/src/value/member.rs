@@ -90,6 +90,20 @@ pub enum Member {
 }
 
 impl Member {
+    /// The declaring node this member names, or `None` for a
+    /// [`Self::ProfileOperator`], which names none.
+    pub fn declaration(&self) -> Option<NodeKey> {
+        match self {
+            Self::Field { declaration, .. }
+            | Self::Position { declaration, .. }
+            | Self::Element { declaration }
+            | Self::RelationshipEnd { declaration, .. }
+            | Self::Operation { declaration, .. }
+            | Self::TypeArgument { declaration } => Some(*declaration),
+            Self::ProfileOperator { .. } => None,
+        }
+    }
+
     /// This member's total v2 wire encoding (C-18): exactly the
     /// `node-identity-preimage.schema.json` `OperationMember` shape, over
     /// every variant with no `_` arm, so a new variant fails to compile here
