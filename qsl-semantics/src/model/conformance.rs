@@ -791,8 +791,9 @@ pub fn check_operation_redefinition(
 /// #165 composes it into the real pipeline's `conformance.axis` accounting.
 ///
 /// `max_ancestor_steps` is the caller's `ancestor_steps` ceiling for the one
-/// owner-to-target-owner conformance walk this performs, used as given (see
-/// [`walk_ancestors`]).
+/// owner-to-target-owner conformance walk this performs, used as given: a
+/// target owner `n` generalization steps up is reached at a ceiling of `n`,
+/// and one step more refuses `ModelRefusalCause::AncestorSteps`.
 pub fn resolve_redefinition_target(
     domain_package: &DomainPackage,
     redefining: &DeclarationKey,
