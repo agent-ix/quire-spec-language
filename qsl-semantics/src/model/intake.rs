@@ -8,7 +8,8 @@
 //! turns a spec bundle plus its module roots into IR 2.0.0 document bytes
 //! (FCD FR-091..097). [`admit`] runs FR-154's own four-check admission
 //! table (`model-complete.md:58`) over a selection and a byte map, and
-//! returns the package's raw bytes. [`read_records`] is the per-node reader:
+//! returns the package parsed once as a [`PackageDocument`], the only place
+//! intake parses package bytes. [`read_records`] is the per-node reader:
 //! it dispatches every `types[]`/`populations[]` entry purely by the
 //! `meaning` its `kind` resolves to in the document's own `constructs[]`
 //! table (FR-208), never by `kind.name`/`kind.module` directly.
@@ -38,7 +39,6 @@ use std::path::{Path, PathBuf};
 
 use agent_ix_extraction_frontend::lift::{lift, LiftOutcome, LiftRequest};
 use agent_ix_extraction_frontend::{Diagnostic, Refusal};
-use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -226,24 +226,102 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
     }
 }
 
+/// One domain-package document, parsed exactly once.
+///
+/// [`PackageDocument::parse`] is the only place intake turns package bytes
+/// into a tree. It reads the bytes with `agent-ix-semantic-ir`'s own JSON
+/// reader, the one [`validate_with_semantic_ir`] must be handed (its
+/// `decide` accepts only that crate's own `Json`), and derives this crate's
+/// `serde_json::Value` view from that same tree rather than from the bytes
+/// again. [`admit`]'s JCS digest and [`read_records`]'s per-node reader both
+/// read the derived view, so the three can never disagree about what the
+/// document is.
+///
+/// The reader's bounds carry over: nesting deeper than
+/// `agent_ix_semantic_ir::json::MAX_DEPTH` (200) or input larger than
+/// `json::MAX_INPUT_BYTES` does not parse. The derived view keeps the reader's
+/// last-wins resolution of a repeated member name, and each number is
+/// converted from the lexeme the document carried with `serde_json`'s own
+/// number parser, so it equals what `serde_json::from_slice` would have read.
+/// A number `serde_json` cannot represent (`1e400`) does not parse. The reader
+/// replaces a lone UTF-16 surrogate escape with U+FFFD, so a JCS digest here
+/// is taken over that already-replaced value.
+#[derive(Debug, Clone)]
+pub struct PackageDocument {
+    /// `{"ir": <document>}`: the bundle `agent_ix_semantic_ir::decide` reads
+    /// (`input-bundle.schema.json` requires an `ir` member).
+    bundle: agent_ix_semantic_ir::json::Json,
+    /// The same document as a `serde_json::Value`, derived from `bundle`'s
+    /// own `ir` member.
+    tree: Value,
+}
+
+impl PackageDocument {
+    /// Parses package document bytes once. Bytes that are not UTF-8, do not
+    /// parse as JSON within the reader's bounds, or carry a number
+    /// `serde_json` cannot represent refuse `invalid_model_binding`/
+    /// `malformed-declaration` against the document root `$`.
+    pub fn parse(bytes: &[u8]) -> Result<Self, ModelRefusal> {
+        let root_malformed =
+            |detail: String| malformed_declaration("$".to_owned(), None, None, detail);
+        let text = std::str::from_utf8(bytes).map_err(|err| {
+            root_malformed(format!("package document bytes are not UTF-8: {err}"))
+        })?;
+        let ir = agent_ix_semantic_ir::json::parse(text).map_err(|err| {
+            root_malformed(format!(
+                "package document bytes do not parse as JSON for agent-ix-semantic-ir: {err}"
+            ))
+        })?;
+        let tree = value_of(&ir).map_err(|lexeme| {
+            root_malformed(format!(
+                "package document number {lexeme} has no serde_json representation"
+            ))
+        })?;
+        Ok(Self {
+            bundle: agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), ir)]),
+            tree,
+        })
+    }
+
+    /// The parsed document.
+    pub fn tree(&self) -> &Value {
+        &self.tree
+    }
+}
+
+/// `json` as a `serde_json::Value`, or the first number lexeme `serde_json`
+/// cannot represent. Recursion is bounded by the reader's own `MAX_DEPTH`,
+/// which already held when `json` was parsed.
+fn value_of(json: &agent_ix_semantic_ir::json::Json) -> Result<Value, &str> {
+    use agent_ix_semantic_ir::json::Json;
+    Ok(match json {
+        Json::Null => Value::Null,
+        Json::Bool(value) => Value::Bool(*value),
+        Json::Number(lexeme) => Value::Number(lexeme.parse().map_err(|_| lexeme.as_str())?),
+        Json::Str(text) => Value::String(text.clone()),
+        Json::Array(items) => Value::Array(items.iter().map(value_of).collect::<Result<_, _>>()?),
+        Json::Object(members) => {
+            // In document order, so a repeated name resolves last-wins, the
+            // same way `Json::get` and `serde_json::from_slice` resolve it.
+            let mut object = serde_json::Map::with_capacity(members.len());
+            for (name, value) in members {
+                object.insert(name.clone(), value_of(value)?);
+            }
+            Value::Object(object)
+        }
+    })
+}
+
 /// FR-154 Intake's four-check admission table (`model-complete.md:58-70`).
 ///
 /// Runs the checks in table order and stops at the first failure: digest
-/// domain, then byte presence, then digest equality, then the package's own
-/// declared identity/version. Check 3 (`model-complete.md:69`) is "SHA-256
-/// over the package's JCS bytes equals the selected digest": when the
-/// admitted bytes parse as JSON, the digest is taken over this crate's own
-/// RFC 8785 JCS canonicalisation of the parsed value, not the raw bytes
-/// verbatim, so two byte-different-but-JCS-equivalent encodings of the same
-/// document (e.g. a whitespace variant) digest identically. Bytes that do
-/// not parse as JSON at all have no JCS form to canonicalize; the digest is
-/// then taken over the raw bytes, which a producer that actually selected
-/// this digest could never have done for non-JSON bytes either, so this
-/// still reports the real mismatch rather than fabricating a match.
+/// domain, then byte presence, then digest equality
+/// ([`check_package_digest`]), then the package's own declared
+/// identity/version.
 ///
-/// Returns the admitted selection and a borrow of the package's raw bytes
-/// (never cloned: the caller already owns them in `bytes_by_digest`); reads
-/// its own referent past this call for [`read_records`] to read further.
+/// The package bytes are parsed once, here, into the [`PackageDocument`]
+/// this returns alongside the admitted selection; [`read_records`] reads
+/// that same tree rather than parsing the bytes again.
 ///
 /// `offered` carries `{identity, version, digest}` -- [`DomainPackageRef`]'s
 /// own flat FR-321 shape (its `digest_domain` is implicitly `sha256-jcs`).
@@ -251,11 +329,11 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// `sha256-jcs`: check 1 of the table below is exactly the question of
 /// whether the caller's offered digest domain is the one Intake accepts, so
 /// a parameter that already assumed the answer could not state that check.
-pub fn admit<'a>(
+pub fn admit(
     offered: &DomainPackageRef,
     digest_domain: &str,
-    bytes_by_digest: &'a BTreeMap<[u8; 32], Vec<u8>>,
-) -> Result<(DomainPackageRef, &'a [u8]), ModelRefusal> {
+    bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<(DomainPackageRef, PackageDocument), ModelRefusal> {
     // ADR-010 OBS-006 / ADR-013 O-03: the reserved `quire/native`
     // pseudo-package never selects, regardless of what its bytes would
     // otherwise admit -- checked first, ahead of FR-154's own four-check
@@ -301,48 +379,37 @@ pub fn admit<'a>(
             ),
         });
     };
-    let parsed: Option<Value> = serde_json::from_slice(bytes).ok();
-    let actual_digest: [u8; 32] = match &parsed {
-        Some(value) => Sha256::digest(jcs_bytes(value)).into(),
-        None => Sha256::digest(bytes.as_slice()).into(),
-    };
-    if actual_digest != offered.digest {
-        return Err(ModelRefusal {
-            code: Code::StaleDependency,
-            cause: ModelRefusalCause::ByteDigestMismatch {
-                expected: offered.digest,
-                actual: actual_digest,
-            },
-            detail: format!(
-                "domain package {}@{} bytes hash to {}, not the selected {}",
-                offered.identity,
-                offered.version,
-                hex(&actual_digest),
-                hex(&offered.digest)
-            ),
-        });
-    }
+    // A parse failure is not itself a refusal here: bytes that do not parse
+    // are digested raw by check 3, and supply no identity/version to check 4.
+    let document = PackageDocument::parse(bytes).ok();
+    check_package_digest(offered, bytes, document.as_ref())?;
     // The package's own declared identity/version, read defensively: bytes
     // that fail to parse or omit `package` simply supply no identity/version,
     // which check 4 below reports as a `wrong-model-selection` mismatch
     // rather than a separate malformed-package case FR-154's table does not
     // name.
-    let package = parsed.as_ref().and_then(|value| value.get("package"));
-    let actual_identity = package
-        .and_then(|value| value.get("identity"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    let actual_version = package
-        .and_then(|value| value.get("version"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    if actual_identity != offered.identity || actual_version != offered.version {
-        return Err(ModelRefusal {
+    let package = document
+        .as_ref()
+        .and_then(|document| document.tree.get("package"));
+    let declared = |member: &str| {
+        package
+            .and_then(|package| package.get(member))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let actual_identity = declared("identity");
+    let actual_version = declared("version");
+    match document {
+        Some(document)
+            if actual_identity == offered.identity && actual_version == offered.version =>
+        {
+            Ok((package_ref, document))
+        }
+        _ => Err(ModelRefusal {
             code: Code::InvalidModelBinding,
             cause: ModelRefusalCause::WrongModelSelection {
-                selection: package_ref.clone(),
+                selection: package_ref,
                 actual_identity: actual_identity.clone(),
                 actual_version: actual_version.clone(),
             },
@@ -350,9 +417,50 @@ pub fn admit<'a>(
                 "domain package selection names {}@{} but the package declares {actual_identity}@{actual_version}",
                 offered.identity, offered.version
             ),
-        });
+        }),
     }
-    Ok((package_ref, bytes.as_slice()))
+}
+
+/// FR-154 Intake check 3 (`model-complete.md:69`): SHA-256 over the
+/// package's JCS bytes equals the selected digest, else `stale_dependency`.
+///
+/// When the bytes parsed, the digest is taken over this crate's own RFC 8785
+/// JCS canonicalisation of the parsed tree, not the raw bytes verbatim, so
+/// two byte-different-but-JCS-equivalent encodings of the same document
+/// (a whitespace variant, say) digest identically. Bytes that did not parse
+/// have no JCS form; the digest is then taken over the raw bytes, which a
+/// producer that actually selected this digest could never have done for
+/// unparseable bytes either, so this still reports the real mismatch rather
+/// than fabricating a match.
+///
+/// The one place intake computes a package digest (QSL-194 replaces the JCS
+/// encoder behind it).
+fn check_package_digest(
+    offered: &DomainPackageRef,
+    bytes: &[u8],
+    document: Option<&PackageDocument>,
+) -> Result<(), ModelRefusal> {
+    let actual_digest: [u8; 32] = match document {
+        Some(document) => Sha256::digest(jcs_bytes(&document.tree)).into(),
+        None => Sha256::digest(bytes).into(),
+    };
+    if actual_digest == offered.digest {
+        return Ok(());
+    }
+    Err(ModelRefusal {
+        code: Code::StaleDependency,
+        cause: ModelRefusalCause::ByteDigestMismatch {
+            expected: offered.digest,
+            actual: actual_digest,
+        },
+        detail: format!(
+            "domain package {}@{} bytes hash to {}, not the selected {}",
+            offered.identity,
+            offered.version,
+            hex(&actual_digest),
+            hex(&offered.digest)
+        ),
+    })
 }
 
 /// ADR-013 O-01: admits every selection in `offered`, in order, through
@@ -367,11 +475,11 @@ pub fn admit<'a>(
 /// domain package yet; this is the single-selection rule #131 was asked to
 /// wire together with [`admit`] and did not (ADR-013 O-01's own "Implementing
 /// ticket" row).
-pub fn admit_selections<'a>(
+pub fn admit_selections(
     offered: &[DomainPackageRef],
     digest_domain: &str,
-    bytes_by_digest: &'a BTreeMap<[u8; 32], Vec<u8>>,
-) -> Result<Vec<(DomainPackageRef, &'a [u8])>, ModelRefusal> {
+    bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<Vec<(DomainPackageRef, PackageDocument)>, ModelRefusal> {
     let mut admitted = Vec::with_capacity(offered.len());
     let mut selected_versions: BTreeMap<&str, &str> = BTreeMap::new();
     for selection in offered {
@@ -392,9 +500,9 @@ pub fn admit_selections<'a>(
                 ),
             });
         }
-        let (admitted_ref, bytes) = admit(selection, digest_domain, bytes_by_digest)?;
+        let (admitted_ref, document) = admit(selection, digest_domain, bytes_by_digest)?;
         selected_versions.insert(&selection.identity, &selection.version);
-        admitted.push((admitted_ref, bytes));
+        admitted.push((admitted_ref, document));
     }
     Ok(admitted)
 }
@@ -485,8 +593,8 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
     (artifact, span)
 }
 
-/// Validates admitted document bytes against `agent-ix-semantic-ir`'s own
-/// independent reader before [`read_records`] walks a single node. That
+/// Validates a parsed [`PackageDocument`] against `agent-ix-semantic-ir`'s
+/// own independent reader before [`read_records`] walks a single node. That
 /// crate decides `conformance/schema/input-bundle.schema.json` by wrapping
 /// the document as `{"ir": <document>}` (`input-bundle.schema.json` requires
 /// an `ir` member carrying `semantic-ir.schema.json`) and reports every
@@ -519,37 +627,8 @@ fn node_span(value: &Value) -> (Option<String>, Option<LocatedSpan>) {
 /// which is exactly why `Pump.id`/`Sys.id`/`Tank.id` still refuse in
 /// `tests/model_intake.rs`'s golden-shape test even though the schema
 /// itself now admits them.
-fn validate_with_semantic_ir(document: &[u8]) -> Result<(), Vec<ModelRefusal>> {
-    let malformed =
-        |node: String, artifact: Option<String>, span: Option<LocatedSpan>, detail: String| {
-            ModelRefusal {
-                code: Code::InvalidModelBinding,
-                cause: ModelRefusalCause::IntakeMalformedDeclaration {
-                    node,
-                    artifact,
-                    span,
-                },
-                detail,
-            }
-        };
-    let text = std::str::from_utf8(document).map_err(|err| {
-        vec![malformed(
-            "$".to_owned(),
-            None,
-            None,
-            format!("admitted document bytes are not UTF-8: {err}"),
-        )]
-    })?;
-    let parsed = agent_ix_semantic_ir::json::parse(text).map_err(|err| {
-        vec![malformed(
-            "$".to_owned(),
-            None,
-            None,
-            format!("admitted document bytes do not parse as JSON for agent-ix-semantic-ir: {err}"),
-        )]
-    })?;
-    let bundle = agent_ix_semantic_ir::json::Json::Object(vec![("ir".to_owned(), parsed)]);
-    let verdict = agent_ix_semantic_ir::decide(&bundle);
+fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<ModelRefusal>> {
+    let verdict = agent_ix_semantic_ir::decide(&document.bundle);
     let refusals: Vec<ModelRefusal> = verdict
         .diagnostics
         .iter()
@@ -561,7 +640,7 @@ fn validate_with_semantic_ir(document: &[u8]) -> Result<(), Vec<ModelRefusal>> {
                 located.owner.clone()
             };
             let (artifact, span) = located_span(located);
-            malformed(
+            malformed_declaration(
                 node,
                 artifact,
                 span,
@@ -582,11 +661,11 @@ fn validate_with_semantic_ir(document: &[u8]) -> Result<(), Vec<ModelRefusal>> {
 /// The artifact id and span one `agent-ix-semantic-ir` diagnostic's own
 /// `locus` carries. `Located::locus` is already the `origin.source` object
 /// itself (see `agent_ix_semantic_ir::diag::locus_for`), not wrapped in an
-/// `origin` member the way [`node_span`] must unwrap from a freshly parsed
-/// `serde_json::Value` -- the two functions read the same
-/// `sourceIdentity`/`startLine`/`startColumn` shape from two different `Json`
-/// types the two crates each keep independently, one FCD's own, one this
-/// crate's own `serde_json::Value` copy of the same bytes.
+/// `origin` member the way [`node_span`] must unwrap from a node of
+/// [`PackageDocument::tree`] -- the two functions read the same
+/// `sourceIdentity`/`startLine`/`startColumn` shape from the two views a
+/// [`PackageDocument`] keeps of its one parse, one FCD's own `Json`, one this
+/// crate's `serde_json::Value` derived from it.
 fn located_span(
     located: &agent_ix_semantic_ir::diag::Located,
 ) -> (Option<String>, Option<LocatedSpan>) {
@@ -621,18 +700,33 @@ fn located_span(
     (artifact, span)
 }
 
-fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> ModelRefusal {
-    let node = node_identity_label(value, at);
-    let (artifact, span) = node_span(value);
+/// FR-154's `invalid_model_binding`/`malformed-declaration` refusal: the one
+/// constructor every intake malformed-declaration refusal goes through.
+fn malformed_declaration(
+    node: String,
+    artifact: Option<String>,
+    span: Option<LocatedSpan>,
+    detail: String,
+) -> ModelRefusal {
     ModelRefusal {
         code: Code::InvalidModelBinding,
         cause: ModelRefusalCause::IntakeMalformedDeclaration {
-            node: node.clone(),
+            node,
             artifact,
             span,
         },
-        detail: format!("{at}: {reason}"),
+        detail,
     }
+}
+
+fn malformed_at(value: &Value, at: &str, reason: impl std::fmt::Display) -> ModelRefusal {
+    let (artifact, span) = node_span(value);
+    malformed_declaration(
+        node_identity_label(value, at),
+        artifact,
+        span,
+        format!("{at}: {reason}"),
+    )
 }
 
 fn unsupported_at(value: &Value, at: &str, what: impl Into<String>) -> ModelRefusal {
@@ -723,25 +817,44 @@ impl<'a> NodeCtx<'a> {
         }
     }
 
-    /// `agent-ix-semantic-ir`'s own `identity_list` validates every present
-    /// item as an `ix://<owner>/<name>`-shaped string before
-    /// [`validate_with_semantic_ir`] lets a document reach this reader, so
-    /// each item is trusted as a string here rather than re-checked.
+    /// `value[field]` as a list of identity strings. `agent-ix-semantic-ir`'s
+    /// own `identity_list` validates every present item as an
+    /// `ix://<owner>/<name>`-shaped string before [`validate_with_semantic_ir`]
+    /// lets a document reach this reader; a non-string item still refuses
+    /// here, so a dependency pin that stops guaranteeing it degrades to a
+    /// refusal, not a panic.
     fn identity_keys(
         &self,
         package: &str,
         field: &'static str,
     ) -> Result<Vec<DeclarationKey>, ModelRefusal> {
-        Ok(self
-            .array_field(field)?
+        self.array_field(field)?
             .iter()
-            .map(|item| {
-                let node = item
-                    .as_str()
-                    .expect("agent-ix-semantic-ir guarantees identity_list items are strings");
-                declaration_key(package, node)
+            .enumerate()
+            .map(|(position, item)| {
+                item.as_str()
+                    .map(|node| declaration_key(package, node))
+                    .ok_or_else(|| self.malformed(format!("{field}[{position}]: not a string")))
             })
-            .collect())
+            .collect()
+    }
+
+    /// The `{module, name}` pair of this node's `kind` object, the key a
+    /// `constructs[]` entry is indexed by (FR-208).
+    fn kind_key(&self) -> Result<(&'a str, &'a str), ModelRefusal> {
+        let kind = self
+            .value
+            .get("kind")
+            .ok_or_else(|| self.malformed("kind: missing"))?;
+        let module = kind
+            .get("module")
+            .and_then(Value::as_str)
+            .ok_or_else(|| self.malformed("kind.module: missing or not a string"))?;
+        let name = kind
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| self.malformed("kind.name: missing or not a string"))?;
+        Ok((module, name))
     }
 
     /// FR-154's own multiplicity shape (`model-complete.md`:167-169):
@@ -1025,16 +1138,15 @@ fn read_object_type(
     let ctx = NodeCtx::new(type_value, at);
     let supertypes = ctx.identity_keys(package, "supertypes")?;
     // `agent-ix-semantic-ir`'s own `expect_bool` guarantees `abstract`, when
-    // present, is a boolean, before this reader sees the document; absent
-    // reads as `false` (QSpec's own default for the property).
-    let abstract_type = type_value
-        .get("abstract")
-        .map(|value| {
-            value
-                .as_bool()
-                .expect("agent-ix-semantic-ir guarantees abstract is a boolean when present")
-        })
-        .unwrap_or(false);
+    // present, is a boolean, before this reader sees the document; a
+    // non-boolean still refuses here rather than panicking. Absent reads as
+    // `false` (QSpec's own default for the property).
+    let abstract_type = match type_value.get("abstract") {
+        None => false,
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| ctx.malformed("abstract: not a boolean"))?,
+    };
     let interface_features = if is_interface {
         Some(ctx.identity_keys(package, "featureOrder")?)
     } else {
@@ -1307,21 +1419,11 @@ fn read_population(
     meanings: &HashMap<(String, String), String>,
 ) -> Result<PopulationRecord, ModelRefusal> {
     // `agent-ix-semantic-ir`'s own `POPULATION_MEMBERS` requires `kind`
-    // present with a shape `construct_kind` validates, so only the
-    // meaning-resolution (QSL's own: `kind` must resolve to POPULATION,
-    // not merely to some constructs entry) stays hand-checked here.
-    let kind = ctx
-        .value
-        .get("kind")
-        .expect("agent-ix-semantic-ir guarantees kind is present on a population");
-    let module = kind
-        .get("module")
-        .and_then(Value::as_str)
-        .expect("agent-ix-semantic-ir guarantees kind.module is a string");
-    let name = kind
-        .get("name")
-        .and_then(Value::as_str)
-        .expect("agent-ix-semantic-ir guarantees kind.name is a string");
+    // present with a shape `construct_kind` validates; `kind_key` still
+    // refuses a shape that guarantee missed. The meaning resolution is QSL's
+    // own: `kind` must resolve to POPULATION, not merely to some constructs
+    // entry.
+    let (module, name) = ctx.kind_key()?;
     match meanings.get(&(module.to_owned(), name.to_owned())) {
         Some(resolved) if resolved == meaning::POPULATION => {}
         Some(other) => {
@@ -1375,30 +1477,22 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
     // `constructs` present, `CONSTRUCT_ENTRY_MEMBERS` requires each entry's
     // `kind`/`construct` present, `construct_kind` validates `kind.module`/
     // `kind.name` are strings, and `DECLARATION_REQUIRED` guarantees
-    // `construct.meaning` is a string -- all guaranteed before this reader
-    // sees the document.
+    // `construct.meaning` is a string -- all before this reader sees the
+    // document. Each is still checked here, so a dependency pin that stops
+    // guaranteeing one refuses the document rather than panicking.
     let constructs = document
         .get("constructs")
         .and_then(Value::as_array)
-        .expect("agent-ix-semantic-ir guarantees constructs is present and an array");
-    let mut index = HashMap::new();
-    for entry in constructs {
-        let kind = entry
-            .get("kind")
-            .expect("agent-ix-semantic-ir guarantees kind is present on a constructs entry");
-        let module = kind
-            .get("module")
-            .and_then(Value::as_str)
-            .expect("agent-ix-semantic-ir guarantees kind.module is a string");
-        let name = kind
-            .get("name")
-            .and_then(Value::as_str)
-            .expect("agent-ix-semantic-ir guarantees kind.name is a string");
+        .ok_or_else(|| malformed_at(document, "$", "constructs: missing or not an array"))?;
+    let mut index = HashMap::with_capacity(constructs.len());
+    for (position, entry) in constructs.iter().enumerate() {
+        let ctx = NodeCtx::new(entry, format!("$.constructs[{position}]"));
+        let (module, name) = ctx.kind_key()?;
         let meaning = entry
             .get("construct")
             .and_then(|construct| construct.get("meaning"))
             .and_then(Value::as_str)
-            .expect("agent-ix-semantic-ir guarantees construct.meaning is a string");
+            .ok_or_else(|| ctx.malformed("construct.meaning: missing or not a string"))?;
         index.insert((module.to_owned(), name.to_owned()), meaning.to_owned());
     }
     Ok(index)
@@ -1418,7 +1512,7 @@ fn read_type_node(
     let ctx = NodeCtx::new(type_value, at);
     let (_, key) = read_type_identity(package, &ctx)?;
     let node = key.node.as_str();
-    let Some(kind) = type_value.get("kind").filter(|kind| kind.is_object()) else {
+    if !type_value.get("kind").is_some_and(Value::is_object) {
         // A bare-string kind (`"scalar"`, `"alias"`, `"record"`, ...) is a
         // core kind FCD's own schema admits, but QSpec's declaration-kinds
         // table has no row for a package declaring one of these directly in
@@ -1430,15 +1524,8 @@ fn read_type_node(
         // `types[]` declaration, so this node being refused as a top-level
         // declaration never stops a field resolving its own type reference.
         return Err(ctx.malformed("kind: a bare-string core kind is not a declared FR-208 meaning"));
-    };
-    let module = kind
-        .get("module")
-        .and_then(Value::as_str)
-        .ok_or_else(|| ctx.malformed("kind.module: missing or not a string"))?;
-    let name = kind
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| ctx.malformed("kind.name: missing or not a string"))?;
+    }
+    let (module, name) = ctx.kind_key()?;
     let Some(construct_meaning) = meanings.get(&(module.to_owned(), name.to_owned())) else {
         return Err(ctx.malformed("kind: names no constructs[] entry"));
     };
@@ -1502,46 +1589,32 @@ enum DocumentNode<'a> {
 /// `Err` with every node's refusal, in that same ascending order, otherwise.
 pub fn read_records(
     package_identity: &str,
-    document: &[u8],
+    document: &PackageDocument,
 ) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
     validate_with_semantic_ir(document)?;
-    // `agent-ix-semantic-ir`'s own independent parser (called above by
-    // `validate_with_semantic_ir`) already confirmed these bytes are UTF-8
-    // and parse as JSON *and* fit within its own `json::MAX_DEPTH` (200), so
-    // a second, divergent parse failure here would be an internal bug, not
-    // a real document defect. `serde_json::from_slice`'s own default
-    // recursion limit is 128, lower than that -- a document at depth
-    // 129-200 is real, validator-accepted input, and this crate's own
-    // idiom for a re-parse whose depth is already bounded by a prior pass
-    // is `disable_recursion_limit()` (`src/package/intake.rs`,
-    // `src/protocol_artifact/decode.rs`), not a fixed limit that can
-    // disagree with the bound that already ran.
-    let mut decoder = serde_json::Deserializer::from_slice(document);
-    decoder.disable_recursion_limit();
-    let parsed: Value = Value::deserialize(&mut decoder)
-        .and_then(|value| decoder.end().map(|()| value))
-        .expect(
-            "validate_with_semantic_ir already confirmed these bytes parse as JSON within its \
-             own depth bound, and disable_recursion_limit() removes serde_json's own lower one",
-        );
-    let meanings = match meaning_index(&parsed) {
-        Ok(meanings) => meanings,
-        Err(refusal) => return Err(vec![refusal]),
-    };
+    read_nodes(package_identity, &document.tree)
+}
+
+/// [`read_records`]'s per-node reader over a document
+/// [`validate_with_semantic_ir`] has already accepted. Every shape the
+/// validator guarantees is still checked, so a dependency pin that stops
+/// guaranteeing one degrades to a refusal rather than a panic.
+fn read_nodes(
+    package_identity: &str,
+    document: &Value,
+) -> Result<Vec<DomainPackageRecord>, Vec<ModelRefusal>> {
+    let meanings = meaning_index(document).map_err(|refusal| vec![refusal])?;
     // `agent-ix-semantic-ir`'s own `IR_MEMBERS` requires `types` present and
     // `expect_array` guarantees it is an array; `populations` is optional
     // but array-shaped when present.
-    let types = parsed
+    let root = NodeCtx::new(document, "$");
+    let types = document
         .get("types")
         .and_then(Value::as_array)
-        .expect("agent-ix-semantic-ir guarantees types is present and an array");
-    let populations: &[Value] = match parsed.get("populations") {
-        None => &[],
-        Some(populations) => populations
-            .as_array()
-            .map(Vec::as_slice)
-            .expect("agent-ix-semantic-ir guarantees populations is an array when present"),
-    };
+        .ok_or_else(|| vec![root.malformed("types: missing or not an array")])?;
+    let populations = root
+        .array_field("populations")
+        .map_err(|refusal| vec![refusal])?;
 
     let mut nodes: Vec<DocumentNode<'_>> = Vec::with_capacity(types.len() + populations.len());
     for (position, type_value) in types.iter().enumerate() {
@@ -1603,6 +1676,11 @@ mod tests {
         Sha256::digest(bytes).into()
     }
 
+    /// Test document bytes through intake's one parse.
+    fn parse_document(bytes: &[u8]) -> PackageDocument {
+        PackageDocument::parse(bytes).expect("the test document parses as JSON")
+    }
+
     fn package_bytes(identity: &str, version: &str) -> Vec<u8> {
         serde_json::json!({
             "contractVersion": "2.0.0",
@@ -1637,11 +1715,14 @@ mod tests {
         map.insert(digest, bytes.clone());
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (package_ref, admitted_bytes) = admit(&offered, &digest_domain, &map).unwrap();
+        let (package_ref, document) = admit(&offered, &digest_domain, &map).unwrap();
         assert_eq!(package_ref.identity, "acme/orders");
         assert_eq!(package_ref.version, "1");
         assert_eq!(package_ref.digest, digest);
-        assert_eq!(admitted_bytes, bytes.as_slice());
+        assert_eq!(
+            document.tree(),
+            &serde_json::from_slice::<Value>(&bytes).unwrap()
+        );
     }
 
     #[trace("TC-145", "FR-056-AC-2")]
@@ -1663,9 +1744,12 @@ mod tests {
         map.insert(digest, padded.clone());
         let (offered, digest_domain) =
             selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (package_ref, admitted_bytes) = admit(&offered, &digest_domain, &map).unwrap();
+        let (package_ref, document) = admit(&offered, &digest_domain, &map).unwrap();
         assert_eq!(package_ref.digest, digest);
-        assert_eq!(admitted_bytes, padded.as_slice());
+        assert_eq!(
+            document.tree(),
+            &serde_json::from_slice::<Value>(&compact).unwrap()
+        );
     }
 
     // These five `admit` refusal tests assert the whole `ModelRefusal` --
@@ -1956,20 +2040,20 @@ mod tests {
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn refuses_a_document_that_is_not_json() {
-        let refusals = read_records("acme/orders", b"not json").unwrap_err();
+        let refusal = PackageDocument::parse(b"not json").unwrap_err();
         assert_eq!(
-            refusals,
-            vec![ModelRefusal {
+            refusal,
+            ModelRefusal {
                 code: Code::InvalidModelBinding,
                 cause: ModelRefusalCause::IntakeMalformedDeclaration {
                     node: "$".to_owned(),
                     artifact: None,
                     span: None,
                 },
-                detail: "admitted document bytes do not parse as JSON for \
+                detail: "package document bytes do not parse as JSON for \
                           agent-ix-semantic-ir: an unrecognised literal at byte 0"
                     .to_owned(),
-            }]
+            }
         );
     }
 
@@ -1986,7 +2070,8 @@ mod tests {
             )]),
         )
         .to_string();
-        let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
+        let refusals =
+            read_records("acme/orders", &parse_document(document.as_bytes())).unwrap_err();
         assert_eq!(
             refusals,
             vec![ModelRefusal {
@@ -2046,10 +2131,10 @@ mod tests {
             "ix://acme/orders/Order",
             "A Totally Different Title"
         )]));
-        let records_a =
-            read_records("acme/orders", &titled_a).expect("displayName alone never refuses");
-        let records_b =
-            read_records("acme/orders", &titled_b).expect("displayName alone never refuses");
+        let records_a = read_records("acme/orders", &parse_document(&titled_a))
+            .expect("displayName alone never refuses");
+        let records_b = read_records("acme/orders", &parse_document(&titled_b))
+            .expect("displayName alone never refuses");
         assert_eq!(
             records_a, records_b,
             "changing only displayName must not change the resulting records"
@@ -2060,7 +2145,7 @@ mod tests {
             one_type("ix://acme/orders/Order", "Shared Title"),
             one_type("ix://acme/orders/Invoice", "Shared Title"),
         ]));
-        let records = read_records("acme/orders", &shared_title)
+        let records = read_records("acme/orders", &parse_document(&shared_title))
             .expect("two artifacts with equal titles are still two distinct declarations");
         assert_eq!(records.len(), 2, "both equal-titled artifacts are admitted");
         let keys: std::collections::BTreeSet<_> =
@@ -2090,7 +2175,8 @@ mod tests {
             )]),
         )
         .to_string();
-        let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
+        let refusals =
+            read_records("acme/orders", &parse_document(document.as_bytes())).unwrap_err();
         assert_eq!(
             refusals,
             vec![ModelRefusal {
@@ -2137,7 +2223,8 @@ mod tests {
             )]),
         )
         .to_string();
-        let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
+        let refusals =
+            read_records("acme/orders", &parse_document(document.as_bytes())).unwrap_err();
         assert_eq!(
             refusals,
             vec![ModelRefusal {
@@ -2203,7 +2290,8 @@ mod tests {
             ]),
         )
         .to_string();
-        let refusals = read_records("acme/orders", document.as_bytes()).unwrap_err();
+        let refusals =
+            read_records("acme/orders", &parse_document(document.as_bytes())).unwrap_err();
         assert_eq!(
             refusals.len(),
             2,
@@ -2515,7 +2603,7 @@ mod tests {
                 },
             }],
         }));
-        let refusals = read_records("acme/orders", &document)
+        let refusals = read_records("acme/orders", &parse_document(&document))
             .expect_err("a frame that declares a creates entry is not silently dropped");
         assert_eq!(
             refusals,
@@ -2849,7 +2937,7 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a real FR-208 meaning with no QSL record shape yet refuses, not folds into \
              ObjectTypeRecord",
         );
@@ -2896,7 +2984,7 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &document)
+        let refusals = read_records("acme/orders", &parse_document(&document))
             .expect_err("a meaning outside FR-208 is not a declared vocabulary at all");
         assert_eq!(
             refusals,
@@ -2941,10 +3029,13 @@ mod tests {
             .to_string()
             .into_bytes()
         };
-        let records_a = read_records("acme/orders", &document_named("order"))
+        let records_a = read_records("acme/orders", &parse_document(&document_named("order")))
             .expect("a real OBJECT_TYPE meaning always reads");
-        let records_b = read_records("acme/orders", &document_named("purchase_order"))
-            .expect("a real OBJECT_TYPE meaning always reads");
+        let records_b = read_records(
+            "acme/orders",
+            &parse_document(&document_named("purchase_order")),
+        )
+        .expect("a real OBJECT_TYPE meaning always reads");
         assert_eq!(
             records_a, records_b,
             "renaming the kind while keeping the same meaning id must not change the record"
@@ -2993,7 +3084,7 @@ mod tests {
             },
         }]);
         let document = document.to_string().into_bytes();
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a population's kind names a real constructs entry, but that entry's own \
              meaning is object-type, not population",
         );
@@ -3041,7 +3132,7 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a type identity naming a different package's owner is not a node of acme/orders",
         );
         assert_eq!(
@@ -3075,7 +3166,7 @@ mod tests {
             "other",
             "ix://acme/orders/OtherType",
         ));
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a field identity that is not exactly <owner identity>/<member name> is malformed",
         );
         assert_eq!(
@@ -3140,7 +3231,7 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a typeRef naming a different package's node is not this field's own package",
         );
         assert_eq!(
@@ -3242,7 +3333,7 @@ mod tests {
         )
         .to_string()
         .into_bytes();
-        let refusals = read_records("acme/orders", &document).expect_err(
+        let refusals = read_records("acme/orders", &parse_document(&document)).expect_err(
             "a connection end with no multiplicity at all is stricter than \
              agent-ix-semantic-ir's own optional check",
         );
@@ -3363,7 +3454,7 @@ mod tests {
             "other",
             "ix://acme/orders/OtherType",
         ));
-        let records = read_records("acme/orders", &document)
+        let records = read_records("acme/orders", &parse_document(&document))
             .expect("a typeRef naming a node of the field's own package reads");
         let field = records
             .iter()
