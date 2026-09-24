@@ -213,7 +213,7 @@ use crate::model::domain_package::DomainPackageRefWire;
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
 };
-use crate::model::index::{DeclIdx, ModelIndex, Redefiner};
+use crate::model::index::{DeclIdx, ModelIndex, RecordIndex, Redefiner};
 use crate::model::key::{
     canonical_len, sha256_and_len, DeclarationKey, EffectiveDeclarationPreimage,
     EffectiveDeclarationWire, EffectiveId, EffectiveIdWire, Fact, RuleRefWire, RULE_INHERIT,
@@ -443,11 +443,12 @@ pub struct ViewEntry {
 /// checking or re-normalizing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectiveView {
-    /// The domain package this view was normalized from. Shared, never
-    /// copied, by every [`crate::model::population::PopulationBinding`]
+    /// The domain package this view was normalized from, together with the
+    /// [`ModelIndex`] this normalization built over it (QSL-202). Shared,
+    /// never copied, by every [`crate::model::population::PopulationBinding`]
     /// admitted against this view.
-    domain_package: Arc<DomainPackage>,
-    /// Everything normalization computed from `domain_package`.
+    index: Arc<ModelIndex>,
+    /// Everything else normalization computed from the package.
     body: ViewBody,
 }
 
@@ -479,10 +480,6 @@ struct ViewBody {
     /// Every `Population` record of the package, keyed by its own
     /// declaration key.
     populations: BTreeMap<DeclarationKey, PopulationEntry>,
-    /// The package's shared [`ModelIndex`], built once by this
-    /// normalization (QSL-202) and read by dispatch linking and by every
-    /// population binding admitted against the view.
-    model_index: Arc<ModelIndex>,
 }
 
 /// Every declared type's effective identity, keyed both ways: by its
@@ -590,25 +587,19 @@ impl ObjectUniverses {
 impl EffectiveView {
     /// The domain package this view was normalized from.
     pub fn domain_package(&self) -> &DomainPackage {
-        &self.domain_package
-    }
-
-    /// The shared handle to [`EffectiveView::domain_package`], for a binding
-    /// that keeps the package alive beyond this view.
-    pub(crate) fn shared_domain_package(&self) -> &Arc<DomainPackage> {
-        &self.domain_package
+        self.index.package()
     }
 
     /// The shared [`ModelIndex`] over [`EffectiveView::domain_package`],
     /// built once by the normalization that produced this view.
     pub fn model_index(&self) -> &ModelIndex {
-        &self.body.model_index
+        &self.index
     }
 
     /// The shared handle to [`EffectiveView::model_index`], for a binding
     /// that keeps the index alive beyond this view.
     pub(crate) fn shared_model_index(&self) -> &Arc<ModelIndex> {
-        &self.body.model_index
+        &self.index
     }
 
     /// The shared handle to this view's type catalog, for a binding that
@@ -619,7 +610,7 @@ impl EffectiveView {
 
     /// The model selection this view was normalized under.
     pub fn model_selection(&self) -> &DomainPackageRef {
-        &self.domain_package.model_selection
+        &self.domain_package().model_selection
     }
 
     /// Every admitted declaration, ascending by [`EffectiveId`].
@@ -796,7 +787,7 @@ struct ObjectUniverseWire<'a> {
 /// call site does exactly that).
 fn connected_components(
     type_keys: &[DeclarationKey],
-    index: &ModelIndex,
+    index: &RecordIndex,
 ) -> HashMap<DeclarationKey, usize> {
     let mut adjacency: HashMap<&DeclarationKey, Vec<&DeclarationKey>> = HashMap::new();
     for key in type_keys {
@@ -959,7 +950,7 @@ struct AncestorWalk {
 /// [`ModelRefusalCause::AncestorSteps`] naming `root_key` and the bound.
 fn ancestor_paths(
     root_key: &DeclarationKey,
-    index: &ModelIndex,
+    index: &RecordIndex,
     fact_budget: usize,
     cycle_budget: usize,
     max_steps: u64,
@@ -1164,6 +1155,9 @@ struct Built {
     /// OQ-E's per-component partition -- see
     /// `tests/it/model_normalization.rs`'s pinned-digest regression test.
     view: ViewBody,
+    /// The positional index this build read the package through, kept for
+    /// the completed view's [`ModelIndex`].
+    index: RecordIndex,
     /// Every phase-4 `normalize.redefinition-check` charge's own exact
     /// `work_units` amount (`m + r`, `value-accounting.md:455`), one entry
     /// per redefining member in the entire domain package (field and operation
@@ -1263,7 +1257,7 @@ fn validate_selection(domain_package: &DomainPackage) -> Result<(), ModelRefusal
 /// also being reported as a duplicate key.
 fn check_node<'a>(
     record: &'a DomainPackageRecord,
-    index: &ModelIndex,
+    index: &RecordIndex,
     seen_keys: &mut std::collections::HashSet<&'a DeclarationKey>,
 ) -> Vec<ModelRefusal> {
     let key = record.key();
@@ -1511,7 +1505,7 @@ fn check_node<'a>(
 /// checked by the record's whole [`DeclarationKey`] (`package`/`node`,
 /// #131): a reference matching some declared type's `node` but naming a
 /// different `package` is exactly as dangling as one matching nothing.
-fn validate_references(domain_package: &DomainPackage, index: &ModelIndex) -> Vec<ModelRefusal> {
+fn validate_references(domain_package: &DomainPackage, index: &RecordIndex) -> Vec<ModelRefusal> {
     // `model-complete.md`:73: "Nodes are read ascending by declaration key."
     // Every following check -- the per-node malformed-key check, the
     // dangling-reference checks, and the collision check -- runs over this
@@ -1564,7 +1558,7 @@ fn build(
     #[cfg(test)]
     BUILD_CALLS.with(|calls| calls.set(calls.get() + 1));
     validate_selection(domain_package)?;
-    let index = Arc::new(ModelIndex::build(domain_package));
+    let index = RecordIndex::build(domain_package);
     // QSL #199: every `normalize.record` charge (one per IR node, in node
     // order) runs before any intake refusal is reported -- `validate_references`
     // itself never charges anything; it is `charge_all` that charges the
@@ -1593,8 +1587,8 @@ fn build(
                 },
                 universe_index_by_type: BTreeMap::new(),
                 populations: BTreeMap::new(),
-                model_index: index,
             },
+            index,
             redefinition_check_work: Vec::new(),
             phase4_fact_count: 0,
             conflict_check_work: Vec::new(),
@@ -1711,7 +1705,7 @@ fn build(
         type_preimages.insert(type_key.clone(), preimage);
 
         // Phase 2: members declared directly on this type.
-        for member in index.sorted_direct_fields(type_key) {
+        for member in index.sorted_direct_fields(&domain_package.records, type_key) {
             phase2_facts.push(PendingFact {
                 owner_key: Some(type_key.clone()),
                 declared_key: member.key.clone(),
@@ -1739,7 +1733,9 @@ fn build(
         // ancestor with many members multiplies path count, so this loop
         // stops the moment continuing cannot change the outcome.
         'inherited_members: for ancestor in &paths {
-            for member in index.sorted_direct_fields(&ancestor.ancestor_key) {
+            for member in
+                index.sorted_direct_fields(&domain_package.records, &ancestor.ancestor_key)
+            {
                 let mut inputs = ancestor.path.clone();
                 inputs.push(member.key.clone());
                 phase3_facts.push(PendingFact {
@@ -2073,10 +2069,10 @@ fn build(
         universes,
         universe_index_by_type,
         populations,
-        model_index: index,
     };
 
     Ok(Built {
+        index,
         intake_refusals: Vec::new(),
         phase2_facts,
         phase3_facts,
@@ -2217,7 +2213,7 @@ fn record_phase4_refusal(
 /// separately bounded walk, and likewise computed once, build-wide, not
 /// once per (type, target) group.
 fn apply_redefinitions(
-    index: &ModelIndex,
+    index: &RecordIndex,
     type_key: &DeclarationKey,
     paths: &[AncestorPath],
     member_preimages: &mut HashMap<(DeclarationKey, DeclarationKey), EffectiveDeclarationPreimage>,
@@ -3035,12 +3031,12 @@ pub fn normalize_with_meter(
     )
 }
 
-/// `build` then `charge_all`: the completed view's body, or the denial that
-/// stopped it.
+/// `build` then `charge_all`: the completed view's body and the record
+/// index it was built through, or the denial that stopped it.
 fn normalize_body(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
-) -> (Result<ViewBody, ChargeAllDenial>, Meter) {
+) -> (Result<(ViewBody, RecordIndex), ChargeAllDenial>, Meter) {
     let mut meter = Meter::new(limits);
     let mut built = match build(domain_package, &limits) {
         Ok(built) => built,
@@ -3053,19 +3049,20 @@ fn normalize_body(
             )
         }
     };
-    let body = charge_all(domain_package, &mut built, &mut meter).map(|()| built.view);
+    let body =
+        charge_all(domain_package, &mut built, &mut meter).map(|()| (built.view, built.index));
     (body, meter)
 }
 
 /// The outcome of a normalization whose completed body is paired with the
 /// package `package` supplies, called only when normalization completed.
 fn into_outcome(
-    body: Result<ViewBody, ChargeAllDenial>,
+    body: Result<(ViewBody, RecordIndex), ChargeAllDenial>,
     package: impl FnOnce() -> Arc<DomainPackage>,
 ) -> NormalizeOutcome {
     match body {
-        Ok(body) => NormalizeOutcome::Completed(EffectiveView {
-            domain_package: package(),
+        Ok((body, records)) => NormalizeOutcome::Completed(EffectiveView {
+            index: Arc::new(ModelIndex::from_parts(package(), records)),
             body,
         }),
         Err(ChargeAllDenial::Incomplete(incomplete)) => NormalizeOutcome::Incomplete(incomplete),
@@ -3108,10 +3105,10 @@ mod tests {
     #[test]
     fn n10_unsorted_view_refuses_by_the_semantic_check() {
         let view = EffectiveView {
-            domain_package: Arc::new(DomainPackage::new(
+            index: Arc::new(ModelIndex::build(DomainPackage::new(
                 DomainPackageRef::fixture("test/orders"),
                 Vec::new(),
-            )),
+            ))),
             body: ViewBody {
                 declarations: vec![entry(2), entry(1)],
                 types: Arc::default(),
@@ -3124,10 +3121,6 @@ mod tests {
                 },
                 universe_index_by_type: BTreeMap::new(),
                 populations: BTreeMap::new(),
-                model_index: Arc::new(ModelIndex::build(&DomainPackage::new(
-                    DomainPackageRef::fixture("test/orders"),
-                    Vec::new(),
-                ))),
             },
         };
         let refusal = view
@@ -3165,16 +3158,13 @@ mod tests {
         ) else {
             panic!("the one-type package normalizes");
         };
-        assert!(Arc::ptr_eq(shared.shared_domain_package(), &domain_package));
+        assert!(std::ptr::eq(shared.domain_package(), &*domain_package));
         let NormalizeOutcome::Completed(borrowed) =
             normalize(&domain_package, ModelNormalizationLimits::UNLIMITED)
         else {
             panic!("the one-type package normalizes");
         };
-        assert!(!Arc::ptr_eq(
-            borrowed.shared_domain_package(),
-            &domain_package
-        ));
+        assert!(!std::ptr::eq(borrowed.domain_package(), &*domain_package));
         assert_eq!(shared, borrowed);
     }
 }

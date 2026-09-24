@@ -242,7 +242,7 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
 
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_field_redefinition(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
         &mut meter,
@@ -383,7 +383,7 @@ fn r02_a_compatible_operation_redefinition_admits_every_axis() {
     let redefined_key = DeclarationKey::fixture("model.A.op");
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_operation_redefinition(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
         &mut meter,
@@ -411,7 +411,7 @@ fn r03_an_incompatible_operation_redefinition_reports_every_failing_axis() {
     let redefined_key = DeclarationKey::fixture("model.A.op");
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_operation_redefinition(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
         &mut meter,
@@ -472,7 +472,7 @@ fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
     let redefined_key = DeclarationKey::fixture("model.A.op");
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_operation_redefinition(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
         &mut meter,
@@ -513,7 +513,7 @@ fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
     );
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_field_redefinition(
-        &ModelIndex::build(&narrowing),
+        &ModelIndex::build(narrowing.clone()),
         &redefining_key,
         &redefined_key,
         &mut meter,
@@ -537,7 +537,7 @@ fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
     );
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_field_redefinition(
-        &ModelIndex::build(&widening),
+        &ModelIndex::build(widening.clone()),
         &redefining_key,
         &redefined_key,
         &mut meter,
@@ -576,7 +576,7 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     let domain_package = bundle_of("model.A", mult(0, Some(9)));
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_subsetting(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &subsetting_key,
         &subsetted_key,
         &mut meter,
@@ -598,7 +598,7 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     let domain_package = bundle_of("model.C", mult(0, Some(5)));
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_subsetting(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &subsetting_key,
         &subsetted_key,
         &mut meter,
@@ -620,7 +620,7 @@ fn r06_subsetting_type_and_multiplicity_axes() {
     let domain_package = bundle_of("model.B", mult(0, Some(3)));
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     match check_subsetting(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &subsetting_key,
         &subsetted_key,
         &mut meter,
@@ -659,7 +659,7 @@ fn r07_zero_inherited_targets_refuses_redefinition_target() {
         ],
     );
     match resolve_redefinition_target(
-        &ModelIndex::build(&zero),
+        &ModelIndex::build(zero.clone()),
         &DeclarationKey::fixture("model.B.z"),
         ModelNormalizationLimits::UNLIMITED.ancestor_steps,
     ) {
@@ -734,7 +734,7 @@ fn r08a_a_narrowing_field_redefinition_without_a_presence_fact_refuses() {
     let redefining_key = DeclarationKey::fixture("model.B.xb");
     let redefined_key = DeclarationKey::fixture("model.A.x");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -776,7 +776,7 @@ fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation()
     let redefining_key = DeclarationKey::fixture("model.B.xb");
     let redefined_key = DeclarationKey::fixture("model.A.x");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -801,7 +801,7 @@ fn r08c_an_object_typed_narrowing_has_no_proof_form() {
     let redefining_key = DeclarationKey::fixture("model.B.xr");
     let redefined_key = DeclarationKey::fixture("model.A.x");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -829,7 +829,7 @@ fn r08d_a_narrowed_scalar_domain_without_an_interval_fact_refuses_field_domain()
     let redefining_key = DeclarationKey::fixture("model.B.cs");
     let redefined_key = DeclarationKey::fixture("model.A.c");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -876,7 +876,7 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
     };
 
     match check_field_refinement_obligation(
-        &ModelIndex::build(&contained(5)),
+        &ModelIndex::build(contained(5)),
         &redefining_key,
         &redefined_key,
     ) {
@@ -884,7 +884,7 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
         other => panic!("expected Compatible (e), got {other:?}"),
     }
     match check_field_refinement_obligation(
-        &ModelIndex::build(&contained(6)),
+        &ModelIndex::build(contained(6)),
         &redefining_key,
         &redefined_key,
     ) {
@@ -932,7 +932,7 @@ fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligatio
     let redefining_key = DeclarationKey::fixture("model.B.cs");
     let redefined_key = DeclarationKey::fixture("model.A.c");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -1017,7 +1017,7 @@ fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
         let redefining_key = DeclarationKey::fixture("model.B.cs");
         let redefined_key = DeclarationKey::fixture("model.A.c");
         match check_field_refinement_obligation(
-            &ModelIndex::build(&domain_package),
+            &ModelIndex::build(domain_package.clone()),
             &redefining_key,
             &redefined_key,
         ) {
@@ -1083,7 +1083,7 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
     let redefining_key = DeclarationKey::fixture("model.B.cs");
     let redefined_key = DeclarationKey::fixture("model.A.c");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -1163,7 +1163,7 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
         check_operation_redefinition(
-            &ModelIndex::build(&domain_package),
+            &ModelIndex::build(domain_package.clone()),
             &redefining_key,
             &redefined_key,
             &mut meter
@@ -1236,7 +1236,7 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
         check_operation_redefinition(
-            &ModelIndex::build(&domain_package),
+            &ModelIndex::build(domain_package.clone()),
             &redefining_key,
             &redefined_key,
             &mut meter
@@ -1310,7 +1310,7 @@ fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
         check_operation_redefinition(
-            &ModelIndex::build(&domain_package),
+            &ModelIndex::build(domain_package.clone()),
             &redefining_key,
             &redefined_key,
             &mut meter
@@ -1394,7 +1394,7 @@ fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefiniti
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     assert_eq!(
         check_operation_redefinition(
-            &ModelIndex::build(&domain_package),
+            &ModelIndex::build(domain_package.clone()),
             &redefining_key,
             &redefined_key,
             &mut meter
@@ -1461,7 +1461,7 @@ fn r13_field_refinement_same_type_check_does_not_confuse_two_packages_scalar_of_
     let redefining_key = DeclarationKey::fixture("model.B.xb");
     let redefined_key = DeclarationKey::fixture("model.A.x");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -1554,7 +1554,7 @@ fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
     let redefining_key = DeclarationKey::fixture("model.B.xb");
     let redefined_key = DeclarationKey::fixture("model.A.x");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -1641,7 +1641,7 @@ fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
     let redefining_key = DeclarationKey::fixture("model.B.xb");
     let redefined_key = DeclarationKey::fixture("model.A.x");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -1725,7 +1725,7 @@ fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_w
     let redefining_key = DeclarationKey::fixture("model.B.xb");
     let redefined_key = DeclarationKey::fixture("model.A.x");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -1804,7 +1804,7 @@ fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_o
     let redefining_key = DeclarationKey::fixture("model.B.xb");
     let redefined_key = DeclarationKey::fixture("model.A.x");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -1882,7 +1882,7 @@ fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
     let redefining_key = DeclarationKey::fixture("model.B.xb");
     let redefined_key = DeclarationKey::fixture("model.A.x");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -1956,7 +1956,7 @@ fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
     let redefining_key = DeclarationKey::fixture("model.B.xb");
     let redefined_key = DeclarationKey::fixture("model.A.x");
     match check_field_refinement_obligation(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &redefining_key,
         &redefined_key,
     ) {
@@ -2018,7 +2018,7 @@ fn ancestor_chain_package(depth: u64) -> DomainPackage {
 fn check_chain(depth: u64, limits: ModelNormalizationLimits) -> ConformanceCheckOutcome {
     let mut meter = Meter::new(limits);
     check_field_redefinition(
-        &ModelIndex::build(&ancestor_chain_package(depth)),
+        &ModelIndex::build(ancestor_chain_package(depth)),
         &DeclarationKey::fixture("model.chain.redefining"),
         &DeclarationKey::fixture(format!("model.chain.{depth}.redefined")),
         &mut meter,

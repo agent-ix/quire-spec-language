@@ -779,7 +779,7 @@ fn a_qspec_conformant_document_admits_reads_and_classifies() {
 
     let mut meter = unlimited_meter();
     let connection_outcome = check_connection(
-        &ModelIndex::build(&domain_package),
+        &ModelIndex::build(domain_package.clone()),
         &classification,
         &pipe_key,
         &mut meter,

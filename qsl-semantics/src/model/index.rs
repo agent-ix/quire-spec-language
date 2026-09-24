@@ -6,11 +6,14 @@
 //! map five times, a conformance index once per check, a dispatch index once
 //! per link, and a per-call ancestor walk with its own visited set.
 //! [`ModelIndex::build`] reads the records once, and every rung reads this
-//! index instead:
+//! index instead. A [`ModelIndex`] owns its package (shared by [`Arc`]) and
+//! refers to records by their position in `domain_package.records`, never by
+//! a copy:
 //!
-//! - [`crate::model::normalize`] builds it once per normalization and keeps
-//!   it in the [`crate::model::normalize::EffectiveView`], beside the package,
-//!   so dispatch linking and population admission read the view's index.
+//! - [`crate::model::normalize`] indexes the package once per normalization
+//!   and keeps the index in the [`crate::model::normalize::EffectiveView`],
+//!   together with the package, so dispatch linking and population admission
+//!   read the view's index.
 //! - A caller that checks conformance or systems rules over a package it
 //!   has not normalized builds the index itself, once, and passes it to
 //!   every check.
@@ -22,9 +25,17 @@
 //! Conformance is answered from each type's ancestry, computed once per
 //! type the first time a check asks about it and kept for every later check.
 //! The ancestry records the exact state of the bounded walk the conformance
-//! rule specifies (see `ModelIndex::conforms`), so an answer, including a
+//! rule specifies (see `RecordIndex::conforms`), so an answer, including a
 //! refusal at the caller's `ancestor_steps` ceiling, is the same one that
 //! walk would give.
+//!
+//! A type's first conformance check walks that type's whole ancestry, to
+//! completion, whatever the caller's `ancestor_steps` ceiling: the ceiling
+//! decides the answer read from the ancestry, not how much of it is
+//! computed. That first walk expands each interned type at most once and
+//! keeps one entry per ancestor, so it is bounded by the package's own size,
+//! not by the ceiling; a deep chain refused at a small ceiling still costs
+//! one pass over the chain, once per start type.
 //!
 //! The index adds no charge. Its size is a function of the package's own
 //! records, which normalization already charges as `normalize.record`, and
@@ -37,7 +48,7 @@
 )]
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use crate::model::domain_package::{
     DomainPackage, DomainPackageRecord, FieldMemberRecord, OperationMemberRecord, ValueTypeRef,
@@ -77,7 +88,7 @@ pub(crate) struct Redefiner {
     pub(crate) is_field: bool,
 }
 
-/// One type's ancestry: the walk [`ModelIndex::conforms`] specifies, run to
+/// One type's ancestry: the walk [`RecordIndex::conforms`] specifies, run to
 /// completion from that type once.
 #[derive(Clone, Debug, Default)]
 struct Ancestry {
@@ -89,12 +100,25 @@ struct Ancestry {
     first_named_at: Box<[(DeclIdx, u64)]>,
 }
 
-/// The shared index over one [`DomainPackage`]. See the module docs.
+/// The shared index over one [`DomainPackage`], together with that package.
+/// See the module docs.
+///
+/// A package and its index are built together and never paired afterwards,
+/// so no caller can read one package's records through another's index.
+#[derive(Debug, Eq, PartialEq)]
+pub struct ModelIndex {
+    package: Arc<DomainPackage>,
+    records: RecordIndex,
+}
+
+/// The positional index [`ModelIndex`] keeps over its package's records.
+/// Normalization builds it over a borrowed package, before a completed
+/// view takes a shared copy of that package.
 ///
 /// Built from the records alone and never mutated after [`Self::build`],
 /// apart from each type's ancestry, which is computed on first use.
 #[derive(Debug)]
-pub struct ModelIndex {
+pub(crate) struct RecordIndex {
     /// Every key a record declares or references, ascending.
     keys: Vec<DeclarationKey>,
     positions: HashMap<DeclarationKey, DeclIdx>,
@@ -102,10 +126,11 @@ pub struct ModelIndex {
     /// Each type's declared `supertypes[]`, in record order, concatenated
     /// over every `ObjectType` record under the key.
     generals: Vec<Vec<DeclIdx>>,
-    /// The last field record under each key.
-    fields: HashMap<DeclIdx, FieldMemberRecord>,
-    /// The last operation record under each key, ascending by key.
-    operations: BTreeMap<DeclIdx, OperationMemberRecord>,
+    /// The position of the last field record under each key.
+    fields: HashMap<DeclIdx, usize>,
+    /// The position of the last operation record under each key, ascending
+    /// by key.
+    operations: BTreeMap<DeclIdx, usize>,
     /// The last scalar record's `[lower, upper]` under each key.
     scalars: HashMap<DeclIdx, (i64, i64)>,
     /// Each member's owning type, from the last member record under its key.
@@ -123,7 +148,7 @@ pub struct ModelIndex {
     ancestry: Vec<OnceLock<Ancestry>>,
 }
 
-impl PartialEq for ModelIndex {
+impl PartialEq for RecordIndex {
     /// Compares what [`Self::build`] read from the records. The ancestries
     /// are a cache of values derived from `generals`, so two indexes with
     /// equal `generals` have equal ancestries whichever were computed.
@@ -143,7 +168,7 @@ impl PartialEq for ModelIndex {
     }
 }
 
-impl Eq for ModelIndex {}
+impl Eq for RecordIndex {}
 
 /// Every key `record` declares or references, for interning.
 fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
@@ -169,8 +194,113 @@ fn referenced_keys(record: &DomainPackageRecord) -> Vec<&DeclarationKey> {
 }
 
 impl ModelIndex {
+    /// Reads `domain_package`'s records once into an index that keeps the
+    /// package.
+    pub fn build(domain_package: impl Into<Arc<DomainPackage>>) -> Self {
+        let package = domain_package.into();
+        let records = RecordIndex::build(&package);
+        Self { package, records }
+    }
+
+    /// `package` with `records`, the index normalization already built over
+    /// it.
+    pub(crate) fn from_parts(package: Arc<DomainPackage>, records: RecordIndex) -> Self {
+        Self { package, records }
+    }
+
+    /// The indexed package.
+    pub(crate) fn package(&self) -> &DomainPackage {
+        &self.package
+    }
+
+    /// Whether some `ObjectType` record declares `key`.
+    pub(crate) fn is_object_type(&self, key: &DeclarationKey) -> bool {
+        self.records.is_object_type(key)
+    }
+
+    /// Whether some `ObjectType` record declares `key` abstract (D05,
+    /// `model-complete.md:156`).
+    pub(crate) fn is_abstract(&self, key: &DeclarationKey) -> bool {
+        self.records.is_abstract(key)
+    }
+
+    /// The field record declared under `key` (the last one, if several).
+    pub(crate) fn field(&self, key: &DeclarationKey) -> Option<&FieldMemberRecord> {
+        self.records.field(&self.package.records, key)
+    }
+
+    /// The operation record declared under `key` (the last one, if several).
+    pub(crate) fn operation(&self, key: &DeclarationKey) -> Option<&OperationMemberRecord> {
+        self.records.operation(&self.package.records, key)
+    }
+
+    /// Every operation record, ascending by key.
+    pub(crate) fn operations(&self) -> impl Iterator<Item = &OperationMemberRecord> {
+        self.records.operations(&self.package.records)
+    }
+
+    /// The `[lower, upper]` of the scalar type declared under `key`.
+    pub(crate) fn scalar_bounds(&self, key: &DeclarationKey) -> Option<(i64, i64)> {
+        self.records.scalar_bounds(key)
+    }
+
+    /// The owning type of the field or operation member `key`.
+    pub(crate) fn member_owner(&self, key: &DeclarationKey) -> Option<&DeclarationKey> {
+        self.records.member_owner(key)
+    }
+
+    /// See [`RecordIndex::redefinition_reaches`].
+    pub(crate) fn redefinition_reaches(
+        &self,
+        field: &DeclarationKey,
+        admits: impl Fn(&DeclarationKey) -> bool,
+    ) -> bool {
+        self.records.redefinition_reaches(field, admits)
+    }
+
+    /// See [`RecordIndex::conforms`].
+    pub(crate) fn conforms(
+        &self,
+        s: &DeclarationKey,
+        t: &DeclarationKey,
+        max_steps: u64,
+    ) -> Result<bool, ModelRefusal> {
+        self.records.conforms(s, t, max_steps)
+    }
+
+    /// See [`RecordIndex::value_type_conforms`].
+    pub(crate) fn value_type_conforms(
+        &self,
+        s: &ValueTypeRef,
+        t: &ValueTypeRef,
+        max_steps: u64,
+    ) -> Result<bool, ModelRefusal> {
+        self.records.value_type_conforms(s, t, max_steps)
+    }
+}
+
+/// The record at `position`, when it is a field member.
+fn field_at(records: &[DomainPackageRecord], position: usize) -> Option<&FieldMemberRecord> {
+    match records.get(position)? {
+        DomainPackageRecord::FieldMember(field) => Some(field),
+        _ => None,
+    }
+}
+
+/// The record at `position`, when it is an operation member.
+fn operation_at(
+    records: &[DomainPackageRecord],
+    position: usize,
+) -> Option<&OperationMemberRecord> {
+    match records.get(position)? {
+        DomainPackageRecord::OperationMember(operation) => Some(operation),
+        _ => None,
+    }
+}
+
+impl RecordIndex {
     /// Reads `domain_package`'s records once into the index.
-    pub fn build(domain_package: &DomainPackage) -> Self {
+    pub(crate) fn build(domain_package: &DomainPackage) -> Self {
         let mut keys: Vec<DeclarationKey> = domain_package
             .records
             .iter()
@@ -222,7 +352,7 @@ impl ModelIndex {
                     if let Some(target) = &field.redefines {
                         index.note_redefiner(owner, record_position, own, at(target), true);
                     }
-                    index.fields.insert(own, field.clone());
+                    index.fields.insert(own, record_position);
                 }
                 DomainPackageRecord::OperationMember(operation) => {
                     let owner = at(&operation.owner);
@@ -236,7 +366,7 @@ impl ModelIndex {
                     if let Some(target) = &operation.redefines {
                         index.note_redefiner(owner, record_position, own, at(target), false);
                     }
-                    index.operations.insert(own, operation.clone());
+                    index.operations.insert(own, record_position);
                 }
                 DomainPackageRecord::ScalarType(scalar) => {
                     index.flags[own.0].scalar_type = true;
@@ -361,19 +491,34 @@ impl ModelIndex {
             })
     }
 
-    /// The field record declared under `key` (the last one, if several).
-    pub(crate) fn field(&self, key: &DeclarationKey) -> Option<&FieldMemberRecord> {
-        self.fields.get(&self.position(key)?)
+    /// The field record declared under `key` (the last one, if several),
+    /// read from `records`, the indexed package's own records.
+    fn field<'r>(
+        &self,
+        records: &'r [DomainPackageRecord],
+        key: &DeclarationKey,
+    ) -> Option<&'r FieldMemberRecord> {
+        field_at(records, *self.fields.get(&self.position(key)?)?)
     }
 
-    /// The operation record declared under `key` (the last one, if several).
-    pub(crate) fn operation(&self, key: &DeclarationKey) -> Option<&OperationMemberRecord> {
-        self.operations.get(&self.position(key)?)
+    /// The operation record declared under `key` (the last one, if several),
+    /// read from `records`, the indexed package's own records.
+    fn operation<'r>(
+        &self,
+        records: &'r [DomainPackageRecord],
+        key: &DeclarationKey,
+    ) -> Option<&'r OperationMemberRecord> {
+        operation_at(records, *self.operations.get(&self.position(key)?)?)
     }
 
-    /// Every operation record, ascending by key.
-    pub(crate) fn operations(&self) -> impl Iterator<Item = &OperationMemberRecord> {
-        self.operations.values()
+    /// Every operation record, ascending by key, read from `records`.
+    fn operations<'r>(
+        &'r self,
+        records: &'r [DomainPackageRecord],
+    ) -> impl Iterator<Item = &'r OperationMemberRecord> {
+        self.operations
+            .values()
+            .filter_map(|position| operation_at(records, *position))
     }
 
     /// The `[lower, upper]` of the scalar type declared under `key`.
@@ -387,8 +532,13 @@ impl ModelIndex {
         Some(self.key(*owner))
     }
 
-    /// `owner`'s directly declared field members, ascending by key.
-    pub(crate) fn sorted_direct_fields(&self, owner: &DeclarationKey) -> Vec<&FieldMemberRecord> {
+    /// `owner`'s directly declared field members, ascending by key, read
+    /// from `records`, the indexed package's own records.
+    pub(crate) fn sorted_direct_fields<'r>(
+        &self,
+        records: &'r [DomainPackageRecord],
+        owner: &DeclarationKey,
+    ) -> Vec<&'r FieldMemberRecord> {
         let Some(owner) = self.position(owner) else {
             return Vec::new();
         };
@@ -400,7 +550,7 @@ impl ModelIndex {
         members.sort();
         members
             .into_iter()
-            .filter_map(|member| self.fields.get(&member))
+            .filter_map(|member| field_at(records, *self.fields.get(&member)?))
             .collect()
     }
 
@@ -597,7 +747,7 @@ mod tests {
     }
 
     /// The per-call walk `conformance::type_conforms` ran before QSL-202,
-    /// kept verbatim as the oracle [`ModelIndex::conforms`] must match.
+    /// kept verbatim as the oracle [`RecordIndex::conforms`] must match.
     fn walked(
         domain_package: &DomainPackage,
         s: &DeclarationKey,
@@ -652,7 +802,7 @@ mod tests {
         Ok(found)
     }
 
-    /// QSL-202 AC-5: interning assigns [`DeclIdx`] in ascending
+    /// Interning assigns [`DeclIdx`] in ascending
     /// [`DeclarationKey`] order, whatever the record order, so reading the
     /// index ascending reads keys ascending.
     ///
@@ -666,7 +816,7 @@ mod tests {
             ("model.A", &[]),
             ("model.M", &["model.A", "model.Q"]),
         ]);
-        let index = ModelIndex::build(&domain_package);
+        let index = RecordIndex::build(&domain_package);
         let interned: Vec<&DeclarationKey> = (0..index.keys.len())
             .map(|position| index.key(DeclIdx(position)))
             .collect();
@@ -693,7 +843,7 @@ mod tests {
         );
     }
 
-    /// QSL-202: [`ModelIndex::conforms`] answers from the ancestry exactly
+    /// QSL-202: [`RecordIndex::conforms`] answers from the ancestry exactly
     /// as the per-call walk did, for every ordered pair of keys (declared,
     /// referenced and unknown) and every `ancestor_steps` ceiling from 0 to
     /// past each walk's length, over a chain, a diamond, a cycle, a
@@ -733,7 +883,7 @@ mod tests {
         ];
         let mut checked = 0usize;
         for domain_package in &packages {
-            let index = ModelIndex::build(domain_package);
+            let index = RecordIndex::build(domain_package);
             let mut names: Vec<DeclarationKey> = index.keys.clone();
             names.push(key("model.Unknown"));
             for s in &names {

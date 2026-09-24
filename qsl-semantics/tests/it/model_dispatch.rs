@@ -523,7 +523,7 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
 /// `OperationMember` records that once differed only in `revision` now
 /// share the exact same `DeclarationKey`, and `normalize` -- which every
 /// real pipeline runs before `link_dispatch` ever sees a domain package --
-/// must refuse before either candidate reaches `DispatchIndex`.
+/// must refuse before either candidate reaches `link_dispatch`.
 #[trace("TC-196")]
 #[test]
 fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding() {

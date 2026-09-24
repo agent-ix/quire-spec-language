@@ -509,9 +509,6 @@ fn values_of<'a>(member: &'a PopulationMember, field: &DeclarationKey) -> &'a [S
 /// was checked (see the module docs' "Binding/domain package correspondence").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PopulationBinding {
-    /// The domain package this binding was admitted against. `Arc`, so cloning a
-    /// binding never re-clones the domain package's own records.
-    domain_package: Arc<DomainPackage>,
     /// This binding's own object universe, computed once at admission
     /// (ADR-013 §8 OQ-C ruling: a `UniverseId`, not an `EffectiveId`).
     universe: UniverseId,
@@ -520,8 +517,10 @@ pub struct PopulationBinding {
     /// The binding's declared maximum, or `None` for a binding with no
     /// declared maximum (`allInstances` is then `operator-ineligible`).
     declared_maximum: Option<u64>,
-    /// The shared [`ModelIndex`] the admitting view's normalization built
-    /// over `domain_package` (QSL-202): every conformance decision
+    /// The domain package this binding was admitted against, together with
+    /// the shared [`ModelIndex`] the admitting view's normalization built
+    /// over it (QSL-202). `Arc`, so cloning a binding never re-clones the
+    /// package's own records. Every conformance decision
     /// ([`all_instances`], [`lookup`] and the invocation frame check) reads
     /// its ancestry, which is computed once per type and kept, never walked
     /// again per call. `value-accounting.md`'s "Model and graph evaluation"
@@ -577,12 +576,12 @@ impl PopulationBinding {
     }
     /// The full `DomainPackageRef` header this binding was admitted against.
     pub fn model_selection(&self) -> &DomainPackageRef {
-        &self.domain_package.model_selection
+        &self.index.package().model_selection
     }
 
     /// The `DomainPackageRef` identity this binding was admitted against.
     pub fn model_identity(&self) -> &str {
-        &self.domain_package.model_selection.identity
+        &self.index.package().model_selection.identity
     }
 
     /// This binding's own object universe.
@@ -1099,7 +1098,6 @@ fn admit_binding_as(
     }
 
     AdmissionOutcome::Admitted(PopulationBinding {
-        domain_package: Arc::clone(view.shared_domain_package()),
         universe,
         members: admitted,
         declared_maximum,
@@ -1755,7 +1753,7 @@ fn foreign_universe(binding: &PopulationBinding, actual: &[u8]) -> ModelRefusal 
 
 /// `lookup<T>(p, r) absent m`: `r`'s presence in `binding`, per `mode`, in
 /// one order for a well-formed and a malformed reference alike --
-/// `type_conforms(S, T)`, then the `lookup.key` charge, then the universe
+/// `ModelIndex::conforms(S, T)`, then the `lookup.key` charge, then the universe
 /// check, then membership or absence (see [`LookupKey`]'s own doc comment
 /// for how `r`'s own components carry a malformed universe or object
 /// identity). Charges `lookup.key` once per call; a present result then

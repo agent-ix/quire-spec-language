@@ -41,7 +41,7 @@
 //! `bridge_lookup_key` never substitutes a derived value for either
 //! component and never classifies it itself: it hands [`LookupKey`] `r`'s
 //! own bytes exactly as supplied, and [`lookup`] alone decides the outcome,
-//! in its own single order (`type_conforms(S, T)`, then `lookup.key`, then
+//! in its own single order (`ModelIndex::conforms(S, T)`, then `lookup.key`, then
 //! the universe check, then membership or absence -- see [`LookupKey`]'s own
 //! doc comment). `LookupKey.universe`/`.object` stay raw bytes there because
 //! `crate::model::population`'s own direct callers (`tests/it/
@@ -62,7 +62,7 @@
 //! ([`all_instances`]/[`lookup`]) run entirely inside
 //! `crate::model::population`, which does carry that graph -- including,
 //! for a malformed reference, the short-circuit above, since [`lookup`]
-//! itself decides `type_conforms(S, T)` before any charge for every
+//! itself decides `ModelIndex::conforms(S, T)` before any charge for every
 //! reference it is called with, well-formed or not. Three FR-153/FR-149
 //! obligations that would need this graph at *check* time still cannot get
 //! it, tracked at
@@ -233,7 +233,7 @@ pub fn evaluate_lookup(
                 // `OptionValue::from_admitted`'s own doc comment for the
                 // soundness chain (`F` conforms to `S` by parameter
                 // admission, `S` conforms to `T` by `lookup`'s own
-                // `type_conforms` call) that lets this bypass the checked
+                // `ModelIndex::conforms` call) that lets this bypass the checked
                 // `OptionValue::present`, whose structural `admits()` call
                 // would wrongly refuse every genuine upcast (`b1: M::B`
                 // present as `Reference<M::A>`) that this operation's whole

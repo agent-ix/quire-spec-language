@@ -14,6 +14,11 @@
 //!   unchanged invocation (pre and post). Admission reads its object
 //!   universe from the effective view and never normalizes (QSL-204), so
 //!   neither figure scales with `model/normalize/<n>`.
+//! - `model/admit_binding_cold/4000`: `admit_binding/4000` against a view
+//!   normalized fresh for every iteration (normalization untimed), so each
+//!   admission fills the `ModelIndex` ancestry it reads. Every other
+//!   admission, conformance and `all_instances` row reuses one view or
+//!   binding across iterations and so reads a warm ancestry (QSL-202).
 //! - `model/conformance/resolve_redefinition_target/<n>`: one model
 //!   conformance call against the package's shared `ModelIndex`, which the
 //!   normalization that produced the view built once (QSL-202). Before
@@ -29,7 +34,9 @@
 //!   catalog per query before QSL-202) -- F6's N axis and QSL-202's
 //!   `reverse_catalog`.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{
+    criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, SamplingMode, Throughput,
+};
 use qsl_bench::model::{
     self, admit_offer, admit_population, admit_unchanged_invocation, admitted, chain_type, intake,
     offer, parse_document, population_document, query_all_instances_of_root, read,
@@ -137,6 +144,34 @@ fn normalization_and_admission(c: &mut Criterion) {
     group.finish();
 }
 
+/// Package size of the cold-ancestry admission row.
+const COLD_TYPES: usize = 4_000;
+
+fn cold_admission(c: &mut Criterion) {
+    let mut group = c.benchmark_group("model");
+    // Every iteration normalizes a fresh view outside the timing (about half
+    // a second at 4,000 types), so the row takes one iteration per sample
+    // rather than filling criterion's default measurement window.
+    group.sample_size(10);
+    group.sampling_mode(SamplingMode::Flat);
+    group.warm_up_time(Duration::from_millis(1));
+    group.measurement_time(Duration::from_millis(1));
+    let domain_package = Arc::new(
+        intake(&offer(model::document(shape(COLD_TYPES))))
+            .expect("the generated document passes intake"),
+    );
+    let document = population_document(shape(COLD_TYPES), ADMITTED_MEMBERS);
+    group.bench_function(BenchmarkId::new("admit_binding_cold", COLD_TYPES), |b| {
+        // By reference, so dropping the view stays outside the timing too.
+        b.iter_batched_ref(
+            || view(&domain_package),
+            |effective| admit_population(effective, &document),
+            BatchSize::PerIteration,
+        );
+    });
+    group.finish();
+}
+
 fn all_instances_of(
     binding: &qsl_semantics::model::population::PopulationBinding,
     queried: &qsl_semantics::model::key::DeclarationKey,
@@ -205,6 +240,7 @@ criterion_group!(
     benches,
     intake_stages,
     normalization_and_admission,
+    cold_admission,
     conformance_depth,
     conformance_members
 );

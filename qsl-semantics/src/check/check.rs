@@ -2365,7 +2365,7 @@ impl<'a> Typer<'a> {
     /// carry (the "TypeEnvironment island", tracked at
     /// <https://github.com/agent-ix/quire-spec-language/issues/164>), so that
     /// refusal is deferred to evaluation, inside
-    /// `crate::model::population::lookup`'s own `type_conforms` call
+    /// `crate::model::population::lookup`'s own `ModelIndex::conforms` call
     /// (`crate::value::evaluate_lookup`).
     fn lookup(
         &mut self,

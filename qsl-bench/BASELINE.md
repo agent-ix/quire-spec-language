@@ -516,7 +516,6 @@ The session is recorded as four collections under
   `qsl203-ab-b-probe-v1.json`. Wall time and peak RSS are separate
   `quantity` dimensions.
 
-
 `quoin report --since 67f44989` compares A with B for both plans.
 
 ### Per-component cost of the termination pass
@@ -808,6 +807,31 @@ Reading the table:
   `read_records` differs only in no longer keeping the unread
   `has_own_precondition` flag. Those rows are session noise at this load, not
   a QSL-202 effect.
+
+**Warm and cold ancestry.** The conformance, `admit_binding`,
+`admit_invocation`, `all_instances` and `query/evaluate_all_instances` rows
+on B read a warm ancestry: each reuses one view or binding across
+iterations, so only the first iteration fills the ancestry of the types it
+checks. A review of the fix (LOW-1) asked for a cold row, so
+`model/admit_binding_cold/4000` (added after the session above, not part of
+it) normalizes a fresh view for every iteration outside the timing, with the
+view dropped outside the timing too. Three single runs on B with the review
+fixes, 2026-09-24, load average 8.9 to 11.9:
+
+| Benchmark | Run 1 | Run 2 | Run 3 |
+| --- | --- | --- | --- |
+| `model/admit_binding/4000` (warm) | 179 µs | 282 µs | 208 µs |
+| `model/admit_binding_cold/4000` | 4.54 ms | 6.82 ms | 5.64 ms |
+
+The cold cost is not the ancestry fill, which walks five types here. A
+probe timing a fresh view's first and second admission in one process
+measured 4.5 to 5.5 ms and 0.23 to 0.25 ms. When the probe first made
+20,000 unrelated allocations after normalizing, those took about 6 ms and
+the first admission then took about 1.0 ms: most of the cold figure is the
+allocator's state after a 4,000-type normalization frees its working
+memory, and the rest is cache. Even cold, one admission costs less than A's
+warm 11.7 ms, which rebuilt the supertype map and copied the type catalog
+for every binding.
 
 Output is unchanged: a dump of the effective-view identity, each universe's
 identity, every declaration identity, the full normalization charge sequence
