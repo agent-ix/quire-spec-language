@@ -33,7 +33,6 @@ use quire_spec_language::state::{
 use quire_spec_language::temporal;
 use serde_json::Value;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
-use sha2::{Digest as _, Sha256};
 
 const DECLARATIONS: [(&str, R); 3] = [
     ("ByEvent", R::EventPosition),
@@ -801,25 +800,11 @@ fn checked_leaf(package: &v2::AdmittedPackage) -> (u32, w::Handle) {
         .expect("fixture contains a checked Boolean clause")
 }
 
-/// QSL-220: the handoff identity is independent of the emitted member
-/// order. The member order is rebuilt from the parsed document, the
-/// `identity` member removed, and the RFC 8785 text framed here by hand as
-/// `u64be(len(domain)) || domain || text` rather than by the producer.
+/// QSL-220: the handoff identity, recomputed from the parsed document so
+/// it is independent of the emitted member order.
 fn assert_handoff_identity(document: &[u8], domain: &str) -> Value {
     let value: Value = serde_json::from_slice(document).expect("canonical handoff JSON");
-    let mut preimage = value.clone();
-    preimage
-        .as_object_mut()
-        .expect("handoff document is an object")
-        .remove("identity")
-        .expect("canonical identity member");
-    let limits = quire_canonical::Limits::new(document.len() as u64, 64).expect("limits");
-    let text = quire_canonical::to_vec(&preimage, limits).expect("RFC 8785 preimage");
-    let mut digest = Sha256::new();
-    digest.update((domain.len() as u64).to_be_bytes());
-    digest.update(domain.as_bytes());
-    digest.update(&text);
-    assert_eq!(value["identity"], format!("{:x}", digest.finalize()));
+    crate::support::content_identity::assert_identity(&value, domain);
     value
 }
 

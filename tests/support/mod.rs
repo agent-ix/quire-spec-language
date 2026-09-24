@@ -36,6 +36,7 @@
 pub mod composed_types;
 #[path = "../../examples/config-version/fixtures.rs"]
 pub mod config_version;
+pub mod content_identity;
 pub mod located_json;
 pub mod native_protocol;
 pub mod package_vector_setup;

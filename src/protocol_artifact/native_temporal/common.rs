@@ -24,9 +24,9 @@ const MAX_POSITIONS: usize = 1_000_000;
 const MAX_VALUATIONS: usize = 1_000_000;
 const MAX_CAPTURES: usize = 100_000;
 const MAX_SUPPORT: usize = 1_000_000;
-/// The largest integer every RFC 8785 reader holds exactly (2^53 - 1, or
-/// `usize::MAX` where that is smaller): the request's `limits.history_span`
-/// is part of its identity preimage.
+/// The largest integer an I-JSON (RFC 7493) reader holds exactly as a JSON
+/// number: 2^53 - 1, or `usize::MAX` where that is smaller. A document
+/// carrying a larger `limits.history_span` refuses as `invalid("limits")`.
 const MAX_HISTORY_SPAN: usize = usize::MAX >> usize::BITS.saturating_sub(53);
 const MAX_EVALUATION_STEPS: usize = 1_000_000;
 const MAX_LINEAGE: usize = 1_024;

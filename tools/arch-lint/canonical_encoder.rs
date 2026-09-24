@@ -995,12 +995,23 @@ pub(crate) fn evaluate(qsl_root: &Path) -> Result<Outcome> {
             seen.insert((*index, ""));
         }
         for (_, exemption) in entries.iter().filter(|(_, e)| !e.calls.is_empty()) {
-            let json_lines = site
+            // Every way the function can hold JSON: a line naming
+            // `serde_json`, a serializer call however it was imported, and
+            // a call of any JSON producer, in this file or another.
+            let producer_calls = calls[file_index]
+                .iter()
+                .filter(|call| call.callees.iter().any(|callee| producers.contains(callee)))
+                .map(|call| call.line);
+            let mut json_lines: Vec<usize> = site
                 .json_lines
                 .iter()
+                .chain(&file.serializer_lines)
                 .copied()
                 .filter(|line| !file.use_lines.contains(line))
-                .chain(site.json_calls.iter().map(|call| call.line));
+                .chain(producer_calls)
+                .collect();
+            json_lines.sort_unstable();
+            json_lines.dedup();
             for line in json_lines {
                 let function = file.enclosing_name(line);
                 if exemption.functions.contains(&function.as_str()) {
@@ -1572,6 +1583,64 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
             .collect();
         assert_eq!(json, vec![5], "{}", report(&outcome));
         assert!(!outcome.passed());
+    }
+
+    /// The JSON lines a call-pinned exemption reports for `intake` text.
+    fn pinned_json_lines(intake: &str) -> Vec<(usize, String)> {
+        let dir = tree();
+        write(dir.path(), "qsl-semantics/src/model/intake.rs", intake);
+        let outcome = evaluate(dir.path()).unwrap();
+        assert!(outcome.unlisted.is_empty(), "{}", report(&outcome));
+        assert!(outcome.stale.is_empty(), "{}", report(&outcome));
+        assert_eq!(
+            outcome.passed(),
+            outcome.json_in_pinned.is_empty(),
+            "{}",
+            report(&outcome)
+        );
+        outcome
+            .json_in_pinned
+            .into_iter()
+            .map(|(_, site)| (site.line, site.function))
+            .collect()
+    }
+
+    /// QSL-220 review M1 (A): a serializer imported by name and hashed
+    /// through the pinned call fails.
+    #[test]
+    fn pinned_exemption_refuses_an_imported_serializer() {
+        let found = pinned_json_lines(
+            "use crate::exempt_pinned_callees::*;\nuse serde_json::to_vec;\n\
+             fn check_package_digest(v: &Tree) -> [u8; 32] {\n\
+             \x20   raw_bytes_digest(&to_vec(v).unwrap())\n}\n",
+        );
+        assert_eq!(found, vec![(4, "check_package_digest".to_owned())]);
+    }
+
+    /// QSL-220 review M1 (B): a JSON producer defined in the same file and
+    /// hashed through the pinned call fails.
+    #[test]
+    fn pinned_exemption_refuses_a_same_file_json_producer() {
+        let found = pinned_json_lines(
+            "use crate::exempt_pinned_callees::*;\n\
+             fn json(v: &Tree) -> Vec<u8> {\n    serde_json::to_vec(v).unwrap()\n}\n\
+             fn check_package_digest(v: &Tree) -> [u8; 32] {\n\
+             \x20   raw_bytes_digest(&json(v))\n}\n",
+        );
+        assert_eq!(found, vec![(6, "check_package_digest".to_owned())]);
+    }
+
+    /// The pinned call over exact bytes, next to JSON elsewhere in the
+    /// file, passes.
+    #[test]
+    fn pinned_exemption_accepts_raw_bytes_beside_json_elsewhere() {
+        let found = pinned_json_lines(
+            "use crate::exempt_pinned_callees::*;\n\
+             fn json(v: &Tree) -> Vec<u8> {\n    serde_json::to_vec(v).unwrap()\n}\n\
+             fn check_package_digest(b: &[u8]) -> [u8; 32] {\n\
+             \x20   raw_bytes_digest(b)\n}\n",
+        );
+        assert_eq!(found, Vec::new());
     }
 
     /// An exemption whose file no longer pairs the two fails as stale, and

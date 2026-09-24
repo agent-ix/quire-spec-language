@@ -56,7 +56,7 @@ and measured use.
 The content identity is the lowercase hex SHA-256 over the contract-specific
 domain label's byte length as a big-endian `u64`, the label, and the RFC 8785
 encoding (ADR-013 §2, `quire-canonical`) of the document with `identity`
-omitted.
+omitted and every integer written as its decimal string.
 It is not the package identity, source digest, expression identity or TL signal
 identity. Canonical bytes are unique: object fields use the specified order,
 sets are sorted and distinct, numbers use the existing exact-number encoding,
