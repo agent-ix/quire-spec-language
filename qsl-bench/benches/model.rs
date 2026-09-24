@@ -37,6 +37,7 @@ use qsl_bench::widen;
 use qsl_semantics::model::population::{all_instances, AdmissionOutcome, AllInstancesOutcome};
 use quire_exact::Meter;
 use std::hint::black_box;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Object types per package (each also declares one field record).
@@ -92,8 +93,10 @@ fn normalization_and_admission(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(4));
     for types in TYPES {
-        let domain_package = intake(&offer(model::document(shape(types))))
-            .expect("the generated document passes intake");
+        let domain_package = Arc::new(
+            intake(&offer(model::document(shape(types))))
+                .expect("the generated document passes intake"),
+        );
         let effective = view(&domain_package);
         let document = population_document(shape(types), ADMITTED_MEMBERS);
         assert!(matches!(

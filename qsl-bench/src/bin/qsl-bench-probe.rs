@@ -163,7 +163,7 @@ fn probe_model(shape: ModelShape, members: usize) -> ExitCode {
     let bytes = document.len();
     let offer = model::offer(document);
     let domain_package = match model::intake(&offer) {
-        Ok(domain_package) => domain_package,
+        Ok(domain_package) => std::sync::Arc::new(domain_package),
         Err(failure) => {
             println!("model intake refused: {failure:?}");
             return ExitCode::FAILURE;

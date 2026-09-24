@@ -143,7 +143,9 @@ use crate::model::domain_package::{
     OperationEffect,
 };
 use crate::model::key::{hex, jcs_bytes, DeclarationKey, EffectiveId};
-use crate::model::normalize::{EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection};
+use crate::model::normalize::{
+    EffectiveView, ModelRefusal, ModelRefusalCause, OfferedSelection, ViewPopulation,
+};
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 use serde_json::{Map, Value as JsonValue};
@@ -820,7 +822,11 @@ fn admit_binding_as(
     // own universe -- its first declared member type's connected component,
     // never the whole domain package's, or the first universe when it
     // declares no member type (FR-153 never requires one).
-    let Some((population, universe)) = view.population(population_key) else {
+    let Some(ViewPopulation {
+        record: population,
+        universe,
+    }) = view.population(population_key)
+    else {
         return AdmissionOutcome::Refused(ModelRefusal {
             code: Code::ForeignReference,
             cause: ModelRefusalCause::ForeignModelSelection {
