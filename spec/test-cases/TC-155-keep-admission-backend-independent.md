@@ -50,8 +50,11 @@ FR-057-AC-5, FR-057-AC-6 and FR-057-AC-8.
   request selecting them.
 - Step 3: each registration refuses with `invalid_capability`
   (`unknown-kind`, `absent-kind`, `unknown-mode`, `duplicate-backend`), keyed
-  by backend identity; each refused registration contributes nothing, and the
-  registration already held under the repeated identity stands.
+  by backend identity; each refused registration contributes nothing. The
+  registration repeating an already-registered identity carries a different
+  descriptor, so it conflicts (FR-075-AC-4): both it and the registration
+  already held under that identity are refused, and the held registration is
+  withdrawn rather than left standing.
 - Step 4: the unnamed request carries both backends as (identity, manifest
   digest) candidates ordered by identity then digest, and no chosen one; the named request carries exactly the named
   backend; the backend lacking the kind yields an empty candidate set; the

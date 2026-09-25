@@ -238,11 +238,17 @@ When a backend registers, the registry SHALL admit each advertised kind under
 the same rules as a requested pair.
 
 If a backend advertises an absent or unknown kind, or a mode other than
-`bounded` or `unbounded`, or repeats a registered backend identity, then the
-registry SHALL refuse that backend's registration with `invalid_capability`
-(`absent-kind`, `unknown-kind`, `unknown-mode` or `duplicate-backend`), keyed by
-backend identity. The refused registration contributes nothing, and any
-registration already held under that identity stands.
+`bounded` or `unbounded`, then the registry SHALL refuse that backend's
+registration with `invalid_capability` (`absent-kind`, `unknown-kind` or
+`unknown-mode`), keyed by backend identity; the refused registration
+contributes nothing, and any registration already held under that identity
+stands. A second registration under an identity the registry already holds
+is judged against the held descriptor (FR-075-AC-4, FR-075-AC-7,
+quire-specification FR-290 "Candidate set and negotiation"): an equal
+descriptor repeats harmlessly, and an unequal one conflicts, refusing every
+registration of that identity with `invalid_capability`/`duplicate-backend`
+and withdrawing the one already held -- unlike the kind/mode causes above,
+this refusal does not leave the earlier registration standing.
 
 For each admitted item, the registry SHALL compute the candidate set under the
 FR-290 candidate-set rule from one immutable registry snapshot, and SHALL
@@ -346,7 +352,7 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-5 | The admission entry point takes no registry or backend parameter. Admitting the same requested pairs yields identical admitted pairs and static meaning whatever backends are registered. A declaration whose names resolved reaches its family checker without any capability request. | Test (TC-155) |
 | FR-057-AC-6 | Given settled dispositions in which one item is `unsupported` for an empty candidate set and one is `supported`, routing routes only the `supported` item. The `unsupported` item gets no target and no artifact, and is not turned into a refusal or a hold. The other item routes without delay. | Test (TC-155) |
 | FR-057-AC-7 | The QSL source tree defines one type carrying capability-kind labels, and no other type parses or emits an FR-290 label. | Test (TC-153) |
-| FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode, or repeating a registered identity, is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
+| FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. A registration repeating an already-held identity with an equal descriptor is not refused; with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused `invalid_capability`/`duplicate-backend` and the held registration is withdrawn (FR-075-AC-4, FR-075-AC-7). Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
 | FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item; a nested expression adds no kind; a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153) |
 | FR-057-AC-11 | Each kind is applicable to exactly the family this requirement's applicability table gives it. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration is an inapplicable capability naming the state family, and its declaration's body still reaches its family checker. | Test (TC-115) |
 
@@ -404,7 +410,10 @@ QSL-46 adds registration from advertised labels
 `unknown-kind` and `unknown-mode` keyed by backend identity) and the routing
 step (`qsl_route::routing`), which takes settled dispositions as data and
 gives a target only to a `supported` item. FR-057-AC-6 and FR-057-AC-8 are
-backed by TC-155 steps 3 to 6 (`qsl-route/tests/it/routing.rs`).
+backed by TC-155 steps 3 to 6 (`qsl-route/tests/it/routing.rs`); FR-057-AC-8's
+malformed-mode case is additionally backed by TC-447's
+`tc_282_duplicate_backend_identity::db_07_a_malformed_registration_never_reaches_the_registry`
+(`qsl-route/tests/it/route_registry.rs`).
 
 FR-057-AC-3, FR-057-AC-5, FR-057-AC-7 and FR-057-AC-10 are not yet backed by
 tests traced to them. Remaining work: #213 lands the carrier-version refusal

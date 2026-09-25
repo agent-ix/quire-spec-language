@@ -12,8 +12,8 @@
 use ix_trace_rs::trace;
 use qsl_route::routing::{route, Disposition};
 use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode,
-    RegistrationCause, Registry, ToolIdentity,
+    BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, RegistrationCause,
+    Registry, ToolIdentity,
 };
 use qsl_semantics::check::Capability;
 
@@ -46,10 +46,12 @@ fn set_ids(outcome: CandidateOutcome) -> Vec<String> {
         .collect()
 }
 
-/// TC-155 step 3: an unknown kind, an absent kind, an unknown mode and a
-/// repeated identity each refuse with their `invalid_capability` cause,
-/// keyed by backend identity; the refused registration contributes nothing,
-/// and the registration already held under the repeated identity stands.
+/// TC-155 step 3: an unknown kind, an absent kind and an unknown mode each
+/// refuse with their `invalid_capability` cause, keyed by backend identity,
+/// and the refused registration contributes nothing. A second, unequal
+/// descriptor under an already-held identity conflicts (FR-290 "Candidate
+/// set and negotiation"): both registrations are refused and the identity
+/// is withdrawn (FR-290-AC-10).
 #[test]
 #[trace("TC-155", "FR-057-AC-8")]
 fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
@@ -88,31 +90,35 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
     );
     assert_eq!(unknown_mode.catalog_code().cause(), "unknown-mode");
 
-    let repeat = admit("held", 5, &[(Some("value-validity"), "unbounded")])
+    // A second registration under "held" with a different manifest digest
+    // is a conflict (FR-290 "Candidate set and negotiation"): both
+    // registrations are refused and the identity is withdrawn from the
+    // registry entirely.
+    let conflicting = admit("held", 5, &[(Some("value-validity"), "unbounded")])
         .expect("the labels themselves are admitted");
-    let duplicate = registry
-        .register(repeat)
-        .expect_err("a repeated identity refuses, even with a new digest");
-    assert_eq!(duplicate.identity().as_str(), "held");
-    assert_eq!(duplicate.cause(), &RegistrationCause::DuplicateBackend);
-    assert_eq!(duplicate.catalog_code().cause(), "duplicate-backend");
+    let duplicates = registry
+        .register(conflicting)
+        .expect_err("a conflicting descriptor under a held identity refuses both");
+    assert_eq!(duplicates.len(), 2);
+    for duplicate in &duplicates {
+        assert_eq!(duplicate.identity().as_str(), "held");
+        assert_eq!(duplicate.cause(), &RegistrationCause::DuplicateBackend);
+        assert_eq!(duplicate.catalog_code().cause(), "duplicate-backend");
+    }
 
-    // Nothing refused reached the registry; the held registration stands
-    // with its own digest and advertised pairs.
-    assert_eq!(
-        registry
-            .backends()
-            .map(BackendId::as_str)
-            .collect::<Vec<_>>(),
-        ["held"]
-    );
-    let only = registry.descriptors().next().expect("one descriptor");
-    assert_eq!(only, &held);
-    assert_eq!(
-        only.advertises().collect::<Vec<_>>(),
-        [(Capability::GlobalConformance, Mode::Bounded)]
-    );
+    // "held" is now unregistered: its earlier registration is withdrawn,
+    // and it contributes no candidate for any kind.
+    assert!(!registry
+        .backends()
+        .map(BackendId::as_str)
+        .any(|id| id == "held"));
+    assert!(registry.descriptors().all(|d| d.id().as_str() != "held"));
     assert!(set_ids(registry.candidates(Capability::ValueValidity, None)).is_empty());
+    assert!(set_ids(registry.candidates(Capability::GlobalConformance, None)).is_empty());
+    assert_eq!(
+        registry.candidates(Capability::GlobalConformance, Some(&BackendId::new("held"))),
+        CandidateOutcome::UnknownBackend(BackendId::new("held"))
+    );
 }
 
 /// FR-057-AC-8: an absent mode refuses `unknown-mode` with no bytes, and a

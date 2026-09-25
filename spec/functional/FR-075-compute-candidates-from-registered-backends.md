@@ -46,18 +46,22 @@ whose members are the ten labels FR-290 fixes and FR-057 admits into QSL.
   probe that checks a routed backend's tool against this pin runs after
   routing, at run time (ADR-012 §7.4, FR-290 "Tool absence"), which is
   outside this requirement's scope. A backend supplies one descriptor per
-  registration, so one `BackendId` carries exactly one `manifest_digest`
-  and one `tool` at a time; a second registration under the same
-  `BackendId` with a different `manifest_digest` is a repeated identity
-  and is refused under FR-075-AC-4, the same as a second registration with
-  an unchanged digest. ADR-013 O-19's field-wise equality ("two backend
-  identities are equal iff both fields are equal") states when two wire
-  `backend{identity, manifest_digest}` members are the same value; it is
-  not the registry's uniqueness key. The registry's uniqueness key is
-  `BackendId` alone (FR-290 "Candidate set and negotiation": "a backend
-  identity is unique within a registry"), which is why a same-identity,
-  different-digest registration is a duplicate refusal rather than a
-  distinct, co-existing entry.
+  registration, so one `BackendId` carries at most one held `manifest_digest`
+  and `tool` at a time. The registry's uniqueness key is `BackendId` alone
+  (FR-290 "Candidate set and negotiation": "a backend identity is unique
+  within a registry"), so a second registration under an already-held
+  `BackendId` is judged against the held descriptor: when the two
+  descriptors are equal (same identity, manifest digest, tool and advertised
+  pairs), the repeat is one registration and is not refused (FR-075-AC-7);
+  when they differ in any member, including the manifest digest alone, the
+  identity conflicts (FR-290 "Candidate set and negotiation"), and every
+  registration of it -- the one already held and the new one -- is refused,
+  the held registration is withdrawn, and the identity is permanently
+  unregistered (FR-075-AC-4). ADR-013 O-19's field-wise equality ("two
+  backend identities are equal iff both fields are equal") states when two
+  wire `backend{identity, manifest_digest}` members are the same value; it is
+  not the registry's uniqueness key, which is `BackendId` alone, but it is
+  exactly the pair FR-290's refusal keys by: (identity, manifest digest).
 - A requested item's capability kind (the `Capability` value FR-057's
   admission recorded for it) and, optionally, a named `BackendId`.
 - The registry's current contents at the moment candidates are computed.
@@ -68,9 +72,13 @@ whose members are the ten labels FR-290 fixes and FR-057 admits into QSL.
   pairs, ordered bytewise by identity and then by manifest digest
   (FR-290 "Candidate set and negotiation").
 - A distinct unknown-backend marker, carrying the named identity, when the
-  request names a `BackendId` the registry does not hold.
-- A registration refusal, keyed by backend identity, when a registration
-  repeats an already-registered `BackendId`.
+  request names a `BackendId` the registry does not hold -- including an
+  identity whose registrations have conflicted (FR-075-AC-4).
+- One registration refusal per distinct manifest digest, keyed by
+  `(backend identity, manifest digest)`, when two or more admitted
+  registrations of one `BackendId` are not all equal (FR-075-AC-4); every
+  such refusal the registry currently holds is available from
+  `Registry::refusals`, ordered bytewise by `(identity, manifest digest)`.
 
 ## Behavior
 
@@ -118,12 +126,29 @@ then QSL SHALL refuse the member for its digest.
 Writing a candidate's identity, domain and digest string and reading them back
 SHALL give the same candidate.
 
-### Registration is refused, not silently merged, on a repeated identity
+### A repeated identity is idempotent when identical, and conflicts otherwise
 
-If a registration names a `BackendId` the registry already holds, then the
-registry SHALL refuse the new registration with
-`invalid_capability`/`duplicate-backend`, naming the identity, and SHALL
-leave the existing registration unchanged and in effect.
+If a registration names a `BackendId` the registry already holds, the
+registry SHALL compare the new descriptor with the held one:
+
+- If the two are equal (same identity, manifest digest, tool and advertised
+  pairs), the repeat SHALL be treated as one registration and SHALL NOT be
+  refused (FR-075-AC-7).
+- If the two differ in any member, the registry SHALL refuse every admitted
+  registration of that identity -- the one already held and the new one --
+  with `invalid_capability`/`duplicate-backend`, one refusal per distinct
+  manifest digest keyed by `(identity, manifest digest)`, SHALL withdraw the
+  held registration, and SHALL treat the identity as permanently
+  unregistered: a later registration of it, even one identical to an earlier
+  registration, is refused on arrival, and a request naming it receives the
+  unknown-backend marker (FR-075-AC-4).
+
+The registry snapshot SHALL be a function of the set of admitted
+registrations it has received, independent of the order they arrived in:
+two registries built from the same registrations in different orders SHALL
+be equal, SHALL report the same registration refusals in the same order,
+and SHALL compute identical candidate sets for every item (FR-075-AC-2,
+FR-075-AC-4, FR-075-AC-7).
 
 ### The registry is an ordinary value, not ambient state
 
@@ -137,10 +162,13 @@ or a plugin-discovery mechanism such as `inventory`, `linkme` or `ctor`
 ### Registries agree regardless of build order
 
 Two registries built from the same set of `BackendDescriptor` values, added
-in any order, SHALL be equal, and SHALL compute the identical candidate set,
-in the identical order, for every item. Candidate computation SHALL depend
-only on the registry's contents and the requested item, never on the order
-registrations were added.
+in any order, SHALL be equal, SHALL report the same registration refusals in
+the same order, and SHALL compute the identical candidate set, in the
+identical order, for every item. This holds whether or not the set contains
+identical repeats or conflicting descriptors under one identity: candidate
+computation, and the conflict/refusal state, SHALL depend only on the
+registry's contents and the requested item, never on the order registrations
+were added.
 
 ## Constraints
 
@@ -153,11 +181,12 @@ registrations were added.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-075-AC-1 | Given a registry holding one backend that advertises the requested item's capability kind, and no named backend in the request, the candidate set is exactly that backend. Given a registry holding a backend that does not advertise the item's kind, the candidate set is empty. | Test (TC-193) |
-| FR-075-AC-2 | Given two registries built by adding the same set of `BackendDescriptor` values in two different orders, the two registries are equal, and computing candidate sets for the same set of items against each yields identical sets in identical order for every item. | Test (TC-194) |
+| FR-075-AC-2 | Given two registries built by adding the same set of `BackendDescriptor` values in two different orders, the two registries are equal, they report the same registration refusals in the same order, and computing candidate sets for the same set of items against each yields identical sets in identical order for every item -- including a set that contains an identical repeat of one identity's descriptor and a conflicting pair under another. | Test (TC-194) |
 | FR-075-AC-3 | Given a request naming a `BackendId` the registry does not hold, the result is the unknown-backend marker carrying that identity, distinguishable from an empty candidate set (which arises only from a registered backend that does not advertise the item's kind, or from no registrant advertising the kind at all). | Test (TC-195) |
-| FR-075-AC-4 | Given a registration naming a `BackendId` already held by the registry, the registration is refused with `invalid_capability`/`duplicate-backend` naming the identity, and a subsequent candidate computation still reflects only the original registration's advertised kinds. | Test (TC-196) |
+| FR-075-AC-4 | Given a registration naming a `BackendId` already held by the registry with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused with `invalid_capability`/`duplicate-backend`, one refusal per distinct manifest digest keyed by `(identity, manifest digest)`; the held registration is withdrawn, the identity is permanently unregistered (a later registration of it, even an identical one, is refused on arrival, and a request naming it receives the unknown-backend marker), and registrations of other identities are unaffected. | Test (TC-196, TC-447) |
 | FR-075-AC-5 | The registry module's public and internal capability-kind matching uses only the canonical `Capability` type; no enum defined inside `#185`'s scope carries variants named for an FR-290 capability-kind label. | Test (TC-193) |
 | FR-075-AC-6 | A `backend` member written from a candidate and read back equals it, and an identity with leading and trailing spaces is kept verbatim. An absent domain, an unknown domain label and `quire.source.bytes/v1` each refuse for the domain, and `quire.source.bytes/v1` still refuses for the domain with a digest string that is not hex; with the right domain, 64 uppercase hex digits and a 2-character string each refuse for the digest. | Test (TC-433) |
+| FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with an equal descriptor (same identity, manifest digest, tool and advertised pairs), the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. | Test (TC-447, TC-448) |
 
 ## Dependencies
 
@@ -173,7 +202,10 @@ registrations were added.
 - [FR-290](ix://agent-ix/quire-specification/FR-290) (quire-specification)
   is the normative source for the ten capability-kind labels, the
   `(kind, mode)` advertisement shape, and the candidate-set ordering rule
-  this requirement's Outputs section restates.
+  this requirement's Outputs section restates. Its "Candidate set and
+  negotiation" section (FR-290-AC-9, FR-290-AC-10) is also the normative
+  source for the idempotent-repeat and conflicting-identity rules
+  FR-075-AC-7 and FR-075-AC-4 implement.
 - [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185)'s
   issue body describes "the canonical six-kind `Capability` value type,"
   taking the `protocol` family's six members (FR-290's `Families` table, the
@@ -208,15 +240,22 @@ By Acceptance Criterion:
   `candidate_set_matches_registered_backends_advertising_the_requested_kind`
   (`qsl-route/tests/it/route_registry.rs`).
 - FR-075-AC-2: backed (`TC-194`):
-  `every_permutation_of_three_descriptors_gives_an_equal_registry_and_identical_candidates`
-  and `thirty_sampled_orderings_of_five_descriptors_agree`
+  `every_permutation_of_three_descriptors_gives_an_equal_registry_and_identical_candidates`,
+  `all_120_orderings_of_five_descriptors_agree` and
+  `permutation_invariance_holds_with_repeats_and_conflicts_in_the_multiset`
   (`qsl-route/tests/it/route_registry.rs`).
 - FR-075-AC-3: backed (`TC-195`):
   `unregistered_named_backend_yields_a_distinct_unknown_backend_marker`
   (`qsl-route/tests/it/route_registry.rs`).
-- FR-075-AC-4: backed (`TC-196`):
-  `duplicate_backend_identity_registration_is_refused_and_the_original_stands`
-  (`qsl-route/tests/it/route_registry.rs`).
+- FR-075-AC-4: backed (`TC-196`, `TC-447`):
+  `conflicting_backend_identity_registration_refuses_both_under_either_order`
+  (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`),
+  `tc_282_duplicate_backend_identity::db_03`, `db_04`, `db_05`, `db_06` and
+  `db_08`, and `three_way_conflict_reports_one_refusal_per_distinct_digest`
+  (`qsl-route/tests/it/route_registry.rs`), mirroring quire-specification
+  TC-282's DB-01..DB-08 vectors under every registration order. `db_07`
+  (a malformed advertised mode, never a `duplicate-backend` conflict) is
+  cited under FR-057-AC-8 instead.
 - FR-075-AC-5: backed for its matching half (`TC-193`):
   `advertises_kind_matches_only_the_exact_capability` (`qsl-route/src/lib.rs`)
   shows candidate matching goes through `Capability` and tells two kinds
@@ -227,3 +266,8 @@ By Acceptance Criterion:
   `backend_member_round_trips_through_its_wire_parts` and
   `backend_member_with_a_wrong_digest_domain_refuses_before_the_bytes`
   (`qsl-route/src/lib.rs`).
+- FR-075-AC-7: backed (`TC-447`, `TC-448`):
+  `identical_repeat_registration_is_not_refused`
+  (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`), and
+  `tc_282_duplicate_backend_identity::db_01_identical_repeat_holds_once_with_no_refusal`/`db_02_identical_repeats_plus_another_identity_hold_both`
+  (`qsl-route/tests/it/route_registry.rs`).
