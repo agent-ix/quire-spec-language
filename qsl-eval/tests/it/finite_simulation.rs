@@ -637,3 +637,44 @@ fn counter_sampler_produces_a_pinned_index_sequence() {
     let indices: Vec<usize> = (0..4).map(|_| sampler.next_index(5)).collect();
     assert_eq!(indices, vec![4, 2, 4, 1]);
 }
+
+/// TC-439 (ADR-014 §7, §10 scenario 4): an exhaustive run is O-16 success;
+/// a run a bound stops or the caller cancels is incomplete, and keeps its
+/// frontier and the bound that stopped it.
+#[trace("TC-439", "FR-097-AC-5")]
+#[test]
+fn tc_439_explore_outcomes_map_to_their_o16_category() {
+    use qsl_foundation::diagnostic::Category;
+    // 0 -a-> 1 -b-> 2
+    let system = Graph::new(vec![0], vec![(0, "a", 1), (1, "b", 2)]);
+    let exhaustive = explore(&system, generous_limits(), never_cancels);
+    assert!(matches!(exhaustive, Outcome::Exhaustive(_)));
+    assert_eq!(exhaustive.category(), Category::Success);
+
+    let bounded = explore(
+        &system,
+        Limits {
+            max_depth: 1,
+            ..generous_limits()
+        },
+        never_cancels,
+    );
+    let Outcome::Bounded {
+        ref frontier,
+        limit,
+        ..
+    } = bounded
+    else {
+        panic!("expected Bounded, got {bounded:?}");
+    };
+    assert_eq!(limit, Limit::Depth);
+    assert_eq!(frontier, &vec![key(1)]);
+    assert_eq!(bounded.category(), Category::Incomplete);
+
+    let cancelled = explore(&system, generous_limits(), || true);
+    let Outcome::Cancelled { ref frontier, .. } = cancelled else {
+        panic!("expected Cancelled, got {cancelled:?}");
+    };
+    assert_eq!(frontier, &vec![key(0)]);
+    assert_eq!(cancelled.category(), Category::Incomplete);
+}

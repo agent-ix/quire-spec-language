@@ -416,8 +416,14 @@ fn l01_all_instances_selects_subtype_population_once() {
         selected_a.element_type(),
         &DeclarationKey::fixture("model.A")
     );
-    assert_eq!(selected_a.bound().minimum(), 0);
-    assert_eq!(selected_a.bound().maximum(), 3);
+    assert_eq!(
+        selected_a.bound().expect("a bounded selection").minimum(),
+        0
+    );
+    assert_eq!(
+        selected_a.bound().expect("a bounded selection").maximum(),
+        3
+    );
     assert_eq!(selected_a.len(), 3);
     assert!(!selected_a.is_empty());
     assert_eq!(meter_a.consumed(LimitKind::WorkUnits), 5);
@@ -447,7 +453,10 @@ fn l01_all_instances_selects_subtype_population_once() {
         selected_b.element_type(),
         &DeclarationKey::fixture("model.B")
     );
-    assert_eq!(selected_b.bound().maximum(), 3);
+    assert_eq!(
+        selected_b.bound().expect("a bounded selection").maximum(),
+        3
+    );
     assert_eq!(meter_b.consumed(LimitKind::WorkUnits), 5);
     assert_eq!(meter_b.consumed(LimitKind::ResultUnits), 2);
 
@@ -1676,9 +1685,12 @@ fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
             other => panic!("expected a completed M::A selection, got {other:?}"),
         };
     assert_eq!(selected_a.len(), 3);
-    assert_eq!(selected_a.bound().minimum(), 0);
     assert_eq!(
-        selected_a.bound().maximum(),
+        selected_a.bound().expect("a bounded selection").minimum(),
+        0
+    );
+    assert_eq!(
+        selected_a.bound().expect("a bounded selection").maximum(),
         5,
         "bound().maximum() must be the binding's own declared maximum (5), \
          not the constant 3 or the 3-member selection count"
@@ -3277,4 +3289,35 @@ fn qsl204_admission_reads_the_domain_package_the_view_was_normalized_from() {
         ),
         "a cyclic package yields no view to admit against"
     );
+}
+
+/// TC-240 step 3 (FR-084-AC-5, QSpec FR-153-AC-9): a binding admitted with
+/// no declared maximum selects all three qualifying members, with no
+/// cardinality refusal, and its result carries no bound: the unbounded
+/// `Set<Reference<T>>`.
+#[test]
+#[trace("TC-240", "FR-084-AC-5")]
+fn an_unbounded_binding_selects_every_member_with_no_bound() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        None,
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    assert_eq!(binding.declared_maximum(), None);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let selected = match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter) {
+        AllInstancesOutcome::Completed(set) => set,
+        other => panic!("expected a completed selection, got {other:?}"),
+    };
+    assert_eq!(selected.len(), 3);
+    assert_eq!(selected.bound(), None);
 }

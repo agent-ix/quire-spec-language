@@ -298,10 +298,12 @@ pub(crate) fn resolve_form(
             let bound = CardinalityBound::new(minimum, maximum)
                 .map_err(|_| fault(form, TypeFormFault::EmptyCardinality))?;
             Ok(ValueType::collection(CollectionType::new(
-                *kind, element, bound,
+                *kind,
+                element,
+                Some(bound),
             )))
         }
-        TypeFormHead::Population => Ok(ValueType::Population(bound_u64(form, 0)?)),
+        TypeFormHead::Population => Ok(ValueType::Population(Some(bound_u64(form, 0)?))),
         TypeFormHead::Name(name) => named_type(names, name, form),
     }
 }
@@ -475,7 +477,7 @@ mod tests {
                 &TypeForm::new(TypeFormHead::Population, SPAN).with_bounds(vec!["3".to_owned()])
             )
             .expect("a population type resolves"),
-            ValueType::Population(3)
+            ValueType::Population(Some(3))
         );
     }
 }

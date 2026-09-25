@@ -265,12 +265,21 @@ impl<'a> Lowering<'a> {
 
     /// `Population<T>[N]`: `bounded_domain`/`model_population` over the
     /// `Set<Reference<T>>` node, binding `max` = `N`.
+    ///
+    /// A population with no declared maximum refuses
+    /// (`CheckCause::UnrepresentableBound`). Its bare `Set<Reference<T>>`
+    /// node would be the same node as an unbounded `Set<Reference<T>>`, so
+    /// the population role would be lost. No source spells `Population<T>`
+    /// without a maximum until QSL-42, which gives it its own node.
     pub(super) fn population_type(
         &mut self,
         target: EffectiveId,
-        maximum: u64,
+        maximum: Option<u64>,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
+        let Some(maximum) = maximum else {
+            return Err(refuse(location, CheckCause::UnrepresentableBound));
+        };
         let reference = self.reference_type(target, location)?;
         let set = self.insert(
             location,

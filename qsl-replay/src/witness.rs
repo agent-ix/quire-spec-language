@@ -28,6 +28,7 @@ use crate::identity::{
     Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
     SourceDigestWire, TracePosition,
 };
+use qsl_foundation::bound::FiniteBound;
 use qsl_foundation::digest::{
     ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, ManifestDigest, WireNodeId,
 };
@@ -343,7 +344,7 @@ pub struct WitnessEnvelope<P: FamilyPayload> {
     package_contract_version: String,
     source_digests: Vec<RawSourceRef>,
     profile_selections: Vec<ProfileSelection>,
-    proof_bounds: ScalarLimits,
+    run_limits: ScalarLimits,
     declared_domains: Vec<DeclaredDomain>,
     backend: Backend,
     trace_position: Option<TracePosition>,
@@ -384,9 +385,11 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     pub fn profile_selections(&self) -> &[ProfileSelection] {
         &self.profile_selections
     }
-    /// The proving run's scalar accounting bounds.
-    pub fn proof_bounds(&self) -> ScalarLimits {
-        self.proof_bounds
+    /// The proving run's `quire.value.accounting/v1` limits (ADR-014 B-2).
+    /// They are resource limits, not proof bounds: the finite domains the
+    /// run was requested over are [`Self::declared_domains`].
+    pub fn run_limits(&self) -> ScalarLimits {
+        self.run_limits
     }
     /// The parameter domains declared for the proving run.
     pub fn declared_domains(&self) -> &[DeclaredDomain] {
@@ -588,8 +591,8 @@ pub struct WitnessPacket<P: FamilyPayload> {
     pub source_digests: Option<Vec<SourceDigestWire>>,
     /// The semantic profile selections in effect for the proving run.
     pub profile_selections: Option<Vec<ProfileSelection>>,
-    /// The proving run's scalar accounting bounds.
-    pub proof_bounds: Option<ScalarLimits>,
+    /// The proving run's `quire.value.accounting/v1` limits (ADR-014 B-2).
+    pub run_limits: Option<ScalarLimits>,
     /// The parameter domains declared for the proving run.
     pub declared_domains: Option<Vec<DeclaredDomain>>,
     /// `(identity, manifest digest domain, manifest digest hex)` for the
@@ -635,10 +638,15 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
             .map(|s| s.profile().len() + s.value().len())
             .sum()
     });
-    total += packet
-        .declared_domains
-        .as_ref()
-        .map_or(0, |domains| domains.iter().map(|d| d.domain().len()).sum());
+    total += packet.declared_domains.as_ref().map_or(0, |domains| {
+        domains
+            .iter()
+            .map(|declared| {
+                finite_bound_bytes(declared.bound())
+                    + std::mem::size_of_val(declared.domain().path())
+            })
+            .sum()
+    });
     total += packet
         .backend
         .as_ref()
@@ -661,6 +669,18 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
         .as_ref()
         .map_or(0, std::mem::size_of_val);
     total
+}
+
+/// A declared domain's measured size: 32 bytes for its parameter node id,
+/// then 8 per fixed-width maximum, or the decimal digits of both ends of an
+/// integer range, whose ends are unbounded integers.
+fn finite_bound_bytes(bound: &FiniteBound) -> usize {
+    32 + match bound {
+        FiniteBound::Cardinality { .. } | FiniteBound::Depth { .. } => 8,
+        FiniteBound::IntegerRange(range) => {
+            range.lower().to_string().len() + range.upper().to_string().len()
+        }
+    }
 }
 
 /// [`WitnessEnvelope::reconstruct`]'s structured refusal.
@@ -736,9 +756,9 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         let profile_selections = packet
             .profile_selections
             .ok_or(WitnessRefusal::MissingMember("profile_selections"))?;
-        let proof_bounds = packet
-            .proof_bounds
-            .ok_or(WitnessRefusal::MissingMember("proof_bounds"))?;
+        let run_limits = packet
+            .run_limits
+            .ok_or(WitnessRefusal::MissingMember("run_limits"))?;
         let declared_domains = packet
             .declared_domains
             .ok_or(WitnessRefusal::MissingMember("declared_domains"))?;
@@ -771,7 +791,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             package_contract_version,
             source_digests,
             profile_selections,
-            proof_bounds,
+            run_limits,
             declared_domains,
             backend,
             trace_position,
@@ -811,7 +831,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
                     .collect(),
             ),
             profile_selections: Some(self.profile_selections.clone()),
-            proof_bounds: Some(self.proof_bounds),
+            run_limits: Some(self.run_limits),
             declared_domains: Some(self.declared_domains.clone()),
             backend: Some((
                 self.backend.identity().to_owned(),
@@ -841,6 +861,7 @@ mod envelope_tests {
     use super::*;
     use crate::bounds::MAX_ENCODED_BYTES;
     use ix_trace_rs::trace;
+    use qsl_foundation::bound::{DomainKey, ProofBound};
     use quire_exact::Identifier;
 
     fn digest(byte: u8) -> [u8; 32] {
@@ -889,11 +910,15 @@ mod envelope_tests {
                 "quire.profile.v1".to_owned(),
                 "finite-state".to_owned(),
             )]),
-            proof_bounds: Some(scalar_limits(64)),
-            declared_domains: Some(vec![DeclaredDomain::new(
-                WireNodeId::from_digest(digest(6)),
-                "u32".to_owned(),
-            )]),
+            run_limits: Some(scalar_limits(64)),
+            declared_domains: Some(vec![DeclaredDomain::new(ProofBound {
+                domain: DomainKey::new(WireNodeId::from_digest(digest(6)), Vec::new()),
+                bound: FiniteBound::integer_range(
+                    quire_exact::Integer::from(0_i64),
+                    quire_exact::Integer::from(u64::from(u32::MAX)),
+                )
+                .expect("a non-empty range"),
+            })]),
             backend: Some((
                 "kani-backend-1".to_owned(),
                 Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
@@ -946,6 +971,57 @@ mod envelope_tests {
         let input_envelope = WitnessEnvelope::reconstruct(input_packet).unwrap();
         let input_round_tripped = WitnessEnvelope::reconstruct(input_envelope.to_packet()).unwrap();
         assert_eq!(input_envelope, input_round_tripped);
+    }
+
+    /// FR-070-AC-3 (TC-182; ADR-014 §1, §11): the proving run's accounting
+    /// limits travel as `run_limits` (B-2) and its per-parameter finite
+    /// domains as typed `FiniteBound`s (B-4); each round-trips as itself,
+    /// and a packet without `run_limits` refuses by that member's name.
+    #[trace("TC-182", "FR-070-AC-3")]
+    #[test]
+    fn tc_182_run_limits_and_declared_domains_round_trip_as_their_own_kinds() {
+        let mut packet = full_packet(0);
+        // Two bounds on one parameter, at the parameter's own position and
+        // at its element: distinct by their domain keys.
+        let parameter = WireNodeId::from_digest(digest(6));
+        let whole = DomainKey::new(parameter, Vec::new());
+        let element = DomainKey::new(parameter, vec![0]);
+        packet.declared_domains = Some(vec![
+            DeclaredDomain::new(ProofBound {
+                domain: whole.clone(),
+                bound: FiniteBound::cardinality(8),
+            }),
+            DeclaredDomain::new(ProofBound {
+                domain: element.clone(),
+                bound: FiniteBound::depth(3).unwrap(),
+            }),
+        ]);
+        let envelope = WitnessEnvelope::reconstruct(packet).unwrap();
+        assert_eq!(envelope.run_limits(), scalar_limits(64));
+        assert_eq!(
+            envelope
+                .declared_domains()
+                .iter()
+                .map(|declared| (declared.domain(), declared.bound()))
+                .collect::<Vec<_>>(),
+            [
+                (&whole, &FiniteBound::cardinality(8)),
+                (&element, &FiniteBound::depth(3).unwrap()),
+            ]
+        );
+        assert!(envelope
+            .declared_domains()
+            .iter()
+            .all(|declared| declared.parameter() == parameter));
+        let round_tripped = WitnessEnvelope::reconstruct(envelope.to_packet()).unwrap();
+        assert_eq!(round_tripped, envelope);
+
+        let mut missing = full_packet(0);
+        missing.run_limits = None;
+        assert!(matches!(
+            WitnessEnvelope::reconstruct(missing),
+            Err(WitnessRefusal::MissingMember("run_limits"))
+        ));
     }
 
     /// FR-070-AC-4 (TC-183): reconstruction refuses when any one required
@@ -1120,6 +1196,31 @@ mod envelope_tests {
         ));
     }
 
+    /// TC-181 (FR-070-AC-7): a declared domain's key path counts toward the
+    /// measured size, so a path long enough to pass the reader bound on its
+    /// own refuses, where the same domain with a one-entry path admits.
+    #[trace("TC-181", "FR-070-AC-7")]
+    #[test]
+    fn tc_181_a_long_declared_domain_path_counts_toward_the_bound() {
+        let domain = |path: Vec<u32>| {
+            DeclaredDomain::new(ProofBound {
+                domain: DomainKey::new(WireNodeId::from_digest(digest(6)), path),
+                bound: FiniteBound::cardinality(8),
+            })
+        };
+        let mut short = full_packet(0);
+        short.declared_domains = Some(vec![domain(vec![0])]);
+        assert!(WitnessEnvelope::reconstruct(short).is_ok());
+
+        let entries = MAX_ENCODED_BYTES / std::mem::size_of::<u32>() + 1;
+        let mut long = full_packet(0);
+        long.declared_domains = Some(vec![domain(vec![0; entries])]);
+        assert!(matches!(
+            WitnessEnvelope::reconstruct(long),
+            Err(WitnessRefusal::BoundExceeded(_))
+        ));
+    }
+
     impl WitnessPacket<NoPayload> {
         /// Test helper: re-tag a `NoPayload` packet's `family_payload` slot
         /// as `None` under a different `P`, so TC-184 can supply its own
@@ -1135,7 +1236,7 @@ mod envelope_tests {
                 package_contract_version: self.package_contract_version,
                 source_digests: self.source_digests,
                 profile_selections: self.profile_selections,
-                proof_bounds: self.proof_bounds,
+                run_limits: self.run_limits,
                 declared_domains: self.declared_domains,
                 backend: self.backend,
                 trace_position: self.trace_position,

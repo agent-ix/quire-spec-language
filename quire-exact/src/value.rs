@@ -29,7 +29,7 @@
 //! - `Value::Population(Arc<PopulationBinding>)` becomes
 //!   `Value::Population(PopulationId)` (ADR-013 O-13 Population row, QC-21,
 //!   FR-089): the kernel carries the opaque identity alone, never the
-//!   `PopulationBinding` a QSL `model` type owns. `ValueType::Population(u64)`
+//!   `PopulationBinding` a QSL `model` type owns. `ValueType::Population(Option<u64>)`
 //!   is unchanged (T-6: "keeps `u64` count only"). FR-089-AC-5's
 //!   declared-maximum comparison is a QSL-layer check: the model/evaluator
 //!   resolves a `PopulationId` to its binding and compares the binding's own
@@ -196,13 +196,15 @@ pub enum ValueType {
     Option(Box<ValueType>),
     /// The record or tuple declaration with this node key.
     Composite(NodeKey),
-    /// A bounded collection type `K<T>[min, max]`.
+    /// A collection type `K<T>[min, max]`, or the unbounded `K<T>`.
     Collection(Box<CollectionType>),
     /// `Reference<T>` to an object of the object type with this effective
     /// identity (ADR-013 T-6).
     Reference(EffectiveId),
-    /// The `Population<T>[N]` parameter type's declared maximum `N`.
-    Population(u64),
+    /// The `Population<T>[N]` parameter type's declared maximum `N`, or
+    /// `None` for a population with no declared maximum, which is unbounded
+    /// (QSpec FR-153-AC-9, ADR-014 §2 and N-3).
+    Population(Option<u64>),
 }
 
 impl ValueType {
@@ -822,7 +824,7 @@ mod tests {
     #[trace("TC-297", "FR-089-AC-6")]
     #[test]
     fn admits_refuses_a_population_pair() {
-        assert!(!ValueType::Population(5)
+        assert!(!ValueType::Population(Some(5))
             .admits(&Value::Population(PopulationId::from_digest(digest(1)))));
     }
 

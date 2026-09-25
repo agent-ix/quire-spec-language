@@ -193,12 +193,12 @@ their content digest are equal.
   is keyed against; quire-specification FR-153 owns the normative closed-
   environment query rule and AD-006 owns the decision to keep populations
   and closed dispatch sets in the model view. FR-153-AC-9 (the unbounded
-  `p` case of FR-084-AC-5) landed in quire-specification PR #75, after
-  `qsl-semantics/src/model/population.rs`'s `all_instances` was first written; that
-  function currently refuses `ill_typed`/`operator-ineligible` whenever `p`
-  declares no maximum, rather than returning the unbounded `Set<Reference<T>>`
-  this requirement states. FR-084-AC-5's unbounded-`p` clause does not ship
-  today. Remaining work: #120.
+  `p` case of FR-084-AC-5) landed in quire-specification PR #75. Since
+  QSL-140, `qsl-semantics/src/model/population.rs`'s `all_instances` returns
+  the unbounded `Set<Reference<T>>` (a result with no bound) when `p`
+  declares no maximum, admitting every selected count (TC-240 step 3,
+  `an_unbounded_binding_selects_every_member_with_no_bound`). The other
+  FR-084-AC-5 clauses keep their own status under TC-240.
 - ADR-013 §8 OQ-C and OQ-E, and quire-specification `model-complete.md`
   and FR-204, fix the universe and object identity (FR-084-AC-7). Remaining
   work: QSL-131.

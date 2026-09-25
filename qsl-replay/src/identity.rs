@@ -24,6 +24,7 @@
 //! vocabulary to carry.
 use std::fmt;
 
+use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
 use qsl_foundation::digest::{DigestRecord, ManifestDigest, WireNodeId};
 use quire_exact::Identifier;
 
@@ -240,28 +241,39 @@ impl ProfileSelection {
     }
 }
 
-/// One obligation argument's declared per-argument domain (ADR-013 O-09):
-/// the parameter's wire node id and its declared-domain descriptor.
+/// One declared finite domain of the proving run (ADR-013 O-09; ADR-014
+/// B-4, §11): the [`ProofBound`] the bounded request substituted, keyed by
+/// its full [`DomainKey`] (the parameter node, then the path into its type),
+/// so two bounds on one parameter at different paths stay distinct. It is a
+/// typed `FiniteBound`, so an empty or inverted domain cannot be carried, and
+/// no accounting limit, stage limit or profile ceiling can stand in for it.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DeclaredDomain {
-    parameter: WireNodeId,
-    domain: String,
-}
+pub struct DeclaredDomain(ProofBound);
 
 impl DeclaredDomain {
-    /// Name a declared domain by parameter and domain descriptor.
-    pub fn new(parameter: WireNodeId, domain: String) -> Self {
-        Self { parameter, domain }
+    /// The declared domain `bound`.
+    pub fn new(bound: ProofBound) -> Self {
+        Self(bound)
     }
 
-    /// The parameter this domain is declared for.
+    /// The parameter node this domain is declared in.
     pub fn parameter(&self) -> WireNodeId {
-        self.parameter
+        self.0.domain.node()
     }
 
-    /// The declared-domain descriptor.
-    pub fn domain(&self) -> &str {
-        &self.domain
+    /// The domain key: the parameter node and the path into its type.
+    pub fn domain(&self) -> &DomainKey {
+        &self.0.domain
+    }
+
+    /// The declared finite domain.
+    pub fn bound(&self) -> &FiniteBound {
+        &self.0.bound
+    }
+
+    /// The whole proof bound.
+    pub fn proof_bound(&self) -> &ProofBound {
+        &self.0
     }
 }
 

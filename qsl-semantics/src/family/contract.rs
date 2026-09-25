@@ -5,6 +5,7 @@
 //! (`value::expression::s6a`, ADR-011 §6.2 `family` row).
 
 use super::outcome::CheckOutcome;
+use super::requirements::Requirements;
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
 use quire_exact::Meter;
 
@@ -234,17 +235,12 @@ impl<'a, D> CheckContext<'a, D> {
     }
 }
 
-/// ADR-012 §2's design-level `FamilyContract`, narrowed to the one part
-/// #214's one migrated family (`Value`'s function declaration) can
-/// genuinely exercise: `check`, required by the trait's own
-/// associated-function signature, so a family that omits it fails to
-/// compile (FR-062-AC-1, itself now unbacked past this one part -- see
-/// FR-062's own amended Acceptance Criteria). `requirements` (the
-/// contract's sixth part) and a typed refusal `Cause` are deferred -- see
-/// `crate::family`'s module doc for `requirements`, and
-/// [`qsl_foundation::diagnostic::StageFailure`]'s doc for `Cause`. Both are real
-/// ADR-012 §2 design parts QSL-152 owns (FR-062-AC-1/AC-4/AC-6/AC-8/AC-9),
-/// added against a real instance rather than guessed here.
+/// ADR-012 §2's design-level `FamilyContract`: `check` and `requirements`,
+/// each required by the trait's own associated-function signature, so a
+/// family that omits either fails to compile. `requirements` (the
+/// contract's sixth part, FR-062-AC-4) moved to QSL-140 with ADR-014 §11;
+/// see [`crate::family::requirements`]'s module doc. The `package` and
+/// `evaluate` parts and FR-062-AC-1/AC-6/AC-8/AC-9 remain QSL-152's.
 ///
 /// **`package` is deleted (PR #262 review, findings F1/F2).** An earlier
 /// version of this trait also required `package(checked: &Self::Checked,
@@ -303,4 +299,11 @@ pub trait FamilyContract {
         form: &Self::Form,
         cx: &mut CheckContext<'a, Self::Declarations<'a>>,
     ) -> CheckOutcome<Self::Checked, Self::Cause>;
+
+    /// The requirements of one checked item (ADR-012 §2, FR-062-AC-4): one
+    /// [`Requirements`] value naming the item's FR-057 capability kind and
+    /// its extent, or `None` for a form that carries no kind. Pure and
+    /// total: it reads only `checked`, which carries the extent `check`
+    /// classified, and two calls on the same node return equal values.
+    fn requirements(checked: &Self::Checked) -> Option<Requirements>;
 }

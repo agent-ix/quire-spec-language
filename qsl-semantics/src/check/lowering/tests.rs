@@ -112,7 +112,7 @@ fn sequence(element: ValueType, bound: Option<(u64, u64)>) -> ValueType {
     ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,
         element,
-        CardinalityBound::new(minimum, maximum).unwrap(),
+        Some(CardinalityBound::new(minimum, maximum).unwrap()),
     ))
 }
 
@@ -1970,4 +1970,72 @@ fn a_declaration_key_follows_the_authority_and_identity_not_the_revision() {
     assert_ne!(first, other_authority);
     assert_ne!(first, other_identity);
     assert_ne!(other_authority, other_identity);
+}
+
+/// TC-441 (ADR-014 N-3): an unbounded `Sequence<Int[0, 9]>` keys to its
+/// `composite_type`/`sequence` node alone, with no `collection_bounds`
+/// domain, and is a different node from the widest bounded type
+/// `[0, u64::MAX]`.
+#[trace("TC-441", "FR-097-AC-7")]
+#[test]
+fn tc_441_an_unbounded_collection_is_its_composite_node_alone() {
+    let (graph, keys) = type_nodes(
+        &empty_scope(),
+        &SourceOwner::from(&fixture_source()),
+        &[
+            ValueType::collection(CollectionType::new(
+                CollectionKind::Sequence,
+                int(0, 9),
+                None,
+            )),
+            // This file's `sequence(_, None)` is the widest bounded type.
+            sequence(int(0, 9), None),
+        ],
+    );
+    assert_ne!(keys[0], keys[1]);
+    let forms: Vec<_> = graph
+        .nodes()
+        .map(|node| node.content.semantic_form.to_owned())
+        .collect();
+    assert!(forms.iter().any(|form| form == "collection_bounds"));
+    let unbounded = graph
+        .nodes()
+        .find(|node| node.key == keys[0])
+        .expect("the unbounded type's node");
+    assert_eq!(unbounded.content.semantic_form, "sequence");
+}
+
+/// TC-441 (ADR-014 N-3; QSL-140 review M2): a population with no declared
+/// maximum refuses to lower with `UnrepresentableBound`, before any node
+/// is written, since its bare set node would be an unbounded
+/// `Set<Reference<T>>`.
+#[trace("TC-441", "FR-097-AC-8")]
+#[test]
+fn tc_441_an_unbounded_population_refuses_to_lower() {
+    let scope = empty_scope();
+    let owner = SourceOwner::from(&fixture_source());
+    let lock = LockEvidence::default();
+    let mut occurrences = OccurrenceMap::default();
+    let location = generated_location();
+    let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
+    let mut lowering = Lowering::new(
+        &scope,
+        &owner,
+        &[],
+        scope.types().units().clone(),
+        &lock,
+        crate::check::MAX_CHECKING_DEPTH,
+        0,
+        &mut occurrences,
+        &mut meter,
+    );
+    let refusal = lowering
+        .population_type(
+            quire_exact::EffectiveId::from_digest([4; 32]),
+            None,
+            &location,
+        )
+        .expect_err("an unbounded population has no node of its own yet");
+    assert_eq!(refusal.cause, CheckCause::UnrepresentableBound);
+    assert_eq!(lowering.finish(&location).graph.nodes().count(), 0);
 }

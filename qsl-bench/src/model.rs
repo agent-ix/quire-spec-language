@@ -382,7 +382,7 @@ pub fn query_all_instances_of_root(
     let collection = CollectionType::new(
         CollectionKind::Set,
         ValueType::Reference(root),
-        CardinalityBound::new(0, maximum).expect("0 <= any maximum"),
+        Some(CardinalityBound::new(0, maximum).expect("0 <= any maximum")),
     );
     let mut meter = Meter::new(crate::check::SCALAR_UNLIMITED);
     evaluate_all_instances(binding, &collection, &mut meter)

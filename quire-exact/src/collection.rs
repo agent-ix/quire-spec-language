@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Bounded collection kinds: metered construction and the canonical order.
 //!
-//! A collection type `K<T>[min, max]` includes its bound. Construction
+//! A collection type `K<T>[min, max]` includes its bound, and `K<T>` with no
+//! bound is a different, unbounded type (ADR-014 N-3, QSpec FR-144). An
+//! unbounded collection's construction never refuses for cardinality: it
+//! still charges `collection.bound`, and stops only when the caller's meter
+//! does (ADR-014 §8). Construction
 //! charges the `quire.value.accounting/v1` collection family: one
 //! `collection.element` before each element expression; for a set, bag or
 //! ordered set, one `collection.member-walk` and `collection.member-test`
@@ -96,6 +100,14 @@ impl CardinalityBound {
         Ok(Self { minimum, maximum })
     }
 
+    /// The bound `[0, maximum]`, which is never empty, so this cannot fail.
+    pub const fn at_most(maximum: u64) -> Self {
+        Self {
+            minimum: 0,
+            maximum,
+        }
+    }
+
     /// The inclusive minimum.
     pub fn minimum(self) -> u64 {
         self.minimum
@@ -117,20 +129,25 @@ impl CardinalityBound {
     }
 }
 
-/// A collection type `K<T>[min, max]`. Two collection types are the same
-/// type exactly when kind, element type and bound are all equal.
+/// A collection type `K<T>[min, max]`, or `K<T>` when `bound` is `None`.
+/// Two collection types are the same type exactly when kind, element type
+/// and bound are all equal, so bound presence is part of type identity
+/// (QSpec FR-144-AC-13).
+///
+/// An absent bound means unbounded (ADR-014 §2), never "unspecified".
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CollectionType {
     kind: CollectionKind,
     element: ValueType,
-    bound: CardinalityBound,
+    bound: Option<CardinalityBound>,
 }
 
 impl CollectionType {
-    /// `kind<element>[bound]`. Whether a set, bag or ordered-set element
-    /// type admits `=` is a check made above the kernel, against the
-    /// declaration registry that knows which types are comparable.
-    pub fn new(kind: CollectionKind, element: ValueType, bound: CardinalityBound) -> Self {
+    /// `kind<element>[bound]`, or the unbounded `kind<element>` for `None`.
+    /// Whether a set, bag or ordered-set element type admits `=` is a check
+    /// made above the kernel, against the declaration registry that knows
+    /// which types are comparable.
+    pub fn new(kind: CollectionKind, element: ValueType, bound: Option<CardinalityBound>) -> Self {
         Self {
             kind,
             element,
@@ -148,8 +165,8 @@ impl CollectionType {
         &self.element
     }
 
-    /// The declared bound.
-    pub fn bound(&self) -> CardinalityBound {
+    /// The declared bound; `None` for an unbounded collection type.
+    pub fn bound(&self) -> Option<CardinalityBound> {
         self.bound
     }
 }
@@ -324,13 +341,17 @@ fn bound_and_retain(
     meter.charge(
         Charge::new(ChargePoint::CollectionBound).size(LimitKind::ValueOccurrences, count),
     )?;
-    if let Some(violation) = collection_type.bound.violation(count) {
-        return Err(Stop::Refused(Refusal::CardinalityOutOfBound {
-            violation,
-            kind,
-            bound: collection_type.bound,
-            count,
-        }));
+    // An unbounded collection type has no cardinality to violate (ADR-014
+    // §8, QSpec FR-144-AC-12); the charge above still applies.
+    if let Some(bound) = collection_type.bound {
+        if let Some(violation) = bound.violation(count) {
+            return Err(Stop::Refused(Refusal::CardinalityOutOfBound {
+                violation,
+                kind,
+                bound,
+                count,
+            }));
+        }
     }
     if !kind.is_ordered() {
         sort_by_key(&mut elements)?;
@@ -454,7 +475,7 @@ mod tests {
     fn tc_314_empty_sequence_within_bound_completes() {
         let bound = CardinalityBound::new(0, 3).unwrap();
         let collection_type =
-            CollectionType::new(CollectionKind::Sequence, ValueType::Integer, bound);
+            CollectionType::new(CollectionKind::Sequence, ValueType::Integer, Some(bound));
         let mut meter = generous_meter();
         let outcome = form_collection(&collection_type, vec![], &mut meter).unwrap();
         let value = outcome.completed().expect("within bound");
@@ -468,7 +489,7 @@ mod tests {
     fn tc_315_sequence_above_maximum_is_refused() {
         let bound = CardinalityBound::new(0, 1).unwrap();
         let collection_type =
-            CollectionType::new(CollectionKind::Sequence, ValueType::Integer, bound);
+            CollectionType::new(CollectionKind::Sequence, ValueType::Integer, Some(bound));
         let occurrences = vec![
             Value::Integer(Integer::one()),
             Value::Integer(Integer::one()),
@@ -482,5 +503,75 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    fn integers(count: u64) -> Vec<Value> {
+        (0..count)
+            .map(|index| Value::Integer(Integer::from(index)))
+            .collect()
+    }
+
+    /// TC-441 (ADR-014 N-3, §8; QSpec FR-144-AC-12, AC-13): an unbounded
+    /// `Sequence<Integer>` admits a collection of any size with no
+    /// cardinality refusal, where the same elements under `[0, 1]` refuse;
+    /// `K<T>` and `K<T>[0, u64::MAX]` are different types.
+    #[trace("TC-441", "FR-097-AC-7")]
+    #[test]
+    fn tc_441_an_unbounded_collection_never_refuses_for_cardinality() {
+        let unbounded = CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
+        let widest = CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::Integer,
+            Some(CardinalityBound::new(0, u64::MAX).unwrap()),
+        );
+        assert_ne!(unbounded, widest, "bound presence is part of type identity");
+        assert_eq!(unbounded.bound(), None);
+
+        let mut meter = generous_meter();
+        let value = form_collection(&unbounded, integers(1000), &mut meter)
+            .unwrap()
+            .completed()
+            .expect("an unbounded collection of 1000 completes");
+        let Value::Collection(collection) = value else {
+            panic!("a collection value");
+        };
+        assert_eq!(collection.elements().len(), 1000);
+        assert_eq!(collection.collection_type(), &unbounded);
+
+        let narrow = CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::Integer,
+            Some(CardinalityBound::new(0, 1).unwrap()),
+        );
+        let mut meter = generous_meter();
+        assert!(matches!(
+            form_collection(&narrow, integers(1000), &mut meter).unwrap(),
+            Outcome::Refused(Refusal::CardinalityOutOfBound {
+                violation: BoundViolation::AboveMaximum,
+                count: 1000,
+                ..
+            })
+        ));
+    }
+
+    /// TC-441 (ADR-014 §8, B-2): an unbounded collection still charges
+    /// `collection.bound`, and stops with `Incomplete` naming that charge
+    /// point only when the caller's meter runs out, never with a
+    /// cardinality refusal.
+    #[trace("TC-441", "FR-097-AC-7")]
+    #[test]
+    fn tc_441_an_unbounded_collection_stops_only_on_the_callers_meter() {
+        let unbounded = CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
+        let mut meter = Meter::new(ScalarLimits {
+            value_occurrences: 999,
+            ..*generous_meter().limits()
+        });
+        let outcome = form_collection(&unbounded, integers(1000), &mut meter).unwrap();
+        let Outcome::Incomplete(incomplete) = outcome else {
+            panic!("expected Incomplete, got {outcome:?}");
+        };
+        assert_eq!(incomplete.charge_point, ChargePoint::CollectionBound);
+        assert_eq!(incomplete.limit_kind, LimitKind::ValueOccurrences);
+        assert_eq!(incomplete.limit, 999);
     }
 }

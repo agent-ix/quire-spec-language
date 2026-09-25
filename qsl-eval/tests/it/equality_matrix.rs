@@ -301,7 +301,7 @@ fn bound(minimum: u64, maximum: u64) -> CardinalityBound {
 }
 
 fn collection_type(kind: CollectionKind, element: ValueType, maximum: u64) -> CollectionType {
-    CollectionType::new(kind, element, bound(0, maximum))
+    CollectionType::new(kind, element, Some(bound(0, maximum)))
 }
 
 /// A parameter value of `collection_type` holding `occurrences`.

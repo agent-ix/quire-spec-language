@@ -794,3 +794,8 @@ pub(crate) fn emit_package(
 
 #[cfg(test)]
 mod tests;
+
+/// ADR-014 §4 (QSL-140, TC-440): QSL's extent classification agrees with
+/// IR's `requires-bound` at the pinned IR revision.
+#[cfg(test)]
+mod extent_agreement;

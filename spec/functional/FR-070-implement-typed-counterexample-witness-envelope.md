@@ -29,7 +29,7 @@ The envelope carries, for deterministic replay, every ADR-013 O-25 member:
 the obligation identity and clause occurrence key; the selected function's
 `QualifiedName`; the `package_id`, contract version and `RawSourceRef`
 digests of the package the harness was generated from; the semantic profile
-selections; the proof bounds and declared domains; the `backend` member
+selections; the `run_limits` and declared domains; the `backend` member
 (O-19); the trace position where the family has one; and the `ReplaySource`
 (`Witness` or `Input`). A packet missing any of these members SHALL be
 refused at reconstruction; none is optional or defaulted.
@@ -70,7 +70,7 @@ requires an already-admitted `Witness`).
 - A construct → serialize → read round trip SHALL preserve the stored
   transcript byte-for-byte and every O-25 member exactly: obligation
   identity, occurrence key, `package_id` and every `RawSourceRef` digest,
-  semantic profile selections, proof bounds and declared domains, `backend`
+  semantic profile selections, `run_limits` and declared domains, `backend`
   member, trace position, and the `ReplaySource` variant (with its
   `Witness`/`Input` payload).
 - Envelope reconstruction SHALL refuse when any one O-25 member is absent,

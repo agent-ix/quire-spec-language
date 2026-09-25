@@ -45,11 +45,16 @@ fn text_profile_text(profile: quire_exact::TextProfile) -> &'static str {
 }
 
 fn collection_type_form(collection: &CollectionType) -> TypeForm {
+    // The unbounded `K<T>` has no source spelling until QSL-42's grammar
+    // change, so no fixture here builds one.
+    let bound = collection
+        .bound()
+        .expect("type_form: an unbounded collection has no source spelling yet");
     TypeForm::collection(collection.kind(), SPAN)
         .with_arguments(vec![type_form(collection.element())])
         .with_bounds(vec![
-            collection.bound().minimum().to_string(),
-            collection.bound().maximum().to_string(),
+            bound.minimum().to_string(),
+            bound.maximum().to_string(),
         ])
 }
 
@@ -115,7 +120,9 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
         ValueType::Collection(collection) => collection_type_form(collection),
         ValueType::Population(maximum) => {
             TypeForm::new(qsl_forms::TypeFormHead::Population, SPAN)
-                .with_bounds(vec![maximum.to_string()])
+                .with_bounds(vec![maximum
+                    .expect("type_form: an unbounded population has no source spelling yet")
+                    .to_string()])
         }
         ValueType::Composite(_) | ValueType::Enum(_) | ValueType::Reference(_) => {
             panic!(

@@ -43,6 +43,7 @@
 //! records the gates (`make route-lint`, `cargo deny check bans`) that hold
 //! both of those.
 
+pub mod request;
 pub mod routing;
 
 use std::collections::{BTreeMap, HashSet};

@@ -83,7 +83,7 @@ fn sequence_of(element: ValueType, minimum: u64, maximum: u64) -> ValueType {
     ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,
         element,
-        CardinalityBound::new(minimum, maximum).unwrap(),
+        Some(CardinalityBound::new(minimum, maximum).unwrap()),
     ))
 }
 
@@ -1007,7 +1007,7 @@ mod checked {
         let set = ValueType::collection(CollectionType::new(
             CollectionKind::Set,
             ValueType::Integer,
-            CardinalityBound::new(0, 1).unwrap(),
+            Some(CardinalityBound::new(0, 1).unwrap()),
         ));
         let types = TypeEnvironment::new(
             [record(
@@ -1080,7 +1080,7 @@ mod checked {
                 Outcome::<Value>::Refused(Refusal::CardinalityOutOfBound {
                     violation: BoundViolation::AboveMaximum,
                     kind: CollectionKind::Set,
-                    bound: set_type.bound(),
+                    bound: set_type.bound().expect("the set type is bounded"),
                     count: 2,
                 })
             )

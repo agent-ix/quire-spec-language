@@ -77,7 +77,7 @@ fn collection_type(
     CollectionType::new(
         kind,
         element,
-        CardinalityBound::new(minimum, maximum).unwrap(),
+        Some(CardinalityBound::new(minimum, maximum).unwrap()),
     )
 }
 
@@ -1171,5 +1171,130 @@ fn q16_flatten_stops_incomplete_at_result_retain() {
     assert_eq!(
         format!("{:?}", limited.outcome),
         incomplete(6, 1, ChargePoint::CollectionResultRetain)
+    );
+}
+
+/// The unbounded `K<element>` (ADR-014 N-3).
+fn unbounded(kind: CollectionKind, element: ValueType) -> ValueType {
+    ValueType::collection(CollectionType::new(kind, element, None))
+}
+
+/// TC-441 (ADR-014 §2, N-3): `map` and `flatMap` over an unbounded source
+/// give an unbounded result, and evaluate over a concrete value of it.
+#[trace("TC-441", "FR-097-AC-7")]
+#[test]
+fn tc_441_map_and_flat_map_over_an_unbounded_source_are_unbounded() {
+    let package = plain();
+    let source_type = unbounded(CollectionKind::Sequence, int_type(0, 9));
+    let parameters = [("c", source_type.clone())];
+    let mapped = query(BinderQuery::Map, "c", literal(0));
+    let checked = check(&package, &parameters, &mapped).unwrap();
+    assert_eq!(
+        checked.value_type(),
+        &unbounded(CollectionKind::Sequence, ValueType::Integer)
+    );
+    let result = run(
+        &package,
+        &parameters,
+        &mapped,
+        vec![collection(&source_type, ints(&[1, 2, 3, 4, 5]))],
+        UNLIMITED,
+    );
+    assert_elements(&result, &[0, 0, 0, 0, 0]);
+
+    // `flatMap` over an unbounded source of bounded inner sequences.
+    let outer = unbounded(
+        CollectionKind::Sequence,
+        integers(CollectionKind::Sequence, 0, 2),
+    );
+    let flat_mapped = query(BinderQuery::FlatMap, "c", name("x"));
+    let checked = check(&package, &[("c", outer)], &flat_mapped).unwrap();
+    assert_eq!(
+        checked.value_type(),
+        &unbounded(CollectionKind::Sequence, ValueType::Integer)
+    );
+}
+
+/// TC-441: `filter` over an unbounded source gives an unbounded result.
+#[trace("TC-441", "FR-097-AC-7")]
+#[test]
+fn tc_441_filter_over_an_unbounded_source_is_unbounded() {
+    let package = plain();
+    let source_type = unbounded(CollectionKind::Bag, ValueType::Integer);
+    let parameters = [("b", source_type.clone())];
+    let kept = query(
+        BinderQuery::Filter,
+        "b",
+        binary(BinaryOperator::Equal, name("x"), literal(1)),
+    );
+    let checked = check(&package, &parameters, &kept).unwrap();
+    assert_eq!(checked.value_type(), &source_type);
+    let result = run(
+        &package,
+        &parameters,
+        &kept,
+        vec![collection(&source_type, ints(&[1, 2, 1, 3]))],
+        UNLIMITED,
+    );
+    assert_elements(&result, &[1, 1]);
+}
+
+/// TC-441: `flatten` is unbounded when the outer, the inner or both are,
+/// and keeps its derived bound when both are bounded.
+#[trace("TC-441", "FR-097-AC-7")]
+#[test]
+fn tc_441_flatten_is_unbounded_when_either_level_is() {
+    let package = plain();
+    let flatten = Expression::Flatten(Box::new(name("c")));
+    let bounded_inner = integers(CollectionKind::Sequence, 0, 2);
+    let unbounded_inner = unbounded(CollectionKind::Sequence, ValueType::Integer);
+    let cases = [
+        (
+            unbounded(CollectionKind::Sequence, bounded_inner.clone()),
+            unbounded(CollectionKind::Sequence, ValueType::Integer),
+        ),
+        (
+            of(CollectionKind::Sequence, unbounded_inner.clone(), 0, 2),
+            unbounded(CollectionKind::Sequence, ValueType::Integer),
+        ),
+        (
+            unbounded(CollectionKind::Sequence, unbounded_inner),
+            unbounded(CollectionKind::Sequence, ValueType::Integer),
+        ),
+        (
+            of(CollectionKind::Sequence, bounded_inner, 0, 2),
+            integers(CollectionKind::Sequence, 0, 4),
+        ),
+    ];
+    for (outer, expected) in cases {
+        let checked = check(&package, &[("c", outer.clone())], &flatten).unwrap();
+        assert_eq!(checked.value_type(), &expected, "flatten of {outer:?}");
+    }
+}
+
+/// TC-441 (checked facts): an unbounded source's size is `[0, +inf)`, so a
+/// `sum` into a bounded result is unproved, with no proved upper bound,
+/// where the same source bounded at `[0, 3]` proves it.
+#[trace("TC-441", "FR-097-AC-7")]
+#[test]
+fn tc_441_an_unbounded_source_has_no_proved_size_maximum() {
+    let package = plain();
+    let bounded = [("q", of(CollectionKind::Sequence, int_type(0, 2), 0, 3))];
+    check_linked(&package, &bounded, &sum("Small", "q", name("x"))).unwrap();
+    let open = [("q", unbounded(CollectionKind::Sequence, int_type(0, 2)))];
+    assert_eq!(
+        check_linked(&package, &open, &sum("Small", "q", name("x")))
+            .unwrap_err()
+            .cause,
+        CheckCause::Unproved(Obligation::Range {
+            required: Box::new(ProvedInterval {
+                lower: Some(Integer::from(0_i64)),
+                upper: Some(Integer::from(30_i64)),
+            }),
+            proved: Box::new(ProvedInterval {
+                lower: Some(Integer::from(0_i64)),
+                upper: None,
+            }),
+        })
     );
 }

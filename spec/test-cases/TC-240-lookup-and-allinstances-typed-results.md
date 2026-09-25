@@ -16,12 +16,10 @@ cardinality-out-of-bound; an unbounded population admits every selected
 count; a foreign-universe key refuses; and a non-binding receiver or a
 non-object-type `T` each refuse with their own cause. Scope: FR-084-AC-5.
 
-Known gap: `qsl-semantics/src/model/population.rs::all_instances` currently refuses
-`ill_typed`/`operator-ineligible` whenever the population binding declares
-no maximum, rather than returning the unbounded `Set<Reference<T>>`
-quire-specification FR-153-AC-9 requires (landed after this function was
-first written). This test case's unbounded-`p` step therefore fails against
-current code; see FR-084's Dependencies note.
+Step 3 (the unbounded population) is backed since QSL-140:
+`qsl-semantics/tests/it/model_population.rs`,
+`an_unbounded_binding_selects_every_member_with_no_bound`, tagged
+`#[trace("TC-240", "FR-084-AC-5")]`.
 
 Catches an implementation that (a) returns a bare, untyped collection
 instead of `Set<Reference<T>>[0,N]`, invisible to a test that only checks
@@ -51,5 +49,5 @@ Step 4 refuses with a foreign-universe cause. Step 5 refuses with a
 type-mismatch cause. A mutant that returns a partial (truncated) two-member
 set in step 2 instead of refusing passes a shallow "some members returned"
 check but fails the refusal assertion; a mutant that refuses
-operator-ineligible in step 3 (today's actual behavior) fails the
+operator-ineligible in step 3 (the behaviour before QSL-140) fails the
 unbounded-admits-every-count assertion.

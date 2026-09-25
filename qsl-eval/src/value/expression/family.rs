@@ -504,6 +504,45 @@ mod family_contract_tests {
         assert_eq!(decode_v2(&v2).unwrap(), vec![(declaration_name, expected)]);
     }
 
+    /// TC-160 (FR-062-AC-4): a function declaration carries no FR-057
+    /// capability kind, so `requirements` on its checked node is `None`,
+    /// and a second call on the same node is equal.
+    #[trace("TC-160", "FR-062-AC-4")]
+    #[test]
+    fn a_function_declaration_has_no_requirements() {
+        let scope = empty_scope();
+        let location = root_location();
+        let own_signature = declaration_signature("f");
+        let signatures = Signatures::default();
+        let declarations = declarations_for(
+            &scope,
+            &signatures,
+            &own_signature,
+            &[],
+            CheckingLimits::default(),
+            &location,
+        );
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut cx = qsl_semantics::check::check_context(
+            &declarations,
+            limits(),
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        let form = declaration("f", Expression::Boolean(true));
+        let checked = ValueFunctionFamily::check(&form, &mut cx)
+            .expect("f checks")
+            .into_value();
+        assert_eq!(ValueFunctionFamily::requirements(&checked), None);
+        assert_eq!(
+            ValueFunctionFamily::requirements(&checked),
+            ValueFunctionFamily::requirements(&checked)
+        );
+    }
+
     /// PR #262 review, finding F17 (round 3, item 8), amended by FR-090-AC-3
     /// (TC-384): a second `evaluate` call on the same `EvaluationEnv` --
     /// whose `arguments` the first call already consumed via `.take()` --
