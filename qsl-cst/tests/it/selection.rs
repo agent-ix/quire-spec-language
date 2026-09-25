@@ -145,10 +145,13 @@ fn a_model_digest_keeps_the_slot_its_prefix_names() {
 fn an_import_digest_is_bare_lowercase_hex() {
     use qsl_foundation::digest::{DigestDomain, DigestRecord};
     let hex = "d".repeat(64);
+    let profile_digest = "a".repeat(64);
     let parse_import = |digest: &str| {
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n"
+             profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:{profile_digest}\";\n\
+             import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n\
+             record R {{ datum: Integer; }}\n"
         );
         let parsed = parse(
             SourceIdentity::new("a", "u", "git", "1"),
