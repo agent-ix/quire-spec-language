@@ -1597,8 +1597,9 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
         .expect("S2 builds the unit");
-    let declarations = PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
-        .expect("the assembler builds the package declarations");
+    let declarations =
+        PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
+            .expect("the assembler builds the package declarations");
     let package = CheckedPackage::link(
         declarations
             .check(CheckingLimits::default())
@@ -1899,4 +1900,208 @@ fn the_spine_compile_fixture_reads_back_verified_with_nothing_omitted() {
             "{name} is not exported: {exports:?}"
         );
     }
+}
+
+/// The domain package document `spine-model.native`'s `model M` selects.
+const SPINE_MODEL_DOCUMENT: &[u8] =
+    include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
+
+/// `unit` run S1, S2, I1 (against `packages`) and the assembler, as spine
+/// `compile` runs it.
+fn assemble_with_models(
+    unit: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<PackageDeclarations, String> {
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        unit,
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit");
+    assert_eq!(parsed.diagnostics(), []);
+    let raw = parsed.source().reference().clone();
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .expect("S2 builds the unit");
+    let models = qsl_semantics::model::intake::admit_unit(
+        &unit.selections().models,
+        packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .map_err(|refusal| format!("intake: {refusal:?}"))?;
+    PackageDeclarations::assemble(raw, unit, models).map_err(|refusal| format!("{refusal:?}"))
+}
+
+/// FR-027-AC-9, FR-056-AC-9 (TC-442 step 1): a `1-draft` source whose
+/// functions take and return `M::Gadget` and take `Reference<M::Widget>`
+/// goes S1, S2, I1, the assembler, check, link and the v2 emitter with
+/// nothing omitted. The assembler declares both object types in the
+/// package's `TypeEnvironment`, `Gadget` conforming to `Widget` through its
+/// declared supertype. The lock and the identity preimage select the domain
+/// package by identity, version and the `sha256-jcs` digest of the supplied
+/// document, and QSL's I2 read, given that digest as domain package
+/// evidence, returns Verified exporting both functions.
+#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
+#[test]
+fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
+    const UNIT: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.native");
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let digest = qsl_semantics::model::key::hex(digest);
+    let declarations = assemble_with_models(UNIT, &packages).expect("the unit assembles");
+    assert_eq!(declarations.models.len(), 1);
+    let views = qsl_semantics::model::intake::admit_unit(
+        &unit_selections(std::str::from_utf8(UNIT).unwrap()),
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("the package admits");
+    let object = |artifact: &str| {
+        let key = qsl_semantics::model::key::DeclarationKey {
+            package: "acme/orders".to_owned(),
+            node: format!("ix://acme/orders/{artifact}"),
+        };
+        let id = views[0].view.type_identities()[&key];
+        let declared = declarations
+            .types
+            .object_type(id)
+            .unwrap_or_else(|| panic!("{artifact} is declared"));
+        assert_eq!(declared.name(), format!("M::{artifact}"));
+        id
+    };
+    let (gadget, widget) = (object("Gadget"), object("Widget"));
+    assert!(declarations.types.conforms(gadget, widget));
+    assert!(!declarations.types.conforms(widget, gadget));
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    assert_eq!(emission.omitted, []);
+
+    let wire = wire(&emission);
+    let selection = json!([{
+        "identity": "acme/orders",
+        "version": "1.0.0",
+        "digest_domain": "sha256-jcs",
+        "digest": digest,
+    }]);
+    assert_eq!(wire["lock"]["model_selections"], selection);
+    assert_eq!(wire["identity_preimage"]["model_selections"], selection);
+    assert!(
+        nodes(&wire).iter().any(|node| node["node_tag"] == "model"),
+        "a model node is emitted"
+    );
+
+    let read = |evidence_digest: &str| {
+        let mut evidence = CheckedPackageEvidence::new();
+        locked_artifacts(&wire["lock"], &mut evidence);
+        locked_artifacts(&wire["diagnostics"], &mut evidence);
+        for feature in wire["lock"]["required_features"].as_array().unwrap() {
+            evidence.support_feature(feature.as_str().unwrap());
+        }
+        evidence.insert_domain_package_digest(
+            quire_contract_ir::CheckedDomainPackageLocator {
+                identity: "acme/orders".into(),
+                version: "1.0.0".into(),
+            },
+            evidence_digest,
+        );
+        read_v2(
+            emission.package.bytes(),
+            library(),
+            "1".to_owned(),
+            V2ReadLimits::default(),
+            &evidence,
+            &qsl_semantics::library::fixtures::single_pin(
+                library(),
+                Selection {
+                    version: "1".to_owned(),
+                    package_id: emission.package.package_id(),
+                },
+            ),
+        )
+    };
+    match read(&digest) {
+        Read::Verified { package, .. } => {
+            assert_eq!(package.package_id(), emission.package.package_id());
+            let exports: BTreeSet<String> = package
+                .into_import_view()
+                .exports()
+                .map(|(name, _)| name.to_owned())
+                .collect();
+            assert!(
+                exports.contains("keep") && exports.contains("held"),
+                "{exports:?}"
+            );
+        }
+        other => panic!("expected Verified, got {other:?}"),
+    }
+    // Adverse: evidence naming another document refuses the read.
+    assert!(matches!(read(&"0".repeat(64)), Read::Refused(_)));
+}
+
+/// FR-056-AC-9 (TC-442 step 3): `M::Nope` names no object type of the
+/// admitted domain package and refuses at the assembler, at the name's
+/// span, as `missing_declaration`; the same unit given no domain package
+/// refuses at I1, at its `model` declaration, as `missing_import`.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intake() {
+    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
+    let unknown = UNIT.replace("w: Reference<M::Widget>", "w: Reference<M::Nope>");
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        unknown.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .unwrap();
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default()).unwrap();
+    let models = qsl_semantics::model::intake::admit_unit(
+        &unit.selections().models,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .unwrap();
+    let refusal = PackageDeclarations::assemble(parsed.source().reference().clone(), unit, models)
+        .expect_err("M::Nope refuses");
+    let [error] = &refusal.errors[..] else {
+        panic!("one error: {refusal:?}");
+    };
+    assert_eq!(
+        error.cause,
+        qsl_semantics::check::AssemblyCause::UnresolvedTypeName {
+            name: "M::Nope".to_owned()
+        }
+    );
+    assert_eq!(error.cause.code(), qsl_foundation::Code::MissingDeclaration);
+    assert_eq!(&unknown[error.span.start..error.span.end], "M::Nope");
+
+    let missing = qsl_semantics::model::intake::admit_unit(
+        &unit_selections(UNIT),
+        &BTreeMap::new(),
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect_err("no domain package is supplied");
+    assert_eq!(missing.cause.code(), qsl_foundation::Code::MissingImport);
+    assert!(UNIT[missing.span.start..missing.span.end].starts_with("model M = "));
+}
+
+/// `unit`'s S2 selections.
+fn unit_selections(unit: &str) -> Vec<qsl_foundation::selection::ModelSelection> {
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .unwrap();
+    qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .unwrap()
+        .selections()
+        .models
+        .clone()
 }

@@ -1,0 +1,87 @@
+{
+  "contractVersion": "2.0.0",
+  "source": {
+    "identity": "ix://acme/orders/spec",
+    "version": "1.0.0",
+    "dialect": "spec-bundle",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "package": {
+    "identity": "acme/orders",
+    "version": "1.0.0",
+    "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "mappingVersions": [],
+    "profileVersions": [],
+    "lockDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "occurrences": [],
+  "extensions": [],
+  "constructs": [
+    {
+      "kind": {
+        "module": "acme/orders",
+        "name": "entity"
+      },
+      "moduleVersion": "1.0.0",
+      "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "construct": {
+        "identity": "none",
+        "shape": "record",
+        "members": {},
+        "meaning": "quire.meaning.model.object-type/v1"
+      }
+    }
+  ],
+  "types": [
+    {
+      "identity": "ix://acme/orders/Widget",
+      "displayName": "Widget",
+      "kind": {
+        "module": "acme/orders",
+        "name": "entity"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://acme/orders/spec",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://acme/orders/Widget"
+          ]
+        }
+      },
+      "constraints": [],
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "supertypes": [],
+      "fields": [],
+      "operations": []
+    },
+    {
+      "identity": "ix://acme/orders/Gadget",
+      "displayName": "Gadget",
+      "kind": {
+        "module": "acme/orders",
+        "name": "entity"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://acme/orders/spec",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://acme/orders/Gadget"
+          ]
+        }
+      },
+      "constraints": [],
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "supertypes": [
+        "ix://acme/orders/Widget"
+      ],
+      "fields": [],
+      "operations": []
+    }
+  ]
+}

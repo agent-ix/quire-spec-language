@@ -64,12 +64,12 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use quire_contract_ir::{
     CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
-    CheckedDomainPackageRef,
-    CheckedDiagnosticsV2, CheckedNodeId, CheckedNodeKind, CheckedNodeTag, CheckedOccurrence,
-    CheckedOccurrenceRole, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2, CheckedRevision,
-    CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId,
-    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRegion, NominalIdentityPreimage,
-    NominalOwner, CHECKED_PACKAGE_V2, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind, CheckedNodeTag,
+    CheckedOccurrence, CheckedOccurrenceRole, CheckedPackageIdentityPreimageV2,
+    CheckedPackageLockV2, CheckedRevision, CheckedSelection, CheckedSelectionRole,
+    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, CHECKED_PACKAGE_V2,
+    DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 use serde::Serialize;
 

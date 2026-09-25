@@ -498,7 +498,7 @@ A caller-supplied lock file never enters `package_id`.
 | `edition` | The edition QSpec's value lock selects as always-selected: role `edition` in `proposals/quire-v1/definitions/complete-value-lock.json` (agent-ix/quire-specification), `agent-ix` / `ix:native` / `quire-draft 1-draft.2`, with the digest that file records. The source header's `language "ix:native" edition "1-draft";` names it, and E3 matches it to that `edition` role. The edition in QSpec's v2 positive fixtures (`quire-edition`, an all-`1` digest) is a placeholder, not an edition. |
 | `profile_selections` | The source header's `profile … version … digest …` declarations. E3 refuses a header digest that differs from the accessor's entry for that definition. |
 | `definition_selections` and each law `DefinitionRef` | QSpec's value lock, through QSL's `DefinitionLock` catalog |
-| `model_selections` | The source header's `model` declarations, matched to the domain packages admitted at I1. Spine `compile` (§5) admits no domain package, so its E3 refuses a `model` declaration. |
+| `model_selections` | The source header's `model` declarations, matched to the domain packages admitted at I1, each by identity, version and `sha256-jcs` digest. Spine `compile` (§5) runs I1 over the unit's `model` declarations (amended 2026-09-25, QSL-249). |
 | `sources` | `RawSourceRef` (`quire.source.bytes/v1`) over the bytes E1 read |
 | `required_features` | §2.2 E4: `["quire.value.complete/v1"]` for a function-only `Value` package |
 | `dependency_selections` | Each dependency's `package_id` |
@@ -640,13 +640,15 @@ constraints that design must meet. The field list and the exit-code values are
   <path>`, the operand shape of `parse` and `format`. It writes the
   `quire.checked-package/v2` bytes to stdout. The lock evidence comes from the
   source header and QSL's `DefinitionLock` catalog (§2.4), and no lock file or
-  request file is read. It takes no domain or dependency source, so E3
-  refuses a `model` or `import` declaration. No native-compile/1
+  request file is read. It takes FR-056's package input (domain package
+  documents by `sha256-jcs` digest) and runs I1 over the unit's `model`
+  declarations between S2 and E3 (amended 2026-09-25, QSL-249). It takes no
+  dependency source, so E3 refuses an `import` declaration. No native-compile/1
   request or `native-rule-model/1` model has a spine equivalent. Until
   M-6c/QSL-5, CLI `compile` reaches spine `compile` through a
   native-compile/1 request whose program source declares `1-draft`, with no
-  models and no clause bindings; the operand form lands with QSL-5 (Ruling
-  2026-09-24).
+  clause bindings and only `semantic-ir/2.0.0` domain package models; the
+  operand form lands with QSL-5 (Ruling 2026-09-24).
 - Spine `run` calls a named checked function: a `QualifiedName` resolved by
   name lookup in the compiled package, then `CheckedPackage::call` (E6, and
   the same shape E9 uses). Native-run/1 clause execution over snapshots and

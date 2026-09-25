@@ -730,23 +730,26 @@ pub(crate) fn admit_located(
     for (index, selection) in offered.iter().enumerate() {
         if let Some(&already_selected_version) = selected_versions.get(selection.identity.as_str())
         {
-            return Err((index, ModelRefusal {
-                code: Code::DuplicateSelection,
-                cause: ModelRefusalCause::DuplicateSelection {
-                    identity: selection.identity.clone(),
-                    already_selected_version: already_selected_version.to_owned(),
-                    requested_version: selection.version.clone(),
-                },
-                detail: format!(
+            return Err((
+                index,
+                ModelRefusal {
+                    code: Code::DuplicateSelection,
+                    cause: ModelRefusalCause::DuplicateSelection {
+                        identity: selection.identity.clone(),
+                        already_selected_version: already_selected_version.to_owned(),
+                        requested_version: selection.version.clone(),
+                    },
+                    detail: format!(
                     "domain package identity {:?} is already selected at version {:?}; this call \
                      additionally selects it at version {:?}, and a package selects at most one \
                      version of a domain-package identity",
                     selection.identity, already_selected_version, selection.version
                 ),
-            }));
+                },
+            ));
         }
-        let (admitted_ref, document) = admit(selection, digest_domain, bytes_by_digest)
-            .map_err(|refusal| (index, refusal))?;
+        let (admitted_ref, document) =
+            admit(selection, digest_domain, bytes_by_digest).map_err(|refusal| (index, refusal))?;
         selected_versions.insert(&selection.identity, &selection.version);
         admitted.push((admitted_ref, document));
     }

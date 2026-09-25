@@ -186,7 +186,12 @@ fn intake_message(cause: &UnitIntakeCause) -> String {
         }
         UnitIntakeCause::Refused(refusals) => match refusals.first() {
             Some(first) => with_more(
-                format!("{} ({}): {}", first.code.as_str(), first.cause.as_str(), first.detail),
+                format!(
+                    "{} ({}): {}",
+                    first.code.as_str(),
+                    first.cause.as_str(),
+                    first.detail
+                ),
                 refusals.len(),
             ),
             None => "no refusal recorded".to_owned(),
@@ -326,18 +331,19 @@ pub(crate) fn compile_under(
             refusal,
         })
     })?;
-    let declarations = PackageDeclarations::assemble(raw.clone(), unit, models).map_err(|refusal| {
-        Box::new(CompileRefusal::Assembly {
-            // A type-environment stage limit names no declaration, so it
-            // has no region (FR-082, FR-096).
-            region: refusal
-                .errors
-                .first()
-                .filter(|error| !matches!(error.cause, AssemblyCause::TypeLimit(_)))
-                .and_then(|error| region(&raw, error.span)),
-            refusal,
-        })
-    })?;
+    let declarations =
+        PackageDeclarations::assemble(raw.clone(), unit, models).map_err(|refusal| {
+            Box::new(CompileRefusal::Assembly {
+                // A type-environment stage limit names no declaration, so it
+                // has no region (FR-082, FR-096).
+                region: refusal
+                    .errors
+                    .first()
+                    .filter(|error| !matches!(error.cause, AssemblyCause::TypeLimit(_)))
+                    .and_then(|error| region(&raw, error.span)),
+                refusal,
+            })
+        })?;
     let regions = declarations.regions();
     let graph = declarations.check(limits).map_err(|refusals| {
         Box::new(CompileRefusal::Check {
@@ -360,10 +366,10 @@ pub(crate) fn compile_under(
 #[cfg(test)]
 mod tests {
     use super::{compile_under, CompileRefusal, SpineStage};
-    use std::collections::BTreeMap;
     use ix_trace_rs::trace;
     use qsl_foundation::{Code, SourceIdentity};
     use qsl_semantics::check::CheckingLimits;
+    use std::collections::BTreeMap;
 
     /// FR-096 at the CLI's compile: `Typer`'s depth stop on
     /// `not not not true` under depth 3 is reported at the region of

@@ -102,3 +102,32 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
         }
     }
 }
+
+/// FR-056-AC-9 (TC-442): a `model` declaration's digest names its slot:
+/// `sha256-jcs:` selects a domain package, `sha256:` a compiled-model
+/// artifact, and the two never compare equal.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn a_model_digest_keeps_the_slot_its_prefix_names() {
+    use qsl_foundation::selection::ModelDigest;
+    let hex = "c".repeat(64);
+    let domain = ModelDigest::parse(&format!("sha256-jcs:{hex}")).unwrap();
+    let artifact = ModelDigest::parse(&format!("sha256:{hex}")).unwrap();
+    assert!(matches!(domain, ModelDigest::DomainPackage(_)));
+    assert!(matches!(artifact, ModelDigest::Artifact(_)));
+    assert_ne!(domain, artifact);
+    assert_eq!(domain.digest(), artifact.digest());
+    assert!(ModelDigest::parse(&format!("sha256-jcs:{}", "C".repeat(64))).is_err());
+
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"acme/profile\" version \"1\" digest \"sha256:{hex}\";\nmodel M = \"acme/orders\" version \"1\" digest \"sha256-jcs:{hex}\";\nrecord R {{ datum: Integer; }}"
+    );
+    let parsed = parse(
+        SourceIdentity::new("test", "test:model-jcs", "test", "r1"),
+        "model-jcs.native",
+        source.as_bytes(),
+        Limits::default(),
+    )
+    .unwrap();
+    assert_eq!(parsed.diagnostics(), []);
+}
