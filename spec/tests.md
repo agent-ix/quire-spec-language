@@ -104,7 +104,7 @@ operational validation remains outside this audit-only plan.
 | TC-217 | The model binder is a pure function with no cross-run ambient state | Unit | P1 | FR-081-AC-5 | 🚧 Planned; #120 |
 | TC-218 | Redefinition variance checking reports every failing axis, not only the first | Unit | P1 | FR-082-AC-1 | ✅ Passed locally |
 | TC-219 | A missing redefinition target and a supertype cycle each refuse with a named cause | Unit | P1 | FR-082-AC-2, FR-082-AC-6 | ✅ Passed locally |
-| TC-220 | A conformance ancestor walk past the bound refuses instead of truncating | Unit | P1 | FR-082-AC-3, FR-082-AC-6 | ✅ Passed locally |
+| TC-220 | A conformance ancestor walk past the bound refuses instead of truncating | Unit | P1 | FR-082-AC-3, FR-082-AC-6, FR-082-AC-7 | ✅ Passed locally |
 | TC-221 | A narrowing field redefinition requires an established postcondition | Unit | P1 | FR-082-AC-4 | ✅ Passed locally |
 | TC-222 | Dispatch selects the descendant candidate independent of declaration order | Property | P1 | FR-083-AC-1 | ✅ Passed locally |
 | TC-223 | No-applicable-candidate and multiple-undominated-candidates are named separately | Unit | P1 | FR-083-AC-2 | ✅ Passed locally |
@@ -362,7 +362,7 @@ the exact backing test:
 - TC-215 (FR-081-AC-3): `tests/model_normalization.rs::n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender`
 - TC-218 (FR-082-AC-1): `tests/model_conformance.rs::r03_an_incompatible_operation_redefinition_reports_every_failing_axis`
 - TC-219 (FR-082-AC-2): `tests/model_conformance.rs::r07_zero_inherited_targets_refuses_redefinition_target` and `tests/model_normalization.rs::r01_a_closing_generalization_cycle_names_the_full_rotated_chain`; FR-082-AC-6's unknown-supertype and cycle rows: `qsl-semantics/tests/it/type_environment_model.rs::divergence_*_supertype_*` and `::divergence_generalization_cycle_*`
-- TC-220 (FR-082-AC-3): `qsl-semantics/tests/it/model_conformance.rs::an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses` (the caller-supplied `ancestor_steps` ceiling, exactly at and one past it) and `::a_type_with_more_than_128_ancestors_passes_conformance_at_default_limits`; FR-082-AC-6's chain rows: `qsl-semantics/tests/it/type_environment_model.rs::divergence_chain_*`
+- TC-220 (FR-082-AC-3): `qsl-semantics/tests/it/model_conformance.rs::an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses` (the caller-supplied `ancestor_steps` ceiling, exactly at and one past it) and `::a_type_with_more_than_128_ancestors_passes_conformance_at_default_limits`; FR-082-AC-6's chain rows: `qsl-semantics/tests/it/type_environment_model.rs::divergence_chain_*`; FR-082-AC-7: `::a_deep_chain_refuses_the_admission_work_budget` and `::a_linear_chain_costs_admission_work_linear_in_its_flattened_slots`
 - TC-221 (FR-082-AC-4): `tests/model_conformance.rs::r08a_*_refuses` and `::r08b_*_discharges_the_obligation`
 - TC-222 (FR-083-AC-1): `tests/model_dispatch.rs::d04_registration_order_does_not_change_the_linked_table`
 - TC-223 (FR-083-AC-2): `tests/model_dispatch.rs::d03_no_candidate_*_no_applicable` and `::d02_an_undominated_multi_way_tie_*`
