@@ -246,9 +246,9 @@ impl From<DeclaredClauseKind> for ClauseKind {
 /// `#[cfg(seam_probe)]` adds one further probe-only variant (ADR-012 §5.1
 /// S2, FR-063, QSL-143): under `--cfg seam_probe`, every closed `match` over
 /// this type below this module's own [`Expression::children`],
-/// [`Expression::detach_children`] and [`Expression::is_childless`] becomes
-/// non-exhaustive (`E0004`) unless it has its own probe arm. Never
-/// constructed outside the probe build.
+/// `detach_children` and `is_childless` becomes non-exhaustive (`E0004`)
+/// unless it has its own probe arm. Never constructed outside the probe
+/// build.
 #[derive(Clone, Debug)]
 pub enum Expression {
     /// `true` or `false`.

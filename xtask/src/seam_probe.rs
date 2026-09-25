@@ -146,7 +146,7 @@ pub struct SeamLocation {
 /// parser's leading-token-kind entry table" -- `qsl-forms::dispatch::
 /// dispatch`'s `match` over `LeadingTokenKind`. That table lives in
 /// `qsl-forms` (ADR-011 §6.1 layer 2), a dependency of every one of
-/// [`PROBE_BUILDS`]'s four packages but never itself one of them: giving its
+/// `PROBE_BUILDS`'s four packages but never itself one of them: giving its
 /// `match` the same "no arm under plain `seam_probe`" treatment as
 /// `Typer::infer_form` would make `qsl-forms` -- and therefore every crate
 /// above it -- fail to compile in *every* probe build, permanently hiding
@@ -154,7 +154,7 @@ pub struct SeamLocation {
 /// not just this one; giving it an unconditional arm instead would make the
 /// variant inert (never actually non-exhaustive anywhere), which is not a
 /// seam at all. Probing it needs a build of `qsl-forms` itself, which
-/// [`PROBE_BUILDS`]'s fixed four-crate list (FR-063's own Behavior text)
+/// `PROBE_BUILDS`'s fixed four-crate list (FR-063's own Behavior text)
 /// does not include; that is a spec gap for a future ticket, not something
 /// this checked-in list can honestly claim today. FR-063-AC-6 requires only
 /// *one* checked-in entry per category, and `Typer::infer_form` already
