@@ -4,6 +4,8 @@
 
 use std::collections::{HashSet, VecDeque};
 
+use qsl_foundation::diagnostic::Category;
+
 use crate::simulation::frontier::{Frontier, Limit, StateKey};
 
 /// A finite-branching transition system the engine explores without
@@ -79,6 +81,19 @@ pub enum Outcome {
         /// them next.
         frontier: Frontier,
     },
+}
+
+impl Outcome {
+    /// The ADR-013 O-16 category of this run (ADR-014 §7): `Exhaustive` is
+    /// success; `Bounded` and `Cancelled` are incomplete, each keeping its
+    /// frontier. A stopped run never reports success or a verdict (QSpec
+    /// FR-181).
+    pub fn category(&self) -> Category {
+        match self {
+            Self::Exhaustive(_) => Category::Success,
+            Self::Bounded { .. } | Self::Cancelled { .. } => Category::Incomplete,
+        }
+    }
 }
 
 /// One queued, not-yet-expanded discovered state.
