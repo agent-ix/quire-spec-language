@@ -173,20 +173,23 @@ here, and #212 can check them from this record alone.
 
 - The family records each claim's declared extent, and any authored bound, as
   data in its `Requirements` (§2). This is recording, not a mode decision.
-- AD-016's single predicate for boundedness is IR `requires-bound`. QSL's
-  recorded extent and bound are inputs to it. CG `negotiate_*` settles from IR's
-  result and the candidate's advertised modes (AD-016 arrow 4, ADR-013 O-20).
+- AD-016's IR `requires-bound` classifies which lowered forms carry an
+  unbounded domain. QSL writes the item's extent classification, including
+  whether a finite bound is available, into the FR-331 request (ADR-014 §4),
+  and IR's form predicate agrees with it, pinned by a conformance test. CG
+  `negotiate_*` settles from that classification and the candidate's
+  advertised modes (AD-016 arrow 4, ADR-013 O-20).
   Whether a backend advertises a mode beside each kind is
   agent-ix/quire-specification#134's (scope item 3).
 - Backends advertise (capability kind, mode) pairs. Candidates are matched on
   capability kind alone (§7.2). The mode, bounded or unbounded extent, is
   compared in CG `negotiate_*`, after matching. `negotiate_*` settles:
-  - When IR does not report `requires-bound`, or the candidate advertises
-    unbounded mode, it settles the form's own disposition.
-  - When IR reports `requires-bound`, the candidate advertises only bounded
-    mode and a finite bound is available, it settles `requires-bound`.
-  - When IR reports `requires-bound`, the candidate advertises only bounded
-    mode and no finite bound is available, it settles `unsupported`, warned.
+  - When the extent is bounded, or the candidate advertises unbounded mode,
+    it settles the form's own disposition.
+  - When the extent is unbounded, the candidate advertises only bounded mode
+    and a finite bound is available, it settles `requires-bound`.
+  - When the extent is unbounded, the candidate advertises only bounded mode
+    and no finite bound is available, it settles `unsupported`, warned.
   - `supported` for a bounded-only backend requires a bounded extent.
 - A bounded extent is within both modes. An unbounded extent is within
   unbounded mode only.
@@ -199,7 +202,9 @@ here, and #212 can check them from this record alone.
   `KaniOutcome` to the FR-331 accounting record and reaches it intact.
 
 #212 scenario 5 needs one input from #222: the "available finite bound"
-predicate. #222 may produce it in parallel with #212.
+predicate. ADR-014 §4 defines it: a finite bound is available exactly when
+every unbounded domain of the item is boundable, and QSL-140's request writer
+computes it.
 
 ## 2. Shared family contract
 
@@ -295,9 +300,10 @@ one PR:
   kind at all ("no kind for an expression nested in a clause, such as a
   function application"), so a `requirements()` for this family would
   return `None` unconditionally -- not a real function, its own absence
-  wearing a signature. The family whose migration first has a claim form
-  with a real FR-057 kind adds this back to the contract in that same
-  change, per [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md).
+  wearing a signature. QSL-140 (ADR-013 §7 S-6) adds
+  `Requirements` and `requirements()` back to the contract with the ADR-014
+  bound types; each family with a real FR-057 kind implements it in its own
+  migration, per [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md).
 - `FamilyContract::Cause` is **not a trait associated type**; `check`
   returns `CheckOutcome<Self::Checked>` with no cause type parameter.
   Function declaration has no typed refusal cause distinct from `Value`'s
@@ -1032,7 +1038,7 @@ item settles `invalid-request` with no preference order
 | RT enum matches in place of string compares | RT ticket, to be opened by the RT owner |
 | S2 (parser leading-token-kind entry table/parsed-form-enum check seam) and S3 (checked-node-enum evaluator/v2-emitter/requirement-derivation matches) seam-probe coverage, over the crate-wide enums (`token::Kind`, `Expression`, `NodeKind`) every `Value` form uses, not only function declaration/application | [QSL-143](https://linear.app/agent-ix/issue/QSL-143) |
 | Marking or converting the QSL crate's remaining string-dispatch sites (outside `qsl-semantics/src/family/*`/`qsl-eval/src/value/expression/*`) so `xtask string-edge` can join the lint gate (FR-064) | [QSL-145](https://linear.app/agent-ix/issue/QSL-145) |
-| `FamilyContract`'s `requirements` (ADR-012 §2's sixth contract part) and a typed refusal `Cause`, for a family with a real FR-057 capability kind or a real typed refusal cause; `Relation`'s absence from S6a's input type (FR-090-AC-4); FR-062-AC-8's S4 cause-bearing-family seam-probe coverage; AC-9's `package` fault-injection behavior (FR-062-AC-1, AC-4, AC-6, AC-8, AC-9) | [QSL-152](https://linear.app/agent-ix/issue/QSL-152) |
+| A typed refusal `Cause` (`FamilyContract`'s `requirements`, ADR-012 §2's sixth contract part, moved to QSL-140 by ADR-014 §11), for a family with a real FR-057 capability kind or a real typed refusal cause; `Relation`'s absence from S6a's input type (FR-090-AC-4); FR-062-AC-8's S4 cause-bearing-family seam-probe coverage; AC-9's `package` fault-injection behavior (FR-062-AC-1, AC-4, AC-6, AC-8, AC-9) | [QSL-152](https://linear.app/agent-ix/issue/QSL-152) |
 | `StageLimits`'/`LimitKind`'s (then `StageLimitKind`) input-bytes, node-count and work-budget limit kinds, with a real producer and consumer for each, and the `evaluate`-hook `Incomplete` outcome once `quire-exact`'s meter-charge API is exported (FR-062-AC-5) | [QSL-153](https://linear.app/agent-ix/issue/QSL-153) |
 | FR-063's S1-S4 seam-probe coverage of the mechanism itself (`xtask seam-probe`'s own end-to-end behavior, dedicated trace-tagged tests), and the checked-in list's coverage across all five of AC-6's named categories (tracked here, though AC-6 stays unbacked until QSL-143/QSL-152/`stage_hooks`'s replacement each land their own share) (FR-063-AC-1, AC-2, AC-3, AC-4, AC-6, AC-7) | [QSL-149](https://linear.app/agent-ix/issue/QSL-149) |
 | Spec defects: FR-063-AC-5's gate-stubbing test, and FR-064-AC-6's second half (the production gate actually invoking `xtask string-edge`'s lint denial) | [QSL-155](https://linear.app/agent-ix/issue/QSL-155) (spec defect) |

@@ -293,7 +293,7 @@ These cases are distinct. None of them is reported as another.
 | Unsupported vocabulary version | QSL carrier read | Refusal `invalid_capability`/`unsupported-version`. |
 | Backend absence: the candidate set is empty | Negotiation | `unsupported`, with one warning naming the item's kind and any named backend; `unsupported_projection`/`unsupported-requested-capability`. |
 | Unsupported claim: the one candidate's arm does not discharge this IR form | Negotiation | `unsupported`, warned; `unsupported_projection`/`unsupported-requested-capability` (quire-specification FR-272). |
-| Unbounded extent on a bounded-only candidate, finite bound available | Negotiation | `requires-bound`; the extent and bound predicate are [#222](https://github.com/agent-ix/quire-spec-language/issues/222)'s. |
+| Unbounded extent on a bounded-only candidate, finite bound available | Negotiation | `requires-bound`; the extent and the available finite bound predicate are [ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) §4's (#222). |
 | Unbounded extent on a bounded-only candidate, no finite bound | Negotiation | `unsupported`, warned; `unsupported_projection`/`unbounded-extent`. |
 | Several candidates and no named backend, an unregistered or arm-less named backend, inconsistent candidates, or no extent classification | Negotiation | `invalid-request`, with its `invalid_capability` cause. |
 | Solver or tool absence: the routed backend's adapter probe finds its pinned tool missing or mismatched, errors or exceeds its limit | Run of a `supported` item | FR-331 result `unsupported`, warned, naming the kind, backend and expected and actual tool identity; `unsupported_projection`/`tool-unavailable`. |

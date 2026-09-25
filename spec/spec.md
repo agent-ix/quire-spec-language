@@ -186,6 +186,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-013
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-014
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -463,7 +465,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-079](functional/FR-079-preserve-kani-lowering-corpora.md) | FR | Specified under #185 (QSL-185); AC-2 backed for the current catalog (TC-204); AC-1 unbacked (TC-203); AC-1/AC-2 retire with `lowering` in ADR-011 §7.3 M-6a |
 | [FR-080](functional/FR-080-registry-evidence-and-gates.md) | FR | Specified under #185 (QSL-185); not yet implemented |
 | [FR-081](functional/FR-081-preserve-model-correspondence-and-declaration-identity.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
-| [FR-082](functional/FR-082-resolve-conformance-subsetting-and-redefinition.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
+| [FR-082](functional/FR-082-resolve-conformance-subsetting-and-redefinition.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120. The type-environment ceilings are stage limits by ADR-014 §1 (AC-6, AC-7); the code change is QSL-160's (S-5b) |
 | [FR-083](functional/FR-083-resolve-unique-most-specific-dispatch.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
 | [FR-084](functional/FR-084-admit-closed-populations-and-resolve-lookup.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120; FR-084-AC-7 (one universe per connected supertype component, TC-410): QSL-131 |
 | [FR-085](functional/FR-085-resolve-relationship-end-references.md) | FR | Specified under #120 (QSL-120); most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
@@ -480,3 +482,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md) | FR | Specified under QSL-160 (ADR-013 §7 S-5b: T-4, O-17, O-22 with T-5 loci); not implemented -- TC-426 to TC-429 planned; gated on S-4b, FR-091-AC-10 (QSL-141) and QC-28; AC-9 and AC-10 need three IR reader changes; open question FR-096-OQ-1 (IR's edge, occurrence and diagnostic limits, QC-28) |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented under QSL-214 and QSL-215: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented under QSL-216, QSL-218 and QSL-222: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
+| [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (QSL-17, #222) |

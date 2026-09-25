@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/AD-006
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-014
+    type: depends_on
 ---
 # FR-082: Resolve conformance, subsetting and redefinition over the closed declaration set
 
@@ -41,14 +43,16 @@ contract for applying it.
   `creates`, `deletes`).
 - Established postcondition facts available for a narrowing field
   redefinition's refinement obligation.
-- `ModelNormalizationLimitsV1`.
+- `ModelNormalizationLimitsV1`, and the expression checker's
+  `TypeEnvironmentLimits`.
 
 ## Outputs
 
 For each checked redefinition or subsetting relation: an admitted conformance
 result, or a `Refused` outcome carrying every failing axis (member kind, axis
 name and typed cause), or a typed incomplete result naming the exhausted
-charge point.
+charge point. For the expression checker's type-environment admission, a
+reached ceiling is a stage failure, `StageFailure::Limit(LimitExceeded)`.
 
 ## Behavior
 
@@ -123,6 +127,25 @@ distinct counters, consistent with ADR-013 O-21 ("an exhausted meter yields
 `Incomplete` with its charge point and limit; a stage limit refuses with
 `LimitExceeded`").
 
+The walks above read B-2 ceilings, carried by the accounting-contract limits
+types `ModelNormalizationLimitsV1` and `PopulationAdmissionLimitsV1`, so they
+refuse `resource_exhausted` wherever they run
+([ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
+§1, NFR-012). The expression checker's type-environment admission below reads
+its own check-stage limits type, `TypeEnvironmentLimits`, whose ceilings are
+stage limits (ADR-014 B-3, FR-096). When a type-environment walk would expand
+more types than its `ancestor_steps` ceiling, the expression checker SHALL
+return `StageFailure::Limit(LimitExceeded)` with limit kind node count, catalog
+`stage_limit_exceeded`/`node-count-exceeded`. When type-environment admission
+would spend more than its `work_units` budget, the expression checker SHALL
+return `StageFailure::Limit(LimitExceeded)` with limit kind work budget,
+catalog `stage_limit_exceeded`/`work-budget-exceeded`. Each `LimitExceeded` carries the
+configured ceiling, the actual counter (the ceiling plus one for
+`ancestor_steps`; for `work_units`, the cumulative total the refused charge
+would have reached), and no `Locus`: the
+object types come from an admitted domain package, not a source unit, which
+is FR-096's third no-region case.
+
 ### The expression checker decides the same relation over the same edges
 
 The expression checker's type environment SHALL admit a package's object
@@ -134,8 +157,8 @@ give the same verdict the model gives at evaluation:
 - Admission SHALL use the same `ancestor_steps` ceiling the population
   binding walks under, counted the same way. An object type whose walk
   (the type itself plus every ancestor) would expand more types than the
-  ceiling SHALL refuse the environment with the resource-exhaustion cause
-  (`ancestor-steps`) naming the ceiling. Check time is the stricter side:
+  ceiling SHALL refuse the environment with a stage limit (`LimitExceeded`,
+  limit kind node count) naming the ceiling. Check time is the stricter side:
   it refuses the whole environment when any type's worst-case walk exceeds
   the ceiling, while evaluation refuses only a walk that actually does, so
   every conformance question the checker answers, evaluation completes with
@@ -143,8 +166,8 @@ give the same verdict the model gives at evaluation:
 - Admission SHALL charge the ancestor closure and the attribute flattening
   below to a `work_units` budget: one unit for each ancestor or attribute
   copied into a type's set and each field a lineage names. When the budget
-  runs out, the environment SHALL refuse with the resource-exhaustion cause
-  (`work-units`) naming the budget. Admission work SHALL grow with the
+  runs out, the environment SHALL refuse with a stage limit (`LimitExceeded`,
+  limit kind work budget) naming the budget. Admission work SHALL grow with the
   flattened slot count, not faster.
 - Each object type's attributes SHALL be flattened once, at admission: its
   own fields and every ancestor's. A field another field of the set
@@ -173,8 +196,8 @@ give the same verdict the model gives at evaluation:
 | FR-082-AC-3 | Given a conformance ancestor chain longer than the bound, the checker refuses with a resource-exhaustion cause naming the bound and reports neither conformance nor non-conformance for that walk; a chain at exactly the bound is admitted. | Test (TC-220) |
 | FR-082-AC-4 | Given a narrowing field redefinition with no established postcondition fact proving the narrowing, the checker refuses unproved-refinement; given the same redefinition with the obligation established, the checker admits it. | Test (TC-221) |
 | FR-082-AC-5 | Given a redefining operation whose parameter count differs from the redefined operation's, the checker's `Refused` outcome names exactly the arity failure with a type-mismatch cause and checks no per-parameter type or multiplicity axis for that pair; the result-type, result-multiplicity and effect axes are still independently checked and reported when they also fail. | Test (TC-239) |
-| FR-082-AC-6 | Given one set of object types and `supertypes` edges, the expression checker's type environment is never less strict than the model's evaluation-time walk: a supertype naming no admitted type and a `supertypes` cycle refuse at both; a chain whose walk fits the shared `ancestor_steps` ceiling admits at both with the same answer to every conformance question; and a chain one type past it refuses at check time with `ancestor-steps` naming the ceiling, as the model's walk over it does. Anything check time admits, evaluation completes. | Test (TC-219, TC-220) |
-| FR-082-AC-7 | Given object types whose ancestor closure and flattened attribute sets would cost more than the admission `work_units` budget, the expression checker's type environment refuses with a resource-exhaustion cause naming the budget; a linear chain admits within four work units per flattened slot. | Test (TC-220) |
+| FR-082-AC-6 | Given one set of object types and `supertypes` edges, the expression checker's type environment is never less strict than the model's evaluation-time walk: a supertype naming no admitted type and a `supertypes` cycle refuse at both; a chain whose walk fits the shared `ancestor_steps` ceiling admits at both with the same answer to every conformance question; and a chain one type past it refuses at check time with a stage limit (`LimitExceeded`, node count) naming the ceiling, as the model's walk over it refuses at evaluation with `ancestor-steps`. Anything check time admits, evaluation completes. | Test (TC-219, TC-220) |
+| FR-082-AC-7 | Given object types whose ancestor closure and flattened attribute sets would cost more than the admission `work_units` budget, the expression checker's type environment refuses with a stage limit (`LimitExceeded`, work budget) naming the budget; a linear chain admits within four work units per flattened slot. | Test (TC-220) |
 
 ## Dependencies
 
