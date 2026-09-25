@@ -3,7 +3,7 @@
 //! evaluator runs.
 
 use super::refusal::Location;
-use crate::value::declaration::{CheckedEquality, EqualityOperand, EqualityOperator};
+use crate::value::declaration::{CheckedEquality, EqualityOperand, EqualityOperator, FieldRef};
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
@@ -363,8 +363,9 @@ pub enum NodeKind {
     Attribute {
         /// The object reference.
         reference: Box<Node>,
-        /// The attribute name.
-        name: String,
+        /// The field `f` resolves to in the reference's static type's
+        /// effective attribute set: its declaring type and name (QSL-57).
+        field: FieldRef,
         /// Whether the attribute is optional.
         optional: bool,
     },

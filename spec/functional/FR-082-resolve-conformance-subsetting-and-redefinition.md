@@ -123,6 +123,47 @@ distinct counters, consistent with ADR-013 O-21 ("an exhausted meter yields
 `Incomplete` with its charge point and limit; a stage limit refuses with
 `LimitExceeded`").
 
+### The expression checker decides the same relation over the same edges
+
+The expression checker's type environment SHALL admit a package's object
+types with the same declared `supertypes` edges the model walks, and SHALL
+give the same verdict the model gives at evaluation:
+
+- A supertype naming no admitted object type, and a `supertypes` cycle, SHALL
+  refuse the environment.
+- Admission SHALL use the same `ancestor_steps` ceiling the population
+  binding walks under, counted the same way. An object type whose walk
+  (the type itself plus every ancestor) would expand more types than the
+  ceiling SHALL refuse the environment with the resource-exhaustion cause
+  (`ancestor-steps`) naming the ceiling. Check time is the stricter side:
+  it refuses the whole environment when any type's worst-case walk exceeds
+  the ceiling, while evaluation refuses only a walk that actually does, so
+  every conformance question the checker answers, evaluation completes with
+  the same answer.
+- Admission SHALL charge the ancestor closure and the attribute flattening
+  below to a `work_units` budget: one unit for each ancestor or attribute
+  copied into a type's set and each field a lineage names. When the budget
+  runs out, the environment SHALL refuse with the resource-exhaustion cause
+  (`work-units`) naming the budget. Admission work SHALL grow with the
+  flattened slot count, not faster.
+- Each object type's attributes SHALL be flattened once, at admission: its
+  own fields and every ancestor's. A field another field of the set
+  redefines SHALL be hidden, and its redefiner SHALL take its one storage
+  slot. When several redefinitions of one field reach a type, only the one
+  whose owner is more derived than every other SHALL stay exposed; if none
+  is, the environment SHALL refuse with a redefinition-conflict cause. A
+  field with an inherited field's name that does not redefine it SHALL
+  refuse as a duplicate member, and a `redefines` naming no field of a
+  proper ancestor SHALL refuse with a redefinition-target cause. The
+  exposed field SHALL narrow every field it stands for: required wherever
+  one of them is, and admitting only values that field's type admits. A
+  reference field SHALL be redefined only with the identical reference
+  type, since evaluation matches a reference's object type exactly.
+  Otherwise the environment SHALL refuse as ill-typed.
+- `deref(r).f` SHALL resolve `f` in `r`'s static type's flattened set, and
+  SHALL read the one slot of the referenced object's own type that stands
+  for that field.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -132,6 +173,8 @@ distinct counters, consistent with ADR-013 O-21 ("an exhausted meter yields
 | FR-082-AC-3 | Given a conformance ancestor chain longer than the bound, the checker refuses with a resource-exhaustion cause naming the bound and reports neither conformance nor non-conformance for that walk; a chain at exactly the bound is admitted. | Test (TC-220) |
 | FR-082-AC-4 | Given a narrowing field redefinition with no established postcondition fact proving the narrowing, the checker refuses unproved-refinement; given the same redefinition with the obligation established, the checker admits it. | Test (TC-221) |
 | FR-082-AC-5 | Given a redefining operation whose parameter count differs from the redefined operation's, the checker's `Refused` outcome names exactly the arity failure with a type-mismatch cause and checks no per-parameter type or multiplicity axis for that pair; the result-type, result-multiplicity and effect axes are still independently checked and reported when they also fail. | Test (TC-239) |
+| FR-082-AC-6 | Given one set of object types and `supertypes` edges, the expression checker's type environment is never less strict than the model's evaluation-time walk: a supertype naming no admitted type and a `supertypes` cycle refuse at both; a chain whose walk fits the shared `ancestor_steps` ceiling admits at both with the same answer to every conformance question; and a chain one type past it refuses at check time with `ancestor-steps` naming the ceiling, as the model's walk over it does. Anything check time admits, evaluation completes. | Test (TC-219, TC-220) |
+| FR-082-AC-7 | Given object types whose ancestor closure and flattened attribute sets would cost more than the admission `work_units` budget, the expression checker's type environment refuses with a resource-exhaustion cause naming the budget; a linear chain admits within four work units per flattened slot. | Test (TC-220) |
 
 ## Dependencies
 

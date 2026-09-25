@@ -897,13 +897,15 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let slot = composite.slots().get(*index).ok_or_else(invariant)?;
                 Self::project(slot, *optional, node.value_type())?
             }
-            NodeKind::Attribute { name, optional, .. } => {
+            NodeKind::Attribute {
+                field, optional, ..
+            } => {
                 let Value::Reference(reference) = self.pop()? else {
                     return Err(invariant());
                 };
                 let slot = self
                     .objects
-                    .attribute(self.scope.types(), &reference, name)
+                    .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(invariant)?;
                 Self::project(slot, *optional, node.value_type())?
             }

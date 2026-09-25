@@ -21,7 +21,7 @@ use qsl_semantics::model::object_environment::{
 use qsl_semantics::value::declaration::{
     Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
     DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
-    InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
+    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
 };
 use qsl_semantics::value::enumeration::EnumMemberIndex;
 use qsl_semantics::value::{
@@ -455,7 +455,11 @@ fn r09_object_reference_cycles_are_admitted_and_compare_by_identity() {
         ],
     )
     .unwrap();
-    let project = |object: &str| match objects.attribute(&env, &node_reference(object), "peer") {
+    let project = |object: &str| match objects.attribute(
+        &env,
+        &node_reference(object),
+        &FieldRef::new(object_type("M::Node"), "peer"),
+    ) {
         Some(FieldValue::Present(value)) => value.clone(),
         other => panic!("peer is present, not {other:?}"),
     };

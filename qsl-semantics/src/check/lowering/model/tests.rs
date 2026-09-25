@@ -268,22 +268,20 @@ fn int(lower: i64, upper: i64) -> ValueType {
     ValueType::Int(IntegerInterval::new(Integer::from(lower), Integer::from(upper)).unwrap())
 }
 
-/// `M::Order`, `M::Invoice` and `M::Sub`, each with the attribute `total:
-/// Int[0, 9]` where it has one.
+/// `M::Order`, `M::Invoice` and `M::Sub`, as the acme model declares them:
+/// `Order` declares `total: Int[0, 9]` and `Sub` inherits it (QSL-57).
 fn types(acme: &Acme) -> TypeEnvironment {
-    let total = || {
-        vec![FieldDeclaration::new(
-            "total",
-            int(0, 9),
-            Presence::Required,
-        )]
-    };
+    let total = vec![FieldDeclaration::new(
+        "total",
+        int(0, 9),
+        Presence::Required,
+    )];
     TypeEnvironment::new(
         [],
         [
-            ObjectTypeDeclaration::new(acme.order, "M::Order", total()),
+            ObjectTypeDeclaration::new(acme.order, "M::Order", total),
             ObjectTypeDeclaration::new(acme.invoice, "M::Invoice", Vec::new()),
-            ObjectTypeDeclaration::new(acme.sub, "M::Sub", total())
+            ObjectTypeDeclaration::new(acme.sub, "M::Sub", Vec::new())
                 .with_supertypes(vec![acme.order]),
         ],
     )

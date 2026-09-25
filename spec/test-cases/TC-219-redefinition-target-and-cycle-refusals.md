@@ -14,7 +14,8 @@ Verify two independent negative paths: a redefinition naming a target that
 is not declared on any conforming supertype refuses with a
 redefinition-target cause, and a declared `supertypes` cycle refuses
 specialization for every declaration on the cycle, deriving no conformance
-edge across it. Scope: FR-082-AC-2.
+edge across it. Scope: FR-082-AC-2, and FR-082-AC-6 for the same two
+refusals at the expression checker.
 
 Catches an implementation that silently treats a missing redefinition target
 as "no redefinition" (admitting the member as if it were newly declared,

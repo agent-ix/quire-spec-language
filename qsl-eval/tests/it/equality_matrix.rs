@@ -24,7 +24,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::declaration::{
     CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
     ConstructionRefusal, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
-    ObjectTypeDeclaration, TypeEnvironment,
+    FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
 use qsl_semantics::value::enumeration::{
     EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex, EnumMemberPreimage,
@@ -952,7 +952,11 @@ fn e16_references_compare_identity_triple_only() {
         [(a.clone(), state(2)), (reference("u1", "b"), state(1))],
     )
     .unwrap();
-    let balance = |objects: &ObjectEnvironment| match objects.attribute(&env, &a, "balance") {
+    let balance = |objects: &ObjectEnvironment| match objects.attribute(
+        &env,
+        &a,
+        &FieldRef::new(object_type("M::Obj"), "balance"),
+    ) {
         Some(FieldValue::Present(Value::Integer(value))) => value.clone(),
         other => panic!("balance is a present integer, not {other:?}"),
     };
@@ -984,6 +988,80 @@ fn e16_references_compare_identity_triple_only() {
     assert_eq!(meter.admitted_charges(), [ChargePoint::EqualityPlanForm]);
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
     assert_disjoint(&env, &r);
+}
+
+/// `M::Animal`, `M::Dog` (a subtype of `Animal`) and the unrelated `M::Rock`.
+fn animal_environment() -> TypeEnvironment {
+    TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(object_type("M::Animal"), "Animal", vec![]),
+            ObjectTypeDeclaration::new(object_type("M::Dog"), "Dog", vec![])
+                .with_supertypes(vec![object_type("M::Animal")]),
+            ObjectTypeDeclaration::new(object_type("M::Cat"), "Cat", vec![])
+                .with_supertypes(vec![object_type("M::Animal")]),
+            ObjectTypeDeclaration::new(object_type("M::Rock"), "Rock", vec![]),
+        ],
+    )
+    .unwrap()
+}
+
+/// TC-198 L08 (QSL-57 item 1): `Reference<Animal>` and `Reference<Dog>`
+/// admit `=` in either operand order, because `Dog` conforms to `Animal`.
+/// The comparison is still the identity triple: the same `Dog` object on
+/// both sides is `true`, another object is `false`.
+#[trace("TC-194", "FR-149-AC-6")]
+#[trace("TC-198", "FR-153-AC-6")]
+#[test]
+fn e16a_references_admit_a_conforming_upcast_in_either_order() {
+    let env = animal_environment();
+    let (animal, dog) = (
+        ValueType::Reference(object_type("M::Animal")),
+        ValueType::Reference(object_type("M::Dog")),
+    );
+    let rex = |identity: &str| {
+        Value::Reference(ObjectReference::new(
+            universe_id("u1"),
+            object_type("M::Dog"),
+            ObjectId::new(identity).unwrap(),
+        ))
+    };
+    assert_eq!(
+        equal(&env, (&animal, &rex("rex")), (&dog, &rex("rex"))),
+        is(true)
+    );
+    assert_eq!(
+        equal(&env, (&dog, &rex("rex")), (&animal, &rex("rex"))),
+        is(true)
+    );
+    assert_eq!(
+        equal(&env, (&animal, &rex("rex")), (&dog, &rex("fido"))),
+        is(false)
+    );
+}
+
+/// TC-198 L08's adverse case (QSL-57 item 1): two object-reference types
+/// with no generalization relation between them still refuse `=` at check
+/// time, `ill_typed`/`type-mismatch`, in either order; siblings under one
+/// supertype are no more related than unrelated roots.
+#[trace("TC-194", "FR-149-AC-6")]
+#[test]
+fn e16b_references_to_unrelated_object_types_refuse() {
+    let env = animal_environment();
+    let (dog, cat, rock) = (
+        ValueType::Reference(object_type("M::Dog")),
+        ValueType::Reference(object_type("M::Cat")),
+        ValueType::Reference(object_type("M::Rock")),
+    );
+    for (left, right) in [(&dog, &rock), (&rock, &dog), (&dog, &cat), (&cat, &dog)] {
+        assert_eq!(
+            check(&env, left, right).map(|_| ()),
+            Err(IllTyped {
+                cause: IllTypedCause::TypeMismatch
+            }),
+            "{left:?} = {right:?}"
+        );
+    }
 }
 
 // ---- IEEE rows -------------------------------------------------------------

@@ -1343,14 +1343,15 @@ impl<'a> Typer<'a> {
                         reference_location,
                     )))
                 }
-                Some(population) => Self::lookup(
-                    &frame.target,
-                    population,
-                    typed,
-                    frame.absence,
-                    &frame.location,
-                )
-                .map(Step::Typed),
+                Some(population) => self
+                    .lookup(
+                        &frame.target,
+                        population,
+                        typed,
+                        frame.absence,
+                        &frame.location,
+                    )
+                    .map(Step::Typed),
             },
             Frame::Dispatch(frame) => {
                 let DispatchFrame {

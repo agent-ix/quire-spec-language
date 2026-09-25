@@ -126,9 +126,17 @@ impl AssemblyCause {
                 | DeclarationCause::GeneralizationCycle { .. } => {
                     CatalogCode::new("ill_typed", "type-mismatch")
                 }
+                // The assembler admits records and tuples only: an object-type
+                // cause, or a `redefines` it never writes, is a broken
+                // invariant.
                 DeclarationCause::DuplicateKey
                 | DeclarationCause::UnknownDeclaration(_)
-                | DeclarationCause::UnknownObjectType(_) => {
+                | DeclarationCause::UnknownObjectType(_)
+                | DeclarationCause::RedefinitionTarget(_)
+                | DeclarationCause::RedefinitionConflict(_)
+                | DeclarationCause::RedefinitionWidens(_)
+                | DeclarationCause::AncestorSteps { .. }
+                | DeclarationCause::WorkUnits { .. } => {
                     CatalogCode::new("runtime_invariant", "established-invariant-broken")
                 }
             },
