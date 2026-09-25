@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-027: spine `compile` (ADR-011 §5, §7.3 M-6a). Complete-V1 source
 //! enters S1 and goes through the stage APIs in DAG order: S1
-//! (`qsl_cst::parse`), S2 (`qsl_forms::build_unit`), the FR-091 assembler,
-//! S3 (`PackageDeclarations::check`), S4 (`CheckedPackage::link`) and the v2
+//! (`qsl_cst::parse`), S2 (`qsl_forms::build_unit`), I1
+//! (`model::intake::admit_unit`, the unit's `model` declarations against
+//! the supplied domain packages, FR-056), the FR-091 assembler, S3
+//! (`PackageDeclarations::check`), S4 (`CheckedPackage::link`) and the v2
 //! emitter (`qsl_package::emit_checked`). This module calls them and makes
 //! no semantic decision.
+
+use std::collections::BTreeMap;
 
 use qsl_cst::CompleteDiagnostic;
 use qsl_forms::{build_unit, FormsCause, FormsFailure, FormsLimits};
@@ -14,6 +18,8 @@ use qsl_package::{emit_checked, CheckedPackage, EmitRefusal, OmittedNode};
 use qsl_semantics::check::{
     AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, CheckingLimits, PackageDeclarations,
 };
+use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause, UnitIntakeRefusal};
 
 /// Why spine `compile` wrote no `quire.checked-package/v2` bytes. Each
 /// variant is the stage that refused, with its typed cause and, where the
@@ -30,6 +36,14 @@ pub enum CompileRefusal {
         /// The S2 failure.
         failure: FormsFailure,
         /// The region it concerns, when it concerns one.
+        region: Option<SourceRegion>,
+    },
+    /// I1: a `model` declaration's domain package did not admit.
+    #[error("domain package intake refused `model {}`: {}", .refusal.alias, intake_message(&.refusal.cause))]
+    Intake {
+        /// The intake refusal.
+        refusal: UnitIntakeRefusal,
+        /// The region of the `model` declaration.
         region: Option<SourceRegion>,
     },
     /// E3: the FR-091 assembler refused the unit.
@@ -64,6 +78,7 @@ impl CompileRefusal {
         match self {
             Self::Source(diagnostic) => diagnostic.code,
             Self::Forms { failure, .. } => failure.catalog_code(),
+            Self::Intake { refusal, .. } => refusal.cause.code(),
             Self::Assembly { refusal, .. } => refusal
                 .errors
                 .first()
@@ -82,6 +97,7 @@ impl CompileRefusal {
         match self {
             Self::Source(_) => SpineStage::Source,
             Self::Forms { .. } => SpineStage::Forms,
+            Self::Intake { .. } => SpineStage::Intake,
             Self::Assembly { .. } => SpineStage::Assembly,
             Self::Check { .. } => SpineStage::Check,
             Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
@@ -94,6 +110,7 @@ impl CompileRefusal {
         match self {
             Self::Source(diagnostic) => diagnostic.region.as_ref(),
             Self::Forms { region, .. }
+            | Self::Intake { region, .. }
             | Self::Assembly { region, .. }
             | Self::Check { region, .. } => region.as_ref(),
             Self::Emit(_) | Self::Omitted(_) => None,
@@ -108,6 +125,8 @@ pub enum SpineStage {
     Source,
     /// S2: `qsl_forms::build_unit`.
     Forms,
+    /// I1: `model::intake::admit_unit`.
+    Intake,
     /// The FR-091 assembler.
     Assembly,
     /// S3: `PackageDeclarations::check`.
@@ -122,6 +141,7 @@ impl SpineStage {
         match self {
             Self::Source => "source",
             Self::Forms => "forms",
+            Self::Intake => "intake",
             Self::Assembly => "assembly",
             Self::Check => "check",
             Self::Emit => "emit",
@@ -158,6 +178,27 @@ fn forms_message(failure: &FormsFailure) -> String {
     }
 }
 
+/// A readable account of an I1 refusal.
+fn intake_message(cause: &UnitIntakeCause) -> String {
+    match cause {
+        UnitIntakeCause::ArtifactDigest => {
+            "a `sha256:` digest selects a compiled-model artifact, not a domain package".to_owned()
+        }
+        UnitIntakeCause::Refused(refusals) => match refusals.first() {
+            Some(first) => with_more(
+                format!("{} ({}): {}", first.code.as_str(), first.cause.as_str(), first.detail),
+                refusals.len(),
+            ),
+            None => "no refusal recorded".to_owned(),
+        },
+        UnitIntakeCause::Limit(incomplete) => format!(
+            "model normalization reached its `{}` limit ({})",
+            incomplete.limit_kind.as_str(),
+            incomplete.limit
+        ),
+    }
+}
+
 /// A readable account of the assembler's first error, and how many more.
 fn assembly_message(refusal: &AssemblyRefusal) -> String {
     let Some(first) = refusal.errors.first() else {
@@ -190,6 +231,12 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             limit.actual()
         ),
         AssemblyCause::Handle(_) => "a declared type's handle could not be encoded".to_owned(),
+        AssemblyCause::UnadmittedModel { alias } => {
+            format!("`model {alias}` names no admitted domain package")
+        }
+        AssemblyCause::ModelType { alias, node } => {
+            format!("the domain package of `model {alias}` has no effective type for `{node}`")
+        }
     };
     with_more(message, refusal.errors.len())
 }
@@ -228,16 +275,20 @@ fn region(source: &RawSourceRef, span: Span) -> Option<SourceRegion> {
 }
 
 /// Compile complete-V1 `bytes`, labelled `source` and displayed as `path`,
-/// through S1 to S4 into `quire.checked-package/v2` bytes. No lock file or
-/// request file is read (ADR-011 §5). It returns the emitted bytes, not the
+/// through S1 to S4 into `quire.checked-package/v2` bytes. `packages` is
+/// FR-056's package input, the supplied domain package documents by their
+/// `sha256-jcs` digest (`model::intake::package_input`): I1 admits each
+/// `model` declaration of the unit against it. No lock file or request file
+/// is read (ADR-011 §5). It returns the emitted bytes, not the
 /// `EmittedPackage`: only the stage constructors hand back a stage type
 /// (FR-087-AC-2).
 pub fn compile(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
 ) -> Result<Vec<u8>, Box<CompileRefusal>> {
-    compile_under(source, path, bytes, CheckingLimits::default())
+    compile_under(source, path, bytes, packages, CheckingLimits::default())
 }
 
 /// [`compile`] with S3 checking under `limits`.
@@ -245,6 +296,7 @@ pub(crate) fn compile_under(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: CheckingLimits,
 ) -> Result<Vec<u8>, Box<CompileRefusal>> {
     let parsed = qsl_cst::parse(source, path, bytes, qsl_cst::Limits::default())
@@ -263,7 +315,18 @@ pub(crate) fn compile_under(
             failure,
         })
     })?;
-    let declarations = PackageDeclarations::assemble(raw.clone(), unit).map_err(|refusal| {
+    let models = admit_unit(
+        &unit.selections().models,
+        packages,
+        ModelNormalizationLimits::default(),
+    )
+    .map_err(|refusal| {
+        Box::new(CompileRefusal::Intake {
+            region: region(&raw, refusal.span),
+            refusal,
+        })
+    })?;
+    let declarations = PackageDeclarations::assemble(raw.clone(), unit, models).map_err(|refusal| {
         Box::new(CompileRefusal::Assembly {
             // A type-environment stage limit names no declaration, so it
             // has no region (FR-082, FR-096).
@@ -297,6 +360,7 @@ pub(crate) fn compile_under(
 #[cfg(test)]
 mod tests {
     use super::{compile_under, CompileRefusal, SpineStage};
+    use std::collections::BTreeMap;
     use ix_trace_rs::trace;
     use qsl_foundation::{Code, SourceIdentity};
     use qsl_semantics::check::CheckingLimits;
@@ -315,6 +379,7 @@ mod tests {
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
             UNIT.as_bytes(),
+            &BTreeMap::new(),
             CheckingLimits::new(u64::MAX, 3).unwrap(),
         )
         .expect_err("depth 3 stops a body four deep");

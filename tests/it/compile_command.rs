@@ -366,6 +366,7 @@ fn a_complete_v1_program_compiles_through_the_spine() {
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
         "program.native",
         &program,
+        &std::collections::BTreeMap::new(),
     )
     .unwrap();
     assert_eq!(output.stdout, library);
@@ -469,7 +470,7 @@ fn a_complete_v1_request_selecting_native_inputs_refuses() {
         .as_array()
         .unwrap()
         .is_empty());
-    for (strip, selected) in [(None, "model sources"), (Some("models"), "clause bindings")] {
+    for (strip, selected) in [(None, "native rule-model sources"), (Some("models"), "clause bindings")] {
         if let Some(field) = strip {
             job["request"][field] = json!([]);
         }
