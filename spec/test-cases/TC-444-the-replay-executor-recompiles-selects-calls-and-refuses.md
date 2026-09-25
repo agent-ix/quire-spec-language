@@ -15,7 +15,7 @@ request's byte provision, requires its `package_id`, selects and calls the
 function, settles the verdict, and refuses each ADR-013 O-26 case with a
 typed variant and no partial result.
 
-Scope: FR-098-AC-1 to FR-098-AC-5, and FR-001-AC-6 for the recompile's
+Scope: FR-098-AC-1 to FR-098-AC-7, and FR-001-AC-6 for the recompile's
 source labels.
 
 ## Test Procedure
@@ -49,6 +49,17 @@ compiled package.
    whitespace-only authority label; a definition document or a second
    source in the package reference; and `id(4)` with a zero work budget.
 6. Replay `p(1)`, whose body calls `f`; replay `p(5)`.
+7. Library `test/units` version `2` declares
+   `function big using v(x: Int[0, 9]): Boolean pure { x > 5 }`. A second
+   unit imports it `as u` and declares
+   `function q using v(x: Int[0, 9]): Boolean pure { u::big(x) }`. Build its
+   request from its spine compile against `test/units`: `sources` names the
+   unit's one source, `dependencies` holds `{test/units, 2, <its
+   package_id>, [its one source]}`, and the byte provision carries both.
+   Replay `q(3)`. Then replace `test/units`'s bytes with `x > 6`, with the
+   entry's digest updated to the new bytes; then restore them and change
+   only the entry's `package_id`; then remove the entry; then give the entry
+   a second source.
 
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
@@ -88,6 +99,16 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   which round-trips a real function-calls-function package through a real
   `quire.checked-package/v2` emit and IR's own I2 decode.
 
+- Step 7: `q(3)` is `false` and agrees (`reproduced-without-witness`). The
+  edited bytes refuse `DependencyIdentityMismatch` (`stale_dependency`)
+  naming `test/units`, the recorded and the recompiled `package_id`; the
+  changed entry refuses `DependencyIdentityMismatch` naming `test/units`;
+  the removed entry refuses `invalid_package`/`invalid-value` at
+  `/package/dependencies`; the second source refuses `SourceCount(2)`. None
+  yields a verdict.
+
 ## Status
 
-Passed locally (QSL-5, QSL-257), `qsl-replay/src/execute/tests.rs`.
+Passed locally (QSL-5, QSL-257), `qsl-replay/src/execute/tests.rs`, for
+steps 1 to 6. Step 7 (FR-098-AC-6, FR-098-AC-7) is planned (QSL-255 part
+b).

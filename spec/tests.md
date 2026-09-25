@@ -90,7 +90,7 @@ operational validation remains outside this audit-only plan.
 | TC-184 | A family adds a typed witness payload through a typed extension point, not an untyped map | Unit | P1 | FR-070-AC-5 | ✅ Passed locally |
 | TC-445 | The witness-packet and replay-request readers refuse an unknown package contract version | Unit | P1 | FR-070-AC-8, FR-071-AC-8 | ✅ Passed locally (QSL-235) |
 | TC-185 | The replay request carries exactly the O-26 members and round-trips them exactly | Unit | P1 | FR-071-AC-1 | ✅ Passed locally |
-| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7 | ✅ Passed locally |
+| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7, FR-071-AC-9 | ✅ Passed locally; step 7 (FR-071-AC-9, the package reference's `dependencies`) planned (QSL-255) |
 | TC-187 | The replay request's function selection accepts only a typed QualifiedName, never a bare string | Unit | P1 | FR-071-AC-3 | 🚧 Planned; #231 |
 | TC-188 | The replay request refuses an unknown version or an out-of-set profile/capability identifier before recompilation | Unit | P1 | FR-071-AC-4 | ✅ Passed locally |
 | TC-189 | The replay result keeps the Witness arm and Input arm distinct, each with its own settlement | Unit | P1 | FR-072-AC-1 | ✅ Passed locally |
@@ -224,7 +224,8 @@ operational validation remains outside this audit-only plan.
 | TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally (QSL-140); step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally (QSL-249) |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally (QSL-252) |
-| TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5 | ✅ Passed locally (QSL-5); step 6 (a predicate whose body calls another declared function, the QSL-22 Layer 3 exemplar's shape) added by QSL-257; FR-098-AC-6 (`DependencyIdentityMismatch`) is not delivered; QSL-255 owns it |
+| TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ Passed locally (QSL-5) for steps 1 to 6; step 6 (a predicate whose body calls another declared function, the QSL-22 Layer 3 exemplar's shape) added by QSL-257; step 7 (FR-098-AC-6, FR-098-AC-7, replay against dependencies) planned (QSL-255) |
+| TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Planned (QSL-255) |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

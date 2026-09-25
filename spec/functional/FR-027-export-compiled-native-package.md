@@ -24,8 +24,8 @@ schema and the golden vectors carry them.
 
 ## Inputs
 
-A closed format/request JSON envelope. The request contains only models and
-program, using the same source selections and complete authored clause bindings
+A closed format/request JSON envelope. The request contains only models,
+program and, for a `1-draft` program, `libraries`, using the same source selections and complete authored clause bindings
 as native-run/1. It contains no runtime artifacts or execution selection.
 The command shares FR-026's request/file/count/aggregate limits, relative-path
 resolution, source digest checks and existing model/compiler stage defaults.
@@ -44,7 +44,13 @@ document in format `semantic-ir/2.0.0`, read under its source digest and handed
 to spine `compile` as FR-056's package input; the program's `model`
 declarations select from it by `sha256-jcs` digest, and the v2 lock's
 `model_selections` names each selected package by identity, version and that
-digest. A `1-draft` compile validates the
+digest. A `1-draft` request may carry `libraries`: one
+`{identity, version, source}` object per supplied library, where `source` is
+the same source selection a model or the program uses (file, `sha256:` source
+digest and the FR-001 labels), read under its source digest. The command hands
+them to spine `compile` as its dependency input (FR-099, ADR-015 D-1). A
+request with no `libraries` supplies none. A `0-draft` request that carries a
+library refuses with `invalid-request`. A `1-draft` compile validates the
 program selection's `document` and `formal_revision` but does not record them:
 the `quire.checked-package/v2` wire has no member for them, so two requests that
 differ only in those fields write identical bytes. A spine refusal uses the same
@@ -94,6 +100,7 @@ typed failure without a successful artifact.
 | FR-027-AC-7 | A program source declaring any other edition refuses with `unknown_edition`, exit 20, empty stdout, and a message naming the file and the edition. A `1-draft` request selecting native rule models or clause bindings refuses with `invalid-request`, exit 20, whatever state the model files are in. | Test (TC-435) |
 | FR-027-AC-8 | A `1-draft` source each spine stage refuses (`source`, `forms`, `assembly`, `check`, `emit`) exits with that stage's cause code and reports the stage, with empty stdout. | Test (TC-435) |
 | FR-027-AC-9 | A `1-draft` request selecting a `semantic-ir/2.0.0` domain package document whose program declares `model M` by that document's `sha256-jcs` digest writes exactly the bytes `qsl_replay::spine::compile` returns over the same source and package input. Their lock and identity preimage `model_selections` hold that package's identity, version, `sha256-jcs` and digest, and QSL's I2 reader, given that digest as domain package evidence, reads them back Verified. `M::Nope` refuses at stage `assembly` (`missing_declaration`) at `M::Nope`; a missing or different document and a `sha256:` digest refuse at stage `intake` at the `model` declaration. | Test (TC-442) |
+| FR-027-AC-10 | A `1-draft` request whose program imports `test/geometry` and whose `libraries` supplies it by file, source digest and labels writes exactly the bytes `qsl_replay::spine::compile` returns over the same source and dependency input, exit 0. A `0-draft` request carrying a library refuses with `invalid-request`, exit 20, empty stdout. | Test (TC-446) |
 
 ## Dependencies
 
@@ -102,6 +109,7 @@ typed failure without a successful artifact.
 - [FR-020](FR-020-read-and-rebind-native-packages.md): verified consumer intake.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md) §7.3 M-6a: the spine route for `1-draft` sources.
 - [FR-056](FR-056-admit-domain-package-model-declarations.md): domain package admission, which spine intake runs.
+- [FR-099](FR-099-compile-against-supplied-libraries.md): the dependency input `libraries` supplies.
 
 ## Status
 

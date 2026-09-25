@@ -28,7 +28,8 @@ instead of refusing when the byte provision is incomplete; or a
 constructor that admits a request whose package reference names a digest
 with no matching byte-provision entry, silently deferring the gap to
 whatever consumes the request later (#243's executor) instead of refusing
-at construction. Scope: FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7.
+at construction. Scope: FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7,
+FR-071-AC-9.
 
 ## Test Procedure
 
@@ -54,6 +55,11 @@ at construction. Scope: FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7.
    entries until the bound is crossed), and inspect whatever value the
    constructor returns.
 
+7. Construct a request whose package reference carries two `dependencies`
+   entries and round-trip it; omit one entry's source from the byte
+   provision; decode an entry with an empty identity, and one whose
+   `package_id` is in the `quire.source.bytes/v1` domain.
+
 ## Expected Results
 
 - Step 1 finds no path-, environment-variable-, or search-location-typed
@@ -68,3 +74,6 @@ at construction. Scope: FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7.
 - Step 6 refuses with a bound-exceeded cause; the constructor returns no
   request value at all, in particular no request holding a truncated
   prefix of the padded entries.
+- Step 7: the round trip preserves both entries in order; the omitted
+  source refuses construction as step 5 does; the empty identity and the
+  source-domain `package_id` each refuse at decode.

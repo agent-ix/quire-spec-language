@@ -122,6 +122,13 @@ identity gives every source-owned declaration a different key.
   one identity definition.
 - A library caller supplies them in the source identity it passes to the
   source reader and to S1's `parse`.
+- A supplied library's source carries its own four labels in the
+  dependency input (FR-099, ADR-015 D-1): the library caller sets them, the
+  native-compile/1 `libraries` member carries them in each library's source
+  selection, and the replay executor takes them from the dependency entry's
+  source reference, exactly as it does for the proved source below. Those
+  labels give the library's declarations their `SourceOwner`, and so its
+  `package_id`.
 - The replay executor recompiles each source under the `RawSourceRef` the
   replay request's package reference names (QSpec FR-323 `package`, ADR-013
   O-26). It passes that reference's four labels as the source identity, the

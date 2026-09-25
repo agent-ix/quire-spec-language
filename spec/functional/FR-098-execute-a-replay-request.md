@@ -24,10 +24,11 @@ relationships:
 
 QSL SHALL provide the replay executor entry, `qsl_replay::replay`, as the
 layer-6 `replay` facade's public API (ADR-013 O-26, C-13, TK-01; ADR-011
-§2.1 E9, §6.1). It takes an FR-071 replay request. It recompiles the one
-source unit the request's package reference names through the spine (S1
-to S4, the same `qsl_replay::spine::compile` the CLI `compile` uses,
-FR-027) from the request's digest-addressed byte provision. It requires
+§2.1 E9, §6.1). It takes an FR-071 replay request. It recompiles the proved
+package's one source unit through the spine (S1 to S4, the same
+`qsl_replay::spine::compile` the CLI `compile` uses, FR-027) from the
+request's digest-addressed byte provision, against the dependency input the
+package reference's `dependencies` entries name (ADR-015 D-4). It requires
 the recompiled `package_id` to equal the request's, selects the function
 by its `QualifiedName` in the recompiled package's declarations, joins the
 replay source's arguments to the function's parameters by parameter node
@@ -55,11 +56,25 @@ through it, or a crate alias or glob import that reaches it.
   request's byte provision by digest, and SHALL read no path, environment
   variable or search location. Domain packages are the provision's
   `sha256-jcs` entries, handed to I1 as its package input.
-- The package reference SHALL name exactly one `quire.source.bytes/v1`
-  source. The executor recompiles that source under its four FR-001 labels.
-  A reference naming a definition document, or more than one source,
-  refuses: the recompile reads no definition document, and it compiles one
-  unit.
+- The package reference's `sources` SHALL name exactly one
+  `quire.source.bytes/v1` source, the proved package's, and each of its
+  `dependencies` entries (QSpec FR-323) SHALL name exactly one such source,
+  that dependency's. The executor recompiles each source under its four
+  FR-001 labels. A `sources` list or an entry naming a definition document,
+  or other than one source, refuses: the recompile reads no definition
+  document, and each package compiles from one unit.
+- The executor SHALL build the dependency input (FR-099) from the
+  `dependencies` entries: each entry's `identity` and `version`, and its
+  source's labels, identity as path and provided bytes. Spine `compile`
+  resolves the proved source's imports against it (ADR-015 D-1), so a
+  dependency whose source recompiles to a `package_id` other than its
+  import's recorded digest refuses there, at that import.
+- After the recompile, the executor SHALL require each entry's `package_id`
+  to equal the recompiled closure's selection of the entry's `identity`,
+  refusing `DependencyIdentityMismatch` otherwise, and SHALL require the
+  entries' `{identity, version, package_id}` to equal the recompiled
+  package's `dependency_selections` in order, refusing
+  `invalid_package`/`invalid-value` at `/package/dependencies` otherwise.
 - The recompile SHALL run under the stage limits the request carries. The
   request's S1 `text_input_bytes` bounds S1's source bytes, and its S3
   `work_units` bounds the checker's work budget. No
@@ -84,7 +99,11 @@ through it, or a crate alias or glob import that reaches it.
   parameter's position.
 - Each ADR-013 O-26 refusal SHALL be a typed `ReplayRefusal` variant with no
   partial result: request decode refusals (FR-071), a limit above the
-  reader limit, a source reference that is not one source unit, a recompile
+  reader limit, a source reference that is not one source unit, a
+  dependency whose recompiled `package_id` differs from its recorded one
+  (`DependencyIdentityMismatch`, naming the dependency's identity, the
+  recorded and the recompiled identities), a `dependencies` list that is not
+  the recompiled package's `dependency_selections`, a recompile
   refusal or stage limit (`stage_limit_exceeded`), a stale `package_id`, a
   selection naming no function node, an argument naming no parameter, a
   parameter bound twice or not at all, a witness that does not decode, an
@@ -106,7 +125,8 @@ through it, or a crate alias or glob import that reaches it.
 | FR-098-AC-3 | A meaning-affecting source edit refuses by `package_id`, naming both identities. A presentation-only edit, which keeps the `package_id`, refuses by source digest. | Test (TC-444) |
 | FR-098-AC-4 | Each refusal in Behavior -- unknown version, a missing input, a byte/digest mismatch, a stale `package_id`, a selection naming no function node, an arity mismatch, a type mismatch and a value outside the declared domain (each `WrongValueKind`), a limit above the reader limit, a recompile stage limit at S1 or S3, and a selection whose declared result is not `Boolean` (refused before any call, even with no accounting budget) -- refuses with its typed variant and no partial result. | Test (TC-444) |
 | FR-098-AC-5 | A replay that disagrees with the refuted property settles `inconclusive` with cause `Verdicts`, and one that completes no value with cause `NoValue`, each holding both verdicts; neither is repaired. | Test (TC-444) |
-| FR-098-AC-6 | A dependency whose source, recompiled from the byte provision, yields a `package_id` other than the one the proved package records refuses with `DependencyIdentityMismatch` (`stale_dependency`), ADR-011 §4 dependency binding. | Test (planned) |
+| FR-098-AC-6 | A request for a proved package importing `test/units`, whose `dependencies` entry names `test/units`, its `package_id` and its one source, replays from the byte provision alone. With that entry's source bytes replaced by an edit that changes `test/units`'s `package_id` (digests updated to match), the replay refuses `DependencyIdentityMismatch` (`stale_dependency`), naming `test/units`, the recorded `package_id` and the recompiled one, with no verdict; with only the entry's `package_id` changed, it refuses `DependencyIdentityMismatch` naming the same identity. | Test (TC-444) |
+| FR-098-AC-7 | A request whose `dependencies` entries are swapped, or lack one entry, refuses `invalid_package`/`invalid-value` at `/package/dependencies`; an entry naming two sources, or a definition document, refuses as a source reference that is not one source unit. None yields a verdict. | Test (TC-444) |
 
 ## Dependencies
 
@@ -115,6 +135,8 @@ through it, or a crate alias or glob import that reaches it.
 - [FR-072](FR-072-implement-typed-replay-result.md): the result and its
   settlement.
 - [FR-027](FR-027-export-compiled-native-package.md): the spine compile.
+- [FR-099](FR-099-compile-against-supplied-libraries.md): the dependency
+  input and the S4 source resolution; ADR-015 D-4.
 - ADR-013 O-25, O-26, C-11, C-13, OQ-5; ADR-011 §2.1 E9, §4, §6.1.
 - QSpec FR-323 (`byte_provision`, `replay`).
 
