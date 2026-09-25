@@ -143,6 +143,11 @@ const TOOLCHAIN: &str = concat!("qsl-replay/", env!("CARGO_PKG_VERSION"));
 /// `violation`; the replayed verdict is the selected predicate's: `false`
 /// is `violation`, `true` is `success`, and an S6a outcome that completed
 /// no value is its own category, which never agrees.
+///
+/// FR-063 seam: adding a `FamilyOutcome` variant with no arm here fails
+/// `--cfg seam_probe` with `E0004`; FR-063-AC-7's `#[deny(...)]` closes the
+/// wildcard-arm escape the probe alone cannot see.
+#[deny(clippy::wildcard_enum_match_arm)]
 pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire)?;
     let compiled = recompile(&request)?;
