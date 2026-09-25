@@ -212,6 +212,12 @@ pub struct ReplayRequestWire {
 }
 
 const REQUEST_CONTRACT_VERSION: &str = "quire.native-runtime/v1";
+/// The one package contract version this reader admits for
+/// `package_contract_version` (ADR-013 O-22): the layer-4 `package` byte
+/// reader's own `quire.checked-package/v2` wire (QSpec FR-322). A request
+/// naming any other version refuses -- this reader never negotiates or
+/// infers a version from content (QSL-235).
+const PACKAGE_CONTRACT_VERSION: &str = "quire.checked-package/v2";
 const KNOWN_CAPABILITY_VOCABULARY: &str = "quire.capability-kind/v1";
 const KNOWN_SEMANTIC_PROFILES: &[&str] = &["quire.profile.v1"];
 /// The role a semantic-profile selection fills in a replay request.
@@ -223,6 +229,11 @@ pub enum ReplayRequestRefusal {
     /// `contract_version` is not exactly `quire.native-runtime/v1`.
     #[error("unknown_wire/unsupported-wire: {0:?} is not the admitted quire.native-runtime/v1 contract version")]
     UnknownContractVersion(String),
+    /// `package_contract_version` is not exactly `quire.checked-package/v2`
+    /// (ADR-013 O-22, QSL-235): the catalog's unsupported-wire refusal,
+    /// naming the actual version the request carried.
+    #[error("unknown_wire/unsupported-wire: {0:?} is not the admitted quire.checked-package/v2 package contract version")]
+    UnknownPackageContractVersion(String),
     /// `capability_vocabulary` is absent, or not exactly
     /// `quire.capability-kind/v1`.
     #[error("invalid_capability/unsupported-version: capability_vocabulary is not the admitted quire.capability-kind/v1")]
@@ -301,9 +312,9 @@ impl ReplayRequestRefusal {
     /// reports `unknown_wire`, the code of an unadmitted wire version.
     pub fn code(&self) -> Code {
         match self {
-            Self::UnknownContractVersion(_) | Self::UnknownCapabilityVocabulary => {
-                Code::UnknownWire
-            }
+            Self::UnknownContractVersion(_)
+            | Self::UnknownCapabilityVocabulary
+            | Self::UnknownPackageContractVersion(_) => Code::UnknownWire,
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
             Self::DigestDomainMismatch(_) | Self::ByteDigestMismatch(_) => Code::StaleDependency,
             Self::MalformedDigest(_) | Self::IneligibleByteProvisionDomain(_) => {
@@ -374,8 +385,8 @@ impl ReplayRequest {
     /// Decode a request from `wire`. Version, capability-vocabulary and
     /// semantic-profile checks, and the size-bound check, all happen before
     /// the byte provision or package reference is read at all
-    /// (FR-071-AC-4): no recompilation, package lookup or byte-provision
-    /// access is observed before any of these refusals.
+    /// (FR-071-AC-4, FR-071-AC-8): no recompilation, package lookup or
+    /// byte-provision access is observed before any of these refusals.
     pub fn decode(wire: ReplayRequestWire) -> Result<Self, ReplayRequestRefusal> {
         BoundExceeded::check(measured_encoded_bytes(&wire))?;
         if wire.contract_version != REQUEST_CONTRACT_VERSION {
@@ -394,6 +405,15 @@ impl ReplayRequest {
                     required_role: SEMANTIC_PROFILE_ROLE,
                 });
             }
+        }
+        // ADR-013 O-22 (QSL-235): the package's own declared contract
+        // version is checked here too, before the package reference or byte
+        // provision is read, exactly like the request envelope's own
+        // `contract_version` above.
+        if wire.package_contract_version != PACKAGE_CONTRACT_VERSION {
+            return Err(ReplayRequestRefusal::UnknownPackageContractVersion(
+                wire.package_contract_version,
+            ));
         }
 
         // Only past this point does decoding touch the package reference or
@@ -853,6 +873,38 @@ mod tests {
             ReplayRequest::decode(bad_capability),
             Err(ReplayRequestRefusal::UnknownCapabilityVocabulary)
         ));
+    }
+
+    /// FR-071-AC-8 (TC-445, QSL-235, ADR-013 O-22): a real, otherwise
+    /// well-formed request wire mutated to an unknown
+    /// `package_contract_version` refuses with the catalog's
+    /// unsupported-wire refusal, naming the actual version supplied, before
+    /// the package reference or byte provision is read -- a malformed
+    /// byte-provision entry alongside the bad version proves the ordering,
+    /// exactly like `tc_188` proves it for `contract_version`.
+    #[trace("TC-445", "FR-071-AC-8")]
+    #[test]
+    fn tc_445_refuses_an_unknown_package_contract_version() {
+        let mut bad_package_version = wire(1);
+        bad_package_version.package_contract_version = "quire.checked-package/v3".to_owned();
+        bad_package_version.byte_provision[0].2 = source_bytes(0xFF, 4);
+        assert_eq!(
+            ReplayRequest::decode(bad_package_version),
+            Err(ReplayRequestRefusal::UnknownPackageContractVersion(
+                "quire.checked-package/v3".to_owned()
+            ))
+        );
+        assert_eq!(
+            ReplayRequestRefusal::UnknownPackageContractVersion(
+                "quire.checked-package/v3".to_owned()
+            )
+            .to_string(),
+            "unknown_wire/unsupported-wire: \"quire.checked-package/v3\" is not the admitted quire.checked-package/v2 package contract version"
+        );
+        assert_eq!(
+            ReplayRequestRefusal::UnknownPackageContractVersion("x".to_owned()).code(),
+            Code::UnknownWire
+        );
     }
 
     /// FR-073-AC-2 (TC-210): neither `Debug` nor `Display` of a constructed

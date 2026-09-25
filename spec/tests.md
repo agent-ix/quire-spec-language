@@ -86,6 +86,7 @@ operational validation remains outside this audit-only plan.
 | TC-182 | A positive witness envelope round-trips its transcript and every O-25 member exactly | Unit | P1 | FR-070-AC-3 | ✅ Passed locally |
 | TC-183 | The witness envelope refuses reconstruction when any one O-25 member is missing | Property | P1 | FR-070-AC-4 | ✅ Passed locally |
 | TC-184 | A family adds a typed witness payload through a typed extension point, not an untyped map | Unit | P1 | FR-070-AC-5 | ✅ Passed locally |
+| TC-445 | The witness-packet and replay-request readers refuse an unknown package contract version | Unit | P1 | FR-070-AC-8, FR-071-AC-8 | ✅ Passed locally (QSL-235) |
 | TC-185 | The replay request carries exactly the O-26 members and round-trips them exactly | Unit | P1 | FR-071-AC-1 | ✅ Passed locally |
 | TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7 | ✅ Passed locally |
 | TC-187 | The replay request's function selection accepts only a typed QualifiedName, never a bare string | Unit | P1 | FR-071-AC-3 | 🚧 Planned; #231 |
@@ -324,6 +325,7 @@ as a row that was.
 - TC-182 (FR-070-AC-3): `qsl-replay/src/witness.rs::envelope_tests::tc_182_round_trip_preserves_every_o25_member_and_the_transcript`
 - TC-183 (FR-070-AC-4): `qsl-replay/src/witness.rs::envelope_tests::tc_183_refuses_reconstruction_when_any_o25_member_is_missing` — caveat: this is a `Property`-typed row, but the test asserts only four of the roughly thirteen O-25 members individually (`backend`, `trace_position`, `source_digests`, `obligation_identity`); the rest share the identical `.ok_or(WitnessRefusal::MissingMember(...))?` pattern but are not each individually exercised.
 - TC-184 (FR-070-AC-5): `qsl-replay/src/witness.rs::envelope_tests::tc_184_family_payload_is_a_typed_extension_point` — caveat: the "typed extension point" half is asserted by attaching and round-tripping a new payload type; the "not an untyped map" half is a source-inspection fact (no `get_extra`/string-keyed accessor exists on `WitnessEnvelope`), not itself a runtime assertion.
+- TC-445 (FR-070-AC-8, FR-071-AC-8): `qsl-replay/src/witness.rs::envelope_tests::tc_445_refuses_an_unknown_package_contract_version`, `qsl-replay/src/request.rs::tests::tc_445_refuses_an_unknown_package_contract_version`
 - TC-185 (FR-071-AC-1): `qsl-replay/src/request.rs::tests::tc_185_carries_exactly_o26_members_and_round_trips`
 - TC-186 (FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7): `qsl-replay/src/request.rs::tests::tc_186_byte_provision_is_digest_only_complete_and_bounded`
 - TC-188 (FR-071-AC-4): `qsl-replay/src/request.rs::tests::tc_188_refuses_unknown_version_or_profile_before_recompilation`

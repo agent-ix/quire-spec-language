@@ -684,6 +684,12 @@ pub enum WitnessRefusal {
     /// A required O-25 member is absent from the packet.
     #[error("missing_declaration: O-25 member {0:?} is absent")]
     MissingMember(&'static str),
+    /// `package_contract_version` is present but not exactly
+    /// `quire.checked-package/v2` (ADR-013 O-22, QSL-235): the catalog's
+    /// unsupported-wire refusal, naming the actual version the packet
+    /// carried.
+    #[error("unknown_wire/unsupported-wire: {0:?} is not the admitted quire.checked-package/v2 package contract version")]
+    UnknownPackageContractVersion(String),
     /// A digest names a domain outside the closed FR-201 set, or supplies no
     /// domain at all.
     #[error("stale_dependency/digest-domain-mismatch: {0:?}: {1}")]
@@ -709,11 +715,18 @@ fn classify_digest_error(member: &'static str, err: InvalidDigestRecord) -> Witn
     }
 }
 
+/// The one package contract version [`WitnessEnvelope::reconstruct`] admits
+/// for `package_contract_version` (ADR-013 O-22): the layer-4 `package` byte
+/// reader's own `quire.checked-package/v2` wire (QSpec FR-322). A packet
+/// naming any other version refuses (QSL-235).
+const PACKAGE_CONTRACT_VERSION: &str = "quire.checked-package/v2";
+
 impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// Reconstruct a positive envelope from `packet`. Refuses (with no
     /// partially-built envelope returned) if the encoded size is over the
-    /// configured bound, if any O-25 member is absent, or if a digest
-    /// names a domain outside the closed FR-201 set.
+    /// configured bound, if any O-25 member is absent, if
+    /// `package_contract_version` is not the one admitted version, or if a
+    /// digest names a domain outside the closed FR-201 set.
     pub fn reconstruct(packet: WitnessPacket<P>) -> Result<Self, WitnessRefusal> {
         BoundExceeded::check(measured_encoded_bytes(&packet))?;
 
@@ -738,6 +751,11 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         let package_contract_version = packet
             .package_contract_version
             .ok_or(WitnessRefusal::MissingMember("package_contract_version"))?;
+        if package_contract_version != PACKAGE_CONTRACT_VERSION {
+            return Err(WitnessRefusal::UnknownPackageContractVersion(
+                package_contract_version,
+            ));
+        }
         let source_digests = packet
             .source_digests
             .ok_or(WitnessRefusal::MissingMember("source_digests"))?
@@ -1043,6 +1061,29 @@ mod envelope_tests {
             WitnessEnvelope::reconstruct(missing_obligation),
             Err(WitnessRefusal::MissingMember("obligation_identity"))
         ));
+    }
+
+    /// FR-070-AC-8 (TC-445, QSL-235, ADR-013 O-22): a real, otherwise
+    /// well-formed packet mutated to an unknown `package_contract_version`
+    /// refuses with the catalog's unsupported-wire refusal, naming the
+    /// actual version supplied -- never silently admitted as any string the
+    /// caller happens to send.
+    #[trace("TC-445", "FR-070-AC-8")]
+    #[test]
+    fn tc_445_refuses_an_unknown_package_contract_version() {
+        let mut unknown_version = full_packet(0);
+        unknown_version.package_contract_version = Some("quire.checked-package/v3".to_owned());
+        assert_eq!(
+            WitnessEnvelope::reconstruct(unknown_version),
+            Err(WitnessRefusal::UnknownPackageContractVersion(
+                "quire.checked-package/v3".to_owned()
+            ))
+        );
+        assert_eq!(
+            WitnessRefusal::UnknownPackageContractVersion("quire.checked-package/v3".to_owned())
+                .to_string(),
+            "unknown_wire/unsupported-wire: \"quire.checked-package/v3\" is not the admitted quire.checked-package/v2 package contract version"
+        );
     }
 
     /// FR-070-AC-5 (TC-184): the extension point is a generic parameter
