@@ -251,7 +251,7 @@ record fields at S6a) remains.
 QSL-158, splitting ADR-013 §7 slice S-3, which no FR owned before this
 split. TC-243–260, TC-281, TC-282 and TC-379 above are the corresponding
 test cases. TC-246 and TC-379 are `🚧 Planned`, as FR-087's Status
-records: TC-246 is gated on QSL-6 and QSL-189, and TC-379 is blocked.
+records: TC-246 is gated on QSL-6 and QSL-189, and TC-379 is planned with FR-099 and ADR-015 D-5 (QSL-255 part b).
 TC-243, TC-247, TC-255, TC-258, TC-260 and TC-281 are
 partial, each row naming the steps its test backs; TC-259 is partial
 (QSL-156); and TC-251 covers FR-088-AC-5's `QualifiedName` half only. The

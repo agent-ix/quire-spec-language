@@ -56,6 +56,16 @@ through it, or a crate alias or glob import that reaches it.
   request's byte provision by digest, and SHALL read no path, environment
   variable or search location. Domain packages are the provision's
   `sha256-jcs` entries, handed to I1 as its package input.
+- The executor SHALL refuse a request by the first of ADR-015 D-4's rules,
+  each rule applied over all `dependencies` entries, in entry order, before
+  the next rule, with QSpec FR-323's codes for the rules FR-323 states; the
+  one-source rule and the dependency-input rule are QSL's own and run
+  before the recompile.
+- The executor SHALL refuse entries not in strictly ascending UTF-8 byte
+  order of `identity`, a repeated identity included, as
+  `ReplayRefusal::DependencySelections` (`invalid_package`/`invalid-value`
+  at `/package/dependencies`), before it checks any source count or builds
+  any dependency input.
 - The package reference's `sources` SHALL name exactly one
   `quire.source.bytes/v1` source, the proved package's, and each of its
   `dependencies` entries (QSpec FR-323) SHALL name exactly one such source,
@@ -63,13 +73,6 @@ through it, or a crate alias or glob import that reaches it.
   FR-001 labels. A `sources` list or an entry naming a definition document,
   or other than one source, refuses: the recompile reads no definition
   document, and each package compiles from one unit.
-- The executor SHALL refuse a request by the first of ADR-015 D-4's rules,
-  each rule applied over all `dependencies` entries, in entry order, before
-  the next rule, with the refusal codes QSpec FR-323 gives.
-- The executor SHALL refuse entries not in strictly ascending UTF-8 byte
-  order of `identity`, a repeated identity included, as
-  `ReplayRefusal::DependencySelections` (`invalid_package`/`invalid-value`
-  at `/package/dependencies`), before it builds any dependency input.
 - The executor SHALL build the dependency input (FR-099) from the entries:
   each entry's `identity` and `version`, and its source's labels, identity
   as path and provided bytes. It SHALL carry a dependency-input refusal,

@@ -42,7 +42,8 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    supply `test/a` and `test/b`, each importing the other, and import
    `test/a`: the cycle's import digests are arbitrary, because the cycle
    refusal precedes any digest comparison; import `test/geometry` version
-   `1` and `test/a`, with `test/a` importing `test/geometry` version `2`;
+   `1` and then `test/a`, in that order, with `test/a` importing
+   `test/geometry` version `2`;
    import `test/a` with `test/a` importing a `test/missing` no library
    supplies.
 4. Build `LibraryName` from `test/geometry`, `a.b`, `L` and the empty
@@ -50,8 +51,10 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
 5. Declare `function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }`
    and compile; then replace the call with `g::f(true)`; then give
    `test/geometry` a record `R`, a function `mk` returning `R`, a function
-   over `Set<R>` and a function over a tuple holding `R`, and call each of
-   them; then use `g::R` in a type position.
+   over `Set<R>`, a function over a tuple holding `R` and a function over
+   `Reference<M::T>` for a model type `M::T`, and call each of them; then
+   use `g::R` in a type position; then compile a unit whose only call is
+   `g::f(3)`.
 6. Supply `test/geometry` from the `x < 6` source, with the import's digest
    updated to that compile's `package_id`, and compile step 5's unit again.
 7. Run CLI `compile` over a native-compile/1 request whose `1-draft`
@@ -86,8 +89,9 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   whose callee is `dependency_reference` `{package: d, node: f's node id}`,
   whose `result_type` is the Boolean type node, and whose node
   `dependencies` do not list `f`. `g::f(true)` refuses `ill_typed` at the
-  argument, and each of the three calls over `R` and the use `g::R` refuses
-  `ill_typed`/`operator-ineligible` at the use.
+  argument, and each of the four calls and the use `g::R` refuses
+  `ill_typed`/`operator-ineligible` at the use. The `g::f(3)` unit's
+  package holds no `Int[0, 9]` type node.
 - Step 6: `p`'s call node id and the package's `package_id` both differ
   from step 5's.
 - Step 7: stdout is exactly the bytes spine `compile` returns for step 5's

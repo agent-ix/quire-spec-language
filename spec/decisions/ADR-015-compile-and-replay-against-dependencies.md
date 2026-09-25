@@ -36,7 +36,7 @@ ADR-011 §4 says E4 and the layer-6 `replay` facade check every dependency
 of a package against the `package_id` its import records, and that an
 ordinary compile gets each dependency's source from "the S4 source
 resolution". The E4 closure exists (`CheckedPackage::link_with`,
-FR-087-AC-14). Five questions were still open, so E3 refuses every
+FR-087-AC-14). Five questions were still open, so E3 refused every
 `import`:
 
 1. How spine `compile`, the CLI and `replay` are given dependency sources,
@@ -191,16 +191,18 @@ and the dependency packages the proving run admitted, and invents none
 (ADR-013 C-12).
 
 `replay` refuses with the first of these rules, each rule applied over all
-entries, in entry order, before the next rule, with the refusal codes QSpec
-FR-323 gives:
+entries, in entry order, before the next rule. It uses QSpec FR-323's codes
+for the rules FR-323 states; the one-source rule and the dependency-input
+rule (rules 2 and 3) are QSL's own preconditions on its request, and both
+run before the recompile:
 
-1. The proved package's `sources`, and each entry's `sources`, name exactly
-   one `quire.source.bytes/v1` source, else the existing `NotASource` or
-   `SourceCount`.
-2. The entries are in strictly ascending UTF-8 byte order of `identity`, a
+1. The entries are in strictly ascending UTF-8 byte order of `identity`, a
    repeated identity included, else `ReplayRefusal::DependencySelections`
    (`invalid_package`/`invalid-value` at `/package/dependencies`). This
    runs before any dependency input is built or source compiled.
+2. The proved package's `sources`, and each entry's `sources`, name exactly
+   one `quire.source.bytes/v1` source, else the existing `NotASource` or
+   `SourceCount`.
 3. `replay` builds the dependency input from the entries: identity and
    version from the entry, the four labels from its source reference, the
    reference's identity as the path, and the bytes from the byte
@@ -248,18 +250,21 @@ its result type is the function's checked result type. An `ImportView`
 stays name data only. No type is read from wire bytes (ADR-011 FB-03).
 
 An imported name E3 accepts names a `function` declaration whose parameter
-and result types are package-independent: no type node reachable from them,
-through element, member, component, argument or unit-term references,
-carries an FR-322 `declaration`. Such types (builtin, bounded-domain and
+and result types are package-independent: no node in the transitive
+closure of the signature type nodes' `dependencies` carries an FR-322
+`declaration` or a `ModelOwner`. Such types (builtin, bounded-domain and
 anonymous structural types over them) have the same node id in every
 package (ADR-013 O-04, OQ-G), so the importing graph holds each under the id
-the dependency gives it. Such a node gets the occurrences FR-093 gives any
-node: a `type` occurrence where the importing unit writes the type, and
+the dependency gives it. The importing graph holds exactly the type nodes
+its own nodes reference, such as a call's `result_type` and the types of its
+own arguments, and no other node of the imported signature. Such a node
+gets the occurrences FR-093 gives any node: a `type` occurrence where the importing unit writes the type, and
 otherwise one `generated` occurrence, as for a type node that no region
 denotes. A use of an imported name that names any other declaration, or a
 function one of whose reachable signature type nodes carries a
-`declaration` (a `Set<R>`, a tuple holding `R` or a quantity over a
-declared unit), refuses `ill_typed`/`operator-ineligible` at the use
+`declaration` or a `ModelOwner` (a `Set<R>`, a tuple holding `R`, a
+quantity over a declared unit, or `Reference<M::T>` for a model type
+`M::T`), refuses `ill_typed`/`operator-ineligible` at the use
 (QSpec FR-322). An imported name stands only as a callee.
 
 A reference to an imported function lowers to QSpec FR-322's
