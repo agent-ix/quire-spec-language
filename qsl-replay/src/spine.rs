@@ -282,6 +282,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
     };
     let message = match &first.cause {
         AssemblyCause::UnresolvedTypeName { name } => format!("no declaration is named `{name}`"),
+        AssemblyCause::ImportedTypeName { name } => {
+            format!("`{name}` names an imported declaration, which stands only as a callee")
+        }
         AssemblyCause::AmbiguousTypeName { name, .. } => {
             format!("`{name}` names more than one declaration")
         }
@@ -831,6 +834,7 @@ impl Resolution<'_> {
             admitted.push(AdmittedImport {
                 identity: identity.clone(),
                 view: library.view.clone(),
+                graph: library.package.shared_graph(),
             });
             links.push(Import {
                 identity,

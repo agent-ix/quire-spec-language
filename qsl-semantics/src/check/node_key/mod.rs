@@ -347,6 +347,83 @@ pub enum SemanticTerm {
         /// The bound term.
         value: Box<SemanticTerm>,
     },
+    /// A reference to a node of a dependency package (ADR-015 D-5, QSpec
+    /// FR-322): the dependency's `package_id` and the node's id there. It
+    /// enters the referencing node's identity and is never one of its
+    /// `dependencies` (FR-322-AC-36, FR-322-AC-37).
+    DependencyReference {
+        /// The dependency's `package_id`.
+        package: PackageRef,
+        /// The node's id in the dependency.
+        node: WireNodeRef,
+    },
+}
+
+/// A dependency's `package_id` as a term writes it: a
+/// `quire.package.semantic/v2` SHA-256 semantic id.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PackageRef(pub crate::library::PackageId);
+
+impl Serialize for PackageRef {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            domain: &'static str,
+            algorithm: &'static str,
+            digest: &'a str,
+        }
+        let digits = HexDigest::of(self.0.as_bytes());
+        Wire {
+            domain: PACKAGE_DOMAIN_V2,
+            algorithm: "sha256",
+            digest: digits.as_str(),
+        }
+        .serialize(serializer)
+    }
+}
+
+/// A dependency node's id as a term writes it: a node id in the node
+/// domain, the spelling the dependency's own graph gives it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct WireNodeRef(pub qsl_foundation::digest::WireNodeId);
+
+impl Serialize for WireNodeRef {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            domain: &'static str,
+            digest: &'a str,
+        }
+        let digits = HexDigest::of(self.0.as_bytes());
+        Wire {
+            domain: NODE_KEY_DOMAIN,
+            digest: digits.as_str(),
+        }
+        .serialize(serializer)
+    }
+}
+
+/// The `package_id` domain a `dependency_reference` names (QSpec FR-322).
+const PACKAGE_DOMAIN_V2: &str = "quire.package.semantic/v2";
+
+// Test-only: QSpec's operation vectors carry no `dependency_reference`, so
+// the conformance decoder never needs one.
+#[cfg(test)]
+impl<'de> serde::Deserialize<'de> for PackageRef {
+    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom(
+            "dependency references are not decoded from vectors",
+        ))
+    }
+}
+
+#[cfg(test)]
+impl<'de> serde::Deserialize<'de> for WireNodeRef {
+    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom(
+            "dependency references are not decoded from vectors",
+        ))
+    }
 }
 
 impl SemanticTerm {
@@ -1253,6 +1330,10 @@ enum PreimageTerm<'a> {
         name: &'a str,
         value: Box<PreimageTerm<'a>>,
     },
+    DependencyReference {
+        package: PackageRef,
+        node: WireNodeRef,
+    },
 }
 
 impl SemanticTerm {
@@ -1283,6 +1364,8 @@ impl SemanticTerm {
                 }
             }
             Self::Binding { value, .. } => value.for_each_key(visit),
+            // A dependency's node is no key of this package.
+            Self::DependencyReference { .. } => {}
         }
     }
 
@@ -1320,6 +1403,10 @@ impl SemanticTerm {
             Self::Binding { name, value } => Self::Binding {
                 name: name.clone(),
                 value: Box::new(value.map_keys(map)),
+            },
+            Self::DependencyReference { package, node } => Self::DependencyReference {
+                package: *package,
+                node: *node,
             },
         }
     }
@@ -1458,6 +1545,15 @@ impl Walk<'_> {
                 };
                 (preimage, has)
             }
+            // ADR-015 D-5: the dependency's `package_id` and node id enter
+            // the preimage as written; neither names a node of this graph.
+            SemanticTerm::DependencyReference { package, node } => (
+                PreimageTerm::DependencyReference {
+                    package: *package,
+                    node: *node,
+                },
+                false,
+            ),
         })
     }
 }

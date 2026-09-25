@@ -123,7 +123,7 @@ pub use lowering::{
 pub use node_key::{
     IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment, LiteralValue,
     ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf,
-    OperationMode, Operator, Owner, SemanticTerm, SourceOwner,
+    OperationMode, Operator, Owner, PackageRef, SemanticTerm, SourceOwner, WireNodeRef,
 };
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
@@ -578,7 +578,8 @@ impl PackageDeclarations {
             self.model_operations,
             self.ieee_profile,
             self.dispatch_operations,
-        );
+        )
+        .with_imports(self.imports);
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
             .resolved_signatures
@@ -1281,6 +1282,42 @@ impl CheckedGraph {
         identity: quire_exact::NodeKey,
     ) -> Option<FunctionState<'_>> {
         self.functions.with_identity(identity).map(function_state)
+    }
+
+    /// ADR-015 D-5: the signature of the function callable by name whose
+    /// checked identity has the bytes of `node`, found among the identities
+    /// this graph holds and never by minting a `NodeKey` (ADR-013 O-04,
+    /// R-10). `None` when no such function is declared.
+    pub(crate) fn imported_function(
+        &self,
+        node: &qsl_foundation::digest::WireNodeId,
+    ) -> Option<&Signature> {
+        self.function_with_wire_node(node)
+            .map(|(signature, _)| signature)
+            .filter(|signature| signature.callable_by_name)
+    }
+
+    /// The function whose checked identity has the bytes of `node`, found
+    /// by lookup as [`Self::imported_function`] finds it.
+    fn function_with_wire_node(
+        &self,
+        node: &qsl_foundation::digest::WireNodeId,
+    ) -> Option<(&Signature, &CheckedFunction)> {
+        self.functions
+            .by_identity
+            .iter()
+            .find(|(identity, _)| identity.as_bytes() == node.as_bytes())
+            .and_then(|(_, position)| self.functions.get(*position))
+    }
+
+    /// ADR-015 D-5: the evaluation-visible state of the function an
+    /// imported call names by its node id in this graph, found by lookup
+    /// among this graph's identities.
+    pub fn function_with_wire_identity(
+        &self,
+        node: &qsl_foundation::digest::WireNodeId,
+    ) -> Option<FunctionState<'_>> {
+        self.function_with_wire_node(node).map(function_state)
     }
 
     /// `name`'s identity and declared parameters, filtered to functions a

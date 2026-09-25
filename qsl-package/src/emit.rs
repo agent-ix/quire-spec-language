@@ -305,6 +305,9 @@ impl BodyNames {
                 }
                 SemanticTerm::Aggregate { members } => pending.extend(members),
                 SemanticTerm::Binding { value, .. } => pending.push(value),
+                // FR-322-AC-37: a `dependency_reference` is never one of the
+                // node's `dependencies`, and names no node of this graph.
+                SemanticTerm::DependencyReference { .. } => {}
             }
         }
         names

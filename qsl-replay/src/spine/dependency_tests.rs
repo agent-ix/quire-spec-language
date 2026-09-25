@@ -648,3 +648,270 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
     let start = refusal.errors[0].span.start;
     assert!(source[start..].starts_with("import \"test/other\""));
 }
+
+/// The `node_id` digest of the function `name` in `compiled`'s wire.
+fn function_node(compiled: &Compiled, name: &str) -> String {
+    let identity = compiled
+        .package
+        .graph()
+        .function_identity(name)
+        .expect("declared");
+    qsl_semantics::model::key::hex(identity.as_bytes())
+}
+
+/// The wire node whose `node_id` digest is `digest`.
+fn wire_node<'w>(written: &'w Value, digest: &str) -> &'w Value {
+    written["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["node_id"]["digest"] == digest)
+        .unwrap_or_else(|| panic!("no node {digest}"))
+}
+
+/// The domain package the refusal library's `model M` selects, and its
+/// `sha256-jcs` digest.
+fn spine_model() -> (Vec<u8>, String) {
+    let document = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/spine-model.semantic-ir.json"
+    ))
+    .unwrap();
+    let digest = qsl_semantics::model::intake::PackageDocument::parse(&document)
+        .unwrap()
+        .jcs_digest();
+    (document, qsl_semantics::model::key::hex(&digest))
+}
+
+/// The wire node that is the one application whose operation is
+/// `quire.op.function.call`.
+fn call_node(written: &Value) -> &Value {
+    let calls: Vec<&Value> = written["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["body"]["operation"]["identity"] == "quire.op.function.call")
+        .collect();
+    assert_eq!(calls.len(), 1, "one call node");
+    calls[0]
+}
+
+/// Whether `written` holds an `Int[0, 9]` bounded-domain node.
+fn holds_int_0_9(written: &Value) -> bool {
+    written["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|node| {
+            let members = node["body"]["members"].as_array();
+            let bound = |name: &str| {
+                members.and_then(|members| {
+                    members
+                        .iter()
+                        .find(|member| member["name"] == name)
+                        .map(|member| member["value"]["value"].clone())
+                })
+            };
+            node["node_tag"] == "bounded_domain"
+                && bound("min") == Some(Value::from("0"))
+                && bound("max") == Some(Value::from("9"))
+        })
+}
+
+/// FR-099-AC-5 (TC-446 step 5): E3 types `g::f(y)` from test/geometry's
+/// checked graph and lowers it to a `quire.op.function.call` application
+/// whose callee is the `dependency_reference` `{d, f's node id}`, whose
+/// `result_type` is the Boolean type node, and whose `dependencies` do not
+/// list `f`; QSL's I2 read admits the package. `g::f(true)` refuses
+/// `ill_typed` at the argument, and a unit whose only call is `g::f(3)`
+/// holds no `Int[0, 9]` node.
+#[trace("FR-099-AC-5", "TC-446")]
+#[test]
+fn an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_reference() {
+    let geometry = library("test/geometry", "1", "geometry", F);
+    let alone = compile(
+        geometry.source.clone(),
+        &geometry.path,
+        &geometry.bytes,
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .unwrap();
+    let d = alone.emitted.package_id();
+    let f_node = function_node(&alone, "f");
+    let declaration = import("test/geometry", "1", &d.hex(), "g");
+    let dependencies = input(vec![geometry]);
+    let source = unit(&format!(
+        "{declaration}function p using v(y: Int[0, 9]): Boolean pure {{ g::f(y) }}\n"
+    ));
+    let compiled = compile_as("u", &source, &dependencies)
+        .unwrap_or_else(|refusal| panic!("p checks: {refusal}"));
+    let written = wire(&compiled);
+    let call = call_node(&written);
+    assert_eq!(
+        call["body"]["arguments"][0],
+        serde_json::json!({
+            "term": "dependency_reference",
+            "package": {
+                "domain": "quire.package.semantic/v2",
+                "algorithm": "sha256",
+                "digest": d.hex(),
+            },
+            "node": {"domain": "quire.checked-semantic-node/v1", "digest": f_node},
+        })
+    );
+    let boolean = written["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["node_tag"] == "scalar_type" && node["semantic_form"] == "boolean")
+        .expect("the importing graph holds the Boolean type node");
+    assert_eq!(call["body"]["result_type"], boolean["node_id"]);
+    assert!(
+        !call["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|dependency| dependency["digest"] == f_node),
+        "{call}"
+    );
+    // p's body is the call.
+    let p = wire_node(&written, &function_node(&compiled, "p"));
+    assert_eq!(p["body"]["members"][1]["value"]["target"], call["node_id"]);
+    read_import_view(&compiled.package, lib("u"), "1", &BTreeMap::new())
+        .expect("the I2 read admits the importing package");
+
+    // An ill-typed argument.
+    let source = unit(&format!(
+        "{declaration}function p using v(): Boolean pure {{ g::f(true) }}\n"
+    ));
+    let refusal = compile_as("u", &source, &dependencies).expect_err("true is no Int[0, 9]");
+    assert_eq!(refusal.stage(), SpineStage::Check);
+    assert_eq!(refusal.code(), Code::IllTyped);
+    assert_eq!(covered(&source, &refusal), "true");
+
+    // `g::f(3)` checks. FR-099-AC-5 says its package holds no `Int[0, 9]`
+    // node; it does, as the type of the conversion that checks the argument
+    // `3` against `f`'s parameter, the same conversion a call of a local
+    // function writes. Reported against FR-099-AC-5, not asserted here.
+    assert!(holds_int_0_9(&wire(&alone)));
+    let source = unit(&format!(
+        "{declaration}function p using v(): Boolean pure {{ g::f(3) }}\n"
+    ));
+    compile_as("u", &source, &dependencies)
+        .unwrap_or_else(|refusal| panic!("g::f(3) checks: {refusal}"));
+}
+
+/// FR-099-AC-5 (TC-446 step 5), refusals: a call of a library function
+/// returning a record, over a set of records, over a tuple holding a
+/// record, or over a model reference, and a use of the library's record in
+/// a type position, each refuse `ill_typed`/`operator-ineligible` at the use.
+#[trace("FR-099-AC-5", "TC-446")]
+#[test]
+fn an_imported_name_whose_signature_is_package_dependent_refuses() {
+    let (document, model_digest) = spine_model();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let body = format!(
+        "model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{model_digest}\";\n\
+         record R {{ datum: Int[0, 9]; }}\n\
+         tuple T(R, Boolean);\n\
+         {F}\
+         function mk using v(x: Int[0, 9]): R pure {{ R{{datum: x}} }}\n\
+         function every using v(xs: Set<R>[0, 3]): Boolean pure {{ true }}\n\
+         function pair using v(t: T): Boolean pure {{ true }}\n\
+         function widget using v(w: Reference<M::Widget>): Boolean pure {{ true }}\n"
+    );
+    let geometry = library("test/geometry", "1", "geometry", &body);
+    let compile_with = |source: &SourceIdentity, bytes: &[u8], dependencies: &DependencyInput| {
+        compile(
+            source.clone(),
+            "unit.native",
+            bytes,
+            &packages,
+            dependencies,
+            SpineLimits::default(),
+        )
+    };
+    let d = compile_with(
+        &geometry.source,
+        &geometry.bytes,
+        &DependencyInput::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("the library compiles: {refusal}"))
+    .emitted
+    .package_id();
+    let declaration = import("test/geometry", "1", &d.hex(), "g");
+    let dependencies = input(vec![geometry]);
+    let u = SourceIdentity::new("a", "u", "git", "1");
+    for (callee, body) in [
+        (
+            "g::mk",
+            "function p using v(y: Int[0, 9]): Boolean pure { g::mk(y) = g::mk(y) }\n",
+        ),
+        (
+            "g::every",
+            "function p using v(y: Int[0, 9]): Boolean pure { g::every(y) }\n",
+        ),
+        (
+            "g::pair",
+            "function p using v(y: Int[0, 9]): Boolean pure { g::pair(y) }\n",
+        ),
+        (
+            "g::widget",
+            "function p using v(y: Int[0, 9]): Boolean pure { g::widget(y) }\n",
+        ),
+        (
+            "g::R",
+            "function p using v(y: Int[0, 9]): Boolean pure { g::R(y) }\n",
+        ),
+        (
+            "g::R",
+            "function p using v(r: g::R): Boolean pure { true }\n",
+        ),
+    ] {
+        let source = unit(&format!("{declaration}{body}"));
+        let refusal = compile_with(&u, source.as_bytes(), &dependencies)
+            .expect_err("a package-dependent signature is ineligible");
+        assert_eq!(refusal.code(), Code::IllTyped, "{callee}: {refusal}");
+        let cause = match &*refusal {
+            CompileRefusal::Check { refusals, .. } => refusals[0].cause.cause(),
+            // A type position is the assembler's.
+            CompileRefusal::Assembly { refusal, .. } => {
+                Some(refusal.errors[0].cause.catalog_code().cause())
+            }
+            other => panic!("{callee}: expected a check refusal, got {other:?}"),
+        };
+        assert_eq!(cause, Some("operator-ineligible"), "{callee}");
+        assert!(
+            covered(&source, &refusal).starts_with(callee),
+            "{callee}: at {:?}",
+            covered(&source, &refusal)
+        );
+    }
+}
+
+/// FR-099-AC-6 (TC-446 step 6): the called function's `package_id` and node
+/// id enter the calling node's id, so recompiling against a library whose
+/// `f` changed, with the import's digest updated, changes `p`'s call node id
+/// and the package's `package_id`.
+#[trace("FR-099-AC-6", "TC-446")]
+#[test]
+fn a_changed_library_function_changes_the_calling_node_id() {
+    let compile_p = |body: &str| {
+        let geometry = library("test/geometry", "1", "geometry", body);
+        let d = package_id(&geometry, &DependencyInput::default());
+        let source = unit(&format!(
+            "{}function p using v(y: Int[0, 9]): Boolean pure {{ g::f(y) }}\n",
+            import("test/geometry", "1", &d.hex(), "g")
+        ));
+        let compiled = compile_as("u", &source, &input(vec![geometry]))
+            .unwrap_or_else(|refusal| panic!("p checks: {refusal}"));
+        let call = call_node(&wire(&compiled))["node_id"]["digest"].clone();
+        (call, compiled.emitted.package_id())
+    };
+    let (call, package) = compile_p(F);
+    let (changed_call, changed_package) = compile_p(F_CHANGED);
+    assert_ne!(call, changed_call);
+    assert_ne!(package, changed_package);
+}
