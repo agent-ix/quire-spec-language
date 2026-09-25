@@ -149,7 +149,7 @@ Each producer's locus is the position at which its charge failed:
 
 `LimitExceeded`'s locus SHALL be absent in exactly these cases:
 
-1. The position resolves to no region (the two cases above).
+1. The position resolves to no region (the three cases above).
 2. The I2 reader's own artifact byte ceiling. The reader refuses without
    hashing the oversized bytes, which is the ceiling's purpose, and a digest
    over them is the only name the artifact has.
@@ -290,6 +290,9 @@ Partly implemented under QSL-160.
   located at `/contract_version`, locates every IR refusal and limit
   reported at a value, and gives its own byte ceiling and a refusal at no
   value no locus (AC-9, AC-10).
+- The expression checker's `TypeEnvironmentLimits` ceilings return
+  `StageFailure::Limit(LimitExceeded)` (node count for `ancestor_steps`,
+  work budget for `work_units`) with no locus (FR-082).
 - `RefusalRecord` exists in F `diagnostic`, carrying the code, category,
   locus and catalog fields. The I2 reader builds one for its version
   refusal.
