@@ -2043,28 +2043,43 @@ pub(crate) mod checking_tests {
         assert_eq!(diagnostics.entries().len(), 0);
     }
 
-    /// Two independently constructed contexts each observe exactly one
-    /// diagnostic from checking the same form -- if `check` wrote through
-    /// any shared/global state instead of `cx.diagnostics`, one of the two
-    /// independent sinks would show zero or more than one entry (PR #262
-    /// review, finding F6: the previous version of this test compared
-    /// `diagnostics_a`'s count against an unrelated, freshly constructed
-    /// `DiagnosticSink::default()` rather than against `diagnostics_b`, so
-    /// it never actually observed `cx_b`'s own state, and separately
-    /// asserted a pure function's output against itself by comparing
-    /// `staged_a.value` to `staged_b.value` -- both deleted).
+    /// FR-062-AC-3's central clause (QSL-161): two independently
+    /// constructed typing contexts, checking the same form, produce
+    /// *identical checked output* -- not merely "each observes one
+    /// diagnostic" (this test's own isolation half, kept below).
     ///
-    /// **Untagged (PR #262 review, coordinator round 3, finding 5).** This
-    /// test was tagged `FR-062-AC-3`, whose central clause is that two
-    /// typing contexts checking the same declarations produce *identical
-    /// checked output* -- F6 correctly deleted the `staged_a.value ==
-    /// staged_b.value` self-comparison that used to (fabricatedly) stand in
-    /// for that, but kept the tag on what remained: two counts, each
-    /// asserted only against the literal `1` the loop below guarantees by
-    /// construction, not against each other's checked output. That is a
-    /// real isolation test, not an identical-output test, so it is untagged
-    /// rather than left claiming to back a criterion it does not; see
-    /// FR-062's own amended Acceptance Criteria for AC-3's current status.
+    /// **Rebuilt (QSL-161).** PR #262 review F6 deleted this test's earlier
+    /// `staged_a.value == staged_b.value` assertion as a self-comparison
+    /// (both sides came from the same deterministic call, so nothing could
+    /// make it fail) and left the tag on what remained -- two diagnostic
+    /// counts, each compared only to the literal `1` the loop already
+    /// guarantees by construction. Comparing `CheckedDeclaration` by `==`
+    /// is not available: its checked `Node` tree deliberately carries no
+    /// `PartialEq` (`ir.rs`'s own doc on `Node`'s privacy), and adding one
+    /// across the whole IR is a change no ticket here owns. This repo's own
+    /// established substitute for exactly this situation --
+    /// `qsl-eval/tests/it/collection_algebra.rs` and
+    /// `collection_queries.rs` both compare `format!("{:?}", ..)` of two
+    /// computed values where no `PartialEq` exists -- applies the same way
+    /// here: `CheckedDeclaration` and `StageFailure<CheckRefusal>` both
+    /// derive `Debug`, and two independently constructed, differently
+    /// shaped contexts producing the same `Debug` text is a real assertion
+    /// a divergent implementation could fail.
+    ///
+    /// **Not a self-comparison this time.** Context `b` is seeded with an
+    /// extra, unrelated signature (`signatures_b`, not `Signatures::
+    /// default()` as in `a`) that `f`'s body never calls -- if `check`
+    /// leaked *any* shared state (a global cache keyed by declaration
+    /// count, position, or anything else `b`'s extra signature would
+    /// perturb), the two outputs would diverge; if it does not, they must
+    /// still match exactly, so this is sensitive to real state leakage
+    /// while still asserting genuine equality, not two calls into the same
+    /// closure over the same values. Mutation-verified: temporarily made
+    /// `check` record its diagnostic message with `cx.meter.admission_
+    /// count()` computed *after* an extra, context-specific charge, and
+    /// confirmed this assertion (not just the isolation counts below) is
+    /// what caught the divergence.
+    #[trace("TC-160", "FR-062-AC-3")]
     #[test]
     fn two_contexts_from_the_same_declarations_check_identically() {
         let scalar_limits = SCALAR_LIMITS_UNLIMITED;
@@ -2092,11 +2107,15 @@ pub(crate) mod checking_tests {
             &mut diagnostics_a,
             &mut scopes_a,
         );
-        ValueFunctionFamily::check(&form, &mut cx_a).unwrap();
+        let outcome_a = ValueFunctionFamily::check(&form, &mut cx_a);
 
         let scope_b = empty_scope();
         let location_b = root_location();
-        let signatures_b = Signatures::default();
+        // Deliberately not `Signatures::default()`: an extra declaration
+        // `f`'s body never calls, so a correct implementation's output is
+        // unaffected, but a leaky one (reading declaration count or
+        // position from somewhere other than `cx`) would not be.
+        let signatures_b = Signatures::from(vec![boolean_signature("unrelated", 0)]);
         let declarations_b = declarations_for(
             &scope_b,
             &signatures_b,
@@ -2115,7 +2134,14 @@ pub(crate) mod checking_tests {
             &mut diagnostics_b,
             &mut scopes_b,
         );
-        ValueFunctionFamily::check(&form, &mut cx_b).unwrap();
+        let outcome_b = ValueFunctionFamily::check(&form, &mut cx_b);
+
+        assert_eq!(
+            format!("{outcome_a:?}"),
+            format!("{outcome_b:?}"),
+            "two independently constructed typing contexts checking the same \
+             form must produce identical checked output"
+        );
 
         // Each independently constructed sink shows exactly its own one
         // entry -- a shared/global sink would leak entries into whichever
