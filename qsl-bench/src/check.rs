@@ -255,23 +255,6 @@ pub fn completed_with_five(evaluation: &Evaluation) -> bool {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn smallest_packages_check_and_evaluate() {
-        assert!(check(call_chain(1)).is_ok());
-        assert!(check(independent(1)).is_ok());
-        assert!(check(enum_members(2, &enum_binding(2))).is_ok());
-        let package = linked_chain(2);
-        assert!(completed_with_five(&call_head(
-            &package,
-            &ObjectEnvironment::default()
-        )));
-    }
-}
-
 /// A linear chain `M::T0 <- M::T1 <- ... <- M::T{depth-1}` of model object
 /// types, each declaring one integer field of its own (QSL-57's admission
 /// cost shape: type `k` flattens to `k + 1` slots).
@@ -310,4 +293,21 @@ pub fn admit_object_types(
             ..TypeEnvironmentLimits::default()
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smallest_packages_check_and_evaluate() {
+        assert!(check(call_chain(1)).is_ok());
+        assert!(check(independent(1)).is_ok());
+        assert!(check(enum_members(2, &enum_binding(2))).is_ok());
+        let package = linked_chain(2);
+        assert!(completed_with_five(&call_head(
+            &package,
+            &ObjectEnvironment::default()
+        )));
+    }
 }
