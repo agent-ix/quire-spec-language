@@ -43,14 +43,13 @@
 //! # Omitted nodes
 //!
 //! A node whose (`node_tag`, `semantic_form`) IR's v2 vocabulary does not
-//! hold is omitted: at the pinned IR revision that is `value`/`parameter`
-//! (IR-280) and `scalar_type`/`compound_unit`. So is a node that names a node
-//! the checked graph does not hold (a declared unit node, which lowering
-//! names by key but does not build), a nominal node whose owner the lock
-//! does not select, an application node inside a recursion group (the
-//! pinned IR keys it by the bare group label, not FR-322's
-//! `{ordinal, size}`), and every node that names an omitted one. Every other
-//! node is written (FR-062-AC-9: a refusal is per item).
+//! hold is omitted. So is a node that names a node the checked graph does
+//! not hold (a declared unit node, which lowering names by key but does not
+//! build, so a `scalar_type`/`compound_unit` node over one), a nominal node
+//! whose owner the lock does not select, and every node that names an
+//! omitted one. Every other node is written (FR-062-AC-9: a refusal is per
+//! item), `value`/`parameter` nodes and recursion-group application nodes
+//! included (IR-280, IR-242).
 //! [`Emission::omitted`] lists each omitted node and its cause.
 //!
 //! # Nominal nodes
@@ -184,8 +183,7 @@ pub(crate) struct OmittedNode {
 /// Why a node is omitted from the wire.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum OmissionCause {
-    /// IR's v2 vocabulary has no such form for the tag (IR-280: no
-    /// `value`/`parameter`).
+    /// IR's v2 vocabulary has no such form for the tag.
     UnsupportedForm {
         /// The node's tag.
         node_tag: NodeTag,
@@ -198,12 +196,6 @@ pub(crate) enum OmissionCause {
     /// A nominal node whose owner is not the checked unit's source, so the
     /// lock the emitter writes selects no owner it joins.
     UnlockedOwner,
-    /// An application node inside a recursion group. The pinned IR reader
-    /// re-derives its key from the bare `recursion_group` label rather than
-    /// FR-322's `{ordinal, size}` and `group_reference` terms, so it would
-    /// refuse the package as `stale-node-key`. The whole group is omitted
-    /// through [`Self::NamesOmittedNode`].
-    RecursiveApplication,
     /// The node names a node the checked graph does not hold.
     NamesAbsentNode(CheckedNodeId),
     /// The node names a node the wire omits.
@@ -380,11 +372,6 @@ impl<'g> Candidate<'g> {
         declared == self.node.declaration().is_some()
     }
 
-    fn is_recursive_application(&self) -> bool {
-        self.node.recursion().is_some()
-            && matches!(self.node.body(), SemanticTerm::Application { .. })
-    }
-
     /// The node as FR-322 writes it.
     fn wire_node(&self) -> Result<CheckedSemanticNodeV2, EmitRefusal> {
         let node = self.node;
@@ -493,8 +480,6 @@ fn omissions(
             Some(OmissionCause::DeclarationOccurrenceMismatch)
         } else if !owner_is_locked(candidate.node.nominal(), source) {
             Some(OmissionCause::UnlockedOwner)
-        } else if candidate.is_recursive_application() {
-            Some(OmissionCause::RecursiveApplication)
         } else {
             candidate
                 .names

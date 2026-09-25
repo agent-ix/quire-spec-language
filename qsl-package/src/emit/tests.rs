@@ -12,7 +12,7 @@ use qsl_forms::{
     FunctionDeclaration, TypeForm,
 };
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
-use qsl_semantics::check::{CheckingLimits, NodeTag, PackageDeclarations};
+use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
 use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
 use qsl_semantics::value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
@@ -459,8 +459,7 @@ fn recursive_f() -> CheckedPackage {
 }
 
 /// Every node of `package` as the emission arm writes it, in graph order,
-/// including the nodes the pinned IR's vocabulary makes it omit (a
-/// parameter node, and the functions and records that name one).
+/// including any node the emitter would omit.
 fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
     let graph = package.graph();
     let mut recorded = recorded_occurrences(graph).expect("every role is FR-322's");
@@ -676,39 +675,26 @@ fn every_emitted_node_has_its_recorded_occurrences() {
     }
 }
 
-/// IR-280: IR's v2 vocabulary has no `value`/`parameter` form. A package
-/// holding `both(a, b)` and `t` writes `t` and omits `both`: its parameter
-/// nodes by form, and each node naming one after it. The rest is admitted.
+/// IR-280: IR's v2 vocabulary holds `value`/`parameter` (FR-092). A
+/// package holding `both(a, b)` and `t` is written with nothing omitted,
+/// `both`'s two parameter nodes included, and reads back Verified with both
+/// functions exported.
 #[trace("FR-093-AC-7", "TC-416")]
 #[test]
-fn a_form_ir_lacks_is_omitted_and_everything_else_is_written() {
+fn a_function_with_parameters_is_written_whole() {
     let package = package(vec![both(), t()]);
     let both_key = package.graph().function_identity("both").unwrap();
     let emission = emit(&package);
-    let parameters: Vec<&OmittedNode> = emission
-        .omitted
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    let parameters = nodes(&wire)
         .iter()
-        .filter(|omission| {
-            omission.cause
-                == OmissionCause::UnsupportedForm {
-                    node_tag: NodeTag::Value,
-                    semantic_form: "parameter",
-                }
-        })
-        .collect();
-    assert_eq!(parameters.len(), 2, "a and b: {:?}", emission.omitted);
-    let both_node = emission
-        .omitted
-        .iter()
-        .find(|omission| *omission.node.digest == both_key.to_string())
-        .expect("both is omitted");
-    assert!(matches!(
-        both_node.cause,
-        OmissionCause::NamesOmittedNode(_)
-    ));
+        .filter(|node| node["node_tag"] == "value" && node["semantic_form"] == "parameter")
+        .count();
+    assert_eq!(parameters, 2, "a and b");
     let exports = verified_exports(&emission);
+    assert_eq!(exports.get("both"), Some(&both_key.to_string()));
     assert!(exports.contains_key("t"));
-    assert!(!exports.contains_key("both"));
 }
 
 /// `Int[0, 9]`.
@@ -997,9 +983,9 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
 /// (an enum literal) and `keep(s: Status): Status { s }` (an enum-typed
 /// parameter) reads back Verified: IR re-derives each nominal node's key
 /// from its `nominal_identity_preimage`. Each member depends on the
-/// declaration, and no node names an absent one. `keep`'s parameter is
-/// omitted only for its form (IR-280). An enum owned by a definition the
-/// lock does not select is omitted, and the rest is still written.
+/// declaration, and no node names an absent one. `keep` and its parameter
+/// are written (IR-280). An enum owned by a definition the lock does not
+/// select is omitted, and the rest is still written.
 #[trace("TC-416")]
 #[test]
 fn enum_declaration_and_member_nodes_are_written() {
@@ -1053,23 +1039,14 @@ fn enum_declaration_and_member_nodes_are_written() {
             .any(|cause| matches!(cause, OmissionCause::NamesAbsentNode(_))),
         "{omitted:?}"
     );
-    assert_eq!(
-        omitted.get(&parameter.key().to_string()),
-        Some(&&OmissionCause::UnsupportedForm {
-            node_tag: NodeTag::Value,
-            semantic_form: "parameter",
-        })
-    );
-    assert!(matches!(
-        omitted.get(&keep_key.to_string()),
-        Some(OmissionCause::NamesOmittedNode(_))
-    ));
+    assert!(!omitted.contains_key(&parameter.key().to_string()));
     // The foreign enum's two members name its declaration.
-    assert_eq!(omitted.len(), 5, "{omitted:?}");
+    assert_eq!(omitted.len(), 3, "{omitted:?}");
     let exports = verified_exports(&emission);
     for name in ["Point", "Pair", "Status", "ready"] {
         assert!(exports.contains_key(name), "{name}: {exports:?}");
     }
+    assert_eq!(exports.get("keep"), Some(&keep_key.to_string()));
     let wire = wire(&emission);
     let declaration = declared(&wire, "Status");
     assert_eq!(declaration["node_id"]["digest"], json!(status.to_string()));
@@ -1120,14 +1097,14 @@ fn enum_declaration_and_member_nodes_are_written() {
     }
 }
 
-/// The pinned IR reader keys an application node in a recursion group by
-/// the bare group label, not FR-322's `{ordinal, size}`, so it would refuse
-/// the whole package as `stale-node-key`. `g(): Boolean { if true then true
-/// else g() }` puts two application nodes in `g`'s group: they are omitted,
-/// `g` with them, and the rest is admitted.
+/// IR-242: IR keys an application node in a recursion group by FR-322's
+/// `{size, ordinal}` in graph order, as `check` keys it. `g(): Boolean { if
+/// true then true else g() }` puts two application nodes in `g`'s group, and
+/// the recursive `f(x: Int[0, 9])` puts three nodes in its group: each
+/// package is written with nothing omitted and reads back Verified.
 #[trace("FR-093-AC-7", "TC-416")]
 #[test]
-fn a_recursion_group_holding_an_application_is_omitted() {
+fn a_recursion_group_holding_an_application_is_written() {
     let g = function(
         "g",
         &[],
@@ -1140,30 +1117,41 @@ fn a_recursion_group_holding_an_application_is_omitted() {
             }),
         },
     );
-    let package = package(vec![g, t()]);
-    let members: BTreeSet<String> = package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .filter(|node| node.recursion().is_some())
-        .map(|node| node.key().to_string())
-        .collect();
-    let g_key = package.graph().function_identity("g").unwrap().to_string();
-    assert!(members.contains(&g_key), "g is in its own group");
-    let emission = emit(&package);
-    let causes: BTreeMap<String, &OmissionCause> = emission
-        .omitted
-        .iter()
-        .map(|omission| (omission.node.digest.to_string(), &omission.cause))
-        .collect();
-    let omitted: BTreeSet<String> = causes.keys().cloned().collect();
-    assert!(members.is_subset(&omitted), "{causes:?}");
-    assert!(causes
-        .values()
-        .any(|cause| **cause == OmissionCause::RecursiveApplication));
-    let exports = verified_exports(&emission);
-    assert!(exports.contains_key("t"));
-    assert!(!exports.contains_key("g"));
+    for (package, function) in [(package(vec![g, t()]), "g"), (recursive_f(), "f")] {
+        let members: Vec<&SemanticNode> = package
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .filter(|node| node.recursion().is_some())
+            .collect();
+        let key = package.graph().function_identity(function).unwrap();
+        assert!(
+            members.iter().any(|node| node.key() == key),
+            "{function} is in its own group"
+        );
+        assert!(
+            members
+                .iter()
+                .filter(|node| matches!(node.body(), SemanticTerm::Application { .. }))
+                .count()
+                >= 2,
+            "{function}'s group holds application nodes"
+        );
+        let emission = emit(&package);
+        assert_eq!(emission.omitted, [], "{function}");
+        let wire = wire(&emission);
+        let written = nodes(&wire)
+            .iter()
+            .filter(|node| node.get("recursion_group").is_some())
+            .count();
+        assert_eq!(
+            written,
+            members.len(),
+            "{function}'s whole group is written"
+        );
+        let exports = verified_exports(&emission);
+        assert_eq!(exports.get(function), Some(&key.to_string()));
+    }
 }
 
 /// FR-322 admits no empty semantic graph: an empty package refuses with no
@@ -1385,21 +1373,22 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
     }
 }
 
-/// A unit with a declared record and an `Integer` function, the FR-091
-/// round trip's source. The function takes no parameter: IR's v2 reader
-/// has no `parameter` form yet, so a parameter node is omitted from the
-/// emitted package (`a_form_ir_lacks_is_omitted_and_everything_else_is_written`).
+/// A unit with a declared record, an `Integer` function and a function with
+/// parameters, the FR-091 round trip's source.
 const SPINE_TEXT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\" version \"1\" digest \
     \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
     record Point { x: Integer; y: Integer; }\n\
-    function one using v(): Integer pure { 1 + 0 }\n";
+    function one using v(): Integer pure { 1 + 0 }\n\
+    function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }\n";
 
 /// FR-091 end to end: source text goes through S1 (`qsl_cst::parse`), S2
 /// (`qsl_forms::build_unit`), the E3 assembler, S3 `check`, S4 `link` and
-/// `emit_checked`, and I2 reads the bytes back Verified. The record's
-/// `declaration` occurrence is placed at its declared name, and every
-/// occurrence at a region of the unit.
+/// `emit_checked`, and I2 reads the bytes back Verified with nothing
+/// omitted: `both`'s `value`/`parameter` nodes are written (IR-280). The
+/// record's `declaration` occurrence is placed at its declared name, each
+/// parameter's occurrences at regions of `both`, and every occurrence at a
+/// region of the unit.
 #[trace("FR-091-AC-10", "FR-096-AC-1", "TC-426")]
 #[test]
 fn source_text_compiles_through_the_spine_and_reads_back_verified() {
@@ -1425,6 +1414,7 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let exports = verified_exports(&emission);
     assert!(exports.contains_key("Point"), "{exports:?}");
     assert!(exports.contains_key("one"), "{exports:?}");
+    assert!(exports.contains_key("both"), "{exports:?}");
 
     let wire = wire(&emission);
     let point = declared(&wire, "Point");
@@ -1441,6 +1431,28 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
     let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
     assert_eq!(&SPINE_TEXT[start..end], "Point");
+    let both = SPINE_TEXT.find("function both").unwrap();
+    let parameters: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["node_tag"] == "value" && node["semantic_form"] == "parameter")
+        .collect();
+    assert_eq!(parameters.len(), 2, "a and b");
+    for parameter in parameters {
+        let mut placed = 0;
+        for entry in wire["source_map"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry["node_id"] == parameter["node_id"])
+        {
+            for region in entry["regions"].as_array().unwrap() {
+                let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
+                assert!(start >= both, "{entry} lies in both");
+                placed += 1;
+            }
+        }
+        assert!(placed > 0, "{parameter} has a placed occurrence");
+    }
     for entry in wire["source_map"].as_array().unwrap() {
         for region in entry["regions"].as_array().unwrap() {
             let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
