@@ -105,6 +105,14 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   capability-vocabulary or semantic-profile identifier outside its closed
   set, with a structured cause and no partial request — before any
   recompilation is attempted.
+- The reader SHALL refuse a request whose `package_contract_version` is not
+  exactly the one package contract version this reader admits
+  (`quire.checked-package/v2`), with the catalog's unsupported-wire refusal
+  (`unknown_wire`/`unsupported-wire`, ADR-013 O-22) naming the actual version
+  supplied, before the package reference or byte provision is read — the same
+  ordering and no-negotiation rule the envelope's own `contract_version`
+  check already follows. **Added by QSL-235**: this member previously
+  decoded unchecked.
 
 ## Acceptance Criteria
 
@@ -117,6 +125,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-5 | A request whose package reference names a `RawSourceRef` digest with no matching byte-provision entry refuses at construction; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
 | FR-071-AC-6 | A byte-provision entry whose stored bytes do not hash to its own declared digest, under its declared digest domain's algorithm, refuses at construction with cause `stale_dependency`/`byte-digest-mismatch`; this is this requirement's own decode-time half of "stale package identity" and is distinct from #243's execution-time recompiled-`package_id` check. | Test (TC-186) |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
+| FR-071-AC-8 | A request whose `package_contract_version` is not exactly `quire.checked-package/v2` refuses at decode with the catalog's unsupported-wire refusal, naming the actual version supplied, before the package reference or byte provision is read. | Test (TC-445) |
 
 ## Dependencies
 

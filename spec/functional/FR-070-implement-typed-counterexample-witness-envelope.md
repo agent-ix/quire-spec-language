@@ -92,6 +92,12 @@ requires an already-admitted `Witness`).
 - Envelope construction SHALL refuse when the envelope's encoded size
   exceeds the configured reader bound, and SHALL NOT return a truncated or
   partially-populated envelope in that case.
+- Envelope reconstruction SHALL refuse a `package_contract_version` that is
+  present but not exactly the one package contract version this reader
+  admits (`quire.checked-package/v2`), with the catalog's unsupported-wire
+  refusal (`unknown_wire`/`unsupported-wire`, ADR-013 O-22) naming the actual
+  version supplied. **Added by QSL-235**: this member was previously only
+  checked for presence, never for its value.
 
 ## Constraints
 
@@ -110,6 +116,7 @@ requires an already-admitted `Witness`).
 | FR-070-AC-5 | #186 can add a state-`forall`-specific witness payload as a typed consumer of the envelope's extension point, in #186's own change, with no edit to this envelope's type, constructors, or round-trip contract, and the extension point itself is typed (a trait or generic parameter), never a `String`-keyed untyped map. | Test (TC-184) |
 | FR-070-AC-6 | This envelope defines no `contract_version` member of its own; a `RawSourceRef` or `package_id` digest it stores whose domain falls outside the closed FR-201 digest-domain set refuses at construction. | Test (TC-181) |
 | FR-070-AC-7 | An envelope whose encoded size exceeds the configured reader bound refuses at construction, with no truncated or partially-populated envelope returned. | Test (TC-181) |
+| FR-070-AC-8 | A packet whose `package_contract_version` is present but not exactly `quire.checked-package/v2` refuses at reconstruction with the catalog's unsupported-wire refusal, naming the actual version supplied. | Test (TC-445) |
 
 ## Dependencies
 
