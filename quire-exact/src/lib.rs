@@ -58,25 +58,38 @@
 //! dependency's own fixture `Cargo.toml`. Building the gate is tracked
 //! separately (QSL-130) and left to ADR-011 §2.3's own named enforcer, #219.
 //!
-//! **H-9: no acceptance criterion exists for most of this crate's own test
-//! suite.** The exception is FR-089-AC-6 (TC-297): the three kernel
-//! population-pair refusal tests in `value`, `equality` and `key` carry the
-//! two-argument `#[trace("TC-297", "FR-089-AC-6")]` form. Every other
-//! `#[trace("TC-3NN")]` tag here is the bare one-argument form,
-//! against the repo's two-argument `#[trace("TC-NNN", "FR-NNN-AC-n")]`
-//! convention, because there is no `FR-NNN-AC-n` to name: no `spec/`
-//! functional requirement or acceptance criterion, no `spec/test-cases/
-//! TC-3NN-*.md` file and no `spec/tests.md`/subsystem `tests.md` test
-//! matrix row exists for the rest of `quire-exact`'s value-kernel behavior as of this
-//! PR. This is stated here rather than left silent, and rather than bound
-//! to an approximate existing FR (every FR found under `spec/functional/`
-//! that mentions ADR-011/ADR-013 is about package/capability admission,
-//! not value-kernel semantics -- binding these tests to one of those
-//! would misrepresent what they actually verify). Authoring a real FR/AC
-//! set and test matrix for this crate is a QSpec decision -- which
-//! subsystem directory it belongs to, and whether criteria are authored
-//! before or after the code they describe -- not something this PR
-//! decides for itself.
+//! **H-9 (QSL-163): the kernel's value-semantics requirements are QSpec's,
+//! not this repo's `spec/`.** PR #254's review flagged that most of this
+//! crate's own tests trace to no requirement, and named the choice of
+//! home -- QSpec or this repo's `spec/` -- as undecided. It is decided now,
+//! and it was not really open: every FR that this crate's own module docs
+//! already cite for value semantics (`FR-140` decimals, `FR-141` text and
+//! enumerations, `FR-142` quantities and units, `FR-144` collection
+//! algebra, `FR-147` integer division, `FR-148` IEEE profiles) is an
+//! `agent-ix/quire-specification` id, and this repo already treats that
+//! crate as the owner: `Task-048` (`plan/Plan-013-complete-v1-delivery`)
+//! references exactly those QSpec FRs and their QSpec `TC-185` through
+//! `TC-187`/`TC-192`/`TC-193` as the acceptance evidence for this same
+//! scalar/numeric/text/enum/unit/IEEE kernel, and `IT-011` records that
+//! QSpec, not QSL's `spec/`, owns `FR-131` through `FR-153` outright.
+//! Authoring a parallel FR/TC set in this repo's `spec/` for behavior QSpec
+//! already normatively defines would duplicate that ownership rather than
+//! resolve the gap (QSL never vendors specs -- graph by reference).
+//!
+//! What was actually missing is narrower than "no requirement": it is that
+//! most of *this crate's own* tests do not yet carry the two-argument
+//! `#[trace("TC-NNN", "FR-NNN-AC-n")]` form naming the QSpec id they verify,
+//! even where the module doc above them already names the owning FR. The
+//! established exception was FR-089-AC-6 (TC-297): the three kernel
+//! population-pair refusal tests in `value`, `equality` and `key`. This PR
+//! adds a second, real slice, each verified to fail under the behavior its
+//! AC names (not tagged because it already passed): `division`'s two tests
+//! against QSpec `FR-147-AC-2`/`FR-147-AC-4` (via central `TC-192`), and
+//! `text`'s two tests against QSpec `FR-141-AC-4` (via central `TC-186`).
+//! Extending this binding to the rest of this crate's ~50 remaining
+//! untagged tests, one AC at a time, is QSL-133's scope, not invented here
+//! -- this PR's job was the decision and a first honest, verified slice of
+//! it, not the full test-matrix execution.
 //!
 //! This crate's ids run `TC-300` to `TC-356`, but that range names 57 ids
 //! for 56 tests: **`TC-343` is retired, not reused.** It named

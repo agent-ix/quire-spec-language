@@ -499,7 +499,13 @@ mod tests {
 
     /// TC-341: a runtime UTF-8 payload within its declared length bounds is
     /// admitted unchanged.
+    ///
+    /// Also QSpec FR-141-AC-4 (each text profile applies its exact length
+    /// domain), verified through central `TC-186`
+    /// (`agent-ix/quire-specification`): the kernel-level admit-within-bound
+    /// half of that domain check (QSL-163).
     #[trace("TC-341")]
+    #[trace("TC-186", "FR-141-AC-4")]
     #[test]
     fn tc_341_utf8_payload_within_bound_is_admitted() {
         let payload = TextPayload::from_utf8("café".as_bytes()).unwrap();
@@ -513,7 +519,11 @@ mod tests {
 
     /// TC-342: a payload longer than the declared maximum is refused with
     /// `TextLengthOutOfDomain`, never silently truncated.
+    ///
+    /// Also QSpec FR-141-AC-4, verified through central `TC-186`: the
+    /// kernel-level refuse-past-bound half of that domain check (QSL-163).
     #[trace("TC-342")]
+    #[trace("TC-186", "FR-141-AC-4")]
     #[test]
     fn tc_342_admit_refuses_past_the_declared_maximum() {
         let payload = TextPayload::from_utf8("hello".as_bytes()).unwrap();
