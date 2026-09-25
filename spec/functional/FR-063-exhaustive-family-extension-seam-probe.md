@@ -95,11 +95,10 @@ SHALL construct or match on a probe variant, and the `seam_probe` and `seam_prob
    seam_probe_downstream`. The root crate names `qsl-route` only as a dev
    dependency, so building the root crate's library never compiles it;
 4. `qsl-eval` (layer 5, QSL-183) with `RUSTFLAGS=--cfg seam_probe --cfg
-   seam_probe_downstream`. The root crate does not depend on `qsl-eval`, so
-   building the root crate's library never compiles it either. **Amended
-   by QSL-5**: the root crate now reaches `qsl-eval` through `qsl-replay`,
-   but its build gives `qsl-eval`'s seams their probe arms, so this build
-   still reports them;
+   seam_probe_downstream`, which reports `qsl-eval`'s own seams. The root
+   crate's build reaches `qsl-eval` through `qsl-replay` but sets
+   `seam_probe_eval_downstream`, which gives those seams their probe arms,
+   so only this build reports them;
 5. `qsl-replay` (layer 6, QSL-5) with `RUSTFLAGS=--cfg seam_probe --cfg
    seam_probe_downstream --cfg seam_probe_eval_downstream`, which reports
    the replay executor's seam over `FamilyOutcome`.

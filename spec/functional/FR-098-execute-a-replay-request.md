@@ -37,7 +37,8 @@ property, so the proved verdict is `violation`.
 
 The spine compile is public only because `command`, another crate, calls
 it. It is not part of the facade CG may call: the FR-060 T12-A rule
-refuses a CG call into `qsl_replay::spine::`.
+refuses any CG reference to `qsl_replay::spine` -- a `use` of it, a path
+through it, or a crate alias or glob import that reaches it.
 
 ## Inputs
 
@@ -68,9 +69,19 @@ refuses a CG call into `qsl_replay::spine::`.
 - The recompiled `package_id` SHALL equal the request's. No
   `CheckedPackage` is built from wire bytes.
 - The executor SHALL resolve the selection by name lookup in the recompiled
-  package's declarations (OQ-5). It SHALL convert each argument's
+  package's declarations (OQ-5), and SHALL refuse a function whose declared
+  result is not `Boolean` before any call. It SHALL convert each argument's
   `WireNodeId` to a `NodeKey` only by lookup in the recompiled package, and
-  order the arguments by the function's declared parameter positions.
+  order the arguments by the function's declared parameter positions,
+  whatever order they arrive in.
+- Each canonical integer assignment SHALL become a value of its
+  parameter's declared type: an integer for an integer type, and `0` or
+  `1` (`false`, `true`) for `Boolean`. Any other value for a Boolean
+  parameter, or any value for a parameter of a kind no integer is,
+  refuses before the call. A value outside a parameter's declared domain
+  (`12` for `Int[0, 9]`) refuses at S6a admission. Both refuse with the
+  same cause, `WrongValueKind` (`invalid_runtime_input`), naming the
+  parameter's position.
 - Each ADR-013 O-26 refusal SHALL be a typed `ReplayRefusal` variant with no
   partial result: request decode refusals (FR-071), a limit above the
   reader limit, a source reference that is not one source unit, a recompile
@@ -78,21 +89,23 @@ refuses a CG call into `qsl_replay::spine::`.
   selection naming no function node, an argument naming no parameter, a
   parameter bound twice or not at all, a witness that does not decode, an
   S6a admission refusal (wrong type, or a value outside the declared
-  domain), and a selected function that completes a non-Boolean value.
-- A replay whose verdict differs from `violation`, including one whose S6a
-  outcome completes no value (`refused`, `incomplete`, `undefined` or a
-  family result), SHALL settle `inconclusive` with both verdicts as its
-  typed cause, never repaired.
+  domain), and a selected function whose declared result is not
+  `Boolean`. Each has a catalog code (`ReplayRefusal::code`).
+- A replay whose verdict differs from `violation` SHALL settle
+  `inconclusive` with both verdicts as its typed cause (`Verdicts`), and one
+  whose S6a outcome completes no value (`refused`, `incomplete`,
+  `undefined` or a family result) SHALL settle `inconclusive` with cause
+  `NoValue`, never repaired (FR-072).
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-098-AC-1 | A request whose byte provision carries its one source and, under their `sha256-jcs` digests, the domain packages the source selects recompiles from those bytes alone, keeps its `package_id`, and replays. A package reference naming a definition document or two sources refuses before any recompile. | Test (TC-444) |
-| FR-098-AC-2 | The selection resolves by `QualifiedName` in the recompiled package; `Input` assignments and `Witness` bindings join the function's parameters by parameter node id; the call runs through S6a, and an agreeing replay settles `reproduced-without-witness` (`Input`) or `reproduced-with-evaluated-witness` with its FR-351 record (`Witness`), carrying the call's charges and the executor's toolchain pin. | Test (TC-444) |
+| FR-098-AC-2 | The selection resolves by `QualifiedName` in the recompiled package; `Input` assignments and `Witness` bindings join the function's parameters by parameter node id, in declared parameter order whatever order they arrive in, and a Boolean parameter takes `0` and `1`; the call runs through S6a, and an agreeing replay settles `reproduced-without-witness` (`Input`) or `reproduced-with-evaluated-witness` with its FR-351 record (`Witness`), carrying the call's charges and the executor's toolchain pin. | Test (TC-444) |
 | FR-098-AC-3 | A meaning-affecting source edit refuses by `package_id`, naming both identities. A presentation-only edit, which keeps the `package_id`, refuses by source digest. | Test (TC-444) |
-| FR-098-AC-4 | Each refusal in Behavior -- unknown version, a missing input, a byte/digest mismatch, a stale `package_id`, a selection naming no function node, an arity mismatch, a type mismatch, a value outside the declared domain, a limit above the reader limit, a recompile stage limit, and a non-predicate selection -- refuses with its typed variant and no partial result. | Test (TC-444) |
-| FR-098-AC-5 | A replay that disagrees with the refuted property, or completes no value, settles `inconclusive` with a typed cause holding both verdicts, and is never repaired. | Test (TC-444) |
+| FR-098-AC-4 | Each refusal in Behavior -- unknown version, a missing input, a byte/digest mismatch, a stale `package_id`, a selection naming no function node, an arity mismatch, a type mismatch and a value outside the declared domain (each `WrongValueKind`), a limit above the reader limit, a recompile stage limit at S1 or S3, and a selection whose declared result is not `Boolean` (refused before any call, even with no accounting budget) -- refuses with its typed variant and no partial result. | Test (TC-444) |
+| FR-098-AC-5 | A replay that disagrees with the refuted property settles `inconclusive` with cause `Verdicts`, and one that completes no value with cause `NoValue`, each holding both verdicts; neither is repaired. | Test (TC-444) |
 | FR-098-AC-6 | A dependency whose source, recompiled from the byte provision, yields a `package_id` other than the one the proved package records refuses with `DependencyIdentityMismatch` (`stale_dependency`), ADR-011 §4 dependency binding. | Test (planned) |
 
 ## Dependencies
@@ -109,10 +122,4 @@ refuses a CG call into `qsl_replay::spine::`.
 
 Implemented under QSL-5. TC-444 passes locally for AC-1 to AC-5.
 
-AC-6 is not delivered. No package can have a dependency today: E3 refuses a
-unit that declares an `import`, the emitter writes
-`dependency_selections: []`, and `CheckedPackage::dependencies` is always
-empty (FR-087, AC-13 notes; ADR-011 §2). The owner is the QSpec checked-package
-v2 schema defect that types a `dependency_selections` entry as a
-definition selection, then QSL-6 (ADR-011 M-4), which fills the E4
-dependency closure. Remaining work: QSL-6.
+AC-6 is not delivered. QSL-255 owns it.

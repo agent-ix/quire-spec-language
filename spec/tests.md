@@ -221,7 +221,7 @@ operational validation remains outside this audit-only plan.
 | TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally (QSL-140); step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally (QSL-249) |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally (QSL-252) |
-| TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5 | ✅ Passed locally (QSL-5); FR-098-AC-6 (`DependencyIdentityMismatch`) is not delivered -- Remaining work: QSL-6, after the QSpec `dependency_selections` schema defect |
+| TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5 | ✅ Passed locally (QSL-5); FR-098-AC-6 (`DependencyIdentityMismatch`) is not delivered; QSL-255 owns it |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

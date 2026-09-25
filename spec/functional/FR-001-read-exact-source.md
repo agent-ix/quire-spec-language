@@ -127,13 +127,15 @@ identity gives every source-owned declaration a different key.
   O-26). It passes that reference's four labels as the source identity, the
   reference's identity as the path, and the provided bytes as the source. A
   reference whose label is only whitespace, which QSpec's `Nonempty` admits,
-  refuses the replay with `invalid_source_identity` before recompilation. It requires the recomputed
+  refuses the replay with `invalid_source_identity` at S1, before any form
+  is built. It requires the recomputed
   `quire.source.bytes/v1` digest to equal the reference's digest, as
   ADR-013 C-13 requires. The recompiled package therefore names each source
   exactly as the proving run did, which keeps its declaration keys and its
-  `package_id` (US-005). The executor is ADR-013 TK-01; it
-  does not exist yet, and this behaviour is built with it. It is the replay
-  module's recompilation path, the S8 row of ADR-011 §2.
+  `package_id` (US-005). The executor is ADR-013 TK-01, `qsl_replay::replay`
+  ([FR-098](FR-098-execute-a-replay-request.md), QSL-5), and this is the
+  replay module's recompilation path, the S8 row of ADR-011 §2. TC-444
+  checks the whitespace-only label.
 
 ### Runtime artifacts are not sources
 

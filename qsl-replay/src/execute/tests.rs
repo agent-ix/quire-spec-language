@@ -616,7 +616,7 @@ fn tc_444_stage_limits_bound_the_recompile() {
 /// FR-098-AC-1 (FR-001): the recompile runs under the package reference's
 /// four labels, so a whitespace-only label refuses at S1 with
 /// `invalid_source_identity`.
-#[trace("TC-444", "FR-098-AC-1", "FR-001-AC-8")]
+#[trace("TC-444", "FR-098-AC-1", "FR-001-AC-6")]
 #[test]
 fn tc_444_a_blank_label_refuses_at_the_source_stage() {
     let mut blank = small(7);
