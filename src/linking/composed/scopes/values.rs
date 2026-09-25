@@ -310,7 +310,8 @@ impl Resolver<'_, '_> {
                     // A parameter's FR-154 key is `<operation key>/<name>`.
                     let prefix = bound.declaration().key.node.as_str();
                     for (position, parameter) in record.parameters.iter().enumerate() {
-                        self.work.charge(Dimension::Bytes, parameter.key.node.len())?;
+                        self.work
+                            .charge(Dimension::Bytes, parameter.key.node.len())?;
                         let Some(parameter_name) = parameter
                             .key
                             .node
