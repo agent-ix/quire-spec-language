@@ -342,6 +342,12 @@ fn body_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
                 | Expression::Lookup { .. }
                 | Expression::Dispatch { .. }
                 | Expression::Pre(_) => {}
+                // Not the S2 seam (`Typer::infer_form`'s own doc,
+                // `qsl-semantics/src/check/check/typing.rs`): an
+                // unconditional probe arm so this match keeps compiling
+                // under `--cfg seam_probe`.
+                #[cfg(seam_probe)]
+                Expression::__SeamProbe => {}
             }
             // Children last-first, so the first child is visited next and
             // forms come out in source order.

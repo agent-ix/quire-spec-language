@@ -1206,6 +1206,11 @@ fn open<'s, 't>(
             write_shell!(target, Expression::Pre(hole()), Expression::Pre(hole));
             pending.push(Rewrite::Node(operand, hole));
         }
+        // Not the S2 seam (`Typer::infer_form`'s own doc,
+        // `qsl-semantics/src/check/check/typing.rs`): an unconditional probe
+        // arm so this match keeps compiling under `--cfg seam_probe`.
+        #[cfg(seam_probe)]
+        Expression::__SeamProbe => unreachable!("never constructed outside the probe build"),
     }
 }
 
