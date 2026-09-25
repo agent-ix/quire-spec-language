@@ -208,6 +208,7 @@ extension.
 | FR-050-AC-5 | Exact and one-short FR-042 limits cover added binding entries, strings, numbers and canonical bytes with the existing accounting identity; a sufficient retry starts fresh and reproduces the same bytes. | Test (TC-138) |
 | FR-050-AC-6 | The v2-specific L5 evaluation entry points compare all authenticated clock fields before positions and retain them in results, while the existing `/1` entry points keep their signatures and historical unauthenticated scope and cannot establish native-to-temporal correspondence. | Test (TC-138) |
 | FR-050-AC-7 | The public handoff path, five member filenames and mutation format constants resolve the committed `/2` inventory and decoded manifest without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138) |
+| FR-050-AC-8 | `protocol_artifact::handoff::write_v2(directory)` is FR-042-AC-15's `/2` counterpart: behind the same `handoff-writer` feature, it writes the complete authenticated handoff -- offer, `expected-v2.json` selection, artifact reference, sources, model source, the three clock inputs, every dependency's exact bytes, the `mutations/` adverse corpus and manifest, and a checksum inventory -- to a caller-chosen new directory, in-process, replaying every mutation to its expected refusal before writing. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-138) |
 
 ## Dependencies
 

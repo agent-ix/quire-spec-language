@@ -97,6 +97,7 @@ per-group counts before moving this row to Passed.
 | FR-042 | FR-042-AC-12 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-13 | TC-121 | ✅ Passed locally (`tests/it/domain_protocol_emission.rs`) |
 | FR-042 | FR-042-AC-14 | TC-121 | ✅ Passed locally (`tests/it/domain_protocol_emission.rs`, `tests/it/composed_domain_models.rs`) |
+| FR-042 | FR-042-AC-15 | TC-121 | ✅ Passed locally (`tests/it/handoff_writer.rs`) |
 | FR-046 | FR-046-AC-1 | TC-126 | ✅ Passed |
 | FR-046 | FR-046-AC-2 | TC-126 | ✅ Passed |
 | FR-046 | FR-046-AC-3 | TC-127 | ✅ Passed |
@@ -139,6 +140,7 @@ per-group counts before moving this row to Passed.
 | FR-050 | FR-050-AC-5 | TC-138 | ✅ Passed |
 | FR-050 | FR-050-AC-6 | TC-138 | ✅ Passed |
 | FR-050 | FR-050-AC-7 | TC-138 | ✅ Passed |
+| FR-050 | FR-050-AC-8 | TC-138 | ✅ Passed locally (`tests/it/handoff_writer.rs`) |
 | FR-054 | FR-054-AC-1 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | FR-054 | FR-054-AC-2 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | FR-054 | FR-054-AC-3 | TC-143 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
@@ -201,7 +203,7 @@ invented for that criterion.
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | ✅ Passed locally (tests/composed_types.rs, tests/composed_type_pipeline.rs, tests/composed_proofs.rs, tests/composed_query_proofs.rs, tests/native_query_emission.rs) |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | ✅ Passed locally (tests/native_model_profiles.rs, src/checking/types.rs, src/linking.rs) |
 | TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
-| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-14 | 🚧 QSL `/1` publication and strict read passed locally (`tests/published_protocol_v1.rs`, `src/protocol_artifact/handoff.rs`); Protocol #11 consumer acceptance pending; FR-042-AC-11/AC-12/AC-13/AC-14 passed locally (`tests/it/domain_protocol_emission.rs`, `tests/it/native_protocol_emission.rs`) |
+| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-15 | 🚧 QSL `/1` publication and strict read passed locally (`tests/published_protocol_v1.rs`, `src/protocol_artifact/handoff.rs`); Protocol #11 consumer acceptance pending; FR-042-AC-11/AC-12/AC-13/AC-14 passed locally (`tests/it/domain_protocol_emission.rs`, `tests/it/native_protocol_emission.rs`); FR-042-AC-15's in-process public writer passed locally (`tests/it/handoff_writer.rs`) |
 | TC-126 | Preserve exact predicate meaning at cross-family calls | Integration | P1 | FR-046-AC-1, FR-046-AC-2, FR-046-AC-8 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-127 | Evaluate ordered query values against independent expected results | Integration | P1 | FR-046-AC-3, FR-046-AC-4, FR-046-AC-5, FR-046-AC-8 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-128 | Keep incomplete query inputs and exhausted work distinct from values | Integration | P1 | FR-046-AC-6, FR-046-AC-7 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
@@ -214,7 +216,7 @@ invented for that criterion.
 | TC-135 | Demonstrate the composed compiler-to-assessment ecosystem handoff | E2E | P1 | FR-048-AC-9, FR-048-AC-10, FR-042-AC-10 | 🚧 Planned; B/F integration pending |
 | TC-136 | Admit exact composed state views and typed outcomes | Integration | P1 | FR-049-AC-1..FR-049-AC-6 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 (tests/composed_state_evaluation.rs) |
 | TC-137 | Bound composed evaluation and retry immutable inputs | Property | P1 | FR-049-AC-6..FR-049-AC-8, NFR-009 | ✅ Passed locally (tests/composed_state_evaluation.rs, src/state/work.rs) |
-| TC-138 | Publish and read authenticated compiled temporal selections | Integration | P1 | FR-050-AC-1..FR-050-AC-7 | ✅ Passed locally (tests/compiled_protocol_v2.rs, src/protocol_artifact/handoff.rs) |
+| TC-138 | Publish and read authenticated compiled temporal selections | Integration | P1 | FR-050-AC-1..FR-050-AC-8 | ✅ Passed locally (tests/compiled_protocol_v2.rs, src/protocol_artifact/handoff.rs, tests/it/handoff_writer.rs) |
 | TC-142 | Evaluate admitted version-2 compensation expressions and initialized captures | Integration | P1 | FR-049-AC-9, NFR-009-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | TC-143 | Publish and read strict control temporal activation mappings | Integration | P1 | FR-054-AC-1..FR-054-AC-4 | ✅ Passed locally (`tests/compiled_protocol_v2.rs`) |
 | TC-145 | Admit an IR 2.0.0 domain package as model declarations | Integration | P0 | FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-AC-7 | 🚧 Planned; #131 |
@@ -428,6 +430,16 @@ One module carrying each criterion's tag:
 | FR-042-AC-12 | `tests/it/protocol_artifact.rs`, `tests/it/native_protocol_emission.rs` |
 | FR-042-AC-13 | `tests/it/domain_protocol_emission.rs` |
 | FR-042-AC-14 | `tests/it/domain_protocol_emission.rs`, `tests/it/composed_domain_models.rs` |
+| FR-042-AC-15 | `tests/it/handoff_writer.rs` |
+
+FR-042-AC-15 is the public in-process producer QSL-251 asked for: behind the
+`handoff-writer` feature (no dev-dependency), `handoff::write_v1` compiles the
+same authored recipe, reads its own output back through the strict reader used
+above, then writes a complete handoff -- including `dependencies/` bytes --
+to a caller-chosen directory. `tests/it/handoff_writer.rs` calls it exactly as
+a downstream crate would, without building this crate's examples or
+dev-dependencies, and checks determinism, checksum completeness and refusal of
+an existing directory.
 
 Per-criterion backing comes from those minted criterion targets and not from the
 row status: the `functional-coverage` declaration classifies a row by its
@@ -462,6 +474,7 @@ consumer side. TC-135 records the separate D-owned campaign gate.
 | FR-042 | FR-042-AC-12 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-13 | TC-121 | ✅ Passed locally (`tests/it/domain_protocol_emission.rs`) |
 | FR-042 | FR-042-AC-14 | TC-121 | ✅ Passed locally (`tests/it/domain_protocol_emission.rs`, `tests/it/composed_domain_models.rs`) |
+| FR-042 | FR-042-AC-15 | TC-121 | ✅ Passed locally (`tests/it/handoff_writer.rs`) |
 
 ## Authenticated temporal artifact selections (L5/L6)
 
@@ -478,6 +491,15 @@ authenticated `/2` correspondence.
 Its handoff-address control imports the producer-owned directory, member and
 format constants, verifies their committed inventory, and leaves no
 environment-variable or duplicated-vocabulary escape hatch.
+
+FR-050-AC-8 is FR-042-AC-15's `/2` counterpart: behind the same
+`handoff-writer` feature, `handoff::write_v2` writes the complete authenticated
+handoff -- offer, selection, reference, sources, model source, the three clock
+inputs, every dependency's exact bytes, the `mutations/` corpus and manifest,
+and a checksum inventory -- to a caller-chosen directory, in-process, replaying
+every mutation to its expected refusal before writing. `tests/it/handoff_writer.rs`
+covers it beside `write_v1`, checking determinism, checksum completeness,
+strict-reader admission and refusal of an existing directory.
 
 ## Composed evaluation admission and bounds (L3/L4)
 
