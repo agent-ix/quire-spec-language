@@ -77,6 +77,9 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 ## Status
 
 Steps 1 to 6 implemented in `qsl-package/src/emit/tests.rs` (QSL-6 S1b).
-Step 7 is not: its admission half waits on IR's v2 reader reading ADR-013
-QC-24's `value`/`parameter` and function nodes and QC-25's model nodes (IR's
-closed `ValueForm` has no `parameter`, IR-280).
+Step 7 is not. IR's v2 reader now admits `value`/`parameter` and function
+nodes (IR-280): a function with parameters is emitted with nothing omitted
+and reads back Verified (`a_function_with_parameters_is_written_whole`), as
+does the recursive `f` of step 5 (IR-242,
+`a_recursion_group_holding_an_application_is_written`). The fixture
+comparison under `make conformance` remains.

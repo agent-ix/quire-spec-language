@@ -751,12 +751,16 @@ text-leaf walk (`text_leaves`) follows the Text leaves rules, charges each
 leaf to the node limit before any leaf's law is read, and keys the Recursive
 text-leaf vectors. A4b spells an integer literal as a decimal string and gives
 `quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is QSL-6 S1b, in `qsl-package/src/emit.rs`:
-TC-416 backs AC-7, AC-9, AC-12 and CON-2 there. The emission omits a node
-whose form the pinned IR reader lacks (`value`/`parameter`, IR-280), a
-declared type node, for which `check` records no `declaration` occurrence,
-and every node that names an omitted one; AC-7 and AC-12 are checked on
-every node the arm writes, omitted or not. AC-13 is unbacked: its IR
-admission waits on IR reading the ADR-013 QC-24 and QC-25 node shapes. The `dependencies` rule and
+TC-416 backs AC-7, AC-9, AC-12 and CON-2 there. The pinned IR reader
+admits `value`/`parameter` and `scalar_type`/`compound_unit` nodes (IR-280)
+and keys recursion-group application nodes by `{size, ordinal}` (IR-242),
+so a function with parameters and a recursive function are written whole
+and read back Verified. The emission omits a node whose form IR's v2
+vocabulary lacks, a node naming a node the checked graph does not hold
+(a declared unit node, so a compound unit over one), a nominal node whose
+owner the lock does not select, and every node that names an omitted one;
+AC-7 and AC-12 are checked on every node the arm writes, omitted or not.
+AC-13 is unbacked: TC-416 step 7's fixture comparison is not implemented. The `dependencies` rule and
 the fixture comparison are specified under QSL-225. Ownership, decided here: QSL-156 A4b builds
 the lowering and the keys in `check`; QSL-6 S1b serializes the lowered nodes
 and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
