@@ -18,6 +18,7 @@ use crate::formal_source::FormalSource;
 use crate::lowering::{self, LoweringError, LoweringLimits, ProjectionTarget};
 use crate::model_source::ModelSourceError;
 use crate::package::{NativePackage, NativePackageRef, PackageError};
+use crate::protocol_artifact::DOMAIN_PACKAGE_PROFILE;
 use crate::runtime::{
     self, ArtifactLimits, ExecutionLimits, InputReadError, Invocation, RuntimeInput, Snapshot,
 };
@@ -362,10 +363,12 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
             },
         )?;
         // The edition is decided before any model is read: a `1-draft`
-        // program takes no model, whatever state the model files are in.
+        // program takes domain packages only, and a request selecting a
+        // native rule model for it refuses whatever state the model files
+        // are in.
         let source = intake.source(&request.program.source)?;
         match Edition::of(source.source())? {
-            Edition::Complete => complete(&request, source.source()),
+            Edition::Complete => complete(&request, &mut intake, source.source()),
             Edition::Native => {
                 let models = compilation::models(&mut intake, &request.models)?;
                 Ok(compilation::package_of(source, &request.program, &models)?
@@ -411,22 +414,45 @@ impl Edition {
     }
 }
 
-/// Spine-compile a `1-draft` program. Model sources and clause bindings
-/// select native constructs; a complete-V1 program compiles alone. The
+/// Spine-compile a `1-draft` program. Each selected model is a domain
+/// package document (format [`DOMAIN_PACKAGE_PROFILE`], the Semantic IR
+/// contract it is admitted under), read under its source digest and handed
+/// to the spine as FR-056's package input; the program's `model`
+/// declarations select from it. Native rule models and clause bindings
+/// select native constructs, which a complete-V1 program does not take. The
 /// program's `document` and `formal_revision` were validated when intake
 /// read it; the v2 wire has no member for them, so they do not reach the
 /// bytes (FR-027 Outputs).
-fn complete(request: &wire::CompileRequest, source: &Source) -> Result<Vec<u8>> {
-    if !request.models.is_empty() {
-        return Err(RunCause::CompleteSelection(CompleteSelection::Models));
+fn complete(
+    request: &wire::CompileRequest,
+    intake: &mut Intake<'_>,
+    source: &Source,
+) -> Result<Vec<u8>> {
+    if request
+        .models
+        .iter()
+        .any(|model| model.format != DOMAIN_PACKAGE_PROFILE)
+    {
+        return Err(RunCause::CompleteSelection(CompleteSelection::NativeModels));
     }
     if !request.program.clauses.is_empty() {
         return Err(RunCause::CompleteSelection(CompleteSelection::Clauses));
     }
+    let documents = request
+        .models
+        .iter()
+        .map(|model| intake.source(&model.source))
+        .collect::<Result<Vec<_>>>()?;
+    let packages = qsl_semantics::model::intake::package_input(
+        documents
+            .iter()
+            .map(|document| document.source().text().as_bytes()),
+    );
     spine::compile(
         source.identity().clone(),
         source.path(),
         source.text().as_bytes(),
+        &packages,
     )
     .map_err(|refusal| {
         RunCause::Spine(Box::new(SpineFailure {
@@ -442,8 +468,8 @@ fn complete(request: &wire::CompileRequest, source: &Source) -> Result<Vec<u8>> 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum CompleteSelection {
-    /// The request selects model sources.
-    Models,
+    /// The request selects a model source in a native rule-model format.
+    NativeModels,
     /// The program selects clause bindings.
     Clauses,
 }
@@ -451,7 +477,7 @@ pub enum CompleteSelection {
 impl std::fmt::Display for CompleteSelection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::Models => "model sources",
+            Self::NativeModels => "native rule-model sources",
             Self::Clauses => "clause bindings",
         })
     }

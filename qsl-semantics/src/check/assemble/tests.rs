@@ -36,7 +36,7 @@ fn assemble_as(
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
-    PackageDeclarations::assemble(parsed.source().reference().clone(), unit)
+    PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
 }
 
 fn assemble(declarations: &str) -> (String, Result<PackageDeclarations, AssemblyRefusal>) {

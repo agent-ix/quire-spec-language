@@ -82,7 +82,7 @@ impl ModelArtifact {
         let exact = ModelRef::new(
             identity,
             version,
-            ModelDigest::from_digest(ByteDigest::of(exact_bytes)),
+            ModelDigest::artifact(ByteDigest::of(exact_bytes)),
         )?;
         Ok(Self {
             exact,
@@ -905,11 +905,18 @@ pub fn resolve_source_package(
                 ));
             }
         }
+        if let ModelDigest::DomainPackage(_) = selected.digest() {
+            return Err(refusal(
+                Code::InvalidModelBinding,
+                selection.span,
+                PackageError::DomainPackageModel(Box::new(selected.clone())),
+            ));
+        }
         let Some(model) = models.exact(selected) else {
             let cause = if models.contains_identity(selected.identity()) {
-                PackageError::StaleModel(selected.clone())
+                PackageError::StaleModel(Box::new(selected.clone()))
             } else {
-                PackageError::MissingModel(selected.clone())
+                PackageError::MissingModel(Box::new(selected.clone()))
             };
             return Err(refusal(Code::InvalidModelBinding, selection.span, cause));
         };
@@ -1221,7 +1228,9 @@ fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
         }
         PackageError::MissingDefinition(_) => Tag::MissingSelection,
         PackageError::StaleDefinition(_) => Tag::RevisionMismatch,
-        PackageError::MissingModel(_) | PackageError::StaleModel(_) => Tag::WrongModelSelection,
+        PackageError::MissingModel(_)
+        | PackageError::StaleModel(_)
+        | PackageError::DomainPackageModel(_) => Tag::WrongModelSelection,
         PackageError::ConflictingModels(_) => Tag::ConflictingBinding,
         PackageError::ConflictingDefinitions(_) => Tag::ConflictingAuthority,
         PackageError::DuplicateAlias { .. } => Tag::AmbiguousName,
@@ -1322,7 +1331,7 @@ impl<'a> From<&'a ModelRef> for ExactRefPreimage<'a> {
         Self {
             identity: exact.identity(),
             version: exact.version(),
-            digest: exact.digest().digest().to_string(),
+            digest: exact.digest().to_string(),
         }
     }
 }
@@ -1411,10 +1420,15 @@ pub enum PackageError {
     StaleDefinition(DefinitionRef),
     /// A selected compiled-model artifact was absent.
     #[error("missing compiled-model artifact {0:?}")]
-    MissingModel(ModelRef),
+    MissingModel(Box<ModelRef>),
     /// A known compiled model was selected with stale version/digest.
     #[error("stale compiled-model artifact {0:?}")]
-    StaleModel(ModelRef),
+    StaleModel(Box<ModelRef>),
+    /// A `model` declaration selects a domain package (`sha256-jcs:`); this
+    /// resolver binds compiled-model artifacts only, and spine intake
+    /// admits domain packages (FR-056).
+    #[error("model {} selects a domain package by {}; only spine intake admits one", .0.identity(), .0.digest())]
+    DomainPackageModel(Box<ModelRef>),
     /// Two source model selections conflict on one logical identity.
     #[error("conflicting compiled-model selections")]
     ConflictingModels(Box<ModelConflict>),

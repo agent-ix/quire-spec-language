@@ -1597,8 +1597,9 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
         .expect("S2 builds the unit");
-    let declarations = PackageDeclarations::assemble(parsed.source().reference().clone(), unit)
-        .expect("the assembler builds the package declarations");
+    let declarations =
+        PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
+            .expect("the assembler builds the package declarations");
     let package = CheckedPackage::link(
         declarations
             .check(CheckingLimits::default())
@@ -1886,7 +1887,7 @@ fn the_spine_compile_fixture_reads_back_verified_with_nothing_omitted() {
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
         .expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit)
+    let graph = PackageDeclarations::assemble(raw, unit, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");
@@ -1899,4 +1900,394 @@ fn the_spine_compile_fixture_reads_back_verified_with_nothing_omitted() {
             "{name} is not exported: {exports:?}"
         );
     }
+}
+
+/// The domain package document `spine-model.native`'s `model M` selects.
+const SPINE_MODEL_DOCUMENT: &[u8] =
+    include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
+
+/// `unit` run S1, S2, I1 (against `packages`) and the assembler, as spine
+/// `compile` runs it.
+fn assemble_with_models(
+    unit: &[u8],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<PackageDeclarations, String> {
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        unit,
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit");
+    assert_eq!(parsed.diagnostics(), []);
+    let raw = parsed.source().reference().clone();
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .expect("S2 builds the unit");
+    let models = qsl_semantics::model::intake::admit_unit(
+        &unit.selections().models,
+        packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .map_err(|refusal| format!("intake: {refusal:?}"))?;
+    PackageDeclarations::assemble(raw, unit, models).map_err(|refusal| format!("{refusal:?}"))
+}
+
+/// The spine-model fixture's inherited field access, which QSL's I2 read
+/// cannot admit until IR-285 (see
+/// [`inherited_field_access_is_refused_by_the_i2_read_until_ir_285`]).
+const FIELD_ACCESS: &str = "function code using v(g: M::Gadget): Integer pure { deref(g).code }\n";
+
+/// The spine-model fixture's equality over conforming references, which
+/// QSL's I2 read cannot admit while QSpec's v2 operation catalog pins
+/// `quire.op.reference.eq` to `same_type` (see
+/// [`conforming_reference_equality_is_refused_by_the_i2_read`]).
+const CONFORMING_EQUALITY: &str =
+    "function same using v(g: M::Gadget, w: M::Widget): Boolean pure { g = w }\n";
+
+/// The spine-model fixture with `removed` taken out, each of which the
+/// fixture holds.
+fn spine_model_without(removed: &[&str]) -> String {
+    const FIXTURE: &str = include_str!("../../../tests/fixtures/spine-model.native");
+    removed.iter().fold(FIXTURE.to_owned(), |unit, line| {
+        assert!(unit.contains(line), "the fixture holds {line:?}");
+        unit.replace(line, "")
+    })
+}
+
+/// Assert `read` is IR's `ill_typed`/`operator-ineligible` envelope
+/// refusal at a node pointer ending in `suffix`.
+fn assert_operator_ineligible(read: &Read, suffix: &str) {
+    let Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) = read else {
+        panic!("expected IR's envelope refusal, got {read:?}");
+    };
+    assert_eq!(
+        refusal.code,
+        quire_contract_ir::CheckedPackageRefusalCode::IllTyped,
+        "{refusal:?}"
+    );
+    assert_eq!(
+        refusal.cause,
+        Some(quire_contract_ir::CheckedPackageRefusalCause::OperatorIneligible),
+        "{refusal:?}"
+    );
+    let path = refusal
+        .path
+        .as_ref()
+        .map(ToString::to_string)
+        .unwrap_or_default();
+    assert!(
+        path.starts_with("/semantic_graph/nodes/") && path.ends_with(suffix),
+        "{path}"
+    );
+}
+
+/// `unit` through S1, S2, I1, the assembler, check, link and the v2
+/// emitter against the spine-model document, with nothing omitted, and a
+/// read of the bytes through QSL's I2 reader under the document's
+/// `sha256-jcs` digest as domain package evidence (or `evidence_digest`,
+/// when given). Returns the emission, its wire, the document's digest and
+/// the read.
+fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Value, String, Read) {
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let digest = qsl_semantics::model::key::hex(digest);
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    let mut evidence = CheckedPackageEvidence::new();
+    locked_artifacts(&wire["lock"], &mut evidence);
+    locked_artifacts(&wire["diagnostics"], &mut evidence);
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    evidence.insert_domain_package_digest(
+        quire_contract_ir::CheckedDomainPackageLocator {
+            identity: "acme/orders".into(),
+            version: "1.0.0".into(),
+        },
+        evidence_digest.unwrap_or(&digest),
+    );
+    let read = read_v2(
+        emission.package.bytes(),
+        library(),
+        "1".to_owned(),
+        V2ReadLimits::default(),
+        &evidence,
+        &qsl_semantics::library::fixtures::single_pin(
+            library(),
+            Selection {
+                version: "1".to_owned(),
+                package_id: emission.package.package_id(),
+            },
+        ),
+    );
+    (emission, wire, digest, read)
+}
+
+/// FR-027-AC-9, FR-056-AC-9 (TC-442 step 1): the spine-model fixture
+/// without its field access (`FIELD_ACCESS`, which waits on IR-285) and
+/// its conforming reference equality (`CONFORMING_EQUALITY`) goes
+/// S1, S2, I1, the assembler, check, link and the v2 emitter with nothing
+/// omitted. The assembler declares `M::Gadget` and `M::Widget` in the
+/// package's `TypeEnvironment`, `Gadget` conforming to `Widget` through its
+/// declared supertype. The lock and the identity preimage select the domain
+/// package by identity, version and the `sha256-jcs` digest of the supplied
+/// document, and QSL's I2 read, given that digest as domain package
+/// evidence, returns Verified exporting `keep` and `held`.
+#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
+#[test]
+fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
+    let unit = spine_model_without(&[FIELD_ACCESS, CONFORMING_EQUALITY]);
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let declarations =
+        assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
+    assert_eq!(declarations.models.len(), 1);
+    let views = qsl_semantics::model::intake::admit_unit(
+        &unit_selections(&unit),
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("the package admits");
+    let object = |artifact: &str| {
+        let key = qsl_semantics::model::key::DeclarationKey {
+            package: "acme/orders".to_owned(),
+            node: format!("ix://acme/orders/{artifact}"),
+        };
+        let id = views[0].view.type_identities()[&key];
+        let declared = declarations
+            .types
+            .object_type(id)
+            .unwrap_or_else(|| panic!("{artifact} is declared"));
+        assert_eq!(declared.name(), format!("M::{artifact}"));
+        id
+    };
+    let (gadget, widget) = (object("Gadget"), object("Widget"));
+    assert!(declarations.types.conforms(gadget, widget));
+    assert!(!declarations.types.conforms(widget, gadget));
+
+    let (emission, wire, digest, read) = emit_model_unit(&unit, None);
+    let selection = json!([{
+        "identity": "acme/orders",
+        "version": "1.0.0",
+        "digest_domain": "sha256-jcs",
+        "digest": digest,
+    }]);
+    assert_eq!(wire["lock"]["model_selections"], selection);
+    assert_eq!(wire["identity_preimage"]["model_selections"], selection);
+    assert!(
+        nodes(&wire).iter().any(|node| node["node_tag"] == "model"),
+        "a model node is emitted"
+    );
+    match read {
+        Read::Verified { package, .. } => {
+            assert_eq!(package.package_id(), emission.package.package_id());
+            let exports: BTreeSet<String> = package
+                .into_import_view()
+                .exports()
+                .map(|(name, _)| name.to_owned())
+                .collect();
+            for name in ["keep", "held"] {
+                assert!(exports.contains(name), "{name}: {exports:?}");
+            }
+        }
+        other => panic!("expected Verified, got {other:?}"),
+    }
+    // Adverse: evidence naming another document refuses the read.
+    let (.., other) = emit_model_unit(&unit, Some(&"0".repeat(64)));
+    assert!(matches!(other, Read::Refused(_)));
+}
+
+/// TC-442 step 1 (the gap it records): the whole spine-model fixture,
+/// `deref(g).code` included, assembles, checks and emits, and its `field`
+/// member names the model node of `g`'s object type, whose body FR-094
+/// keeps `aggregate{[]}`. IR's v2 reader resolves a field member only
+/// against a binding in the declaring node's body, so QSL's I2 read refuses
+/// it `ill_typed`/`operator-ineligible` at that member's `name`. The ruling
+/// is that the reader resolves a model member through the lock-selected
+/// domain package instead: QSpec STD-100 states the FR-322 rule and IR-285
+/// fixes IR's `check_field_member`. This test pins today's refusal and
+/// fails the moment IR admits the read; replace it with a Verified
+/// assertion then.
+#[trace("TC-442")]
+#[test]
+fn inherited_field_access_is_refused_by_the_i2_read_until_ir_285() {
+    let (.., read) = emit_model_unit(&spine_model_without(&[CONFORMING_EQUALITY]), None);
+    assert_operator_ineligible(&read, "/body/operation/member/name");
+}
+
+/// TC-442 step 1 (the gap it records): `g = w` over a `Gadget` and the
+/// `Widget` it conforms to checks (QSpec FR-153-AC-6, TC-198 L08: two
+/// conforming references compare by identity) and emits as
+/// `quire.op.reference.eq`. QSpec's v2 operation catalog
+/// (`proposals/checked-package-v2/operation-catalog.json`) constrains that
+/// operation to `same_type` operands, so IR's reader refuses it
+/// `ill_typed`/`operator-ineligible` at the second argument. This test
+/// pins today's refusal and fails once the catalog and IR admit
+/// conforming operands; replace it with a Verified assertion then.
+#[trace("TC-442")]
+#[test]
+fn conforming_reference_equality_is_refused_by_the_i2_read() {
+    let (.., read) = emit_model_unit(&spine_model_without(&[FIELD_ACCESS]), None);
+    assert_operator_ineligible(&read, "/body/arguments/1");
+}
+
+/// FR-056-AC-9 (TC-442 step 3): `M::Nope` names no object type of the
+/// admitted domain package and refuses at the assembler, at the name's
+/// span, as `missing_declaration`; the same unit given no domain package
+/// refuses at I1, at its `model` declaration, as `missing_import`.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intake() {
+    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
+    let unknown = UNIT.replace("w: Reference<M::Widget>", "w: Reference<M::Nope>");
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        unknown.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .unwrap();
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default()).unwrap();
+    let models = qsl_semantics::model::intake::admit_unit(
+        &unit.selections().models,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .unwrap();
+    let refusal = PackageDeclarations::assemble(parsed.source().reference().clone(), unit, models)
+        .expect_err("M::Nope refuses");
+    let [error] = &refusal.errors[..] else {
+        panic!("one error: {refusal:?}");
+    };
+    assert_eq!(
+        error.cause,
+        qsl_semantics::check::AssemblyCause::UnresolvedTypeName {
+            name: "M::Nope".to_owned()
+        }
+    );
+    assert_eq!(error.cause.code(), qsl_foundation::Code::MissingDeclaration);
+    assert_eq!(&unknown[error.span.start..error.span.end], "M::Nope");
+
+    let missing = qsl_semantics::model::intake::admit_unit(
+        &unit_selections(UNIT),
+        &BTreeMap::new(),
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect_err("no domain package is supplied");
+    assert_eq!(missing.cause.code(), qsl_foundation::Code::MissingImport);
+    assert!(UNIT[missing.span.start..missing.span.end].starts_with("model M = "));
+}
+
+/// `unit`'s S2 selections.
+fn unit_selections(unit: &str) -> Vec<qsl_foundation::selection::ModelSelection> {
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .unwrap();
+    qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .unwrap()
+        .selections()
+        .models
+        .clone()
+}
+
+/// FR-056-AC-9 (TC-442 step 3): the assembler given no admitted model for
+/// the unit's `model M` refuses `UnadmittedModel` at the declaration, as
+/// `missing_import`.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
+    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        UNIT.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .unwrap();
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default()).unwrap();
+    let refusal =
+        PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
+            .expect_err("no package is admitted for M");
+    let first = &refusal.errors[0];
+    assert_eq!(
+        first.cause,
+        qsl_semantics::check::AssemblyCause::UnadmittedModel {
+            alias: "M".to_owned()
+        }
+    );
+    assert_eq!(first.cause.code(), qsl_foundation::Code::MissingImport);
+    assert!(UNIT[first.span.start..first.span.end].starts_with("model M = "));
+}
+
+/// FR-056-AC-9 (TC-442 step 3): a refusal after admission and a
+/// normalization ceiling each stop I1 at the `model` declaration: a
+/// supertype cycle (`Widget` and `Gadget` generalizing each other) is
+/// refused by the Semantic IR record reader as
+/// `invalid_model_binding`/`malformed-declaration`, and a
+/// `declaration_records` ceiling of one is a limit, `stage_limit_exceeded`.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
+    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
+    let selections = unit_selections(UNIT);
+    let limited = qsl_semantics::model::intake::admit_unit(
+        &selections,
+        &qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]),
+        qsl_semantics::model::accounting::ModelNormalizationLimits {
+            declaration_records: 1,
+            ..Default::default()
+        },
+    )
+    .expect_err("four records exceed a ceiling of one");
+    assert!(
+        matches!(
+            limited.cause,
+            qsl_semantics::model::intake::UnitIntakeCause::Limit(_)
+        ),
+        "{limited:?}"
+    );
+    assert_eq!(
+        limited.cause.code(),
+        qsl_foundation::Code::StageLimitExceeded
+    );
+    assert!(UNIT[limited.span.start..limited.span.end].starts_with("model M = "));
+
+    let mut cyclic: Value = serde_json::from_slice(SPINE_MODEL_DOCUMENT).unwrap();
+    for node in cyclic["types"].as_array_mut().unwrap() {
+        if node["identity"] == "ix://acme/orders/Widget" {
+            node["supertypes"] = json!(["ix://acme/orders/Gadget"]);
+        }
+    }
+    let cyclic = serde_json::to_vec(&cyclic).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([cyclic.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let text = UNIT.replace(
+        &UNIT[UNIT.find("sha256-jcs:").unwrap()..][..75],
+        &format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
+    );
+    let refused = qsl_semantics::model::intake::admit_unit(
+        &unit_selections(&text),
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect_err("a supertype cycle does not normalize");
+    let qsl_semantics::model::intake::UnitIntakeCause::Refused(refusals) = &refused.cause else {
+        panic!("expected a refusal, got {refused:?}");
+    };
+    assert_eq!(refusals[0].code, qsl_foundation::Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+    assert!(text[refused.span.start..refused.span.end].starts_with("model M = "));
 }

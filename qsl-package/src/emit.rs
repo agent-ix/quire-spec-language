@@ -20,9 +20,10 @@
 //!   and any other raw source an occurrence region names.
 //! - `required_features` is `quire.value.complete/v1` (ADR-011 §2.4) and
 //!   `capability_report` reports it available.
-//! - `profile_selections` and `model_selections` are empty: the `Value`
-//!   family selects no profile, and a model-bearing package's domain
-//!   packages are not carried on `CheckedGraph`.
+//! - `profile_selections` is empty: the `Value` family selects no profile.
+//! - `model_selections` is `CheckedGraph::model_selections`: each domain
+//!   package the package was checked against, by identity, version and
+//!   `sha256-jcs` digest (ADR-011 §2.4).
 //! - `dependency_selections` is empty (ADR-011 §2.4: the QSpec schema types
 //!   it as a definition selection, which is a schema defect).
 //!
@@ -63,11 +64,12 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use quire_contract_ir::{
     CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
-    CheckedDiagnosticsV2, CheckedNodeId, CheckedNodeKind, CheckedNodeTag, CheckedOccurrence,
-    CheckedOccurrenceRole, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2, CheckedRevision,
-    CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId,
-    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRegion, NominalIdentityPreimage,
-    NominalOwner, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind, CheckedNodeTag,
+    CheckedOccurrence, CheckedOccurrenceRole, CheckedPackageIdentityPreimageV2,
+    CheckedPackageLockV2, CheckedRevision, CheckedSelection, CheckedSelectionRole,
+    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, CHECKED_PACKAGE_V2,
+    DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 use serde::Serialize;
 
@@ -77,6 +79,7 @@ use qsl_semantics::check::{
     CheckedGraph, Location, NodeTag, NominalNode, SemanticNode, SemanticTerm,
 };
 use qsl_semantics::library::PackageId;
+use qsl_semantics::model::key::hex;
 use qsl_semantics::value::IDENTITY_LIMITS;
 use qsl_semantics::value::{
     CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference, Member, NodeOwner,
@@ -740,13 +743,23 @@ pub(crate) fn emit_package(
         .collect();
 
     let (edition, definition_selections) = catalog_selections(&laws);
+    let model_selections: Vec<CheckedDomainPackageRef> = graph
+        .model_selections()
+        .iter()
+        .map(|selection| CheckedDomainPackageRef {
+            identity: selection.identity.as_str().into(),
+            version: selection.version.as_str().into(),
+            digest_domain: DOMAIN_PACKAGE_DIGEST.into(),
+            digest: hex(&selection.digest).into(),
+        })
+        .collect();
     let root = catalog_entry(CatalogRole::Root).identity;
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),
         edition: edition.clone(),
         profile_selections: Vec::new(),
         definition_selections: definition_selections.clone(),
-        model_selections: Vec::new(),
+        model_selections: model_selections.clone(),
         required_features: vec![root.into()],
         dependency_selections: Vec::new(),
     };
@@ -755,7 +768,7 @@ pub(crate) fn emit_package(
         edition,
         profile_selections: Vec::new(),
         definition_selections,
-        model_selections: Vec::new(),
+        model_selections,
         required_features: lock.required_features.clone(),
         dependency_selections: Vec::new(),
         identity_projection: nodes.iter().map(Into::into).collect(),

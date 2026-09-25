@@ -366,6 +366,7 @@ fn a_complete_v1_program_compiles_through_the_spine() {
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
         "program.native",
         &program,
+        &std::collections::BTreeMap::new(),
     )
     .unwrap();
     assert_eq!(output.stdout, library);
@@ -509,7 +510,10 @@ fn a_complete_v1_request_selecting_native_inputs_refuses() {
         .as_array()
         .unwrap()
         .is_empty());
-    for (strip, selected) in [(None, "model sources"), (Some("models"), "clause bindings")] {
+    for (strip, selected) in [
+        (None, "native rule-model sources"),
+        (Some("models"), "clause bindings"),
+    ] {
         if let Some(field) = strip {
             job["request"][field] = json!([]);
         }
@@ -636,5 +640,162 @@ fn a_source_without_an_ix_native_header_goes_to_native() {
                 .contains(&failure["stage"].as_str().unwrap()),
             "{failure}"
         );
+    }
+}
+
+/// The complete-V1 compile fixture with a domain package (FR-027-AC-9).
+const SPINE_MODEL_FIXTURE: &str = "tests/fixtures/spine-model.native";
+
+/// The domain package document `SPINE_MODEL_FIXTURE`'s `model M` selects.
+const SPINE_MODEL_DOCUMENT: &str = "tests/fixtures/spine-model.semantic-ir.json";
+
+/// [`spine_request`], with `document` written as `orders.json` and selected
+/// as a `semantic-ir/2.0.0` model.
+fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {
+    spine_request(directory, program);
+    std::fs::write(directory.join("orders.json"), document).unwrap();
+    let path = directory.join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    job["request"]["models"] = json!([{"format":"semantic-ir/2.0.0","source":{
+        "file":"orders.json","authority":"agent-ix","identity":"acme/orders",
+        "revision_namespace":"fixture","revision":"fixture:1",
+        "digest":ByteDigest::of(document).to_string(),"document":"Orders","formal_revision":1}}]);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+}
+
+/// FR-027-AC-9 (TC-442 step 2): a `1-draft` request selecting a domain
+/// package document compiles its program through the spine. Stdout is
+/// exactly `command::spine::compile`'s bytes over the same source and
+/// package input, and the lock and identity preimage select the domain
+/// package by the `sha256-jcs` digest the program's `model` declaration
+/// names.
+#[test]
+#[trace("TC-442", "FR-027-AC-9")]
+fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
+    let program = std::fs::read(SPINE_MODEL_FIXTURE).unwrap();
+    let document = std::fs::read(SPINE_MODEL_DOCUMENT).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    spine_model_request(directory.path(), &program, &document);
+    let output = compile(directory.path());
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let library = quire_spec_language::command::spine::compile(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
+        "program.native",
+        &program,
+        &qsl_semantics::model::intake::package_input([document.as_slice()]),
+    )
+    .unwrap();
+    assert_eq!(output.stdout, library);
+    let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let selected = std::str::from_utf8(&program)
+        .unwrap()
+        .split("digest \"sha256-jcs:")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .unwrap()
+        .to_owned();
+    let selection = json!([{
+        "identity": "acme/orders",
+        "version": "1.0.0",
+        "digest_domain": "sha256-jcs",
+        "digest": selected,
+    }]);
+    assert_eq!(wire["lock"]["model_selections"], selection);
+    assert_eq!(wire["identity_preimage"]["model_selections"], selection);
+}
+
+/// FR-027-AC-9, FR-056-AC-9 (TC-442 step 4): the model fixture refuses at
+/// the stage that owns each defect, at its region: `M::Nope`, which the
+/// admitted package does not declare, at `assembly`; `deref(g).nope`, a
+/// field neither `Gadget` nor its supertype declares, and `g = w` over a
+/// `Gadget` and an unrelated `Rock` (FR-082 compares references of one
+/// type only), at `check`; the `model` declaration, when the request
+/// supplies no domain package or a document whose digest differs, at
+/// `intake`; and a `sha256:` model digest at `intake`.
+#[test]
+#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
+fn a_model_bearing_request_refuses_at_the_owning_stage() {
+    let program = std::fs::read_to_string(SPINE_MODEL_FIXTURE).unwrap();
+    let document = std::fs::read(SPINE_MODEL_DOCUMENT).unwrap();
+    let declaration = program
+        .lines()
+        .find(|line| line.starts_with("model M = "))
+        .unwrap();
+    let artifact = program.replacen("sha256-jcs:", "sha256:", 1);
+    // Another document of the same package: its `sha256-jcs` digest is not
+    // the one the declaration selects.
+    let mut changed_document: Value = serde_json::from_slice(&document).unwrap();
+    changed_document["package"]["lockDigest"] = json!(format!("sha256:{}", "1".repeat(64)));
+    let changed_document = serde_json::to_vec(&changed_document).unwrap();
+    for (text, supplied, stage, code, located) in [
+        (
+            program.replacen("deref(g).code", "deref(g).nope", 1),
+            Some(document.clone()),
+            "check",
+            "ill_typed",
+            "deref(g).nope".to_owned(),
+        ),
+        (
+            program.replacen("w: M::Widget): Boolean", "w: M::Rock): Boolean", 1),
+            Some(document.clone()),
+            "check",
+            "ill_typed",
+            "g = w".to_owned(),
+        ),
+        (
+            program.replacen("Reference<M::Widget>", "Reference<M::Nope>", 1),
+            Some(document.clone()),
+            "assembly",
+            "missing_declaration",
+            "M::Nope".to_owned(),
+        ),
+        (
+            program.clone(),
+            None,
+            "intake",
+            "missing_import",
+            declaration.to_owned(),
+        ),
+        (
+            program.clone(),
+            Some(changed_document),
+            "intake",
+            "missing_import",
+            declaration.to_owned(),
+        ),
+        (
+            artifact.clone(),
+            Some(document.clone()),
+            "intake",
+            "invalid_model_binding",
+            artifact
+                .lines()
+                .find(|line| line.starts_with("model M = "))
+                .unwrap()
+                .to_owned(),
+        ),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        match &supplied {
+            Some(supplied) => spine_model_request(directory.path(), text.as_bytes(), supplied),
+            None => spine_request(directory.path(), text.as_bytes()),
+        }
+        let output = compile(directory.path());
+        assert_eq!(output.status.code(), Some(20), "{stage} {code}");
+        assert!(output.stdout.is_empty());
+        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(failure["stage"], stage, "{failure}");
+        assert_eq!(failure["code"], code, "{failure}");
+        let message = failure["message"].as_str().unwrap();
+        assert!(!message.contains('{'), "a Debug dump: {message}");
+        let start = text.find(&located).unwrap();
+        let span = &failure["details"]["span"];
+        assert_eq!(span["start"]["byte"], start, "{failure}");
+        assert_eq!(span["end"]["byte"], start + located.len(), "{failure}");
     }
 }

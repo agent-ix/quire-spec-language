@@ -221,6 +221,36 @@ The compiler SHALL produce byte-identical results for the same selection,
 package input, definition and limits, whether it starts at the intake seam or
 at the bundle entry point that lifts those bytes.
 
+### Complete-V1 units (spine I1)
+
+When a complete-V1 (`1-draft`) unit declares `model M = "<identity>" version
+"<version>" digest "sha256-jcs:<hex>";`, spine intake (ADR-011 §2.1 I1) SHALL
+admit that selection against the package input under this requirement, read its
+records and normalize them, in the unit's declaration order, before the FR-091
+assembler runs. The assembler SHALL declare each object type of the admitted
+package in the package's type environment as `M::<artifact id>`, with its
+declared supertypes and fields, and SHALL resolve `M::<artifact id>` and
+`Reference<M::<artifact id>>` to that object type. A field is named by its
+member name. A native `Boolean` or `Integer` value type, an object type (as
+`Reference`) and a scalar type (as its `Int[lower, upper]`) are its value type.
+Multiplicity `[1, 1]` is required, `[0, 1]` optional, and any other
+multiplicity is the collection its `ordered` and `unique` flags name, bounded
+by it. A `redefines` names the redefined field by its owner and name.
+
+If an admitted package declares a record the type environment does not
+represent (an operation, a record value type, a systems part, port or
+allocation, or a field whose value type or multiplicity has no kernel type),
+then the assembler SHALL refuse it with
+`unknown_required_feature`/`unsupported-feature` at the `model` declaration.
+A `Float32` or `Float64` field SHALL refuse as every floating type does.
+
+If a unit's `model` declaration spells a `sha256:` digest, then spine intake
+SHALL refuse it with `invalid_model_binding` at the declaration: that slot
+selects a compiled-model artifact (FR-056-CON-4). If a selection does not
+admit, spine intake SHALL refuse with the FR-154 refusal's code at the
+declaration. If a type name names no object type of an admitted package, then
+the assembler SHALL refuse it with `missing_declaration` at the name.
+
 ## Constraints
 
 | ID | Constraint | Type | Validation |
@@ -241,6 +271,7 @@ at the bundle entry point that lifts those bytes.
 | FR-056-AC-5 | Each relationship member yields one `relationship` export with its name and span; a relationship member missing either refuses `invalid_model_binding`/`malformed-declaration`; a relationship member or reference to a node absent from the package refuses `missing_declaration`/`missing-name`; any declaration refusal leaves the whole package unadmitted with every refusal reported in node order. | Test (TC-145) |
 | FR-056-AC-6 | Intake at its exact `normalize.record` bound completes, the one-less run is incomplete at `normalize.record` with no declaration, and admission refusals are decided before the first charge. | Test (TC-147) |
 | FR-056-AC-7 | The same selection, package input, definition and limits yield byte-identical results from the intake seam and from the bundle entry point, and a domain package digest offered in a raw-byte or compiled-artifact digest slot refuses. | Test (TC-145, TC-147) |
+| FR-056-AC-9 | A `1-draft` unit selecting a domain package by its `sha256-jcs` digest assembles with each of the package's object types declared as `M::<artifact id>` with its declared supertypes and fields, a subtype conforming to its declared supertype, and checks with functions over `M::T` and `Reference<M::T>`; inherited field access checks (`deref(g).code` over a `Gadget` whose supertype `Widget` declares `code`), and `deref(g).nope` and `g = r` over an unrelated `Rock` refuse `ill_typed` at check. A `model` declaration with no admitted package refuses at the assembler as `missing_import`. `Reference<M::Nope>` refuses at the assembler as `missing_declaration` at `M::Nope`; with no package supplied the declaration refuses at intake as `missing_import`, and a `sha256:` digest refuses at intake as `invalid_model_binding`, each at the `model` declaration. Past the I2 read, a package holding the field access waits on IR-285 and QSpec STD-100 (the reader resolves a model member through the lock-selected domain package), and one holding `g = w` over conforming references waits on QSpec's v2 operation catalog, which pins `quire.op.reference.eq` to `same_type`; TC-442 pins both refusals. | Test (TC-442) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148, IT-012) |
 
 ## Open Questions

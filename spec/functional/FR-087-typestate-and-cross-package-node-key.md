@@ -540,9 +540,9 @@ model selection, among others). ADR-011 gives each half its own successor
   profile and definition selections through the QSpec value-lock accessor,
   and each `model` declaration against the domain packages admitted at I1
   (ADR-011 §2.4). Gated on QSL-189, the QSpec lock accessor the builder
-  reads. Spine `compile` admits no domain package, so its E3 refuses a
-  `model` declaration (ADR-011 §2.4); a `model` selection resolves only on a
-  path that admits the selected domain package at I1.
+  reads. Spine `compile` runs I1 over the unit's `model` declarations, and
+  each resolves only against the domain package I1 admitted for it
+  (ADR-011 §2.4, QSL-249).
 
 QSL SHALL remove `ResolvedSourcePackage`, `resolve_source_package` and
 their constructors from `qsl-semantics/src/complete/package.rs` in one

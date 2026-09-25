@@ -93,6 +93,7 @@ mod region;
 mod termination;
 mod type_form;
 
+use crate::model::domain_package::DomainPackageRef;
 use std::collections::BTreeMap;
 
 use check::{bind_parameters, Typer};
@@ -325,6 +326,9 @@ pub struct CheckedGraph {
     /// FR-096: the span of each declared type's name read from the unit, by
     /// its declared name, so an `Origin::TypeDeclaration` resolves.
     type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// ADR-011 §2.4 `model_selections`: each admitted domain package's
+    /// selection, ascending by identity.
+    model_selections: Vec<DomainPackageRef>,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -680,6 +684,11 @@ impl PackageDeclarations {
         let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
         let models = self.models;
+        let mut model_selections: Vec<_> = models
+            .iter()
+            .map(|model| model.selection().clone())
+            .collect();
+        model_selections.sort_by(|a, b| (&a.identity, &a.version).cmp(&(&b.identity, &b.version)));
         // FR-094 (ADR-013 O-01): a check selects one version of each domain
         // package identity, so a model owner names one declaration.
         let mut selected = std::collections::BTreeSet::new();
@@ -1050,11 +1059,19 @@ impl PackageDeclarations {
             effective_limits: limits,
             form_spans,
             type_spans,
+            model_selections,
         })
     }
 }
 
 impl CheckedGraph {
+    /// ADR-011 §2.4: the selection of each domain package this package was
+    /// checked against, ascending by identity: the lock's
+    /// `model_selections`.
+    pub fn model_selections(&self) -> &[DomainPackageRef] {
+        &self.model_selections
+    }
+
     /// FR-001: the `RawSourceRef` of the unit this package was checked
     /// from, the lock's `sources` entry (QSpec FR-322 `PackageLock`).
     pub fn source(&self) -> &qsl_foundation::source::provenance::RawSourceRef {

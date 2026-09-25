@@ -55,6 +55,9 @@ use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::{LocatedSpan, Position};
 
+mod unit;
+pub use unit::{admit_unit, package_input, SelectedModel, UnitIntakeCause, UnitIntakeRefusal};
+
 /// A Quire meaning id (FR-208): the sole legitimate way to determine what a
 /// construct or type definition IS. Kind names and modules are never
 /// matched directly; every reader dispatches on this table's values.
@@ -712,29 +715,63 @@ pub fn admit_selections(
     digest_domain: &str,
     bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
 ) -> Result<Vec<(DomainPackageRef, PackageDocument)>, ModelRefusal> {
+    admit_located(
+        offered,
+        |selection| selection,
+        digest_domain,
+        bytes_by_digest,
+    )
+    .map(|admitted| {
+        admitted
+            .into_iter()
+            .map(|(_, admitted_ref, document)| (admitted_ref, document))
+            .collect()
+    })
+    .map_err(|(_, refusal)| refusal)
+}
+
+/// One item [`admit_located`] admitted: the item, its admitted selection
+/// and its package document.
+pub(crate) type Admitted<'a, T> = (&'a T, DomainPackageRef, PackageDocument);
+
+/// [`admit_selections`] over any `offered` items, each naming its
+/// selection through `selection`: an admitted item comes back with its
+/// package document, and a refusal names the item it concerns.
+pub(crate) fn admit_located<'a, T>(
+    offered: &'a [T],
+    selection: impl Fn(&T) -> &DomainPackageRef,
+    digest_domain: &str,
+    bytes_by_digest: &BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<Vec<Admitted<'a, T>>, (&'a T, ModelRefusal)> {
     let mut admitted = Vec::with_capacity(offered.len());
     let mut selected_versions: BTreeMap<&str, &str> = BTreeMap::new();
-    for selection in offered {
-        if let Some(&already_selected_version) = selected_versions.get(selection.identity.as_str())
+    for item in offered {
+        let offered_ref = selection(item);
+        if let Some(&already_selected_version) =
+            selected_versions.get(offered_ref.identity.as_str())
         {
-            return Err(ModelRefusal {
-                code: Code::DuplicateSelection,
-                cause: ModelRefusalCause::DuplicateSelection {
-                    identity: selection.identity.clone(),
-                    already_selected_version: already_selected_version.to_owned(),
-                    requested_version: selection.version.clone(),
+            return Err((
+                item,
+                ModelRefusal {
+                    code: Code::DuplicateSelection,
+                    cause: ModelRefusalCause::DuplicateSelection {
+                        identity: offered_ref.identity.clone(),
+                        already_selected_version: already_selected_version.to_owned(),
+                        requested_version: offered_ref.version.clone(),
+                    },
+                    detail: format!(
+                        "domain package identity {:?} is already selected at version {:?}; this \
+                         call additionally selects it at version {:?}, and a package selects at \
+                         most one version of a domain-package identity",
+                        offered_ref.identity, already_selected_version, offered_ref.version
+                    ),
                 },
-                detail: format!(
-                    "domain package identity {:?} is already selected at version {:?}; this call \
-                     additionally selects it at version {:?}, and a package selects at most one \
-                     version of a domain-package identity",
-                    selection.identity, already_selected_version, selection.version
-                ),
-            });
+            ));
         }
-        let (admitted_ref, document) = admit(selection, digest_domain, bytes_by_digest)?;
-        selected_versions.insert(&selection.identity, &selection.version);
-        admitted.push((admitted_ref, document));
+        let (admitted_ref, document) = admit(offered_ref, digest_domain, bytes_by_digest)
+            .map_err(|refusal| (item, refusal))?;
+        selected_versions.insert(&offered_ref.identity, &offered_ref.version);
+        admitted.push((item, admitted_ref, document));
     }
     Ok(admitted)
 }
