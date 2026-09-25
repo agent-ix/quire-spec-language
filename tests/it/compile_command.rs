@@ -367,6 +367,7 @@ fn a_complete_v1_program_compiles_through_the_spine() {
         "program.native",
         &program,
         &std::collections::BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
         qsl_replay::spine::SpineLimits::default(),
     )
     .unwrap();
@@ -689,6 +690,7 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
         "program.native",
         &program,
         &qsl_semantics::model::intake::package_input([document.as_slice()]),
+        &qsl_replay::spine::DependencyInput::default(),
         qsl_replay::spine::SpineLimits::default(),
     )
     .unwrap();

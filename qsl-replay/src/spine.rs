@@ -3,10 +3,12 @@
 //! Complete-V1 source enters S1 and goes through the stage APIs in DAG
 //! order: S1 (`qsl_cst::parse`), S2 (`qsl_forms::build_unit`), I1
 //! (`model::intake::admit_unit`, the unit's `model` declarations against
-//! the supplied domain packages, FR-056), the FR-091 assembler, S3
-//! (`PackageDeclarations::check`), S4 (`CheckedPackage::link`) and the v2
-//! emitter (`qsl_package::emit_checked`). This module calls them and makes
-//! no semantic decision.
+//! the supplied domain packages, FR-056), the S4 source resolution of the
+//! unit's `import`s against the dependency input (ADR-015 D-1, FR-099), the
+//! FR-091 assembler, S3 (`PackageDeclarations::check`), E4
+//! (`CheckedPackage::link_with`) and the v2 emitter
+//! (`qsl_package::emit_checked`). This module calls them and makes no
+//! semantic decision.
 //!
 //! It lives in layer 6 `replay` because both of its callers are layer 6:
 //! `command`'s CLI `compile`, which writes the emitted bytes, and this
@@ -17,15 +19,24 @@
 //! `command`, so this is the one place the chain can be written once.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
-use qsl_cst::CompleteDiagnostic;
+use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{build_unit, FormsCause, FormsFailure, FormsLimits};
+use qsl_foundation::diagnostic::StageFailure;
+use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::{Code, SourceIdentity, Span};
-use qsl_package::{emit_checked, CheckedPackage, EmitRefusal, EmittedPackage, OmittedNode};
-use qsl_semantics::check::{
-    AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, CheckingLimits, PackageDeclarations,
+use qsl_package::{
+    emit_checked, read_import_view, CheckedPackage, Emission, EmitRefusal, EmittedPackage, Import,
+    ImportViewRefusal, LinkRefusal, OmittedNode,
 };
+use qsl_semantics::check::{
+    AdmittedImport, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, CheckingLimits,
+    PackageDeclarations,
+};
+use qsl_semantics::library::{ImportView, LibraryName, PackageId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause, UnitIntakeRefusal};
 
@@ -70,6 +81,34 @@ pub enum CompileRefusal {
         /// The region of the first refusal, when it names one.
         region: Option<SourceRegion>,
     },
+    /// ADR-015 D-1: the dependency input refused. Closure-level: reported
+    /// unwrapped, with no source region.
+    #[error("the dependency input refused: {0}")]
+    DependencyInput(DependencyInputRefusal),
+    /// ADR-015 D-1: the S4 source resolution refused one of this unit's own
+    /// `import`s.
+    #[error("{refusal}")]
+    Import {
+        /// The resolution's refusal.
+        refusal: ImportRefusal,
+        /// The region of the import, or of its identity string, in the
+        /// source that declares it.
+        region: Option<SourceRegion>,
+    },
+    /// ADR-015 D-1: a library's own refusal, raised while resolving or
+    /// compiling it. It reports the library's own stage and region, located
+    /// in the library's source.
+    #[error("the library {} refused: {refusal}", display_path(.path))]
+    Dependency {
+        /// The library identities from the unit's import down to the
+        /// library that refused, that library last.
+        path: Vec<LibraryName>,
+        /// The library's own refusal; never itself a `Dependency`.
+        refusal: Box<CompileRefusal>,
+    },
+    /// E4: the link step refused the unit's dependency closure.
+    #[error("{0}")]
+    Link(LinkRefusal),
     /// E4: the v2 emitter wrote no bytes.
     #[error("{0}")]
     Emit(EmitRefusal),
@@ -94,6 +133,10 @@ impl CompileRefusal {
             Self::Check { refusals, .. } => refusals
                 .first()
                 .map_or(Code::RuntimeInvariant, |refusal| refusal.cause.code()),
+            Self::DependencyInput(refusal) => refusal.code(),
+            Self::Import { refusal, .. } => refusal.code(),
+            Self::Dependency { refusal, .. } => refusal.code(),
+            Self::Link(refusal) => refusal.code(),
             Self::Emit(refusal) => refusal.code(),
             // An emission path IR's pinned v2 vocabulary does not hold yet.
             Self::Omitted(_) => Code::UnsupportedProjection,
@@ -105,10 +148,13 @@ impl CompileRefusal {
         match self {
             Self::Source(_) => SpineStage::Source,
             Self::Forms { .. } => SpineStage::Forms,
-            Self::Intake { .. } => SpineStage::Intake,
+            Self::Intake { .. } | Self::DependencyInput(_) | Self::Import { .. } => {
+                SpineStage::Intake
+            }
+            Self::Dependency { refusal, .. } => refusal.stage(),
             Self::Assembly { .. } => SpineStage::Assembly,
             Self::Check { .. } => SpineStage::Check,
-            Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
+            Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
         }
     }
 
@@ -120,9 +166,24 @@ impl CompileRefusal {
             Self::Forms { region, .. }
             | Self::Intake { region, .. }
             | Self::Assembly { region, .. }
+            | Self::Import { region, .. }
             | Self::Check { region, .. } => region.as_ref(),
-            Self::Emit(_) | Self::Omitted(_) => None,
+            Self::Dependency { refusal, .. } => refusal.region(),
+            Self::DependencyInput(_) | Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => None,
         }
+    }
+
+    /// Whether this refusal is closure-level (ADR-015 D-1): the top-level
+    /// compile reports it unwrapped, wherever in the closure it arose.
+    fn is_closure_level(&self) -> bool {
+        matches!(
+            self,
+            Self::DependencyInput(_)
+                | Self::Import {
+                    refusal: ImportRefusal::Cycle { .. } | ImportRefusal::Diamond { .. },
+                    ..
+                }
+        )
     }
 }
 
@@ -295,6 +356,311 @@ fn region(source: &RawSourceRef, span: Span) -> Option<SourceRegion> {
     SourceRegion::new(source.clone(), start, end).ok()
 }
 
+/// A dependency path written `a -> b -> c`.
+fn display_path(path: &[LibraryName]) -> String {
+    path.iter()
+        .map(LibraryName::as_str)
+        .collect::<Vec<_>>()
+        .join(" -> ")
+}
+
+/// One supplied library as its supplier names it (ADR-015 D-1; QSpec
+/// FR-307): its identity, its version and its source unit. It carries no
+/// `package_id`: a library's `package_id` is the one its own compile yields
+/// (ADR-013 O-02).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SuppliedLibrary {
+    /// The library identity, a non-empty string (ADR-015 D-3).
+    pub identity: String,
+    /// The library's version, a non-empty string.
+    pub version: String,
+    /// The source's four FR-001 labels.
+    pub source: SourceIdentity,
+    /// The source's display path; only displayed, never opened.
+    pub path: String,
+    /// The source bytes.
+    pub bytes: Vec<u8>,
+}
+
+/// The dependency input of one compile (ADR-015 D-1): at most one supplied
+/// library per library identity, each source with its own owner.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DependencyInput {
+    libraries: BTreeMap<LibraryName, SuppliedLibrary>,
+}
+
+/// Which source of a compile a [`DependencyInputRefusal`] names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SourceHolder {
+    /// The unit being compiled.
+    Unit,
+    /// The supplied library of this identity.
+    Library(LibraryName),
+}
+
+/// Why a dependency input was refused (ADR-015 D-1), naming both offending
+/// libraries or the empty field. Closure-level: the compile reports it
+/// unwrapped and at no source region.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum DependencyInputRefusal {
+    /// A library is supplied under the empty identity
+    /// (`invalid_identifier`, [`HostCause::SelectionIdentity`]).
+    #[error("invalid_identifier: a library from source {} has an empty identity", .labels.identity)]
+    EmptyIdentity {
+        /// The library's source labels.
+        labels: SourceIdentity,
+    },
+    /// A library is supplied with an empty version (`invalid_identifier`,
+    /// [`HostCause::SelectionVersion`]).
+    #[error("invalid_identifier: the library {identity} has an empty version")]
+    EmptyVersion {
+        /// The library identity.
+        identity: LibraryName,
+    },
+    /// Two libraries are supplied under one identity
+    /// (`invalid_package`/`conflicting-definition`).
+    #[error(
+        "invalid_package/conflicting-definition: {identity} is supplied from {} and from {}",
+        .first.identity,
+        .second.identity
+    )]
+    DuplicateIdentity {
+        /// The identity supplied twice.
+        identity: LibraryName,
+        /// The first library's source labels.
+        first: SourceIdentity,
+        /// The second library's source labels.
+        second: SourceIdentity,
+    },
+    /// A library's source has the authority and identity of the unit's or
+    /// of another library's source: one owner per compile (ADR-013 O-04)
+    /// (`invalid_package`/`conflicting-definition`).
+    #[error(
+        "invalid_package/conflicting-definition: the library {second} has the source owner {authority}/{identity} of {}",
+        match .first { SourceHolder::Unit => "the unit".to_owned(), SourceHolder::Library(name) => format!("the library {name}") }
+    )]
+    SharedOwner {
+        /// The source that holds the owner first.
+        first: SourceHolder,
+        /// The library whose source repeats it.
+        second: LibraryName,
+        /// The shared source authority.
+        authority: String,
+        /// The shared source identity.
+        identity: String,
+    },
+}
+
+impl DependencyInputRefusal {
+    /// The catalog code.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::EmptyIdentity { .. } | Self::EmptyVersion { .. } => Code::InvalidIdentifier,
+            Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => Code::InvalidPackage,
+        }
+    }
+
+    /// The host cause of an `invalid_identifier` refusal.
+    pub fn host_cause(&self) -> Option<HostCause> {
+        match self {
+            Self::EmptyIdentity { .. } => Some(HostCause::SelectionIdentity),
+            Self::EmptyVersion { .. } => Some(HostCause::SelectionVersion),
+            Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => None,
+        }
+    }
+
+    /// The catalog cause of an `invalid_package` refusal.
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::DuplicateIdentity { .. } | Self::SharedOwner { .. } => {
+                Some("conflicting-definition")
+            }
+            Self::EmptyIdentity { .. } | Self::EmptyVersion { .. } => None,
+        }
+    }
+}
+
+impl DependencyInput {
+    /// The dependency input holding `libraries`, refusing, in supply order,
+    /// an empty identity or version, a second library under one identity,
+    /// and a library whose source repeats another library's owner.
+    pub fn new(
+        libraries: impl IntoIterator<Item = SuppliedLibrary>,
+    ) -> Result<Self, DependencyInputRefusal> {
+        let mut held: BTreeMap<LibraryName, SuppliedLibrary> = BTreeMap::new();
+        for library in libraries {
+            let Ok(identity) = LibraryName::new(library.identity.as_str()) else {
+                return Err(DependencyInputRefusal::EmptyIdentity {
+                    labels: library.source,
+                });
+            };
+            if library.version.is_empty() {
+                return Err(DependencyInputRefusal::EmptyVersion { identity });
+            }
+            if let Some(first) = held.get(&identity) {
+                return Err(DependencyInputRefusal::DuplicateIdentity {
+                    identity,
+                    first: first.source.clone(),
+                    second: library.source,
+                });
+            }
+            if let Some((first, _)) = held
+                .iter()
+                .find(|(_, other)| same_owner(&other.source, &library.source))
+            {
+                return Err(DependencyInputRefusal::SharedOwner {
+                    first: SourceHolder::Library(first.clone()),
+                    second: identity,
+                    authority: library.source.authority,
+                    identity: library.source.identity,
+                });
+            }
+            held.insert(identity, library);
+        }
+        Ok(Self { libraries: held })
+    }
+
+    /// Refuse a library whose source has the owner of `unit`, the unit
+    /// being compiled against this input (ADR-013 O-04).
+    fn check_unit_owner(&self, unit: &SourceIdentity) -> Result<(), DependencyInputRefusal> {
+        match self
+            .libraries
+            .iter()
+            .find(|(_, library)| same_owner(&library.source, unit))
+        {
+            Some((identity, _)) => Err(DependencyInputRefusal::SharedOwner {
+                first: SourceHolder::Unit,
+                second: identity.clone(),
+                authority: unit.authority.clone(),
+                identity: unit.identity.clone(),
+            }),
+            None => Ok(()),
+        }
+    }
+}
+
+/// Whether two sources have one owner: the same authority and identity
+/// (ADR-013 O-04).
+fn same_owner(first: &SourceIdentity, second: &SourceIdentity) -> bool {
+    first.authority == second.authority && first.identity == second.identity
+}
+
+/// One import's selection as the S4 source resolution first visited it: the
+/// version and digest it records and the dependency path that reached it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VisitedImport {
+    /// The library identities from the unit's import down to this library.
+    pub path: Vec<LibraryName>,
+    /// The version the import names.
+    pub version: String,
+    /// The digest the import records.
+    pub digest: DigestRecord,
+}
+
+/// Why the S4 source resolution refused an `import` (ADR-015 D-1).
+#[derive(Debug, thiserror::Error)]
+pub enum ImportRefusal {
+    /// Step 1: the import names a library whose compile is in progress
+    /// (`invalid_package`/`definition-cycle`). Closure-level.
+    #[error("invalid_package/definition-cycle: {}", display_path(.path))]
+    Cycle {
+        /// The identity path, from the library the cycle returns to, back
+        /// to it.
+        path: Vec<LibraryName>,
+    },
+    /// Step 2: an earlier import in the closure selects the same identity
+    /// with another version or digest
+    /// (`invalid_package`/`conflicting-definition`, QSpec FR-307's diamond
+    /// rule). Closure-level.
+    #[error(
+        "invalid_package/conflicting-definition: {} and {} select {identity} differently",
+        display_path(&.first.path),
+        display_path(&.second.path)
+    )]
+    Diamond {
+        /// The library identity.
+        identity: LibraryName,
+        /// The earlier import.
+        first: Box<VisitedImport>,
+        /// The later, conflicting import.
+        second: Box<VisitedImport>,
+    },
+    /// Step 3: no library is supplied under the import's identity
+    /// (`missing_import`/`missing-selection`).
+    #[error("missing_import/missing-selection: no library is supplied as {identity}")]
+    MissingSelection {
+        /// The identity the import names.
+        identity: String,
+    },
+    /// Step 3: the library supplied under the import's identity has another
+    /// version (`stale_dependency`/`revision-mismatch`).
+    #[error(
+        "stale_dependency/revision-mismatch: {identity} is imported at version {imported} but supplied at {supplied}"
+    )]
+    RevisionMismatch {
+        /// The library identity.
+        identity: LibraryName,
+        /// The version the import names.
+        imported: String,
+        /// The version the library is supplied at.
+        supplied: String,
+    },
+    /// Step 5: the library's recomputed `package_id` is not the digest the
+    /// import records (`stale_dependency`/`byte-digest-mismatch`,
+    /// ADR-011 §4).
+    #[error(
+        "stale_dependency/byte-digest-mismatch: {identity} is recorded as {} but its source compiles to {}",
+        .recorded.hex(),
+        .recompiled.hex()
+    )]
+    DependencyIdentityMismatch {
+        /// The library identity.
+        identity: LibraryName,
+        /// The digest the import records.
+        recorded: DigestRecord,
+        /// The library's recomputed `package_id`.
+        recompiled: PackageId,
+    },
+    /// Step 6: the I2 read of the library's emitted bytes built no import
+    /// view.
+    #[error("the I2 read of {identity} refused: {refusal:?}")]
+    View {
+        /// The library identity.
+        identity: LibraryName,
+        /// The read's refusal or reached ceiling.
+        refusal: Box<ImportViewRefusal>,
+    },
+}
+
+impl ImportRefusal {
+    /// The catalog code.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Cycle { .. } | Self::Diamond { .. } => Code::InvalidPackage,
+            Self::MissingSelection { .. } => Code::MissingImport,
+            Self::RevisionMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {
+                Code::StaleDependency
+            }
+            Self::View { refusal, .. } => match &**refusal {
+                StageFailure::Refused(refusal) => refusal.code(),
+                StageFailure::Limit(_) => Code::StageLimitExceeded,
+            },
+        }
+    }
+
+    /// The catalog cause, where the catalog names one.
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::Cycle { .. } => Some("definition-cycle"),
+            Self::Diamond { .. } => Some("conflicting-definition"),
+            Self::MissingSelection { .. } => Some("missing-selection"),
+            Self::RevisionMismatch { .. } => Some("revision-mismatch"),
+            Self::DependencyIdentityMismatch { .. } => Some("byte-digest-mismatch"),
+            Self::View { .. } => None,
+        }
+    }
+}
+
 /// The stage limits one spine compile runs under: S1's, S2's, I1's and
 /// S3's own limits types, each defaulting to that stage's published
 /// default. The v2 emitter takes none.
@@ -324,75 +690,274 @@ pub struct Compiled {
 /// through S1 to S4 under `limits`. `packages` is FR-056's package input,
 /// the supplied domain package documents by their `sha256-jcs` digest
 /// (`model::intake::package_input`): I1 admits each `model` declaration of
-/// the unit against it. No lock file or request file is read (ADR-011 §5),
-/// and `path` is only displayed, never opened.
+/// the unit against it. `dependencies` is the dependency input (ADR-015
+/// D-1): the S4 source resolution compiles each library the unit's
+/// `import`s reach from its source, against the same package input,
+/// dependency input and limits. No lock file or request file is read
+/// (ADR-011 §5), and `path` is only displayed, never opened.
 pub fn compile(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    dependencies: &DependencyInput,
     limits: SpineLimits,
 ) -> Result<Compiled, Box<CompileRefusal>> {
-    let parsed = qsl_cst::parse(source, path, bytes, limits.source)
-        .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
-    if let Some(first) = parsed.diagnostics().first() {
-        return Err(Box::new(CompileRefusal::Source(Box::new(first.clone()))));
-    }
-    let raw = parsed.source().reference().clone();
-    let unit = build_unit(&parsed, limits.forms).map_err(|failure| {
-        let span = match &failure {
-            FormsFailure::Refused(refusal) => refusal.span,
-            FormsFailure::Limit { span, .. } => Some(*span),
-        };
-        Box::new(CompileRefusal::Forms {
-            region: span.and_then(|span| region(&raw, span)),
-            failure,
-        })
-    })?;
-    let models =
-        admit_unit(&unit.selections().models, packages, limits.model).map_err(|refusal| {
-            Box::new(CompileRefusal::Intake {
-                region: region(&raw, refusal.span),
-                refusal,
+    dependencies
+        .check_unit_owner(&source)
+        .map_err(|refusal| Box::new(CompileRefusal::DependencyInput(refusal)))?;
+    let mut resolution = Resolution {
+        dependencies,
+        packages,
+        limits,
+        active: Vec::new(),
+        visited: BTreeMap::new(),
+        compiled: BTreeMap::new(),
+    };
+    let (package, emission) = resolution.compile_unit(source, path, bytes)?;
+    Ok(Compiled {
+        package,
+        emitted: emission.package().clone(),
+    })
+}
+
+/// A library the S4 source resolution compiled: its checked package and
+/// its import view.
+#[derive(Debug)]
+struct ResolvedLibrary {
+    package: Arc<CheckedPackage>,
+    view: ImportView,
+}
+
+/// One compile's S4 source resolution state (ADR-015 D-1).
+struct Resolution<'a> {
+    dependencies: &'a DependencyInput,
+    packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    limits: SpineLimits,
+    /// The libraries whose compile is in progress, outermost first.
+    active: Vec<LibraryName>,
+    /// Each identity's first import in the closure.
+    visited: BTreeMap<LibraryName, VisitedImport>,
+    /// Each library whose compile completed. A library is compiled at most
+    /// once per compile, so the number of library compiles is at most the
+    /// number of supplied libraries.
+    compiled: BTreeMap<LibraryName, Arc<ResolvedLibrary>>,
+}
+
+impl Resolution<'_> {
+    /// One unit through S1 to S4, resolving its imports depth first.
+    fn compile_unit(
+        &mut self,
+        source: SourceIdentity,
+        path: &str,
+        bytes: &[u8],
+    ) -> Result<(CheckedPackage, Emission), Box<CompileRefusal>> {
+        let limits = self.limits;
+        let parsed = qsl_cst::parse(source, path, bytes, limits.source)
+            .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
+        if let Some(first) = parsed.diagnostics().first() {
+            return Err(Box::new(CompileRefusal::Source(Box::new(first.clone()))));
+        }
+        let raw = parsed.source().reference().clone();
+        let unit = build_unit(&parsed, limits.forms).map_err(|failure| {
+            let span = match &failure {
+                FormsFailure::Refused(refusal) => refusal.span,
+                FormsFailure::Limit { span, .. } => Some(*span),
+            };
+            Box::new(CompileRefusal::Forms {
+                region: span.and_then(|span| region(&raw, span)),
+                failure,
             })
         })?;
-    let declarations = PackageDeclarations::assemble(raw.clone(), unit, models, Vec::new())
-        .map_err(|refusal| {
-            Box::new(CompileRefusal::Assembly {
-                // A type-environment stage limit names no declaration, so it
-                // has no region (FR-082, FR-096).
-                region: refusal
-                    .errors
+        let models = admit_unit(&unit.selections().models, self.packages, limits.model).map_err(
+            |refusal| {
+                Box::new(CompileRefusal::Intake {
+                    region: region(&raw, refusal.span),
+                    refusal,
+                })
+            },
+        )?;
+        let mut admitted = Vec::with_capacity(unit.selections().imports.len());
+        let mut links = Vec::with_capacity(unit.selections().imports.len());
+        for import in &unit.selections().imports {
+            let (identity, library) = self.resolve(&raw, import)?;
+            admitted.push(AdmittedImport {
+                identity: identity.clone(),
+                view: library.view.clone(),
+            });
+            links.push(Import {
+                identity,
+                version: import.version.clone(),
+                digest: import.digest.clone(),
+                package: Arc::clone(&library.package),
+            });
+        }
+        let declarations = PackageDeclarations::assemble(raw.clone(), unit, models, admitted)
+            .map_err(|refusal| {
+                Box::new(CompileRefusal::Assembly {
+                    // A type-environment stage limit names no declaration,
+                    // so it has no region (FR-082, FR-096).
+                    region: refusal
+                        .errors
+                        .first()
+                        .filter(|error| !matches!(error.cause, AssemblyCause::TypeLimit(_)))
+                        .and_then(|error| region(&raw, error.span)),
+                    refusal,
+                })
+            })?;
+        let regions = declarations.regions();
+        let graph = declarations.check(limits.checking).map_err(|refusals| {
+            Box::new(CompileRefusal::Check {
+                region: refusals
                     .first()
-                    .filter(|error| !matches!(error.cause, AssemblyCause::TypeLimit(_)))
-                    .and_then(|error| region(&raw, error.span)),
-                refusal,
+                    .and_then(|refusal| regions.refusal_region(refusal)),
+                refusals,
             })
         })?;
-    let regions = declarations.regions();
-    let graph = declarations.check(limits.checking).map_err(|refusals| {
-        Box::new(CompileRefusal::Check {
-            region: refusals
-                .first()
-                .and_then(|refusal| regions.refusal_region(refusal)),
-            refusals,
-        })
-    })?;
-    let package = CheckedPackage::link(graph);
-    let emission =
-        emit_checked(&package).map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
-    if !emission.omitted().is_empty() {
-        return Err(Box::new(CompileRefusal::Omitted(
-            emission.omitted().to_vec(),
-        )));
+        let package = CheckedPackage::link_with(graph, links)
+            .map_err(|refusal| Box::new(CompileRefusal::Link(refusal)))?;
+        let emission =
+            emit_checked(&package).map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
+        if !emission.omitted().is_empty() {
+            return Err(Box::new(CompileRefusal::Omitted(
+                emission.omitted().to_vec(),
+            )));
+        }
+        Ok((package, emission))
     }
-    let emitted = emission.package().clone();
-    Ok(Compiled { package, emitted })
+
+    /// ADR-015 D-1's six steps for one `import` of the unit `raw` names:
+    /// cycle, diamond, selection, compile, identity, view.
+    fn resolve(
+        &mut self,
+        raw: &RawSourceRef,
+        import: &ImportSelection,
+    ) -> Result<(LibraryName, Arc<ResolvedLibrary>), Box<CompileRefusal>> {
+        let at_identity = || region(raw, import.identity_span);
+        let at_import = || region(raw, import.span);
+        let refuse = |refusal, region| Box::new(CompileRefusal::Import { refusal, region });
+        // The parser admits no empty identity, so this refuses only a
+        // selection no source spells.
+        let Ok(identity) = LibraryName::new(import.identity.as_str()) else {
+            return Err(refuse(
+                ImportRefusal::MissingSelection {
+                    identity: import.identity.clone(),
+                },
+                at_identity(),
+            ));
+        };
+        // 1. Cycle, before any digest is compared.
+        if let Some(start) = self.active.iter().position(|active| *active == identity) {
+            let mut path = self.active[start..].to_vec();
+            path.push(identity);
+            return Err(refuse(ImportRefusal::Cycle { path }, at_identity()));
+        }
+        let mut path = self.active.clone();
+        path.push(identity.clone());
+        let visit = VisitedImport {
+            path,
+            version: import.version.clone(),
+            digest: import.digest.clone(),
+        };
+        // 2. Diamond; an equal earlier import reuses its completed library.
+        if let Some(first) = self.visited.get(&identity) {
+            if first.version != visit.version || first.digest != visit.digest {
+                return Err(refuse(
+                    ImportRefusal::Diamond {
+                        identity,
+                        first: Box::new(first.clone()),
+                        second: Box::new(visit),
+                    },
+                    at_identity(),
+                ));
+            }
+            if let Some(library) = self.compiled.get(&identity) {
+                return Ok((identity, Arc::clone(library)));
+            }
+        }
+        self.visited.insert(identity.clone(), visit);
+        // 3. Selection.
+        let dependencies = self.dependencies;
+        let Some(supplied) = dependencies.libraries.get(&identity) else {
+            return Err(refuse(
+                ImportRefusal::MissingSelection {
+                    identity: import.identity.clone(),
+                },
+                at_identity(),
+            ));
+        };
+        if supplied.version != import.version {
+            return Err(refuse(
+                ImportRefusal::RevisionMismatch {
+                    identity,
+                    imported: import.version.clone(),
+                    supplied: supplied.version.clone(),
+                },
+                at_import(),
+            ));
+        }
+        // 4. Compile, by this same resolution.
+        self.active.push(identity.clone());
+        let compiled = self.compile_unit(supplied.source.clone(), &supplied.path, &supplied.bytes);
+        self.active.pop();
+        let (package, emission) = compiled.map_err(|refusal| wrap(&identity, refusal))?;
+        // 5. Identity.
+        let recompiled = emission.package().package_id();
+        if !recompiled.matches(&import.digest) {
+            return Err(refuse(
+                ImportRefusal::DependencyIdentityMismatch {
+                    identity,
+                    recorded: import.digest.clone(),
+                    recompiled,
+                },
+                at_import(),
+            ));
+        }
+        // 6. View.
+        let view = read_import_view(&emission, identity.clone(), &import.version, self.packages)
+            .map_err(|refusal| {
+                refuse(
+                    ImportRefusal::View {
+                        identity: identity.clone(),
+                        refusal: Box::new(refusal),
+                    },
+                    at_import(),
+                )
+            })?;
+        let library = Arc::new(ResolvedLibrary {
+            package: Arc::new(package),
+            view,
+        });
+        self.compiled.insert(identity.clone(), Arc::clone(&library));
+        Ok((identity, library))
+    }
+}
+
+/// `refusal`, raised compiling the library `identity`, as the importing
+/// unit reports it (ADR-015 D-1): a closure-level refusal unwrapped, and
+/// any other as the library's own under its dependency path.
+fn wrap(identity: &LibraryName, refusal: Box<CompileRefusal>) -> Box<CompileRefusal> {
+    if refusal.is_closure_level() {
+        return refusal;
+    }
+    match *refusal {
+        CompileRefusal::Dependency { mut path, refusal } => {
+            path.insert(0, identity.clone());
+            Box::new(CompileRefusal::Dependency { path, refusal })
+        }
+        refusal => Box::new(CompileRefusal::Dependency {
+            path: vec![identity.clone()],
+            refusal: Box::new(refusal),
+        }),
+    }
 }
 
 #[cfg(test)]
+mod dependency_tests;
+
+#[cfg(test)]
 mod tests {
-    use super::{compile, CompileRefusal, SpineLimits, SpineStage};
+    use super::{compile, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SpineStage};
     use ix_trace_rs::trace;
     use qsl_foundation::{Code, SourceIdentity};
     use qsl_semantics::check::CheckingLimits;
@@ -413,6 +978,7 @@ mod tests {
             "unit.native",
             UNIT.as_bytes(),
             &BTreeMap::new(),
+            &DependencyInput::default(),
             SpineLimits {
                 checking: CheckingLimits::new(u64::MAX, 3).unwrap(),
                 ..SpineLimits::default()
@@ -428,53 +994,47 @@ mod tests {
         assert_eq!(start, UNIT.rfind("true").unwrap());
     }
 
-    /// FR-091-AC-24 (ADR-011 §2.4): the spine takes no dependency packages,
-    /// so E3 refuses a unit that declares an `import` as
-    /// `missing_import`/`missing-selection` at the declaration, rather than
-    /// drop the import from the package it emits.
+    /// FR-091-AC-24 (ADR-015 D-1): with no library supplied, the S4 source
+    /// resolution refuses an `import` at stage `intake`, before assembly, as
+    /// `missing_import`/`missing-selection` at the import's identity string,
+    /// rather than drop the import from the package it emits.
     #[trace("TC-405", "FR-091-AC-24")]
     #[test]
     fn an_import_no_dependency_input_supplies_refuses() {
-        const IMPORT: &str = "import \"test/units\" version \"2\" digest \
-            \"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" as u;";
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\" version \"1\" digest \
              \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
-             {IMPORT}\n\
-             function f using v(): Boolean pure {{ true }}\n"
+             import \"test/units\" version \"2\" digest \"{}\" as u;\n\
+             function f using v(): Boolean pure {{ true }}\n",
+            "b".repeat(64)
         );
         let refusal = compile(
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
             unit.as_bytes(),
             &BTreeMap::new(),
+            &DependencyInput::default(),
             SpineLimits::default(),
         )
         .expect_err("no dependency input supplies test/units");
-        assert_eq!(refusal.stage(), SpineStage::Assembly);
+        assert_eq!(refusal.stage(), SpineStage::Intake);
         assert_eq!(refusal.code(), Code::MissingImport);
-        let CompileRefusal::Assembly {
-            refusal: assembly, ..
+        let CompileRefusal::Import {
+            refusal: import, ..
         } = &*refusal
         else {
-            panic!("expected an assembly refusal, got {refusal:?}");
+            panic!("expected an import refusal, got {refusal:?}");
         };
-        assert_eq!(assembly.errors.len(), 1, "{assembly:?}");
-        assert_eq!(
-            assembly.errors[0].cause,
-            qsl_semantics::check::AssemblyCause::UnsuppliedImport {
-                identity: "test/units".to_owned()
-            }
+        assert!(
+            matches!(import, ImportRefusal::MissingSelection { identity } if identity == "test/units"),
+            "{import:?}"
         );
-        assert_eq!(
-            assembly.errors[0].cause.catalog_code().to_string(),
-            "missing_import/missing-selection"
-        );
+        assert_eq!(import.cause(), Some("missing-selection"));
         let region = refusal.region().expect("the refusal is located");
         let start = usize::try_from(region.start()).unwrap();
         let end = usize::try_from(region.end()).unwrap();
-        assert_eq!(&unit[start..end], IMPORT);
+        assert_eq!(&unit[start..end], "\"test/units\"");
     }
 
     /// FR-027-AC-8 (TC-435 step 6): an emission that would omit part of the

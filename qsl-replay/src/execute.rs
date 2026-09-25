@@ -39,7 +39,7 @@ use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, Verdict,
     WitnessArmResult,
 };
-use crate::spine::{compile, CompileRefusal, Compiled, SpineLimits};
+use crate::spine::{compile, CompileRefusal, Compiled, DependencyInput, SpineLimits};
 use crate::witness::{DecodeRefusal, ReplaySource};
 
 /// The S1 limit a request names that is above this executor's reader
@@ -344,6 +344,9 @@ fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
         source.identity(),
         bytes,
         &packages,
+        // FR-098 replays a package with no dependencies; ADR-015 D-4's
+        // `dependencies` entries build this input (QSL-255 part b, PR 3).
+        &DependencyInput::default(),
         limits,
     )
     .map_err(ReplayRefusal::Recompile)?;

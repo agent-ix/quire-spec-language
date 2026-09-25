@@ -78,6 +78,7 @@ fn spine(source: &str, packages: &BTreeMap<[u8; 32], Vec<u8>>) -> Compiled {
         IDENTITY,
         source.as_bytes(),
         packages,
+        &crate::spine::DependencyInput::default(),
         SpineLimits::default(),
     )
     .expect("the unit compiles")
