@@ -321,6 +321,12 @@ impl Resolver<'_, '_> {
                             self.issue(ScopeIssue::ModelOperationUnavailable { span: name.span })?;
                             return Ok(());
                         };
+                        // `self` and `result` spell the clause's own ambient
+                        // slots, so a parameter named either could not be read.
+                        if matches!(parameter_name, "self" | "result") {
+                            self.issue(ScopeIssue::ReservedBinder { span: name.span })?;
+                            return Ok(());
+                        }
                         let binder = self.binder(Binder {
                             name: Some(parameter_name.to_owned()),
                             span: name.span,

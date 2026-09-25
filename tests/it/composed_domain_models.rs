@@ -1050,9 +1050,11 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
     );
 }
 
-/// Appends four operations with parameters or a result to the temp copy's
+/// Appends six operations with parameters or a result to the temp copy's
 /// `Pump`: `fill(level: Reading, forced: Boolean): Boolean`,
-/// `swap(peer: Pump)`, `meter(amount: Integer)` and `total(): Integer`. The
+/// `swap(peer: Pump)`, `meter(amount: Integer)`, `total(): Integer`, and
+/// `latch(result: Boolean): Boolean` and `hold(self: Boolean)`, whose
+/// parameters spell a clause's ambient slots. The
 /// bundle's own only operation, `run`, takes no parameters and returns
 /// nothing. `Reading` is written by the caller.
 pub(crate) fn pump_operations(root: &Path) {
@@ -1074,7 +1076,16 @@ pub(crate) fn pump_operations(root: &Path) {
          |-------|------|--------------|-------------|\n\
          | amount | Integer | 1 | |\n\n\
          ### total\n\nThe pumped total.\n\n\
-         Returns: Integer [1]\n",
+         Returns: Integer [1]\n\n\
+         ### latch\n\nLatch a result.\n\n\
+         | Param | Type | Multiplicity | Constraints |\n\
+         |-------|------|--------------|-------------|\n\
+         | result | Boolean | 1 | |\n\n\
+         Returns: Boolean [1]\n\n\
+         ### hold\n\nHold itself.\n\n\
+         | Param | Type | Multiplicity | Constraints |\n\
+         |-------|------|--------------|-------------|\n\
+         | self | Boolean | 1 | |\n",
     );
     std::fs::write(&pump, text).expect("write Pump");
 }
@@ -1090,8 +1101,8 @@ pub(crate) fn pump_operations(root: &Path) {
 /// A parameter or result typed `Integer` has no native type here and refuses
 /// as an unsupported domain representation, whether or not the body reads
 /// it, while a precondition of `total` binds no result and types. A name the
-/// operation does not declare, and `result` in a precondition, refuse at
-/// scope resolution.
+/// operation does not declare, `result` in a precondition, and a parameter
+/// named `result` or `self`, refuse at scope resolution.
 #[trace("TC-121", "FR-042-AC-14")]
 #[test]
 fn domain_operation_parameters_and_result_bind_and_type_check() {
@@ -1122,7 +1133,9 @@ fn domain_operation_parameters_and_result_bind_and_type_check() {
          post Totalled using S on M::Pump::total {{ true }}\n\
          pre TotalReady using S on M::Pump::total {{ true }}\n\
          pre Undeclared using S on M::Pump::fill {{ amount }}\n\
-         pre EarlyResult using S on M::Pump::fill {{ result }}\n",
+         pre EarlyResult using S on M::Pump::fill {{ result }}\n\
+         post Latched using S on M::Pump::latch {{ result }}\n\
+         pre Held using S on M::Pump::hold {{ true }}\n",
         profile.identity,
         profile.revision,
         profile.digest,
@@ -1249,7 +1262,18 @@ fn domain_operation_parameters_and_result_bind_and_type_check() {
                 "{:?}",
                 early.issues
             );
-            for name in ["Undeclared", "EarlyResult"] {
+            // A parameter named `result` or `self` refuses where it is bound,
+            // at the operation selector, rather than shadowing the ambient slot.
+            for (name, operation) in [("Latched", "latch"), ("Held", "hold")] {
+                let reserved = scope(name);
+                assert_eq!(reserved.disposition(), ScopeDisposition::Refused);
+                let [ScopeIssue::ReservedBinder { span }] = reserved.issues.as_slice() else {
+                    panic!("{name}: one reserved binder: {:?}", reserved.issues)
+                };
+                let unit = namespace.unit(reserved.unit).expect("unit");
+                assert_eq!(unit.source().slice(*span), Some(operation));
+            }
+            for name in ["Undeclared", "EarlyResult", "Latched", "Held"] {
                 assert_ne!(
                     report.disposition(id(name)),
                     Some(TypeDisposition::Typed),

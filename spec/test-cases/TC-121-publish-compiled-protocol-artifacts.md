@@ -312,8 +312,9 @@ observations belong only to the later consumer fixture.
     the strict reader reads the bytes back unchanged. Require a clause over
     `meter` and a postcondition of `total` each to refuse checking as
     `DomainRepresentation`, a precondition of `total` to type (it binds no
-    result), and a precondition of `fill` reading the undeclared `amount` to
-    refuse at scope resolution.
+    result), and a precondition of `fill` reading the undeclared `amount`, and
+    clauses over `latch(result: Boolean): Boolean` and `hold(self: Boolean)`,
+    whose parameters spell the ambient slots, to refuse at scope resolution.
 
 ## Expected Results
 
