@@ -22,6 +22,7 @@ use crate::witness::ReplaySource;
 use qsl_foundation::digest::{
     ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, ManifestDigest,
 };
+use qsl_semantics::model::intake::PackageDocument;
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)
@@ -177,8 +178,8 @@ pub struct ReplayRequestWire {
     pub package_id: (Option<String>, String),
     /// The package's declared contract version.
     pub package_contract_version: String,
-    /// `(authority, identity, revision, digest domain, digest hex)` per
-    /// declared source reference.
+    /// `(authority, identity, revision namespace, revision, digest domain,
+    /// digest hex)` per declared source reference.
     pub source_digests: Vec<SourceDigestWire>,
     /// The selected function.
     pub selected_function: QualifiedName,
@@ -240,12 +241,12 @@ pub enum ReplayRequestRefusal {
     /// problem, so it is never spelled `digest-domain-mismatch`.
     #[error("invalid_digest/malformed-encoding: {0}")]
     MalformedDigest(#[source] InvalidDigestRecord),
-    /// A byte-provision entry names an FR-201 domain that is not
-    /// raw-byte-addressed (e.g. a `sha256-jcs` or structural-preimage
-    /// domain): this reader hashes only raw bytes, so such a domain can
+    /// A byte-provision entry names an FR-201 domain that is neither
+    /// raw-byte-addressed nor `sha256-jcs` (e.g. a structural-preimage
+    /// domain): this reader recomputes only those, so such a domain can
     /// never be verified here and is refused before any hashing is
     /// attempted, distinct from an actual byte/digest mismatch.
-    #[error("invalid_digest/ineligible-domain: {0} is not a raw-byte-addressed digest domain and cannot be admitted as a byte-provision entry")]
+    #[error("invalid_digest/ineligible-domain: {0} is neither a raw-byte-addressed digest domain nor sha256-jcs and cannot be admitted as a byte-provision entry")]
     IneligibleByteProvisionDomain(DigestDomain),
     /// A byte-provision entry does not hash to its own declared digest.
     #[error("stale_dependency/byte-digest-mismatch: entry under {0} does not hash to its own declared digest")]
@@ -257,6 +258,25 @@ pub enum ReplayRequestRefusal {
     /// The encoded request exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
+}
+
+/// `bytes`' digest under `domain`: SHA-256 of the raw bytes for a
+/// raw-byte-addressed domain (source and definition documents), and for
+/// `sha256-jcs` the domain package document's own digest, SHA-256 of its
+/// RFC 8785 bytes, exactly as I1 keys its package input
+/// (`model::intake::package_input`, ADR-013 QC-1). `None` when the bytes
+/// are not a domain package document at all, which matches no declared
+/// digest. Every other domain refuses as ineligible.
+fn digest_of(domain: DigestDomain, bytes: &[u8]) -> Result<Option<[u8; 32]>, ReplayRequestRefusal> {
+    if domain == DigestDomain::Sha256Jcs {
+        return Ok(PackageDocument::parse(bytes)
+            .ok()
+            .map(|document| document.jcs_digest()));
+    }
+    if domain.is_raw_byte_addressed() {
+        return Ok(Some(ByteDigest::of(bytes).as_bytes()));
+    }
+    Err(ReplayRequestRefusal::IneligibleByteProvisionDomain(domain))
 }
 
 /// Route `err` to [`ReplayRequestRefusal::DigestDomainMismatch`] or
@@ -288,9 +308,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
         + wire
             .source_digests
             .iter()
-            .map(|(authority, identity, revision, _, hex)| {
-                authority.len() + identity.len() + revision.len() + hex.len()
-            })
+            .map(RawSourceRef::wire_len)
             .sum::<usize>()
         + wire.selected_function.to_string().len()
         + wire.backend.0.len()
@@ -347,29 +365,23 @@ impl ReplayRequest {
         let package_id = DigestRecord::from_wire(package_domain.as_deref(), &package_hex)
             .map_err(classify_digest_error)?;
 
-        let mut source_digests = Vec::with_capacity(wire.source_digests.len());
-        for (authority, identity, revision, domain, hex) in wire.source_digests {
-            let digest =
-                DigestRecord::from_wire(domain.as_deref(), &hex).map_err(classify_digest_error)?;
-            source_digests.push(RawSourceRef::new(authority, identity, revision, digest));
-        }
+        let source_digests = wire
+            .source_digests
+            .into_iter()
+            .map(RawSourceRef::from_wire)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(classify_digest_error)?;
 
         let mut provision = BTreeMap::new();
         for (domain, hex, bytes) in wire.byte_provision {
             let digest =
                 DigestRecord::from_wire(domain.as_deref(), &hex).map_err(classify_digest_error)?;
-            // N3: only a raw-byte-addressed domain can ever pass the check
-            // below -- a `sha256-jcs`/structural domain digests a
-            // canonicalized or structural form this reader never builds, so
-            // admitting one here would always refuse with a misleading
-            // staleness cause instead of the real "wrong domain for this
-            // position" one.
-            if !digest.domain().is_raw_byte_addressed() {
-                return Err(ReplayRequestRefusal::IneligibleByteProvisionDomain(
-                    digest.domain(),
-                ));
-            }
-            if ByteDigest::of(&bytes).as_bytes() != *digest.as_bytes() {
+            // N3: only a domain this reader can recompute passes the check
+            // below. A structural domain digests a form this reader never
+            // builds, so admitting one here would always refuse with a
+            // misleading staleness cause instead of the real "wrong domain
+            // for this position" one.
+            if digest_of(digest.domain(), &bytes)? != Some(*digest.as_bytes()) {
                 return Err(ReplayRequestRefusal::ByteDigestMismatch(format!(
                     "{digest:?}"
                 )));
@@ -430,15 +442,7 @@ impl ReplayRequest {
             source_digests: self
                 .source_digests
                 .iter()
-                .map(|r| {
-                    (
-                        r.authority().to_owned(),
-                        r.identity().to_owned(),
-                        r.revision().to_owned(),
-                        Some(r.digest().domain().as_str().to_owned()),
-                        r.digest().hex(),
-                    )
-                })
+                .map(RawSourceRef::to_wire)
                 .collect(),
             selected_function: self.selected_function.clone(),
             source: self.source.clone(),
@@ -523,6 +527,7 @@ mod tests {
             source_digests: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
+                "git".to_owned(),
                 "rev-1".to_owned(),
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 DigestRecord::mint(DigestDomain::SourceBytesV1, source_digest).hex(),
@@ -617,19 +622,49 @@ mod tests {
             Err(ReplayRequestRefusal::MalformedDigest(_))
         ));
 
-        // N3: a valid FR-201 domain that is not raw-byte-addressed (e.g.
-        // `sha256-jcs`, which digests a canonicalized form this reader never
-        // builds) refuses with the real cause instead of a spurious
+        // N3: a valid FR-201 domain this reader cannot recompute (a
+        // structural domain, which digests a form this reader never builds)
+        // refuses with the real cause instead of a spurious
         // `byte-digest-mismatch`.
         let mut ineligible_domain = wire(1);
-        ineligible_domain.byte_provision[0].0 = Some(DigestDomain::Sha256Jcs.as_str().to_owned());
+        ineligible_domain.byte_provision[0].0 =
+            Some(DigestDomain::CheckedSemanticNodeV1.as_str().to_owned());
         ineligible_domain.byte_provision[0].1 =
-            DigestRecord::mint(DigestDomain::Sha256Jcs, [0xAB; 32]).hex();
+            DigestRecord::mint(DigestDomain::CheckedSemanticNodeV1, [0xAB; 32]).hex();
         assert!(matches!(
             ReplayRequest::decode(ineligible_domain),
             Err(ReplayRequestRefusal::IneligibleByteProvisionDomain(
-                DigestDomain::Sha256Jcs
+                DigestDomain::CheckedSemanticNodeV1
             ))
+        ));
+
+        // QC-1: a domain package document enters under its `sha256-jcs`
+        // digest, verified over its RFC 8785 bytes; other bytes under that
+        // digest refuse as a byte/digest mismatch.
+        let document = br#"{"b": 1, "a": [true]}"#.to_vec();
+        let jcs = qsl_semantics::model::intake::PackageDocument::parse(&document)
+            .expect("the document parses")
+            .jcs_digest();
+        let mut domain_package = wire(1);
+        domain_package.byte_provision.push((
+            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
+            DigestRecord::mint(DigestDomain::Sha256Jcs, jcs).hex(),
+            document,
+        ));
+        let admitted = ReplayRequest::decode(domain_package).unwrap();
+        assert!(admitted
+            .byte_provision()
+            .get(DigestRecord::mint(DigestDomain::Sha256Jcs, jcs))
+            .is_some());
+        let mut stale_package = wire(1);
+        stale_package.byte_provision.push((
+            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
+            DigestRecord::mint(DigestDomain::Sha256Jcs, jcs).hex(),
+            br#"{"b": 2}"#.to_vec(),
+        ));
+        assert!(matches!(
+            ReplayRequest::decode(stale_package),
+            Err(ReplayRequestRefusal::ByteDigestMismatch(_))
         ));
 
         // Byte/digest mismatch.
@@ -785,6 +820,7 @@ mod tests {
         request_wire.source_digests[0] = (
             "registry".to_owned(),
             "pkg-a".to_owned(),
+            "git".to_owned(),
             "rev-1".to_owned(),
             Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
             DigestRecord::mint(DigestDomain::SourceBytesV1, digest).hex(),

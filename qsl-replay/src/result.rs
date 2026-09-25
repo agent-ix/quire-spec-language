@@ -78,12 +78,19 @@ pub enum InputSettlement {
 }
 
 /// The evaluated value a replay produced. A minimal stand-in for the
-/// kernel `Value` (ADR-013 O-13): none of FR-072's acceptance criteria turn
-/// on this value's own shape, only on arm distinctness, settlement and the
-/// nested FR-351 record's typed fields, so a bounded integer scalar is
-/// sufficient here.
+/// kernel `Value` (ADR-013 O-13), which has no structural equality to derive
+/// this envelope's from: none of FR-072's acceptance criteria turn on this
+/// value's own shape, only on arm distinctness, settlement and the nested
+/// FR-351 record's typed fields. It holds the two scalar kinds a replay
+/// reads today: the Boolean a replayed predicate returns (FR-098) and an
+/// integer deciding element.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct EvaluatedValue(pub i64);
+pub enum EvaluatedValue {
+    /// A Boolean value.
+    Boolean(bool),
+    /// An integer value.
+    Integer(i64),
+}
 
 /// The nested FR-351 separating-witness record, decoded when the
 /// settlement basis is decisive: the deciding element, its index, its value
@@ -383,7 +390,7 @@ mod tests {
 
     fn record(value_path: Vec<&str>) -> SeparatingWitnessRecord {
         SeparatingWitnessRecord {
-            deciding_element: EvaluatedValue(7),
+            deciding_element: EvaluatedValue::Integer(7),
             index: 2,
             value_path: value_path.into_iter().map(str::to_owned).collect(),
             trace_position: Some(TracePosition::new("frame-0".to_owned())),
@@ -416,7 +423,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(1),
+            EvaluatedValue::Integer(1),
             record(vec!["field"]),
             regions(),
             charges(),
@@ -426,7 +433,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(1),
+            EvaluatedValue::Integer(1),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -461,7 +468,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Refusal),
             ProofCategory::Refusal,
-            EvaluatedValue(0),
+            EvaluatedValue::Integer(0),
             record(vec!["field"]),
             regions(),
             charges(),
@@ -482,7 +489,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Refusal),
             ProofCategory::Refusal,
-            EvaluatedValue(0),
+            EvaluatedValue::Integer(0),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -511,7 +518,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(9),
+            EvaluatedValue::Integer(9),
             record(vec!["outer", "items", "member"]),
             regions(),
             charges(),
@@ -528,7 +535,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(9),
+            EvaluatedValue::Integer(9),
             read_back_record.clone(),
             regions(),
             charges(),
@@ -537,7 +544,7 @@ mod tests {
         assert_eq!(round_tripped.record(), Some(&read_back_record));
         assert_eq!(
             round_tripped.record().unwrap().deciding_element,
-            EvaluatedValue(7)
+            EvaluatedValue::Integer(7)
         );
         assert_eq!(round_tripped.record().unwrap().index, 2);
         assert_eq!(
@@ -553,7 +560,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(9),
+            EvaluatedValue::Integer(9),
             record(vec!["outer", "items", "other_member"]),
             regions(),
             charges(),
@@ -576,7 +583,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(9),
+            EvaluatedValue::Integer(9),
             record(vec![huge_segment.as_str()]),
             regions(),
             charges(),
@@ -689,7 +696,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Violation),
             Verdict::from_category(ProofCategory::Violation),
             ProofCategory::Violation,
-            EvaluatedValue(1),
+            EvaluatedValue::Integer(1),
             record(vec!["x"]),
             regions(),
             charges(),

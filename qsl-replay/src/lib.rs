@@ -113,6 +113,7 @@ mod redaction_tests {
             source_digests: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
+                "git".to_owned(),
                 "rev-1".to_owned(),
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),
@@ -162,6 +163,7 @@ mod redaction_tests {
             source_digests: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
+                "git".to_owned(),
                 "rev-1".to_owned(),
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),

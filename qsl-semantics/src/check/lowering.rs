@@ -46,6 +46,7 @@ fn content_hash(content: &NodeContent) -> u64 {
     BuildHasherDefault::<DefaultHasher>::default().hash_one(content)
 }
 
+use qsl_foundation::digest::WireNodeId;
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
     Identifier, Integer, Meter, NodeKey, OrderingOperator, Presence, TextProfile, Value, ValueType,
@@ -220,6 +221,34 @@ impl SemanticNode {
     pub fn nominal(&self) -> Option<&NominalNode> {
         self.nominal.as_ref()
     }
+
+    /// FR-092 "Function nodes": a function node's parameter nodes, in
+    /// declared parameter order, read from the `parameters` binding its
+    /// lowering writes first. `None` for every node that is not a function
+    /// node. The replay executor joins arguments keyed by parameter node
+    /// id to parameter positions through this (ADR-013 O-25, C-11).
+    pub fn function_parameters(&self) -> Option<Vec<NodeKey>> {
+        if self.content.node_tag != NodeTag::Function {
+            return None;
+        }
+        let SemanticTerm::Aggregate { members } = &self.content.body else {
+            return None;
+        };
+        let Some(SemanticTerm::Binding { name, value }) = members.first() else {
+            return None;
+        };
+        let (true, SemanticTerm::Aggregate { members }) = (name == "parameters", value.as_ref())
+        else {
+            return None;
+        };
+        members
+            .iter()
+            .map(|member| match member {
+                SemanticTerm::Reference { target } => Some(target.0),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 /// The checked semantic graph: every lowered node by key.
@@ -237,6 +266,17 @@ impl SemanticGraph {
     /// Every node, ascending by key.
     pub fn nodes(&self) -> impl Iterator<Item = &SemanticNode> {
         self.nodes.values()
+    }
+
+    /// ADR-013 O-04, R-10: the key of the node a wire node id names, by
+    /// lookup in this graph -- the only way a `WireNodeId` becomes a
+    /// `NodeKey` (ADR-011 §2.1 E9). `None` when no node of this graph has
+    /// that id. It mints no key: it returns one `check` already minted.
+    pub fn resolve_wire(&self, id: WireNodeId) -> Option<NodeKey> {
+        self.nodes
+            .keys()
+            .copied()
+            .find(|key| key.as_bytes() == id.as_bytes())
     }
 }
 

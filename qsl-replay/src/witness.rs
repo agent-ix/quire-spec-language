@@ -586,8 +586,8 @@ pub struct WitnessPacket<P: FamilyPayload> {
     pub package_id: Option<(Option<String>, String)>,
     /// The package's declared contract version.
     pub package_contract_version: Option<String>,
-    /// `(authority, identity, revision, digest domain, digest hex)` per
-    /// declared source reference.
+    /// `(authority, identity, revision namespace, revision, digest domain,
+    /// digest hex)` per declared source reference.
     pub source_digests: Option<Vec<SourceDigestWire>>,
     /// The semantic profile selections in effect for the proving run.
     pub profile_selections: Option<Vec<ProfileSelection>>,
@@ -625,12 +625,7 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
         .as_deref()
         .map_or(0, str::len);
     total += packet.source_digests.as_ref().map_or(0, |digests| {
-        digests
-            .iter()
-            .map(|(authority, identity, revision, _, hex)| {
-                authority.len() + identity.len() + revision.len() + hex.len()
-            })
-            .sum()
+        digests.iter().map(RawSourceRef::wire_len).sum()
     });
     total += packet.profile_selections.as_ref().map_or(0, |selections| {
         selections
@@ -747,10 +742,9 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             .source_digests
             .ok_or(WitnessRefusal::MissingMember("source_digests"))?
             .into_iter()
-            .map(|(authority, identity, revision, domain, hex)| {
-                let digest = DigestRecord::from_wire(domain.as_deref(), &hex)
-                    .map_err(|e| classify_digest_error("source_digests", e))?;
-                Ok(RawSourceRef::new(authority, identity, revision, digest))
+            .map(|wire| {
+                RawSourceRef::from_wire(wire)
+                    .map_err(|e| classify_digest_error("source_digests", e))
             })
             .collect::<Result<Vec<_>, WitnessRefusal>>()?;
         let profile_selections = packet
@@ -819,15 +813,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
             source_digests: Some(
                 self.source_digests
                     .iter()
-                    .map(|r| {
-                        (
-                            r.authority().to_owned(),
-                            r.identity().to_owned(),
-                            r.revision().to_owned(),
-                            Some(r.digest().domain().as_str().to_owned()),
-                            r.digest().hex(),
-                        )
-                    })
+                    .map(RawSourceRef::to_wire)
                     .collect(),
             ),
             profile_selections: Some(self.profile_selections.clone()),
@@ -902,6 +888,7 @@ mod envelope_tests {
             source_digests: Some(vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
+                "git".to_owned(),
                 "rev-1".to_owned(),
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 DigestRecord::mint(DigestDomain::SourceBytesV1, digest(5)).hex(),
@@ -1094,6 +1081,7 @@ mod envelope_tests {
         packet.source_digests = Some(vec![(
             "registry".to_owned(),
             "pkg-a".to_owned(),
+            "git".to_owned(),
             "rev-1".to_owned(),
             Some("quire.not-a-real-domain/v1".to_owned()),
             "ab".repeat(32),
@@ -1114,6 +1102,7 @@ mod envelope_tests {
         packet.source_digests = Some(vec![(
             "registry".to_owned(),
             "pkg-a".to_owned(),
+            "git".to_owned(),
             "rev-1".to_owned(),
             Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
             "ab".repeat(31), // 62 hex chars, not 64
