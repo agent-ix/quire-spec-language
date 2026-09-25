@@ -24,8 +24,10 @@ fn compile(directory: &Path) -> Output {
         .unwrap()
 }
 
+/// FR-027-AC-6 (TC-435 step 3): these programs declare `edition "0-draft"`,
+/// so they compile through native compile, byte for byte.
 #[test]
-#[trace("TC-105", "FR-027-AC-1", "FR-027-AC-2")]
+#[trace("TC-105", "FR-027-AC-1", "FR-027-AC-2", "TC-435", "FR-027-AC-6")]
 fn source_only_compilation_emits_exact_bytes_accepted_by_the_existing_reader() {
     for (case, expression, kind) in [
         (
@@ -318,4 +320,281 @@ fn compiled_packages_name_the_four_source_labels() {
     assert!(output.stdout.is_empty());
     let value: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(value["code"], "invalid-request");
+}
+
+/// The complete-V1 compile fixture (FR-027-AC-5).
+const SPINE_FIXTURE: &str = "tests/fixtures/spine-compile.native";
+
+/// The fixture's header and profile selection, which every stage-refusal
+/// body below follows.
+const SPINE_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+
+/// Write `program` as `program.native` under `directory` with a
+/// native-compile/1 request selecting it, no models and no clause bindings.
+fn spine_request(directory: &Path, program: &[u8]) {
+    std::fs::write(directory.join("program.native"), program).unwrap();
+    let request = json!({"format":"native-compile/1","request":{"models":[],"program":{
+        "source":{"file":"program.native","authority":"agent-ix","identity":"test:spine",
+        "revision_namespace":"fixture","revision":"fixture:1",
+        "digest":ByteDigest::of(program).to_string(),"document":"Spine","formal_revision":1},
+        "clauses":[]}}});
+    std::fs::write(
+        directory.join("compile.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+}
+
+/// FR-027-AC-5 (TC-435 step 2): a `1-draft` program compiles through the
+/// spine; stdout is exactly `command::spine::compile`'s bytes, which
+/// qsl-package's TC-435 step 1 reads back Verified with nothing omitted.
+#[test]
+#[trace("TC-435", "FR-027-AC-5")]
+fn a_complete_v1_program_compiles_through_the_spine() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let output = compile(directory.path());
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let library = quire_spec_language::command::spine::compile(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
+        "program.native",
+        &program,
+    )
+    .unwrap();
+    assert_eq!(output.stdout, library);
+    let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(wire["contract_version"], "quire.checked-package/v2");
+}
+
+/// FR-027-AC-5 (TC-435 step 2): a `1-draft` compile validates the program's
+/// `document` and `formal_revision` but the v2 wire does not record them,
+/// so two requests differing only there write identical bytes; an invalid
+/// `document` still refuses.
+#[test]
+#[trace("TC-435", "FR-027-AC-5")]
+fn formal_labels_are_validated_but_not_recorded_by_a_spine_compile() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let first = compile(directory.path());
+    assert_eq!(first.status.code(), Some(0));
+    let path = directory.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    job["request"]["program"]["source"]["document"] = json!("Elsewhere");
+    job["request"]["program"]["source"]["formal_revision"] = json!(9);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let second = compile(directory.path());
+    assert_eq!(
+        second.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+    assert!(!first.stdout.is_empty());
+    assert_eq!(first.stdout, second.stdout);
+    job["request"]["program"]["source"]["document"] = json!("");
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let invalid = compile(directory.path());
+    assert_eq!(invalid.status.code(), Some(20));
+    assert!(invalid.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&invalid.stderr).unwrap();
+    assert_eq!(failure["stage"], "request", "{failure}");
+}
+
+/// FR-027-AC-7 (TC-435 step 4): an edition neither compiler reads refuses
+/// with `unknown_edition` at its literal, naming the file and the edition.
+#[test]
+#[trace("TC-435", "FR-027-AC-7")]
+fn an_edition_neither_compiler_reads_refuses() {
+    let directory = tempfile::tempdir().unwrap();
+    fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
+    let path = directory.path().join("program.native");
+    let program = std::fs::read_to_string(&path).unwrap().replacen(
+        "edition \"0-draft\"",
+        "edition \"7-draft\"",
+        1,
+    );
+    assert!(program.contains("\"7-draft\""));
+    std::fs::write(&path, &program).unwrap();
+    let request = directory.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&request).unwrap()).unwrap();
+    job["request"]["program"]["source"]["digest"] =
+        json!(ByteDigest::of(program.as_bytes()).to_string());
+    std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(directory.path());
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "unknown_edition", "{failure}");
+    assert_eq!(failure["stage"], "profile", "{failure}");
+    let message = failure["message"].as_str().unwrap();
+    assert!(message.contains("program.native"), "{message}");
+    assert!(message.contains("7-draft"), "{message}");
+    let literal = program.find("\"7-draft\"").unwrap();
+    assert_eq!(failure["details"]["span"]["start"]["byte"], literal);
+    assert_eq!(
+        failure["details"]["span"]["end"]["byte"],
+        literal + "\"7-draft\"".len()
+    );
+}
+
+/// FR-027-AC-7 (TC-435 step 5): a `1-draft` program compiles alone; a
+/// request that selects models or clause bindings for it refuses, whatever
+/// state the model files are in.
+#[test]
+#[trace("TC-435", "FR-027-AC-7")]
+fn a_complete_v1_request_selecting_native_inputs_refuses() {
+    let directory = tempfile::tempdir().unwrap();
+    fixtures::write(directory.path(), fixtures::Case::Aggregate(2)).unwrap();
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    std::fs::write(directory.path().join("program.native"), &program).unwrap();
+    let request = directory.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&request).unwrap()).unwrap();
+    job["request"]["program"]["source"]["digest"] = json!(ByteDigest::of(&program).to_string());
+    assert!(!job["request"]["models"].as_array().unwrap().is_empty());
+    // Malformed model files: the edition is decided before any model is
+    // read, so the refusal names the selection, not the files.
+    for model in job["request"]["models"].as_array().unwrap() {
+        let file = model["source"]["file"].as_str().unwrap();
+        std::fs::write(directory.path().join(file), b"not a model {").unwrap();
+    }
+    assert!(!job["request"]["program"]["clauses"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    for (strip, selected) in [(None, "model sources"), (Some("models"), "clause bindings")] {
+        if let Some(field) = strip {
+            job["request"][field] = json!([]);
+        }
+        std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
+        let output = compile(directory.path());
+        assert_eq!(output.status.code(), Some(20), "{selected}");
+        assert!(output.stdout.is_empty());
+        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(failure["code"], "invalid-request", "{failure}");
+        assert_eq!(failure["stage"], "request", "{failure}");
+        assert!(
+            failure["message"].as_str().unwrap().ends_with(selected),
+            "{failure}"
+        );
+    }
+    job["request"]["program"]["clauses"] = json!([]);
+    std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(directory.path());
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// FR-027-AC-8 (TC-435 step 6): each spine stage's refusal reports that
+/// stage and its cause's code, exits on that code, and writes no bytes.
+#[test]
+#[trace("TC-435", "FR-027-AC-8")]
+fn each_spine_stage_refusal_reports_its_stage_and_code() {
+    for (body, stage, code, exit, located) in [
+        (
+            "function f using v(): Int[0, 9] pure { 7\n",
+            "source",
+            "invalid_syntax",
+            20,
+            None,
+        ),
+        (
+            "predicate p using v(): Boolean { true }\n",
+            "forms",
+            "unsupported_construct",
+            21,
+            Some("predicate p using v(): Boolean { true }"),
+        ),
+        (
+            "function f using v(p: Nope): Int[0, 9] pure { 1 }\n",
+            "assembly",
+            "missing_declaration",
+            20,
+            Some("Nope"),
+        ),
+        (
+            "function f using v(): Int[0, 9] pure { true }\n",
+            "check",
+            "ill_typed",
+            20,
+            Some("true"),
+        ),
+        (
+            "type Digit = Int[0, 9];\n",
+            "emit",
+            "unsupported_projection",
+            21,
+            None,
+        ),
+    ] {
+        let text = format!("{SPINE_HEADER}{body}");
+        let directory = tempfile::tempdir().unwrap();
+        spine_request(directory.path(), text.as_bytes());
+        let output = compile(directory.path());
+        assert_eq!(output.status.code(), Some(exit), "{stage}");
+        assert!(output.stdout.is_empty(), "{stage}");
+        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(failure["stage"], stage, "{failure}");
+        assert_eq!(failure["code"], code, "{failure}");
+        assert_eq!(failure["status"], "refused", "{failure}");
+        assert_eq!(failure["details"]["path"], "program.native", "{failure}");
+        let message = failure["message"].as_str().unwrap();
+        assert!(!message.contains('{'), "a Debug dump: {message}");
+        let span = &failure["details"]["span"];
+        match located {
+            Some(located) => {
+                let start = SPINE_HEADER.len() + body.find(located).unwrap();
+                assert_eq!(span["start"]["byte"], start, "{failure}");
+                assert_eq!(span["end"]["byte"], start + located.len(), "{failure}");
+            }
+            None if stage == "emit" => assert!(span.is_null(), "{failure}"),
+            None => assert!(span.is_object(), "{failure}"),
+        }
+    }
+}
+
+/// FR-027-AC-5 (TC-435 step 7): a source that does not open with an
+/// `ix:native` header declares no edition and goes to native compile, whose
+/// parser reports its header.
+#[test]
+#[trace("TC-435", "FR-027-AC-5")]
+fn a_source_without_an_ix_native_header_goes_to_native() {
+    for (program, code) in [
+        (
+            "function f using v(): Int[0, 9] pure { 7 }\n".to_owned(),
+            "invalid_syntax",
+        ),
+        (
+            SPINE_HEADER.replacen("ix:native", "ix:other", 1)
+                + "function f using v(): Int[0, 9] pure { 7 }\n",
+            "unknown_language",
+        ),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        spine_request(directory.path(), program.as_bytes());
+        let output = compile(directory.path());
+        assert_eq!(output.status.code(), Some(20), "{program}");
+        assert!(output.stdout.is_empty());
+        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(failure["code"], code, "{failure}");
+        // The native parser's diagnostic carries its phase; no spine
+        // refusal does.
+        assert!(failure["details"]["phase"].is_string(), "{failure}");
+        assert!(
+            !["source", "forms", "assembly", "check", "emit"]
+                .contains(&failure["stage"].as_str().unwrap()),
+            "{failure}"
+        );
+    }
 }

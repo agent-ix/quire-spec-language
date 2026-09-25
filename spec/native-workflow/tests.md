@@ -55,6 +55,10 @@ appropriate error provenance, explicitly rather than through a presence guard.
 | FR-027 | FR-027-AC-1 | TC-105 | ✅ Tested |
 | FR-027 | FR-027-AC-2 | TC-105 | ✅ Tested |
 | FR-027 | FR-027-AC-3 | TC-105 | ✅ Tested |
+| FR-027 | FR-027-AC-5 | TC-435 | ✅ Tested |
+| FR-027 | FR-027-AC-6 | TC-435 | ✅ Tested |
+| FR-027 | FR-027-AC-7 | TC-435 | ✅ Tested |
+| FR-027 | FR-027-AC-8 | TC-435 | ✅ Tested |
 | FR-028 | FR-028-AC-1 | TC-106 | ✅ Tested |
 | FR-028 | FR-028-AC-2 | TC-106 | ✅ Tested |
 | FR-028 | FR-028-AC-3 | TC-106 | ✅ Tested |
@@ -91,6 +95,7 @@ appropriate error provenance, explicitly rather than through a presence guard.
 | TC-103 | Standalone native execution | Integration | P1 | FR-026 | ✅ Tested |
 | TC-104 | Standalone native refusals | Integration | P1 | FR-026 | ✅ Tested |
 | TC-105 | Standalone package export | Integration | P1 | FR-027 | ✅ Tested |
+| TC-435 | CLI compile routes a program by its declared edition | Integration | P1 | FR-027 | ✅ Tested |
 | TC-106 | Selected package execution | Integration | P1 | FR-028, FR-016 | ✅ Tested |
 | TC-107 | Standalone projection export | Integration | P1 | FR-029 | ✅ Tested |
 | TC-108 | Actual Quire/native workflow | Integration | P1 | FR-030, FR-011 | ✅ Tested |

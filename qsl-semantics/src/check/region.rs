@@ -68,6 +68,45 @@ impl PackageDeclarations {
     }
 }
 
+/// FR-096: the spans [`PackageDeclarations::region`] resolves a location
+/// over, taken from the declarations before `check` consumes them, so a
+/// check refusal's region resolves without keeping the declarations.
+#[derive(Clone, Debug)]
+pub struct DeclarationRegions {
+    source: RawSourceRef,
+    spans: Vec<Option<DeclarationSpans>>,
+    type_spans: BTreeMap<String, Span>,
+}
+
+impl DeclarationRegions {
+    /// FR-096: the region `location` names, by the same rule as
+    /// [`PackageDeclarations::region`] over the declarations taken.
+    pub fn region(&self, location: &Location) -> Option<SourceRegion> {
+        resolve(
+            &self.source,
+            |index| self.spans.get(index)?.as_ref(),
+            &self.type_spans,
+            location,
+        )
+    }
+}
+
+impl PackageDeclarations {
+    /// The spans [`Self::region`] reads, and nothing else of the
+    /// declarations.
+    pub fn regions(&self) -> DeclarationRegions {
+        DeclarationRegions {
+            source: self.source.clone(),
+            spans: self
+                .functions
+                .iter()
+                .map(|function| function.spans().cloned())
+                .collect(),
+            type_spans: self.declared_type_spans.clone(),
+        }
+    }
+}
+
 impl CheckedGraph {
     /// FR-096: the region of the checked unit that `location` names, by the
     /// same rule as [`PackageDeclarations::region`], so a consumer holding
@@ -236,13 +275,14 @@ mod tests {
 
     /// TC-426 step 2: each location follows its path to its own node, so
     /// the region's bytes are that expression's source text, under the
-    /// unit's reference, from the declarations and from the checked package
-    /// alike.
+    /// unit's reference, from the declarations, from the regions taken from
+    /// them and from the checked package alike.
     #[trace("TC-426", "FR-096-AC-1", "FR-091-AC-10")]
     #[test]
     fn a_check_location_resolves_to_the_source_text_of_its_node() {
         let declarations = unit();
         let reference = declarations.source.clone();
+        let regions = declarations.regions();
         let cases = [
             (body(&[]), "if a then b else c + d"),
             (body(&[2]), "c + d"),
@@ -256,6 +296,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{location:?} resolves"));
             assert_eq!(text(&region), *expected, "{location:?}");
             assert_eq!(region.source(), &reference);
+            assert_eq!(regions.region(location), Some(region), "{location:?}");
         }
         // Every leaf the paths reach through `Expression::children` is a
         // name whose spelling is its region's text, so a span tree whose
@@ -331,8 +372,10 @@ mod tests {
                 path: Vec::new(),
             },
         ];
+        let regions = declarations.regions();
         for location in &unresolved {
             assert_eq!(declarations.region(location), None, "{location:?}");
+            assert_eq!(regions.region(location), None, "{location:?}");
         }
         assert_eq!(declarations.declaration_region(1), None);
 

@@ -642,7 +642,11 @@ constraints that design must meet. The field list and the exit-code values are
   source header and QSL's `DefinitionLock` catalog (§2.4), and no lock file or
   request file is read. It takes no domain or dependency source, so E3
   refuses a `model` or `import` declaration. No native-compile/1
-  request or `native-rule-model/1` model has a spine equivalent.
+  request or `native-rule-model/1` model has a spine equivalent. Until
+  M-6c/QSL-5, CLI `compile` reaches spine `compile` through a
+  native-compile/1 request whose program source declares `1-draft`, with no
+  models and no clause bindings; the operand form lands with QSL-5 (Ruling
+  2026-09-24).
 - Spine `run` calls a named checked function: a `QualifiedName` resolved by
   name lookup in the compiled package, then `CheckedPackage::call` (E6, and
   the same shape E9 uses). Native-run/1 clause execution over snapshots and
@@ -793,7 +797,7 @@ Seams:
 
 | Seam | Contents | Retires when | Owning change |
 |---|---|---|---|
-| SEAM-1 native-v1 | ADR-010 lane A, defined by its entry points: the `lower` command, the native `run` and `compile` paths, `package::NativePackage`, `runtime::execute`, the native-linked-package/1 format and the `lowering` targets. SEAM-1 holds every module reachable only from those entry points, including the `package` submodules `intake`, `reading`, `wire`, `encoding`, `features` and `view` (native-linked-package/1, FR-019 and FR-020): arena `syntax` and native `parser`, `linking::native`, native `checking`, `native_model`, `model_source`, `mapped`, `runtime`, and the `command` submodules `compilation`, `projection_error` and `wire`, and the native arms of `extraction` and `output`. Code shared with SEAM-2 (for example `formal_source`, which `checking::composed` imports) belongs to SEAM-2. | Per lane (§7.3 M-6). The checked-package producer lane (M-6a) is deleted before gate #216: "Old producer/bypass paths are unreachable" and "Do not pass while two authoritative producer paths coexist" (#216). Native `run` clause execution and the modules only it reaches retire with M-6c. | M-6a, M-6c to M-6e |
+| SEAM-1 native-v1 | ADR-010 lane A, defined by its entry points: the `lower` command, the native `run` and `compile` paths, `package::NativePackage`, `runtime::execute`, the native-linked-package/1 format and the `lowering` targets. SEAM-1 holds every module reachable only from those entry points, including the `package` submodules `intake`, `reading`, `wire`, `encoding`, `features` and `view` (native-linked-package/1, FR-019 and FR-020): arena `syntax` and native `parser`, `linking::native`, native `checking`, `native_model`, `model_source`, `mapped`, `runtime`, and the `command` submodules `compilation`, `projection_error` and `wire`, and the native arms of `extraction` and `output`. Code shared with SEAM-2 (for example `formal_source`, which `checking::composed` imports) belongs to SEAM-2. | Per lane (§7.3 M-6). The checked-package producer lane (M-6a) is deleted before gate #216, except native `compile`, which stays for `0-draft` sources until M-6c/QSL-5 (Ruling 2026-09-24): "Old producer/bypass paths are unreachable" and "Do not pass while two authoritative producer paths coexist" (#216). Native `run` clause execution and the modules only it reaches retire with M-6c. | M-6a, M-6c to M-6e |
 | SEAM-2 composed | ADR-010 lane B: `syntax::composed`, `parser::composed`, `linking::composed`, `checking::composed`, and shared code such as `formal_source` | Deleted (owner ruling). Each composed family is deleted in the PR that lands its S3 family checker and S4 emission, so everything reaches IR through the one S4 spine. #185 removes the `requests` backend disposition from QSL (FB-12). | M-6e with the family implementation tickets (§7.3); #185 for `requests` |
 | SEAM-3 protocol wires | `protocol_artifact` (compiled-protocol /1 to /3 emit and read; checked-predicate, temporal-subject and native-temporal handoffs) | Its reads that feed `state` and `temporal` are deleted with #120, #121 and #164 (state) and #188 and #189 (temporal) (M-6c). Its handoffs to IR are deleted with #218 and agent-ix/quire-contract-ir#141, which land S4 emission over the checked graph and IR v2 admission (M-6d). The last lane PR deletes the remainder. The QSpec wire question is in §Questions. | M-6c, M-6d |
 | SEAM-4 IT-010 | `tests/it/configversion_backends.rs` proof and replay path, QSL dev dependencies on CG 5e2a6a9 and IR 04eb6f8, and the RT test fixture crate | Deleted with `lowering` once the skeleton spine (§1.1) is green, so CI keeps a Kani proof-and-replay check throughout | M-6a |
@@ -1023,9 +1027,9 @@ old path and its replacement both run:
 
 | Lane | Deleted | In the PR that lands |
 |---|---|---|
-| M-6a checked-package producer | the native `compile` command, which writes native-linked-package/1 bytes; the `lower` command; `format` is retargeted to the CST, and native-edition `format` retires with no replacement. That retirement is a scoped exception, by owner decision on 2026-09-22, to the 2026-09-19 ruling that nothing working is removed early: `format` is tooling with no downstream artifact, the native lane is retiring, and native `run` does not need formatted input (Rulings 2026-09-22, native-edition `format`). Last in the lane, once the skeleton spine (§1.1) is green: `lowering` as a whole (`ProjectionTarget` and `--target` included), the IT-010 path (SEAM-4), and the QSL dev dependencies on CG, IR and the RT fixture crate | the spine for those commands: QSL-8 (this repo's #240) with M-4, before #216. Spine `compile` and spine `run` (§5) are the replacements. The skeleton spine is QSL #243 (QSL-5) with agent-ix/quire-contract-codegen#87. |
+| M-6a checked-package producer | CLI `compile` routes by source edition: `1-draft` → spine (S1–S4), `0-draft` → native until M-6c/QSL-5; native compile/lower are deleted with M-6c and QSL-5 (owner ruling 2026-09-24). `format` is retargeted to the CST, and native-edition `format` retires with no replacement. That retirement is a scoped exception, by owner decision on 2026-09-22, to the 2026-09-19 ruling that nothing working is removed early: `format` is tooling with no downstream artifact, the native lane is retiring, and native `run` does not need formatted input (Rulings 2026-09-22, native-edition `format`). Last in the lane, once the skeleton spine (§1.1) is green: `lowering` as a whole (`ProjectionTarget` and `--target` included), the IT-010 path (SEAM-4), and the QSL dev dependencies on CG, IR and the RT fixture crate | the spine for those commands: QSL-8 (this repo's #240) with M-4, before #216. Spine `compile` and spine `run` (§5) are the replacements. The skeleton spine is QSL #243 (QSL-5) with agent-ix/quire-contract-codegen#87. |
 | M-6b proof and replay | nothing: its former contents, SEAM-4 and `lowering`, are deleted in M-6a | #217 widens the skeleton spine to the function-application exemplar and deletes nothing. The skeleton moves CG's dev pin on QSL from 21c507e to a QSL revision that has M-4 and the S6a entry. |
-| M-6c state and temporal evaluators | `state`, `temporal`, and the SEAM-3 reads and `native_model` and IR imports that feed them; native `run` (native-run/1 clause execution over snapshots and invocations) and the SEAM-1 modules only it reaches, including `package::NativePackage`, the native-linked-package/1 reader, `runtime`, `mapped` and `model_source` (ADR-011-OQ-2) | #120, #121 and #164 (state; design #220) and #188 and #189 (temporal; design #222). The PR that lands spine clause execution deletes native `run`. |
+| M-6c state and temporal evaluators | `state`, `temporal`, and the SEAM-3 reads and `native_model` and IR imports that feed them; native `run` (native-run/1 clause execution over snapshots and invocations); the native `compile` and `lower` commands, with QSL-5 (owner ruling 2026-09-24); and the SEAM-1 modules only they reach, including `package::NativePackage`, the native-linked-package/1 reader, `runtime`, `mapped` and `model_source` (ADR-011-OQ-2) | #120, #121 and #164 (state; design #220) and #188 and #189 (temporal; design #222). The PR that lands spine clause execution deletes native `run`. |
 | M-6d protocol handoffs | SEAM-3 emission and handoffs to IR, the composed emission (B8, B9), and IR's predicate and temporal admission over QSL types with the IR root → QSL edge | #218 (design #223), with agent-ix/quire-contract-ir#141 |
 | M-6e composed checker | SEAM-2: each composed family is deleted in the PR that lands its S3 family checker and S4 emission. The composed checker is deleted, not kept (owner ruling). | Each family implementation ticket as its family lands: #214, #120, #164, #170 and #175 (`Value`), #120, #121 and #164 (`StateModel`), #187 (`SumCase`), #188 and #189 (`TemporalTrace`), #218 (`ProtocolClause`), #191, #192 and #198 (`Relation`); the last one deletes the remainder |
 
@@ -1040,8 +1044,11 @@ through the spine. Native `run` builds a `NativePackage` in process as the
 input to its clause execution, writes no package bytes and no backend
 artifact, and retires in M-6c. The `NativePackage` library API it uses,
 including its constructor and its native-linked-package/1 bytes, stays with
-it until M-6c; no CLI command writes those bytes after M-6a (ADR-011-OQ-2
-records this against #216's wording). The M-6b to M-6e lanes are not checked-package producers;
+it until M-6c; after M-6a, CLI `compile` writes native-linked-package/1 bytes
+only for a `0-draft` source, until native compile is deleted with M-6c and
+QSL-5 (Ruling 2026-09-24); those bytes are neither a checked package nor v2
+bytes, so the spine stays the only checked-package producer #216 checks
+(ADR-011-OQ-2 records this against #216's wording). The M-6b to M-6e lanes are not checked-package producers;
 their "old path unreachable" evidence belongs to the gate after each
 replacement (#219 for M-6b, #224 for M-6c to M-6e). This per-lane reading of
 #216 is an owner ruling (2026-09-19); the coordinator amends the text of #216,
@@ -1220,6 +1227,20 @@ on QSL-193.
   package bytes and no backend artifact, so no M-6a checked-package producer
   remains for #216 to find.
 
+## Ruling (2026-09-24): CLI `compile` routes by edition
+
+The owner ruled this on QSL-8.
+
+- CLI `compile` reads the native-compile/1 program source's declared
+  edition once, from its header, before either compiler runs. A `1-draft`
+  source compiles through the spine (S1 to S4, `command::spine::compile`)
+  and writes `quire.checked-package/v2` bytes. A `0-draft` source compiles
+  through native compile and writes native-linked-package/1 bytes. Each
+  source takes exactly one path. A declared edition neither compiler reads
+  refuses with `unknown_edition` (FR-027).
+- Native `compile`, `lower` and native-compile/1 are deleted with M-6c and
+  QSL-5 (§7.3; ADR-011-OQ-2, OQ-3), not in M-6a.
+
 ## Owner rulings (2026-09-19)
 
 The owner delegated these to the #205 coordinator.
@@ -1255,7 +1276,7 @@ sections it names.
 - **OQ-2: spine `compile` input.** Complete-V1 source, as §8, §2.1 E1 and I1,
   and US-014 already state. The request format is `compile <identity>
   <revision> <path>`, returning v2 bytes, with the source header as the lock
-  (§5, §2.4).
+  (§5, §2.4). Amended by the 2026-09-24 ruling.
 - **OQ-3: `NativePackage`, `lowering`, `runtime` and IT-010.** `lowering`
   and IT-010 are deleted in the last M-6a change, which runs only once the
   skeleton spine is green: QSL #243 (QSL-5) with

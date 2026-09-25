@@ -299,7 +299,7 @@ fn source_and_types(g: &mut Grammar) {
             x("language"),
             Rule::Terminal(Terminal::TextValue("ix:native")),
             x("edition"),
-            Rule::Terminal(Terminal::TextValue("1-draft")),
+            Rule::Terminal(Terminal::TextValue(crate::EDITION)),
             x(";"),
         ]),
     );

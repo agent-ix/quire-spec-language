@@ -243,6 +243,15 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                 cause: error.cause.as_ref().map(package_cause),
             },
         ),
+        RunCause::CompleteSelection(_) => (types::Stage::Request, types::Details::None),
+        RunCause::Spine(failure) => (
+            types::Stage::Spine(failure.refusal.stage()),
+            types::Details::Spine {
+                source: &failure.source,
+                path: &failure.path,
+                span: failure.span,
+            },
+        ),
         RunCause::Lowering {
             target,
             package,

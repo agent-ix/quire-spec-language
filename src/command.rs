@@ -7,6 +7,7 @@ pub mod extraction;
 mod output;
 mod projection_error;
 mod source_package;
+pub mod spine;
 mod wire;
 
 pub use output::NativeResult;
@@ -195,6 +196,27 @@ pub enum RunCause {
     /// Existing selected runtime artifact failure.
     #[error("{0}")]
     Input(#[from] Box<InputReadError>),
+    /// A `1-draft` program's request selects what spine compile does not
+    /// take.
+    #[error("a complete-V1 program compiles alone; the request selects {0}")]
+    CompleteSelection(CompleteSelection),
+    /// Spine compile of a `1-draft` program refused at one stage.
+    #[error("{}", .0.refusal)]
+    Spine(Box<SpineFailure>),
+}
+
+/// A spine refusal of a `1-draft` program, with the program it concerns.
+#[derive(Debug)]
+pub struct SpineFailure {
+    /// The program's four source labels.
+    pub source: qsl_foundation::SourceIdentity,
+    /// The program's request-selected path.
+    pub path: String,
+    /// The refused region rendered over the program, when the stage records
+    /// one.
+    pub span: Option<qsl_foundation::LocatedSpan>,
+    /// The stage's typed refusal.
+    pub refusal: spine::CompileRefusal,
 }
 
 impl From<ir::Diagnostic> for RunCause {
@@ -223,6 +245,8 @@ impl RunCause {
             Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
             Self::Input(error) => error.code,
             Self::Lowering { error, .. } => error.code.code(),
+            Self::CompleteSelection(_) => Code::InvalidRequest,
+            Self::Spine(failure) => failure.refusal.code(),
         }
     }
 
@@ -318,10 +342,119 @@ pub fn run(path: &Path) -> std::result::Result<RunResult, Box<RunError>> {
     with_request(path, run_bytes)
 }
 
-/// Compile a native-compile/1 source-only job into the exact existing package bytes.
-/// No runtime artifact is read or executed; failures expose no partial artifact.
+/// Compile a native-compile/1 source-only job (FR-027). The program source's
+/// declared edition selects the compiler: `1-draft` compiles through the
+/// spine into `quire.checked-package/v2` bytes, `0-draft` into the
+/// native-linked-package/1 bytes. No runtime artifact is read or executed;
+/// failures expose no partial artifact.
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
-    compile_with(path, |package| Ok(package.bytes().to_vec()))
+    with_request(path, |directory, bytes, _digest| {
+        let request: wire::CompileRequest = request(bytes)?;
+        compilation::source_only(&request.program)?;
+        let mut intake = intake(
+            directory,
+            FileCounts {
+                programs: 1,
+                models: request.models.len(),
+                snapshots: 0,
+                invocations: 0,
+                packages: 0,
+            },
+        )?;
+        // The edition is decided before any model is read: a `1-draft`
+        // program takes no model, whatever state the model files are in.
+        let source = intake.source(&request.program.source)?;
+        match Edition::of(source.source())? {
+            Edition::Complete => complete(&request, source.source()),
+            Edition::Native => {
+                let models = compilation::models(&mut intake, &request.models)?;
+                Ok(compilation::package_of(source, &request.program, &models)?
+                    .bytes()
+                    .to_vec())
+            }
+        }
+    })
+}
+
+/// The compiler a program source's declared edition selects.
+enum Edition {
+    /// `1-draft`: the spine, S1 to S4 (ADR-011 §7.3 M-6a).
+    Complete,
+    /// `0-draft`, or a source whose header the native parser reports on.
+    Native,
+}
+
+impl Edition {
+    /// Read `source`'s header once. A declared edition neither compiler
+    /// reads refuses as `unknown_edition` at its literal.
+    fn of(source: &Source) -> Result<Self> {
+        let Some(declared) = qsl_cst::declared_edition(source.text()) else {
+            return Ok(Self::Native);
+        };
+        match declared.edition.as_str() {
+            qsl_cst::EDITION => Ok(Self::Complete),
+            crate::syntax::EDITION => Ok(Self::Native),
+            other => Err(RunCause::Native(qsl_foundation::diagnostic::error(
+                source,
+                Code::UnknownEdition,
+                qsl_foundation::Phase::Profile,
+                declared.span.start,
+                declared.span.end,
+                format!(
+                    "{} declares edition {other:?}; compile reads {:?} and {:?}",
+                    source.path(),
+                    qsl_cst::EDITION,
+                    crate::syntax::EDITION
+                ),
+            ))),
+        }
+    }
+}
+
+/// Spine-compile a `1-draft` program. Model sources and clause bindings
+/// select native constructs; a complete-V1 program compiles alone. The
+/// program's `document` and `formal_revision` were validated when intake
+/// read it; the v2 wire has no member for them, so they do not reach the
+/// bytes (FR-027 Outputs).
+fn complete(request: &wire::CompileRequest, source: &Source) -> Result<Vec<u8>> {
+    if !request.models.is_empty() {
+        return Err(RunCause::CompleteSelection(CompleteSelection::Models));
+    }
+    if !request.program.clauses.is_empty() {
+        return Err(RunCause::CompleteSelection(CompleteSelection::Clauses));
+    }
+    spine::compile(
+        source.identity().clone(),
+        source.path(),
+        source.text().as_bytes(),
+    )
+    .map_err(|refusal| {
+        RunCause::Spine(Box::new(SpineFailure {
+            source: source.identity().clone(),
+            path: source.path().to_owned(),
+            span: refusal.region().and_then(|region| source.render(region)),
+            refusal: *refusal,
+        }))
+    })
+}
+
+/// A request selection a complete-V1 (`1-draft`) program does not take.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum CompleteSelection {
+    /// The request selects model sources.
+    Models,
+    /// The program selects clause bindings.
+    Clauses,
+}
+
+impl std::fmt::Display for CompleteSelection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Models => "model sources",
+            Self::Clauses => "clause bindings",
+        })
+    }
 }
 
 /// Compile native-compile/1 sources and export the existing Boolean IR projection.

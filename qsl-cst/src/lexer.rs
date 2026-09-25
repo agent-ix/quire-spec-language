@@ -59,6 +59,42 @@ pub struct Token {
     pub span: Span,
 }
 
+/// The edition a source's header declares, and the span of its quoted
+/// literal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredEdition {
+    /// The decoded edition literal, exactly as written.
+    pub edition: String,
+    /// The quoted literal's half-open byte span.
+    pub span: Span,
+}
+
+/// The edition `text`'s header declares: the literal of
+/// `language "ix:native" edition "<edition>"`, read from the first four
+/// significant tokens and nothing after them. `None` when the source does
+/// not open with that header; the parser that reads the source reports why.
+pub fn declared_edition(text: &str) -> Option<DeclaredEdition> {
+    let mut tokens = Kind::lexer(text)
+        .spanned()
+        .filter(|(kind, _)| kind != &Ok(Kind::Comment));
+    let (
+        Some((Ok(Kind::Language), _)),
+        Some((Ok(Kind::Text(language)), _)),
+        Some((Ok(Kind::Edition), _)),
+        Some((Ok(Kind::Text(edition)), range)),
+    ) = (tokens.next(), tokens.next(), tokens.next(), tokens.next())
+    else {
+        return None;
+    };
+    (language == "ix:native").then_some(DeclaredEdition {
+        edition,
+        span: Span {
+            start: range.start,
+            end: range.end,
+        },
+    })
+}
+
 /// Recognize `source` and reclassify each token under the historical
 /// `0-draft` grammar's reservation set.
 pub fn lex(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diagnostic>> {
@@ -191,4 +227,55 @@ pub fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diag
         span: Span { start: end, end },
     });
     Ok(tokens)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{declared_edition, DeclaredEdition};
+    use ix_trace_rs::trace;
+    use qsl_foundation::Span;
+
+    /// FR-027-AC-5: the header names the edition compile routes on, past
+    /// comments, whatever follows the header.
+    #[trace("TC-435", "FR-027-AC-5")]
+    #[test]
+    fn the_header_declares_the_edition() {
+        for (text, edition, start) in [
+            ("language \"ix:native\" edition \"1-draft\";", "1-draft", 29),
+            (
+                "// c\nlanguage \"ix:native\" edition \"0-draft\"; ? ?",
+                "0-draft",
+                34,
+            ),
+            ("language \"ix:native\" edition \"9-draft\"", "9-draft", 29),
+        ] {
+            assert_eq!(
+                declared_edition(text),
+                Some(DeclaredEdition {
+                    edition: edition.to_owned(),
+                    span: Span {
+                        start,
+                        end: start + 9
+                    },
+                }),
+                "{text}"
+            );
+        }
+    }
+
+    /// FR-027-AC-5: a source that does not open with an `ix:native`
+    /// header declares no edition.
+    #[trace("TC-435", "FR-027-AC-5")]
+    #[test]
+    fn a_source_without_the_header_declares_none() {
+        for text in [
+            "",
+            "language ?",
+            "language \"ix:other\" edition \"1-draft\";",
+            "edition \"1-draft\";",
+            "language \"ix:native\" edition 1;",
+        ] {
+            assert_eq!(declared_edition(text), None, "{text}");
+        }
+    }
 }
