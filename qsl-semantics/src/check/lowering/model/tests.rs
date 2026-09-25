@@ -211,6 +211,7 @@ fn acme(version: &str) -> DomainPackage {
                 owner: key("Order"),
                 value_type: ValueTypeRef::Native(NativeValueType::Integer),
                 multiplicity: one(),
+                presence: Presence::Required,
                 subsets: Vec::new(),
                 redefines: None,
             }),

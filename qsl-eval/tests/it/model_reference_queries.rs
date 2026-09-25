@@ -93,6 +93,7 @@ fn field_member(identity: &str, owner: &str, value_type: &str) -> DomainPackageR
         owner: DeclarationKey::fixture(owner),
         value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: MULTIPLICITY_0_1,
+        presence: quire_exact::Presence::Required,
         subsets: Vec::new(),
         redefines: None,
     })

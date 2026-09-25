@@ -1792,6 +1792,7 @@ fn type_identities_hold_only_type_level_declarations() {
                 ordered: false,
                 unique: true,
             },
+            presence: quire_exact::Presence::Required,
             subsets: Vec::new(),
             redefines: None,
         }));

@@ -2960,6 +2960,7 @@ mod tests {
                 ordered: false,
                 unique: true,
             },
+            presence: quire_exact::Presence::Required,
             subsets: Vec::new(),
             redefines: None,
         })

@@ -54,6 +54,7 @@ use crate::model::refusal::IntakeLimit;
 use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::{LocatedSpan, Position};
+use quire_exact::Presence;
 
 mod unit;
 pub use unit::{admit_unit, package_input, SelectedModel, UnitIntakeCause, UnitIntakeRefusal};
@@ -1382,6 +1383,20 @@ fn read_field_member(
     let type_ref = ctx.str_field("typeRef")?;
     let value_type = read_value_type_ref(package, &ctx, type_ref)?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
+    // QSpec's own Presence row (`model-complete.md`:158): `presence` is
+    // exactly `required` or `optional`, independent of `multiplicity`'s
+    // lower bound; any other value is `malformed-declaration` per the
+    // Presence row, refusing rather than aborting, so a future FCD pin
+    // widening this enum degrades to a refusal, not a crash.
+    let presence = match ctx.str_field("presence")? {
+        "required" => Presence::Required,
+        "optional" => Presence::Optional,
+        other => {
+            return Err(ctx.malformed(format!(
+                "presence: {other:?} is not required/optional, the only presences this reader recognizes"
+            )))
+        }
+    };
     let subsets = ctx.identity_keys(package, "subsets")?;
     let redefines = ctx
         .opt_str_field("redefines")
@@ -1391,6 +1406,7 @@ fn read_field_member(
         owner: declaration_key(package, owner_identity),
         value_type,
         multiplicity,
+        presence,
         subsets,
         redefines,
     })
@@ -3415,6 +3431,7 @@ mod tests {
             "identity": format!("ix://acme/orders/Money/{name}"),
             "name": name,
             "typeRef": type_ref,
+            "presence": "required",
             "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
         })
     }
@@ -4045,6 +4062,99 @@ mod tests {
                 && refusal
                     .detail
                     .contains("closed/open, the only extents this reader recognizes"),
+            "{}",
+            refusal.detail
+        );
+    }
+
+    /// A `field`'s own `presence` beyond `identity`/`typeRef`/`multiplicity`,
+    /// filled with schema-valid stand-ins, so [`read_field_member`] reaches
+    /// its own `presence` check.
+    fn field_with_presence(presence: Option<Value>) -> Value {
+        let mut field = serde_json::json!({
+            "identity": "ix://acme/orders/Widget/code",
+            "name": "code",
+            "typeRef": "ix://quire/native/Integer",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
+        });
+        if let (Some(object), Some(presence)) = (field.as_object_mut(), presence) {
+            object.insert("presence".to_owned(), presence);
+        }
+        field
+    }
+
+    /// QSL-252 review (PR #439): the presence check itself was untested.
+    /// Every refusal here goes through [`NodeCtx::malformed`], so all three
+    /// carry `invalid_model_binding`/`IntakeMalformedDeclaration`
+    /// (FR-056-AC-10) -- the same shape as every other malformed field
+    /// value, distinguished by `detail`.
+    #[trace("TC-443", "FR-056-AC-10")]
+    #[test]
+    fn refuses_an_unrecognized_presence_value() {
+        let field = field_with_presence(Some(serde_json::json!("sometimes")));
+        let refusal = read_field_member(
+            "acme/orders",
+            "ix://acme/orders/Widget",
+            &field,
+            "$.types[0].fields[0]",
+        )
+        .expect_err("an unrecognized presence value refuses rather than admitting it");
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert!(matches!(
+            refusal.cause,
+            ModelRefusalCause::IntakeMalformedDeclaration { .. }
+        ));
+        assert!(
+            refusal.detail.contains("sometimes")
+                && refusal.detail.contains(
+                    "is not required/optional, the only presences this reader recognizes"
+                ),
+            "{}",
+            refusal.detail
+        );
+    }
+
+    #[trace("TC-443", "FR-056-AC-10")]
+    #[test]
+    fn refuses_a_missing_presence_value() {
+        let field = field_with_presence(None);
+        let refusal = read_field_member(
+            "acme/orders",
+            "ix://acme/orders/Widget",
+            &field,
+            "$.types[0].fields[0]",
+        )
+        .expect_err("a missing presence refuses rather than admitting it");
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert!(matches!(
+            refusal.cause,
+            ModelRefusalCause::IntakeMalformedDeclaration { .. }
+        ));
+        assert!(
+            refusal.detail.contains("presence: missing or not a string"),
+            "{}",
+            refusal.detail
+        );
+    }
+
+    #[trace("TC-443", "FR-056-AC-10")]
+    #[test]
+    fn refuses_a_non_string_presence_value() {
+        let field = field_with_presence(Some(serde_json::json!(true)));
+        let refusal = read_field_member(
+            "acme/orders",
+            "ix://acme/orders/Widget",
+            &field,
+            "$.types[0].fields[0]",
+        )
+        .expect_err("a non-string presence refuses rather than admitting it");
+        assert_eq!(refusal.code, Code::InvalidModelBinding);
+        assert!(matches!(
+            refusal.cause,
+            ModelRefusalCause::IntakeMalformedDeclaration { .. }
+        ));
+        assert!(
+            refusal.detail.contains("presence: missing or not a string"),
             "{}",
             refusal.detail
         );

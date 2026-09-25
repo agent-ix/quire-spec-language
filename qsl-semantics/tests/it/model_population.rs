@@ -86,6 +86,7 @@ fn field_member_redefining(
         owner: DeclarationKey::fixture(owner),
         value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: MULTIPLICITY_0_1,
+        presence: quire_exact::Presence::Required,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
     })
@@ -123,6 +124,7 @@ fn field_member_mult_redefining(
             ordered: false,
             unique: true,
         },
+        presence: quire_exact::Presence::Required,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
     })
@@ -2206,6 +2208,7 @@ fn ordering_bundle() -> DomainPackage {
                     ordered: true,
                     unique: true,
                 },
+                presence: quire_exact::Presence::Required,
                 subsets: Vec::new(),
                 redefines: None,
             }),
@@ -2219,6 +2222,7 @@ fn ordering_bundle() -> DomainPackage {
                     ordered: false,
                     unique: true,
                 },
+                presence: quire_exact::Presence::Required,
                 subsets: Vec::new(),
                 redefines: None,
             }),
