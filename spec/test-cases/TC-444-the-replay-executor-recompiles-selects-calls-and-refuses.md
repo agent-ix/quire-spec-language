@@ -22,8 +22,12 @@ source labels.
 
 The unit declares `small(x: Int[0, 9]): Boolean { x < 5 }`,
 `flag(b: Boolean): Boolean`, `id(x: Int[0, 9]): Int[0, 9]`,
-`lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }` and
-`maybe(t: Option<Boolean>): Boolean`. Each request
+`lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }`,
+`maybe(t: Option<Boolean>): Boolean`, `f(x: Int[0, 9]): Integer { x + 1 }`
+and `p(x: Int[0, 9]): Boolean { f(x) > 3 }` (QSL-257: `p`'s body is a `call`
+expression node applying a distinct declared function, the one shape none
+of the other declared functions exercise -- the QSL-22 Layer 3 exemplar's
+own shape). Each request
 is built from the unit's spine compile: its `package_id`, its one source
 reference and its byte provision, with parameter node ids read from the
 compiled package.
@@ -44,6 +48,7 @@ compiled package.
    `text_input_bytes` above 1 MiB and at 16, and S3 `work_units` at 0; a
    whitespace-only authority label; a definition document or a second
    source in the package reference; and `id(4)` with a zero work budget.
+6. Replay `p(1)`, whose body calls `f`; replay `p(5)`.
 
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
@@ -71,7 +76,18 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   refusal; a stage-`source` `invalid_source_identity` recompile refusal;
   `NotASource` and `SourceCount(2)`; `NotAPredicate` naming the selection
   and the recompiled package, not an `incomplete` settlement.
+- Step 6: `p(1)` is `f(1) > 3` = `2 > 3` = `false`, agreeing with the
+  refuted property (`reproduced-without-witness`); `p(5)` is `f(5) > 3` =
+  `6 > 3` = `true`, `inconclusive` with cause `Verdicts`. The S4 emitter
+  writes `p`'s `call` node (`node_tag` `expression`, `semantic_form` `call`)
+  in exactly the checked-package/v2 shape codegen's FR-021 oracle generator
+  reads (`quire-contract-codegen/src/exact_function.rs`, confirmed
+  read-only against `origin/main`); no QSL emission change was needed, and
+  the shape is separately confirmed structurally by
+  `qsl-package/src/emit/tests.rs::emit_checked_places_the_calls_occurrence_at_its_own_source_span`,
+  which round-trips a real function-calls-function package through a real
+  `quire.checked-package/v2` emit and IR's own I2 decode.
 
 ## Status
 
-Passed locally (QSL-5), `qsl-replay/src/execute/tests.rs`.
+Passed locally (QSL-5, QSL-257), `qsl-replay/src/execute/tests.rs`.

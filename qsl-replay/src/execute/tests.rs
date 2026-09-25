@@ -21,6 +21,11 @@ const PROFILE: &str = "profile v = \"quire.value.complete/v1\" version \"1\" dig
     \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
 
 /// The proved unit: `small` is the predicate a counterexample refutes.
+///
+/// `f`/`p` (QSL-257, the QSL-22 Layer 3 exemplar's shape): `p` is a Boolean
+/// predicate whose body calls another declared function, `f`, rather than
+/// applying an operator directly to its own parameters -- the one case
+/// `small`, `flag`, `id`, `lt` and `maybe` never exercise.
 fn proved() -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
@@ -28,7 +33,9 @@ fn proved() -> String {
          function flag using v(b: Boolean): Boolean pure {{ b }}\n\
          function id using v(x: Int[0, 9]): Int[0, 9] pure {{ x }}\n\
          function lt using v(a: Int[0, 9], b: Int[0, 9]): Boolean pure {{ a < b }}\n\
-         function maybe using v(t: Option<Boolean>): Boolean pure {{ true }}\n"
+         function maybe using v(t: Option<Boolean>): Boolean pure {{ true }}\n\
+         function f using v(x: Int[0, 9]): Integer pure {{ x + 1 }}\n\
+         function p using v(x: Int[0, 9]): Boolean pure {{ f(x) > 3 }}\n"
     )
 }
 
@@ -167,6 +174,19 @@ fn small(x: i64) -> ReplayRequestWire {
     )
 }
 
+/// A request replaying `p(x)` against the proved unit: `p`'s own body calls
+/// `f`, a distinct declared function (QSL-257).
+fn p(x: i64) -> ReplayRequestWire {
+    let source = proved();
+    let compiled = spine(&source, &BTreeMap::new());
+    request(
+        source.as_bytes(),
+        compiled.emitted.package_id(),
+        name(&["p"]),
+        input(parameter(&compiled, "p", 0), x),
+    )
+}
+
 /// FR-098-AC-1, FR-098-AC-2: an `Input` counterexample `x = 7` recompiles
 /// from the byte provision alone, keeps its `package_id`, joins `x` by
 /// its parameter node id, and `small(7)` is `false`: the replay agrees
@@ -259,6 +279,53 @@ fn tc_444_a_disagreement_settles_inconclusive() {
         Some(Verdict::from_category(ProofCategory::Incomplete))
     );
     assert_eq!(incomplete.value(), None);
+}
+
+/// QSL-257 (QSL-22 Layer 3 exemplar): `p(x) { f(x) > 3 }` replays through a
+/// nested call to `f(x) { x + 1 }`, a distinct declared function, and
+/// agrees: `p(1)` is `f(1) > 3` = `2 > 3` = `false`, which agrees with the
+/// counterexample's assumed violation. This is FR-098-AC-1's own agreement
+/// case, over a predicate whose body is a `call` node rather than a direct
+/// operator application -- the shape S4's emitter must write as a checked
+/// `expression`/`call` node for codegen's FR-021 oracle generator to read
+/// (`quire-contract-codegen/src/exact_function.rs`), confirmed structurally
+/// by `qsl-package/src/emit/tests.rs`'s own `f`-calls-`g` round trip through
+/// a real `quire.checked-package/v2` emit/decode (FR-065-AC-3, TC-163).
+#[trace("TC-444", "FR-098-AC-1", "FR-098-AC-2")]
+#[test]
+fn tc_444_a_nested_function_call_replays_and_agrees() {
+    let ReplayResult::Input(result) = replay(p(1)).expect("the replay runs") else {
+        panic!("an Input-sourced request settles on the Input arm");
+    };
+    assert_eq!(
+        result.settlement(),
+        InputSettlement::ReproducedWithoutWitness
+    );
+    assert_eq!(result.category(), ProofCategory::Violation);
+    assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
+    assert_eq!(result.disagreement(), None);
+}
+
+/// QSL-257: `p(5)` is `f(5) > 3` = `6 > 3` = `true`, which disagrees with
+/// the counterexample's assumed violation and settles `inconclusive` --
+/// the nested call's own agreement and disagreement cases both replay
+/// correctly through the same `qsl_replay::replay` entry `tc_444_a_
+/// disagreement_settles_inconclusive` exercises for a direct operator body.
+#[trace("TC-444", "FR-098-AC-5")]
+#[test]
+fn tc_444_a_nested_function_call_disagreement_settles_inconclusive() {
+    let ReplayResult::Input(result) = replay(p(5)).expect("the replay runs") else {
+        panic!("an Input-sourced request settles on the Input arm");
+    };
+    assert_eq!(result.settlement(), InputSettlement::Inconclusive);
+    assert_eq!(
+        result.disagreement(),
+        Some(crate::DisagreementCause::Verdicts {
+            proved: Verdict::from_category(ProofCategory::Violation),
+            replayed: Verdict::from_category(ProofCategory::Success),
+        })
+    );
+    assert_eq!(result.value(), Some(EvaluatedValue::Boolean(true)));
 }
 
 /// FR-098-AC-3: a meaning-affecting edit (`x < 6`) recompiles to another
