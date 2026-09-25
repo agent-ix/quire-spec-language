@@ -245,6 +245,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             limit.actual()
         ),
         AssemblyCause::Handle(_) => "a declared type's handle could not be encoded".to_owned(),
+        AssemblyCause::UnsuppliedImport { identity } => {
+            format!("`import \"{identity}\"` names a library no dependency input supplies")
+        }
         AssemblyCause::UnadmittedModel { alias } => {
             format!("`model {alias}` names no admitted domain package")
         }
@@ -423,6 +426,55 @@ mod tests {
         let end = usize::try_from(region.end()).unwrap();
         assert_eq!(&UNIT[start..end], "true");
         assert_eq!(start, UNIT.rfind("true").unwrap());
+    }
+
+    /// FR-091-AC-24 (ADR-011 §2.4): the spine takes no dependency packages,
+    /// so E3 refuses a unit that declares an `import` as
+    /// `missing_import`/`missing-selection` at the declaration, rather than
+    /// drop the import from the package it emits.
+    #[trace("TC-405", "FR-091-AC-24")]
+    #[test]
+    fn an_import_no_dependency_input_supplies_refuses() {
+        const IMPORT: &str = "import \"test/units\" version \"2\" digest \
+            \"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" as u;";
+        let unit = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.value.complete/v1\" version \"1\" digest \
+             \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+             {IMPORT}\n\
+             function f using v(): Boolean pure {{ true }}\n"
+        );
+        let refusal = compile(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            SpineLimits::default(),
+        )
+        .expect_err("no dependency input supplies test/units");
+        assert_eq!(refusal.stage(), SpineStage::Assembly);
+        assert_eq!(refusal.code(), Code::MissingImport);
+        let CompileRefusal::Assembly {
+            refusal: assembly, ..
+        } = &*refusal
+        else {
+            panic!("expected an assembly refusal, got {refusal:?}");
+        };
+        assert_eq!(assembly.errors.len(), 1, "{assembly:?}");
+        assert_eq!(
+            assembly.errors[0].cause,
+            qsl_semantics::check::AssemblyCause::UnsuppliedImport {
+                identity: "test/units".to_owned()
+            }
+        );
+        assert_eq!(
+            assembly.errors[0].cause.catalog_code().to_string(),
+            "missing_import/missing-selection"
+        );
+        let region = refusal.region().expect("the refusal is located");
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        assert_eq!(&unit[start..end], IMPORT);
     }
 
     /// FR-027-AC-8 (TC-435 step 6): an emission that would omit part of the

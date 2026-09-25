@@ -61,7 +61,6 @@ reused; prose may change without changing classification.
 | undefined_expression | The actual IR prover could not establish a potentially evaluated operation's definedness under its preceding guards. |
 | resource_exhausted | A source, syntax, formatter, map, linking, checking/proof, package or runtime construction/validation ceiling prevented completion. |
 | ambiguous_dispatch | FR-151 dispatch linking found no, or several undominated, applicable candidates for a closed subtype. |
-| unsupported_dependency_selections | FR-322 I2: an admitted `quire.checked-package/v2` wire's lock names one or more `dependency_selections`; import derivation from a lock is not yet implemented (QC-10). |
 
 Phase identifies the observing boundary: source, lex, parse, profile, format or
 source_map, link, check or validate. `Diagnostic` itself carries only the

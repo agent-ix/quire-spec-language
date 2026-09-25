@@ -52,6 +52,12 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-CON-2.
    that operation, read the emitted package with IR's v2 reader, and
    compare the emitted node with the fixture node on the members FR-093-AC-13
    names.
+8. Link a graph with imports `test/units` `2` and `test/geometry` `1` of one
+   package, emit it and read it back through QSL's I2 read; link a chain
+   root -> `test/b` -> `test/c` -> `test/units`; link imports
+   `test/\u{1F600}` and `test/\u{FF61}`. Under
+   `make conformance`, read QSpec's `dependency-selection-vectors.json`
+   (FR-093-AC-16).
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
@@ -73,10 +79,20 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 - Step 7: IR admits each emitted package, and each compared member equals
   the fixture's. The compared members are exactly those FR-093-AC-13
   names.
+- Step 8: the lock and the identity preimage carry the same two entries,
+  `test/geometry` then `test/units`, each with the package's `package_id`;
+  the package reads back Verified and its `package_id` differs from the
+  unlinked graph's; the chain's closure is `test/b`, `test/c`, `test/units`,
+  with paths `[b]`, `[b, c]` and `[b, c, units]`; `test/\u{FF61}` is
+  written before `test/\u{1F600}` and reads back Verified. The
+  vectors' `package_id` recomputes, each entry mutation refuses at its entry
+  and each order vector gets its recorded outcome and locus.
 
 ## Status
 
 Steps 1 to 6 implemented in `qsl-package/src/emit/tests.rs` (QSL-6 S1b).
+Step 8 implemented under QSL-255 (`emit/tests.rs` and
+`checked_v2::tests::conformance_dependency_selection_vectors`).
 Step 7 is not. IR's v2 reader now admits `value`/`parameter` and function
 nodes (IR-280): a function with parameters is emitted with nothing omitted
 and reads back Verified (`a_function_with_parameters_is_written_whole`), as

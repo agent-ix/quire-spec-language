@@ -30,8 +30,10 @@ alias is `v`.
    `is_admissible()` after S1, and read the parameter's type form after S2.
 3. Assemble a unit, with no `model` selection and no admitted domain
    package, holding `function g using v(r: Reference<M::T>): Boolean pure { true }`.
+4. Spine-compile a unit that declares
+   `import "test/units" version "2" digest "sha256:…" as u;` (FR-091-AC-24).
 
-Tag the test `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`.
+Tag the tests `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, and step 4's `#[trace("TC-405", "FR-091-AC-24")]`.
 
 ## Expected Results
 
@@ -42,8 +44,11 @@ Tag the test `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`.
   mode, and the assembler gives the same floating-type error naming
   `exact`.
 - Step 3 gives an unresolved-type-name error naming `M::T`.
+- Step 4 refuses at the assembly stage with an unsupplied-import error
+  naming `test/units`, `missing_import`/`missing-selection`, located at the
+  import declaration.
 - No step returns a `PackageDeclarations` value.
 
 ## Status
 
-Steps 1 and 3 are backed by `qsl-semantics` `check::assemble` tests: `floating_and_reference_types_are_refused`. Step 2 is not: `qsl-cst` still requires `[mode]` on `Float32` and `Float64` (FR-091-AC-23).
+Step 4 is backed by `qsl-replay` `spine::tests::an_import_no_dependency_input_supplies_refuses` (QSL-255). Steps 1 and 3 are backed by `qsl-semantics` `check::assemble` tests: `floating_and_reference_types_are_refused`. Step 2 is not: `qsl-cst` still requires `[mode]` on `Float32` and `Float64` (FR-091-AC-23).

@@ -7,11 +7,12 @@
 //! (lane-private, ADR-013 §6: O-15's canonical owner is this module's
 //! `CheckedPackage`, not that one).
 //!
-//! `CheckedPackage`'s constructor ([`CheckedPackage::link`]) and both its
-//! fields are private to this module: the only conversion into it is the S4
-//! link step, over an already-checked [`CheckedGraph`] (S3's own stage
-//! output, `qsl_semantics::check`) and other already-checked `CheckedPackage`s (E4's
-//! dependency closure), never over an unchecked or wire-admitted value
+//! `CheckedPackage`'s constructors ([`CheckedPackage::link`] and
+//! [`CheckedPackage::link_with`]) and its fields are private to this module:
+//! the only conversion into it is the S4 link step, over an already-checked
+//! [`CheckedGraph`] (S3's own stage output, `qsl_semantics::check`) and
+//! other already-checked `CheckedPackage`s (E4's dependency closure), never
+//! over an unchecked or wire-admitted value
 //! (R-10, O-15) -- there is no `From`/`Into` impl from `VerifiedPackage`,
 //! `ImportView` or any `protocol_artifact`-read value, and no struct-literal
 //! construction reachable from outside this module (TC-244 rows 2-6).
@@ -37,17 +38,21 @@
 
 use std::collections::BTreeMap;
 
+use qsl_foundation::Code;
 use qsl_semantics::check::CheckedGraph;
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::{PackageId, Selection};
 use qsl_semantics::value::IDENTITY_LIMITS;
+
+use crate::emit::{emit_checked, EmitRefusal};
 
 /// S4 in-process checked package (ADR-013 T-1): this package's own checked
 /// declarations (a [`CheckedGraph`], S3's stage output) plus the checked
-/// dependency closure E4 names. Both fields are private to this module
-/// (ADR-011 §4); [`Self::link`] is the sole constructor.
+/// dependency closure E4 names. Every field is private to this module
+/// (ADR-011 §4); [`Self::link`] and [`Self::link_with`] are the only
+/// constructors.
 ///
 /// TC-244 row 2 (FR-087-AC-2): a `CheckedGraph` never becomes a
-/// `CheckedPackage` by any path other than [`CheckedPackage::link`] -- in
+/// `CheckedPackage` by any path other than the S4 link step -- in
 /// particular, not by naming this struct's private fields directly from
 /// outside `qsl-package`:
 /// ```compile_fail,E0451
@@ -123,28 +128,131 @@ use qsl_semantics::value::IDENTITY_LIMITS;
 #[derive(Debug)]
 pub struct CheckedPackage {
     graph: CheckedGraph,
-    /// E4's checked dependency closure: each imported identity's own
-    /// checked package, compiled from its digest-addressed source and
-    /// verified against the identity this package's own I2 resolution
-    /// named. Always empty today: no #213 slice before S-3a gives the
-    /// checker an import syntax to populate this from -- the `library`
-    /// relocation that builds `PackageNodeKey`/`ImportView` resolution is
-    /// FR-087's own later slice under QSL-158, and QSL-6/M-4 (the v2
-    /// emitter and importer) is what actually populates a real dependency
-    /// closure in production. The field is part of the type's shape now so
-    /// that M-4 has a stable constructor to build against (FR-087-CON-1),
-    /// not a claim that dependency resolution is implemented here.
+    /// E4's checked dependency closure: each directly imported package's
+    /// own checked package, compiled from its digest-addressed source, by
+    /// its recomputed `package_id` ([`Self::link_with`]).
     dependencies: BTreeMap<PackageId, CheckedPackage>,
+    /// The resolved library closure (FR-307, FR-322 `dependency_selections`):
+    /// one selection per library identity, over the direct imports and every
+    /// dependency's own closure, keyed by the identity string an import
+    /// names. `String`'s order is UTF-8 byte order, the order FR-322 writes.
+    selections: BTreeMap<String, ResolvedDependency>,
+}
+
+/// One library identity's selection in a package's resolved closure, and the
+/// first dependency path that reached it (FR-307).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedDependency {
+    /// The selected version and `package_id`.
+    pub selection: Selection,
+    /// The library identities from the linking package's direct import down
+    /// to this one, this one last. The linking package itself is the
+    /// implicit first step of every path.
+    pub path: Vec<String>,
+}
+
+/// One import the E4 link step binds (ADR-011 §4 dependency binding): the
+/// library identity `L`, version `v` and `package_id` `d` an
+/// `import "L" version "v" digest "d"` names, and the dependency's checked
+/// package compiled from its digest-addressed source.
+#[derive(Debug)]
+pub struct Import {
+    /// Library identity `L`, as the import spells it.
+    pub identity: String,
+    /// Version string `v`.
+    pub version: String,
+    /// The `package_id` the import, and the verified view E3 resolved
+    /// against, record for the dependency.
+    pub package_id: PackageId,
+    /// The dependency's checked package, compiled from source through S1 to
+    /// S4.
+    pub package: CheckedPackage,
+}
+
+/// Why the E4 link step built no package (ADR-011 §2.3: no partial output).
+#[derive(Debug, thiserror::Error)]
+pub enum LinkRefusal {
+    /// An import's identity or version is empty; FR-322 admits neither.
+    #[error("an import names an empty library identity or version")]
+    EmptySelection {
+        /// The identity as written.
+        identity: String,
+        /// The version as written.
+        version: String,
+    },
+    /// ADR-011 §4: a dependency's recomputed `package_id` is not the one
+    /// its import records (`stale_dependency`, ADR-013 O-26, C-13).
+    #[error(
+        "stale_dependency: {identity} is recorded as {} but its source compiles to {}",
+        .expected.hex(),
+        .recompiled.hex()
+    )]
+    DependencyIdentityMismatch {
+        /// The library identity.
+        identity: String,
+        /// The `package_id` the import records.
+        expected: PackageId,
+        /// The dependency's recomputed `package_id`.
+        recompiled: PackageId,
+    },
+    /// FR-307 diamond rule: two dependency paths select one library
+    /// identity with a different version or `package_id`
+    /// (`invalid_package`/`conflicting-definition`), listing both paths.
+    #[error(
+        "invalid_package/conflicting-definition: {} and {} select {identity} differently",
+        .selections[0].path.join(" -> "),
+        .selections[1].path.join(" -> ")
+    )]
+    ConflictingDefinition {
+        /// The library identity.
+        identity: String,
+        /// The earlier selection and its path, then the conflicting one.
+        selections: Box<[ResolvedDependency; 2]>,
+    },
+    /// A dependency's `package_id` could not be recomputed: its emission
+    /// refused, or would omit nodes (ADR-011 §2.3 partial output).
+    #[error("the dependency {identity} does not emit a complete package")]
+    DependencyEmission {
+        /// The library identity.
+        identity: String,
+        /// The emitter's refusal, or `None` when the emission omits nodes.
+        refusal: Option<EmitRefusal>,
+    },
+}
+
+impl LinkRefusal {
+    /// The catalog code.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::DependencyIdentityMismatch { .. } => Code::StaleDependency,
+            Self::ConflictingDefinition { .. } | Self::EmptySelection { .. } => {
+                Code::InvalidPackage
+            }
+            Self::DependencyEmission {
+                refusal: Some(refusal),
+                ..
+            } => refusal.code(),
+            Self::DependencyEmission { refusal: None, .. } => Code::UnsupportedProjection,
+        }
+    }
+
+    /// The catalog cause, where the catalog names one.
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::DependencyIdentityMismatch { .. } => Some("byte-digest-mismatch"),
+            Self::ConflictingDefinition { .. } => Some("conflicting-definition"),
+            Self::EmptySelection { .. } => Some("invalid-value"),
+            Self::DependencyEmission { .. } => None,
+        }
+    }
 }
 
 impl CheckedPackage {
     /// The S4 link step (ADR-013 T-1): the sole conversion from
     /// `CheckedGraph` to `CheckedPackage`. Fed only by already-checked
     /// typestate -- a `CheckedGraph` -- never by an unchecked or
-    /// wire-admitted value (R-10). The dependency closure starts empty:
-    /// no #213 slice before S-3a gives the checker an import syntax to
-    /// populate it from. M-4 adds the dependency-bearing step
-    /// (`pub(crate)`, with verification) when it lands.
+    /// wire-admitted value (R-10). The dependency closure is empty;
+    /// [`Self::link_with`] is the dependency-bearing step.
     ///
     /// TC-163 (FR-065-AC-1, QSL-154): the function packaging/lowering
     /// public API accepts only a checked node -- built solely through the
@@ -199,7 +307,74 @@ impl CheckedPackage {
         Self {
             graph,
             dependencies: BTreeMap::new(),
+            selections: BTreeMap::new(),
         }
+    }
+
+    /// The E4 link step with a dependency closure (ADR-011 §2.1 E4, §4
+    /// dependency binding): `graph` linked with each import's checked
+    /// package. Each dependency's `package_id` is recomputed by emitting it
+    /// (ADR-013 O-02: never accepted from a caller) and must equal the one
+    /// its import records, else [`LinkRefusal::DependencyIdentityMismatch`].
+    /// The closure takes the imports and every dependency's own closure; two
+    /// selections of one identity unify only when version and `package_id`
+    /// are equal (FR-307), else [`LinkRefusal::ConflictingDefinition`].
+    /// A refusal yields no package.
+    pub fn link_with(graph: CheckedGraph, imports: Vec<Import>) -> Result<Self, LinkRefusal> {
+        let mut dependencies = BTreeMap::new();
+        let mut selections: BTreeMap<String, ResolvedDependency> = BTreeMap::new();
+        for import in imports {
+            if import.identity.is_empty() || import.version.is_empty() {
+                return Err(LinkRefusal::EmptySelection {
+                    identity: import.identity,
+                    version: import.version,
+                });
+            }
+            let recompiled = recomputed_package_id(&import)?;
+            if recompiled != import.package_id {
+                return Err(LinkRefusal::DependencyIdentityMismatch {
+                    identity: import.identity,
+                    expected: import.package_id,
+                    recompiled,
+                });
+            }
+            let direct = ResolvedDependency {
+                selection: Selection {
+                    version: import.version,
+                    package_id: recompiled,
+                },
+                path: vec![import.identity.clone()],
+            };
+            let transitive = import
+                .package
+                .selections
+                .iter()
+                .map(|(identity, resolved)| {
+                    let mut path = Vec::with_capacity(resolved.path.len().saturating_add(1));
+                    path.push(import.identity.clone());
+                    path.extend(resolved.path.iter().cloned());
+                    (
+                        identity.clone(),
+                        ResolvedDependency {
+                            selection: resolved.selection.clone(),
+                            path,
+                        },
+                    )
+                });
+            let entries: Vec<(String, ResolvedDependency)> =
+                std::iter::once((import.identity.clone(), direct))
+                    .chain(transitive)
+                    .collect();
+            for (identity, resolved) in entries {
+                unify(&mut selections, identity, resolved)?;
+            }
+            dependencies.insert(recompiled, import.package);
+        }
+        Ok(Self {
+            graph,
+            dependencies,
+            selections,
+        })
     }
 
     /// This package's own checked declarations (S3's stage output) -- the
@@ -214,6 +389,49 @@ impl CheckedPackage {
     /// checked package.
     pub fn dependencies(&self) -> &BTreeMap<PackageId, CheckedPackage> {
         &self.dependencies
+    }
+
+    /// The resolved library closure: one selection per library identity, in
+    /// ascending UTF-8 byte order of the identity (FR-322
+    /// `dependency_selections`), each with the first path that reached it.
+    pub fn dependency_selections(&self) -> &BTreeMap<String, ResolvedDependency> {
+        &self.selections
+    }
+}
+
+/// `import`'s dependency `package_id`, recomputed by emitting its package.
+fn recomputed_package_id(import: &Import) -> Result<PackageId, LinkRefusal> {
+    let emission =
+        emit_checked(&import.package).map_err(|refusal| LinkRefusal::DependencyEmission {
+            identity: import.identity.clone(),
+            refusal: Some(refusal),
+        })?;
+    if !emission.omitted().is_empty() {
+        return Err(LinkRefusal::DependencyEmission {
+            identity: import.identity.clone(),
+            refusal: None,
+        });
+    }
+    Ok(emission.package().package_id())
+}
+
+/// Add `resolved` of `identity` to `selections`, unifying an equal
+/// selection reached by another path (FR-307 diamond rule).
+fn unify(
+    selections: &mut BTreeMap<String, ResolvedDependency>,
+    identity: String,
+    resolved: ResolvedDependency,
+) -> Result<(), LinkRefusal> {
+    match selections.get(&identity) {
+        Some(existing) if existing.selection == resolved.selection => Ok(()),
+        Some(existing) => Err(LinkRefusal::ConflictingDefinition {
+            selections: Box::new([existing.clone(), resolved]),
+            identity,
+        }),
+        None => {
+            selections.insert(identity, resolved);
+            Ok(())
+        }
     }
 }
 

@@ -24,8 +24,11 @@
 //! - `model_selections` is `CheckedGraph::model_selections`: each domain
 //!   package the package was checked against, by identity, version and
 //!   `sha256-jcs` digest (ADR-011 §2.4).
-//! - `dependency_selections` is empty (ADR-011 §2.4: the QSpec schema types
-//!   it as a definition selection, which is a schema defect).
+//! - `dependency_selections` is [`CheckedPackage::dependency_selections`]:
+//!   the resolved library closure, one `{identity, version, package_id}`
+//!   entry per library identity in ascending UTF-8 byte order of `identity`
+//!   (FR-322, FR-307). The same entries are the identity preimage's, so each
+//!   dependency's `package_id` enters this package's.
 //!
 //! # Source regions
 //!
@@ -64,12 +67,12 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use quire_contract_ir::{
     CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
-    CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId, CheckedNodeKind, CheckedNodeTag,
-    CheckedOccurrence, CheckedOccurrenceRole, CheckedPackageIdentityPreimageV2,
-    CheckedPackageLockV2, CheckedRevision, CheckedSelection, CheckedSelectionRole,
-    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
-    CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, CHECKED_PACKAGE_V2,
-    DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId,
+    CheckedNodeKind, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
+    CheckedPackageIdentityPreimageV2, CheckedPackageLockV2, CheckedRevision, CheckedSelection,
+    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
+    CheckedSourceMapEntry, CheckedSourceRegion, NominalIdentityPreimage, NominalOwner,
+    CHECKED_PACKAGE_V2, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 use serde::Serialize;
 
@@ -690,6 +693,29 @@ struct WireV2<'a> {
     diagnostics: &'a CheckedDiagnosticsV2,
 }
 
+/// `package`'s FR-322 `dependency_selections`, in its closure's ascending
+/// UTF-8 byte order of identity.
+fn dependency_selections(package: &CheckedPackage) -> Vec<CheckedDependencySelection> {
+    package
+        .dependency_selections()
+        .iter()
+        .map(|(identity, resolved)| CheckedDependencySelection {
+            identity: identity.as_str().into(),
+            version: resolved.selection.version.as_str().into(),
+            package_id: semantic_id(resolved.selection.package_id),
+        })
+        .collect()
+}
+
+/// `package_id` as FR-322's `PackageId` member.
+fn semantic_id(package_id: PackageId) -> CheckedSemanticId {
+    CheckedSemanticId {
+        domain: PACKAGE_DOMAIN_V2.into(),
+        algorithm: "sha256".into(),
+        digest: package_id.hex().into(),
+    }
+}
+
 fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
     EmitRefusal::Encoding {
         reason: error.to_string(),
@@ -761,7 +787,7 @@ pub(crate) fn emit_package(
         definition_selections: definition_selections.clone(),
         model_selections: model_selections.clone(),
         required_features: vec![root.into()],
-        dependency_selections: Vec::new(),
+        dependency_selections: dependency_selections(package),
     };
     let preimage = CheckedPackageIdentityPreimageV2 {
         version: IDENTITY_PREIMAGE_V2.into(),
@@ -770,7 +796,7 @@ pub(crate) fn emit_package(
         definition_selections,
         model_selections,
         required_features: lock.required_features.clone(),
-        dependency_selections: Vec::new(),
+        dependency_selections: lock.dependency_selections.clone(),
         identity_projection: nodes.iter().map(Into::into).collect(),
     };
     let semantic_graph = CheckedSemanticGraphV2 {
@@ -789,11 +815,7 @@ pub(crate) fn emit_package(
         let wire = WireV2 {
             contract_version: CHECKED_PACKAGE_V2,
             identity_preimage: &preimage,
-            package_id: CheckedSemanticId {
-                domain: PACKAGE_DOMAIN_V2.into(),
-                algorithm: "sha256".into(),
-                digest: package_id.hex().into(),
-            },
+            package_id: semantic_id(package_id),
             lock: &lock,
             semantic_graph: &semantic_graph,
             source_map: &source_map,

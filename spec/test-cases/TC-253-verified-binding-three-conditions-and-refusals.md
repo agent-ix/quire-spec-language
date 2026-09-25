@@ -66,6 +66,10 @@ FR-087-AC-3.
    through the whole I2 read. Then check an identity preimage that repeats a
    node id at adjacent positions, and one that repeats it two positions
    apart (`[R, S, R]`).
+10. E4 dependency binding (FR-087-AC-14): link a graph with an import whose
+    recorded `package_id` is not its package's, and link a graph importing
+    `test/units` at version `3` and a package `mid` that selected
+    `test/units` at version `2`.
 
 ## Expected Results
 
@@ -84,3 +88,8 @@ FR-087-AC-3.
   admitted, at least one of them with a non-ascending `identity_projection`;
   each repeated node id refuses as `DuplicateNode`, naming the repeated id
   and the index of its second occurrence.
+- Step 10: the first link refuses `DependencyIdentityMismatch`
+  (`stale_dependency`) naming the recorded and the recomputed `package_id`;
+  the second refuses `invalid_package`/`conflicting-definition` naming both
+  selections of `test/units` and both dependency paths (`test/units` and
+  `test/mid -> test/units`). Neither yields a package.

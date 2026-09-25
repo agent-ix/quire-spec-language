@@ -779,15 +779,20 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 6] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 7] = [
         // S3: the checker.
         (
             "qsl-semantics/src/check/mod.rs",
             Some("PackageDeclarations"),
             "check",
         ),
-        // S4: the link step.
+        // S4: the link step, and its dependency-bearing form (E4).
         ("qsl-package/src/checked.rs", Some("CheckedPackage"), "link"),
+        (
+            "qsl-package/src/checked.rs",
+            Some("CheckedPackage"),
+            "link_with",
+        ),
         // S4 wire: the v2 emitter's constructor.
         ("qsl-package/src/checked.rs", Some("EmittedPackage"), "new"),
         // I2: the §4 verified binding.

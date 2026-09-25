@@ -304,9 +304,10 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
     // Counted directly against `Code::all()` on this branch (47 pre-existing
     // variants from `main` after #143/#144/#149's FR-153 codes
     // (`ForeignReference`, `CardinalityOutOfBound`), QSL#213 S-2's
-    // `DuplicateSelection`, ADR-013 O-01/QC-5), QSL-6's own
-    // `UnsupportedDependencySelections`, plus QSL-236's `StageLimitExceeded`)
-    // rather than derived by arithmetic — `Code::all()` lists exactly 48
+    // `DuplicateSelection`, ADR-013 O-01/QC-5), plus QSL-236's
+    // `StageLimitExceeded`; QSL-255 removed QSL-6's
+    // `UnsupportedDependencySelections`) rather than derived by arithmetic —
+    // `Code::all()` lists exactly 47
     // entries, one per `pub enum Code` variant, none missing and none
     // duplicated. FR-322 I2's own envelope-shape refusals
     // (`UnknownContractVersion`, `MalformedWire`, `DuplicateMember`,
@@ -314,7 +315,7 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
     // mirrored here at all: they collapse onto the existing
     // `Code::InvalidPackage`, exactly like
     // `UnsupportedNodeTag`/`InvalidSemanticGraph` already do (no-copy rule).
-    assert_eq!(seen.len(), 48);
+    assert_eq!(seen.len(), 47);
     assert_eq!(Code::InvalidRuntimeInput.as_str(), "invalid_runtime_input");
     assert_eq!(
         Code::from_code("invalid_runtime_input"),
