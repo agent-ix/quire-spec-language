@@ -495,9 +495,8 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
     };
     assert_eq!(parsed.declarations().len(), 1);
     assert_eq!(parsed.expressions().len(), 1);
-    // QSL-236: `source_bytes`/`nodes`/`nesting` are `SyntaxLimit` kinds the
-    // catalog admits, so they report `stage_limit_exceeded`; `tokens` has
-    // no catalog cause yet (STD-95) and stays `resource_exhausted`.
+    // Every syntax ceiling reports `stage_limit_exceeded` (catalog revision
+    // `1-draft.7`): `tokens` is `token-count-exceeded`.
     for (limits, phase, code) in [
         (
             Limits {
@@ -513,7 +512,7 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
                 ..exact
             },
             Phase::Lex,
-            Code::ResourceExhausted,
+            Code::StageLimitExceeded,
         ),
         (
             Limits { nodes: 2, ..exact },

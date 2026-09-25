@@ -1627,7 +1627,7 @@ mod tests {
                 },
             )
             .unwrap_err();
-            assert_eq!(refusal.code, qsl_foundation::Code::ResourceExhausted);
+            assert_eq!(refusal.code, qsl_foundation::Code::StageLimitExceeded);
             assert_eq!(refusal.byte_span().unwrap().start, 0);
             assert_eq!(refusal.byte_span().unwrap().end, compound.len());
         }

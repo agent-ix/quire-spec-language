@@ -387,13 +387,12 @@ fn real_frontend_limits_preserve_native_causes_and_retry_state() {
             limits,
         )
         .unwrap_err();
-        // QSL-236: only the S1 syntax dimensions other than `tokens` (no
-        // catalog cause yet, STD-95) are `SyntaxLimit` kinds the catalog
-        // admits; `link.*` (`src/linking.rs`'s own node/depth/model-byte
+        // Every S1 syntax dimension is a `SyntaxLimit` kind the catalog
+        // admits (revision `1-draft.7`); `link.*` (`src/linking.rs`'s own node/depth/model-byte
         // budgets) and `check.*` (`src/checking.rs`'s native constraint
         // checker) are untouched producers outside this ticket's four
         // kinds, and stay `resource_exhausted`.
-        let expected_code = if dimension.starts_with("syntax.") && dimension != "syntax.tokens" {
+        let expected_code = if dimension.starts_with("syntax.") {
             Code::StageLimitExceeded
         } else {
             Code::ResourceExhausted

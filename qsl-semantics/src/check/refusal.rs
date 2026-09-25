@@ -160,23 +160,26 @@ impl CheckingLimitKind {
     }
 }
 
-impl From<LimitKind> for CheckingLimitKind {
-    /// The reverse of `CheckingLimitKind::foundation_kind` (QSL-236, L6):
-    /// `check::mod`'s `StageFailure::Limit` arm named this bijection inline
-    /// as a `match`, matched exhaustively rather than a `_` catch-all (PR
-    /// #262 review, coordinator round 3, finding 4) so a `LimitKind` this
-    /// crate does not yet expect forces a real decision here, not a guess.
+impl TryFrom<LimitKind> for CheckingLimitKind {
+    type Error = LimitKind;
+
+    /// The reverse of `CheckingLimitKind::foundation_kind` (QSL-236, L6),
+    /// for `check::mod`'s `StageFailure::Limit` arm. Matched exhaustively
+    /// rather than with a `_` catch-all (PR #262 review, coordinator round
+    /// 3, finding 4), so a new `LimitKind` forces a decision here.
     /// `NodeCount` maps onto the pre-existing `Self::Nodes` (both name "how
-    /// many expression nodes"); `InputBytes` and `WorkBudget` have no
-    /// pre-existing counterpart in this older `Typer`-era enum, so QSL-153
-    /// added one each. Named once here rather than duplicated at that call
-    /// site.
-    fn from(kind: LimitKind) -> Self {
+    /// many expression nodes"). The token, edge, occurrence and diagnostic
+    /// counts name S1 and I2 ceilings no checking limit has, and refuse.
+    fn try_from(kind: LimitKind) -> Result<Self, LimitKind> {
         match kind {
-            LimitKind::NestingDepth => Self::Depth,
-            LimitKind::NodeCount => Self::Nodes,
-            LimitKind::InputBytes => Self::InputBytes,
-            LimitKind::WorkBudget => Self::WorkBudget,
+            LimitKind::NestingDepth => Ok(Self::Depth),
+            LimitKind::NodeCount => Ok(Self::Nodes),
+            LimitKind::InputBytes => Ok(Self::InputBytes),
+            LimitKind::WorkBudget => Ok(Self::WorkBudget),
+            LimitKind::TokenCount
+            | LimitKind::EdgeCount
+            | LimitKind::OccurrenceCount
+            | LimitKind::DiagnosticCount => Err(kind),
         }
     }
 }
@@ -391,6 +394,9 @@ pub enum KeyFault {
     /// An admitted enum declaration or member whose nominal preimage has no
     /// RFC 8785 encoding.
     NonCanonicalNominal(quire_exact::NodeKey),
+    /// A family `check` reported a stage limit of a kind no checking limit
+    /// names (a token, edge, occurrence or diagnostic count).
+    UncheckedLimitKind(LimitKind),
 }
 
 impl KeyFault {
@@ -412,6 +418,7 @@ impl KeyFault {
             Self::UntypedIeeeOperand => "ieee-operand-typed",
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
             Self::NonCanonicalNominal(_) => "nominal-preimage-canonical",
+            Self::UncheckedLimitKind(_) => "family-limit-is-a-checking-limit",
         }
     }
 }

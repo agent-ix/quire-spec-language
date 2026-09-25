@@ -195,7 +195,7 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
         below,
     )
     .unwrap_err();
-    assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
+    assert_eq!(refusal.code, CompleteCode::StageLimitExceeded);
     assert_eq!(refusal.byte_span().unwrap().start, first_excess.start);
     assert_eq!(refusal.byte_span().unwrap().end, first_excess.end);
 
@@ -214,7 +214,7 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
             },
         )
         .unwrap_err();
-        assert_eq!(refusal.code, CompleteCode::ResourceExhausted, "{revision}");
+        assert_eq!(refusal.code, CompleteCode::StageLimitExceeded, "{revision}");
         assert_eq!(refusal.byte_span().unwrap().start, 0, "{revision}");
         assert_eq!(refusal.byte_span().unwrap().end, source.len(), "{revision}");
     }
@@ -234,7 +234,7 @@ fn large_single_lexeme_refuses_at_the_first_excess_leaf() {
         },
     )
     .unwrap_err();
-    assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
+    assert_eq!(refusal.code, CompleteCode::StageLimitExceeded);
     assert_eq!(refusal.byte_span().unwrap().start, 9);
     assert_eq!(refusal.byte_span().unwrap().end, 10);
 }

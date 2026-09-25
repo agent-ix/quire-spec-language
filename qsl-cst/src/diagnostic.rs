@@ -12,7 +12,7 @@ pub type CompleteCode = qsl_foundation::Code;
 
 /// The closed typed cause of a complete-source diagnostic, selected by its
 /// producer at the failing operation under `quire.native.diagnostics/v1`
-/// revision `1-draft.6`.
+/// revision `1-draft.7`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CompleteCause {
     /// `invalid_syntax`: a token the grammar does not admit at its position.
@@ -66,10 +66,9 @@ pub enum CompleteCause {
     EstablishedInvariantBroken,
     /// A retained host or source code with its original structured cause.
     Host(HostCause),
-    /// `stage_limit_exceeded` (QSL-236, catalog revision `1-draft.6`): a
-    /// [`SyntaxLimit`] whose kind the catalog already admits a cause for.
-    /// [`SyntaxLimit::Tokens`] has no catalog cause yet (STD-95) and stays
-    /// [`Self::InsufficientNextCharge`].
+    /// `stage_limit_exceeded` (catalog revision `1-draft.7`): a
+    /// [`SyntaxLimit`], named by its [`LimitKind`]. The token ceiling is
+    /// `token-count-exceeded`.
     StageLimit(LimitKind),
 }
 
@@ -321,31 +320,19 @@ pub fn error(
 }
 
 /// The one constructor for a complete-V1 syntax-ceiling refusal, at `span`:
-/// `stage_limit_exceeded`/[`CompleteCause::StageLimit`] for every
-/// [`SyntaxLimit`] kind the catalog admits (QSL-236), `resource_exhausted`/
-/// [`CompleteCause::InsufficientNextCharge`] for [`SyntaxLimit::Tokens`] (no
-/// catalog cause yet, STD-95), and a message rendered from `limit` either
-/// way.
+/// `stage_limit_exceeded`/[`CompleteCause::StageLimit`] naming every
+/// [`SyntaxLimit`] kind's catalog cause (revision `1-draft.7`), and a
+/// message rendered from `limit`.
 pub fn resource_exhausted(
     source: &Source,
     phase: Phase,
     span: qsl_foundation::Span,
     limit: SyntaxLimit,
 ) -> Box<CompleteDiagnostic> {
-    let (code, cause) = match limit.stage_kind() {
-        Some(kind) => (
-            CompleteCode::StageLimitExceeded,
-            CompleteCause::StageLimit(kind),
-        ),
-        None => (
-            CompleteCode::ResourceExhausted,
-            CompleteCause::InsufficientNextCharge,
-        ),
-    };
     let mut diagnostic = error(
         source,
-        code,
-        cause,
+        CompleteCode::StageLimitExceeded,
+        CompleteCause::StageLimit(limit.stage_kind()),
         phase,
         span.start,
         span.end,
@@ -358,6 +345,8 @@ pub fn resource_exhausted(
 #[cfg(test)]
 mod tests {
     use super::{resource_exhausted, CompleteCause, CompleteCode};
+    use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::LimitKind;
     use qsl_foundation::{Phase, Source, SourceIdentity, Span, SyntaxLimit};
 
     fn source() -> Source {
@@ -370,10 +359,10 @@ mod tests {
         .expect("test source")
     }
 
-    /// QSL-236: every `SyntaxLimit` kind but `Tokens` reports
-    /// `stage_limit_exceeded/<kind>-exceeded`; `Tokens` keeps
-    /// `resource_exhausted/insufficient-next-charge` (no catalog cause yet,
-    /// STD-95).
+    /// Every `SyntaxLimit` kind reports `stage_limit_exceeded/<kind>-exceeded`
+    /// (catalog revision `1-draft.7`); the token ceiling is
+    /// `token-count-exceeded`.
+    #[trace("TC-113", "FR-035-AC-5")]
     #[test]
     fn resource_exhausted_reports_the_kind_that_maps_to_the_catalog() {
         let source = source();
@@ -401,8 +390,8 @@ mod tests {
             ),
             (
                 SyntaxLimit::Tokens { bound: 4 },
-                CompleteCode::ResourceExhausted,
-                "insufficient-next-charge",
+                CompleteCode::StageLimitExceeded,
+                "token-count-exceeded",
             ),
         ];
         for (limit, code, cause) in cases {
@@ -420,7 +409,7 @@ mod tests {
                 SyntaxLimit::Tokens { bound: 4 }
             )
             .cause,
-            CompleteCause::InsufficientNextCharge
+            CompleteCause::StageLimit(LimitKind::TokenCount)
         ));
     }
 }

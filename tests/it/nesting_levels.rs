@@ -73,18 +73,13 @@ fn on_bounded_stack<F: FnOnce() + Send + 'static>(run: F) {
 }
 
 /// The limit a refusal names, asserting it is a resource refusal whose
-/// message renders that same limit, and (QSL-236) that its code matches the
-/// kind: `stage_limit_exceeded` for every kind the catalog admits,
-/// `resource_exhausted` for `Tokens` (no catalog cause yet, STD-95).
+/// message renders that same limit, with code `stage_limit_exceeded` for
+/// every kind (catalog revision `1-draft.7`).
 fn refused_limit(error: &Diagnostic) -> SyntaxLimit {
     let limit = error
         .limit()
         .expect("a syntax refusal carries its typed limit");
-    let expected_code = match limit.stage_kind() {
-        Some(_) => Code::StageLimitExceeded,
-        None => Code::ResourceExhausted,
-    };
-    assert_eq!(error.code, expected_code, "{error}");
+    assert_eq!(error.code, Code::StageLimitExceeded, "{error}");
     assert_eq!(error.message, limit.to_string());
     limit
 }

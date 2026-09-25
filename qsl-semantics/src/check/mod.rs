@@ -874,20 +874,24 @@ impl PackageDeclarations {
                     drafts.push((signatures.as_slice()[index].clone(), checked.body));
                 }
                 Err(StageFailure::Limit(limit)) => {
-                    // QSL-236 (L6): `CheckingLimitKind::from(LimitKind)` is
-                    // the named reverse of `foundation_kind`, not an inline
-                    // match here -- see its doc for why the match stays
-                    // exhaustive (PR #262 review, coordinator round 3,
-                    // finding 4).
-                    let kind = CheckingLimitKind::from(limit.kind());
-                    refusals.push(CheckRefusal {
-                        location: location.clone(),
-                        cause: CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+                    // QSL-236 (L6): `CheckingLimitKind::try_from(LimitKind)`
+                    // is the named reverse of `foundation_kind`; a kind no
+                    // checking limit names is a fault in the family, not
+                    // in the input.
+                    let cause = match CheckingLimitKind::try_from(limit.kind()) {
+                        Ok(kind) => CheckCause::ResourceExhausted(Box::new(StageLimitCause {
                             stage: CheckingStage::Typing,
                             kind,
                             limit: limit.configured_bound(),
                             actual: limit.actual(),
                         })),
+                        Err(kind) => {
+                            CheckCause::InternalFault(Box::new(KeyFault::UncheckedLimitKind(kind)))
+                        }
+                    };
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause,
                     });
                 }
                 Err(StageFailure::Refused(refusal)) => {
