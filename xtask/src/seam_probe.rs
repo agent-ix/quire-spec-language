@@ -1021,13 +1021,10 @@ mod tests {
     }
 
     /// FR-063-AC-7 (second test): none of `FamilyKind`, the parsed form
-    /// enum (`Expression`), the checked node enum (`NodeKind`) or a family
-    /// `Cause` enum carries `#[non_exhaustive]`. `WrongSnapshotCause`
-    /// (`ProtocolClauseSnapshot`'s own cause, already a checked-in S4-shaped
-    /// location above) is the one cause-bearing type this repository has
-    /// today; no migrated family yet has its own top-level `Cause` (this
-    /// module's own doc, and `crate::family::outcome`'s), so there is no
-    /// other family `Cause` enum to check yet.
+    /// enum (`Expression`), the checked node enum (`NodeKind`), `Value`'s
+    /// function family's own `Cause` (`CheckCause`, QSL-152) or
+    /// `WrongSnapshotCause` (`ProtocolClauseSnapshot`'s own S4-shaped, not
+    /// family-`Cause`, cause) carries `#[non_exhaustive]`.
     #[ix_trace_rs::trace("TC-161", "FR-063-AC-7")]
     #[test]
     fn closed_enums_carry_no_non_exhaustive_attribute() {
@@ -1039,6 +1036,7 @@ mod tests {
             ("qsl-forms/src/syntax.rs", "Expression"),
             ("qsl-semantics/src/check/ir.rs", "NodeKind"),
             ("qsl-semantics/src/check/refusal.rs", "WrongSnapshotCause"),
+            ("qsl-semantics/src/check/refusal.rs", "CheckCause"),
         ] {
             assert_enum_is_not_non_exhaustive(workspace_root, file, name);
         }
