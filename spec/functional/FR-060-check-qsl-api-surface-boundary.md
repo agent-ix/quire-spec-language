@@ -83,7 +83,7 @@ five rules (T12-E added by QSL-181, 2026-09-23):
 
 | Rule | Role | Protects | Allowed callers (today) | Requires |
 | --- | --- | --- | --- | --- |
-| T12-A | Cg | The layer-6 `qsl-replay` facade crate | CG's `replay` adapter module; a call spelled `quire_spec_language::replay::` is a violation from any module, because the root crate has no `replay` module | `qsl-replay/src/lib.rs` |
+| T12-A | Cg | The layer-6 `qsl-replay` facade crate | CG's `replay` adapter module; a call spelled `quire_spec_language::replay::` is a violation from any module, because the root crate has no `replay` module, and so is a call into `qsl_replay::spine::`, the spine compile `command` shares with the executor, which is not part of the facade (QSL-5) | `qsl-replay/src/lib.rs` |
 | T12-B | Qsl | The kernel `NodeKey` constructor (ADR-013 O-04) | `check` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-C | Qsl | The kernel `EffectiveId` constructor (ADR-013 O-05) | `model` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-D | Qsl | The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21; ADR-011 T-12(d)) | `model` | `qsl-semantics/src/model/population.rs` |

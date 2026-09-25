@@ -182,7 +182,12 @@ pub(crate) const RULES: &[Rule] = &[
         // into its own crate), so a call spelled this way cannot reach the
         // facade; it is a finding, never a pass, from any module including
         // an allowed one.
-        forbidden_patterns: &["quire_spec_language::replay::"],
+        //
+        // `qsl_replay::spine::` is the spine compile `command` shares with
+        // the executor (QSL-5). It is `pub` only because `command` is another
+        // crate; it is not part of the facade CG may call, so a CG call to
+        // it is a finding from any module too.
+        forbidden_patterns: &["quire_spec_language::replay::", "qsl_replay::spine::"],
         // The facade's own internal adapter module has no ticket-assigned
         // name yet (ADR-011 places it in CG, "with RT ops and IR outcome",
         // #217/#219 build it). Left as a placeholder for #213/#217 to set.
@@ -1336,6 +1341,29 @@ mod tests {
         assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
         assert_eq!(outcome.violations[0].module, "replay");
         assert_eq!(outcome.violations[0].line, 2);
+        assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_021 (negative control, QSL-5): a CG call
+    /// into `qsl_replay::spine::` is a T12-A violation even from the
+    /// allowed `replay` module -- the spine compile is `command`'s, not the
+    /// facade's -- while `qsl_replay::replay` beside it passes.
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_021_spine_compile_is_not_the_facade() {
+        let qsl_dir = tempfile::tempdir().unwrap();
+        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
+        let cg_dir = tempfile::tempdir().unwrap();
+        write(
+            cg_dir.path(),
+            "src/replay.rs",
+            "fn f() {\n    qsl_replay::replay(w);\n    qsl_replay::spine::compile(a, b, c, d, e);\n}\n",
+        );
+        let rule = &RULES[0]; // T12-A
+        let outcome = evaluate(rule, qsl_dir.path(), Some(cg_dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert_eq!(outcome.violations.len(), 1, "{:?}", outcome.violations);
+        assert_eq!(outcome.violations[0].line, 3);
         assert!(!outcome.passed());
     }
 

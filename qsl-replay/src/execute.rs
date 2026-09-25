@@ -39,7 +39,7 @@ use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, Verdict,
     WitnessArmResult,
 };
-use crate::spine::{compile, CompileRefusal, SpineLimits};
+use crate::spine::{compile, CompileRefusal, Compiled, SpineLimits};
 use crate::witness::{DecodeRefusal, ReplaySource};
 
 /// The S1 limit a request names that is above this executor's reader
@@ -95,8 +95,13 @@ pub enum ReplayRefusal {
         recompiled: PackageId,
     },
     /// The selection names no function node of the recompiled package.
-    #[error("missing_declaration/missing-name: the recompiled package declares no function {0}")]
-    UnknownFunction(QualifiedName),
+    #[error("missing_declaration/missing-name: package {} declares no function {selection}", .package.hex())]
+    UnknownFunction {
+        /// The request's selection.
+        selection: QualifiedName,
+        /// The recompiled package it was looked up in.
+        package: PackageId,
+    },
     /// An argument names a node that is not a parameter of the selected
     /// function.
     #[error("invalid_runtime_input: node {0} is not a parameter of the selected function")]
@@ -118,8 +123,13 @@ pub enum ReplayRefusal {
     Input(InputRefusal),
     /// The selected function completed a value that is not a Boolean, so
     /// it states no property a counterexample refutes.
-    #[error("the selected function {0} is not a predicate: it completed a non-Boolean value")]
-    NotAPredicate(QualifiedName),
+    #[error("the selected function {selection} of package {} is not a predicate: it completed a non-Boolean value", .package.hex())]
+    NotAPredicate {
+        /// The request's selection.
+        selection: QualifiedName,
+        /// The recompiled package that declares it.
+        package: PackageId,
+    },
     /// An executor or S6a invariant broke.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
@@ -135,9 +145,10 @@ const TOOLCHAIN: &str = concat!("qsl-replay/", env!("CARGO_PKG_VERSION"));
 /// no value is its own category, which never agrees.
 pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire)?;
-    let package = recompile(&request)?;
-    let call = select(&package, request.selected_function())?;
-    let arguments = arguments(&package, &call, request.source())?;
+    let compiled = recompile(&request)?;
+    let package = &compiled.package;
+    let call = select(&compiled, request.selected_function())?;
+    let arguments = arguments(package, &call, request.source())?;
     let mut meter = Meter::new(request.accounting_limits());
     let evaluation = package
         .call(
@@ -160,9 +171,10 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
             Some(EvaluatedValue::Boolean(holds)),
         ),
         FamilyOutcome::Evaluated(Outcome::Completed(_)) => {
-            return Err(ReplayRefusal::NotAPredicate(
-                request.selected_function().clone(),
-            ));
+            return Err(ReplayRefusal::NotAPredicate {
+                selection: request.selected_function().clone(),
+                package: compiled.emitted.package_id(),
+            });
         }
         FamilyOutcome::Evaluated(Outcome::Refused(_)) => (ProofCategory::Refusal, None),
         FamilyOutcome::Evaluated(Outcome::Incomplete(_)) => (ProofCategory::Incomplete, None),
@@ -244,7 +256,7 @@ fn spine_limits(stages: StageLimits) -> Result<SpineLimits, ReplayRefusal> {
 /// every domain package the provision carries under its `sha256-jcs`
 /// digest as I1's package input, and require the recompiled `package_id`
 /// to equal the request's.
-fn recompile(request: &ReplayRequest) -> Result<CheckedPackage, ReplayRefusal> {
+fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
     let limits = spine_limits(request.stage_limits())?;
     if let Some(other) = request
         .source_digests()
@@ -295,7 +307,7 @@ fn recompile(request: &ReplayRequest) -> Result<CheckedPackage, ReplayRefusal> {
             recompiled,
         });
     }
-    Ok(compiled.package)
+    Ok(compiled)
 }
 
 /// The selected function: its S6a name and its parameter nodes in
@@ -309,8 +321,12 @@ struct Selected {
 /// declarations -- the one name lookup after the check stage (R-06).
 /// Complete-V1 declares no qualified names, so only a one-segment name
 /// can resolve.
-fn select(package: &CheckedPackage, name: &QualifiedName) -> Result<Selected, ReplayRefusal> {
-    let unknown = || ReplayRefusal::UnknownFunction(name.clone());
+fn select(compiled: &Compiled, name: &QualifiedName) -> Result<Selected, ReplayRefusal> {
+    let package = &compiled.package;
+    let unknown = || ReplayRefusal::UnknownFunction {
+        selection: name.clone(),
+        package: compiled.emitted.package_id(),
+    };
     let [segment] = name.segments() else {
         return Err(unknown());
     };

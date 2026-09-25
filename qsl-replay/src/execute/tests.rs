@@ -14,7 +14,7 @@ use quire_exact::{Identifier, ScalarLimits};
 use super::*;
 use crate::request::StateEnvironment;
 use crate::result::{InputSettlement, WitnessSettlement};
-use crate::spine::{Compiled, SpineStage};
+use crate::spine::SpineStage;
 use crate::witness::{CanonicalAssignment, Witness};
 
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\" version \"1\" digest \
@@ -410,10 +410,18 @@ fn tc_443_a_selection_naming_no_function_refuses() {
         let mut wire = small(7);
         wire.selected_function = selection.clone();
         let refused = replay(wire).unwrap_err();
-        let ReplayRefusal::UnknownFunction(named) = &refused else {
+        let ReplayRefusal::UnknownFunction {
+            selection: named,
+            package,
+        } = &refused
+        else {
             panic!("expected an unknown function, got {refused:?}");
         };
         assert_eq!(named, &selection);
+        assert_eq!(
+            package,
+            &spine(&proved(), &BTreeMap::new()).emitted.package_id()
+        );
     }
 }
 
@@ -591,7 +599,11 @@ fn tc_443_a_non_predicate_refuses() {
     ))
     .unwrap_err();
     assert!(
-        matches!(&refused, ReplayRefusal::NotAPredicate(named) if named == &name(&["id"])),
+        matches!(
+            &refused,
+            ReplayRefusal::NotAPredicate { selection, package }
+                if selection == &name(&["id"]) && package == &compiled.emitted.package_id()
+        ),
         "{refused:?}"
     );
 }
