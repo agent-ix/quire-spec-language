@@ -183,6 +183,17 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
         FamilyOutcome::Evaluated(Outcome::Undefined(_)) | FamilyOutcome::FamilyEvaluated(_) => {
             (ProofCategory::Inconclusive, None)
         }
+        // FR-063: no arm for the probe variant under `--cfg seam_probe`
+        // alone -- this match is the replay facade's own seam over
+        // `FamilyOutcome` (`E0004` in `xtask seam-probe`'s build of this
+        // crate): a family whose S6a result is new widens the facade here
+        // (ADR-013 TK-01). The arm below exists only in the probe's build of
+        // the root crate (`--cfg seam_probe_replay_downstream`), which
+        // depends on this crate. Do not add a catch-all to make it compile.
+        #[cfg(seam_probe_replay_downstream)]
+        FamilyOutcome::__SeamProbe => {
+            unreachable!("never constructed outside the probe build")
+        }
     };
     let proved = Verdict::from_category(ProofCategory::Violation);
     let regions = evaluation

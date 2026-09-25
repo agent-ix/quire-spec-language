@@ -13,8 +13,8 @@ check-index-completeness:
 
 # QSL#214 (FR-063-AC-5): demonstrated on every full-gate run, not only when
 # run by hand. Runs three normal builds (the root crate, qsl-route and
-# qsl-eval) and four probe builds (qsl-semantics, the root crate, qsl-route
-# and qsl-eval under `RUSTFLAGS=--cfg seam_probe`) on their own, independent
+# qsl-eval) and five probe builds (qsl-semantics, the root crate, qsl-route,
+# qsl-eval and qsl-replay under `RUSTFLAGS=--cfg seam_probe`) on their own, independent
 # of whatever feature set the caller's own `cargo build`/`clippy` steps used.
 seam-probe:
 	cargo xtask seam-probe

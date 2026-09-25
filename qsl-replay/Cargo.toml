@@ -26,6 +26,11 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+# FR-063: `xtask seam-probe` builds this crate under `--cfg seam_probe --cfg
+# seam_probe_downstream --cfg seam_probe_eval_downstream`, which reports its
+# own seam, and the root crate adds `--cfg seam_probe_replay_downstream`,
+# which gives that seam its probe arm.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)", "cfg(seam_probe_downstream)", "cfg(seam_probe_eval_downstream)", "cfg(seam_probe_replay_downstream)"] }
 
 [lints.clippy]
 all = "deny"

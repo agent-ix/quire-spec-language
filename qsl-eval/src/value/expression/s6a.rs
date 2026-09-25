@@ -113,6 +113,13 @@ impl S6aFamilyKind {
             // FR-063: no arm for `Self::__SeamProbe` -- under
             // `--cfg seam_probe` this match is deliberately non-exhaustive
             // (`E0004`). Do not add a catch-all to make it compile.
+            //
+            // The arm below exists only in the probe's build of the crates
+            // above `qsl-eval` (`--cfg seam_probe_eval_downstream`, QSL-5):
+            // `qsl-replay` depends on this crate, so it must compile there
+            // for the root crate's own seams to be reached at all.
+            #[cfg(seam_probe_eval_downstream)]
+            Self::__SeamProbe => FamilyKind::Value,
         }
     }
 }
