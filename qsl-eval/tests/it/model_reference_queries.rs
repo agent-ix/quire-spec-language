@@ -3289,3 +3289,96 @@ fn both_family_outcome_arms_reach_a_caller_through_the_s6a_seam() {
         other => panic!("expected Evaluated(Completed(Integer(1))), got {other:?}"),
     }
 }
+
+/// `document` admitted under `p1`'s population key with no declared
+/// maximum: an unbounded population (QSpec FR-153-AC-9, ADR-014 §2).
+fn unbounded_binding(view: &EffectiveView, document: &PopulationDocument) -> PopulationBinding {
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    match admit_binding(
+        view,
+        document,
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        None,
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    }
+}
+
+/// TC-441 (ADR-014 §2, N-3): `allInstances` over a `Population(None)`
+/// parameter checks to an unbounded `Set`, and evaluates, through
+/// admission and S6a's own maximum match, over a binding admitted with no
+/// declared maximum.
+#[test]
+#[trace("TC-441", "FR-097-AC-7")]
+fn tc_441_all_instances_over_an_unbounded_population_is_unbounded() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let domain_package = fixture_f1();
+    let binding = unbounded_binding(&view_of(&domain_package), &p1("test/orders"));
+    assert_eq!(binding.declared_maximum(), None);
+    let parameters = [("p", ValueType::Population(None))];
+    let expression = all_instances(ValueType::Reference(scenario.a));
+
+    let checked = check(&package, &parameters, &expression);
+    let ValueType::Collection(collection_type) = checked.value_type() else {
+        panic!("a checked collection result type");
+    };
+    assert_eq!(collection_type.bound(), None);
+
+    let objects = ObjectEnvironment::default()
+        .with_population(binding.clone())
+        .unwrap();
+    let (outcome, _) = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![Value::Population(binding.population_id())],
+        SCALAR_UNLIMITED,
+        &objects,
+    );
+    let Outcome::Completed(value) = outcome else {
+        panic!("expected a completed collection, got {outcome:?}");
+    };
+    assert_eq!(reference_elements(&value).len(), 3);
+}
+
+/// TC-441: a population's declared maximum matches exactly at admission,
+/// absence included: an unbounded parameter refuses a binding with a
+/// maximum, and a bounded parameter refuses an unbounded binding.
+#[test]
+#[trace("TC-441", "FR-097-AC-7")]
+fn tc_441_population_maximum_absence_must_match_at_admission() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let domain_package = fixture_f1();
+    let unbounded = unbounded_binding(&view_of(&domain_package), &p1("test/orders"));
+    for (parameter_type, binding) in [
+        (ValueType::Population(None), scenario.binding.clone()),
+        (ValueType::Population(Some(3)), unbounded),
+    ] {
+        let parameters = [("p", parameter_type)];
+        let checked = check(&package, &parameters, &Expression::Boolean(true));
+        let objects = ObjectEnvironment::default()
+            .with_population(binding.clone())
+            .unwrap();
+        let mut meter = Meter::new(SCALAR_UNLIMITED);
+        let result = package.evaluate(
+            &checked,
+            vec![Value::Population(binding.population_id())],
+            &objects,
+            &mut meter,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(CallFailure::Input(InputRefusal::WrongValueKind {
+                    parameter: 0
+                }))
+            ),
+            "expected an input refusal, got {result:?}"
+        );
+    }
+}

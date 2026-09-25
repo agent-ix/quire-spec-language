@@ -1583,7 +1583,7 @@ fn check_declared_delta(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReferenceSet {
     element_type: DeclarationKey,
-    bound: CardinalityBound,
+    bound: Option<CardinalityBound>,
     members: BTreeSet<ReferenceKey>,
 }
 
@@ -1593,8 +1593,9 @@ impl ReferenceSet {
         &self.element_type
     }
 
-    /// The declared bound `[0, N]`.
-    pub fn bound(&self) -> CardinalityBound {
+    /// The declared bound `[0, N]`; `None` for a binding with no declared
+    /// maximum, which is unbounded.
+    pub fn bound(&self) -> Option<CardinalityBound> {
         self.bound
     }
 
@@ -1636,13 +1637,9 @@ pub fn all_instances(
     t: &DeclarationKey,
     meter: &mut ScalarMeter,
 ) -> AllInstancesOutcome {
-    let Some(declared_maximum) = binding.declared_maximum() else {
-        return AllInstancesOutcome::Refused(ModelRefusal {
-            code: Code::IllTyped,
-            cause: ModelRefusalCause::OperatorIneligible,
-            detail: "population binding has no declared maximum".to_owned(),
-        });
-    };
+    // A binding with no declared maximum is unbounded (QSpec FR-153-AC-9,
+    // ADR-014 §2): its selection has no cardinality to exceed.
+    let declared_maximum = binding.declared_maximum();
     if !binding.index.is_object_type(t) {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::IllTyped,
@@ -1676,7 +1673,7 @@ pub fn all_instances(
     ) {
         return AllInstancesOutcome::Incomplete(incomplete);
     }
-    if n > declared_maximum {
+    if let Some(declared_maximum) = declared_maximum.filter(|maximum| n > *maximum) {
         return AllInstancesOutcome::Refused(ModelRefusal {
             code: Code::CardinalityOutOfBound,
             cause: ModelRefusalCause::AboveMaximum {
@@ -1703,8 +1700,8 @@ pub fn all_instances(
         return AllInstancesOutcome::Incomplete(incomplete);
     }
 
-    let bound =
-        CardinalityBound::new(0, declared_maximum).expect("0 is always <= a declared u64 maximum");
+    // `[0, N]` is never empty, so `CardinalityBound::new` cannot refuse it.
+    let bound = declared_maximum.and_then(|maximum| CardinalityBound::new(0, maximum).ok());
     AllInstancesOutcome::Completed(ReferenceSet {
         element_type: t.clone(),
         bound,

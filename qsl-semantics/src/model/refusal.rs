@@ -291,8 +291,7 @@ pub enum ModelRefusalCause {
         /// The newly declared, conflicting type.
         declared_type: EffectiveId,
     },
-    /// An operator is applied to a binding it cannot act on: a population
-    /// binding with no declared maximum to select against, or (FR-151,
+    /// An operator is applied to a target it cannot act on: (FR-151,
     /// `quire.model.dispatch.single/v1`) a dispatch target with a declared
     /// result and effect set that disqualify it as a query.
     OperatorIneligible,

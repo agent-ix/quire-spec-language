@@ -363,7 +363,7 @@ fn lookup_key(
 /// `ReferenceSet`'s `bound` from `CardinalityBound::new(0, declared_maximum)`
 /// to `CardinalityBound::new(0, u64::MAX)`, which left the binding's own
 /// declared maximum unreflected in the Outputs — the
-/// `selected_a.bound().maximum() == 3` assertion went red as expected,
+/// `selected_a.bound().expect("a bounded selection").maximum() == 3` assertion went red as expected,
 /// reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5", "FR-153-AC-6")]
@@ -416,8 +416,14 @@ fn l01_all_instances_selects_subtype_population_once() {
         selected_a.element_type(),
         &DeclarationKey::fixture("model.A")
     );
-    assert_eq!(selected_a.bound().minimum(), 0);
-    assert_eq!(selected_a.bound().maximum(), 3);
+    assert_eq!(
+        selected_a.bound().expect("a bounded selection").minimum(),
+        0
+    );
+    assert_eq!(
+        selected_a.bound().expect("a bounded selection").maximum(),
+        3
+    );
     assert_eq!(selected_a.len(), 3);
     assert!(!selected_a.is_empty());
     assert_eq!(meter_a.consumed(LimitKind::WorkUnits), 5);
@@ -447,7 +453,10 @@ fn l01_all_instances_selects_subtype_population_once() {
         selected_b.element_type(),
         &DeclarationKey::fixture("model.B")
     );
-    assert_eq!(selected_b.bound().maximum(), 3);
+    assert_eq!(
+        selected_b.bound().expect("a bounded selection").maximum(),
+        3
+    );
     assert_eq!(meter_b.consumed(LimitKind::WorkUnits), 5);
     assert_eq!(meter_b.consumed(LimitKind::ResultUnits), 2);
 
@@ -1640,13 +1649,13 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
 ///
 /// Mutation used (constant): in `all_instances`, changed
 /// `CardinalityBound::new(0, declared_maximum)` to
-/// `CardinalityBound::new(0, 3)` — `selected_a.bound().maximum() == 5` went
+/// `CardinalityBound::new(0, 3)` — `selected_a.bound().expect("a bounded selection").maximum() == 5` went
 /// red as expected (got `3`), reverted.
 ///
 /// Mutation used (member count): in `all_instances`, changed
 /// `CardinalityBound::new(0, declared_maximum)` to
 /// `CardinalityBound::new(0, length_amount(binding.members().len()))` —
-/// `selected_a.bound().maximum() == 5` went red as expected (got `3`),
+/// `selected_a.bound().expect("a bounded selection").maximum() == 5` went red as expected (got `3`),
 /// reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5")]
@@ -1676,9 +1685,12 @@ fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
             other => panic!("expected a completed M::A selection, got {other:?}"),
         };
     assert_eq!(selected_a.len(), 3);
-    assert_eq!(selected_a.bound().minimum(), 0);
     assert_eq!(
-        selected_a.bound().maximum(),
+        selected_a.bound().expect("a bounded selection").minimum(),
+        0
+    );
+    assert_eq!(
+        selected_a.bound().expect("a bounded selection").maximum(),
         5,
         "bound().maximum() must be the binding's own declared maximum (5), \
          not the constant 3 or the 3-member selection count"
