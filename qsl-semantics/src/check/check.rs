@@ -1532,27 +1532,24 @@ impl<'a> Typer<'a> {
         let ValueType::Reference(key) = reference.value_type else {
             return Err(mismatch(operand_location));
         };
+        // QSL-57: `f` resolves in the static type's effective attribute set,
+        // so a field `T` inherits (or redefines) resolves like its own.
         let attribute = self
             .scope
             .types
-            .object_type(key)
-            .and_then(|object| {
-                object
-                    .attributes()
-                    .iter()
-                    .find(|attribute| attribute.name() == field)
-            })
+            .attribute(key, field)
             .ok_or_else(|| mismatch(location))?;
-        let optional = attribute.presence() == Presence::Optional;
+        let declared = attribute.field();
+        let optional = declared.presence() == Presence::Optional;
         let value_type = if optional {
-            ValueType::option(attribute.value_type().clone())
+            ValueType::option(declared.value_type().clone())
         } else {
-            attribute.value_type().clone()
+            declared.value_type().clone()
         };
         Ok(node(
             NodeKind::Attribute {
+                field: attribute.identity(),
                 reference: Box::new(reference),
-                name: field.to_owned(),
                 optional,
             },
             value_type,
@@ -1907,23 +1904,27 @@ impl<'a> Typer<'a> {
     /// `lookup<T>(p, r) absent m` (FR-153) over its typed operands. `r`'s own
     /// checked static type `S` (never `T`) is `reference.value_type` at
     /// evaluation time (`qsl-eval`'s `value::expression::evaluate`), so
-    /// [`NodeKind::Lookup`] does not restate it. FR-153 also refuses
+    /// [`NodeKind::Lookup`] does not restate it. FR-153 refuses
     /// `ill_typed`/`type-mismatch` at check time when `S` does not conform to
-    /// `T` (TC-198 L03's last case, "before any charge") -- this checker
-    /// cannot decide that here without the model's own generalization graph,
-    /// which `TypeEnvironment` does not carry (the "TypeEnvironment island",
-    /// tracked at <https://github.com/agent-ix/quire-spec-language/issues/164>),
-    /// so that refusal is deferred to evaluation, inside
-    /// `crate::model::population::lookup`'s own `ModelIndex::conforms` call
-    /// (`crate::value::evaluate_lookup`).
+    /// `T` (TC-198 L03's last case, "before any charge"): decided here from
+    /// the package's own admitted generalization graph
+    /// ([`crate::value::declaration::TypeEnvironment::conforms`]), whose
+    /// admission bound makes it agree with the model's own walk at
+    /// evaluation (`crate::model::population::lookup`), which still decides
+    /// `S` against `T` for a runtime binding.
     fn lookup(
+        &self,
         target: &ValueType,
         population: Node,
         reference: Node,
         absence: AbsenceMode,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
-        if !matches!(reference.value_type, ValueType::Reference(_)) {
+        let (ValueType::Reference(s), ValueType::Reference(t)) = (&reference.value_type, target)
+        else {
+            return Err(mismatch(&reference.location));
+        };
+        if !self.scope.types.conforms(*s, *t) {
             return Err(mismatch(&reference.location));
         }
         let value_type = match absence {

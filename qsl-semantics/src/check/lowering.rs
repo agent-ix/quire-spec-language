@@ -2824,13 +2824,17 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::Attribute {
-                reference, name, ..
+                reference, field, ..
             } => {
                 // FR-093/FR-094 (QC-24): `quire.op.model.deref` over the
                 // reference, typed at its object type `T`'s model node, and
                 // over it the `record.project` of field `name` of `T`.
                 let object = self.referenced_object(&reference.value_type, &node.location)?;
-                frames.push(LowerFrame::Attribute { node, object, name });
+                frames.push(LowerFrame::Attribute {
+                    node,
+                    object,
+                    name: &field.name,
+                });
                 return Ok(LowerStep::Descend(reference, depth + 1));
             }
             NodeKind::Present(operand) => (

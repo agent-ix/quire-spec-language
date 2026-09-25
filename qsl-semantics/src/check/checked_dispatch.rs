@@ -188,6 +188,18 @@ pub enum DispatchBridgeRefusal {
         /// The subtype missing an entry.
         subtype: Box<DeclarationKey>,
     },
+    /// Two object-type records of the view's domain package map to one
+    /// [`EffectiveId`] ([`object_type_supertypes`]'s re-key is not
+    /// injective), so neither record's supertypes can stand for the type.
+    /// Keys boxed as in [`Self::MissingObjectKey`].
+    DuplicateObjectKey {
+        /// The shared effective identity.
+        identity: EffectiveId,
+        /// The first record's key, in record order.
+        first: Box<DeclarationKey>,
+        /// The later record's key.
+        second: Box<DeclarationKey>,
+    },
     /// The effective-precondition ancestor walk followed more `redefines`
     /// edges than the caller's `family_steps` ceiling
     /// ([`crate::model::accounting::ModelNormalizationLimits::family_steps`]),
@@ -338,15 +350,27 @@ pub struct DispatchRoot {
 /// their [`EffectiveId`]s through `view`'s [`EffectiveView::type_identities`] --
 /// the exact shape [`crate::value::declaration::ObjectTypeDeclaration::with_supertypes`]
 /// needs (ADR-013 O-05). No production code builds a
-/// [`crate::value::declaration::TypeEnvironment`] yet (only test scaffolding does), so
-/// this is test-support infrastructure today; #131's own real intake can
-/// call it exactly as tests do.
+/// [`crate::value::declaration::TypeEnvironment`]'s object types yet (only
+/// test scaffolding does); a real model intake calls it exactly as tests do.
+///
+/// The re-key must be injective: two object-type records that map to one
+/// [`EffectiveId`] refuse [`DispatchBridgeRefusal::DuplicateObjectKey`]
+/// rather than letting the later record's edges replace the earlier's.
 pub fn object_type_supertypes(
     view: &EffectiveView,
 ) -> Result<BTreeMap<EffectiveId, Vec<EffectiveId>>, DispatchBridgeRefusal> {
-    let domain_package = view.domain_package();
-    let type_identities = view.type_identities();
+    rekey_object_types(view.domain_package(), view.type_identities())
+}
+
+/// [`object_type_supertypes`] over its two inputs. Normalization refuses
+/// two records under one key, so a real view's map is injective; the
+/// refusal guards the re-key itself.
+fn rekey_object_types(
+    domain_package: &DomainPackage,
+    type_identities: &BTreeMap<DeclarationKey, EffectiveId>,
+) -> Result<BTreeMap<EffectiveId, Vec<EffectiveId>>, DispatchBridgeRefusal> {
     let mut supertypes: BTreeMap<EffectiveId, Vec<EffectiveId>> = BTreeMap::new();
+    let mut keyed_by: BTreeMap<EffectiveId, &DeclarationKey> = BTreeMap::new();
     for record in &domain_package.records {
         if let DomainPackageRecord::ObjectType(object_type) = record {
             let subtype_key = type_identities
@@ -363,6 +387,13 @@ pub fn object_type_supertypes(
                     }
                 })?;
                 mapped.push(supertype_key);
+            }
+            if let Some(first) = keyed_by.insert(subtype_key, &object_type.key) {
+                return Err(DispatchBridgeRefusal::DuplicateObjectKey {
+                    identity: subtype_key,
+                    first: Box::new(first.clone()),
+                    second: Box::new(object_type.key.clone()),
+                });
             }
             supertypes.insert(subtype_key, mapped);
         }
@@ -1557,10 +1588,77 @@ mod tests {
     use ix_trace_rs::trace;
 
     use super::{
-        ancestor_closure, copy_expression, effective_terms, rename_parameters,
+        ancestor_closure, copy_expression, effective_terms, rekey_object_types, rename_parameters,
         DispatchBridgeRefusal, OperationClauses,
     };
+    use crate::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
+    };
     use crate::model::key::DeclarationKey;
+    use quire_exact::EffectiveId;
+
+    fn object_type(identity: &str, supertypes: &[&str]) -> DomainPackageRecord {
+        DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: DeclarationKey::fixture(identity),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: supertypes
+                .iter()
+                .map(|general| DeclarationKey::fixture(*general))
+                .collect(),
+        })
+    }
+
+    /// QSL-57: two object-type records whose keys map to one effective
+    /// identity refuse `DuplicateObjectKey`, naming both keys in record
+    /// order, rather than the later record's edges replacing the earlier's.
+    #[test]
+    #[trace("TC-196")]
+    fn a_non_injective_object_type_rekey_refuses_duplicate_object_key() {
+        let package = DomainPackage::new(
+            DomainPackageRef::fixture("bundle.qsl57-rekey"),
+            vec![
+                object_type("model.A", &[]),
+                object_type("model.B", &["model.A"]),
+                object_type("model.C", &[]),
+            ],
+        );
+        let shared = EffectiveId::from_digest([0x0B; 32]);
+        let a = EffectiveId::from_digest([0x0A; 32]);
+        let identities: BTreeMap<DeclarationKey, EffectiveId> = [
+            (DeclarationKey::fixture("model.A"), a),
+            (DeclarationKey::fixture("model.B"), shared),
+            (DeclarationKey::fixture("model.C"), shared),
+        ]
+        .into_iter()
+        .collect();
+        match rekey_object_types(&package, &identities) {
+            Err(DispatchBridgeRefusal::DuplicateObjectKey {
+                identity,
+                first,
+                second,
+            }) => {
+                assert_eq!(identity, shared);
+                assert_eq!(*first, DeclarationKey::fixture("model.B"));
+                assert_eq!(*second, DeclarationKey::fixture("model.C"));
+            }
+            other => panic!("expected DuplicateObjectKey, got {other:?}"),
+        }
+
+        let injective: BTreeMap<DeclarationKey, EffectiveId> = [
+            (DeclarationKey::fixture("model.A"), a),
+            (DeclarationKey::fixture("model.B"), shared),
+            (
+                DeclarationKey::fixture("model.C"),
+                EffectiveId::from_digest([0x0C; 32]),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let rekeyed = rekey_object_types(&package, &injective).unwrap();
+        assert_eq!(rekeyed.get(&shared), Some(&vec![a]));
+        assert_eq!(rekeyed.len(), 3);
+    }
     use crate::model::normalize::ModelRefusalCause;
     use qsl_forms::{
         Accumulation, BinaryOperator, BinderQuery, Expression, FieldInitializer, TypeForm,

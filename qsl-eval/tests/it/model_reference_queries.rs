@@ -45,7 +45,7 @@ use qsl_semantics::model::population::{
     PopulationMember,
 };
 use qsl_semantics::value::declaration::{
-    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration,
+    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
     ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_exact::NodeKey;
@@ -325,13 +325,16 @@ fn l07_scenario() -> Scenario {
 /// object types under `scenario`'s own `EffectiveId`s (ADR-013 O-05) —
 /// required for `ValueType::Reference`
 /// to check at all: `TypeEnvironment::type_refusal` refuses any
-/// `Reference<T>` whose `T` is not a declared object type.
+/// `Reference<T>` whose `T` is not a declared object type. `M::B`'s
+/// supertype `M::A` mirrors `fixture_f1`'s own `model.B -> model.A`, so
+/// check time and the runtime binding agree on conformance (QSL-57).
 fn types(scenario: &Scenario) -> TypeEnvironment {
     TypeEnvironment::new(
         [],
         [
             ObjectTypeDeclaration::new(scenario.a, "M::A", vec![]),
-            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![]),
+            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![])
+                .with_supertypes(vec![scenario.a]),
         ],
     )
     .unwrap()
@@ -1058,6 +1061,330 @@ fn l16_lookup_expression_refused_mode() {
     assert_eq!(code.cause(), "absent-key");
 }
 
+/// [`package`], plus an object type `M::C` ([`fixed_type`] `0xCC`) with no
+/// generalization relation to `M::A` or `M::B`.
+fn package_with_unrelated_type(scenario: &Scenario) -> CheckedPackage {
+    let types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(scenario.a, "M::A", vec![]),
+            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![])
+                .with_supertypes(vec![scenario.a]),
+            ObjectTypeDeclaration::new(fixed_type(0xCC), "M::C", vec![]),
+        ],
+    )
+    .unwrap();
+    let graph = PackageDeclarations {
+        types,
+        models: vec![scenario.model.clone()],
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+    }
+    .check(CheckingLimits::default())
+    .unwrap();
+    CheckedPackage::link(graph)
+}
+
+fn equal(left: Expression, right: Expression) -> Expression {
+    Expression::Binary {
+        operator: BinaryOperator::Equal,
+        left: Box::new(left),
+        right: Box::new(right),
+    }
+}
+
+/// TC-198 L08 (QSL-57 item 1): `(lookup<M::A>(p, r) absent refused) = r`
+/// with `r: Reference<M::B>` checks, although the operands' static types are
+/// `Reference<M::A>` and `Reference<M::B>`: `M::B` conforms to `M::A`. Both
+/// operands denote `b1`, so the comparison is `true`; the same query for a
+/// reference to `a1` against `b1` is `false`.
+#[test]
+#[trace("TC-198", "FR-153-AC-6", "FR-149-AC-6")]
+fn l08_upcast_lookup_result_equals_the_subtype_reference() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(scenario.b)),
+    ];
+    let expression = equal(
+        lookup(ValueType::Reference(scenario.a), AbsenceMode::Refused),
+        Expression::Name("r".to_owned()),
+    );
+    assert_eq!(
+        *check(&package, &parameters, &expression).value_type(),
+        ValueType::Boolean
+    );
+    let b1 = object_reference(&scenario.universe, &scenario.b, "b1");
+    let (outcome, _) = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![population_argument(&scenario), Value::Reference(b1)],
+        SCALAR_UNLIMITED,
+        &objects(&scenario),
+    );
+    match outcome {
+        Outcome::Completed(Value::Boolean(same)) => assert!(same, "b1 upcast equals b1"),
+        other => panic!("expected a completed Boolean, got {other:?}"),
+    }
+
+    // The reverse operand order checks too, and compares identity: `c9`
+    // (an `M::A`) against `b1` through `lookup<M::A>` is `false`.
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(scenario.b)),
+        ("q", ValueType::Reference(scenario.a)),
+    ];
+    let expression = equal(
+        Expression::Name("q".to_owned()),
+        lookup(ValueType::Reference(scenario.a), AbsenceMode::Refused),
+    );
+    let (outcome, _) = run(
+        &package,
+        &parameters,
+        &expression,
+        vec![
+            population_argument(&scenario),
+            Value::Reference(object_reference(&scenario.universe, &scenario.b, "b1")),
+            Value::Reference(object_reference(&scenario.universe, &scenario.a, "c9")),
+        ],
+        SCALAR_UNLIMITED,
+        &objects(&scenario),
+    );
+    match outcome {
+        Outcome::Completed(Value::Boolean(same)) => assert!(!same, "c9 is not b1"),
+        other => panic!("expected a completed Boolean, got {other:?}"),
+    }
+}
+
+/// A checked package over `M::A`/`M::B` with `a_fields` on `M::A` and
+/// `b_fields` on `M::B`, and an object world holding `b1` with `b1_slots`.
+fn attribute_world(
+    scenario: &Scenario,
+    a_fields: Vec<FieldDeclaration>,
+    b_fields: Vec<FieldDeclaration>,
+    b1_slots: Vec<(&str, quire_exact::FieldValue)>,
+) -> (CheckedPackage, ObjectEnvironment) {
+    let types = TypeEnvironment::new(
+        [],
+        [
+            ObjectTypeDeclaration::new(scenario.a, "M::A", a_fields),
+            ObjectTypeDeclaration::new(scenario.b, "M::B", b_fields)
+                .with_supertypes(vec![scenario.a]),
+        ],
+    )
+    .unwrap();
+    let objects = ObjectEnvironment::new(
+        &types,
+        [(
+            object_reference(&scenario.universe, &scenario.b, "b1"),
+            b1_slots,
+        )],
+    )
+    .unwrap()
+    .with_population(scenario.binding.clone())
+    .unwrap();
+    let graph = PackageDeclarations {
+        types,
+        models: vec![scenario.model.clone()],
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+    }
+    .check(CheckingLimits::default())
+    .unwrap();
+    (CheckedPackage::link(graph), objects)
+}
+
+/// `deref(lookup<M::A>(p, r) absent refused).field`, `r: Reference<M::B>`
+/// holding `b1`: a `Reference<M::A>` that holds a `B`.
+fn read_through_a(package: &CheckedPackage, objects: &ObjectEnvironment, field: &str) -> Value {
+    let scenario = scenario();
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(scenario.b)),
+    ];
+    let expression = Expression::Field {
+        operand: Box::new(Expression::Deref(Box::new(lookup(
+            ValueType::Reference(scenario.a),
+            AbsenceMode::Refused,
+        )))),
+        field: field.to_owned(),
+    };
+    let (outcome, _) = run(
+        package,
+        &parameters,
+        &expression,
+        vec![
+            population_argument(&scenario),
+            Value::Reference(object_reference(&scenario.universe, &scenario.b, "b1")),
+        ],
+        SCALAR_UNLIMITED,
+        objects,
+    );
+    match outcome {
+        Outcome::Completed(value) => value,
+        other => panic!("expected a completed value, got {other:?}"),
+    }
+}
+
+fn integer_field(name: &str) -> FieldDeclaration {
+    FieldDeclaration::new(name, ValueType::Integer, Presence::Required)
+}
+
+fn present(value: i64) -> quire_exact::FieldValue {
+    quire_exact::FieldValue::Present(Value::Integer(Integer::from(value)))
+}
+
+fn integer_of(value: Value) -> Integer {
+    match value {
+        Value::Integer(value) => value,
+        other => panic!("expected an integer, got {other:?}"),
+    }
+}
+
+/// TC-198 L11 (QSL-57 item 2): `deref(r).x` for a `Reference<M::A>` that
+/// holds a `B` resolves `x`, a field `A` declares and `B` inherits, and
+/// reads `b1`'s inherited slot.
+#[test]
+#[trace("TC-198", "FR-153-AC-6")]
+fn l11_deref_through_a_supertype_reference_reads_an_inherited_field() {
+    let scenario = scenario();
+    let (package, objects) = attribute_world(
+        &scenario,
+        vec![integer_field("x")],
+        vec![integer_field("y")],
+        vec![("x", present(7)), ("y", present(8))],
+    );
+    assert_eq!(
+        integer_of(read_through_a(&package, &objects, "x")),
+        Integer::from(7_i64)
+    );
+}
+
+/// TC-198 L11 with FR-151 redefinition (QSL-57 item 2): `B.x` redefines
+/// `A.x`, so `deref(r).x` for a `Reference<M::A>` holding `b1` reads `B.x`'s
+/// one slot. With the redefinition renamed, `B.z` redefining `A.x`, the same
+/// expression reads `B.z`'s slot.
+#[test]
+#[trace("TC-198", "FR-153-AC-6")]
+#[trace("TC-196", "FR-151-AC-1")]
+fn l11_deref_through_a_supertype_reference_reads_the_redefiner() {
+    let scenario = scenario();
+    let redefines = || FieldRef::new(scenario.a, "x");
+    let (package, objects) = attribute_world(
+        &scenario,
+        vec![integer_field("x")],
+        vec![integer_field("x").with_redefines(redefines())],
+        vec![("x", present(2))],
+    );
+    assert_eq!(
+        integer_of(read_through_a(&package, &objects, "x")),
+        Integer::from(2_i64)
+    );
+
+    let (package, objects) = attribute_world(
+        &scenario,
+        vec![integer_field("x")],
+        vec![integer_field("z").with_redefines(redefines())],
+        vec![("z", present(3))],
+    );
+    assert_eq!(
+        integer_of(read_through_a(&package, &objects, "x")),
+        Integer::from(3_i64)
+    );
+}
+
+/// TC-198 L08's adverse case (QSL-57 item 1): references to two object types
+/// with no generalization relation still refuse `=` at check time,
+/// `ill_typed`/`type-mismatch`.
+#[test]
+#[trace("TC-198", "FR-149-AC-6")]
+fn l08_references_to_unrelated_object_types_refuse_equality_at_check_time() {
+    let scenario = scenario();
+    let package = package_with_unrelated_type(&scenario);
+    let parameters = [
+        ("r", ValueType::Reference(scenario.b)),
+        ("q", ValueType::Reference(fixed_type(0xCC))),
+    ];
+    let expression = equal(
+        Expression::Name("r".to_owned()),
+        Expression::Name("q".to_owned()),
+    );
+    let refusal = check_refusal(&package, &parameters, &expression);
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+}
+
+/// TC-198 L03 (QSL-57 item 3): `lookup<M::A>(p, r)` with `r: Reference<M::B>`
+/// is admitted at check time because `M::B` conforms to `M::A` in the
+/// package's own environment, and its result is typed `Reference<M::A>`.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn lookup_expression_admits_a_conforming_reference_type_at_check_time() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let target = ValueType::Reference(scenario.a);
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(scenario.b)),
+    ];
+    let checked = check(
+        &package,
+        &parameters,
+        &lookup(target.clone(), AbsenceMode::Undefined),
+    );
+    assert_eq!(*checked.value_type(), target);
+}
+
+/// TC-198 L03's last case (QSL-57 item 3): `lookup<M::A>(p, r)` with `r`
+/// statically typed to `M::C`, which does not conform to `M::A`, refuses at
+/// check time, `ill_typed`/`type-mismatch` at `r`'s own location, before any
+/// evaluation or charge. Before QSL-57 the checker admitted it and only
+/// evaluation refused. The reverse direction, `lookup<M::B>(p, r)` with
+/// `r: Reference<M::A>`, refuses the same way: a supertype does not conform
+/// to its subtype.
+#[test]
+#[trace("TC-198", "FR-153-AC-3")]
+fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
+    let scenario = scenario();
+    let package = package_with_unrelated_type(&scenario);
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(fixed_type(0xCC))),
+    ];
+    let refusal = check_refusal(
+        &package,
+        &parameters,
+        &lookup(ValueType::Reference(scenario.a), AbsenceMode::Undefined),
+    );
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+    assert_eq!(
+        refusal.location,
+        Location {
+            origin: Origin::Expression,
+            path: vec![1],
+        }
+    );
+
+    let parameters = [
+        ("p", ValueType::Population(3)),
+        ("r", ValueType::Reference(scenario.a)),
+    ];
+    let refusal = check_refusal(
+        &package,
+        &parameters,
+        &lookup(ValueType::Reference(scenario.b), AbsenceMode::Undefined),
+    );
+    assert_eq!(
+        refusal.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+}
+
 /// FR-153 names a population binding only as the direct operand of
 /// `allInstances`/`lookup`, or a bare parameter's own declared type; every
 /// other named-type context refuses it, never merely leaving `p == p` (or an
@@ -1140,7 +1467,8 @@ fn population_refused_as_record_field() {
         [declaration],
         [
             ObjectTypeDeclaration::new(scenario.a, "M::A", vec![]),
-            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![]),
+            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![])
+                .with_supertypes(vec![scenario.a]),
         ],
     );
     match result {
@@ -1168,7 +1496,8 @@ fn population_refused_as_object_attribute() {
         [],
         [
             ObjectTypeDeclaration::new(scenario.a, "M::A", vec![]),
-            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![]),
+            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![])
+                .with_supertypes(vec![scenario.a]),
             declaration,
         ],
     );
@@ -1231,7 +1560,8 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
         [],
         [
             ObjectTypeDeclaration::new(scenario.a, "M::A", vec![]),
-            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![]),
+            ObjectTypeDeclaration::new(scenario.b, "M::B", vec![])
+                .with_supertypes(vec![scenario.a]),
             ObjectTypeDeclaration::new(foreign_key, "M::C", vec![]),
         ],
     )

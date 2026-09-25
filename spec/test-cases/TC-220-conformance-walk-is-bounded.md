@@ -13,7 +13,8 @@ relationships:
 Verify that an ancestor chain exceeding the checker's bound refuses with a
 named resource-exhaustion cause and reports neither conformance nor
 non-conformance, while a chain at exactly the bound is admitted. Scope:
-FR-082-AC-3.
+FR-082-AC-3, and FR-082-AC-6 for the expression checker sharing the same
+ceiling.
 
 Catches an implementation that silently truncates the ancestor walk at the
 bound and returns `false` (non-conformant) for the unreached remainder — a

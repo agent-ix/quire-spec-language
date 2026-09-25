@@ -54,7 +54,7 @@ impl Default for ModelNormalizationLimits {
             dispatch_candidates: 1_600_000,
             hashed_bytes: 268_435_456,
             work_units: 16_777_216,
-            ancestor_steps: 100_000,
+            ancestor_steps: crate::value::declaration::DEFAULT_ANCESTOR_STEPS,
             family_steps: 100_000,
         }
     }

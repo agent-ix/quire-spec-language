@@ -28,9 +28,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::model::population::PopulationBinding;
-use crate::value::declaration::{
-    fill_slots, ConstructionRefusal, ObjectTypeDeclaration, TypeEnvironment,
-};
+use crate::value::declaration::{fill_slots, ConstructionRefusal, FieldRef, TypeEnvironment};
 use quire_exact::ObjectReference;
 use quire_exact::PopulationId;
 use quire_exact::{FieldValue, Value};
@@ -105,10 +103,10 @@ impl ObjectEnvironment {
                 object: Box::new(reference.clone()),
                 cause,
             };
-            let Some(declaration) = types.object_type(reference.object_type()) else {
+            let Some(declared) = types.attributes(reference.object_type()) else {
                 return Err(refuse(ObjectEnvironmentCause::UnknownObjectType));
             };
-            let slots = fill_slots(declaration.attributes(), attributes)
+            let slots = fill_slots(declared, attributes)
                 .map_err(|refusal| refuse(ObjectEnvironmentCause::Attribute(refusal)))?;
             if admitted.contains_key(&reference) {
                 return Err(refuse(ObjectEnvironmentCause::DuplicateObject));
@@ -175,18 +173,21 @@ impl ObjectEnvironment {
         self.objects.contains_key(reference)
     }
 
-    /// The named attribute slot of the referenced object.
+    /// The referenced object's slot for `field`, the field `deref(r).f`
+    /// resolved to in `r`'s static type (QSL-57). The object's own type
+    /// conforms to that static type, so its effective attribute set has
+    /// exactly one attribute standing for `field`: `field` itself when
+    /// inherited unchanged, or the field that redefines it.
     pub fn attribute(
         &self,
         types: &TypeEnvironment,
         reference: &ObjectReference,
-        name: &str,
+        field: &FieldRef,
     ) -> Option<&FieldValue> {
-        let declaration: &ObjectTypeDeclaration = types.object_type(reference.object_type())?;
-        let position = declaration
-            .attributes()
+        let position = types
+            .attributes(reference.object_type())?
             .iter()
-            .position(|attribute| attribute.name() == name)?;
+            .position(|attribute| attribute.stands_for(field))?;
         self.objects.get(reference)?.get(position)
     }
 

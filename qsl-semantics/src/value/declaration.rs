@@ -81,12 +81,42 @@ use quire_exact::NodeKey;
 use quire_exact::{compare_text, evaluate_decimal};
 use std::fmt;
 
+/// One object-type field's identity: the object type that declares it and
+/// its declared name (FR-151 field redefinition names its target this way).
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FieldRef {
+    /// The declaring object type's effective identity.
+    pub owner: EffectiveId,
+    /// The field's declared name.
+    pub name: String,
+}
+
+impl FieldRef {
+    /// The field `name` declared by the object type `owner`.
+    pub fn new(owner: EffectiveId, name: impl Into<String>) -> Self {
+        Self {
+            owner,
+            name: name.into(),
+        }
+    }
+}
+
 /// A declaration-owned named field; its identity is (declaration key, name).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FieldDeclaration {
     name: String,
     value_type: ValueType,
     presence: Presence,
+    /// The inherited field this one redefines (FR-151
+    /// `quire.model.normalize.redefine/v1`), if any. Only an object-type
+    /// field may carry one.
+    redefines: Option<FieldRef>,
+}
+
+impl AsRef<FieldDeclaration> for FieldDeclaration {
+    fn as_ref(&self) -> &FieldDeclaration {
+        self
+    }
 }
 
 impl FieldDeclaration {
@@ -96,7 +126,23 @@ impl FieldDeclaration {
             name: name.into(),
             value_type,
             presence,
+            redefines: None,
         }
+    }
+
+    /// This field, redefining the inherited field `target` (FR-151): the
+    /// producer copies the domain package's own `redefines` link, which
+    /// phase-4 normalization has already checked. In every object type that
+    /// inherits both, `target` is hidden and this field takes its one slot.
+    #[must_use]
+    pub fn with_redefines(mut self, target: FieldRef) -> Self {
+        self.redefines = Some(target);
+        self
+    }
+
+    /// The inherited field this one redefines, if any.
+    pub fn redefines(&self) -> Option<&FieldRef> {
+        self.redefines.as_ref()
     }
 
     /// The field identifier.
@@ -197,14 +243,14 @@ fn refuse<T>(component: Component, cause: ConstructionCause) -> Result<T, Constr
 /// repeated name. This module's own `TypeEnvironment::evaluate_record` uses
 /// it to match supplied `FieldExpression`s to declared fields the same way
 /// [`fill_slots`] matches supplied `FieldValue`s.
-fn match_names<'n, T>(
-    declared: &[FieldDeclaration],
+fn match_names<'n, F: AsRef<FieldDeclaration>, T>(
+    declared: &[F],
     supplied: Vec<(&'n str, T)>,
 ) -> Result<BTreeMap<&'n str, T>, ConstructionRefusal> {
     let mut by_name = BTreeMap::new();
     for (name, entry) in supplied {
         let component = || Component::Field(name.to_owned());
-        if !declared.iter().any(|field| field.name == name) {
+        if !declared.iter().any(|field| field.as_ref().name == name) {
             return refuse(component(), ConstructionCause::UndeclaredField);
         }
         if by_name.insert(name, entry).is_some() {
@@ -214,14 +260,17 @@ fn match_names<'n, T>(
     Ok(by_name)
 }
 
-/// Declaration-ordered slots of a record or object from supplied fields.
-pub(crate) fn fill_slots(
-    declared: &[FieldDeclaration],
+/// Declaration-ordered slots of a record or object from supplied fields. An
+/// object's `declared` is its type's effective attribute set
+/// ([`TypeEnvironment::attributes`]), so an inherited field has a slot.
+pub(crate) fn fill_slots<F: AsRef<FieldDeclaration>>(
+    declared: &[F],
     supplied: Vec<(&str, FieldValue)>,
 ) -> Result<Box<[FieldValue]>, ConstructionRefusal> {
     let mut by_name = match_names(declared, supplied)?;
     let mut slots = Vec::with_capacity(declared.len());
     for field in declared {
+        let field = field.as_ref();
         let component = || Component::Field(field.name.clone());
         let slot = by_name
             .remove(field.name.as_str())
@@ -351,7 +400,9 @@ impl ObjectTypeDeclaration {
         &self.name
     }
 
-    /// The attributes in declaration order.
+    /// The attributes this type itself declares, in declaration order. The
+    /// type's full attribute set, inherited fields included, is
+    /// [`TypeEnvironment::attributes`].
     pub fn attributes(&self) -> &[FieldDeclaration] {
         &self.attributes
     }
@@ -361,6 +412,53 @@ impl ObjectTypeDeclaration {
         &self.supertypes
     }
 }
+
+/// One attribute of an object type's effective attribute set: a field the
+/// type declares or inherits and that no other field of the set redefines.
+/// It is one storage slot of every object of that type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectiveAttribute {
+    owner: EffectiveId,
+    field: FieldDeclaration,
+    /// This field and every field it stands in for: those it redefines,
+    /// transitively, and those a more derived redefinition of the same
+    /// target hid. Ascending, so [`Self::stands_for`] is a binary search.
+    lineage: Vec<FieldRef>,
+}
+
+impl EffectiveAttribute {
+    /// The object type that declares this field.
+    pub fn owner(&self) -> EffectiveId {
+        self.owner
+    }
+
+    /// The field's declaration.
+    pub fn field(&self) -> &FieldDeclaration {
+        &self.field
+    }
+
+    /// This field's own identity.
+    pub fn identity(&self) -> FieldRef {
+        FieldRef::new(self.owner, self.field.name())
+    }
+
+    /// Whether this slot holds `field`: `field` is this attribute, or a field
+    /// it redefines or hides.
+    pub fn stands_for(&self, field: &FieldRef) -> bool {
+        self.lineage.binary_search(field).is_ok()
+    }
+}
+
+impl AsRef<FieldDeclaration> for EffectiveAttribute {
+    fn as_ref(&self) -> &FieldDeclaration {
+        &self.field
+    }
+}
+
+/// The NFR-012 default `ancestor_steps` ceiling, which [`TypeEnvironment::new`]
+/// admits under. The model's own `ModelNormalizationLimits` and
+/// `PopulationAdmissionLimits` defaults read this same value.
+pub const DEFAULT_ANCESTOR_STEPS: u64 = 100_000;
 
 /// Why a declaration set is not admitted.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
@@ -379,10 +477,14 @@ impl InvalidDeclaration {
             DeclarationCause::DuplicateKey
             | DeclarationCause::DuplicateMember(_)
             | DeclarationCause::UnknownDeclaration(_)
-            | DeclarationCause::UnknownObjectType(_) => "invalid_semantic_graph",
+            | DeclarationCause::UnknownObjectType(_)
+            | DeclarationCause::RedefinitionTarget(_)
+            | DeclarationCause::RedefinitionConflict(_) => "invalid_semantic_graph",
             DeclarationCause::Type(_)
             | DeclarationCause::Recursion { .. }
-            | DeclarationCause::GeneralizationCycle { .. } => IllTyped::CODE,
+            | DeclarationCause::GeneralizationCycle { .. }
+            | DeclarationCause::RedefinitionWidens(_) => IllTyped::CODE,
+            DeclarationCause::AncestorSteps { .. } => "resource_exhausted",
         }
     }
 }
@@ -401,8 +503,28 @@ pub enum RecursionEdges {
 pub enum DeclarationCause {
     /// Two declarations share one node key.
     DuplicateKey,
-    /// Two fields or attributes of one declaration share this name.
+    /// Two fields of one record, or two attributes of one object type's
+    /// effective attribute set, share this name. An inherited field and a
+    /// field of the same name that does not redefine it are two attributes.
     DuplicateMember(String),
+    /// A field's `redefines` names no field of a proper ancestor of its
+    /// owning object type, or a record field declares a `redefines`.
+    RedefinitionTarget(FieldRef),
+    /// Two attributes of one object type's effective set both stand for
+    /// this field, and neither owner is a proper descendant of the other:
+    /// FR-151's conflicting redefinitions of one member reaching a type.
+    RedefinitionConflict(FieldRef),
+    /// A field that redefines this one widens it: an optional redefiner of
+    /// a required field, or a value type admitting a value the redefined
+    /// field's type does not.
+    RedefinitionWidens(FieldRef),
+    /// An object type's conformance walk (itself plus every ancestor, as
+    /// FR-082 counts it) expands more types than the admitted
+    /// `ancestor_steps` ceiling, named here.
+    AncestorSteps {
+        /// The ceiling.
+        limit: u64,
+    },
     /// A type names a key that is no declaration of the package.
     UnknownDeclaration(NodeKey),
     /// A declared supertype names an effective identity that is no admitted
@@ -441,6 +563,12 @@ pub struct TypeEnvironment {
     /// [`TypeEnvironment::new`], after the supertypes graph is known
     /// acyclic, so [`Self::conforms`] is a plain set lookup.
     ancestors: BTreeMap<EffectiveId, BTreeSet<EffectiveId>>,
+    /// Every object type's effective attribute set (QSL-57): its own fields
+    /// plus every ancestor's, less each field another field of the set
+    /// redefines. Computed once in [`TypeEnvironment::bounded`]; an object's
+    /// storage slots are exactly this set, so an attribute lookup never
+    /// walks ancestors.
+    effective: BTreeMap<EffectiveId, Vec<EffectiveAttribute>>,
     /// The units a `ValueType::Quantity` of this package names by id.
     units: UnitTable,
 }
@@ -454,10 +582,29 @@ struct Edge {
 }
 
 impl TypeEnvironment {
-    /// Admit `composites` and `object_types` as one closed environment.
+    /// Admit `composites` and `object_types` as one closed environment,
+    /// under the NFR-012 default `ancestor_steps` ceiling
+    /// ([`DEFAULT_ANCESTOR_STEPS`]). See [`Self::bounded`].
     pub fn new(
         composites: impl IntoIterator<Item = CompositeDeclaration>,
         object_types: impl IntoIterator<Item = ObjectTypeDeclaration>,
+    ) -> Result<Self, InvalidDeclaration> {
+        Self::bounded(composites, object_types, DEFAULT_ANCESTOR_STEPS)
+    }
+
+    /// Admit `composites` and `object_types` as one closed environment.
+    ///
+    /// `ancestor_steps` is the FR-082 ceiling the model walks this package's
+    /// conformance under at evaluation (the population binding's own
+    /// `ancestor_steps`). An object type whose walk would expand more types
+    /// than that, itself included, is refused here with
+    /// [`DeclarationCause::AncestorSteps`]: every conformance question the
+    /// checker answers from this environment is then one evaluation also
+    /// answers, with the same verdict, never one evaluation refuses.
+    pub fn bounded(
+        composites: impl IntoIterator<Item = CompositeDeclaration>,
+        object_types: impl IntoIterator<Item = ObjectTypeDeclaration>,
+        ancestor_steps: u64,
     ) -> Result<Self, InvalidDeclaration> {
         let mut environment = Self::default();
         for declaration in composites {
@@ -468,6 +615,9 @@ impl TypeEnvironment {
             if let CompositeShape::Record(fields) = &declaration.shape {
                 if let Some(name) = duplicate_name(fields) {
                     return Err(refuse(DeclarationCause::DuplicateMember(name)));
+                }
+                if let Some(target) = fields.iter().find_map(FieldDeclaration::redefines) {
+                    return Err(refuse(DeclarationCause::RedefinitionTarget(target.clone())));
                 }
             }
             if environment.composites.contains_key(&declaration.key) {
@@ -495,7 +645,25 @@ impl TypeEnvironment {
         environment.check_recursion(RecursionEdges::NonEscaping)?;
         environment.check_supertypes()?;
         environment.ancestors = environment.compute_ancestors();
+        environment.check_ancestor_steps(ancestor_steps)?;
+        environment.check_redefinitions()?;
+        environment.effective = environment.compute_effective()?;
         Ok(environment)
+    }
+
+    /// The object type's effective attribute set, in slot order: its own
+    /// fields in declaration order, then each proper ancestor's (ascending
+    /// by key) in declaration order, each field another field of the set
+    /// redefines left out. `None` for a key that is no admitted object type.
+    pub fn attributes(&self, object_type: EffectiveId) -> Option<&[EffectiveAttribute]> {
+        self.effective.get(&object_type).map(Vec::as_slice)
+    }
+
+    /// The attribute `name` resolves to in the object type's effective set.
+    pub fn attribute(&self, object_type: EffectiveId, name: &str) -> Option<&EffectiveAttribute> {
+        self.attributes(object_type)?
+            .iter()
+            .find(|attribute| attribute.field.name() == name)
     }
 
     /// This environment with `units` as its quantity unit table.
@@ -888,6 +1056,214 @@ impl TypeEnvironment {
         ancestors
     }
 
+    /// Refuse the first object type, in key order, whose FR-082 conformance
+    /// walk expands more than `limit` types. The model's walk from `S`
+    /// (`ModelIndex::conforms`) expands `S` and then each distinct ancestor
+    /// once, and stops early only when it meets its target, so `1 +` the
+    /// ancestor count is the most any walk from `S` expands. Admitting only
+    /// types within `limit` makes every walk from an admitted type complete
+    /// under the same ceiling at evaluation.
+    fn check_ancestor_steps(&self, limit: u64) -> Result<(), InvalidDeclaration> {
+        for declaration in self.object_types.values() {
+            let ancestors = self
+                .ancestors
+                .get(&declaration.key)
+                .map_or(0, BTreeSet::len);
+            let expanded = u64::try_from(ancestors)
+                .unwrap_or(u64::MAX)
+                .saturating_add(1);
+            if expanded > limit {
+                return Err(InvalidDeclaration {
+                    declaration: declaration.name.clone(),
+                    cause: DeclarationCause::AncestorSteps { limit },
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuse the first object-type field, in key then declaration order,
+    /// whose `redefines` names no field of a proper ancestor of its owner
+    /// (FR-151: the target must be inherited by the owning type).
+    fn check_redefinitions(&self) -> Result<(), InvalidDeclaration> {
+        for declaration in self.object_types.values() {
+            for target in declaration
+                .attributes
+                .iter()
+                .filter_map(FieldDeclaration::redefines)
+            {
+                let inherited = self
+                    .ancestors
+                    .get(&declaration.key)
+                    .is_some_and(|ancestors| ancestors.contains(&target.owner))
+                    && self.declared_field(target).is_some();
+                if !inherited {
+                    return Err(InvalidDeclaration {
+                        declaration: declaration.name.clone(),
+                        cause: DeclarationCause::RedefinitionTarget(target.clone()),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The first field `attribute` stands in for that it widens: `deref(r).f`
+    /// through that field's owner reads `attribute`'s slot, so its presence
+    /// must be required where that field's is, and every value its type
+    /// admits that field's type must admit ([`Self::narrows`]). Otherwise
+    /// the read would yield a value its checked type does not describe.
+    fn widened(&self, attribute: &EffectiveAttribute) -> Option<FieldRef> {
+        let field = &attribute.field;
+        attribute
+            .lineage
+            .iter()
+            .find(|hidden| {
+                self.declared_field(hidden).is_some_and(|redefined| {
+                    (field.presence == Presence::Optional
+                        && redefined.presence == Presence::Required)
+                        || !self.narrows(&field.value_type, &redefined.value_type)
+                })
+            })
+            .cloned()
+    }
+
+    /// Whether every value `narrower` admits, `wider` admits: the same
+    /// type, an `Int` interval within `Integer` or within a wider `Int`
+    /// interval, or a `Reference` to a type conforming to the other's.
+    /// Any other pair is refused, never guessed.
+    fn narrows(&self, narrower: &ValueType, wider: &ValueType) -> bool {
+        match (narrower, wider) {
+            (narrower, wider) if narrower == wider => true,
+            (ValueType::Int(_), ValueType::Integer) => true,
+            (ValueType::Int(inner), ValueType::Int(outer)) => {
+                outer.contains(inner.lower()) && outer.contains(inner.upper())
+            }
+            (ValueType::Reference(sub), ValueType::Reference(sup)) => self.conforms(*sub, *sup),
+            _ => false,
+        }
+    }
+
+    /// The field `field.owner` itself declares under `field.name`.
+    fn declared_field(&self, field: &FieldRef) -> Option<&FieldDeclaration> {
+        self.object_types
+            .get(&field.owner)?
+            .attributes
+            .iter()
+            .find(|declared| declared.name() == field.name)
+    }
+
+    /// `field` (declared by `owner`) and every field it redefines,
+    /// transitively, ascending. [`Self::check_redefinitions`] has admitted
+    /// every link, and each one moves to a proper ancestor of an acyclic
+    /// graph, so the walk ends within the ancestor count.
+    fn lineage(&self, owner: EffectiveId, field: &FieldDeclaration) -> Vec<FieldRef> {
+        let mut lineage = vec![FieldRef::new(owner, field.name())];
+        let mut next = field.redefines();
+        while let Some(target) = next {
+            lineage.push(target.clone());
+            next = self
+                .declared_field(target)
+                .and_then(FieldDeclaration::redefines);
+        }
+        lineage.sort_unstable();
+        lineage.dedup();
+        lineage
+    }
+
+    /// Every object type's effective attribute set (QSL-57), flattened once.
+    ///
+    /// This applies FR-151's phase-4 redefinition result
+    /// (`quire.model.normalize.redefine/v1`) to the `redefines` links a
+    /// producer copies from the normalized domain package: a redefined field
+    /// stays declared but is hidden in every type that also has its
+    /// redefiner; when several redefinitions of one field reach a type, only
+    /// the one whose owner is a proper descendant of every other stays
+    /// exposed, and it stands for the others' slots too. Two exposed
+    /// attributes that still stand for one field conflict
+    /// ([`DeclarationCause::RedefinitionConflict`]), and two exposed
+    /// attributes of one name are two fields, not a redefinition
+    /// ([`DeclarationCause::DuplicateMember`]).
+    fn compute_effective(
+        &self,
+    ) -> Result<BTreeMap<EffectiveId, Vec<EffectiveAttribute>>, InvalidDeclaration> {
+        let mut effective = BTreeMap::new();
+        for declaration in self.object_types.values() {
+            let refuse = |cause| InvalidDeclaration {
+                declaration: declaration.name.clone(),
+                cause,
+            };
+            let ancestors = self
+                .ancestors
+                .get(&declaration.key)
+                .into_iter()
+                .flatten()
+                .filter_map(|key| self.object_types.get(key));
+            let collected: Vec<(EffectiveId, &FieldDeclaration)> = std::iter::once(declaration)
+                .chain(ancestors)
+                .flat_map(|owner| owner.attributes.iter().map(move |field| (owner.key, field)))
+                .collect();
+            let redefined: BTreeSet<&FieldRef> = collected
+                .iter()
+                .filter_map(|(_, field)| field.redefines())
+                .collect();
+            let mut attributes: Vec<EffectiveAttribute> = collected
+                .iter()
+                .filter(|(owner, field)| !redefined.contains(&FieldRef::new(*owner, field.name())))
+                .map(|(owner, field)| EffectiveAttribute {
+                    owner: *owner,
+                    field: (*field).clone(),
+                    lineage: self.lineage(*owner, field),
+                })
+                .collect();
+            while let Some((loser, winner)) = self.dominated(&attributes) {
+                let hidden = attributes.remove(loser);
+                let winner = if winner > loser { winner - 1 } else { winner };
+                if let Some(winner) = attributes.get_mut(winner) {
+                    winner.lineage.extend(hidden.lineage);
+                    winner.lineage.sort_unstable();
+                    winner.lineage.dedup();
+                }
+            }
+            if let Some(shared) = first_overlap(&attributes) {
+                return Err(refuse(DeclarationCause::RedefinitionConflict(shared)));
+            }
+            if let Some(widened) = attributes
+                .iter()
+                .find_map(|attribute| self.widened(attribute))
+            {
+                return Err(refuse(DeclarationCause::RedefinitionWidens(widened)));
+            }
+            let mut names = BTreeSet::new();
+            if let Some(duplicate) = attributes
+                .iter()
+                .find(|attribute| !names.insert(attribute.field.name()))
+            {
+                return Err(refuse(DeclarationCause::DuplicateMember(
+                    duplicate.field.name().to_owned(),
+                )));
+            }
+            effective.insert(declaration.key, attributes);
+        }
+        Ok(effective)
+    }
+
+    /// The first `(loser, winner)` pair of `attributes` positions that stand
+    /// for a common field where the winner's owner is a proper descendant of
+    /// the loser's: FR-151's "only the redefining member of the most derived
+    /// owner is exposed".
+    fn dominated(&self, attributes: &[EffectiveAttribute]) -> Option<(usize, usize)> {
+        attributes.iter().enumerate().find_map(|(loser, low)| {
+            attributes.iter().enumerate().find_map(|(winner, high)| {
+                (loser != winner
+                    && high.owner != low.owner
+                    && self.conforms(high.owner, low.owner)
+                    && shared_field(&low.lineage, &high.lineage).is_some())
+                .then_some((loser, winner))
+            })
+        })
+    }
+
     /// Construct a record from its supplied fields. An omitted `?` field is
     /// `absent`.
     pub fn record(
@@ -1019,6 +1395,23 @@ impl TypeEnvironment {
     fn shape(&self, declaration: NodeKey) -> Option<&CompositeShape> {
         self.composites.get(&declaration).map(|d| &d.shape)
     }
+}
+
+/// The first field both ascending lineages hold.
+fn shared_field(left: &[FieldRef], right: &[FieldRef]) -> Option<FieldRef> {
+    left.iter()
+        .find(|field| right.binary_search(field).is_ok())
+        .cloned()
+}
+
+/// The first field two distinct attributes both stand for.
+fn first_overlap(attributes: &[EffectiveAttribute]) -> Option<FieldRef> {
+    attributes.iter().enumerate().find_map(|(index, left)| {
+        attributes
+            .iter()
+            .skip(index + 1)
+            .find_map(|right| shared_field(&left.lineage, &right.lineage))
+    })
 }
 
 fn duplicate_name(fields: &[FieldDeclaration]) -> Option<String> {
@@ -1224,6 +1617,17 @@ impl TypeEnvironment {
             (ValueType::Population(_), _) | (_, ValueType::Population(_)) => {
                 return ill_typed(IllTypedCause::OperatorIneligible)
             }
+            // FR-153-AC-6 / TC-198 L08 (QSL-57): a `Reference<A>` and a
+            // `Reference<B>` denote the same real object when one type
+            // conforms to the other, as `lookup<A>(p, rb) = rb` does. The
+            // plan compares the two references' full identity whatever
+            // their static types, so this admits more pairs and decides
+            // none differently.
+            (ValueType::Reference(l), ValueType::Reference(r))
+                if self.conforms(*l, *r) || self.conforms(*r, *l) =>
+            {
+                EqualitySchedule::Plan
+            }
             (l, r) if l == r => EqualitySchedule::Plan,
             _ => return ill_typed(IllTypedCause::TypeMismatch),
         };
@@ -1405,7 +1809,16 @@ pub fn operand_value(
     units: &UnitScope<'_>,
     meter: &mut Meter,
 ) -> Result<Value, Stop> {
-    if !operand.source.admits(value) {
+    // A `Reference<T>` operand's value carries its object's most specific
+    // type, which is `T` or a type conforming to it (`lookup<T>` returns
+    // the object as found): `ValueType::admits`'s exact type match would
+    // refuse a real upcast, so a reference operand is checked by kind only.
+    // The checker already proved the static types related.
+    let admitted = match (&operand.source, value) {
+        (ValueType::Reference(_), value) => matches!(value, Value::Reference(_)),
+        (source, value) => source.admits(value),
+    };
+    if !admitted {
         return Err(invariant());
     }
     let Some(target) = &operand.target else {

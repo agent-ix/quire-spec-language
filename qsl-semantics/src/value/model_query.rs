@@ -52,24 +52,24 @@
 //!
 //! # The TypeEnvironment island
 //!
-//! This module bridges identities, never model *conformance*, on its own:
-//! `crate::value`'s `TypeEnvironment` (`crate::value::declaration`) admits no
-//! generalization graph, so nothing on this side of the bridge can decide
-//! whether one object type conforms to another by itself -- only
-//! `crate::model::conformance` (reachable from a runtime
-//! [`PopulationBinding`], never from a checked package's static types) can.
+//! This module bridges identities, never model *conformance*:
 //! `allInstances`/`lookup`'s own conformance decisions
-//! ([`all_instances`]/[`lookup`]) run entirely inside
-//! `crate::model::population`, which does carry that graph -- including,
-//! for a malformed reference, the short-circuit above, since [`lookup`]
-//! itself decides `ModelIndex::conforms(S, T)` before any charge for every
-//! reference it is called with, well-formed or not. Three FR-153/FR-149
-//! obligations that would need this graph at *check* time still cannot get
-//! it, tracked at
-//! <https://github.com/agent-ix/quire-spec-language/issues/164>: `deref(r).f`
-//! display-name resolution, TC-198 L08 upcast equality, and refusing
-//! `lookup<T>(p, r)` at check time when `r`'s declared type does not conform
-//! to `T` (today refused only at evaluation).
+//! ([`all_instances`]/[`lookup`]) run inside `crate::model::population`
+//! against the runtime [`PopulationBinding`]'s model -- including, for a
+//! malformed reference, the short-circuit above, since [`lookup`] itself
+//! decides `ModelIndex::conforms(S, T)` before any charge for every
+//! reference it is called with, well-formed or not.
+//!
+//! The checker decides the same relation over the package's own admitted
+//! object types: `crate::value::declaration::TypeEnvironment` carries their
+//! generalization graph (`conforms`), their flattened attribute sets
+//! (inherited and redefined fields, QSL-57), and admits them only within the
+//! `ancestor_steps` ceiling the model walks under, so `lookup<T>(p, r)`'s
+//! `S`-vs-`T` refusal, TC-198 L08 upcast equality and `deref(r).f` through
+//! an inherited field are all decided at check time and agree with
+//! evaluation. What remains an island is which object types a particular
+//! runtime binding's model exports: that is model data, not package data
+//! (see `resolve_target`).
 
 use crate::model::key::{DeclarationKey, EffectiveId};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
