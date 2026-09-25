@@ -120,6 +120,9 @@ through it, or a crate alias or glob import that reaches it.
 
 ## Status
 
-Implemented under QSL-5. TC-444 passes locally for AC-1 to AC-5.
+Implemented under QSL-5. TC-444 passes locally for AC-1 to AC-5. QSL-257
+added TC-444 coverage of a predicate whose body calls another declared
+function (the QSL-22 Layer 3 exemplar's shape), confirming the S4 emitter
+writes the checked `call` node codegen's FR-021 oracle generator reads.
 
 AC-6 is not delivered. QSL-255 owns it.
