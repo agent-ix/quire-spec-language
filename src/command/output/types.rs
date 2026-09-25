@@ -24,6 +24,8 @@ pub(super) enum Stage {
     SelectedPackage,
     Lower,
     Input,
+    /// The spine stage that refused a `1-draft` program.
+    Spine(&'static str),
 }
 
 impl Serialize for Stage {
@@ -42,6 +44,7 @@ impl Serialize for Stage {
             Self::SelectedPackage => "selected_package",
             Self::Lower => "lower",
             Self::Input => "input",
+            Self::Spine(stage) => stage,
         })
     }
 }
@@ -157,6 +160,11 @@ pub(super) enum Details<'a> {
     Input {
         expected: Reference<'a>,
         stage: &'static str,
+    },
+    Spine {
+        source: &'a SourceIdentity,
+        path: &'a str,
+        span: Option<LocatedSpan>,
     },
 }
 

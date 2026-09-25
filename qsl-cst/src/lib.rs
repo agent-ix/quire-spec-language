@@ -34,6 +34,9 @@ pub use cst::{
 pub use diagnostic::{CompleteCause, CompleteCode, CompleteDiagnostic, HostCause};
 pub use lexer::{declared_edition, DeclaredEdition, Limits};
 
+/// The one edition the complete-V1 grammar admits (its `Header` rule).
+pub const EDITION: &str = "1-draft";
+
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Source, SourceIdentity, Span};
 

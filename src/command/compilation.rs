@@ -97,6 +97,15 @@ pub(super) fn package<'model>(
     models: &'model [NativeModel],
 ) -> Result<NativePackage<'model>> {
     let source = intake.source(&program.source)?;
+    package_of(source, program, models)
+}
+
+/// The native package of `program`, whose `source` intake has already read.
+pub(super) fn package_of<'model>(
+    source: FormalSource,
+    program: &wire::Program,
+    models: &'model [NativeModel],
+) -> Result<NativePackage<'model>> {
     let unit = crate::parse_source(source.source().clone(), Limits::default())?;
     let linked = crate::link_native(unit, models, crate::LinkLimits::default())?;
     let checked = check(linked, bindings(source, program)?, CheckLimits::default())?;

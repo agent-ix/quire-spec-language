@@ -86,7 +86,7 @@ pub fn declared_edition(text: &str) -> Option<DeclaredEdition> {
     else {
         return None;
     };
-    (language == "ix:native").then(|| DeclaredEdition {
+    (language == "ix:native").then_some(DeclaredEdition {
         edition,
         span: Span {
             start: range.start,

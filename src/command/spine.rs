@@ -78,6 +78,18 @@ impl CompileRefusal {
         }
     }
 
+    /// The stage that refused: `source`, `forms`, `assembly`, `check` or
+    /// `emit`.
+    pub fn stage(&self) -> &'static str {
+        match self {
+            Self::Source(_) => "source",
+            Self::Forms { .. } => "forms",
+            Self::Assembly { .. } => "assembly",
+            Self::Check { .. } => "check",
+            Self::Emit(_) | Self::Omitted(_) => "emit",
+        }
+    }
+
     /// The region of the unit this refusal concerns, when its stage records
     /// one.
     pub fn region(&self) -> Option<&SourceRegion> {
