@@ -1039,7 +1039,9 @@ mod foundation_tests {
             assert_eq!(diagnostic.limit(), Some(limit));
         }
         assert_eq!(
-            SyntaxLimit::Tokens { bound: 4 }.stage_kind().catalog_cause(),
+            SyntaxLimit::Tokens { bound: 4 }
+                .stage_kind()
+                .catalog_cause(),
             "token-count-exceeded"
         );
     }

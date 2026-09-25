@@ -86,7 +86,9 @@ pub struct LimitExceeded {
     kind: LimitKind,
     configured_bound: u64,
     actual: u128,
-    locus: Option<Locus>,
+    /// Boxed: a `Locus` names a source reference or a digest and pointer,
+    /// far larger than the rest, and every stage's `Result` carries this.
+    locus: Option<Box<Locus>>,
 }
 
 impl LimitExceeded {
@@ -112,7 +114,7 @@ impl LimitExceeded {
     /// producer can know one).
     #[must_use]
     pub fn at(mut self, locus: Option<Locus>) -> Self {
-        self.locus = locus;
+        self.locus = locus.map(Box::new);
         self
     }
 
@@ -133,7 +135,7 @@ impl LimitExceeded {
 
     /// Where the charge failed, when a producer can know it.
     pub fn locus(&self) -> Option<&Locus> {
-        self.locus.as_ref()
+        self.locus.as_deref()
     }
 }
 

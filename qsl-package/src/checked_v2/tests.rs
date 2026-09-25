@@ -10,8 +10,8 @@
 
 use ix_trace_rs::trace;
 use quire_contract_ir::{
-    CheckedArtifactLocator, CheckedPackageEvidence, CheckedPackageRefusalCode,
-    CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    CheckedArtifactLocator, CheckedPackageEvidence, CheckedPackageRefusalCode, CHECKED_PACKAGE_V2,
+    PACKAGE_DOMAIN_V2,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -270,7 +270,7 @@ fn read(bytes: &[u8], pinned: &PinnedRequest) -> Read {
 /// outcome it got instead.
 fn structural(outcome: Read) -> LibraryRefusal {
     match outcome {
-        Read::Refused(V2ReadRefusal::Structural(refusal)) => refusal,
+        Read::Refused(V2ReadRefusal::Structural(refusal)) => *refusal,
         other => panic!("expected Refused(Structural(_)), got {other:?}"),
     }
 }
@@ -711,7 +711,12 @@ fn refuses_an_ambiguous_declaration_at_ir_intake() {
     ]);
     let bytes = jcs(&envelope);
     let outcome = read(&bytes, &pinned_for(&preimage));
-    let Read::Refused(ref refusal @ V2ReadRefusal::Envelope { refusal: ref envelope, .. }) = outcome
+    let Read::Refused(
+        ref refusal @ V2ReadRefusal::Envelope {
+            refusal: ref envelope,
+            ..
+        },
+    ) = outcome
     else {
         panic!("expected Refused(Envelope(AmbiguousDeclaration)), got {outcome:?}");
     };
@@ -760,7 +765,10 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
         &evidence(None),
         &pinned_for(&preimage),
     );
-    assert_eq!(outcome, Read::Limit(input_bytes(bytes.len() - 1, bytes.len())));
+    assert_eq!(
+        outcome,
+        Read::Limit(input_bytes(bytes.len() - 1, bytes.len()))
+    );
 }
 
 /// A valid wire of at least `min_bytes`, made large by one export whose
@@ -1502,13 +1510,15 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
     );
 }
 
-
 /// `Locus::Artifact` over `bytes`, computed here from the bytes themselves
 /// (FR-201 `raw-artifact-digest`: the SHA-256 of the complete supplied
 /// bytes), at `pointer`.
 fn artifact_locus(bytes: &[u8], pointer: &str) -> Locus {
     Locus::Artifact {
-        digest: DigestRecord::mint(DigestDomain::RawArtifactDigest, Sha256::digest(bytes).into()),
+        digest: DigestRecord::mint(
+            DigestDomain::RawArtifactDigest,
+            Sha256::digest(bytes).into(),
+        ),
         pointer: pointer.parse().unwrap(),
     }
 }
@@ -1645,7 +1655,10 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
         (
             &base,
             &preimage,
-            V2ReadLimits { depth: 1, ..defaults },
+            V2ReadLimits {
+                depth: 1,
+                ..defaults
+            },
             LimitKind::NestingDepth,
             1,
             8,
@@ -1654,7 +1667,10 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
         (
             &two_nodes,
             &two_preimage,
-            V2ReadLimits { nodes: 1, ..defaults },
+            V2ReadLimits {
+                nodes: 1,
+                ..defaults
+            },
             LimitKind::NodeCount,
             1,
             2,
@@ -1663,7 +1679,10 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
         (
             &edged,
             &edge_preimage,
-            V2ReadLimits { edges: 0, ..defaults },
+            V2ReadLimits {
+                edges: 0,
+                ..defaults
+            },
             LimitKind::EdgeCount,
             0,
             1,
@@ -1672,7 +1691,10 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
         (
             &base,
             &preimage,
-            V2ReadLimits { occurrences: 0, ..defaults },
+            V2ReadLimits {
+                occurrences: 0,
+                ..defaults
+            },
             LimitKind::OccurrenceCount,
             0,
             1,
@@ -1681,7 +1703,10 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
         (
             &diagnosed,
             &preimage,
-            V2ReadLimits { diagnostics: 0, ..defaults },
+            V2ReadLimits {
+                diagnostics: 0,
+                ..defaults
+            },
             LimitKind::DiagnosticCount,
             0,
             1,
@@ -1690,7 +1715,10 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
         (
             &base,
             &preimage,
-            V2ReadLimits { work: 0, ..defaults },
+            V2ReadLimits {
+                work: 0,
+                ..defaults
+            },
             LimitKind::WorkBudget,
             0,
             1,

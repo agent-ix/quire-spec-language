@@ -307,10 +307,7 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
 #[test]
 fn the_lock_selects_the_catalog_definitions() {
     let emission = emit(&package(vec![t()]));
-    assert!(matches!(
-        read_back(&emission),
-        Read::Verified { .. }
-    ));
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
     let wire = wire(&emission);
     let lock = DefinitionLock::pinned();
     let row = |role: CatalogRole| {
@@ -1257,10 +1254,7 @@ fn t_read_from_text() -> FunctionDeclaration {
 #[test]
 fn emit_checked_places_occurrences_at_the_form_spans() {
     let emission = emit_checked(&package(vec![t_read_from_text()])).expect("t emits");
-    assert!(matches!(
-        read_back(&emission),
-        Read::Verified { .. }
-    ));
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
     let wire = wire(&emission);
     let entries = wire["source_map"].as_array().unwrap();
     assert!(!entries.is_empty());
@@ -1652,19 +1646,20 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
         &evidence,
         &pinned,
     );
-    let Read::Refused(crate::checked_v2::V2ReadRefusal::Structural(
-        qsl_semantics::library::LibraryRefusal::InvalidPreimage {
-            library: refused,
-            defect:
-                qsl_semantics::library::PreimageDefect::DeclarationNominalMismatch {
-                    node,
-                    declared: None,
-                    nominal,
-                },
-        },
-    )) = outcome
+    let Read::Refused(crate::checked_v2::V2ReadRefusal::Structural(structural)) = outcome else {
+        panic!("expected a structural refusal, got {outcome:?}");
+    };
+    let qsl_semantics::library::LibraryRefusal::InvalidPreimage {
+        library: refused,
+        defect:
+            qsl_semantics::library::PreimageDefect::DeclarationNominalMismatch {
+                node,
+                declared: None,
+                nominal,
+            },
+    } = *structural
     else {
-        panic!("expected InvalidPreimage(DeclarationNominalMismatch), got {outcome:?}");
+        panic!("expected InvalidPreimage(DeclarationNominalMismatch), got {structural:?}");
     };
     assert_eq!(refused, library());
     assert_eq!(json!(node.to_string()), status);

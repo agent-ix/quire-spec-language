@@ -286,7 +286,7 @@ pub(crate) enum V2ReadRefusal {
         /// The version IR read.
         wire: UnsupportedWire,
         /// `Locus::Artifact` at IR's pointer, `/contract_version`.
-        locus: Locus,
+        locus: Box<Locus>,
     },
     /// IR's I04 `checked_package` reader refused the wire, carrying its own
     /// closed refusal code, the pointer of the value it refused, and (where
@@ -301,11 +301,12 @@ pub(crate) enum V2ReadRefusal {
     /// variants (team decision, no-copy rule).
     #[error("checked-package/v2 wire refused ({refusal:?})")]
     Envelope {
-        /// IR's refusal.
-        refusal: CheckedPackageRefusal,
+        /// IR's refusal. Boxed: IR's refusal is the largest payload, and
+        /// every read's `Result` carries this type.
+        refusal: Box<CheckedPackageRefusal>,
         /// `Locus::Artifact` at IR's pointer; `None` when IR refused the
         /// bytes at no value (malformed JSON, non-canonical bytes).
-        locus: Option<Locus>,
+        locus: Option<Box<Locus>>,
     },
     /// The admitted wire's lock names one or more `dependency_selections`;
     /// this reader does not yet derive imports from a lock (QC-10, ADR-013
@@ -313,13 +314,15 @@ pub(crate) enum V2ReadRefusal {
     #[error("dependency_selections present; import derivation is not yet implemented")]
     UnsupportedDependencySelections {
         /// `Locus::Artifact` at `/lock/dependency_selections`.
-        locus: Locus,
+        locus: Box<Locus>,
     },
     /// `library`'s verified-binding entry point refused the candidate
     /// derived from an admitted wire (its identity preimage's declared
     /// names, never its already-IR-checked `package_id`).
+    /// Boxed: `LibraryRefusal` is the largest refusal, and every read's
+    /// `Result` carries this type.
     #[error(transparent)]
-    Structural(#[from] LibraryRefusal),
+    Structural(Box<LibraryRefusal>),
     /// `quire-canonical` refused to encode an admitted wire's identity
     /// preimage. Practically unreachable: IR has already decoded the
     /// preimage into typed Rust structs it itself just re-serialized without
@@ -458,7 +461,7 @@ impl V2ReadRefusal {
         match self {
             Self::UnsupportedVersion { locus, .. }
             | Self::UnsupportedDependencySelections { locus } => Some(locus),
-            Self::Envelope { locus, .. } => locus.as_ref(),
+            Self::Envelope { locus, .. } => locus.as_deref(),
             Self::Structural(_) | Self::Preimage(_) | Self::SourceMap(_) => None,
         }
     }
@@ -476,7 +479,7 @@ impl V2ReadRefusal {
             Self::UnsupportedVersion { wire, locus } => Some(RefusalRecord::new(
                 wire.catalog_code(),
                 wire.catalog_fields(),
-                Some(locus.clone()),
+                Some((**locus).clone()),
             )),
             _ => None,
         }
@@ -644,7 +647,7 @@ pub(crate) fn read_checked_package_v2(
             if !package.lock().dependency_selections.is_empty() {
                 let pointer = JsonPointer::root().key("lock").key("dependency_selections");
                 return refused(V2ReadRefusal::UnsupportedDependencySelections {
-                    locus: Artifact::of(bytes).at(pointer),
+                    locus: Box::new(Artifact::of(bytes).at(pointer)),
                 });
             }
             // The preimage's RFC 8785 bytes, from `quire-canonical` (ADR-013
@@ -667,13 +670,13 @@ pub(crate) fn read_checked_package_v2(
             // value IR derived independently, can.
             let ir_digest = package.package_id().digest.as_ref();
             if package_id.hex() != ir_digest {
-                return refused(V2ReadRefusal::Structural(
+                return refused(V2ReadRefusal::Structural(Box::new(
                     LibraryRefusal::IdentityDivergedFromIr {
                         library: identity.clone(),
                         ir_digest: ir_digest.into(),
                         recomputed_hex: package_id.hex(),
                     },
-                ));
+                )));
             }
             // `PreimageDefect::AmbiguousDeclaration` cannot reach here: IR's
             // `validate_declaration_names` refuses a repeated `qualified_name`
@@ -682,12 +685,12 @@ pub(crate) fn read_checked_package_v2(
             let exports = match declared_exports(&preimage_bytes) {
                 Ok(exports) => exports,
                 Err(defect) => {
-                    return refused(V2ReadRefusal::Structural(
+                    return refused(V2ReadRefusal::Structural(Box::new(
                         LibraryRefusal::InvalidPreimage {
                             library: identity,
                             defect,
                         },
-                    ))
+                    )));
                 }
             };
             let source_map = match package_source_map(package.source_map()) {
@@ -712,24 +715,25 @@ pub(crate) fn read_checked_package_v2(
                     source_map,
                     effective_limits: limits.enforced(),
                 })),
-                Err(refusal) => refused(V2ReadRefusal::Structural(refusal)),
+                Err(refusal) => refused(V2ReadRefusal::Structural(Box::new(refusal))),
             }
         }
         CheckedPackageDispatchResult::Refused(refusal) => {
             let artifact = Artifact::of(bytes);
-            let locus = artifact.at_ir(refusal.path.as_ref());
+            let locus = artifact.at_ir(refusal.path.as_ref()).map(Box::new);
             refused(match (refusal.code, &refusal.contract_version, locus) {
-                (
-                    CheckedPackageRefusalCode::UnknownContractVersion,
-                    Some(actual),
-                    Some(locus),
-                ) => V2ReadRefusal::UnsupportedVersion {
-                    wire: UnsupportedWire {
-                        actual: actual.clone(),
-                    },
+                (CheckedPackageRefusalCode::UnknownContractVersion, Some(actual), Some(locus)) => {
+                    V2ReadRefusal::UnsupportedVersion {
+                        wire: UnsupportedWire {
+                            actual: actual.clone(),
+                        },
+                        locus,
+                    }
+                }
+                (_, _, locus) => V2ReadRefusal::Envelope {
+                    refusal: Box::new(refusal),
                     locus,
                 },
-                (_, _, locus) => V2ReadRefusal::Envelope { refusal, locus },
             })
         }
         CheckedPackageDispatchResult::Incomplete(CheckedPackageIncomplete {

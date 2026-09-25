@@ -1207,9 +1207,8 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // a whole is located at the declaration's span; `Typer`'s depth
         // stop, at the node whose entry failed.
         let declarations = cx.declarations();
-        let located = |limit: LimitExceeded| {
-            StageFailure::Limit(limit.at(declarations.declaration_locus()))
-        };
+        let located =
+            |limit: LimitExceeded| StageFailure::Limit(limit.at(declarations.declaration_locus()));
         cx.enter_nesting().map_err(located)?;
         // FR-062-AC-3 "no side door": the scope stack is pushed and popped
         // around this one check (`cx.scopes.enter`/`leave` below), not just
@@ -2727,12 +2726,18 @@ mod locus_tests {
         let signatures = Signatures::default();
         let own_signature = declaration_signature("f");
         let location = body_location();
-        let synthesized = declarations_for(&scope, &signatures, &own_signature, &[], tight, &location);
+        let synthesized =
+            declarations_for(&scope, &signatures, &own_signature, &[], tight, &location);
         let mut meter = unlimited();
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
-        let mut cx =
-            CheckContext::new(&synthesized, limits(), &mut meter, &mut diagnostics, &mut scopes);
+        let mut cx = CheckContext::new(
+            &synthesized,
+            limits(),
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
         let exceeded = limit(ValueFunctionFamily::check(&unit.functions[0], &mut cx));
         assert_eq!(exceeded.kind(), LimitKind::NestingDepth);
         assert_eq!(exceeded.locus(), None);
@@ -2786,7 +2791,13 @@ mod locus_tests {
         let mut meter = unlimited();
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
-        let mut cx = CheckContext::new(&synthesized, stage, &mut meter, &mut diagnostics, &mut scopes);
+        let mut cx = CheckContext::new(
+            &synthesized,
+            stage,
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
         let exceeded = limit(ValueFunctionFamily::check(&form, &mut cx));
         assert_eq!(exceeded.kind(), LimitKind::InputBytes);
         assert_eq!(exceeded.locus(), None);
@@ -2818,10 +2829,7 @@ mod locus_tests {
             Some(Locus::Region(region)) => region,
             other => panic!("expected a region, got {other:?}"),
         };
-        assert_eq!(
-            unit.regions().declaration_region(0).as_ref(),
-            Some(region)
-        );
+        assert_eq!(unit.regions().declaration_region(0).as_ref(), Some(region));
         assert_eq!(
             text(exceeded.locus(), &unit),
             "function f using v(): Boolean pure { not not not true }"
