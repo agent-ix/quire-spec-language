@@ -36,3 +36,9 @@ statements. Three of them are ambiguous enough to change what gets built.
 | FND-008 | medium | ADR-014 A-4 says S6a "never produces `proved` or a true settlement for an infinite-trace formula", then says that over a lasso "it evaluates exactly", which can yield true. Fix: state the response for a true lasso evaluation explicitly, e.g. "Over a lasso it evaluates exactly and reports true as `tested` (§8), never as a settlement of the claim". | ADR-014 |
 | FND-009 | low | ADR-014 §2 loop-maximum row: "An unproved termination claim is refused or inconclusive" gives two responses and no condition that selects between them. Fix: name the condition, e.g. refused at S3 when no variant is declared, inconclusive when a declared variant is not proved. | ADR-014 |
 | FND-010 | low | ADR-014 TR-2 ("refuses at reconstruction"), TR-3 ("refuses `lower > upper`", "refuses `Unbounded`") and TR-4 ("Overflow … refuses at check") give no responder's cause or catalog code, unlike A-2 and §6 step 4. Fix: name the cause for each, or cite the FR that will. | ADR-014 |
+
+## Resolution
+
+Resolved by the author in the follow-up commit on `spec/17-boundedness-adr`.
+
+FND-001, FND-002, FND-003 fixed: FR-082's new paragraph names the expression checker as responder, applies only to `TypeEnvironmentLimits`, and leaves the model paragraph B-2. FND-004 fixed: FR-082 Outputs. FND-005: AC-3 is restored to its original single-stage text, since model walks stay B-2. FND-006 fixed: §1 B-2 row covers read-only ceilings; the Alternatives entry now rejects classifying by stage. FND-007 fixed: §4 boundable table. FND-008 fixed: A-4 true over a lasso is `tested`. FND-009 fixed: §2 loop row. FND-010 fixed: TR-2, TR-3, TR-4 name their codes or QSpec rules.

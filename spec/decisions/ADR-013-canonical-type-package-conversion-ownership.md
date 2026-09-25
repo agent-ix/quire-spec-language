@@ -725,7 +725,7 @@ Equality: lexical on the capability wire string.
 
 | Field | Decision |
 | --- | --- |
-| Owner | Decided in ADR-014 §4 (Q222-3): the mode and extent vocabulary and its rules. Recorded mechanics: CG negotiation settles the disposition (AD-016 arrow 4); it is not a QSL-emitted value; the `requires-bound` predicate is IR's (AD-016), and CG reports it as the FR-331 disposition value. |
+| Owner | Decided in ADR-014 §4 (Q222-3): the extent vocabulary, the unbounded domains and the available finite bound, which QSL's request writer computes into the FR-331 extent classification. Recorded mechanics: CG negotiation settles the disposition (AD-016 arrow 4); it is not a QSL-emitted value; IR's `requires-bound` (AD-016) classifies which lowered forms carry an unbounded domain and agrees with QSL's extent by construction (ADR-014 §4); CG reads the classification and reports the FR-331 disposition value. |
 | Implementing ticket | CG (existing negotiation code). #213 S-6 implements only QSL's typed request representation to #222's design. |
 | Public type | CG's disposition plus the declared finite domain per argument. A `proved` result qualifies only over that declared subset, and the subset is part of the obligation identity (AD-016 arrow 5, O-09). |
 | Serialized authority | FR-331 request `domains`, `limits`, `requested claims`; FR-331 `dispositions`. |

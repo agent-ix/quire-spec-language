@@ -71,3 +71,9 @@ What does not hold:
 | FND-011 | low | The §7 intro says "Every case already has a type". The cancellation row lists S6a, but it names only `IncompleteCause::Cancelled` (a backend FR-331 cause) and `explore::Outcome::Cancelled`. The kernel `Outcome` and `Incomplete` in `quire-exact` have no cancellation variant. Fix: remove S6a from the row, or name the type to be added and the ticket that adds it. | ADR-014 §7; `quire-exact/src/outcome.rs` |
 | FND-012 | low | Derivation 1 ("B-1 → B-4") is not a conversion into a B-4 value: it says a bounded item needs no `ProofBound`. It also cites ADR-013 C-25, which covers the disposition of an unbounded domain. Fix: restate it as "a bounded authored domain needs no B-4 value", and cite the AD-016 harness-domain row instead of C-25. | ADR-014 §1 derivations; ADR-013 C-25 |
 | FND-013 | low | The front matter omits QSpec artifacts that the decisions depend on: FR-250, FR-255, FR-341, FR-331, AD-016 and the `quire.native.diagnostics/v1` catalog. Fix: add `depends_on` edges for them. | ADR-014 front matter |
+
+## Resolution
+
+Resolved by the author in the follow-up commit on `spec/17-boundedness-adr`.
+
+FND-001 fixed (TR-3, A-1, A-2, scenario 5, §13 item 2). FND-002 fixed: §4 "Bounded request". FND-003, FND-004, FND-005 fixed: §1 classification by limits type; FR-082 narrowed. FND-006 fixed: route guard dropped. FND-007 fixed: TR-1, TR-6, scenario 4. FND-008 fixed: §4 boundable table. FND-009 fixed: QSpec ids prefixed. FND-010 fixed: O-20 row and §4. FND-011 fixed: §7 cancellation row. FND-012 fixed: §1 "Relations between kinds". FND-013 fixed: front matter.
