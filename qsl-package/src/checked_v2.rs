@@ -513,6 +513,10 @@ pub(crate) fn read_checked_package_v2(
                     },
                 ));
             }
+            // `PreimageDefect::AmbiguousDeclaration` cannot reach here: IR's
+            // `validate_declaration_names` refuses a repeated `qualified_name`
+            // (`ambiguous_declaration`) and its segments are identifiers, so
+            // the `::` join compares the same names.
             let exports = match declared_exports(&preimage_bytes) {
                 Ok(exports) => exports,
                 Err(defect) => {

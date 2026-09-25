@@ -1431,7 +1431,9 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
     let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
     assert_eq!(&SPINE_TEXT[start..end], "Point");
-    let both = SPINE_TEXT.find("function both").unwrap();
+    let both_start = SPINE_TEXT.find("function both").unwrap();
+    let both_end = both_start + SPINE_TEXT[both_start..].find('}').unwrap() + 1;
+    let both = both_start..both_end;
     let parameters: Vec<&Value> = nodes(&wire)
         .iter()
         .filter(|node| node["node_tag"] == "value" && node["semantic_form"] == "parameter")
@@ -1447,7 +1449,11 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
         {
             for region in entry["regions"].as_array().unwrap() {
                 let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
-                assert!(start >= both, "{entry} lies in both");
+                let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
+                assert!(
+                    both.start <= start && end <= both.end,
+                    "{entry} lies in both ({both:?})"
+                );
                 placed += 1;
             }
         }
@@ -1571,4 +1577,96 @@ fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
         emission.omitted
     );
     assert!(verified_exports(&emission).contains_key("t"));
+}
+
+// No `#[trace]` tag: no TC names the I2 reader's own preimage refusals; the
+// test backs `read_checked_package_v2`'s `InvalidPreimage` arm.
+/// An enum declaration node whose `declaration` is dropped (its declaration
+/// occurrence re-roled `expression`, so it keeps one) passes IR's v2 reader:
+/// IR's `validate_declaration_names` checks the nominal join only on a node
+/// carrying both. QSL's I2 read refuses it as
+/// `DeclarationNominalMismatch` with no declared name, through the
+/// `InvalidPreimage` arm, and yields no package.
+#[test]
+fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
+    let local = status_enum(
+        json!({"kind": "source", "authority": "a", "identity": "u"}),
+        "Status",
+    );
+    let status = json!(local.declaration.key().to_string());
+    let emission = emit(&declared_types(vec![local], vec![]));
+    let mut wire = wire(&emission);
+    let strip = |node: &mut Value| {
+        if node["node_id"]["digest"] == status {
+            node.as_object_mut().unwrap().remove("declaration").unwrap();
+            for occurrence in node
+                .get_mut("occurrences")
+                .and_then(Value::as_array_mut)
+                .into_iter()
+                .flatten()
+            {
+                if occurrence["role"] == "declaration" {
+                    occurrence["role"] = json!("expression");
+                }
+            }
+        }
+    };
+    wire["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .for_each(strip);
+    wire["identity_preimage"]["identity_projection"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .for_each(strip);
+    let mut re_roled = 0;
+    for entry in wire["source_map"].as_array_mut().unwrap() {
+        if entry["node_id"]["digest"] == status && entry["role"] == "declaration" {
+            entry["role"] = json!("expression");
+            re_roled += 1;
+        }
+    }
+    assert_eq!(re_roled, 1, "Status had one declaration entry");
+    let package_id = PackageId::of_preimage(&jcs(&wire["identity_preimage"]));
+    wire["package_id"]["digest"] = json!(package_id.hex());
+    let mut evidence = CheckedPackageEvidence::new();
+    locked_artifacts(&wire["lock"], &mut evidence);
+    locked_artifacts(&wire["diagnostics"], &mut evidence);
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
+        library(),
+        Selection {
+            version: "1".to_owned(),
+            package_id,
+        },
+    );
+    let outcome = read_checked_package_v2(
+        &jcs(&wire),
+        library(),
+        "1".to_owned(),
+        V2ReadLimits::default(),
+        &evidence,
+        &pinned,
+    );
+    let V2ReadOutcome::Refused(crate::checked_v2::V2ReadRefusal::Structural(
+        qsl_semantics::library::LibraryRefusal::InvalidPreimage {
+            library: refused,
+            defect:
+                qsl_semantics::library::PreimageDefect::DeclarationNominalMismatch {
+                    node,
+                    declared: None,
+                    nominal,
+                },
+        },
+    )) = outcome
+    else {
+        panic!("expected InvalidPreimage(DeclarationNominalMismatch), got {outcome:?}");
+    };
+    assert_eq!(refused, library());
+    assert_eq!(json!(node.to_string()), status);
+    assert_eq!(nominal, "Status");
 }

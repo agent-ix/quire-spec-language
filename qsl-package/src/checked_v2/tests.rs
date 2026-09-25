@@ -699,17 +699,14 @@ fn refuses_an_ambiguous_declaration_at_ir_intake() {
     ]);
     let bytes = jcs(&envelope);
     let outcome = read(&bytes, &pinned_for(&preimage));
-    assert!(
-        matches!(
-            &outcome,
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
-                if refusal.code == CheckedPackageRefusalCode::AmbiguousDeclaration
-        ),
-        "expected Refused(Envelope(AmbiguousDeclaration)), got {outcome:?}"
-    );
-    let V2ReadOutcome::Refused(refusal) = outcome else {
-        unreachable!("asserted refused above");
+    let V2ReadOutcome::Refused(ref refusal @ V2ReadRefusal::Envelope(ref envelope)) = outcome
+    else {
+        panic!("expected Refused(Envelope(AmbiguousDeclaration)), got {outcome:?}");
     };
+    assert_eq!(
+        envelope.code,
+        CheckedPackageRefusalCode::AmbiguousDeclaration
+    );
     assert_eq!(refusal.code(), Code::AmbiguousDeclaration);
 }
 
