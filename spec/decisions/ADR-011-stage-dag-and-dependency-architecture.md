@@ -628,7 +628,8 @@ re-walks them against the scenarios.
 #225 owns the lifecycle and CLI orchestration design. #122 and its bounded
 child #232 implement it, and #230 is the conformance slice. The rules below are
 constraints that design must meet. The field list and the exit-code values are
-#225's. The orchestrating driver crate is T-13, implemented by QSL #248.
+#225's. The orchestrating driver crate is T-13, implemented by QSL #248 in
+its own repository, agent-ix/quire-driver.
 
 - `command` calls stage APIs in DAG order and makes no semantic decision. It
   contains no parsing, name resolution, typing, definedness, capability or
@@ -691,7 +692,7 @@ enforces it; before #226, §3's interim rule applies.
 | tool | `complete::editor`, `complete::edit`, `format` | tooling over S1 | 1, F |
 | 6 | `replay` | the CG-facing replay facade: S1 to S4 recompile, then S6a. Its public API includes the #231 envelopes. | layers 1 to 5, F, K; I3 under feature `quire-extraction` |
 | 6 | `command` < `cli` < `main` | orchestration of QSL stages | every layer above, including I3, R, tool and `replay`; quire-rs only through `qsl-source`; never CG |
-| driver | the orchestrating driver crate that calls both QSL and CG (T-13, implemented by #248; #225 accepts its design). It is the crate `quire-driver` in its own repository, agent-ix/quire-driver, downstream of QSL and CG. Nothing depends on it, so the QSL and CG gates never build it. | orchestration across repositories | the QSL layer crates and CG, by git pin; a separate crate downstream of CG, because CG → QSL is a normal edge and Cargo refuses a package cycle |
+| driver | the orchestrating driver crate that calls both QSL and CG (T-13, implemented by #248; #225 accepts its design). It is the crate `quire-driver` in its own repository, agent-ix/quire-driver, downstream of QSL and CG. Nothing depends on it, so the QSL and CG gates never build it. | orchestration across repositories | the QSL layer crates and CG; a separate crate downstream of CG, because CG → QSL is a normal edge and Cargo refuses a package cycle |
 
 Crate map. Layers F, 1, I3, 2, 3, 4, 5, R and the layer-6 `replay` facade are
 each their own workspace crate (§7.2). K is `quire-exact` (X-1). A layer
@@ -1139,7 +1140,8 @@ against the combined Layer 1 architecture.
    on or calls CG (§6.1 layer 6: "never CG"). Only the orchestrating
    driver (T-13) calls both. Because CG → QSL is a normal edge (AD-016
    Owner decision 5), the driver is a separate crate downstream of CG; it
-   cannot be the QSL package's own `main`. QSL #248 implements it, and #225
+   cannot be the QSL package's own `main`. QSL #248 implements it as the
+   crate `quire-driver` in the repository agent-ix/quire-driver, and #225
    accepts its design.
 3. **Families map to modules in their layers' crates.** Every family is a set
    of modules inside the §6.1 layer crates. A crate holds one layer, and a
