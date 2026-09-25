@@ -7,8 +7,8 @@ rust-version = "1.98"
 license = "AGPL-3.0-or-later"
 description = "ADR-011 §6.1 layer 4: the S4 checked-package typestate, the quire.checked-package/v2 emitter and the I2 byte reader."
 
-# ADR-011 §6.1 layer 4 depends on "3, F, K; `quire-contract-model` for v2
-# wire constants and round-trip tests only". The root crate's
+# ADR-011 §6.1 layer 4 depends on "3, F, K; `quire-contract-model` for the
+# v2 wire contract" (X-7). The root crate's
 # `tests/it/family_outcome_layering.rs` (TC-390) asserts that this table
 # names no other workspace crate.
 [dependencies]
