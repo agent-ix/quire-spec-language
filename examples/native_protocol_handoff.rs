@@ -1,27 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-042/TC-121: real native producer fixture; B's IT-001 remains a separate gate.
+//! FR-042/TC-121: thin CLI over `protocol_artifact::handoff::write_v1`; B's IT-001 remains a separate gate.
 
-#[allow(dead_code, reason = "The shared module also provides the v2 recipe")]
-#[path = "protocol-handoff/producer.rs"]
-mod producer;
+use quire_spec_language::protocol_artifact::handoff;
 
 fn main() -> std::process::ExitCode {
-    match run() {
+    let mut arguments = std::env::args_os().skip(1);
+    let (Some(directory), None) = (arguments.next(), arguments.next()) else {
+        eprintln!("usage: native_protocol_handoff <new-output-directory>");
+        return std::process::ExitCode::FAILURE;
+    };
+    match handoff::write_v1(std::path::Path::new(&directory)) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{error}");
             std::process::ExitCode::FAILURE
         }
     }
-}
-
-fn run() -> Result<(), producer::Error> {
-    let mut arguments = std::env::args_os().skip(1);
-    let directory = arguments.next().ok_or(producer::Error::Arguments)?;
-    if arguments.next().is_some() {
-        return Err(producer::Error::Arguments);
-    }
-    producer::write(std::path::Path::new(&directory))
 }
 
 #[cfg(test)]
@@ -45,7 +39,8 @@ mod tests {
         let output = directory.path().join("handoff");
         // The recipe runs the real producer and independently reads the emitted
         // bytes before writing. These assertions inspect its output.
-        super::producer::write(&output).expect("real producer and independent reader");
+        quire_spec_language::protocol_artifact::handoff::write_v1(&output)
+            .expect("real producer and independent reader");
         let package: w::Package =
             serde_json::from_slice(&std::fs::read(output.join("compiled-protocol.json")).unwrap())
                 .unwrap();

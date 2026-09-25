@@ -15,7 +15,21 @@ use serde::{Deserialize, Serialize};
 
 use super::{v2, wire as w, Dimension, Limits, ACCOUNTING_VERSION};
 
+/// QSL-251: the complete handoff producer. Behind the `handoff-writer`
+/// feature because it embeds the authored recipe inputs, which the default
+/// build does not carry.
+#[cfg(feature = "handoff-writer")]
+pub mod writer;
+#[cfg(feature = "handoff-writer")]
+pub use writer::{write_v1, write_v2};
+
 /// Repository path of the committed compiled-protocol v1 consumer handoff.
+///
+/// A committed snapshot, not an admissible handoff: it carries no
+/// `dependencies/` bytes, and its `Producer.binary` digest is informational
+/// (the producer source when the snapshot was taken). A consumer that must
+/// admit a handoff writes a fresh one with the `handoff-writer` feature's
+/// `write_v1`/`write_v2`.
 pub const PUBLISHED_V1_HANDOFF: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/artifacts/compiled-protocol-v1"
@@ -34,6 +48,12 @@ pub const PUBLISHED_V1_SELECTION_FILE: &str = "expected.json";
 pub const PUBLISHED_V1_CHECKSUMS_FILE: &str = "SHA256SUMS";
 
 /// Repository path of the committed compiled-protocol v2 consumer handoff.
+///
+/// A committed snapshot, not an admissible handoff: it carries no
+/// `dependencies/` bytes, and its `Producer.binary` digest is informational
+/// (the producer source when the snapshot was taken). A consumer that must
+/// admit a handoff writes a fresh one with the `handoff-writer` feature's
+/// `write_v1`/`write_v2`.
 pub const PUBLISHED_HANDOFF: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/artifacts/compiled-protocol-v2"

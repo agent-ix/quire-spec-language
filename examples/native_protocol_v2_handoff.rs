@@ -1,27 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-050/TC-138: release-capable strict v2 producer handoff for B.
+//! FR-050/TC-138: thin CLI over `protocol_artifact::handoff::write_v2`, the strict v2 producer handoff for B.
 
-#[allow(dead_code, reason = "The shared module also preserves the v1 recipe")]
-#[path = "protocol-handoff/producer.rs"]
-mod producer;
+use quire_spec_language::protocol_artifact::handoff;
 
 fn main() -> std::process::ExitCode {
-    match run() {
+    let mut arguments = std::env::args_os().skip(1);
+    let (Some(directory), None) = (arguments.next(), arguments.next()) else {
+        eprintln!("usage: native_protocol_v2_handoff <new-output-directory>");
+        return std::process::ExitCode::FAILURE;
+    };
+    match handoff::write_v2(std::path::Path::new(&directory)) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{error}");
             std::process::ExitCode::FAILURE
         }
     }
-}
-
-fn run() -> Result<(), producer::Error> {
-    let mut arguments = std::env::args_os().skip(1);
-    let directory = arguments.next().ok_or(producer::Error::ArgumentsV2)?;
-    if arguments.next().is_some() {
-        return Err(producer::Error::ArgumentsV2);
-    }
-    producer::write_v2(std::path::Path::new(&directory))
 }
 
 #[cfg(test)]
@@ -41,7 +35,8 @@ mod tests {
     fn stripped_release_v2_producer_writes_the_independently_read_handoff() {
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("handoff-v2");
-        super::producer::write_v2(&output).expect("real v2 producer and independent strict reader");
+        quire_spec_language::protocol_artifact::handoff::write_v2(&output)
+            .expect("real v2 producer and independent strict reader");
 
         let bytes = std::fs::read(output.join(PUBLISHED_OFFER_FILE)).unwrap();
         let package: v2::wire::Package = serde_json::from_slice(&bytes).unwrap();

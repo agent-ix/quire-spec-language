@@ -4,7 +4,7 @@
 # committed at a `dependencies/0.bin` path (since purged from history
 # entirely; this repository commits no `dependencies/*.bin` fixtures at all
 # now), behind filenames indistinguishable from the plain-text JSON members
-# alongside them, and a size ceiling (`examples/protocol-handoff/producer.rs`'s
+# alongside them, and a size ceiling (the handoff producer's
 # old `BINARY_BYTES`) was raised to 16 MiB to let them through instead of
 # being asked whether they should exist. QSL-169.
 #
