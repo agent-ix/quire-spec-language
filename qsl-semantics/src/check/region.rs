@@ -89,6 +89,13 @@ impl DeclarationRegions {
             location,
         )
     }
+
+    /// FR-096: the region of function `index`'s whole declaration form, or
+    /// `None` when it was not read from the unit.
+    pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
+        let spans = self.spans.get(index)?.as_ref()?;
+        region(&self.source, spans.declaration)
+    }
 }
 
 impl PackageDeclarations {

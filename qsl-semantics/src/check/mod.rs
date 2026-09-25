@@ -527,6 +527,8 @@ impl PackageDeclarations {
     /// before any charge; a reached checking limit is `stage_limit_exceeded`
     /// (QSL-236) and yields no admission verdict.
     pub fn check(self, limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        // FR-096: a family limit's locus resolves through the unit's spans.
+        let regions = self.regions();
         let body_location = |index: usize, name: &str| {
             root(Origin::Body {
                 function: name.to_owned(),
@@ -848,6 +850,7 @@ impl PackageDeclarations {
                 location: &location,
                 measure_location: &measure_location,
                 nodes_used,
+                regions: Some(&regions),
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,

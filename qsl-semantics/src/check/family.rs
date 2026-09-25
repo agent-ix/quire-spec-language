@@ -56,7 +56,7 @@ use qsl_forms::{
     FunctionDeclaration,
 };
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, StageFailure, Staged};
+use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Locus, StageFailure, Staged};
 // QSL-148: the relocated function-application/-declaration checking code
 // below needs `check.rs`'s own `Typer`/`Signature`/`bind_parameters` (the
 // general typer this family delegates to for a body or a call's
@@ -69,7 +69,7 @@ use super::check::{bind_parameters, Signature, Signatures, Typer};
 use super::facts::{CallSite, Definedness};
 use super::ir::Node;
 use super::refusal::{CheckCause, CheckRefusal, CheckingLimitKind, Location as CheckLocation};
-use super::{CheckingLimits, DispatchTable, Scope};
+use super::{CheckingLimits, DeclarationRegions, DispatchTable, Origin as CheckOrigin, Scope};
 use crate::value::declaration::CompositeShape;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTypedCause;
@@ -1125,6 +1125,28 @@ pub struct ValueDeclarations<'a> {
     pub(crate) measure_location: &'a CheckLocation,
     /// See this struct's own doc.
     pub(crate) nodes_used: u64,
+    /// FR-096: the regions of the unit the declarations were read from,
+    /// through which a limit's locus resolves. `None` for declarations not
+    /// read from a unit, whose positions no region names.
+    pub(crate) regions: Option<&'a DeclarationRegions>,
+}
+
+impl ValueDeclarations<'_> {
+    /// FR-096: the declaration being checked, as a whole, located at its
+    /// form's span; `None` when it was not read from the unit (a function
+    /// synthesized for FR-151 dispatch).
+    fn declaration_locus(&self) -> Option<Locus> {
+        let CheckOrigin::Body { index, .. } = self.location.origin else {
+            return None;
+        };
+        self.regions?.declaration_region(index).map(Locus::Region)
+    }
+
+    /// FR-096: the node `location` names, located at its span; `None` for
+    /// a position in a tree not read from the unit.
+    fn locus(&self, location: &CheckLocation) -> Option<Locus> {
+        self.regions?.region(location).map(Locus::Region)
+    }
 }
 
 /// [`ValueFunctionFamily`]'s [`crate::family::FamilyContract::Checked`]
@@ -1180,13 +1202,20 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // recursive descent below is charged against -- see
         // `Application`'s own doc for why the two are not unified in
         // this change.
-        cx.enter_nesting().map_err(StageFailure::Limit)?;
+        //
+        // FR-096: every limit this function reaches for the declaration as
+        // a whole is located at the declaration's span; `Typer`'s depth
+        // stop, at the node whose entry failed.
+        let declarations = cx.declarations();
+        let located = |limit: LimitExceeded| {
+            StageFailure::Limit(limit.at(declarations.declaration_locus()))
+        };
+        cx.enter_nesting().map_err(located)?;
         // FR-062-AC-3 "no side door": the scope stack is pushed and popped
         // around this one check (`cx.scopes.enter`/`leave` below), not just
         // read.
         cx.scopes
             .enter(format!("value.function-declaration:{}", form.name));
-        let declarations = cx.declarations();
         let measured = measure_declaration(
             form,
             declarations.own_signature,
@@ -1222,7 +1251,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         {
             cx.scopes.leave();
             cx.leave_nesting();
-            return Err(StageFailure::Limit(exceeded));
+            return Err(located(exceeded));
         }
         // PR #302 review finding 3: `WorkBudget` is a `Limit` outcome
         // produced by a denied charge against `cx.meter` -- the *shared
@@ -1259,7 +1288,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
                 Some(metrics.work_budget),
                 "the denied amount is this declaration's charge"
             );
-            return Err(StageFailure::Limit(LimitExceeded::new(
+            return Err(located(LimitExceeded::new(
                 LimitKind::WorkBudget,
                 incomplete.limit,
                 u128::from(incomplete.consumed) + u128::from(denied.unwrap_or(metrics.work_budget)),
@@ -1329,11 +1358,10 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
             CheckCause::ResourceExhausted(ref exceeded)
                 if exceeded.kind == CheckingLimitKind::Depth =>
             {
-                StageFailure::Limit(LimitExceeded::new(
-                    LimitKind::NestingDepth,
-                    exceeded.limit,
-                    exceeded.actual,
-                ))
+                StageFailure::Limit(
+                    LimitExceeded::new(LimitKind::NestingDepth, exceeded.limit, exceeded.actual)
+                        .at(declarations.locus(&refusal.location)),
+                )
             }
             _ => StageFailure::Refused(refusal),
         })?;
@@ -1602,6 +1630,7 @@ pub mod fixtures {
             location,
             measure_location: location,
             nodes_used: 0,
+            regions: None,
         }
     }
     /// The contract-level stage limits these tests check under: nothing
@@ -2359,7 +2388,8 @@ pub(crate) mod checking_tests {
     /// `StageFailure::Limit(LimitExceeded::new(LimitKind::NestingDepth,
     /// ..))`, so this test's refusal is that `Limit` outcome, carrying the
     /// configured bound and the actual depth the refused entry would have
-    /// reached, with no `Locus` (FR-062-AC-7's own text).
+    /// reached. Its declarations were not read from a unit, so it carries
+    /// no `Locus` (FR-096; `locus_tests` covers the located case).
     #[test]
     #[trace("FR-062-AC-7")]
     fn real_checker_depth_limit_is_the_proximate_cause() {
@@ -2563,5 +2593,238 @@ pub(crate) mod checking_tests {
             })
             .collect();
         assert_eq!(refusals, expected);
+    }
+}
+
+/// FR-096: a family `check`'s limits name the locus where the charge
+/// failed, over declarations S1, S2 and the FR-091 assembler read from real
+/// source text.
+#[cfg(test)]
+mod locus_tests {
+    use super::fixtures::{
+        declaration, declaration_signature, declarations_for, empty_scope, limits,
+        measure_resolved, root_location,
+    };
+    use super::*;
+    use crate::check::refusal::Origin as CheckOrigin;
+    use crate::check::PackageDeclarations;
+    use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
+    use ix_trace_rs::trace;
+    use qsl_forms::{build_unit, FormsLimits};
+    use qsl_foundation::diagnostic::{CatalogCode, CatalogCoded};
+    use qsl_foundation::source::provenance::SourceRegion;
+    use qsl_foundation::SourceIdentity;
+    use quire_exact::{Meter, ScalarLimits};
+
+    const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
+        profile v = \"quire.value.complete/v1\" version \"1\" digest \
+        \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+        function f using v(): Boolean pure { not not not true }\n";
+
+    /// [`UNIT`] through S1, S2 and the assembler.
+    fn unit() -> PackageDeclarations {
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            UNIT.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let forms = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
+        PackageDeclarations::assemble(parsed.source().reference().clone(), forms)
+            .expect("the unit assembles")
+    }
+
+    fn body_location() -> CheckLocation {
+        CheckLocation {
+            origin: CheckOrigin::Body {
+                function: "f".into(),
+                index: 0,
+            },
+            path: Vec::new(),
+        }
+    }
+
+    /// The unit bytes `locus` names, asserting it is a region of the unit.
+    fn text(locus: Option<&Locus>, unit: &PackageDeclarations) -> &'static str {
+        let Some(Locus::Region(region)) = locus else {
+            panic!("expected a region locus, got {locus:?}");
+        };
+        assert_eq!(region.source(), &unit.source);
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        &UNIT[start..end]
+    }
+
+    /// The outcome of checking function 0 of `unit` under `checking`,
+    /// `stage` and `meter`, located through `unit`'s regions.
+    fn check_unit(
+        unit: &PackageDeclarations,
+        checking: CheckingLimits,
+        stage: StageLimits,
+        meter: &mut Meter,
+    ) -> crate::family::CheckOutcome<CheckedDeclaration, CheckRefusal> {
+        let scope = empty_scope();
+        let signatures = Signatures::default();
+        let own_signature = declaration_signature("f");
+        let location = body_location();
+        let regions = unit.regions();
+        let declarations = ValueDeclarations {
+            regions: Some(&regions),
+            ..declarations_for(
+                &scope,
+                &signatures,
+                &own_signature,
+                &[],
+                checking,
+                &location,
+            )
+        };
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut cx = CheckContext::new(&declarations, stage, meter, &mut diagnostics, &mut scopes);
+        ValueFunctionFamily::check(&unit.functions[0], &mut cx)
+    }
+
+    fn limit(
+        outcome: crate::family::CheckOutcome<CheckedDeclaration, CheckRefusal>,
+    ) -> LimitExceeded {
+        match outcome {
+            Err(StageFailure::Limit(exceeded)) => exceeded,
+            other => panic!("expected a stage limit, got {other:?}"),
+        }
+    }
+
+    fn unlimited() -> Meter {
+        Meter::new(SCALAR_LIMITS_UNLIMITED)
+    }
+
+    /// FR-096-AC-11: `Typer`'s depth stop on `not not not true` (four
+    /// deep) under depth 3 is a nesting-depth limit with bound 3, actual 4,
+    /// located at the span of `true` and coded
+    /// `stage_limit_exceeded`/`nesting-depth-exceeded`; depth 4 admits. The
+    /// same stop in a function not read from a unit carries no locus.
+    #[trace("TC-378", "FR-096-AC-11", "FR-062-AC-7")]
+    #[test]
+    fn the_typer_depth_stop_is_located_at_the_node_whose_entry_failed() {
+        let unit = unit();
+        let tight = CheckingLimits::new(u64::MAX, 3).unwrap();
+        let exceeded = limit(check_unit(&unit, tight, limits(), &mut unlimited()));
+        assert_eq!(exceeded.kind(), LimitKind::NestingDepth);
+        assert_eq!(exceeded.configured_bound(), 3);
+        assert_eq!(exceeded.actual(), 4);
+        assert_eq!(text(exceeded.locus(), &unit), "true");
+        assert_eq!(
+            exceeded.catalog_code(),
+            CatalogCode::new("stage_limit_exceeded", "nesting-depth-exceeded")
+        );
+
+        let wide = CheckingLimits::new(u64::MAX, 4).unwrap();
+        assert!(check_unit(&unit, wide, limits(), &mut unlimited()).is_ok());
+
+        let scope = empty_scope();
+        let signatures = Signatures::default();
+        let own_signature = declaration_signature("f");
+        let location = body_location();
+        let synthesized = declarations_for(&scope, &signatures, &own_signature, &[], tight, &location);
+        let mut meter = unlimited();
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut cx =
+            CheckContext::new(&synthesized, limits(), &mut meter, &mut diagnostics, &mut scopes);
+        let exceeded = limit(ValueFunctionFamily::check(&unit.functions[0], &mut cx));
+        assert_eq!(exceeded.kind(), LimitKind::NestingDepth);
+        assert_eq!(exceeded.locus(), None);
+    }
+
+    /// FR-096-AC-4: a declaration whose preimage input bytes exceed a bound
+    /// `B` stops with kind input bytes, bound `B`, the measured bytes and
+    /// the declaration's span. The same limit reached for a function not
+    /// read from a unit carries no locus.
+    #[trace("TC-427", "FR-096-AC-4")]
+    #[test]
+    fn a_declaration_input_bytes_limit_is_located_at_the_declaration() {
+        let unit = unit();
+        let measured = measure_resolved(&empty_scope(), &unit.functions[0]).input_bytes;
+        let bound = measured - 1;
+        let stage = StageLimits {
+            input_bytes: bound,
+            ..limits()
+        };
+        let exceeded = limit(check_unit(
+            &unit,
+            CheckingLimits::default(),
+            stage,
+            &mut unlimited(),
+        ));
+        assert_eq!(exceeded.kind(), LimitKind::InputBytes);
+        assert_eq!(exceeded.configured_bound(), bound);
+        assert_eq!(exceeded.actual(), u128::from(measured));
+        assert_eq!(
+            text(exceeded.locus(), &unit),
+            "function f using v(): Boolean pure { not not not true }"
+        );
+
+        let scope = empty_scope();
+        let signatures = Signatures::default();
+        let own_signature = declaration_signature("f");
+        let location = root_location();
+        let synthesized = declarations_for(
+            &scope,
+            &signatures,
+            &own_signature,
+            &[],
+            CheckingLimits::default(),
+            &location,
+        );
+        let form = declaration("f", Expression::Boolean(true));
+        let stage = StageLimits {
+            input_bytes: 0,
+            ..limits()
+        };
+        let mut meter = unlimited();
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut cx = CheckContext::new(&synthesized, stage, &mut meter, &mut diagnostics, &mut scopes);
+        let exceeded = limit(ValueFunctionFamily::check(&form, &mut cx));
+        assert_eq!(exceeded.kind(), LimitKind::InputBytes);
+        assert_eq!(exceeded.locus(), None);
+    }
+
+    /// FR-096-AC-5: a declaration whose work charge a budget `W` denies
+    /// stops with kind work budget, bound `W`, the spend the denied charge
+    /// would have reached, and the declaration's span.
+    #[trace("TC-427", "FR-096-AC-5")]
+    #[test]
+    fn a_denied_work_charge_is_located_at_the_declaration() {
+        let unit = unit();
+        let charge = measure_resolved(&empty_scope(), &unit.functions[0]).work_budget;
+        let bound = charge - 1;
+        let mut meter = Meter::new(ScalarLimits {
+            work_units: bound,
+            ..SCALAR_LIMITS_UNLIMITED
+        });
+        let exceeded = limit(check_unit(
+            &unit,
+            CheckingLimits::default(),
+            limits(),
+            &mut meter,
+        ));
+        assert_eq!(exceeded.kind(), LimitKind::WorkBudget);
+        assert_eq!(exceeded.configured_bound(), bound);
+        assert_eq!(exceeded.actual(), u128::from(charge));
+        let region: &SourceRegion = match exceeded.locus() {
+            Some(Locus::Region(region)) => region,
+            other => panic!("expected a region, got {other:?}"),
+        };
+        assert_eq!(
+            unit.regions().declaration_region(0).as_ref(),
+            Some(region)
+        );
+        assert_eq!(
+            text(exceeded.locus(), &unit),
+            "function f using v(): Boolean pure { not not not true }"
+        );
     }
 }
