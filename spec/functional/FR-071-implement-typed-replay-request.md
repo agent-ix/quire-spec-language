@@ -66,7 +66,17 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   path-typed, environment-variable-typed, or search-location-typed member,
   and a byte-provision entry naming a digest domain outside the closed
   FR-201 domain set SHALL refuse at decode.
-- Each package-reference entry SHALL carry FR-001's four source labels
+- The package reference SHALL carry QSpec FR-323's `sources` and
+  `dependencies`: `sources` names the proved package's own source
+  references, and `dependencies` one entry per entry of the proved
+  package's `dependency_selections`, in order, each
+  `{identity, version, package_id, sources}` (ADR-015 D-4). `identity` is a
+  `LibraryName` and `package_id` a `quire.package.semantic/v2`
+  `DigestRecord`; an empty identity or version, or a `package_id` in
+  another domain, refuses at decode. Every source reference of every entry
+  is a `RawSourceRef` the byte provision SHALL cover, as the proved
+  package's are.
+- Each package-reference source entry SHALL carry FR-001's four source labels
   (authority, identity, revision namespace, revision) and its digest, so
   the executor (FR-098) recompiles a source under exactly the labels the
   proving run used (ADR-013 §7 S-4b). **Amended by QSL-5**: the entry used
@@ -126,6 +136,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-6 | A byte-provision entry whose stored bytes do not hash to its own declared digest, under its declared digest domain's algorithm, refuses at construction with cause `stale_dependency`/`byte-digest-mismatch`; this is this requirement's own decode-time half of "stale package identity" and is distinct from #243's execution-time recompiled-`package_id` check. | Test (TC-186) |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
 | FR-071-AC-8 | A request whose `package_contract_version` is not exactly `quire.checked-package/v2` refuses at decode with the catalog's unsupported-wire refusal, naming the actual version supplied, before the package reference or byte provision is read. | Test (TC-445) |
+| FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity or an empty version, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
 
 ## Dependencies
 

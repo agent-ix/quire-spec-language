@@ -405,10 +405,11 @@ The assembler refuses in these cases:
   cycle, as the cycle's dependency edges.
 - **Undeclared `using` alias.** As stated above.
 - **Duplicate alias.** As stated above.
-- **Unsupplied import.** An `import` declaration names a library that no
-  dependency input supplies. Spine `compile` takes no dependency input
-  (ADR-011 §2.4), so every `import` refuses, at the import declaration's
-  span, rather than being dropped from the package.
+
+An `import` reaches the assembler only after spine `compile`'s S4 source
+resolution has bound it to a supplied library ([FR-099](FR-099-compile-against-supplied-libraries.md),
+ADR-015 D-1). An import no library supplies is refused there, at stage
+`intake`, before assembly, and is never dropped from the package.
 
 A refusal carries every error the assembler found in the unit, not only the
 first (ADR-011 §2.3 E3). The assembler returns no `PackageDeclarations`
@@ -433,7 +434,6 @@ code or code/cause:
 | floating type | `unknown_required_feature`/`unsupported-feature` |
 | undeclared `using` alias | `missing_declaration`/`missing-selection` |
 | duplicate alias | `ambiguous_declaration`/`ambiguous-name` |
-| unsupplied import | `missing_import`/`missing-selection` |
 | alias cycle | `invalid_package`/`definition-cycle` (catalog extension proposed, Dependencies) |
 | S2 nesting-depth limit | `stage_limit_exceeded`/`nesting-depth-exceeded` |
 
@@ -486,7 +486,7 @@ for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
 | FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The floating-type cause returns `unknown_required_feature`, the undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, and the alias-cycle cause `invalid_package`. S2's nesting-depth limit refusal reports `stage_limit_exceeded`/`nesting-depth-exceeded`. | Test (TC-406) |
 | FR-091-AC-22 | For a unit with one profile selection, alias `v`, and `function f using v(): Boolean pure { true }`, the assembler records `f`'s `using` alias as resolved to that selection. With `function g using w(): Boolean pure { true }` added, it returns one refusal holding an undeclared-alias error, code `missing_declaration`/`missing-selection`, that names `w` and the span of `g`'s `using` field, and no `PackageDeclarations`. A unit that declares two profile selections with alias `v` refuses with a duplicate-alias error, code `ambiguous_declaration`/`ambiguous-name`, naming `v` and both selection spans. | Test (TC-412) |
 | FR-091-AC-23 | S1 admits a unit whose function parameter is typed `Float32` or `Float64` with no `[mode]`, and S2 builds that parameter's type form with head `Float32` or `Float64` and no rounding mode. | Test (TC-405) |
-| FR-091-AC-24 | Spine `compile` of a unit that declares `import "test/units" version "2" digest "sha256:…" as u;` refuses at the assembly stage with an unsupplied-import error naming `test/units`, code `missing_import`/`missing-selection`, located at the import declaration's span, and emits no package. | Test (TC-405) |
+| FR-091-AC-24 | Spine `compile` of a unit that declares `import "test/units" version "2" digest "<64 lowercase hex>" as u;`, with no library supplied as `test/units`, refuses at stage `intake`, before assembly, with `missing_import`/`missing-selection` naming `test/units` at the import's identity string (FR-099, ADR-015 D-1), and emits no package. | Test (TC-405) |
 
 ## Dependencies
 

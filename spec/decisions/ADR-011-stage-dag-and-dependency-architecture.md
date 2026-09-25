@@ -253,8 +253,8 @@ distinct nominal type with private constructors in its stage module.
 |---|---|---|---|---|
 | E1 | S0 → S1 | Source bytes, `SourceIdentity`, limits | Lossless CST | QSL `cst` |
 | E2 | S1 → S2 | A CST with no error or recovery node | Parsed forms | QSL `forms`; family form builders (ADR-012 §2) |
-| E3 | S2 → S3 | Parsed forms, the unit's source owner (ADR-013 O-04), admitted domain packages (I1), layer-3 `library` import views (I2) for name resolution only, library lock, and the package's lock evidence (§2.4) | Checked semantic graph | QSL `check`; family `check` and `requirements` hooks (ADR-012 §2) |
-| E4 | S3 → S4 | Checked semantic graph, and each dependency's checked package compiled from its digest-addressed source through S1 to S4, whose recomputed `package_id` equals that of the verified view E3 resolved against (§4 dependency binding) | Linked checked package (in-process) whose closure carries the checked dependency nodes, and v2 bytes on request | QSL `package` |
+| E3 | S2 → S3 | Parsed forms, the unit's source owner (ADR-013 O-04), admitted domain packages (I1), layer-3 `library` import views (I2) for name resolution only, each imported dependency's `CheckedGraph`, compiled from source, for typing imported declarations (ADR-015 D-5), library lock, and the package's lock evidence (§2.4) | Checked semantic graph | QSL `check`; family `check` and `requirements` hooks (ADR-012 §2) |
+| E4 | S3 → S4 | Checked semantic graph, and each dependency's checked package compiled from its source through S1 to S4 (ADR-015 D-1), whose recomputed `package_id` equals that of the verified view E3 resolved against (§4 dependency binding) | Linked checked package (in-process) whose closure carries the checked dependency nodes, and v2 bytes on request | QSL `package` |
 | E5 | S4 → S5 | `quire.checked-package/v2` bytes only, and beside them the expected `package_id` the driver received in E4's `EmittedPackage`. IR's reader enforces conditions 1 and 2 of the §4 verified binding (supported version, digest equal to declared identity) under FR-322 (IR TC-048), and condition 3 (identity pinned by the request) against that expected `package_id` | IR `CheckedPackageV2`, then IR nodes | IR reader. The wire contract is QSpec's. |
 | E6 | S4 → S6a | In-process linked checked package with its checked dependency closure (E4), typed arguments, object environment, `Meter` | `Evaluation` carrying a `FamilyOutcome` | QSL `value::expression` |
 | E7 | S5 → S6b | IR nodes; the per-item requirement records (keyed by occurrence key, ADR-012 §13.5), which the driver passes from the in-process `CheckedPackage`; bounds, and the `route` candidate sets, passed by the orchestrating driver (T-13) | `ObligationRecord` per requested item. For `supported` items: oracle, harness and one `KaniOutcome`. | CG, with RT ops and IR outcome (AD-016 arrows 3 to 6) |
@@ -526,10 +526,9 @@ members, and the I2 reader admits a non-empty `dependency_selections`.
 
 **Amended (2026-09-25, QSL-255).** The QSpec schema defect this section
 recorded is fixed (QSpec STD-105; IR-287 types the entry as
-`CheckedDependencySelection`). E3 still refuses a unit that declares an
-`import` (`missing_import`/`missing-selection`, FR-091), because spine
-`compile` and `replay` take no dependency input yet. Remaining work:
-QSL-255 (the dependency input of spine `compile` and of the replay request).
+`CheckedDependencySelection`). Spine `compile` takes a dependency input and
+resolves each `import` against it, and `replay` builds that input from its
+request (ADR-015, FR-099, FR-098).
 
 ## 3. Forbidden bypasses
 
@@ -584,8 +583,9 @@ re-walks them against the scenarios.
   `stale_dependency` (ADR-013 O-26, C-13), yielding no package and no
   verdict. The dependency source bytes, and the view each check compares
   against, come from:
-  1. an ordinary compile: the S4 source resolution, which reads the same
-     resolved package source that the verified view was produced from;
+  1. an ordinary compile: the S4 source resolution (ADR-015 D-1), which
+     compiles each supplied library's source and builds the verified view
+     from that same compile;
   2. `replay`: the QC-1 digest-addressed byte provision in the replay request.
      `replay` compiles each dependency's bytes through S1 to S4 and verifies
      the emitted v2 bytes to build its view. The expected `package_id` is the
@@ -654,8 +654,9 @@ constraints that design must meet. The field list and the exit-code values are
   source header and QSL's `DefinitionLock` catalog (§2.4), and no lock file or
   request file is read. It takes FR-056's package input (domain package
   documents by `sha256-jcs` digest) and runs I1 over the unit's `model`
-  declarations between S2 and E3 (amended 2026-09-25, QSL-249). It takes no
-  dependency source, so E3 refuses an `import` declaration. No native-compile/1
+  declarations between S2 and E3 (amended 2026-09-25, QSL-249). It takes the
+  dependency input, the supplied libraries, and runs the S4 source
+  resolution over the unit's imports between S2 and E3 (ADR-015 D-1). No native-compile/1
   request or `native-rule-model/1` model has a spine equivalent. Until
   M-6c/QSL-5, CLI `compile` reaches spine `compile` through a
   native-compile/1 request whose program source declares `1-draft`, with no
@@ -1322,10 +1323,9 @@ sections it names.
 - **OQ-5: `dependency_selections`.** Each entry is
   `{identity, version, package_id}`, one per library identity of the
   resolved closure, identical in the lock and the identity preimage (QSpec
-  STD-105, IR-287). E4 fills it and the emitter writes it (§2.4). An
-  `import` is refused until spine `compile` and `replay` take a dependency
-  input (§2.4; Remaining work: QSL-255). It is not a prerequisite of the
-  lock-evidence work.
+  STD-105, IR-287). E4 fills it and the emitter writes it (§2.4). Spine
+  `compile` and `replay` resolve imports against a dependency input
+  (ADR-015). It is not a prerequisite of the lock-evidence work.
 - **OQ-6: edition and definition digests.** The edition is `ix:native` /
   `1-draft.2` per QSpec's `complete-value-lock.json`; the fixtures'
   `quire-edition` edition is a placeholder. **Amended (2026-09-24, QSL-6):**

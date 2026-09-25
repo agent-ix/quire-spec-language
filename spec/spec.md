@@ -188,6 +188,10 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-014
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-015
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-099
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -481,7 +485,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-095](functional/FR-095-occurrence-keyed-source-map-and-locus.md) | FR | Specified and implemented under QSL-159 (ADR-013 §7 S-4: O-07, O-12, T-5, C-14) -- TC-420 to TC-422 pass locally; `LocatedSpan` replacement and C-21 are slice S-4b (QSL-233, FR-001), check-stage regions slice S-5b (QSL-160, FR-096) |
 | [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md) | FR | Partly implemented under QSL-160 (ADR-013 §7 S-5b: T-4, O-17, O-22 with T-5 loci; catalog revision `1-draft.7`) -- AC-2 to AC-5 and AC-9 to AC-11 pass locally (TC-427, TC-429, TC-378); AC-6 to AC-8 (TC-428, S6a refusal-record fields) remain |
 | [FR-097](functional/FR-097-classify-claim-extent-and-write-bounded-requests.md) | FR | Specified and implemented under QSL-140 (ADR-013 §7 S-6, ADR-014 §11): F `bound`, `ClaimExtent`, the O-20 request writer, `explore::Outcome::category()` and the optional kernel bounds -- TC-436 to TC-439 and TC-441 pass locally; TC-440 is partly passed, its IR-283/IR-284 fixtures in an ignored agreement test |
-| [FR-098](functional/FR-098-execute-a-replay-request.md) | FR | Implemented under QSL-5 (ADR-013 TK-01, C-13): `qsl_replay::replay` recompiles through the spine, checks `package_id`, selects by `QualifiedName`, joins by parameter node id and calls S6a -- TC-444 passes locally for AC-1 to AC-5; AC-6 (`DependencyIdentityMismatch`) is not delivered; QSL-255 owns it |
+| [FR-098](functional/FR-098-execute-a-replay-request.md) | FR | Implemented under QSL-5 (ADR-013 TK-01, C-13): `qsl_replay::replay` recompiles through the spine, checks `package_id`, selects by `QualifiedName`, joins by parameter node id and calls S6a -- TC-444 passes locally for AC-1 to AC-5; AC-6 and AC-7 (replay against dependencies, ADR-015 D-4) are specified, not delivered; QSL-255 owns them |
+| [FR-099](functional/FR-099-compile-against-supplied-libraries.md) | FR | Specified under QSL-255 (ADR-015 D-1 to D-3, D-5): spine `compile` resolves imports against supplied libraries, compiles each from source, types imported names from the library's checked graph and emits `dependency_reference` -- TC-446 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented under QSL-214 and QSL-215: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented under QSL-216, QSL-218 and QSL-222: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (QSL-17, #222) |
+| [ADR-015](decisions/ADR-015-compile-and-replay-against-dependencies.md) | ADR | Accepted; compile and replay against dependencies: the dependency input and S4 source resolution, the bare-hex import digest, string library identities, replay dependency entries, typing imported names (QSL-255) |

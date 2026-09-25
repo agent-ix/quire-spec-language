@@ -90,7 +90,7 @@ operational validation remains outside this audit-only plan.
 | TC-184 | A family adds a typed witness payload through a typed extension point, not an untyped map | Unit | P1 | FR-070-AC-5 | ✅ Passed locally |
 | TC-445 | The witness-packet and replay-request readers refuse an unknown package contract version | Unit | P1 | FR-070-AC-8, FR-071-AC-8 | ✅ Passed locally (QSL-235) |
 | TC-185 | The replay request carries exactly the O-26 members and round-trips them exactly | Unit | P1 | FR-071-AC-1 | ✅ Passed locally |
-| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7 | ✅ Passed locally |
+| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7, FR-071-AC-9 | ✅ Passed locally; step 7 (FR-071-AC-9, the package reference's `dependencies`) planned (QSL-255) |
 | TC-187 | The replay request's function selection accepts only a typed QualifiedName, never a bare string | Unit | P1 | FR-071-AC-3 | 🚧 Planned; #231 |
 | TC-188 | The replay request refuses an unknown version or an out-of-set profile/capability identifier before recompilation | Unit | P1 | FR-071-AC-4 | ✅ Passed locally |
 | TC-189 | The replay result keeps the Witness arm and Input arm distinct, each with its own settlement | Unit | P1 | FR-072-AC-1 | ✅ Passed locally |
@@ -162,7 +162,7 @@ operational validation remains outside this audit-only plan.
 | TC-376 | Function application checking accepts a well-typed call and refuses wrong arity, an unknown name and a type mismatch | Unit | P1 | FR-065-AC-4 | ✅ Passed locally (QSL-148) |
 | TC-377 | Function declaration checking accepts a well-typed declaration, reports its calls, and refuses an ill-typed body | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC (QSL-148) |
 | TC-378 | A real recursive-descent fixture shows the nesting-depth limit is the proximate cause of a function-declaration refusal | Unit | P1 | FR-062-AC-7, FR-096-AC-11 | ✅ Passed locally; QSL-160 (S-5b) |
-| TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Planned; E3 refuses every `import` until spine `compile` takes a dependency input (ADR-011 §2.4, QSL-255); see FR-087 Status |
+| TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Planned with FR-099 and ADR-015 D-5 (QSL-255 part b); see FR-087 Status |
 | TC-380 | The function-declaration contract check refuses an ill-typed declaration and admits a well-typed one | Unit | P1 | FR-065-AC-7 | ✅ Passed locally (QSL-148, PR #303) |
 | TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | 🚧 Partly passed: the whole-package count passes locally (PR #303 review round 3, finding F1); the `Limit` outcome is pending S-5b (QSL-160) |
 | TC-382 | S6a returns each kernel outcome unchanged in FamilyOutcome::Evaluated | Unit | P1 | FR-090-AC-1 | ✅ Passed locally |
@@ -187,7 +187,7 @@ operational validation remains outside this audit-only plan.
 | TC-402 | The assembler lives in the check core and its non-test code has no edge to qsl-cst | Unit | P1 | FR-091-AC-20 | 🚧 Planned; QSL-141 |
 | TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | 🚧 Planned; QSL-141 |
 | TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | ✅ Passed locally |
-| TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | 🚧 Planned; QSL-141; FR-091-AC-24 passes locally (QSL-255) |
+| TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | 🚧 Planned; QSL-141; FR-091-AC-24's stage-`intake`, bare-hex form is planned with FR-099 (QSL-255 part b) |
 | TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; `stage_limit_exceeded` code needs QSL-160 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | ✅ Passed locally |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | ✅ Passed locally |
@@ -224,7 +224,8 @@ operational validation remains outside this audit-only plan.
 | TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally (QSL-140); step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally (QSL-249) |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally (QSL-252) |
-| TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5 | ✅ Passed locally (QSL-5); step 6 (a predicate whose body calls another declared function, the QSL-22 Layer 3 exemplar's shape) added by QSL-257; FR-098-AC-6 (`DependencyIdentityMismatch`) is not delivered; QSL-255 owns it |
+| TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ Passed locally (QSL-5) for steps 1 to 6; step 6 (a predicate whose body calls another declared function, the QSL-22 Layer 3 exemplar's shape) added by QSL-257; step 7 (FR-098-AC-6, FR-098-AC-7, replay against dependencies) planned (QSL-255) |
+| TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Planned (QSL-255) |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -250,7 +251,7 @@ record fields at S6a) remains.
 QSL-158, splitting ADR-013 §7 slice S-3, which no FR owned before this
 split. TC-243–260, TC-281, TC-282 and TC-379 above are the corresponding
 test cases. TC-246 and TC-379 are `🚧 Planned`, as FR-087's Status
-records: TC-246 is gated on QSL-6 and QSL-189, and TC-379 is blocked.
+records: TC-246 is gated on QSL-6 and QSL-189, and TC-379 is planned with FR-099 and ADR-015 D-5 (QSL-255 part b).
 TC-243, TC-247, TC-255, TC-258, TC-260 and TC-281 are
 partial, each row naming the steps its test backs; TC-259 is partial
 (QSL-156); and TC-251 covers FR-088-AC-5's `QualifiedName` half only. The
