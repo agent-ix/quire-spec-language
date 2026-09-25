@@ -734,9 +734,10 @@ impl TypeEnvironment {
 
     /// The object type's effective attribute set, in slot order: its own
     /// fields in declaration order, then each direct supertype's slots in
-    /// that supertype's order and in declaration order of the supertypes,
-    /// each attribute once, each field another field of the set stands for
-    /// left out and a redefiner in the place of the first slot it hides. `None` for a key that is no admitted object type.
+    /// its own order, the supertypes in declaration order. Each attribute
+    /// appears once; a field a more derived attribute of the set stands for
+    /// is left out, and that attribute keeps its own place. `None` for a key
+    /// that is no admitted object type.
     pub fn attributes(&self, object_type: EffectiveId) -> Option<&[EffectiveAttribute]> {
         self.effective.get(&object_type).map(Vec::as_slice)
     }

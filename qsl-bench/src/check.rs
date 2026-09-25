@@ -13,12 +13,18 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::declaration::{
+    FieldDeclaration, InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+    TypeEnvironmentLimits,
+};
 use qsl_semantics::value::enumeration::{
     EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject};
+use quire_exact::{EffectiveId, Presence, ValueType};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
 use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
+use sha2::{Digest, Sha256};
 
 /// A kernel limit set no evaluation in this crate runs out of.
 pub const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
@@ -264,4 +270,44 @@ mod tests {
             &ObjectEnvironment::default()
         )));
     }
+}
+
+/// A linear chain `M::T0 <- M::T1 <- ... <- M::T{depth-1}` of model object
+/// types, each declaring one integer field of its own (QSL-57's admission
+/// cost shape: type `k` flattens to `k + 1` slots).
+pub fn object_chain(depth: usize) -> Vec<ObjectTypeDeclaration> {
+    let key = |level: usize| {
+        EffectiveId::from_digest(Sha256::digest(format!("M::T{level}").as_bytes()).into())
+    };
+    (0..depth)
+        .map(|level| {
+            let supertypes = level.checked_sub(1).map(key).into_iter().collect();
+            ObjectTypeDeclaration::new(
+                key(level),
+                format!("M::T{level}"),
+                vec![FieldDeclaration::new(
+                    format!("f{level}"),
+                    ValueType::Integer,
+                    Presence::Required,
+                )],
+            )
+            .with_supertypes(supertypes)
+        })
+        .collect()
+}
+
+/// Admit `object_types` as one check-time `TypeEnvironment` under the
+/// default `ancestor_steps` and `work_units` budget.
+pub fn admit_object_types(
+    object_types: Vec<ObjectTypeDeclaration>,
+    work_units: u64,
+) -> Result<TypeEnvironment, InvalidDeclaration> {
+    TypeEnvironment::bounded(
+        [],
+        object_types,
+        TypeEnvironmentLimits {
+            work_units,
+            ..TypeEnvironmentLimits::default()
+        },
+    )
 }
