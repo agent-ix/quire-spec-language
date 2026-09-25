@@ -44,7 +44,7 @@ operational validation remains outside this audit-only plan.
 | TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ Passed locally for FR-060-AC-1..AC-3; 🚧 FR-060-AC-4's T12-B and T12-C clauses amended to allow-lists plus debt lists (2026-09-22), gate rewrite planned |
 | TC-158 | Report a quire-ecosystem crate resolved to more than one source | Integration | P1 | FR-061-AC-1..FR-061-AC-4 | ✅ Passed locally |
 | TC-159 | Run the current-head integration lane against real and intentionally incompatible heads | Manual | P1 | FR-058-AC-1..FR-058-AC-4 | ✅ Passed locally |
-| TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9 | 🚧 Planned; #214 |
+| TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9 | 🚧 Planned; #214. FR-062-AC-4 passed locally (QSL-140) |
 | TC-161 | The seam probe demonstrates exhaustiveness at every S1-S4 seam | Integration | P1 | FR-063-AC-1..FR-063-AC-7, FR-062-AC-8, FR-067-AC-4 | 🚧 Planned; #214 |
 | TC-162 | The string-edge scan reports every unmarked string dispatch | Integration | P1 | FR-064-AC-1..FR-064-AC-6 | 🚧 Planned; #214 |
 | TC-163 | Function identity and provenance survive checking and package conversion | Integration | P1 | FR-065-AC-1..FR-065-AC-3, FR-065-AC-8 | 🚧 Planned; #214, QSL-156 |
@@ -213,6 +213,12 @@ operational validation remains outside this audit-only plan.
 | TC-431 | Runtime input artifacts carry the four labels, and two-label bytes refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | ✅ Passed locally; QSL-233 (S-4b) |
 | TC-432 | A family check's stage limit names its kind, bound and actual counter, and the counter is where the limit stops | Unit | P1 | FR-062-AC-12 | ✅ Passed locally (QSL-160 part 1) |
 | TC-434 | Model limits have finite defaults, and normalization work stops at the limit | Unit | P1 | NFR-012 (defaults and recording: steps 1 and 2; bounded work: steps 3 and 4; meter memory: step 5; shared paths: step 6; ancestor-steps order: step 7) | ✅ Passed locally (QSL-216, QSL-218, QSL-222) |
+| TC-436 | Proof-bound and interval-key constructors refuse empty ranges, and domain keys order by node then path | Unit | P1 | FR-097-AC-1 | ✅ Passed locally (QSL-140) |
+| TC-437 | The extent rule names each unbounded type position once, by node and path, under a node-count ceiling | Unit | P1 | FR-097-AC-2 | ✅ Passed locally (QSL-140) |
+| TC-438 | The request writer computes the available finite bound, writes a bounded request as its own item, and refuses bad bounds before writing | Unit | P1 | FR-097-AC-3, FR-097-AC-4 | ✅ Passed locally (QSL-140) |
+| TC-439 | An exploration outcome maps to its O-16 category and keeps its frontier | Unit | P1 | FR-097-AC-5 | ✅ Passed locally (QSL-140) |
+| TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision, with measured disagreements asserted | Integration | P1 | FR-097-AC-6 | ✅ Passed locally (QSL-140); two measured IR disagreements recorded in FR-097 Status |
+| TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7 | ✅ Passed locally (QSL-140) |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
