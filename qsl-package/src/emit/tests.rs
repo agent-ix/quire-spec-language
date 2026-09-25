@@ -1932,28 +1932,124 @@ fn assemble_with_models(
     PackageDeclarations::assemble(raw, unit, models).map_err(|refusal| format!("{refusal:?}"))
 }
 
-/// FR-027-AC-9, FR-056-AC-9 (TC-442 step 1): a `1-draft` source whose
-/// functions take and return `M::Gadget` and take `Reference<M::Widget>`
-/// goes S1, S2, I1, the assembler, check, link and the v2 emitter with
-/// nothing omitted. The assembler declares both object types in the
-/// package's `TypeEnvironment`, `Gadget` conforming to `Widget` through its
-/// declared supertype. The lock and the identity preimage select the domain
-/// package by identity, version and the `sha256-jcs` digest of the supplied
-/// document, and QSL's I2 read, given that digest as domain package
-/// evidence, returns Verified exporting both functions.
-#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
-#[test]
-fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
-    const UNIT: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.native");
+/// The spine-model fixture's inherited field access, which QSL's I2 read
+/// cannot admit until IR-285 (see
+/// [`inherited_field_access_is_refused_by_the_i2_read_until_ir_285`]).
+const FIELD_ACCESS: &str = "function code using v(g: M::Gadget): Integer pure { deref(g).code }\n";
+
+/// The spine-model fixture's equality over conforming references, which
+/// QSL's I2 read cannot admit while QSpec's v2 operation catalog pins
+/// `quire.op.reference.eq` to `same_type` (see
+/// [`conforming_reference_equality_is_refused_by_the_i2_read`]).
+const CONFORMING_EQUALITY: &str =
+    "function same using v(g: M::Gadget, w: M::Widget): Boolean pure { g = w }\n";
+
+/// The spine-model fixture with `removed` taken out, each of which the
+/// fixture holds.
+fn spine_model_without(removed: &[&str]) -> String {
+    const FIXTURE: &str = include_str!("../../../tests/fixtures/spine-model.native");
+    removed.iter().fold(FIXTURE.to_owned(), |unit, line| {
+        assert!(unit.contains(line), "the fixture holds {line:?}");
+        unit.replace(line, "")
+    })
+}
+
+/// Assert `read` is IR's `ill_typed`/`operator-ineligible` envelope
+/// refusal at a node pointer ending in `suffix`.
+fn assert_operator_ineligible(read: &Read, suffix: &str) {
+    let Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) = read else {
+        panic!("expected IR's envelope refusal, got {read:?}");
+    };
+    assert_eq!(
+        refusal.code,
+        quire_contract_ir::CheckedPackageRefusalCode::IllTyped,
+        "{refusal:?}"
+    );
+    assert_eq!(
+        refusal.cause,
+        Some(quire_contract_ir::CheckedPackageRefusalCause::OperatorIneligible),
+        "{refusal:?}"
+    );
+    let path = refusal
+        .path
+        .as_ref()
+        .map(ToString::to_string)
+        .unwrap_or_default();
+    assert!(
+        path.starts_with("/semantic_graph/nodes/") && path.ends_with(suffix),
+        "{path}"
+    );
+}
+
+/// `unit` through S1, S2, I1, the assembler, check, link and the v2
+/// emitter against the spine-model document, with nothing omitted, and a
+/// read of the bytes through QSL's I2 reader under the document's
+/// `sha256-jcs` digest as domain package evidence (or `evidence_digest`,
+/// when given). Returns the emission, its wire, the document's digest and
+/// the read.
+fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Value, String, Read) {
     let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");
     };
     let digest = qsl_semantics::model::key::hex(digest);
-    let declarations = assemble_with_models(UNIT, &packages).expect("the unit assembles");
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    let mut evidence = CheckedPackageEvidence::new();
+    locked_artifacts(&wire["lock"], &mut evidence);
+    locked_artifacts(&wire["diagnostics"], &mut evidence);
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    evidence.insert_domain_package_digest(
+        quire_contract_ir::CheckedDomainPackageLocator {
+            identity: "acme/orders".into(),
+            version: "1.0.0".into(),
+        },
+        evidence_digest.unwrap_or(&digest),
+    );
+    let read = read_v2(
+        emission.package.bytes(),
+        library(),
+        "1".to_owned(),
+        V2ReadLimits::default(),
+        &evidence,
+        &qsl_semantics::library::fixtures::single_pin(
+            library(),
+            Selection {
+                version: "1".to_owned(),
+                package_id: emission.package.package_id(),
+            },
+        ),
+    );
+    (emission, wire, digest, read)
+}
+
+/// FR-027-AC-9, FR-056-AC-9 (TC-442 step 1): the spine-model fixture
+/// without its field access (`FIELD_ACCESS`, which waits on IR-285) and
+/// its conforming reference equality (`CONFORMING_EQUALITY`) goes
+/// S1, S2, I1, the assembler, check, link and the v2 emitter with nothing
+/// omitted. The assembler declares `M::Gadget` and `M::Widget` in the
+/// package's `TypeEnvironment`, `Gadget` conforming to `Widget` through its
+/// declared supertype. The lock and the identity preimage select the domain
+/// package by identity, version and the `sha256-jcs` digest of the supplied
+/// document, and QSL's I2 read, given that digest as domain package
+/// evidence, returns Verified exporting `keep` and `held`.
+#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
+#[test]
+fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
+    let unit = spine_model_without(&[FIELD_ACCESS, CONFORMING_EQUALITY]);
+    let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]);
+    let declarations =
+        assemble_with_models(unit.as_bytes(), &packages).expect("the unit assembles");
     assert_eq!(declarations.models.len(), 1);
     let views = qsl_semantics::model::intake::admit_unit(
-        &unit_selections(std::str::from_utf8(UNIT).unwrap()),
+        &unit_selections(&unit),
         &packages,
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
@@ -1974,13 +2070,8 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     let (gadget, widget) = (object("Gadget"), object("Widget"));
     assert!(declarations.types.conforms(gadget, widget));
     assert!(!declarations.types.conforms(widget, gadget));
-    let graph = declarations
-        .check(CheckingLimits::default())
-        .expect("the package checks");
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
-    assert_eq!(emission.omitted, []);
 
-    let wire = wire(&emission);
+    let (emission, wire, digest, read) = emit_model_unit(&unit, None);
     let selection = json!([{
         "identity": "acme/orders",
         "version": "1.0.0",
@@ -1993,37 +2084,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
         nodes(&wire).iter().any(|node| node["node_tag"] == "model"),
         "a model node is emitted"
     );
-
-    let read = |evidence_digest: &str| {
-        let mut evidence = CheckedPackageEvidence::new();
-        locked_artifacts(&wire["lock"], &mut evidence);
-        locked_artifacts(&wire["diagnostics"], &mut evidence);
-        for feature in wire["lock"]["required_features"].as_array().unwrap() {
-            evidence.support_feature(feature.as_str().unwrap());
-        }
-        evidence.insert_domain_package_digest(
-            quire_contract_ir::CheckedDomainPackageLocator {
-                identity: "acme/orders".into(),
-                version: "1.0.0".into(),
-            },
-            evidence_digest,
-        );
-        read_v2(
-            emission.package.bytes(),
-            library(),
-            "1".to_owned(),
-            V2ReadLimits::default(),
-            &evidence,
-            &qsl_semantics::library::fixtures::single_pin(
-                library(),
-                Selection {
-                    version: "1".to_owned(),
-                    package_id: emission.package.package_id(),
-                },
-            ),
-        )
-    };
-    match read(&digest) {
+    match read {
         Read::Verified { package, .. } => {
             assert_eq!(package.package_id(), emission.package.package_id());
             let exports: BTreeSet<String> = package
@@ -2031,15 +2092,49 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
                 .exports()
                 .map(|(name, _)| name.to_owned())
                 .collect();
-            assert!(
-                exports.contains("keep") && exports.contains("held"),
-                "{exports:?}"
-            );
+            for name in ["keep", "held"] {
+                assert!(exports.contains(name), "{name}: {exports:?}");
+            }
         }
         other => panic!("expected Verified, got {other:?}"),
     }
     // Adverse: evidence naming another document refuses the read.
-    assert!(matches!(read(&"0".repeat(64)), Read::Refused(_)));
+    let (.., other) = emit_model_unit(&unit, Some(&"0".repeat(64)));
+    assert!(matches!(other, Read::Refused(_)));
+}
+
+/// TC-442 step 1 (the gap it records): the whole spine-model fixture,
+/// `deref(g).code` included, assembles, checks and emits, and its `field`
+/// member names the model node of `g`'s object type, whose body FR-094
+/// keeps `aggregate{[]}`. IR's v2 reader resolves a field member only
+/// against a binding in the declaring node's body, so QSL's I2 read refuses
+/// it `ill_typed`/`operator-ineligible` at that member's `name`. The ruling
+/// is that the reader resolves a model member through the lock-selected
+/// domain package instead: QSpec STD-100 states the FR-322 rule and IR-285
+/// fixes IR's `check_field_member`. This test pins today's refusal and
+/// fails the moment IR admits the read; replace it with a Verified
+/// assertion then.
+#[trace("TC-442")]
+#[test]
+fn inherited_field_access_is_refused_by_the_i2_read_until_ir_285() {
+    let (.., read) = emit_model_unit(&spine_model_without(&[CONFORMING_EQUALITY]), None);
+    assert_operator_ineligible(&read, "/body/operation/member/name");
+}
+
+/// TC-442 step 1 (the gap it records): `g = w` over a `Gadget` and the
+/// `Widget` it conforms to checks (QSpec FR-153-AC-6, TC-198 L08: two
+/// conforming references compare by identity) and emits as
+/// `quire.op.reference.eq`. QSpec's v2 operation catalog
+/// (`proposals/checked-package-v2/operation-catalog.json`) constrains that
+/// operation to `same_type` operands, so IR's reader refuses it
+/// `ill_typed`/`operator-ineligible` at the second argument. This test
+/// pins today's refusal and fails once the catalog and IR admit
+/// conforming operands; replace it with a Verified assertion then.
+#[trace("TC-442")]
+#[test]
+fn conforming_reference_equality_is_refused_by_the_i2_read() {
+    let (.., read) = emit_model_unit(&spine_model_without(&[FIELD_ACCESS]), None);
+    assert_operator_ineligible(&read, "/body/arguments/1");
 }
 
 /// FR-056-AC-9 (TC-442 step 3): `M::Nope` names no object type of the

@@ -31,7 +31,8 @@ Scope: FR-027-AC-9, FR-056-AC-9.
    `PackageDeclarations::assemble`, check, `CheckedPackage::link` and
    `emit_checked` (`qsl-package`). Read the bytes back through QSL's I2 reader
    with the document's `sha256-jcs` digest as domain package evidence, then
-   with another digest.
+   with another digest, first without `code` and `same`; then the fixture
+   with `code` only, and with `same` only.
 2. Compile a native-compile/1 request selecting that program and the document
    as a `semantic-ir/2.0.0` model, and compare stdout with
    `command::spine::compile` over the same source and package input.
@@ -47,7 +48,8 @@ Scope: FR-027-AC-9, FR-056-AC-9.
 Tag the tests `#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]` (step 1),
 `#[trace("TC-442", "FR-027-AC-9")]` (step 2),
 `#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]` (step 4) and
-`#[trace("TC-442", "FR-056-AC-9")]` (step 3).
+`#[trace("TC-442", "FR-056-AC-9")]` (step 3). The two gap tests of step 1
+carry `#[trace("TC-442")]` only.
 
 ## Expected Results
 
@@ -56,8 +58,13 @@ Tag the tests `#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]` (step 1),
   identity preimage `model_selections` are
   `[{"identity": "acme/orders", "version": "1.0.0", "digest_domain":
   "sha256-jcs", "digest": <the document's digest>}]`; a model node is emitted;
-  the read is Verified and exports `keep`, `held`, `code` and `same`; the
-  other digest is refused.
+  without `code` and `same` the read is Verified and exports `keep` and
+  `held`, and the other digest is refused. With `code` the read refuses
+  `ill_typed`/`operator-ineligible` at the field member's `name`: field
+  access past I2 waits on IR-285 and QSpec STD-100. With `same` it refuses
+  the same way at the equality's second argument: QSpec's v2 operation
+  catalog pins `quire.op.reference.eq` to `same_type`. Each of these two
+  tests fails once its gap is fixed.
 - Step 2: exit 0; stdout equals the library bytes, and its `model_selections`
   digest is the one the program's `model` declaration spells.
 - Step 3: one assembler error, `UnresolvedTypeName("M::Nope")`, code
@@ -74,4 +81,6 @@ Tag the tests `#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]` (step 1),
 
 ## Status
 
-Passed locally (QSL-249).
+Passed locally (QSL-249). Remaining work: field access past I2 (IR-285, QSpec
+STD-100) and conforming reference equality past I2 (QSpec's v2 operation
+catalog `quire.op.reference.eq` constraint).
