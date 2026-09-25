@@ -151,4 +151,12 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
 ## Status
 
-Specified (QSL-255 part b). No test backs it yet.
+Partly implemented (QSL-255 part b). D-1 to D-3 are implemented: spine
+`compile` takes a `DependencyInput`, and the S4 source resolution
+(`qsl-replay/src/spine.rs`) compiles each imported library from source,
+binds it to the recomputed `package_id`, reads its import view through
+`qsl_package::read_import_view`, and links it through
+`CheckedPackage::link_with`. TC-446 passes locally for AC-1 to AC-4
+(`qsl-replay` `spine::dependency_tests`; AC-2's S1 spellings are `qsl-cst`'s
+`an_import_digest_is_bare_lowercase_hex`). AC-5 and AC-6 (D-5, E3 typing of
+an imported call and its `dependency_reference` lowering) are not delivered.

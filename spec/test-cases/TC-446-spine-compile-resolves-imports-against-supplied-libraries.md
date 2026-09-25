@@ -101,4 +101,7 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 
 ## Status
 
-Planned (QSL-255 part b).
+Steps 1 to 4 pass locally (QSL-255 part b): `qsl-replay`
+`spine::dependency_tests`, and `qsl-cst` `an_import_digest_is_bare_lowercase_hex`
+for step 2's digest spellings. Steps 5 and 6 (ADR-015 D-5) and step 7 (the
+CLI `libraries` member, FR-027-AC-10) are planned.
