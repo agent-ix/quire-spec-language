@@ -1050,11 +1050,11 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
     );
 }
 
-/// Appends three operations with parameters or a result to the temp copy's
+/// Appends four operations with parameters or a result to the temp copy's
 /// `Pump`: `fill(level: Reading, forced: Boolean): Boolean`,
-/// `meter(amount: Integer)` and
-/// `total(): Integer`. The bundle's own only operation, `run`, takes no
-/// parameters and returns nothing. `Reading` is written by the caller.
+/// `swap(peer: Pump)`, `meter(amount: Integer)` and `total(): Integer`. The
+/// bundle's own only operation, `run`, takes no parameters and returns
+/// nothing. `Reading` is written by the caller.
 pub(crate) fn pump_operations(root: &Path) {
     let pump = root.join("spec/model/Pump.md");
     let mut text = std::fs::read_to_string(&pump).expect("read Pump");
@@ -1065,6 +1065,10 @@ pub(crate) fn pump_operations(root: &Path) {
          | level | Reading | 1 | |\n\
          | forced | Boolean | 1 | |\n\n\
          Returns: Boolean [1]\n\n\
+         ### swap\n\nSwap with a peer pump.\n\n\
+         | Param | Type | Multiplicity | Constraints |\n\
+         |-------|------|--------------|-------------|\n\
+         | peer | Pump | 1 | |\n\n\
          ### meter\n\nMeter an amount.\n\n\
          | Param | Type | Multiplicity | Constraints |\n\
          |-------|------|--------------|-------------|\n\
@@ -1088,7 +1092,7 @@ pub(crate) fn pump_operations(root: &Path) {
 /// it, while a precondition of `total` binds no result and types. A name the
 /// operation does not declare, and `result` in a precondition, refuse at
 /// scope resolution.
-#[trace("TC-148", "FR-036-AC-9", "FR-042-AC-14")]
+#[trace("TC-121", "FR-042-AC-14")]
 #[test]
 fn domain_operation_parameters_and_result_bind_and_type_check() {
     use quire_spec_language::checking::composed::{

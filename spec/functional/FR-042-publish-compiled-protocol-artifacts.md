@@ -303,7 +303,12 @@ type. With no covering declaration, or more than one, emission SHALL refuse as
 operation is, keyed by its [FR-154](ix://agent-ix/quire-specification/FR-154)
 member key, with its owning object type as its context; a pre- or
 postcondition of a domain operation executes at the anchor named by the
-operation's member name. The reader SHALL refuse
+operation's member name. It SHALL bind each declared parameter as an
+invocation parameter at the invocation-input anchor and, in a postcondition,
+the declared result as `result` at the invocation-post anchor, as a native
+operation's are, each typed from the member's declared value type and
+multiplicity; a parameter or result with no native type SHALL refuse checking
+as an unsupported domain representation. The reader SHALL refuse
 a missing, surplus or mis-keyed population pair as `Invalid::Binding`, a pair
 naming a declaration that does not cover its object type as `Invalid::Model`
 (the `Model` declares no such export), and an operation context other than its
@@ -407,6 +412,7 @@ therefore exhaust one invocation's shared limits; this returns incomplete.
 | FR-042-AC-11 | For a model whose native package imports a domain package, reading `Model`'s domain package identity, version and digest from decoded bytes reproduces exactly the `DomainPackageRef` FR-056 admitted for that model at linking, with no producer or relation object between them. A payload whose `Model` object carries a `correspondence`, `producer` or `interface` member, of any value including `null`, or that carries a `ProducerObject`-shaped or `Correspondence`-shaped value under any key, refuses as an unrecognized field rather than being read into a domain package identity or silently ignored. | Test (TC-121) |
 | FR-042-AC-12 | For a directly admitted native model with no domain-package import, `Model`'s domain-package member decodes as explicit `null`; a payload that omits the member entirely refuses exactly as an omitted `Nullable<T>` member already refuses elsewhere in this contract, and is never read as an implicit `null`. | Test (TC-121) |
 | FR-042-AC-13 | Over an admitted domain package, a declaration over a domain object type's population input and a domain operation (an operation clause, an attempt with a domain event record, and a FIFO channel keyed by a domain object) check, emit exactly one population/closure pair per covering declaration and anchor and the operation's own export, and read back unchanged. A changed package digest, an export the package does not declare, a population pair keyed to another object type and an operation context other than its owner each refuse; an object type with no covering population declaration refuses emission as `Unsupported::Export`. | Test (TC-121) |
+| FR-042-AC-14 | Over an admitted domain package, a precondition reading a domain operation's parameter and a postcondition reading its parameters and `result` check, emit each parameter as an `invocation_parameter` binder at the `invocation_input` anchor and the result as the `result` binder at `invocation_post`, typed by the package's exports or `Boolean`, with a domain object parameter's population pair at that anchor, and read back unchanged. A parameter or result whose type has no native type here refuses checking as `DomainRepresentation`, and a clause reading a name the operation does not declare refuses at scope resolution. | Test (TC-121) |
 
 ## Dependencies
 

@@ -169,9 +169,12 @@ operation: an attempt, compensation or operation clause names its `operation`
 export, keyed by the FR-154 member key `<owner>/<name>`, and its context is
 the owning object type's `object` export in the same model; the reader refuses
 a context other than that owner as `Invalid::Type`. A pre- or postcondition of
-a domain operation executes at the anchor named by the operation's member name,
-and binds only an operation with no parameters and, for a postcondition, no
-result, since their domain value types have no native binder type yet. A domain type may type an
+a domain operation executes at the anchor named by the operation's member name.
+It binds each declared parameter as an `invocation_parameter` binder at the
+`invocation_input` anchor and, in a postcondition, the declared result as the
+`result` binder at `invocation_post`, as a native operation's are; each is
+typed from the operation member's declared value type and multiplicity as a
+domain field is, and one with no native type refuses checking. A domain type may type an
 event, commit or compensation record, and a domain object type keys a FIFO
 channel by identity; a record value type key refuses as `Invalid::Type`, as a
 native record does.
