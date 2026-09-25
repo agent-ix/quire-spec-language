@@ -19,7 +19,8 @@ use qsl_eval::value::{
     QualifiedName,
 };
 use qsl_forms::{
-    BinaryOperator, ClauseKind, DeclaredClauseKind, Expression, FunctionDeclaration, TypeForm,
+    BinaryOperator, ClauseKind, DeclarationSpans, DeclaredClauseKind, Expression, ExpressionSpans,
+    FunctionDeclaration, TypeForm,
 };
 use qsl_foundation::diagnostic::{Code, UndefinedReason, UndefinedRecord};
 use qsl_package::CheckedPackage;
@@ -766,6 +767,205 @@ fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
         unrelated_first_decoded_identity, identity_target_first,
         "target's identity must survive check, linking and a v2 round trip identically \
          regardless of unrelated's position"
+    );
+}
+
+/// FR-065-AC-3 (QSL-154): a call's own source occurrence resolves to the
+/// same byte span immediately after `check`, and again once `CheckedPackage
+/// ::link` has wrapped it -- and a hand-built alternate package whose span
+/// differs by one byte resolves to a genuinely different region, so this
+/// test is reading the region rather than a constant.
+///
+/// **Rebuilt (QSL-154).** The one test that used to carry this criterion's
+/// tag, `occurrence_span_survives_link_and_a_corrupted_alternate_differs`
+/// (`src/value/expression/family.rs`, deleted in the PR #262 review round,
+/// finding F6), built a bare `OccurrenceMap` by hand and recorded two
+/// hand-picked tuples, `(10, 20)` and `(10, 21)`, into two unrelated maps:
+/// no real source, no real `check`, no real `region()` resolution, and no
+/// real corruption -- the "corrupted" value was a tuple the test itself
+/// chose, and `before_linking`/`after_linking` both read the very same map
+/// through `link_function_identity` (`fn(x) -> x`), so nothing here could
+/// have failed. This version checks a real source file, resolves the
+/// call's region through the real `check` -> `CheckedPackage::link`
+/// pipeline, and corrupts the alternate by widening its own
+/// `DeclarationSpans` by one byte -- a difference the real `region()`
+/// machinery reads, not one the assertion invents.
+///
+/// **What the v2 checkpoint below actually checks, and why.** `quire.
+/// checked-function-package/v2` (`emit_v2`/`FunctionEntryV2`) carries only
+/// a declared function's own name and identity -- it has no wire
+/// representation for a *call's* occurrence at all (see `family::contract`'s
+/// `FamilyContract` doc on why `package` and a shared v2 node shape were
+/// deleted rather than fabricated). So the call's own region is exercised
+/// at the two checkpoints that exist for it: immediately after `check`, and
+/// after S4 linking. The v2 round trip is exercised too, but against `f`'s
+/// own *declaration* occurrence -- the one thing v2 actually carries an
+/// identity for (AC-2) -- confirming that the identity decoded from v2
+/// still indexes the unchanged region in the occurrence-keyed source map,
+/// which is the part of FR-065-AC-3's "before linking, after linking, and
+/// after decoding from v2 bytes" that this delivered v2 encoding can
+/// support honestly.
+#[trace("TC-163", "FR-065-AC-3")]
+#[test]
+fn occurrence_span_survives_link_a_v2_round_trip_and_a_corrupted_alternate_differs() {
+    const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
+        profile \"ix:value\" as v;\n\
+        function g using v(): Boolean pure { true }\n\
+        function f using v(): Boolean pure { g() }\n";
+
+    fn find(text: &str) -> qsl_foundation::Span {
+        let start = UNIT.find(text).expect("the fixture text is in the unit");
+        qsl_foundation::Span {
+            start,
+            end: start + text.len(),
+        }
+    }
+
+    /// `g` and `f`, with `f`'s call span taken from `call` (the fixture's
+    /// own "g()" span, or a one-byte-wider corruption of it).
+    fn package(
+        source: qsl_foundation::source::provenance::RawSourceRef,
+        call: qsl_foundation::Span,
+    ) -> PackageDeclarations {
+        let boolean = || crate::support::type_form::type_form(&ValueType::Boolean);
+        let g = FunctionDeclaration::new("g", Vec::new(), boolean(), None, Expression::Boolean(true));
+        let declaration = find("function f using v(): Boolean pure { g() }");
+        let spans = DeclarationSpans {
+            declaration,
+            body: ExpressionSpans::new(call).expect("a call span admits a root"),
+            measure: None,
+        };
+        let f = FunctionDeclaration::new(
+            "f",
+            Vec::new(),
+            boolean(),
+            None,
+            Expression::Call {
+                name: "g".to_owned(),
+                arguments: Vec::new(),
+            },
+        )
+        .with_spans(spans)
+        .expect("the call is the body's own root, with no children");
+        PackageDeclarations {
+            functions: vec![g, f],
+            ..PackageDeclarations::new(source)
+        }
+    }
+
+    let source = qsl_semantics::check::admitted_source(
+        qsl_foundation::SourceIdentity::new("a", "occurrence-span", "git", "1"),
+        UNIT.as_bytes(),
+    );
+    let call = find("g()");
+
+    let checked = package(source.clone(), call)
+        .check(CheckingLimits::default())
+        .expect("g and f check cleanly");
+
+    let call_identity = checked
+        .semantic_graph()
+        .nodes()
+        .find(|node| node.semantic_form() == "call")
+        .map(|node| node.key())
+        .expect("the call node was lowered");
+    let call_origin = ExactOrigin::new(ExactRole::new("expression"), 0);
+    let call_location = checked
+        .occurrence(call_identity, &call_origin)
+        .expect("check records the call's own occurrence")
+        .clone();
+
+    let before_linking = checked
+        .region(&call_location)
+        .expect("the call's region resolves immediately after check");
+    assert_eq!(
+        qsl_foundation::Span {
+            start: usize::try_from(before_linking.start()).unwrap(),
+            end: usize::try_from(before_linking.end()).unwrap(),
+        },
+        call,
+        "the resolved region must be the call's own source span"
+    );
+
+    let f_identity = checked
+        .function_identity("f")
+        .expect("f is declared in this package");
+    let declaration_origin = ExactOrigin::new(ExactRole::new("declaration"), 0);
+    let declaration_location = checked
+        .occurrence(f_identity, &declaration_origin)
+        .expect("check records f's own declaration occurrence")
+        .clone();
+    let declaration_region_before = checked
+        .region(&declaration_location)
+        .expect("f's declaration region resolves immediately after check");
+
+    let linked = CheckedPackage::link(checked);
+    let after_linking = linked
+        .graph()
+        .region(&call_location)
+        .expect("the call's region resolves after S4 linking");
+    assert_eq!(
+        after_linking, before_linking,
+        "S4 linking must not move or drop the call's own source region"
+    );
+
+    let name = QualifiedName::unqualified("f").expect("\"f\" is an identifier");
+    let bytes = linked
+        .emit_function_package_v2()
+        .expect("both declared names here are identifier-shaped");
+    let decoded = decode_function_package_v2(&bytes)
+        .expect("this crate's own emit_function_package_v2 output decodes cleanly");
+    let decoded_identity = decoded
+        .into_iter()
+        .find(|(decoded_name, _)| *decoded_name == name)
+        .map(|(_, identity)| identity)
+        .expect("f survives the v2 round trip");
+    assert_eq!(
+        decoded_identity, f_identity,
+        "the v2-decoded identity must be f's own checked identity"
+    );
+    let declaration_location_after_v2 = linked
+        .graph()
+        .occurrence(decoded_identity, &declaration_origin)
+        .expect("the v2-decoded identity still indexes f's own declaration occurrence")
+        .clone();
+    let declaration_region_after_v2 = linked
+        .graph()
+        .region(&declaration_location_after_v2)
+        .expect("f's declaration region still resolves once its identity has travelled a v2 round trip");
+    assert_eq!(
+        declaration_region_after_v2, declaration_region_before,
+        "f's declaration region must be unchanged after the v2 round trip"
+    );
+
+    // A hand-built alternate package whose span is corrupted by one byte:
+    // not a hand-edited assertion value, but a genuinely different
+    // `DeclarationSpans` fed through the same real `check` -> `region()`
+    // pipeline.
+    let corrupted_call = qsl_foundation::Span {
+        start: call.start,
+        end: call.end + 1,
+    };
+    let alternate = package(source, corrupted_call)
+        .check(CheckingLimits::default())
+        .expect("the corrupted alternate still checks");
+    let alternate_identity = alternate
+        .semantic_graph()
+        .nodes()
+        .find(|node| node.semantic_form() == "call")
+        .map(|node| node.key())
+        .expect("the corrupted alternate's call node was lowered");
+    let alternate_location = alternate
+        .occurrence(alternate_identity, &call_origin)
+        .expect("the corrupted alternate records the call's own occurrence")
+        .clone();
+    let alternate_region = alternate
+        .region(&alternate_location)
+        .expect("the corrupted alternate's call region resolves");
+    assert_ne!(
+        alternate_region, before_linking,
+        "a one-byte-wider span must resolve to a genuinely different region, \
+         showing this test reads the region rather than a constant"
     );
 }
 
