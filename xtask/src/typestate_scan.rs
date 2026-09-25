@@ -779,7 +779,7 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 7] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 9] = [
         // S3: the checker.
         (
             "qsl-semantics/src/check/mod.rs",
@@ -802,6 +802,17 @@ mod tests {
             "qsl-semantics/src/library/mod.rs",
             Some("VerifiedPackage"),
             "into_import_view",
+        ),
+        // I2 over a library's own emission: the verified binding, then
+        // `into_import_view` (ADR-015 D-1 step 6).
+        ("qsl-package/src/checked_v2.rs", None, "read_import_view"),
+        // The spine's per-unit S1 to S4 chain, which the S4 source
+        // resolution reruns for each library (ADR-015 D-1); its package
+        // comes from `link_with`.
+        (
+            "qsl-replay/src/spine.rs",
+            Some("Resolution"),
+            "compile_unit",
         ),
         // Lane-private: the native-v1 emitter's own `EmittedPackage`.
         ("src/protocol_artifact/native/mod.rs", None, "emit"),

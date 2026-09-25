@@ -713,8 +713,10 @@ the steps its test backs.
   `PackageDeclarations::check`, `CheckedPackage::link`,
   `CheckedPackage::link_with`,
   `EmittedPackage::new`, `verify_binding` and
-  `VerifiedPackage::into_import_view`, plus the two lane-private
-  producers. `compile_fail` doctests cover TC-244 rows 1 to 5. Rows 3 to 5
+  `VerifiedPackage::into_import_view`, the two composing them
+  (`qsl_package::read_import_view`, the I2 read of a library's own
+  emission, and the spine's per-unit chain `Resolution::compile_unit`,
+  ADR-015 D-1), plus the two lane-private producers. `compile_fail` doctests cover TC-244 rows 1 to 5. Rows 3 to 5
   (`VerifiedPackage`, `ImportView` and `protocol_artifact::AdmittedPackage`
   into checked typestate) fail with E0277. Stable rustdoc does not check
   that code, so each block is paired with one that must compile over the
