@@ -67,7 +67,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   and identity of the unit's or another library's source, with
   `invalid_package`/`conflicting-definition` naming both, and an empty
   identity or version with `invalid_identifier`.
-- The S4 source resolution SHALL run between S2 and E3 and SHALL report its
+- The S4 source resolution, which runs between S2 and E3, SHALL report its
   own refusals at stage `intake`.
 - When an import names an identity that an earlier import in the closure
   (depth first, in source order) named with a different version or digest,
