@@ -1207,6 +1207,13 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
     /// See [`ValueDeclarations`]'s own doc.
     type Declarations<'a> = ValueDeclarations<'a>;
 
+    /// A function declaration requests no FR-057 capability kind (FR-057:
+    /// "no kind for an expression nested in a clause, such as a function
+    /// application"), so it has no requirements (FR-062-AC-4).
+    fn requirements(_checked: &CheckedDeclaration) -> Option<crate::family::Requirements> {
+        None
+    }
+
     fn check<'a>(
         form: &Self::Form,
         cx: &mut crate::family::CheckContext<'a, ValueDeclarations<'a>>,

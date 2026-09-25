@@ -46,32 +46,18 @@
 //! the foundation `diagnostic` module, ADR-013 T-4's home for them
 //! (QSL-160); this module keeps only the `CheckOutcome` alias.
 //!
-//! **The sixth contract part, `Requirements` (ADR-012 §2), is deferred.**
-//! No family this repository has migrated -- `Value`'s function-declaration
-//! form, the only form #214 migrates -- carries an FR-057 capability kind.
-//! FR-057:159-162 states plainly that "no kind for an expression nested in
-//! a clause, such as a function application" exists, and FR-057:182-186
-//! states "family-body admission is language admission, not a capability
-//! kind" -- explicit text, not an inference from absence, and not an open
-//! question against #229: function declaration/application has no FR-057
-//! kind. A `Requirements` type built now would have had exactly the fields
-//! `CapabilityKind`, `Extent` and `Bound` supply, and deleting those three
-//! (because nothing constructs one yet) leaves `Requirements` with no
-//! fields at all: a zero-content type that cannot be told apart from "not
-//! implemented" by anything that reads it. Shipping that shell would make
-//! a future family with a real capability kind satisfy `FamilyContract`
-//! identically whether it wires `requirements()` correctly or not -- the
-//! exact failure this contract exists to prevent. So `#214` does not add a
-//! `requirements` method to `FamilyContract`, and the FR-062 rows for this
-//! part are left unbacked rather than backed by an unexercised shell.
-//! QSL-152 (FR-062-AC-1/AC-4/AC-6/AC-8/AC-9) owns adding `requirements()`
-//! (and `Requirements`/`CapabilityKind`/`Extent`/`Bound`, or whatever shape
-//! a real FR-057 capability kind actually needs) to the trait, validated
-//! against a real instance instead of guessed in advance.
+//! **The sixth contract part, `requirements` (ADR-012 §2, FR-062-AC-4).**
+//! ADR-014 §11 moved it to QSL-140: [`Requirements`], [`ClaimExtent`] and
+//! the `FamilyContract::requirements` method live in [`requirements`].
+//! `Value`'s function-declaration form carries no FR-057 capability kind
+//! (FR-057: "no kind for an expression nested in a clause, such as a
+//! function application"), so its `requirements` returns `None`. The
+//! claim families QSL-42 and QSL-43 migrate return one value each.
 
 mod contract;
 mod evaluation;
 mod outcome;
+pub mod requirements;
 
 pub use contract::{CheckContext, FamilyContract};
 // Public only under `test-support`: the layer-5 evaluator's tests build a
@@ -83,6 +69,9 @@ pub use contract::{Diagnostic, DiagnosticSink, ScopeStack, StageLimits};
 pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
 pub use evaluation::{EvalOutcome, FamilyOutcome, FamilyResult};
 pub use outcome::CheckOutcome;
+pub use requirements::{
+    classify_extent, ClaimExtent, ClassifyFailure, DomainKind, Requirements, UnboundedDomains,
+};
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed
 // function-selection key, FR-065-AC-6) lives at
