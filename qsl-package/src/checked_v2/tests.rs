@@ -1496,12 +1496,21 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
             .pointer_mut(mutation["pointer"].as_str().unwrap())
             .unwrap_or_else(|| panic!("{id}: pointer exists")) = mutation["replacement"].clone();
         let (_, outcome) = read_fixture_wire(&candidate);
+        // FR-096: an unknown contract version is `unknown_wire`, located at
+        // `/contract_version`; every other IR refusal keeps IR's code.
+        let refused_as_expected = match &outcome {
+            Read::Refused(refusal @ V2ReadRefusal::UnsupportedVersion { .. }) => {
+                expected == CheckedPackageRefusalCode::UnknownContractVersion
+                    && refusal
+                        .locus()
+                        .is_some_and(|locus| matches!(locus, Locus::Artifact { pointer, .. } if pointer.as_str() == "/contract_version"))
+            }
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => refusal.code == expected,
+            _ => false,
+        };
         assert!(
-            matches!(
-                &outcome,
-                Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) if refusal.code == expected
-            ),
-            "{id}: expected Refused(Envelope({expected:?})), got {outcome:?}"
+            refused_as_expected,
+            "{id}: expected a refusal as {expected:?}, got {outcome:?}"
         );
     }
     println!(
