@@ -437,7 +437,7 @@ impl V2ReadRefusal {
     )]
     pub(crate) fn code(&self) -> Code {
         match self {
-            Self::UnsupportedVersion { .. } => Code::InvalidPackage,
+            Self::UnsupportedVersion { .. } => Code::UnknownWire,
             Self::Envelope { refusal, .. } => map_refusal_code(refusal.code),
             Self::UnsupportedDependencySelections { .. } => Code::UnsupportedDependencySelections,
             Self::Structural(refusal) => refusal.code(),
@@ -485,9 +485,10 @@ impl V2ReadRefusal {
 
 /// Maps IR's closed I04 refusal-code vocabulary onto this crate's own FR-010
 /// codes. Exhaustive on purpose: a new IR variant must be triaged here
-/// rather than silently falling into a catch-all bucket. Every envelope-
-/// shape code (contract-version, malformed/noncanonical wire, duplicate or
-/// unknown member, digest-domain mismatch) collapses to the crate's own
+/// rather than silently falling into a catch-all bucket. A contract-version
+/// refusal is `unknown_wire` (ADR-013 O-22). Every envelope-shape code
+/// (malformed/noncanonical wire, duplicate or unknown member, digest-domain
+/// mismatch) collapses to the crate's own
 /// pre-existing `Code::InvalidPackage`, exactly as `UnsupportedNodeTag`
 /// already does -- no per-IR-variant `Code` is minted to mirror IR's own
 /// closed vocabulary (team decision, no-copy rule). IR's full
@@ -505,8 +506,8 @@ impl V2ReadRefusal {
 )]
 fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     match code {
-        CheckedPackageRefusalCode::UnknownContractVersion
-        | CheckedPackageRefusalCode::MalformedWire
+        CheckedPackageRefusalCode::UnknownContractVersion => Code::UnknownWire,
+        CheckedPackageRefusalCode::MalformedWire
         | CheckedPackageRefusalCode::DuplicateMember
         | CheckedPackageRefusalCode::UnknownMember
         | CheckedPackageRefusalCode::NoncanonicalWire

@@ -43,7 +43,12 @@ Tag the tests `#[trace("TC-378", "FR-062-AC-7")]` and
 
 ## Status
 
-**Unbacked** (PR #303 review, findings 4/5; reverted from an earlier
+Backed (QSL-160) by
+`the_typer_depth_stop_is_located_at_the_node_whose_entry_failed`
+(`qsl-semantics/src/check/family.rs`, `locus_tests`), over `not not not
+true` read through S1, S2 and the assembler. The history below is kept.
+
+Previously **unbacked** (PR #303 review, findings 4/5; reverted from an earlier
 "backed" claim in this round). The earlier claim rested on
 `real_recursive_descent_is_nesting_depth_bounded`, which depended on
 `check::family::charge_recursive_nesting` -- a side-walk added purely to

@@ -39,6 +39,7 @@ authored choreography fixture and balanced-but-incomplete refusal controls.
 
 The composed forms produce typed, located syntax with no linked or checked claim.
 Malformed forms return their typed source-bound diagnostics; budget failures are
-resource_exhausted. All historical expectations remain byte-for-byte unchanged.
+`stage_limit_exceeded` with the budget's cause, a token budget
+`token-count-exceeded` (catalog revision `1-draft.7`). All historical expectations remain byte-for-byte unchanged.
 Each step has unconditional assertions; a missing declaration or absent error
 object fails the test rather than skipping the check.

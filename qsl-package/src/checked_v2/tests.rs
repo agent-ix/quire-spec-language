@@ -549,7 +549,7 @@ fn refuses_unknown_contract_version() {
         ),
         "expected Refused(UnsupportedVersion), got {outcome:?}"
     );
-    assert_eq!(envelope_code(&outcome), Some(Code::InvalidPackage));
+    assert_eq!(envelope_code(&outcome), Some(Code::UnknownWire));
 }
 
 #[test]
