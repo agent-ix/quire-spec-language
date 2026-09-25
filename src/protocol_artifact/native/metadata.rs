@@ -2,7 +2,7 @@
 //! FR-042: source/proof correspondence and exact selected semantic resources.
 use super::{
     layout,
-    types::{index as checked_index, text, ValueBuilder},
+    types::{index as checked_index, text, ModelSelection, ValueBuilder},
     Selections,
 };
 use crate::checking::composed::proofs::ProofReport;
@@ -147,7 +147,8 @@ fn definitions(
 
 pub(super) struct Lowered {
     pub package: w::Package,
-    pub model_schema: Vec<NativeModel>,
+    /// Per wire model: the native model's schema, `None` for a domain package.
+    pub model_schema: Vec<Option<NativeModel>>,
 }
 
 pub(super) fn lower(
@@ -347,11 +348,12 @@ pub(super) fn lower(
         meta.declaration_indices.insert(d, checked_index(i)?);
     }
     let model_binding = binding.models().ok_or(Error::Invalid(Invalid::Model))?;
-    work.charge(Dimension::Models, selections.models.len())?;
-    work.charge(
-        Dimension::Entries,
-        selections.models.len().saturating_mul(2),
-    )?;
+    let selected_count = selections
+        .models
+        .len()
+        .saturating_add(selections.domain_packages.len());
+    work.charge(Dimension::Models, selected_count)?;
+    work.charge(Dimension::Entries, selected_count.saturating_mul(2))?;
     let mut models = Vec::new();
     for model in selections.models {
         let mut found = false;
@@ -367,13 +369,39 @@ pub(super) fn lower(
         if !found {
             return Err(Error::Invalid(Invalid::Model));
         }
-        let artifact = meta.dependency(model.artifact, work)?;
-        models.push((artifact, *model));
+        models.push(ModelSelection::Native {
+            dependency: meta.dependency(model.artifact, work)?,
+            model: *model,
+        });
     }
-    models.sort_by_key(|(index, _)| *index);
-    let indices = models.iter().map(|(i, _)| *i).collect::<Vec<_>>();
-    let selected_models = models.iter().map(|(_, m)| *m).collect::<Vec<_>>();
-    let mut builder = ValueBuilder::new(&selected_models, &indices, work)?;
+    for package in selections.domain_packages {
+        let mut found = false;
+        for input in model_binding.inputs() {
+            work.visit()?;
+            if (*input)
+                .domain_package()
+                .is_some_and(|actual| std::ptr::eq(actual, package.package))
+            {
+                found = true;
+            }
+        }
+        if !found {
+            return Err(Error::Invalid(Invalid::Model));
+        }
+        let dependency = meta.dependency(package.artifact, work)?;
+        let bytes = meta
+            .dependencies
+            .get(dependency as usize)
+            .ok_or(Error::Invalid(Invalid::Dependency))?
+            .bytes;
+        models.push(ModelSelection::Domain {
+            dependency,
+            package: *package,
+            document_len: bytes.len(),
+        });
+    }
+    models.sort_by_key(ModelSelection::dependency);
+    let mut builder = ValueBuilder::new(&models, work)?;
     let mut declarations = Vec::new();
     let mut families = BTreeSet::new();
     let mut features = BTreeSet::from(["quire.protocol.bindings/1", "quire.protocol.numeric/1"]);
@@ -563,8 +591,13 @@ pub(super) fn lower(
     };
     // The same independent model adapter used by the public reader checks the
     // actual export, locus and type before bytes can exist.
-    let model_schema =
-        artifact::models::validate(&package, selections.models, selections.dependencies, work)?;
+    let model_schema = artifact::models::validate(
+        &package,
+        selections.models,
+        selections.domain_packages,
+        selections.dependencies,
+        work,
+    )?;
     Ok(Lowered {
         package,
         model_schema,

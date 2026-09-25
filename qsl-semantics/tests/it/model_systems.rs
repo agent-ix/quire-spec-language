@@ -292,6 +292,41 @@ fn find_component<'a>(
 // resolving "exact producer AND effective-declaration identity," and this
 // module computes no effective-declaration identity at all (see the module
 // doc's own scope note) — nothing here can honestly claim AC-1.
+/// FR-208-AC-9: a relationship end naming a record value type refuses
+/// `invalid_model_binding`/`malformed-declaration`, not as a dangling end:
+/// the end names a declared type of the wrong meaning.
+#[trace("TC-197")]
+#[test]
+fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
+    let domain_package = fixture_y(|records| {
+        records.push(DomainPackageRecord::RecordValueType(
+            qsl_semantics::model::domain_package::RecordValueTypeRecord {
+                key: DeclarationKey::fixture("model.Money"),
+            },
+        ));
+        records.push(relationship(
+            "model.Sys.owes",
+            "model.Sys",
+            one(),
+            "model.Money",
+            one(),
+            RelationshipDirection::SourceToTarget,
+        ));
+    });
+    let classification =
+        classify(&domain_package, &mut unlimited_meter()).expect("classify completes");
+    let refusals: Vec<_> = classification
+        .refusals
+        .iter()
+        .filter(|refusal| refusal.detail.contains("model.Sys.owes"))
+        .collect();
+    assert_eq!(refusals.len(), 1, "{:?}", classification.refusals);
+    assert_eq!(refusals[0].code, Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause, ModelRefusalCause::MalformedDeclaration);
+    assert!(refusals[0].detail.contains("target end"));
+    assert!(refusals[0].detail.contains("model.Money"));
+}
+
 #[trace("TC-197")]
 #[test]
 fn y01_every_kind_resolves_to_its_exact_producer_key() {

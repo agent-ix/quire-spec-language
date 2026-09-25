@@ -1046,6 +1046,30 @@ fn a_field_member_naming_an_undeclared_owner_refuses_instead_of_dropping() {
     }
 }
 
+/// A field member owned by a record value type (FR-208-AC-4) is not a
+/// dangling owner: the package normalizes.
+#[trace("TC-195")]
+#[test]
+fn a_field_member_owned_by_a_record_value_type_normalizes() {
+    let mut domain_package = fixture_f1();
+    domain_package
+        .records
+        .push(DomainPackageRecord::RecordValueType(
+            qsl_semantics::model::domain_package::RecordValueTypeRecord {
+                key: DeclarationKey::fixture("model.Money"),
+            },
+        ));
+    domain_package.records.push(field_member(
+        "model.Money.amount",
+        "model.Money",
+        "ix://test/orders/A",
+    ));
+    assert!(matches!(
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED),
+        NormalizeOutcome::Completed(_)
+    ));
+}
+
 // `a_generalization_naming_an_undeclared_specific_refuses_instead_of_being_ignored`
 // is dropped: under QSpec's inline `supertypes[]` property
 // (`model-complete.md`:155), `specific` is always the owning
@@ -1126,6 +1150,50 @@ fn a_population_naming_an_undeclared_member_type_refuses_instead_of_being_ignore
         }
         other => panic!("expected Refused, got {other:?}"),
     }
+}
+
+/// FR-208-AC-9: a population member type naming a record value type refuses
+/// `invalid_model_binding`/`malformed-declaration`, not `missing-name`: the
+/// type is declared, with a meaning a population cannot hold.
+#[trace("TC-195")]
+#[test]
+fn a_population_naming_a_record_value_type_refuses_malformed() {
+    let mut domain_package = fixture_f1();
+    domain_package
+        .records
+        .push(DomainPackageRecord::RecordValueType(
+            qsl_semantics::model::domain_package::RecordValueTypeRecord {
+                key: DeclarationKey::fixture("model.Money"),
+            },
+        ));
+    domain_package.records.push(field_member(
+        "model.Money.amount",
+        "model.Money",
+        "ix://test/orders/A",
+    ));
+    domain_package.records.push(DomainPackageRecord::Population(
+        qsl_semantics::model::domain_package::PopulationRecord {
+            key: DeclarationKey::fixture("model.pop.p1"),
+            member_types: vec![DeclarationKey::fixture("model.Money")],
+            extent: qsl_semantics::model::domain_package::Extent::Closed,
+        },
+    ));
+    let NormalizeOutcome::Refused(refusals) =
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("the package refuses")
+    };
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(
+        refusals[0],
+        ModelRefusal {
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::MalformedDeclaration,
+            detail: "population model.pop.p1 names member type model.Money, \
+                     a record value type, not an object type"
+                .to_owned(),
+        }
+    );
 }
 
 /// A field member's own inline `subsets` property
@@ -1643,7 +1711,7 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
                 owner: DeclarationKey::fixture("model.no-such-owner"),
             },
             detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type"
+                     which is not a declared object type or record value type"
                 .to_owned(),
         },
         ModelRefusal {
@@ -1684,7 +1752,7 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
                 owner: DeclarationKey::fixture("model.no-such-owner"),
             },
             detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type"
+                     which is not a declared object type or record value type"
                 .to_owned(),
         },
         ModelRefusal {
@@ -1725,7 +1793,7 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
                 owner: DeclarationKey::fixture("model.no-such-owner"),
             },
             detail: "field member model.Z.y names owner model.no-such-owner, \
-                     which is not a declared object type"
+                     which is not a declared object type or record value type"
                 .to_owned(),
         },
     ]));
@@ -1908,7 +1976,7 @@ fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
                 owner: DeclarationKey::fixture("model.no-such-owner"),
             },
             detail: "field member model.A.y names owner model.no-such-owner, \
-                     which is not a declared object type"
+                     which is not a declared object type or record value type"
                 .to_owned(),
         },
         ModelRefusal {
@@ -1981,7 +2049,7 @@ fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_
                             owner: DeclarationKey::fixture("model.no-such-owner"),
                         },
                         detail: "field member model.A.y names owner model.no-such-owner, \
-                                 which is not a declared object type"
+                                 which is not a declared object type or record value type"
                             .to_owned(),
                     },
                     ModelRefusal {
@@ -4187,7 +4255,7 @@ fn a_field_member_with_a_dangling_owner_and_a_dangling_redefines_reports_both() 
                     member: DeclarationKey::fixture("model.A.y"),
                     owner: DeclarationKey::fixture("model.nope"),
                 },
-                detail: "field member model.A.y names owner model.nope, which is not a declared object type".to_string(),
+                detail: "field member model.A.y names owner model.nope, which is not a declared object type or record value type".to_string(),
             },
             ModelRefusal {
                 code: qsl_foundation::diagnostic::Code::DanglingReference,
@@ -4266,7 +4334,7 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
                 member: DeclarationKey::fixture("model.Dup.f"),
                 owner: DeclarationKey::fixture("model.nope"),
             },
-            detail: "field member model.Dup.f names owner model.nope, which is not a declared object type".to_string(),
+            detail: "field member model.Dup.f names owner model.nope, which is not a declared object type or record value type".to_string(),
         },
         ModelRefusal {
             code: qsl_foundation::diagnostic::Code::InvalidModelBinding,

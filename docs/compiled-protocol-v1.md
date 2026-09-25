@@ -136,6 +136,19 @@ member refuses. A `Model` carrying any other member, such as `correspondence`,
 compares the naming with the accepted selection; a naming that differs from it,
 including one offered where the accepted model links no domain package, refuses
 as `Invalid::Model`.
+A model that names a domain package selects, through `artifact`, the
+`model-package` dependency whose bytes are that package's Semantic IR 2.0.0
+document; the reader re-admits those bytes under the named identity, version and
+`sha256-jcs` digest. Its `profile` is `semantic-ir/2.0.0`. Its exports are the
+package's object types and Interfaces (`object`, path `[artifact id]`), record
+value types (`record`, path `[artifact id]`), and their fields and operations
+(`field`/`operation`, path `[artifact id, name]`). Domain intake retains no
+per-declaration span yet, so every such export's locus names the model's own
+dependency reference, formal document equal to the package identity, formal
+revision `{namespace:"ix:domain-package-version",value:<package version>}` and
+span `[0, document length)`. A domain object type's population input has no
+export yet, so a declaration requiring one refuses emission as
+`Unsupported::Export`.
 
 `package_definition` and every `profile` index `definitions`; `Definition.requires`
 indexes definitions, while its `artifact`/`rules` and `Dependency.requires` index

@@ -7,7 +7,7 @@ use crate::linking::composed::{
     definition_source::RegisteredDefinition as Definition,
     scopes::{Anchor, BinderKind, DeclarationScope, StructuralKind, SymbolKind},
 };
-use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid};
+use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::syntax::composed as c;
 use qsl_foundation::{Span, Spanned};
 
@@ -49,7 +49,7 @@ pub(super) fn lower(
             end: channel.carries.name.span.end,
         };
         work.locus = Some(layout.locus(payload_span)?);
-        let ty = model_type(context, payload_span, work)?;
+        let ty = &model_type(context, payload_span, work)?;
         let message_type = builder.ty(ty, work)?;
         let model = nominal(ty, builder, work)?;
         work.locus = Some(layout.locus(channel.delivery.span)?);
@@ -211,6 +211,8 @@ fn stable_equality(ty: &NativeType<'_>) -> Result<(), Error> {
         NativeType::Record { .. } | NativeType::Option(_) | NativeType::Sequence { .. } => {
             Err(Error::Invalid(Invalid::Type))
         }
+        // No domain-package channel key equality is admitted yet.
+        NativeType::Domain(_) => Err(Error::Unsupported(Unsupported::Export)),
     }
 }
 

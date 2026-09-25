@@ -6,8 +6,8 @@ use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use crate::linking::composed::definition_source::RegisteredDefinition;
 
 use super::{
-    ir, local_value, reference_target, reserve_formal, same_model, target, w, Dimension, Error,
-    Invalid, NativeType, ScalarSite, Target, View, Work,
+    ir, local_value, reference_target, reserve_formal, same_model, target, w, Dimension,
+    DomainTarget, Error, Invalid, NativeType, ScalarSite, Target, View, Work,
 };
 
 type RoleKey<'a> = (u32, &'a ir::SymbolName, u32);
@@ -119,7 +119,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             field: field.name().clone(),
         };
         let native = view
-            .catalog
+            .catalog()?
             .formal(field.value_type(), &site)
             .ok_or(Error::Invalid(Invalid::Type))?;
         let leaf = match &native {
@@ -128,7 +128,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             value => value,
         };
         if !matches!(leaf, NativeType::Reference { model, role: target }
-            if same_model(view.catalog.model, model) && std::ptr::eq(role, *target))
+            if same_model(view.model()?, model) && std::ptr::eq(role, *target))
         {
             return Err(Error::Invalid(Invalid::Type));
         }
@@ -305,7 +305,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                 .get(model as usize)
                 .ok_or(Error::Invalid(Invalid::Reference))?;
             let ty = view
-                .catalog
+                .catalog()?
                 .record_type(name)
                 .ok_or(Error::Invalid(Invalid::Type))?;
             let record = match ty {
@@ -326,7 +326,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             work.charge(Dimension::Entries, 1)?;
             seen.insert((model, record, anchor));
             let declaration = view
-                .catalog
+                .catalog()?
                 .records
                 .get(record)
                 .ok_or(Error::Invalid(Invalid::Type))?;
@@ -403,6 +403,14 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                     let name = match selected {
                         Target::Record(record) => record.name(),
                         Target::Object(role, _) | Target::Reference(role) => &role.record,
+                        // A domain type needs no population input unless it
+                        // reaches a domain object type, which has no
+                        // population export yet.
+                        Target::Domain(DomainTarget::Type(ty)) => {
+                            return crate::protocol_artifact::domain::require_no_population(
+                                &ty, work,
+                            );
+                        }
                         _ => return Err(Error::Invalid(Invalid::Type)),
                     };
                     work.charge(Dimension::Entries, 1)?;

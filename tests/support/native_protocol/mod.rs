@@ -6,12 +6,14 @@ use crate::support::composed_types as composed_inputs;
 use std::collections::BTreeMap;
 
 use qsl_foundation::{ByteDigest, Source};
+use qsl_semantics::model::admitted::AdmittedPackage;
 use quire_contract_ir as ir;
 use quire_spec_language::checking::composed::{self, proofs, TypeLimits};
 use quire_spec_language::checking::{CheckBindings, ClauseBinding};
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+use quire_spec_language::linking::composed::models::ModelInput;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::protocol_artifact::{self as artifact, native, v2, v3, wire as w};
 
@@ -21,8 +23,17 @@ pub struct Unit<'a> {
     pub declarations: &'a [&'a str],
 }
 
+/// A domain package imported beside the native model as `D`, with the bytes
+/// of its Semantic IR document and the model-package reference selecting them.
+pub struct DomainInput {
+    pub package: AdmittedPackage,
+    pub bytes: Vec<u8>,
+    pub reference: w::ArtifactRef,
+}
+
 pub struct Inputs {
     pub model: NativeModel,
+    pub domain: Option<DomainInput>,
     pub sources: Vec<Source>,
     pub formal: Vec<FormalSource>,
     pub mappings: Vec<CheckBindings>,
@@ -209,9 +220,52 @@ impl Inputs {
     }
 
     pub fn with_model(units: &[Unit<'_>], model: NativeModel) -> Self {
+        Self::with_models(units, model, None)
+    }
+
+    /// The native fixture model as `M` and `package` as `D`, whose document
+    /// is `bytes`, in every unit.
+    #[allow(
+        dead_code,
+        reason = "Only domain-package emission tests import a domain package"
+    )]
+    pub fn with_domain(units: &[Unit<'_>], package: AdmittedPackage, bytes: Vec<u8>) -> Self {
+        let reference = reference(
+            w::ArtifactKind::ModelPackage,
+            "fixture-domain-package",
+            "semantic-ir",
+            "2.0.0",
+            &bytes,
+        );
+        Self::with_models(
+            units,
+            composed_inputs::model("NativeEmission"),
+            Some(DomainInput {
+                package,
+                bytes,
+                reference,
+            }),
+        )
+    }
+
+    fn with_models(units: &[Unit<'_>], model: NativeModel, domain: Option<DomainInput>) -> Self {
+        let import = domain.as_ref().map_or_else(String::new, |domain| {
+            let selection = domain.package.selection();
+            let digest: String = selection
+                .digest
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            format!(
+                "model D = \"{}\" version \"{}\" digest \"sha256-jcs:{digest}\";\n",
+                selection.identity, selection.version
+            )
+        });
         let sources: Vec<_> = units
             .iter()
-            .map(|unit| composed_inputs::source(unit.name, &model, unit.body))
+            .map(|unit| {
+                composed_inputs::source(unit.name, &model, &format!("{import}{}", unit.body))
+            })
             .collect();
         let formal = composed_inputs::formal_sources(&sources);
         let mappings: Vec<CheckBindings> = formal
@@ -325,6 +379,9 @@ impl Inputs {
             (binary, binary_bytes.to_vec()),
             (model_reference.clone(), model.artifact_bytes().to_vec()),
         ]);
+        if let Some(domain) = &domain {
+            dependencies.push((domain.reference.clone(), domain.bytes.clone()));
+        }
         dependencies.sort_by(|a, b| {
             (a.0.kind.as_str(), &a.0.identity).cmp(&(b.0.kind.as_str(), &b.0.identity))
         });
@@ -344,6 +401,7 @@ impl Inputs {
         };
         Self {
             model,
+            domain,
             sources,
             formal,
             mappings,
@@ -423,9 +481,15 @@ impl Inputs {
         proof_limits: proofs::ProofLimits,
         test: impl FnOnce(&proofs::ProofReport<'_, '_, '_>, &native::Selections<'_>),
     ) {
-        composed_inputs::with_binding(
+        let mut inputs = vec![ModelInput::Native(&self.model)];
+        inputs.extend(
+            self.domain
+                .as_ref()
+                .map(|domain| ModelInput::Domain(&domain.package)),
+        );
+        composed_inputs::with_binding_inputs(
             &self.sources,
-            &[&self.model],
+            &inputs,
             BindingLimits::default(),
             |binding| {
                 assert!(
@@ -460,6 +524,14 @@ impl Inputs {
             model: &self.model,
             source: &foreign,
         }];
+        let domain_packages: Vec<_> = self
+            .domain
+            .iter()
+            .map(|domain| artifact::AdmittedDomainPackage {
+                artifact: &domain.reference,
+                package: &domain.package,
+            })
+            .collect();
         let sources: Vec<_> = self
             .source_references
             .iter()
@@ -477,6 +549,7 @@ impl Inputs {
             sources: &sources,
             dependencies: &dependencies,
             models: &models,
+            domain_packages: &domain_packages,
             definition_revision_namespace: "test:semantic-definition-revision",
             requirement_revision_namespace: "test:requirement-revision",
         })
@@ -745,6 +818,7 @@ impl Inputs {
                     sources: &sources,
                     dependencies: selected.dependencies,
                     models: selected.models,
+                    domain_packages: selected.domain_packages,
                 },
                 &sources,
             )

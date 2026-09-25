@@ -189,12 +189,11 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 /// `sourceEnd`/`targetEnd`/`role`/`direction` shape, so `decide` reports no
 /// `Severity::Error` diagnostic and `read_records` reaches its own per-node
 /// reading over the golden for the first time. Of its 12 types (no
-/// `populations[]`, asserted below rather than assumed), **5 refuse and 7
-/// read clean**:
+/// `populations[]`, asserted below rather than assumed), **4 refuse and 8
+/// read clean**. `Count`, a `quire.meaning.model.record-value-type/v1`
+/// type, reads as a record value type (it refused as an unsupported
+/// declaration form until QSL-64 added its reader):
 ///
-/// - `Count`: [`qsl_semantics::model::normalize::ModelRefusalCause::UnsupportedDeclarationForm`]
-///   -- `quire.meaning.model.record-value-type/v1` has no reader yet (a
-///   separate, still-open gap, not this pin's).
 /// - `Flow2`: `IntakeMalformedDeclaration` on its own inline
 ///   relationship -- FCD's relationship identity form
 ///   (`ix://agent-ix/architecture/relationship/Flow2-specializes-Flow`, an
@@ -228,8 +227,8 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 /// correct now, for the real reason (a relationship member's identity form),
 /// not the predicted one (role/multiplicity).
 ///
-/// The remaining 7 -- `Flow`, `pipe`, `pump_alloc`, `pump_out`, `sys_pump`,
-/// `sys_tank`, `tank_in` -- read clean, but `read_records` only proves that
+/// The remaining 8 -- `Count`, `Flow`, `pipe`, `pump_alloc`, `pump_out`,
+/// `sys_pump`, `sys_tank`, `tank_in` -- read clean, but `read_records` only proves that
 /// as "produced no refusal": it discards every already-read record when any
 /// node refuses, so no content assertion for these 7 is possible against
 /// the whole-document call above. `reads_pump_out_as_a_real_endpoint_record`
@@ -237,7 +236,7 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 /// single-type document.
 #[trace("TC-145", "TC-146", "FR-056-AC-3", "FR-056-AC-5")]
 #[test]
-fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types() {
+fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_4_of_its_12_types() {
     let package_identity = "agent-ix/architecture";
     let document =
         std::fs::read_to_string(fcd_fixtures_dir().join("architecture/expected/semantic-ir.json"))
@@ -252,7 +251,7 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types
             .expect("the golden's types is an array")
             .len(),
         12,
-        "the golden's own type count; if this drifts, the 5-of-12/7-clean split below is stale"
+        "the golden's own type count; if this drifts, the 4-of-12/8-clean split below is stale"
     );
     assert!(
         parsed.get("populations").is_none(),
@@ -260,40 +259,21 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types
     );
 
     let refusals = read_records(package_identity, &parse_document(document.as_bytes())).expect_err(
-        "measured: 5 of the golden's 12 types refuse at read_records even though the whole \
+        "measured: 4 of the golden's 12 types refuse at read_records even though the whole \
          document now clears validate_with_semantic_ir's schema check",
     );
 
     assert_eq!(
         refusals.len(),
-        5,
-        "measured refusal count over the post-#200 golden, post-H1 fix: {refusals:#?}"
+        4,
+        "measured refusal count over the post-#200 golden, post-H1 fix, with the \
+         record-value-type reader: {refusals:#?}"
     );
 
     use qsl_foundation::diagnostic::Code;
     use qsl_semantics::model::normalize::ModelRefusalCause;
 
-    let (count, flow2, pump, sys, tank) = (
-        &refusals[0],
-        &refusals[1],
-        &refusals[2],
-        &refusals[3],
-        &refusals[4],
-    );
-
-    assert_eq!(count.code, Code::UnsupportedConstruct);
-    match &count.cause {
-        ModelRefusalCause::UnsupportedDeclarationForm { node, what } => {
-            assert_eq!(node, "ix://agent-ix/architecture/Count");
-            assert_eq!(what, "quire.meaning.model.record-value-type/v1");
-        }
-        other => panic!("Count: expected UnsupportedDeclarationForm, got {other:?}"),
-    }
-    assert!(
-        count.detail.contains("has no reader yet"),
-        "Count detail: {}",
-        count.detail
-    );
+    let (flow2, pump, sys, tank) = (&refusals[0], &refusals[1], &refusals[2], &refusals[3]);
 
     assert_eq!(flow2.code, Code::InvalidModelBinding);
     match &flow2.cause {
@@ -345,10 +325,10 @@ fn reading_fcd_199s_golden_shape_admits_the_schema_and_refuses_5_of_its_12_types
 /// type -- `pump_out.owner`, `pump_out.interfaceType`, `sys_pump.owner`,
 /// `sys_pump.declaredType` -- to resolve to a real node, so the referential
 /// closure comes along), with only `Sys`/`Pump.id`'s own `typeRef` (the
-/// `ix://quire/native/UUID` refusal, irrelevant to `pump_out` itself) and
-/// `Flow.rate`'s `typeRef` (a reference to `Count`, the unsupported-meaning
-/// refusal, equally irrelevant here) redirected to a supported native type
-/// so the closure itself reads clean too. `pump_out` reads as a real
+/// `ix://quire/native/UUID` refusal, irrelevant to `pump_out` itself)
+/// redirected to a supported native type so the closure itself reads clean
+/// too. `Flow.rate` keeps its golden `typeRef`, `Count`, and `Count` comes
+/// along verbatim: it reads as a record value type owning its one field. `pump_out` reads as a real
 /// [`qsl_semantics::model::domain_package::EndpointRecord`], not
 /// merely "no refusal": owner `sys_pump`, direction `Out`, value type
 /// `Flow`, multiplicity exactly `1..=1`.
@@ -373,7 +353,6 @@ fn reads_pump_out_as_a_real_endpoint_record() {
 
     let pump_out = find("ix://agent-ix/architecture/pump_out");
     let sys_pump = find("ix://agent-ix/architecture/sys_pump");
-    let mut flow = find("ix://agent-ix/architecture/Flow");
     let mut sys = find("ix://agent-ix/architecture/Sys");
     let mut pump = find("ix://agent-ix/architecture/Pump");
     // `Sys.id`/`Pump.id`'s own `typeRef` is `ix://quire/native/UUID`, R5's
@@ -383,14 +362,10 @@ fn reads_pump_out_as_a_real_endpoint_record() {
     for entity in [&mut sys, &mut pump] {
         entity["fields"][0]["typeRef"] = Value::String("ix://quire/native/Boolean".to_owned());
     }
-    // `Flow.rate`'s own `typeRef` names `Count`, the unsupported-meaning
-    // refusal -- irrelevant to `pump_out`'s own content -- so it is
-    // redirected to a supported native type rather than dropped outright:
-    // `featureOrder` requires at least one feature, and the field must
-    // still resolve to keep `Flow` itself reading clean.
-    flow["fields"][0]["typeRef"] = Value::String("ix://quire/native/Boolean".to_owned());
+    let flow = find("ix://agent-ix/architecture/Flow");
+    let count = find("ix://agent-ix/architecture/Count");
 
-    let types = vec![pump_out, sys_pump, flow, sys, pump];
+    let types = vec![pump_out, sys_pump, flow, sys, pump, count];
     let kept_kinds: Vec<Value> = types
         .iter()
         .map(|type_value| type_value["kind"].clone())
@@ -413,7 +388,7 @@ fn reads_pump_out_as_a_real_endpoint_record() {
     )
     .expect(
         "pump_out and the referential closure needed to satisfy agent-ix-semantic-ir's own \
-         schema, with Sys/Pump/Flow's unrelated refusing members emptied out, read clean",
+         schema, with Sys/Pump's unrelated refusing identity types redirected, read clean",
     );
     let endpoint = records
         .iter()
@@ -442,6 +417,35 @@ fn reads_pump_out_as_a_real_endpoint_record() {
     );
     assert_eq!(endpoint.multiplicity.lower, 1);
     assert_eq!(endpoint.multiplicity.upper, Some(1));
+
+    // `Count` reads as a record value type, its field `value` owned by it,
+    // and `Flow.rate` resolves its type to that node.
+    use qsl_semantics::model::domain_package::{
+        DomainPackageRecord, NativeValueType, RecordValueTypeRecord, ValueTypeRef,
+    };
+    let count = key(package_identity, "ix://agent-ix/architecture/Count");
+    assert!(records.contains(&DomainPackageRecord::RecordValueType(
+        RecordValueTypeRecord { key: count.clone() }
+    )));
+    let field = |node: &str| {
+        records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::FieldMember(field) if field.key.node == node => Some(field),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{node}: a field member"))
+    };
+    let value = field("ix://agent-ix/architecture/Count/value");
+    assert_eq!(value.owner, count);
+    assert_eq!(
+        value.value_type,
+        ValueTypeRef::Native(NativeValueType::Integer)
+    );
+    assert_eq!(
+        field("ix://agent-ix/architecture/Flow/rate").value_type,
+        ValueTypeRef::Package(count)
+    );
 }
 
 fn multiplicity_one(lower: u64, upper: Option<u64>) -> serde_json::Value {

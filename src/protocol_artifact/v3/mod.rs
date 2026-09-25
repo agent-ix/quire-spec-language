@@ -41,7 +41,7 @@ pub struct AdmittedPackage {
     pub(crate) package: wire::Package,
     pub(crate) digest: ByteDigest,
     pub(crate) artifact: Option<crate::protocol_artifact::wire::ArtifactRef>,
-    pub(crate) model_schema: Vec<crate::native_model::NativeModel>,
+    pub(crate) model_schema: Vec<Option<crate::native_model::NativeModel>>,
 }
 
 impl AdmittedPackage {
@@ -59,7 +59,9 @@ impl AdmittedPackage {
     }
     /// Retained independently admitted model schema.
     pub fn schema_model(&self, index: u32) -> Option<&crate::native_model::NativeModel> {
-        self.model_schema.get(usize::try_from(index).ok()?)
+        self.model_schema
+            .get(usize::try_from(index).ok()?)?
+            .as_ref()
     }
 
     /// Complete strict-reader-admitted authored control-to-temporal mapping.

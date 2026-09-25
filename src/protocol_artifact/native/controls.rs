@@ -593,6 +593,7 @@ pub(super) fn require_record(ty: &crate::checking::NativeType<'_>) -> Result<(),
         crate::checking::NativeType::Record { .. } | crate::checking::NativeType::Object { .. } => {
             Ok(())
         }
+        crate::checking::NativeType::Domain(_) => Err(Error::Unsupported(Unsupported::Export)),
         crate::checking::NativeType::Boolean
         | crate::checking::NativeType::Scalar { .. }
         | crate::checking::NativeType::Enumeration { .. }
@@ -691,14 +692,22 @@ pub(super) fn operation_context(
     for occurrence in &context.exports.occurrences {
         work.visit()?;
         if occurrence.span.start <= span.start && span.end <= occurrence.span.end {
-            if let ModelTarget::Operation(operation) = &occurrence.target {
-                return builder.export(
-                    operation.model(),
-                    w::ExportKind::Object,
-                    operation.role().context.as_str(),
-                    None,
-                    work,
-                );
+            match &occurrence.target {
+                ModelTarget::Operation(operation) => {
+                    return builder.export(
+                        operation.model(),
+                        w::ExportKind::Object,
+                        operation.role().context.as_str(),
+                        None,
+                        work,
+                    );
+                }
+                // A domain operation has no compiled-protocol attempt or
+                // compensation authority yet.
+                ModelTarget::Declaration(_) => {
+                    return Err(Error::Unsupported(Unsupported::Export));
+                }
+                ModelTarget::Type(_) => {}
             }
         }
     }

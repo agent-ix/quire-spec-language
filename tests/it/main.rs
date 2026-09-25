@@ -61,6 +61,7 @@ mod composed_types;
 mod config_version;
 mod configversion_backends;
 mod contract_model_architecture;
+mod domain_protocol_emission;
 mod exact_decimals;
 mod extracted_command;
 mod family_outcome_layering;

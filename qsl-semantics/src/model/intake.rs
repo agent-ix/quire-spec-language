@@ -45,7 +45,8 @@ use crate::model::domain_package::{
     AllocationRecord, ComponentRecord, DomainPackageRecord, DomainPackageRef, EndpointRecord,
     Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
     OperationMemberRecord, OperationParameterRecord, OperationResult, PopulationRecord,
-    PortDirection, RelationshipDirection, RelationshipEnd, RelationshipRecord, ValueTypeRef,
+    PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
+    RelationshipRecord, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -1428,6 +1429,106 @@ fn read_object_type(
     Ok(())
 }
 
+/// Reads a `RECORD_VALUE_TYPE` type (FR-208-AC-4) into a
+/// [`RecordValueTypeRecord`] plus one [`FieldMemberRecord`] per declared
+/// field, in declaration order.
+///
+/// A record value type has one or more fields and no identity field: an
+/// empty `fields` or a non-empty `identityFields` refuses
+/// `invalid_model_binding`/`malformed-declaration`. An operation refuses
+/// `unsupported_construct`/`declaration-form` naming the operation. A
+/// `supertypes` entry naming a type of another meaning refuses
+/// `malformed-declaration` at that entry (FR-208-AC-12), one naming no type
+/// of the document `dangling_reference`/`unknown-general`, and one naming a
+/// record value type `declaration-form`: record-value-type generalization is
+/// not read yet. An inline relationship refuses `malformed-declaration`,
+/// since a relationship end must name an object type.
+///
+/// `type_meanings` maps each type identity of the document to the meaning
+/// its `kind` resolves to.
+fn read_record_value_type(
+    package: &str,
+    type_value: &Value,
+    node: &str,
+    at: &str,
+    type_meanings: &HashMap<&str, &str>,
+    records: &mut Vec<DomainPackageRecord>,
+) -> Result<(), ModelRefusal> {
+    let ctx = NodeCtx::new(type_value, at);
+    if !ctx.array_field("identityFields")?.is_empty() {
+        return Err(ctx.malformed("identityFields: a record value type has no identity field"));
+    }
+    if let Some(operation) = ctx.array_field("operations")?.first() {
+        let operation_at = format!("{at}.operations[0]");
+        return Err(unsupported_at(
+            operation,
+            &operation_at,
+            format!("{}:operations", meaning::RECORD_VALUE_TYPE),
+        ));
+    }
+    let supertypes = ctx.identity_keys(package, "supertypes")?;
+    for (position, general) in supertypes.iter().enumerate() {
+        match type_meanings.get(general.node.as_str()) {
+            Some(&meaning::RECORD_VALUE_TYPE) => {}
+            Some(other) => {
+                return Err(NodeCtx::new(type_value, format!("{at}.supertypes[{position}]"))
+                    .malformed(format!(
+                        "{} resolves to {other:?}; a record value type generalizes only a record value type",
+                        general.node
+                    )))
+            }
+            None => {
+                return Err(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownGeneral {
+                        supertype: declaration_key(package, node),
+                        general: general.clone(),
+                    },
+                    detail: format!(
+                        "{at}.supertypes[{position}]: {} names no type of this domain package",
+                        general.node
+                    ),
+                })
+            }
+        }
+    }
+    // Every entry names a record value type: a generalization this reader
+    // does not read yet.
+    if !supertypes.is_empty() {
+        return Err(unsupported_at(
+            type_value,
+            at,
+            format!("{}:supertypes", meaning::RECORD_VALUE_TYPE),
+        ));
+    }
+    if !ctx.array_field("relationships")?.is_empty() {
+        return Err(
+            NodeCtx::new(type_value, format!("{at}.relationships[0]")).malformed(
+                "a record value type owns no relationship; a relationship end names an object type",
+            ),
+        );
+    }
+    let fields = ctx.array_field("fields")?;
+    if fields.is_empty() {
+        return Err(ctx.malformed("fields: a record value type has one or more fields"));
+    }
+    records.push(DomainPackageRecord::RecordValueType(
+        RecordValueTypeRecord {
+            key: declaration_key(package, node),
+        },
+    ));
+    let fields_at = format!("{at}.fields");
+    for (position, field) in fields.iter().enumerate() {
+        records.push(DomainPackageRecord::FieldMember(read_field_member(
+            package,
+            node,
+            field,
+            &format!("{fields_at}[{position}]"),
+        )?));
+    }
+    Ok(())
+}
+
 fn read_component(
     package: &str,
     ctx: &NodeCtx<'_>,
@@ -1742,6 +1843,7 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
 fn read_type_node(
     package: &str,
     meanings: &HashMap<(String, String), String>,
+    type_meanings: &HashMap<&str, &str>,
     type_value: &Value,
     at: &str,
 ) -> Result<Vec<DomainPackageRecord>, ModelRefusal> {
@@ -1772,6 +1874,9 @@ fn read_type_node(
         }
         meaning::SYSTEMS_INTERFACE => {
             read_object_type(package, type_value, node, at, true, &mut records)?
+        }
+        meaning::RECORD_VALUE_TYPE => {
+            read_record_value_type(package, type_value, node, at, type_meanings, &mut records)?
         }
         meaning::SYSTEMS_PART => {
             records.push(DomainPackageRecord::Component(read_component(
@@ -1852,6 +1957,20 @@ fn read_nodes(
         .array_field("populations")
         .map_err(|refusal| vec![refusal])?;
 
+    // Each type identity -> the meaning its `kind` resolves to, for the
+    // cross-node meaning checks (a record value type's supertypes).
+    let type_meanings: HashMap<&str, &str> = types
+        .iter()
+        .filter_map(|type_value| {
+            let identity = type_value.get("identity")?.as_str()?;
+            let kind = type_value.get("kind")?;
+            let key = (
+                kind.get("module")?.as_str()?.to_owned(),
+                kind.get("name")?.as_str()?.to_owned(),
+            );
+            Some((identity, meanings.get(&key)?.as_str()))
+        })
+        .collect();
     let mut nodes: Vec<DocumentNode<'_>> = Vec::with_capacity(types.len() + populations.len());
     for (position, type_value) in types.iter().enumerate() {
         let at = format!("$.types[{position}]");
@@ -1878,7 +1997,7 @@ fn read_nodes(
         match node {
             DocumentNode::Type(type_value, position, _) => {
                 let at = format!("$.types[{position}]");
-                match read_type_node(package_identity, &meanings, type_value, &at) {
+                match read_type_node(package_identity, &meanings, &type_meanings, type_value, &at) {
                     Ok(mut new_records) => records.append(&mut new_records),
                     Err(refusal) => refusals.push(refusal),
                 }
@@ -3210,8 +3329,8 @@ mod tests {
         );
     }
 
-    /// A real FR-208 meaning (`RECORD_VALUE_TYPE`) FCD's own schema
-    /// accepts generically -- any string in `kind`'s resolved `meaning` is
+    /// A real FR-208 meaning (`EVENT_TYPE`) FCD's own schema accepts
+    /// generically -- any string in `kind`'s resolved `meaning` is
     /// schema-valid -- but [`read_type_node`]'s dispatch has no reader for
     /// yet, refuses as a known-but-unsupported declaration form rather than
     /// silently folding into `ObjectTypeRecord`.
@@ -3222,13 +3341,13 @@ mod tests {
             "acme/orders",
             serde_json::json!([wire_construct(
                 "acme/orders",
-                "money",
-                meaning::RECORD_VALUE_TYPE,
+                "happened",
+                meaning::EVENT_TYPE,
                 serde_json::json!({}),
             )]),
             serde_json::json!([wire_type(
-                "ix://acme/orders/Money",
-                serde_json::json!({"module": "acme/orders", "name": "money"}),
+                "ix://acme/orders/OrderPlaced",
+                serde_json::json!({"module": "acme/orders", "name": "happened"}),
                 serde_json::json!({}),
             )]),
         )
@@ -3243,15 +3362,171 @@ mod tests {
             vec![ModelRefusal {
                 code: Code::UnsupportedConstruct,
                 cause: ModelRefusalCause::UnsupportedDeclarationForm {
-                    node: "ix://acme/orders/Money".to_owned(),
-                    what: meaning::RECORD_VALUE_TYPE.to_owned(),
+                    node: "ix://acme/orders/OrderPlaced".to_owned(),
+                    what: meaning::EVENT_TYPE.to_owned(),
                 },
                 detail: format!(
                     "$.types[0]: construct meaning/capability {:?} has no reader yet",
-                    meaning::RECORD_VALUE_TYPE
+                    meaning::EVENT_TYPE
                 ),
             }]
         );
+    }
+
+    fn money_field(name: &str, type_ref: &str) -> Value {
+        serde_json::json!({
+            "identity": format!("ix://acme/orders/Money/{name}"),
+            "name": name,
+            "typeRef": type_ref,
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
+        })
+    }
+
+    fn money(extra: Value) -> Value {
+        let mut node = serde_json::json!({
+            "identity": "ix://acme/orders/Money",
+            "fields": [
+                money_field("amount_minor", "ix://quire/native/Integer"),
+                money_field("paid", "ix://quire/native/Boolean"),
+            ],
+        });
+        if let (Some(node), Some(extra)) = (node.as_object_mut(), extra.as_object()) {
+            for (key, value) in extra {
+                node.insert(key.clone(), value.clone());
+            }
+        }
+        node
+    }
+
+    fn read_money(extra: Value) -> Result<Vec<DomainPackageRecord>, ModelRefusal> {
+        let mut records = Vec::new();
+        read_record_value_type(
+            "acme/orders",
+            &money(extra),
+            "ix://acme/orders/Money",
+            "$.types[0]",
+            &HashMap::from([
+                ("ix://acme/orders/Money", meaning::RECORD_VALUE_TYPE),
+                ("ix://acme/orders/Base", meaning::RECORD_VALUE_TYPE),
+                ("ix://acme/orders/Order", meaning::OBJECT_TYPE),
+                ("ix://acme/orders/Placed", meaning::EVENT_TYPE),
+            ]),
+            &mut records,
+        )
+        .map(|()| records)
+    }
+
+    /// A record value type (FR-208-AC-4) reads as its own record kind, never
+    /// an `ObjectTypeRecord`, followed by one field member per field, each
+    /// owned by the record value type.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn reads_a_record_value_type_and_its_fields() {
+        let key = |node: &str| declaration_key("acme/orders", node);
+        let records = read_money(serde_json::json!({})).expect("Money reads");
+        assert_eq!(records.len(), 3);
+        assert_eq!(
+            records[0],
+            DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                key: key("ix://acme/orders/Money"),
+            })
+        );
+        for (record, (name, native)) in records[1..].iter().zip([
+            ("amount_minor", NativeValueType::Integer),
+            ("paid", NativeValueType::Boolean),
+        ]) {
+            let DomainPackageRecord::FieldMember(field) = record else {
+                panic!("a field member follows its record value type")
+            };
+            assert_eq!(field.key, key(&format!("ix://acme/orders/Money/{name}")));
+            assert_eq!(field.owner, key("ix://acme/orders/Money"));
+            assert_eq!(field.value_type, ValueTypeRef::Native(native));
+        }
+    }
+
+    /// A record value type with an identity field, an operation, a
+    /// supertype, an inline relationship or no field is not valid for its
+    /// meaning: each refuses with FR-208-AC-4/AC-12's cause, naming the node
+    /// (the operation for an operation), and reads nothing. A supertype of
+    /// another meaning (an object type, an event type) refuses
+    /// `malformed-declaration` at that entry; a record value type supertype
+    /// is a generalization this reader does not read yet
+    /// (`declaration-form`); one naming no type is a dangling reference.
+    #[trace("TC-146", "FR-056-AC-3")]
+    #[test]
+    fn refuses_a_record_value_type_its_meaning_does_not_admit() {
+        let operation = serde_json::json!({"identity": "ix://acme/orders/Money/add"});
+        for (extra, code, node, detail) in [
+            (
+                serde_json::json!({"identityFields": ["ix://acme/orders/Money/paid"]}),
+                Code::InvalidModelBinding,
+                "ix://acme/orders/Money",
+                "$.types[0]: identityFields",
+            ),
+            (
+                serde_json::json!({"operations": [operation]}),
+                Code::UnsupportedConstruct,
+                "ix://acme/orders/Money/add",
+                "$.types[0].operations[0]:",
+            ),
+            (
+                serde_json::json!({"supertypes": ["ix://acme/orders/Base"]}),
+                Code::UnsupportedConstruct,
+                "ix://acme/orders/Money",
+                "$.types[0]:",
+            ),
+            (
+                serde_json::json!({"supertypes": ["ix://acme/orders/Order"]}),
+                Code::InvalidModelBinding,
+                "ix://acme/orders/Money",
+                "$.types[0].supertypes[0]:",
+            ),
+            (
+                serde_json::json!({"supertypes": ["ix://acme/orders/Base", "ix://acme/orders/Placed"]}),
+                Code::InvalidModelBinding,
+                "ix://acme/orders/Money",
+                "$.types[0].supertypes[1]:",
+            ),
+            (
+                serde_json::json!({"supertypes": ["ix://acme/orders/Placed"]}),
+                Code::InvalidModelBinding,
+                "ix://acme/orders/Money",
+                "$.types[0].supertypes[0]:",
+            ),
+            (
+                serde_json::json!({"supertypes": ["ix://acme/orders/Ghost"]}),
+                Code::DanglingReference,
+                "ix://acme/orders/Money",
+                "$.types[0].supertypes[0]:",
+            ),
+            (
+                serde_json::json!({"relationships": [{"identity": "ix://acme/orders/Money/owner"}]}),
+                Code::InvalidModelBinding,
+                "ix://acme/orders/Money",
+                "$.types[0].relationships[0]:",
+            ),
+            (
+                serde_json::json!({"fields": []}),
+                Code::InvalidModelBinding,
+                "ix://acme/orders/Money",
+                "$.types[0]: fields",
+            ),
+        ] {
+            let refusal = read_money(extra.clone()).expect_err("Money refuses");
+            assert_eq!(refusal.code, code, "{extra}");
+            let named = match &refusal.cause {
+                ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                | ModelRefusalCause::UnsupportedDeclarationForm { node, .. } => node,
+                ModelRefusalCause::UnknownGeneral { supertype, .. } => &supertype.node,
+                other => panic!("{extra}: {other:?}"),
+            };
+            assert_eq!(named, node, "{extra}");
+            assert!(
+                refusal.detail.starts_with(detail),
+                "{extra}: {}",
+                refusal.detail
+            );
+        }
     }
 
     /// A construct's `meaning` is schema-free text to

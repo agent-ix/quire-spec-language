@@ -291,7 +291,8 @@ impl<'s, 'm> Received<'s, 'm> {
             | NativeType::Enumeration { .. }
             | NativeType::Reference { .. }
             | NativeType::Option(_)
-            | NativeType::Sequence { .. } => Ok(None),
+            | NativeType::Sequence { .. }
+            | NativeType::Domain(_) => Ok(None),
         }
     }
 }

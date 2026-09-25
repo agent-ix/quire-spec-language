@@ -220,7 +220,7 @@ fn lower_one(
         },
         work,
     )?;
-    let attempt_native = model_type(context, qualified_span(&value.attempt_type), work)?;
+    let attempt_native = &model_type(context, qualified_span(&value.attempt_type), work)?;
     controls::require_record(attempt_native)?;
     let attempt_type = builder.ty(attempt_native, work)?;
     let (earlier, earlier_type, _) = record(

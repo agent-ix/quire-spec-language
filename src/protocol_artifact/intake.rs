@@ -532,8 +532,13 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         sources(&package, expected, &mut work)?;
         definitions(&package, &supplied, &mut work)?;
         super::validate::package(&package, &mut work)?;
-        let model_schema =
-            super::models::validate(&package, expected.models, expected.dependencies, &mut work)?;
+        let model_schema = super::models::validate(
+            &package,
+            expected.models,
+            expected.domain_packages,
+            expected.dependencies,
+            &mut work,
+        )?;
         let canonical = super::encoding::bytes(&package, &mut work)?;
         work.bytes(bytes.len().saturating_add(canonical.len()))?;
         if canonical != bytes {

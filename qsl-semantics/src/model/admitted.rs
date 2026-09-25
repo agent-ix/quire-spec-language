@@ -34,6 +34,8 @@ pub enum DeclarationKind {
     Interface,
     /// A value type bound to a native value type.
     ValueType,
+    /// A record value type: named fields and no identity (FR-208).
+    RecordValueType,
     /// A field member of an object type.
     Field,
     /// An operation member of an object type.
@@ -149,6 +151,7 @@ impl AdmittedPackage {
                 DomainPackageRecord::FieldMember(member) => Some(member.owner.node.as_str()),
                 DomainPackageRecord::OperationMember(member) => Some(member.owner.node.as_str()),
                 DomainPackageRecord::ObjectType(_)
+                | DomainPackageRecord::RecordValueType(_)
                 | DomainPackageRecord::ScalarType(_)
                 | DomainPackageRecord::Component(_)
                 | DomainPackageRecord::Endpoint(_)
@@ -231,6 +234,17 @@ impl AdmittedPackage {
         self.nodes.get(artifact_id).map(|index| self.at(*index))
     }
 
+    /// The type-definition or population node keyed `key`, if the package
+    /// declares one: `key` must name this package and have the
+    /// `ix://<package>/<artifact id>` form.
+    pub fn declaration_by_key(&self, key: &DeclarationKey) -> Option<Declaration<'_>> {
+        let identity = &self.package.model_selection.identity;
+        if &key.package != identity {
+            return None;
+        }
+        self.declaration(type_identity_segment(identity, &key.node)?)
+    }
+
     /// The member `name` of the declaration keyed `owner`, if the package
     /// declares one.
     pub fn member(&self, owner: &DeclarationKey, name: &str) -> Option<Declaration<'_>> {
@@ -241,6 +255,11 @@ impl AdmittedPackage {
             .get(owner.node.as_str())
             .and_then(|members| members.get(name))
             .map(|index| self.at(*index))
+    }
+
+    /// Every admitted declaration, in the package's record order.
+    pub fn declarations(&self) -> impl Iterator<Item = Declaration<'_>> {
+        (0..self.package.records.len()).map(|index| self.at(index))
     }
 
     fn at(&self, index: usize) -> Declaration<'_> {
@@ -259,6 +278,7 @@ impl AdmittedPackage {
             }
             DomainPackageRecord::ObjectType(_) => DeclarationKind::ObjectType,
             DomainPackageRecord::FieldMember(_) => DeclarationKind::Field,
+            DomainPackageRecord::RecordValueType(_) => DeclarationKind::RecordValueType,
             DomainPackageRecord::ScalarType(_) => DeclarationKind::ValueType,
             DomainPackageRecord::OperationMember(_) => DeclarationKind::Operation,
             // `admit` refuses every kind-mapping refusal, so an admitted

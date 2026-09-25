@@ -158,6 +158,18 @@ impl ValueBuilder<'_> {
                             (*model, declaration.name().as_str())
                         }
                         NativeType::Object { model, role } => (*model, role.record.as_str()),
+                        NativeType::Domain(domain) => {
+                            return Ok(w::ValueOperation::Field {
+                                base: layout.value(*base)?,
+                                field: self.domain_export(
+                                    domain.package,
+                                    w::ExportKind::Field,
+                                    domain.artifact_id(),
+                                    Some(&name.value),
+                                    work,
+                                )?,
+                            });
+                        }
                         NativeType::Boolean
                         | NativeType::Scalar { .. }
                         | NativeType::Enumeration { .. }
@@ -284,7 +296,8 @@ impl ValueBuilder<'_> {
                         | NativeType::Enumeration { .. }
                         | NativeType::Record { .. }
                         | NativeType::Option(_)
-                        | NativeType::Sequence { .. } => return Err(Error::Invalid(Invalid::Type)),
+                        | NativeType::Sequence { .. }
+                        | NativeType::Domain(_) => return Err(Error::Invalid(Invalid::Type)),
                     };
                     w::ValueOperation::Reaches {
                         start: layout.value(*start)?,

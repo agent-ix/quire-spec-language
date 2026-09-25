@@ -289,6 +289,7 @@ pub(super) fn nominal(
             None,
             work,
         ),
+        NativeType::Domain(domain) => builder.domain_type_export(domain, work),
         NativeType::Boolean | NativeType::Option(_) | NativeType::Sequence { .. } => {
             Err(Error::Unsupported(Unsupported::Export))
         }
@@ -349,17 +350,17 @@ fn captures(
     }
     Ok(result)
 }
-pub(super) fn model_type<'s, 'm>(
-    context: &'s Declaration<'_, 'm>,
+pub(super) fn model_type<'m>(
+    context: &Declaration<'_, 'm>,
     span: Span,
     work: &mut Work,
-) -> Result<&'s NativeType<'m>, Error> {
+) -> Result<NativeType<'m>, Error> {
     let report = context.exports;
     for occurrence in &report.occurrences {
         work.visit()?;
         if occurrence.span == span {
-            if let ModelTarget::Type(ty) = &occurrence.target {
-                return Ok(ty.native());
+            if let Some(ty) = occurrence.target.value_type() {
+                return Ok(ty);
             }
         }
     }
@@ -579,7 +580,7 @@ pub(super) fn body(
                 // first so a multi-unit package cannot combine this span with
                 // a stale source index from the preceding declaration.
                 work.locus = Some(layout.locus(role.span)?);
-                let ty = model_type(context, qualified_span(&role.model), work)?;
+                let ty = &model_type(context, qualified_span(&role.model), work)?;
                 let model = nominal(ty, builder, work)?;
                 let value_type = builder.ty(ty, work)?;
                 work.bytes(role.name.value.len().saturating_add(5))?;
@@ -787,14 +788,20 @@ pub(super) fn operation_export(
     for o in &report.occurrences {
         work.visit()?;
         if o.span.start <= span.start && span.end <= o.span.end {
-            if let ModelTarget::Operation(op) = &o.target {
-                return builder.export(
-                    op.model(),
-                    w::ExportKind::Operation,
-                    op.role().context.as_str(),
-                    Some(op.role().name.as_str()),
-                    work,
-                );
+            match &o.target {
+                ModelTarget::Operation(op) => {
+                    return builder.export(
+                        op.model(),
+                        w::ExportKind::Operation,
+                        op.role().context.as_str(),
+                        Some(op.role().name.as_str()),
+                        work,
+                    );
+                }
+                // A domain operation clause has no compiled-protocol
+                // execution authority yet.
+                ModelTarget::Declaration(_) => return Err(Error::Unsupported(Unsupported::Export)),
+                ModelTarget::Type(_) => {}
             }
         }
     }

@@ -5,16 +5,48 @@ use std::collections::BTreeMap;
 
 use quire_contract_ir as ir;
 
-use crate::checking::NativeType;
+use crate::checking::{DomainType, NativeType};
 use crate::native_model::{NativeModel, ScalarKind, Unit};
 use crate::protocol_artifact::{
-    wire as w, work::Work, AdmittedModel, Dimension, Error, Invalid, NumberWire, Unsupported,
+    domain, wire as w, work::Work, AdmittedDomainPackage, AdmittedModel, Dimension, Error, Invalid,
+    NumberWire, Unsupported, DOMAIN_PACKAGE_PROFILE,
 };
+use qsl_semantics::model::admitted::AdmittedPackage;
 
 pub(super) struct ValueBuilder<'a> {
-    selected: Vec<AdmittedModel<'a>>,
+    selected: Vec<Selected<'a>>,
     models: Vec<w::Model>,
     types: Vec<w::Type>,
+}
+
+/// One selected model, in dependency order.
+#[derive(Clone, Copy)]
+enum Selected<'a> {
+    Native(AdmittedModel<'a>),
+    Domain(&'a AdmittedPackage),
+}
+
+/// A model to emit: a native model, or a domain package with the length of
+/// its document dependency (the extent of every export locus).
+#[derive(Clone, Copy)]
+pub(super) enum ModelSelection<'a> {
+    Native {
+        dependency: u32,
+        model: AdmittedModel<'a>,
+    },
+    Domain {
+        dependency: u32,
+        package: AdmittedDomainPackage<'a>,
+        document_len: usize,
+    },
+}
+
+impl ModelSelection<'_> {
+    pub(super) fn dependency(&self) -> u32 {
+        match self {
+            Self::Native { dependency, .. } | Self::Domain { dependency, .. } => *dependency,
+        }
+    }
 }
 
 enum Shape {
@@ -24,14 +56,8 @@ enum Shape {
 }
 
 impl<'a> ValueBuilder<'a> {
-    pub(super) fn new(
-        models: &[AdmittedModel<'a>],
-        dependencies: &[u32],
-        work: &mut Work,
-    ) -> Result<Self, Error> {
-        if models.len() != dependencies.len() {
-            return Err(Error::Invalid(Invalid::Inventory));
-        }
+    /// `models` ascending by dependency index.
+    pub(super) fn new(models: &[ModelSelection<'a>], work: &mut Work) -> Result<Self, Error> {
         work.charge(Dimension::Models, models.len())?;
         let mut result = Self {
             selected: Vec::new(),
@@ -39,29 +65,71 @@ impl<'a> ValueBuilder<'a> {
             types: Vec::new(),
         };
         let mut previous = None;
-        for (selected, &dependency) in models.iter().zip(dependencies) {
+        for selection in models {
             work.visit()?;
+            let dependency = selection.dependency();
             if previous.is_some_and(|value| value >= dependency) {
                 return Err(Error::Invalid(Invalid::Order));
             }
             previous = Some(dependency);
-            if selected.artifact.kind != w::ArtifactKind::ModelPackage
-                || selected.artifact.digest != selected.model.digest()
-            {
-                return Err(Error::Invalid(Invalid::Model));
+            match selection {
+                ModelSelection::Native { model, .. } => {
+                    if model.artifact.kind != w::ArtifactKind::ModelPackage
+                        || model.artifact.digest != model.model.digest()
+                    {
+                        return Err(Error::Invalid(Invalid::Model));
+                    }
+                    let exports = model_exports(model, work)?;
+                    let profile = text(model.model.profile().as_str(), work)?;
+                    work.charge(Dimension::Entries, 2)?;
+                    result.selected.push(Selected::Native(*model));
+                    result.models.push(w::Model {
+                        artifact: dependency,
+                        profile,
+                        exports,
+                        // FR-042-AC-12: a `NativeModel` is directly admitted,
+                        // never linked against an FR-056 domain package.
+                        domain_package: w::Nullable(None),
+                    });
+                }
+                ModelSelection::Domain {
+                    package,
+                    document_len,
+                    ..
+                } => {
+                    if package.artifact.kind != w::ArtifactKind::ModelPackage {
+                        return Err(Error::Invalid(Invalid::Model));
+                    }
+                    let locus = domain::locus(package, *document_len, work)?;
+                    let mut exports = Vec::new();
+                    for export in domain::exports(package.package, work)? {
+                        work.visit()?;
+                        work.charge(Dimension::Entries, 3)?;
+                        let mut path = vec![text(export.owner, work)?];
+                        if let Some(member) = export.member {
+                            path.push(text(member, work)?);
+                        }
+                        exports.push(w::Export {
+                            kind: export.kind,
+                            path,
+                            locus: locus.clone(),
+                        });
+                    }
+                    work.charge(Dimension::Entries, 2)?;
+                    result.selected.push(Selected::Domain(package.package));
+                    result.models.push(w::Model {
+                        artifact: dependency,
+                        profile: text(DOMAIN_PACKAGE_PROFILE, work)?,
+                        exports,
+                        // FR-042-AC-11: the package this model was linked
+                        // against, named directly.
+                        domain_package: w::Nullable(Some(domain::naming(
+                            package.package.selection(),
+                            work,
+                        )?)),
+                    });
+                }
             }
-            let exports = model_exports(selected, work)?;
-            let profile = text(selected.model.profile().as_str(), work)?;
-            work.charge(Dimension::Entries, 2)?;
-            result.selected.push(*selected);
-            result.models.push(w::Model {
-                artifact: dependency,
-                profile,
-                exports,
-                // FR-042-AC-12: a `NativeModel` is directly admitted, never
-                // linked against an FR-056 domain package.
-                domain_package: w::Nullable(None),
-            });
         }
         Ok(result)
     }
@@ -81,28 +149,80 @@ impl<'a> ValueBuilder<'a> {
     ) -> Result<w::ExportRef, Error> {
         for (model_index, selected) in self.selected.iter().enumerate() {
             work.visit()?;
+            let Selected::Native(selected) = selected else {
+                continue;
+            };
             if !std::ptr::eq(selected.model, model) {
                 continue;
             }
-            for (export_index, export) in self.models[model_index].exports.iter().enumerate() {
-                work.visit()?;
-                work.bytes(owner.len().saturating_add(member.map_or(0, str::len)))?;
-                if export.kind == kind
-                    && export.path.first().is_some_and(|name| name == owner)
-                    && match member {
-                        Some(member) => export.path.len() == 2 && export.path[1] == member,
-                        None => export.path.len() == 1,
-                    }
-                {
-                    return Ok(w::ExportRef {
-                        model: index(model_index)?,
-                        export: index(export_index)?,
-                    });
-                }
-            }
-            return Err(Error::Unsupported(Unsupported::Export));
+            return self.find(model_index, kind, owner, member, work);
         }
         Err(Error::Invalid(Invalid::Model))
+    }
+
+    /// Resolve an export of the selected domain package `package`.
+    pub(super) fn domain_export(
+        &self,
+        package: &AdmittedPackage,
+        kind: w::ExportKind,
+        owner: &str,
+        member: Option<&str>,
+        work: &mut Work,
+    ) -> Result<w::ExportRef, Error> {
+        for (model_index, selected) in self.selected.iter().enumerate() {
+            work.visit()?;
+            let Selected::Domain(selected) = selected else {
+                continue;
+            };
+            if !std::ptr::eq(*selected, package) {
+                continue;
+            }
+            return self.find(model_index, kind, owner, member, work);
+        }
+        Err(Error::Invalid(Invalid::Model))
+    }
+
+    /// The type export of a domain type: `object` for an object type or
+    /// Interface, `record` for a record value type.
+    pub(super) fn domain_type_export(
+        &self,
+        ty: &DomainType<'_>,
+        work: &mut Work,
+    ) -> Result<w::ExportRef, Error> {
+        self.domain_export(
+            ty.package,
+            domain::type_export_kind(ty),
+            ty.artifact_id(),
+            None,
+            work,
+        )
+    }
+
+    fn find(
+        &self,
+        model_index: usize,
+        kind: w::ExportKind,
+        owner: &str,
+        member: Option<&str>,
+        work: &mut Work,
+    ) -> Result<w::ExportRef, Error> {
+        for (export_index, export) in self.models[model_index].exports.iter().enumerate() {
+            work.visit()?;
+            work.bytes(owner.len().saturating_add(member.map_or(0, str::len)))?;
+            if export.kind == kind
+                && export.path.first().is_some_and(|name| name == owner)
+                && match member {
+                    Some(member) => export.path.len() == 2 && export.path[1] == member,
+                    None => export.path.len() == 1,
+                }
+            {
+                return Ok(w::ExportRef {
+                    model: index(model_index)?,
+                    export: index(export_index)?,
+                });
+            }
+        }
+        Err(Error::Unsupported(Unsupported::Export))
     }
 
     /// Wrappers precede their children, exactly as the reader's first-use walk.
@@ -128,7 +248,8 @@ impl<'a> ValueBuilder<'a> {
                 | NativeType::Enumeration { .. }
                 | NativeType::Record { .. }
                 | NativeType::Object { .. }
-                | NativeType::Reference { .. } => {
+                | NativeType::Reference { .. }
+                | NativeType::Domain(_) => {
                     shapes.push(Shape::Leaf(self.leaf(current, work)?));
                     break;
                 }
@@ -307,6 +428,14 @@ impl<'a> ValueBuilder<'a> {
                     work,
                 )?,
             },
+            NativeType::Domain(domain) => {
+                let export = self.domain_type_export(domain, work)?;
+                if domain.is_object() {
+                    w::Type::Object { export }
+                } else {
+                    w::Type::Record { export }
+                }
+            }
             NativeType::Option(_) | NativeType::Sequence { .. } => {
                 return Err(Error::Invalid(Invalid::Type))
             }

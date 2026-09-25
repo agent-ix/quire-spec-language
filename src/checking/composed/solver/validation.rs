@@ -37,9 +37,9 @@ impl<'a> Solver<'_, 'a, '_, '_> {
                     {
                         self.work.charge(D::Constraints, 1, site)?;
                         if occurrence.span == span {
-                            if let ModelTarget::Type(bound) = &occurrence.target {
-                                charge_type(bound.native(), self.work, site, 1)?;
-                                found = Some(bound.native().clone());
+                            if let Some(ty) = occurrence.target.value_type() {
+                                charge_type(&ty, self.work, site, 1)?;
+                                found = Some(ty);
                                 break;
                             }
                         }
@@ -188,7 +188,8 @@ impl<'a> Solver<'_, 'a, '_, '_> {
             | NativeType::Enumeration { .. }
             | NativeType::Record { .. }
             | NativeType::Object { .. }
-            | NativeType::Reference { .. } => {}
+            | NativeType::Reference { .. }
+            | NativeType::Domain(_) => {}
         }
         Ok(())
     }
@@ -209,9 +210,12 @@ impl<'a> Solver<'_, 'a, '_, '_> {
             NativeType::Object { .. } | NativeType::Reference { .. } => {
                 self.require(at, Capability::Graph)?
             }
-            NativeType::Record { .. } | NativeType::Option(_) | NativeType::Sequence { .. } => {
-                self.cause(at, CauseKind::ForbiddenOperator)?
-            }
+            // FR-208 record-value equality compares every field, and domain
+            // object identity has no runtime owner here yet; neither is admitted.
+            NativeType::Record { .. }
+            | NativeType::Option(_)
+            | NativeType::Sequence { .. }
+            | NativeType::Domain(_) => self.cause(at, CauseKind::ForbiddenOperator)?,
         }
         Ok(())
     }
@@ -255,7 +259,8 @@ impl<'a> Solver<'_, 'a, '_, '_> {
             | NativeType::Enumeration { .. }
             | NativeType::Record { .. }
             | NativeType::Option(_)
-            | NativeType::Sequence { .. } => {
+            | NativeType::Sequence { .. }
+            | NativeType::Domain(_) => {
                 self.cause(at, CauseKind::InvalidGraphEdge)?;
                 return Ok(());
             }

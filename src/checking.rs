@@ -17,8 +17,9 @@ use crate::native_model::{NativeModel, ObjectRole, OperationRole};
 use crate::syntax::ExprId;
 use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
 
-pub use types::NativeType;
+pub(crate) use types::DomainField;
 pub(crate) use types::{Catalog, FrameIndex};
+pub use types::{DomainType, NativeType};
 
 type Result<T> = std::result::Result<T, Box<CheckingError>>;
 

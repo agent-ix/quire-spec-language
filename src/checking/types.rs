@@ -6,6 +6,121 @@ use std::collections::{BTreeMap, BTreeSet};
 use quire_contract_ir as ir;
 
 use crate::native_model::{NativeModel, ObjectRole, ScalarKind, ScalarRole, ScalarSite, Unit};
+use qsl_semantics::model::admitted::{AdmittedPackage, Declaration, DeclarationKind};
+use qsl_semantics::model::domain_package::{
+    DomainPackageRecord, Multiplicity, NativeValueType, ValueTypeRef,
+};
+
+/// A type declared by an admitted FR-056 domain package: an object type, an
+/// FR-152 Interface or a record value type, identified by its FR-154
+/// declaration key under the selection the package was admitted by.
+#[derive(Clone, Copy, Debug)]
+pub struct DomainType<'a> {
+    /// The admitted package declaring the type.
+    pub package: &'a AdmittedPackage,
+    /// The type's declaration.
+    pub declaration: Declaration<'a>,
+}
+
+/// What a domain type's field names, for a field access.
+#[derive(Clone, Debug)]
+pub(crate) enum DomainField<'a> {
+    /// The field's value, typed.
+    Typed(NativeType<'a>),
+    /// The type declares no field of that name.
+    Missing,
+    /// The field's value type or multiplicity has no native type here: a
+    /// native value type other than `Boolean`, a domain value type, or a
+    /// multiplicity other than `1`, `0..1` or `0..n`.
+    Unrepresented,
+}
+
+impl<'a> DomainType<'a> {
+    /// The domain type `declaration` names in `package`, when its kind types
+    /// a value: an object type, an Interface or a record value type.
+    pub fn new(package: &'a AdmittedPackage, declaration: Declaration<'a>) -> Option<Self> {
+        match declaration.kind {
+            DeclarationKind::ObjectType
+            | DeclarationKind::Interface
+            | DeclarationKind::RecordValueType => Some(Self {
+                package,
+                declaration,
+            }),
+            DeclarationKind::ValueType
+            | DeclarationKind::Field
+            | DeclarationKind::Operation
+            | DeclarationKind::Part
+            | DeclarationKind::Port
+            | DeclarationKind::Connection
+            | DeclarationKind::Relationship
+            | DeclarationKind::Allocation
+            | DeclarationKind::Population => None,
+        }
+    }
+
+    /// Whether values of this type carry object identity (an object type or
+    /// Interface), rather than being structural record values.
+    pub fn is_object(&self) -> bool {
+        matches!(
+            self.declaration.kind,
+            DeclarationKind::ObjectType | DeclarationKind::Interface
+        )
+    }
+
+    /// The artifact id the type is exported under: its key's
+    /// `ix://<package>/<artifact id>` segment.
+    pub fn artifact_id(&self) -> &'a str {
+        let key = self.declaration.key;
+        key.node
+            .rsplit_once('/')
+            .map_or(key.node.as_str(), |(_, artifact)| artifact)
+    }
+
+    /// The type of this type's field `name`.
+    pub(crate) fn field(&self, name: &str) -> DomainField<'a> {
+        let Some(member) = self.package.member(self.declaration.key, name) else {
+            return DomainField::Missing;
+        };
+        let DomainPackageRecord::FieldMember(field) = member.record else {
+            return DomainField::Missing;
+        };
+        match value_type(self.package, &field.value_type, field.multiplicity) {
+            Some(ty) => DomainField::Typed(ty),
+            None => DomainField::Unrepresented,
+        }
+    }
+}
+
+/// The native type of a domain value typed `value_type` with `multiplicity`.
+fn value_type<'a>(
+    package: &'a AdmittedPackage,
+    value_type: &ValueTypeRef,
+    multiplicity: Multiplicity,
+) -> Option<NativeType<'a>> {
+    let leaf = match value_type {
+        ValueTypeRef::Native(NativeValueType::Boolean) => NativeType::Boolean,
+        ValueTypeRef::Native(
+            NativeValueType::Integer
+            | NativeValueType::Rational
+            | NativeValueType::Decimal
+            | NativeValueType::Float32
+            | NativeValueType::Float64
+            | NativeValueType::Text,
+        ) => return None,
+        ValueTypeRef::Package(key) => {
+            NativeType::Domain(DomainType::new(package, package.declaration_by_key(key)?)?)
+        }
+    };
+    match (multiplicity.lower, multiplicity.upper) {
+        (1, Some(1)) => Some(leaf),
+        (0, Some(1)) => Some(NativeType::Option(Box::new(leaf))),
+        (0, Some(maximum)) => Some(NativeType::Sequence {
+            element: Box::new(leaf),
+            maximum: u32::try_from(maximum).ok()?,
+        }),
+        _ => None,
+    }
+}
 
 /// An exact native type; nominal identities are qualified by their model owner.
 #[derive(Clone, Debug)]
@@ -58,6 +173,8 @@ pub enum NativeType<'a> {
         /// Inclusive maximum length.
         maximum: u32,
     },
+    /// A type declared by an admitted FR-056 domain package.
+    Domain(DomainType<'a>),
 }
 
 fn owner_equal(left: &NativeModel, right: &NativeModel) -> bool {
@@ -111,6 +228,10 @@ impl PartialEq for NativeType<'_> {
                     maximum: bm,
                 },
             ) => a == b && am == bm,
+            (Self::Domain(a), Self::Domain(b)) => {
+                a.package.selection() == b.package.selection()
+                    && a.declaration.key == b.declaration.key
+            }
             _ => false,
         }
     }
@@ -168,7 +289,8 @@ impl<'a> NativeType<'a> {
             | Self::Object { .. }
             | Self::Reference { .. }
             | Self::Option(_)
-            | Self::Sequence { .. } => None,
+            | Self::Sequence { .. }
+            | Self::Domain(_) => None,
         }
     }
 
@@ -187,7 +309,8 @@ impl<'a> NativeType<'a> {
             | Self::Object { .. }
             | Self::Reference { .. }
             | Self::Option(_)
-            | Self::Sequence { .. } => false,
+            | Self::Sequence { .. }
+            | Self::Domain(_) => false,
         }
     }
 
@@ -410,7 +533,9 @@ impl<'a> Catalog<'a> {
                 ScalarKind::Integer { .. } | ScalarKind::Text { .. } => true,
                 ScalarKind::Rational { .. } => false,
             },
-            NativeType::Option(_) | NativeType::Sequence { .. } => false,
+            // No domain-package equality is admitted by this historical
+            // checker; it reads only native models.
+            NativeType::Option(_) | NativeType::Sequence { .. } | NativeType::Domain(_) => false,
             NativeType::Record { declaration, .. } => {
                 // The model is acyclic and already node-bounded. Visit each
                 // declaration once, avoiding recursive stack use and diamond expansion.

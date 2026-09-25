@@ -1667,6 +1667,7 @@ impl Fixture {
             sources: &sources,
             dependencies: &dependencies,
             models: &models,
+            domain_packages: &[],
         };
         artifact::read(bytes, &expected, limits)
     }

@@ -9,7 +9,7 @@
         "namespace": "example-output",
         "value": "2"
       },
-      "digest": "sha256:dd72d7781bd9cc9b7a47f2475a8971bd5f273280a14dc1b8018068e6e61ba5c7",
+      "digest": "sha256:6b3ff2f9b438071671b1a3832137f985fef04b6968c614b83f0589fcfcdd4a72",
       "wire": {
         "identity": "quire.compiled-protocol",
         "version": "2"
@@ -60,7 +60,7 @@
           "namespace": "crate-version",
           "value": "0.2.0"
         },
-        "digest": "sha256:4337aff94e768b3963040aa50f16d463403248c6ccd4c39b1569ee3f319ca305",
+        "digest": "sha256:f8df51c9698eef9dacc32d225490038715d28156b132202b538866ebcb13afbd",
         "wire": {
           "identity": "text/rust",
           "version": "1"

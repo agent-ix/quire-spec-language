@@ -10,7 +10,7 @@ use quire_contract_ir as ir;
 
 use super::binding_work::{Dimension, Exhaustion, Work};
 use super::{DeclarationId, SyntaxNamespace, UnitId};
-use crate::checking::{Catalog, NativeType};
+use crate::checking::{Catalog, DomainType, NativeType};
 use crate::linking::{location, DeclarationKey, DeclarationLocation};
 use crate::native_model::{NativeModel, OperationRole, ScalarRole, ScalarSite};
 use crate::syntax::composed::{self as c, Operation, ParameterType, QualifiedName};
@@ -262,7 +262,8 @@ impl Site {
         match kind {
             DeclarationKind::ObjectType
             | DeclarationKind::Interface
-            | DeclarationKind::ValueType => {
+            | DeclarationKind::ValueType
+            | DeclarationKind::RecordValueType => {
                 matches!(self, Self::Type | Self::Role)
             }
             DeclarationKind::Part | DeclarationKind::Port => matches!(self, Self::Role),
@@ -1066,7 +1067,8 @@ impl<'a> ModelBindings<'a> {
             | NativeType::Enumeration { .. }
             | NativeType::Reference { .. }
             | NativeType::Option(_)
-            | NativeType::Sequence { .. } => {
+            | NativeType::Sequence { .. }
+            | NativeType::Domain(_) => {
                 return Err(failure(unit, name.span, ModelErrorKind::WrongExportKind));
             }
         };
@@ -1263,6 +1265,21 @@ pub enum ModelTarget<'a> {
     Operation(BoundOperation<'a>),
     /// A domain-package declaration, bound by its exact key and kind.
     Declaration(BoundDeclaration<'a>),
+}
+
+impl<'a> ModelTarget<'a> {
+    /// The value type a type-site occurrence names: the bound native type,
+    /// or the domain type of a domain object type, Interface or record value
+    /// type. `None` for an operation or any other domain declaration kind.
+    pub fn value_type(&self) -> Option<NativeType<'a>> {
+        match self {
+            Self::Type(bound) => Some(bound.native().clone()),
+            Self::Declaration(bound) => {
+                DomainType::new(bound.package(), bound.declaration()).map(NativeType::Domain)
+            }
+            Self::Operation(_) => None,
+        }
+    }
 }
 
 /// An occurrence belongs to the report's declaration and declaring source unit.

@@ -1143,7 +1143,7 @@ fn check_node<'a>(
             }
         }
         DomainPackageRecord::FieldMember(member) => {
-            if !index.is_object_type(&member.owner) {
+            if !index.is_object_type(&member.owner) && !index.is_record_value_type(&member.owner) {
                 refusals.push(ModelRefusal {
                     code: Code::DanglingReference,
                     cause: ModelRefusalCause::UnknownOwner {
@@ -1151,7 +1151,7 @@ fn check_node<'a>(
                         owner: member.owner.clone(),
                     },
                     detail: format!(
-                        "field member {} names owner {}, which is not a declared object type",
+                        "field member {} names owner {}, which is not a declared object type or record value type",
                         member.key.node, member.owner.node
                     ),
                 });
@@ -1187,7 +1187,7 @@ fn check_node<'a>(
                 }
             }
         }
-        DomainPackageRecord::ScalarType(_) => {}
+        DomainPackageRecord::RecordValueType(_) | DomainPackageRecord::ScalarType(_) => {}
         DomainPackageRecord::OperationMember(op) => {
             if !index.is_object_type(&op.owner) {
                 refusals.push(ModelRefusal {
@@ -1299,7 +1299,18 @@ fn check_node<'a>(
         // `missing_declaration`/`missing-name`.
         DomainPackageRecord::Population(population) => {
             for type_name in &population.member_types {
-                if !index.is_object_type(type_name) {
+                // FR-208-AC-9: a record value type is a declared type of
+                // another meaning, not a missing one.
+                if index.is_record_value_type(type_name) {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::MalformedDeclaration,
+                        detail: format!(
+                            "population {} names member type {}, a record value type, not an object type",
+                            population.key.node, type_name.node
+                        ),
+                    });
+                } else if !index.is_object_type(type_name) {
                     refusals.push(ModelRefusal {
                         code: Code::MissingDeclaration,
                         cause: ModelRefusalCause::UnknownPopulationMemberType {

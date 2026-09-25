@@ -12,12 +12,13 @@ mod validation;
 use super::sources::Correspondence;
 use super::work::{Dimension as D, Work};
 use super::*;
-use crate::checking::{variables::Variables, Catalog};
+use crate::checking::{variables::Variables, Catalog, DomainField, DomainType};
 use crate::linking::composed::models::ModelTarget;
 use crate::linking::composed::scopes::{self, DeclarationScope};
 use crate::linking::composed::{DependencyKind, DependencySite};
 use crate::native_model::{NativeModel, ScalarKind, ScalarSite, Unit};
 use crate::syntax::{composed as c, BinaryOp, Builtin, ExprKind, UnaryOp};
+use qsl_semantics::model::domain_package::DomainPackageRecord;
 use quire_contract_ir as ir;
 use std::collections::BTreeMap;
 
@@ -372,9 +373,18 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
         for occurrence in &self.binding.exports()[self.output.declaration.index()].occurrences {
             self.work.charge(D::Constraints, 1, self.site(at))?;
             if occurrence.span == span {
-                if let ModelTarget::Type(bound) = &occurrence.target {
-                    charge_type(bound.native(), self.work, self.site(at), 1)?;
-                    return Ok(Some(bound.native().clone()));
+                if let Some(ty) = occurrence.target.value_type() {
+                    charge_type(&ty, self.work, self.site(at), 1)?;
+                    return Ok(Some(ty));
+                }
+                if let ModelTarget::Declaration(_) = &occurrence.target {
+                    // A domain value type binds at a type site but has no
+                    // native type here yet.
+                    self.cause(
+                        at,
+                        CauseKind::UnsupportedPrerequisite(Prerequisite::DomainRepresentation),
+                    )?;
+                    return Ok(None);
                 }
             }
         }
@@ -394,13 +404,31 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
                         &self.binding.exports()[self.output.declaration.index()].occurrences
                     {
                         self.work.charge(D::Constraints, 1, self.site(at))?;
-                        if let ModelTarget::Operation(operation) = &occurrence.target {
-                            if occurrence.span.start == name.model.span.start {
+                        if occurrence.span.start != name.model.span.start {
+                            continue;
+                        }
+                        match &occurrence.target {
+                            ModelTarget::Operation(operation) => {
                                 let Some(catalog) = self.catalog(operation.model(), at)? else {
                                     return Ok(None);
                                 };
                                 return Ok(catalog.record_type(&operation.role().context));
                             }
+                            // A domain operation's context is its owning type.
+                            ModelTarget::Declaration(bound) => {
+                                if let DomainPackageRecord::OperationMember(operation) =
+                                    bound.declaration().record
+                                {
+                                    let package = bound.package();
+                                    let context = package
+                                        .declaration_by_key(&operation.owner)
+                                        .and_then(|owner| DomainType::new(package, owner));
+                                    if let Some(context) = context {
+                                        return Ok(Some(NativeType::Domain(context)));
+                                    }
+                                }
+                            }
+                            ModelTarget::Type(_) => {}
                         }
                     }
                 }
@@ -565,6 +593,9 @@ fn charge_type(ty: &NativeType<'_>, work: &mut Work, site: Site, depth: usize) -
                 + role.universe.as_str().len()
                 + model.environment().owner().package().as_str().len()
                 + model.environment().owner().requirement().as_str().len();
+        }
+        NativeType::Domain(domain) => {
+            bytes += domain.declaration.key.package.len() + domain.declaration.key.node.len();
         }
     }
     work.charge(D::Bytes, bytes, site)
