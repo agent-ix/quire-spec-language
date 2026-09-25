@@ -330,20 +330,16 @@ delivered code today:
   `decode_function_package_v2` (PR #262 review, coordinator round 3,
   finding 3).
 - FR-065-AC-3: backed (`TC-163`, QSL-154):
-  `occurrence_span_survives_link_a_v2_round_trip_and_a_corrupted_alternate_differs`
-  (`qsl-eval/tests/it/dispatch_calls.rs`) checks a real source file whose
-  `f` calls `g`, resolves the call's own region immediately after `check`
-  and again after `CheckedPackage::link`, resolves `f`'s own declaration
-  region again once its identity has travelled a real `emit_function_
-  package_v2`/`decode_function_package_v2` round trip (the v2 checkpoint
-  is against the declaration's identity, the one thing this minimal v2
-  encoding actually carries -- see the test's own doc for why the call's
-  region has no v2 checkpoint to exercise), and confirms a hand-built
-  alternate package whose `DeclarationSpans` is genuinely one byte wider
-  resolves to a different region. Mutation-verified: temporarily made
-  `region.rs`'s resolver return a constant span for every `Origin::Body`
-  location, and confirmed this test (not merely `region.rs`'s own tests)
-  caught it.
+  `emit_checked_places_the_calls_occurrence_at_its_own_source_span`
+  (`qsl-package/src/emit/tests.rs`) checks a real source file whose `f`
+  calls `g`, resolves the call's own region immediately after `check`,
+  again after `CheckedPackage::link`, and again from the decoded
+  `PackageSourceMap` of a real `emit_checked`/`read_checked_package_v2`
+  round trip -- the real `quire.checked-package/v2` source map, which
+  carries a full (identity, role, ordinal) -> region map, unlike `qsl-eval`'s
+  minimal `emit_function_package_v2` (identity only, no source map at all).
+  A hand-built alternate package whose `DeclarationSpans` is genuinely one
+  byte wider resolves to a different region.
 - FR-065-AC-4: backed (`TC-376`). Amended by QSL-148's spec lane to a
   behavioural criterion; the thin-arm rule it used to test by code shape is
   FR-065-CON-3, verified by inspection, per the

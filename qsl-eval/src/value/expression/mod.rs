@@ -549,7 +549,7 @@ mod tests {
     /// FR-090-AC-4 verbatim ("The Relation family has no evaluation hook,
     /// and S6a's input type admits no Relation node..."), so the test that
     /// demonstrates one demonstrates the other.
-    #[trace("FR-090-AC-4", "TC-385", "FR-062-AC-6")]
+    #[trace("FR-090-AC-4", "TC-385", "FR-062-AC-6", "TC-160")]
     #[test]
     fn s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms() {
         let empty = qsl_package::CheckedPackage::link(

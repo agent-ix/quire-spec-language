@@ -305,9 +305,14 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
     type Env<'a> = EvaluationEnv<'a>;
     type Key = NodeKey;
 
-    /// FR-062-AC-6: reads only `checked` (a bare identity) and `env`'s
-    /// checked package/object environment -- no CST, token or display
-    /// string. `meter` (the shared kernel meter every family's `evaluate`
+    /// Reads only `checked` (a bare identity) and `env`'s
+    /// checked package/object environment; this hook's own body touches no
+    /// CST, token or display string, though `env.package` is a
+    /// `&CheckedPackage`, which exposes string-shaped accessors this hook
+    /// simply does not call -- so this is a description of what the code
+    /// does today, not a type-level guarantee (FR-062-AC-6's second
+    /// sentence stays unbacked; see FR-062's own Status).
+    /// `meter` (the shared kernel meter every family's `evaluate`
     /// takes) is charged one `ChargePoint::FunctionCall` -- "one checked
     /// function call"'s own documented meaning, matching what this hook is
     /// about to run -- per call, denied into
@@ -612,23 +617,7 @@ mod family_contract_tests {
     /// denied charge runs nothing, so it must not consume them, and the
     /// recorded location and losses are empty (FR-090: `None` when the
     /// evaluation stopped before any node ran).
-    ///
-    /// Also backs FR-062-AC-6's second sentence (QSL-152): every value this
-    /// call can reach -- `identity` (`NodeKey`, an opaque digest),
-    /// `env` (`EvaluationEnv`: a `&CheckedPackage`, a `&ObjectEnvironment`,
-    /// already-typed `Value` arguments) and `meter` -- is checked-input
-    /// shaped by the hook's own signature; none is a CST, token or display
-    /// string. A "test double that panics if such an input is touched" (the
-    /// criterion's own verification idea) has nothing to attach to here:
-    /// `EvaluationEnv` carries no CST/token-typed field for a double to
-    /// guard, so the type signature forecloses the read this test would
-    /// otherwise have to catch at runtime -- a stronger guarantee than a
-    /// double gives, not a weaker one. `Value`'s function family is the one
-    /// family with an `evaluate` hook today (`Relation` has none:
-    /// `s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms`,
-    /// `value::expression::mod`, backs this criterion's first sentence); the
-    /// same reasoning extends to every family that migrates one.
-    #[trace("TC-160", "FR-062-AC-5", "FR-062-AC-6")]
+    #[trace("TC-160", "FR-062-AC-5")]
     #[test]
     fn evaluate_returns_incomplete_when_the_meter_is_exhausted() {
         let graph = PackageDeclarations {

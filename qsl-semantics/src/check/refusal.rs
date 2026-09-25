@@ -355,6 +355,11 @@ pub enum CheckCause {
     /// or non-identifier name, a number RFC 8785 cannot render exactly, a
     /// body nested past the preimage depth bound).
     NodePreimage(super::node_key::NodeKeyRefusal),
+    /// FR-062-AC-8/TC-161/FR-063: exists only so `--cfg seam_probe` makes
+    /// `CheckCause::code`'s match below non-exhaustive. Never constructed
+    /// outside the probe build.
+    #[cfg(seam_probe)]
+    __SeamProbe,
 }
 
 /// The invariant [`CheckCause::InternalFault`] names, with the value that
@@ -529,6 +534,14 @@ pub enum InvalidDispatchDeclaration {
 
 impl CheckCause {
     /// The refusal code.
+    ///
+    /// FR-062-AC-8/TC-161/FR-063 seam: adding a `CheckCause` variant with no arm
+    /// here fails `--cfg seam_probe` with `E0004` (`xtask::seam_probe`'s
+    /// checked-in `CheckCause::code` location) -- this is the one family
+    /// `Cause` enum's `catalog_code()`-shaped mapping (ADR-012 §5.1 S4) QSL
+    /// has today.
+    #[deny(clippy::wildcard_enum_match_arm)]
+    #[deny(clippy::match_wildcard_for_single_variants)]
     pub fn code(&self) -> Code {
         match self {
             Self::IllTyped(_) => Code::IllTyped,
@@ -545,6 +558,18 @@ impl CheckCause {
             Self::MissingSelection { .. } => Code::MissingDeclaration,
             Self::UnsupportedFeature { .. } => Code::UnknownRequiredFeature,
             Self::InternalFault(_) => Code::RuntimeInvariant,
+            // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
+            // have their own real seams over other enums, probed in the
+            // same `--cfg seam_probe_downstream` build -- this arm exists
+            // only so *this* match keeps compiling in that build, letting
+            // rustc reach and report those crates' own E0004s, the same
+            // "arm under downstream, none under seam_probe alone" shape
+            // `FamilyKind::catalog_code_prefix` already uses. `Code`'s
+            // choice is arbitrary: `__SeamProbe` is never constructed
+            // outside the probe build, so this arm is never actually
+            // reached.
+            #[cfg(seam_probe_downstream)]
+            Self::__SeamProbe => Code::RuntimeInvariant,
         }
     }
 
@@ -572,6 +597,13 @@ impl CheckCause {
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound | Self::NodePreimage(_) => {
                 None
             }
+            // Not a seam-probe location (unlike `code()`, above --
+            // deliberately left non-exhaustive there): this arm keeps
+            // `cause()` compiling under `--cfg seam_probe`, so `code()`'s
+            // own E0004 is the one and only probe failure this variant
+            // causes, matching the checked-in list in `xtask::seam_probe`.
+            #[cfg(seam_probe)]
+            Self::__SeamProbe => None,
         }
     }
 }
