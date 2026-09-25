@@ -1977,10 +1977,8 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
-    evidence.insert_domain_package_document(
-        evidence_digest.unwrap_or(&digest),
-        SPINE_MODEL_DOCUMENT,
-    );
+    evidence
+        .insert_domain_package_document(evidence_digest.unwrap_or(&digest), SPINE_MODEL_DOCUMENT);
     let read = read_v2(
         emission.package.bytes(),
         library(),
