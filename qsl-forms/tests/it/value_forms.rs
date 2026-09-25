@@ -9,7 +9,7 @@ use qsl_forms::{
     Expression, FieldInitializer, FormsCause, FormsFailure, FormsLimits, FunctionDeclaration,
     ParsedUnit, TypeFormHead,
 };
-use qsl_foundation::diagnostic::LimitKind;
+use qsl_foundation::diagnostic::{LimitKind, Locus};
 use qsl_foundation::{Code, SourceIdentity, Span};
 use quire_exact::{CollectionKind, Integer};
 
@@ -550,6 +550,33 @@ fn the_nesting_depth_bound_refuses_past_its_limit() {
             other => panic!("{count}: a depth limit, not {other:?}"),
         }
     }
+}
+
+/// FR-096-AC-3: with S2 nesting-depth bound 8, a body of eight `not`s over
+/// `a` stops at depth 9 with the configured bound, the actual depth and
+/// `Locus::Region` over the span of `a` (the node at depth 9) under the
+/// unit's `RawSourceRef`.
+#[trace("FR-096-AC-3", "TC-427")]
+#[test]
+fn the_s2_depth_limit_is_located_at_the_first_node_past_the_bound() {
+    let (text, parsed) = admissible(&format!(
+        "function f using v(a: Boolean): Boolean pure {{ {} }}",
+        nots(8)
+    ));
+    let Err(FormsFailure::Limit { limit, .. }) =
+        build_unit(&parsed, FormsLimits { nesting_depth: 8 })
+    else {
+        panic!("depth 9 is past the bound");
+    };
+    assert_eq!(limit.kind(), LimitKind::NestingDepth);
+    assert_eq!(limit.configured_bound(), 8);
+    assert_eq!(limit.actual(), 9);
+    let a = u64::try_from(span_of(&text, "a }").start).unwrap();
+    let Some(Locus::Region(region)) = limit.locus() else {
+        panic!("an S2 limit carries its region, got {:?}", limit.locus());
+    };
+    assert_eq!(region.source(), parsed.source().reference());
+    assert_eq!((region.start(), region.end()), (a, a + 1));
 }
 
 #[trace("FR-091-AC-10", "TC-403")]
