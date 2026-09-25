@@ -107,14 +107,14 @@ Specified under
 Implemented as [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md),
 citing FR-065's implementation for its worked-example section.
 
-**By Acceptance Criterion (PR #262 review, P3 accounting):** `TC-165` has
-zero tests in the delivered code -- no test file exists that checks the
-recipe document's content programmatically, though each AC's verification
-method is stated as "Test." All four ACs (AC-1 through AC-4) are therefore
-unbacked by that measure; their substance is satisfied by the document's
-own content (AC-4's "real deleted symbol," specifically, was corrected this
-review round -- PR #262 finding F13 -- to cite symbols that actually
-existed in a pushed commit, per `docs/family-migration-recipe.md`'s own
-correction note), but that is inspection, not the automated test TC-165
-names. Zero of four ACs are backed by a trace tag. Owner: QSL-151
-(AC-1 through AC-4).
+**By Acceptance Criterion (QSL-151):** all four ACs are backed by a tagged
+test in `tests/it/family_migration_recipe.rs` (`TC-165`), which reads the
+checked-in recipe document via `include_str!` and asserts its required
+content programmatically -- a source-inspection test, since this
+requirement's own deliverable is documentation, not runtime code (see this
+FR's "recipe is a procedure, not new code" section). Each test was verified
+to fail when the content it checks is removed from the document:
+AC-1/`recipe_names_all_five_required_test_categories_with_descriptions`,
+AC-2/`recipe_names_all_three_required_conversion_categories_and_ir_ownership`,
+AC-3/`recipe_states_removal_condition_and_names_a_ticket_per_remaining_family`,
+AC-4/`recipe_worked_example_names_a_real_test_file_and_a_real_deleted_symbol`.
