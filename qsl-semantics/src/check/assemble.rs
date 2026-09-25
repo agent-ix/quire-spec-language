@@ -457,8 +457,8 @@ enum Unmapped {
 /// collection its `ordered`/`unique` flags name (`Set`, `Bag`, `Sequence`
 /// or `OrderedSet`), bounded when the upper bound is finite, and unbounded
 /// only when the lower bound is `0` -- an unbounded multiplicity with a
-/// lower bound above `0` has no kernel type (STD-100's model-owned member
-/// type table). The returned declaration's own `value_type` is always the
+/// lower bound above `0` has no kernel type (QSpec FR-322's "Model-owned
+/// members" step 4). The returned declaration's own `value_type` is always the
 /// unwrapped element or collection type; `check`'s `attribute`/`field`
 /// readers wrap it in `Option` from `presence()` alone, as they already do
 /// for every other `FieldDeclaration`.
