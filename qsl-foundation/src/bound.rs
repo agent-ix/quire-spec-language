@@ -163,10 +163,11 @@ pub struct ProofBound {
 /// (ADR-014 TR-3, §10 scenario 5): (`lower`, `upper`, selected profile
 /// identity, clock binding). Equality is componentwise.
 ///
-/// `clock_binding` is the wire node id of the checked clock-binding node the
-/// interval's offsets count under. A checked node id is content-derived, so
-/// two bindings with equal components have equal ids, which is the
-/// componentwise equality QSpec FR-252 requires.
+/// `clock_binding` is the wire node id of the structural (non-nominal)
+/// clock-binding value node the interval's offsets count under; QSL-43
+/// confirms it. A structural node id is content-derived, so two bindings
+/// with equal components have equal ids, the componentwise equality QSpec
+/// FR-252 requires.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct IntervalKey {
     lower: u64,

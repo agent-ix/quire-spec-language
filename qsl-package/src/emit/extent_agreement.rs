@@ -11,22 +11,17 @@
 //! unbounded node must be the form QSL named: a collection with no bound, or
 //! an `Integer` with no range.
 //!
-//! Two cases disagree at the pinned revision and are asserted as measured,
-//! so each assertion fails when IR changes and the case can join the
-//! agreeing ones:
+//! Three fixtures do not agree at the pinned revision, because of IR-side
+//! predicate gaps. They sit in an ignored test that asserts agreement, and
+//! join the passing test when IR fixes them:
 //!
-//! - **A bounded collection of a non-integer element** (`Flags`). QSL emits
-//!   the `collection_bounds` domain's `min` and `max` as integer literals
-//!   typed at the `integer` scalar node. IR `1d7884c`'s `requires_bound`
-//!   walks every reachable node, finds that `integer` node with no
-//!   `integer_range` over it, and reports `RequiresBound` naming it. The
-//!   bound's own literals are not a value domain, so QSL classifies the
-//!   record `Bounded`. A record that also has an `Int[a,b]` field hides the
-//!   difference, because its `integer_range` covers the same `integer` node.
-//! - **A recursive record** (`RangedTree`). ADR-014 §4 makes a recursive
-//!   value type (QSpec FR-143) an unbounded domain, boundable by `Depth`.
-//!   IR `1d7884c`'s `requires_bound` has no recursion rule, so it lowers the
-//!   record.
+//! - **IR-283.** IR's `requires-bound` does not distinguish positions. A
+//!   `bounded_domain` over the shared `integer` scalar node bounds every
+//!   integer position at once. So `Mixed{n: Integer, k: Int[0, 9]}` lowers,
+//!   and `Flags{xs: Sequence<Boolean>[0, 3]}` requires a bound for the
+//!   `integer` node its `collection_bounds` literals are typed at.
+//! - **IR-284.** IR has no recursion rule, so it lowers the recursive
+//!   `RangedTree`, which ADR-014 §4 classifies as unbounded by depth.
 
 use quire_contract_ir::{
     read_checked_package, CheckedNodeId, CheckedNodeTag, CheckedPackageDispatchResult,
@@ -106,15 +101,14 @@ fn records() -> Vec<CompositeDeclaration> {
             "Ints",
             vec![("xs", sequence(ValueType::Integer, Some((0, 3))))],
         ),
-        // Measured divergence: a bounded collection of booleans.
+        // IR-283: a bounded collection of booleans.
         record(
             7,
             "Flags",
             vec![("xs", sequence(ValueType::Boolean, Some((0, 3))))],
         ),
-        // Measured divergence: recursive (QSpec FR-143). The `Int[0, 9]`
-        // field covers the bound literals' `integer` node, so only the
-        // recursion differs.
+        // IR-284: recursive (QSpec FR-143). The `Int[0, 9]` field covers
+        // the bound literals' `integer` node, so only the recursion differs.
         record(
             8,
             "RangedTree",
@@ -122,6 +116,12 @@ fn records() -> Vec<CompositeDeclaration> {
                 ("kids", sequence(ValueType::Composite(key(8)), Some((0, 3)))),
                 ("k", int_0_9()),
             ],
+        ),
+        // IR-283: an unranged integer beside a ranged one.
+        record(
+            9,
+            "Mixed",
+            vec![("n", ValueType::Integer), ("k", int_0_9())],
         ),
     ]
 }
@@ -245,33 +245,30 @@ fn both_sides(name: &str) -> (ClaimExtent, CompleteLoweringRecordV2, Value) {
     (extent, ir_lowering(&package, &ir_id), wire)
 }
 
-/// TC-440: the measured divergences at IR `1d7884c` (this module's doc).
-/// `Flags` is bounded in QSL, and IR requires a bound for the `integer`
-/// node its bound literals are typed at; `RangedTree` is unbounded by depth
-/// in QSL, and IR lowers it.
+/// TC-440 (IR-283, IR-284): agreement over the fixtures IR's pinned
+/// predicate gets wrong (this module's doc). QSL: `Flags` bounded,
+/// `RangedTree` unbounded by depth, `Mixed` unbounded by its `Integer`.
 #[trace("TC-440", "FR-097-AC-6")]
 #[test]
-fn tc_440_measured_divergences_from_ir_at_the_pin() {
-    let (extent, lowering, wire) = both_sides("Flags");
-    assert_eq!(extent, ClaimExtent::Bounded);
-    let CompleteLoweringRecordV2::RequiresBound { unbounded_type, .. } = &lowering else {
-        panic!("IR now lowers Flags: move it into the agreeing cases: {lowering:?}");
-    };
-    assert_eq!(
-        node_by_id(&wire, unbounded_type)["semantic_form"],
-        "integer"
-    );
-
-    let (extent, lowering, _) = both_sides("RangedTree");
-    let ClaimExtent::Unbounded(domains) = extent else {
-        panic!("a recursive record is unbounded (ADR-014 §4)");
-    };
-    assert_eq!(
-        domains.iter().map(|(_, kind)| kind).collect::<Vec<_>>(),
-        [DomainKind::Recursive]
-    );
-    assert!(
-        matches!(lowering, CompleteLoweringRecordV2::Lowered { .. }),
-        "IR now classifies the recursive record: move it into the agreeing cases: {lowering:?}"
-    );
+#[ignore = "IR-283/IR-284: IR's pinned requires-bound predicate does not distinguish integer positions and has no recursion rule"]
+fn tc_440_qsl_extent_agrees_with_ir_requires_bound_pending_ir_283_284() {
+    for (name, expected) in [
+        ("Flags", None),
+        ("RangedTree", Some(DomainKind::Recursive)),
+        ("Mixed", Some(DomainKind::Integer)),
+    ] {
+        let (extent, lowering, _) = both_sides(name);
+        match (expected, &extent, &lowering) {
+            (None, ClaimExtent::Bounded, CompleteLoweringRecordV2::Lowered { .. }) => {}
+            (
+                Some(kind),
+                ClaimExtent::Unbounded(domains),
+                CompleteLoweringRecordV2::RequiresBound { .. },
+            ) => assert!(
+                domains.iter().any(|(_, domain)| domain == kind),
+                "{name}: QSL names a {kind:?} domain: {domains:?}"
+            ),
+            _ => panic!("{name}: QSL {extent:?} disagrees with IR {lowering:?}"),
+        }
+    }
 }

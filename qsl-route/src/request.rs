@@ -158,6 +158,9 @@ pub enum BoundRefusal {
         /// The domain.
         domain: DomainKey,
     },
+    /// The item is bounded, so no bounded request exists for it.
+    #[error("the item has no unbounded domain")]
+    NoUnboundedDomain,
 }
 
 impl CatalogCoded for BoundRefusal {
@@ -167,9 +170,8 @@ impl CatalogCoded for BoundRefusal {
             Self::UnknownDomain { .. }
             | Self::UnboundableDomain { .. }
             | Self::KindMismatch { .. }
-            | Self::MissingDomain { .. } => {
-                CatalogCode::new("invalid_runtime_input", "invalid-value")
-            }
+            | Self::MissingDomain { .. }
+            | Self::NoUnboundedDomain => CatalogCode::new("invalid_runtime_input", "invalid-value"),
         }
     }
 }
@@ -196,56 +198,64 @@ impl RequestWriter {
 
     /// Write the bounded item for `node` with `requirements`, substituting
     /// `bounds` for its unbounded domains (ADR-014 §4 "Bounded request").
-    /// Refuses, writing nothing, unless `bounds` names exactly the item's
-    /// unbounded domains, each boundable, each with a bound of its kind.
+    /// Refuses, writing nothing, unless the item is unbounded, every one of
+    /// its domains is boundable, and `bounds` names exactly those domains,
+    /// each with a bound of its kind. Refusals are checked in that order:
+    /// a bounded item, an unknown key, an unboundable domain, then each
+    /// domain's missing or mismatched bound.
     pub fn bounded_item(
         &mut self,
         node: WireNodeId,
         requirements: &Requirements,
         bounds: BTreeMap<DomainKey, FiniteBound>,
     ) -> Result<RequestIndex, BoundRefusal> {
-        let domains = match requirements.extent() {
-            ClaimExtent::Bounded => {
-                if let Some(domain) = bounds.into_keys().next() {
-                    return Err(BoundRefusal::UnknownDomain { domain });
-                }
-                Vec::new()
-            }
-            ClaimExtent::Unbounded(unbounded) => {
-                for (domain, bound) in &bounds {
-                    let Some(kind) = unbounded.kind(domain) else {
-                        return Err(BoundRefusal::UnknownDomain {
-                            domain: domain.clone(),
-                        });
-                    };
-                    let Some(expected) = kind.finite_kind() else {
-                        return Err(BoundRefusal::UnboundableDomain {
-                            domain: domain.clone(),
-                            kind,
-                        });
-                    };
-                    if bound.kind() != expected {
-                        return Err(BoundRefusal::KindMismatch {
-                            domain: domain.clone(),
-                            expected,
-                            supplied: bound.kind(),
-                        });
-                    }
-                }
-                if let Some((domain, _)) = unbounded
-                    .iter()
-                    .find(|(domain, _)| !bounds.contains_key(domain))
-                {
-                    return Err(BoundRefusal::MissingDomain {
-                        domain: domain.clone(),
-                    });
-                }
-                bounds
-                    .into_iter()
-                    .map(|(domain, bound)| ProofBound { domain, bound })
-                    .collect()
-            }
+        let ClaimExtent::Unbounded(unbounded) = requirements.extent() else {
+            // A bounded item needs no proof bound; it is written by `item`.
+            return Err(BoundRefusal::NoUnboundedDomain);
         };
+        if let Some(domain) = bounds
+            .keys()
+            .find(|domain| unbounded.kind(domain).is_none())
+        {
+            return Err(BoundRefusal::UnknownDomain {
+                domain: domain.clone(),
+            });
+        }
+        // An item with a domain no finite bound can stand for can never be
+        // bounded, whatever else is supplied.
+        if let Some((domain, kind)) = unbounded
+            .iter()
+            .find(|(_, kind)| kind.finite_kind().is_none())
+        {
+            return Err(BoundRefusal::UnboundableDomain {
+                domain: domain.clone(),
+                kind,
+            });
+        }
+        for (domain, kind) in unbounded.iter() {
+            let Some(bound) = bounds.get(domain) else {
+                return Err(BoundRefusal::MissingDomain {
+                    domain: domain.clone(),
+                });
+            };
+            let Some(expected) = kind.finite_kind() else {
+                return Err(BoundRefusal::UnboundableDomain {
+                    domain: domain.clone(),
+                    kind,
+                });
+            };
+            if bound.kind() != expected {
+                return Err(BoundRefusal::KindMismatch {
+                    domain: domain.clone(),
+                    expected,
+                    supplied: bound.kind(),
+                });
+            }
+        }
+        let domains = bounds
+            .into_iter()
+            .map(|(domain, bound)| ProofBound { domain, bound })
+            .collect();
         Ok(self.push(
             node,
             requirements.kind(),
@@ -428,15 +438,6 @@ mod tests {
         // items; neither is the unbounded item.
         assert_ne!(items[eight.get()].domains(), items[four.get()].domains());
         assert_ne!(items[eight.get()], items[unbounded.get()]);
-        // A bounded claim needs no proof bound: an empty set is its item.
-        let mut writer = RequestWriter::new();
-        let index = writer
-            .bounded_item(node(9), &claim(&[]), BTreeMap::new())
-            .unwrap();
-        assert_eq!(
-            writer.items()[index.get()].extent(),
-            ExtentClassification::Bounded
-        );
     }
 
     /// TC-438 (ADR-014 §4 refusals): an unknown domain, an unboundable
@@ -463,10 +464,9 @@ mod tests {
             (
                 claim(&[]),
                 BTreeMap::from([(key(1, &[]), FiniteBound::cardinality(8))]),
-                BoundRefusal::UnknownDomain {
-                    domain: key(1, &[]),
-                },
+                BoundRefusal::NoUnboundedDomain,
             ),
+            (claim(&[]), BTreeMap::new(), BoundRefusal::NoUnboundedDomain),
             (
                 with_loop.clone(),
                 BTreeMap::from([
@@ -490,8 +490,9 @@ mod tests {
             (
                 with_loop,
                 BTreeMap::from([(key(1, &[]), FiniteBound::cardinality(8))]),
-                BoundRefusal::MissingDomain {
+                BoundRefusal::UnboundableDomain {
                     domain: key(2, &[]),
+                    kind: DomainKind::Loop,
                 },
             ),
             (

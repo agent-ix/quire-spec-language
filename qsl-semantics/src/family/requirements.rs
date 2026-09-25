@@ -25,15 +25,19 @@
 //! | population with no maximum | `Population` | `FiniteBound::Cardinality` |
 //! | `Integer` with no range | `Integer` | `FiniteBound::IntegerRange` |
 //! | recursive record or tuple (QSpec FR-143) | `Recursive` | `FiniteBound::Depth` |
+//! | quantity (its magnitude is an unbounded `Rational`) | `Quantity` | nothing |
 //! | loop admitted under QSpec FR-228-AC-5 | `Loop` | nothing |
 //! | infinite-trace temporal formula | `InfiniteTrace` | nothing |
 //!
-//! [`classify_extent`] finds the four type positions. The loop and
+//! [`classify_extent`] finds the five type positions. The loop and
 //! infinite-trace domains belong to the families that admit those forms
 //! (QSL-42, QSL-43), which add them with [`ClaimExtent::from_domains`].
-//! Every other type (`Int[a,b]`, `Rational`, `Decimal`, `Text`, `Float`,
-//! `Boolean`, `Enum`, a quantity, a reference) carries its own finite
-//! domain or is not a value domain, so it adds none.
+//! A quantity is unbounded and takes no finite bound: no `FiniteBound`
+//! variant ranges over a rational magnitude, so a bounded-only backend
+//! settles it `unsupported`, never `supported` (ADR-013 C-22). Every other
+//! type (`Int[a,b]`, `Rational`, `Decimal`, `Text`, `Float`, `Boolean`,
+//! `Enum`, a reference) carries its own finite domain or is not a value
+//! domain, so it adds none.
 //!
 //! No domain gives [`ClaimExtent::Bounded`]. No stage limit, accounting
 //! limit, profile ceiling or backend budget ever makes a domain bounded
@@ -68,6 +72,9 @@ pub enum DomainKind {
     /// A temporal formula under `quire.temporal.infinite-trace/v1`. A finite
     /// prefix never proves infinite satisfaction (QSpec FR-161).
     InfiniteTrace,
+    /// A quantity type: its magnitude is an unbounded `Rational`, and no
+    /// finite bound ranges over it.
+    Quantity,
 }
 
 impl DomainKind {
@@ -78,7 +85,7 @@ impl DomainKind {
             Self::Collection | Self::Population => Some(FiniteBoundKind::Cardinality),
             Self::Integer => Some(FiniteBoundKind::IntegerRange),
             Self::Recursive => Some(FiniteBoundKind::Depth),
-            Self::Loop | Self::InfiniteTrace => None,
+            Self::Loop | Self::InfiniteTrace | Self::Quantity => None,
         }
     }
 }
@@ -199,7 +206,10 @@ struct Position<'t> {
 ///
 /// The walk uses an explicit stack. It visits at most `position_limit`
 /// type positions, each position once per path that reaches it, and
-/// refuses past that with a node-count stage limit. A record or tuple that
+/// refuses past that with a node-count stage limit. The limit carries no
+/// locus: this walk sees types, not source. The family's `check` that calls
+/// it attaches its declaration's `Locus::Region` with `LimitExceeded::at`,
+/// as FR-096's family-`check` row requires. A record or tuple that
 /// reaches itself is one `Recursive` domain at the position where the
 /// recursion starts, and the walk does not descend into it again.
 pub fn classify_extent(
@@ -235,6 +245,9 @@ pub fn classify_extent(
             }
             ValueType::Population(None) => {
                 domains.insert(key(), DomainKind::Population);
+            }
+            ValueType::Quantity(_) => {
+                domains.insert(key(), DomainKind::Quantity);
             }
             ValueType::Collection(collection) => {
                 if collection.bound().is_none() {
@@ -279,7 +292,6 @@ pub fn classify_extent(
             | ValueType::Rational(_)
             | ValueType::Decimal(_)
             | ValueType::Float(_)
-            | ValueType::Quantity(_)
             | ValueType::Text(_)
             | ValueType::Enum(_)
             | ValueType::Reference(_)
@@ -622,13 +634,13 @@ mod tests {
             .into_value()
     }
 
-    /// TC-160 (FR-062-AC-4; ADR-014 §10 scenario 3): a claim form with a
+    /// TC-437 (ADR-014 §10 scenario 3): a claim form with a
     /// kind yields exactly one `Requirements` naming that kind, here with
     /// the set's domain as its unbounded extent; two calls on the same
     /// checked node return equal values.
-    #[trace("TC-160", "FR-062-AC-4")]
+    #[trace("TC-437", "FR-097-AC-2")]
     #[test]
-    fn tc_160_a_claim_form_with_a_kind_yields_one_requirements_value() {
+    fn tc_437_a_claim_family_records_its_classified_extent() {
         use crate::family::FamilyContract;
         let set = ValueType::collection(CollectionType::new(CollectionKind::Set, int_0_9(), None));
         let checked = check_claim(&[(node(7), set)]);
@@ -648,5 +660,22 @@ mod tests {
                 ClaimExtent::Bounded
             ))
         );
+    }
+
+    /// TC-437 (ADR-014 §4 amended; ADR-013 C-22): a quantity is one
+    /// unbounded, unboundable domain, so an item over it has no finite bound
+    /// available and a bounded-only backend can never settle it supported.
+    #[trace("TC-437", "FR-097-AC-2")]
+    #[test]
+    fn tc_437_a_quantity_is_an_unboundable_domain() {
+        let metre =
+            ValueType::Quantity(quire_exact::UnitId::declared(NodeKey::from_digest([5; 32])));
+        let extent = extent(&metre);
+        assert_eq!(extent, unbounded(&[(vec![], DomainKind::Quantity)]));
+        let ClaimExtent::Unbounded(domains) = extent else {
+            panic!("a quantity is unbounded");
+        };
+        assert!(!domains.all_boundable());
+        assert_eq!(DomainKind::Quantity.finite_kind(), None);
     }
 }
