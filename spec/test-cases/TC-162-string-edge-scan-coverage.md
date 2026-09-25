@@ -41,8 +41,10 @@ is what an outer branch reads -- a shape this scanner's structural
 (syntactic-nesting-only) detector does not see, by its own documented scope.
 `branch_gating_entries` therefore does not reject an allow-list entry at any
 of the four real sites today. This is recorded as a concrete, tested finding
-(`xtask::string_edge::tests::real_adr010_sites_are_not_flagged_branch_gating_
-by_the_structural_detector`) rather than left to the synthetic fixtures in
+(`xtask::string_edge::tests::real_adr010_sites_are_flagged_branch_gating_
+by_the_structural_detector`, `#[ignore]`d and asserting the desired
+rejection so it fails for a documented reason rather than passing on the
+current, wrong behavior) rather than left to the synthetic fixtures in
 step 6 below implying more than they show.
 
 **Correction: steps 2 and 6 (PR #262 review, finding F11).** An earlier

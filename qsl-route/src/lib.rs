@@ -330,6 +330,9 @@ impl BackendDescriptor {
     /// (`qsl-semantics/src/check/capability.rs`), and confirms this match
     /// fails to compile with `E0004` (non-exhaustive) against it.
     fn advertises_kind(&self, kind: Capability) -> bool {
+        /// FR-063-AC-7: `#[deny(...)]` closes the `_ => unsupported(...)`
+        /// escape hatch the seam probe alone cannot see.
+        #[deny(clippy::wildcard_enum_match_arm)]
         fn same_kind(a: Capability, b: Capability) -> bool {
             match a {
                 Capability::ValueValidity => matches!(b, Capability::ValueValidity),

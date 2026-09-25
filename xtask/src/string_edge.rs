@@ -938,9 +938,14 @@ mod tests {
         }
     }
 
-    /// **Untagged -- this is why FR-064-AC-5's "each of the five ADR-010
-    /// §4.3 production dispatch sites" half stays unbacked (QSL-150), not
-    /// evidence that it is.** Runs the real scan (not a synthetic fixture)
+    /// **`#[ignore]`d -- this is why FR-064-AC-5's "each of the five
+    /// ADR-010 §4.3 production dispatch sites" half stays unbacked
+    /// (QSL-150), not evidence that it is (PR #434 review, LOW-3).** Written
+    /// against the *desired* rejection behavior -- an allow-list entry at
+    /// any of these four real sites should be rejected, per FR-064-AC-5 --
+    /// so it currently fails for the reason its `#[ignore = "..."]` message
+    /// gives, rather than passing by asserting the current, wrong,
+    /// not-rejected behavior. Runs the real scan (not a synthetic fixture)
     /// over the four of the five named sites still present in the current
     /// tree at their real file and line -- `Graph::profile`
     /// (`src/protocol_artifact/validate.rs`, the
@@ -974,7 +979,14 @@ mod tests {
     /// this ticket does not build; QSL-150 records the criterion unbacked
     /// with this concrete reason rather than a synthetic pass.
     #[test]
-    fn real_adr010_sites_are_not_flagged_branch_gating_by_the_structural_detector() {
+    #[ignore = "FR-064-AC-5's real-site half is unbacked (QSL-150): the \
+                structural (syntactic-nesting-only) detector does not see a \
+                comparison whose *result* feeds a boolean combinator or \
+                match arm that a branch further up the function then reads \
+                -- exactly these four sites' shape. Backing this needs the \
+                detector widened to a dataflow extension, not a test change. \
+                Re-enable once that widening lands."]
+    fn real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector() {
         let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("xtask lives one level below the workspace root")
@@ -1011,9 +1023,9 @@ mod tests {
                     panic!("{file}::{item} ({label}) is no longer found by the scan")
                 });
             assert!(
-                !occurrence.branch_gating,
-                "{file}::{item} ({label}) is now flagged branch-gating -- FR-064-AC-5's \
-                 real-site half may be backable; update this test and its own doc"
+                occurrence.branch_gating,
+                "{file}::{item} ({label}) is not flagged branch-gating -- FR-064-AC-5 \
+                 requires a real ADR-010 §4.3 production dispatch site to be rejected"
             );
             let candidate = AllowListEntry {
                 file: occurrence.file.clone(),
@@ -1022,9 +1034,9 @@ mod tests {
             };
             let rejected = branch_gating_entries(&occurrences, [&candidate]);
             assert!(
-                rejected.is_empty(),
-                "{file}::{item} ({label}) is rejected today -- FR-064-AC-5's real-site half \
-                 may be backable; update this test and its own doc"
+                !rejected.is_empty(),
+                "{file}::{item} ({label}) is not rejected -- FR-064-AC-5 requires a real \
+                 ADR-010 §4.3 production dispatch site to be rejected as an allow-list entry"
             );
         }
     }

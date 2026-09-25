@@ -6,9 +6,10 @@
 //! (non-exhaustive match) locations rustc reports against a checked-in
 //! list, exactly as FR-063 requires.
 //!
-//! **Scope: S1, S2, S3 (partial) and S7 (PR #262 review, finding F7; PR
-//! #305 review, finding 6; QSL-143).** FR-063-AC-6 names five categories:
-//! S1's stage-participation table and prefix arm, S2, S3, S4. S1 originally
+//! **Scope: S1, S2, S3 (partial), one S4-shaped (not S4 proper) location,
+//! and S7 (PR #262 review, finding F7; PR #305 review, finding 6; QSL-143;
+//! PR #434 review, LOW-4).** FR-063-AC-6 names five categories: S1's
+//! stage-participation table and prefix arm, S2, S3, S4. S1 originally
 //! had two checked-in `match`es over `FamilyKind` in `src/family/mod.rs` --
 //! `catalog_code_prefix`'s prefix arm and `stage_hooks`'s
 //! stage-participation table. `stage_hooks` is deleted: its only non-test
@@ -55,7 +56,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use qsl_attrs::string_edge;
@@ -115,7 +116,13 @@ pub struct SeamLocation {
 /// FR-090-AC-6 (TC-387): the `ProtocolClause` snapshot cause's
 /// `catalog_code()` match over `crate::check::WrongSnapshotCause`, whose
 /// `#[cfg(seam_probe)]` variant has an arm only in `WrongSnapshotCause::
-/// as_str`.
+/// as_str`. **S4-shaped, not S4 itself (PR #434 review, LOW-4):** the match
+/// has the same shape S4 does (a `Cause` enum's `catalog_code()` arm), but
+/// `WrongSnapshotCause` is FR-090's own ad hoc snapshot-refusal cause, not a
+/// family's `FamilyContract`-associated `Cause` (no family has one yet;
+/// `crate::family::outcome`'s own doc, QSL-152). It is checked in as one
+/// more real seam location in its own right, but does not itself satisfy
+/// FR-063-AC-6's S4 category.
 ///
 /// FR-090-AC-4 (TC-385): the S6a seam's `match` over
 /// `qsl-eval`'s `value::expression::s6a::S6aFamilyKind` (`evaluate_declaration`), its
@@ -155,14 +162,19 @@ pub struct SeamLocation {
 /// variant inert (never actually non-exhaustive anywhere), which is not a
 /// seam at all. Probing it needs a build of `qsl-forms` itself, which
 /// `PROBE_BUILDS`'s fixed four-crate list (FR-063's own Behavior text)
-/// does not include; that is a spec gap for a future ticket, not something
-/// this checked-in list can honestly claim today. FR-063-AC-6 requires only
+/// does not include; QSL-244 tracks widening `PROBE_BUILDS` (or otherwise
+/// giving `qsl-forms` its own probe build) to reach this table, not
+/// something this checked-in list can honestly claim today. FR-063-AC-6
+/// requires only
 /// *one* checked-in entry per category, and `Typer::infer_form` already
 /// supplies S2's.
 ///
-/// S4 (each family `Cause` enum's `catalog_code()`) still has no
-/// cause-bearing family to demonstrate it (`crate::family::outcome`'s own
-/// doc).
+/// S4 proper (each family's `FamilyContract`-associated `Cause` enum's
+/// `catalog_code()`) still has no cause-bearing family to demonstrate it
+/// (`crate::family::outcome`'s own doc, QSL-152); the S4-*shaped*
+/// `WrongSnapshotCause` location above is FR-090's own cause, not a family
+/// `Cause`, so it does not stand in for this category (see the note above
+/// `checked_in_locations`'s `ProtocolClauseSnapshot::catalog_code` entry).
 pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
     [
         SeamLocation {
@@ -287,15 +299,22 @@ fn enclosing_item_name(source: &str, line: u32) -> Option<String> {
 /// test`/`cargo clippy` use elsewhere in the same `make ci` run. Each
 /// RUSTFLAGS flip invalidates that whole dependency graph's incremental
 /// cache, and the next unrelated build in the same directory pays to
-/// rebuild it again. `target/seam-probe` (the same relative-to-workspace-
-/// root idiom `ci-clean-build`'s own `--target-dir target/clean` already
-/// uses in the Makefile) keeps this probe's own RUSTFLAGS churn out of the
-/// shared one.
+/// rebuild it again. A `seam-probe` subdirectory of the caller's own
+/// `CARGO_TARGET_DIR` when one is set, or `target/seam-probe` (the same
+/// relative-to-workspace-root idiom `ci-clean-build`'s own `--target-dir
+/// target/clean` already uses in the Makefile) otherwise, keeps this
+/// probe's own RUSTFLAGS churn out of the shared target dir without also
+/// planting a second, redundant build tree in every worktree that already
+/// sets its own `CARGO_TARGET_DIR` (PR #434 review, LOW-5).
 fn build_and_collect_e0004(
     workspace_root: &Path,
     package: &str,
     rustflags: &str,
 ) -> Result<(bool, BTreeSet<SeamLocation>, String)> {
+    let target_dir = match std::env::var_os("CARGO_TARGET_DIR") {
+        Some(dir) if !dir.is_empty() => Path::new(&dir).join("seam-probe"),
+        _ => PathBuf::from("target/seam-probe"),
+    };
     let mut command = Command::new("cargo");
     command.current_dir(workspace_root).args([
         "build",
@@ -305,8 +324,8 @@ fn build_and_collect_e0004(
         "--lib",
         "--message-format=json",
         "--target-dir",
-        "target/seam-probe",
     ]);
+    command.arg(&target_dir);
     if !rustflags.is_empty() {
         command.env("RUSTFLAGS", rustflags);
     }
@@ -506,11 +525,21 @@ pub fn run(workspace_root: &Path) -> Result<String> {
     }
     let checked_in = checked_in_locations();
     compare_probe_builds(&probe_results, &checked_in)?;
+    // Generated from `checked_in_locations()` itself (PR #434 review,
+    // optional item), not hand-written prose: a location added or removed
+    // there is reflected here automatically, instead of needing this
+    // summary edited to match in the same change.
+    let locations = checked_in
+        .iter()
+        .map(|location| format!("{}::{}", location.file, location.item))
+        .collect::<Vec<_>>()
+        .join(", ");
     Ok(format!(
-        "seam-probe: {} checked-in S1/S2/S3/S7/TC-385/TC-387 locations confirmed under RUSTFLAGS=--cfg seam_probe \
-         (qsl-semantics, then quire-spec-language, qsl-route and qsl-eval); normal builds have none. `stage_hooks`'s former \
-         second S1 location is deleted (PR #262 review F7). The parser's leading-token-kind table (S2, QSL-143) and S4 (no \
-         cause-bearing family yet) are not covered by this checked-in list -- see `checked_in_locations`'s own doc.\n",
+        "seam-probe: {} checked-in locations confirmed under RUSTFLAGS=--cfg seam_probe \
+         (qsl-semantics, then quire-spec-language, qsl-route and qsl-eval); normal builds have none: \
+         {locations}. The parser's leading-token-kind table (S2, QSL-244) and S4 proper (no \
+         cause-bearing family yet, QSL-152) are not covered by this checked-in list -- see \
+         `checked_in_locations`'s own doc.\n",
         checked_in.len()
     ))
 }
@@ -751,7 +780,9 @@ mod tests {
         );
         // One entry removed from the checked-in list, with no change to
         // what the build reports (this criterion's own "concrete example"):
-        // the sets now differ, so the gate must fail with a non-zero exit.
+        // the reported set now has an entry the checked-in list lacks
+        // (unexpected-but-present), so the gate must fail with a non-zero
+        // exit.
         let mut wrong_checked_in = checked_in.clone();
         wrong_checked_in.remove(&route_seam());
         let error = compare_probe_builds(&builds, &wrong_checked_in)
@@ -762,43 +793,87 @@ mod tests {
             0,
             "a checked-in/build mismatch must exit non-zero, not zero"
         );
+
+        // The other direction (PR #434 review, LOW-2): one entry added to
+        // the checked-in list that no build reports (expected-but-missing).
+        // The two directions are independent branches of the same `if` in
+        // `compare_probe_builds`, so a checked-in list only ever missing an
+        // entry (the case above) does not exercise this one.
+        let mut over_checked_in = checked_in.clone();
+        over_checked_in.insert(SeamLocation {
+            file: "qsl-eval/src/value/expression/family.rs".to_owned(),
+            item: "not_a_real_seam_function".to_owned(),
+        });
+        let error = compare_probe_builds(&builds, &over_checked_in)
+            .expect_err("a checked-in list naming a location no build reports must fail the gate");
+        assert_eq!(error.code(), crate::error::Code::SeamProbe);
+        assert_ne!(
+            error.exit_code(),
+            0,
+            "a checked-in/build mismatch must exit non-zero, not zero"
+        );
+    }
+
+    /// The workspace's own member list, read from the root `Cargo.toml`'s
+    /// `[workspace] members = [...]` array, so this test's file-walk always
+    /// matches the real workspace instead of a hand-copied, driftable copy
+    /// of it (PR #434 review, MED-1).
+    fn workspace_members(workspace_root: &Path) -> Vec<String> {
+        let manifest = workspace_root.join("Cargo.toml");
+        let source =
+            fs::read_to_string(&manifest).unwrap_or_else(|error| panic!("{manifest:?}: {error}"));
+        let after_key = source
+            .split_once("members")
+            .unwrap_or_else(|| panic!("{manifest:?} names no `members` key"))
+            .1;
+        let list = after_key
+            .split_once('[')
+            .unwrap_or_else(|| panic!("{manifest:?}: `members` has no `[...]` array"))
+            .1
+            .split_once(']')
+            .unwrap_or_else(|| panic!("{manifest:?}: `members` array is never closed"))
+            .0;
+        list.split(',')
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .map(|entry| entry.trim_matches('"').to_owned())
+            .collect()
     }
 
     /// FR-063-AC-3: nothing outside `xtask seam-probe`'s own build
     /// invocation can set the `seam_probe` cfg -- no `[features]` table
-    /// entry, no `build.rs`, no `.cargo/config.toml` `rustflags`, and no
-    /// `RUSTFLAGS`/`rustflags` setting in the Makefile or a CI workflow. A
+    /// entry, no `build.rs`, no `.cargo/config.toml` `rustflags` key, and no
+    /// line mentioning `seam_probe` in the Makefile or a CI workflow. A
     /// grep-shaped check over those specific files (this criterion's own
     /// text), not a proof that no code path anywhere could set the cfg: a
     /// `build.rs` added later, for instance, would need this check re-run,
     /// not exempt it from the pattern it greps for.
+    ///
+    /// Matches the bare `seam_probe` token rather than a specific
+    /// `RUSTFLAGS=` spelling (PR #434 review, MED-1): the earlier version
+    /// only matched `RUSTFLAGS=`/`rustflags=`, missing `RUSTFLAGS :=`,
+    /// `?=`, `+=`, `export RUSTFLAGS` and the dotted `build.rustflags` key.
+    /// Since the only way any of those forms could inject the cfg is by
+    /// naming it, a bare-token search over non-comment lines catches every
+    /// assignment spelling at once. `.cargo/config.toml` additionally bans
+    /// any `rustflags` key at all, case-insensitively, whether or not it
+    /// mentions `seam_probe` by name, matching this criterion's stronger
+    /// "no rustflags key" rule for that one file.
     #[ix_trace_rs::trace("TC-161", "FR-063-AC-3")]
     #[test]
     fn nothing_outside_xtask_seam_probe_can_set_the_seam_probe_cfg() {
         let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("xtask lives one level below the workspace root");
-        const MEMBERS: [&str; 15] = [
-            ".",
-            "xtask",
-            "tools/arch-lint",
-            "quire-exact",
-            "qsl-attrs",
-            "qsl-foundation",
-            "qsl-cst",
-            "qsl-replay",
-            "qsl-source",
-            "qsl-forms",
-            "qsl-semantics",
-            "qsl-package",
-            "qsl-route",
-            "qsl-eval",
-            "qsl-bench",
-        ];
+        let members = workspace_members(workspace_root);
+        assert!(
+            members.len() >= 10,
+            "workspace_members parsed suspiciously few members from Cargo.toml: {members:?}"
+        );
 
         // No `build.rs`: the only other place a crate could inject a `--cfg`
         // outside `xtask`'s own build invocation.
-        for member in MEMBERS {
+        for member in &members {
             let build_rs = workspace_root.join(member).join("build.rs");
             assert!(
                 !build_rs.exists(),
@@ -816,7 +891,7 @@ mod tests {
         let feature_definition = |line: &str| -> bool {
             line.starts_with("seam_probe") || line.starts_with("seam-probe")
         };
-        for member in MEMBERS {
+        for member in &members {
             let manifest = workspace_root.join(member).join("Cargo.toml");
             let Ok(source) = fs::read_to_string(&manifest) else {
                 continue;
@@ -834,8 +909,10 @@ mod tests {
             }
         }
 
-        // `.cargo/config.toml`: no `rustflags` key at all (the only key that
-        // could inject `--cfg seam_probe` process-wide).
+        // `.cargo/config.toml`: no `seam_probe` token on any non-comment
+        // line, and no `rustflags` key at all (case-insensitive, so it also
+        // catches the dotted `build.rustflags` form) -- the only key that
+        // could inject `--cfg seam_probe` process-wide.
         let cargo_config = workspace_root.join(".cargo/config.toml");
         if let Ok(source) = fs::read_to_string(&cargo_config) {
             for line in source.lines() {
@@ -844,15 +921,20 @@ mod tests {
                     continue;
                 }
                 assert!(
-                    !trimmed.starts_with("rustflags"),
-                    "{} sets rustflags (FR-063-AC-3): {line}",
+                    !trimmed.contains("seam_probe"),
+                    "{} mentions seam_probe (FR-063-AC-3): {line}",
+                    cargo_config.display()
+                );
+                assert!(
+                    !trimmed.to_lowercase().contains("rustflags"),
+                    "{} sets a rustflags key (FR-063-AC-3): {line}",
                     cargo_config.display()
                 );
             }
         }
 
-        // The Makefile: no non-comment line assigns `RUSTFLAGS` outside this
-        // module's own doc/comments about it.
+        // The Makefile: no non-comment line mentions `seam_probe` outside
+        // this module's own doc/comments about it.
         let makefile = workspace_root.join("Makefile");
         let source =
             fs::read_to_string(&makefile).unwrap_or_else(|error| panic!("{makefile:?}: {error}"));
@@ -862,14 +944,14 @@ mod tests {
                 continue;
             }
             assert!(
-                !trimmed.contains("RUSTFLAGS=") && !trimmed.contains("rustflags="),
-                "{} sets RUSTFLAGS/rustflags outside xtask's own build invocation \
+                !trimmed.contains("seam_probe"),
+                "{} mentions seam_probe outside xtask's own build invocation \
                  (FR-063-AC-3): {line}",
                 makefile.display()
             );
         }
 
-        // Every CI workflow: no non-comment line sets `RUSTFLAGS`.
+        // Every CI workflow: no non-comment line mentions `seam_probe`.
         let workflows_dir = workspace_root.join(".github/workflows");
         let entries = fs::read_dir(&workflows_dir)
             .unwrap_or_else(|error| panic!("{workflows_dir:?}: {error}"));
@@ -891,8 +973,8 @@ mod tests {
                     continue;
                 }
                 assert!(
-                    !trimmed.contains("RUSTFLAGS"),
-                    "{} sets RUSTFLAGS (FR-063-AC-3): {line}",
+                    !trimmed.contains("seam_probe"),
+                    "{} mentions seam_probe (FR-063-AC-3): {line}",
                     path.display()
                 );
             }
@@ -951,15 +1033,124 @@ mod tests {
         }
     }
 
-    /// FR-063-AC-7 (first test): a `_ => ...` fallback arm on a closed enum
-    /// produces no `E0004` under `--cfg seam_probe` and is therefore
-    /// invisible to `xtask seam-probe` alone; `cargo clippy`'s
-    /// `clippy::wildcard_enum_match_arm` is the mechanism that catches it
-    /// instead. Reintroduces exactly such a fallback arm in a standalone
-    /// fixture crate (a temp directory, not this workspace, so it cannot be
-    /// caught by inspecting this repository's own source) and asserts the
-    /// lint fires and the build fails.
+    /// Whether `attrs` deny `clippy::wildcard_enum_match_arm` or
+    /// `clippy::match_wildcard_for_single_variants` (FR-063-AC-7's own
+    /// either/or: whichever lint actually trips for the enum in question).
+    fn denies_wildcard_arm(attrs: &[syn::Attribute]) -> bool {
+        fn is_path(path: &syn::Path, segments: &[&str]) -> bool {
+            path.segments.len() == segments.len()
+                && path
+                    .segments
+                    .iter()
+                    .zip(segments)
+                    .all(|(segment, name)| segment.ident == name)
+        }
+        attrs.iter().any(|attr| {
+            if !attr.path().is_ident("deny") {
+                return false;
+            }
+            let mut found = false;
+            let _ = attr.parse_nested_meta(|meta| {
+                if is_path(&meta.path, &["clippy", "wildcard_enum_match_arm"])
+                    || is_path(
+                        &meta.path,
+                        &["clippy", "match_wildcard_for_single_variants"],
+                    )
+                {
+                    found = true;
+                }
+                Ok(())
+            });
+            found
+        })
+    }
+
+    /// A `syn` walk finding the function or method named `target` (the same
+    /// `Type::method`/bare-name shape [`SeamLocation::item`] and
+    /// `enclosing_item_name` use), including a free function nested inside
+    /// another function's body (`same_kind`, nested in `advertises_kind`),
+    /// and recording its attributes.
+    struct SeamFunctionAttrs<'t> {
+        target: &'t str,
+        current_impl_self: Option<String>,
+        found: Option<Vec<syn::Attribute>>,
+    }
+
+    impl<'t, 'ast> Visit<'ast> for SeamFunctionAttrs<'t> {
+        fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+            let previous = self
+                .current_impl_self
+                .replace(crate::impl_self_name(&node.self_ty));
+            syn::visit::visit_item_impl(self, node);
+            self.current_impl_self = previous;
+        }
+
+        fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+            if node.sig.ident == self.target {
+                self.found = Some(node.attrs.clone());
+            }
+            syn::visit::visit_item_fn(self, node);
+        }
+
+        fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
+            let name = match &self.current_impl_self {
+                Some(self_ty) => format!("{self_ty}::{}", node.sig.ident),
+                None => node.sig.ident.to_string(),
+            };
+            if name == self.target {
+                self.found = Some(node.attrs.clone());
+            }
+            syn::visit::visit_impl_item_fn(self, node);
+        }
+    }
+
+    /// FR-063-AC-7 (the real test, not the fixture below): a `match` at a
+    /// seam that carries a `_ => unsupported(...)` fallback arm produces no
+    /// `E0004` under `--cfg seam_probe`, so `xtask seam-probe` alone cannot
+    /// catch it -- `cargo clippy`'s `clippy::wildcard_enum_match_arm` must be
+    /// what catches it instead, which requires the lint actually be *denied*
+    /// at every checked-in seam function, not merely provable to fire on some
+    /// other, unrelated fixture. Walks every entry `checked_in_locations()`
+    /// returns with `syn` and asserts each one's own function or method
+    /// carries the deny.
     #[ix_trace_rs::trace("TC-161", "FR-063-AC-7")]
+    #[test]
+    fn checked_in_seam_functions_deny_the_wildcard_lint() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask lives one level below the workspace root");
+        for location in checked_in_locations() {
+            let source = fs::read_to_string(workspace_root.join(&location.file))
+                .unwrap_or_else(|error| panic!("{}: {error}", location.file));
+            let parsed = syn::parse_file(&source)
+                .unwrap_or_else(|error| panic!("{}: {error}", location.file));
+            let mut visitor = SeamFunctionAttrs {
+                target: &location.item,
+                current_impl_self: None,
+                found: None,
+            };
+            visitor.visit_file(&parsed);
+            let attrs = visitor
+                .found
+                .unwrap_or_else(|| panic!("{location:?} names no function or method"));
+            assert!(
+                denies_wildcard_arm(&attrs),
+                "{location:?} does not deny clippy::wildcard_enum_match_arm (or \
+                 clippy::match_wildcard_for_single_variants): a `_ => unsupported(...)` \
+                 fallback arm here would compile clean under both the normal build and \
+                 --cfg seam_probe, invisible to every gate (FR-063-AC-7)"
+            );
+        }
+    }
+
+    /// Supporting evidence only, untagged: this fixture proves clippy's
+    /// `clippy::wildcard_enum_match_arm` lint fires on a `_ => ...` fallback
+    /// arm *in general*, on a standalone crate whose own `#![deny(...)]`
+    /// enables the lint itself. It does not show the lint is actually
+    /// enabled at any of this repository's own checked-in seam functions --
+    /// `checked_in_seam_functions_deny_the_wildcard_lint` below is the real
+    /// FR-063-AC-7 test for that, walking `checked_in_locations()` and
+    /// asserting each one's own `#[deny(...)]`.
     #[test]
     fn a_reintroduced_wildcard_arm_trips_the_clippy_lint() {
         let dir = tempfile::tempdir().expect("a temp dir");
@@ -1038,15 +1229,20 @@ mod tests {
         );
     }
 
-    /// FR-063-AC-5 (QSL-155 correction), part two: `xtask seam-probe`'s
-    /// non-zero exit propagates to the full gate's own exit. This is
-    /// `make`'s own prerequisite-failure semantics -- a `.PHONY` aggregate
-    /// target depending on a target whose recipe can fail -- demonstrated
-    /// on a minimal fixture `Makefile` with exactly that shape (the real
-    /// `ci:`/`seam-probe:` pair, per `the_full_gate_invokes_seam_probe`
-    /// above), not by running the real, several-minutes seam-probe build
-    /// with a deliberately broken checked-in list.
-    #[ix_trace_rs::trace("TC-161", "FR-063-AC-5")]
+    /// Illustrates the general `make` mechanism `the_full_gate_invokes_
+    /// seam_probe` above relies on -- a `.PHONY` aggregate target depending
+    /// on a target whose recipe can fail propagates that failure to the
+    /// aggregate's own exit -- on a minimal fixture `Makefile` with the
+    /// real `ci:`/`seam-probe:` shape, not by running the real,
+    /// several-minutes seam-probe build with a deliberately broken
+    /// checked-in list.
+    ///
+    /// Untagged (PR #434 review, LOW-1): this fixture proves `make` itself
+    /// propagates a prerequisite's failure in general, not that
+    /// `xtask seam-probe`'s real exit code does so in this repository's
+    /// real `Makefile` -- that is `the_full_gate_invokes_seam_probe`'s own
+    /// grep-shaped check over the real prerequisite list and recipe, which
+    /// is what backs FR-063-AC-5.
     #[test]
     fn a_failed_prerequisite_fails_the_aggregate_gate_target() {
         let dir = tempfile::tempdir().expect("a temp dir");

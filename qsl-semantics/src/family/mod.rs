@@ -125,6 +125,12 @@ impl FamilyKind {
     ///
     /// `const fn` so the compile-time distinctness check below can call
     /// it at compile time.
+    ///
+    /// FR-063-AC-7: `#[deny(...)]` closes the escape hatch a `_ =>
+    /// unsupported(...)` fallback arm would otherwise open (invisible to the
+    /// seam probe alone, since it would compile even under `--cfg
+    /// seam_probe`).
+    #[deny(clippy::wildcard_enum_match_arm)]
     pub(crate) const fn catalog_code_prefix(self) -> &'static str {
         match self {
             Self::Value => "value",

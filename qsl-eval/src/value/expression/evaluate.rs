@@ -723,6 +723,15 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(())
     }
 
+    /// FR-063-AC-7: `#[deny(...)]` closes the `_ => unsupported(...)` escape
+    /// hatch this function's own `NodeKind` match -- the S3 evaluator seam
+    /// -- would otherwise let slip past unnoticed by the seam probe alone.
+    /// The few genuinely defensive wildcard arms further down this
+    /// function's body match over a *different* type (`Value`, from
+    /// `self.pop()?`, never `NodeKind`), each locally `#[allow]`-annotated
+    /// (or expressed as a refutable `let ... else`, which this lint does not
+    /// reach) rather than left to this `deny` -- see each site's own note.
+    #[deny(clippy::wildcard_enum_match_arm)]
     fn apply(&mut self, node: &'a Node) -> Result<(), Halt> {
         let value = match node.kind() {
             NodeKind::Literal(_)
@@ -809,6 +818,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let operand = self.pop_decimal()?;
                 self.decimal(node, DecimalOperation::Negate(&operand), target)?
             }
+            // Not the FR-063 seam: the inner match below is over `Value`
+            // (checking already fixed which two variants a `ConvertDecimal`
+            // operand can be), not `NodeKind`, so its fallback is a genuine
+            // invariant check, not an escape hatch over the seam's own enum.
+            #[allow(clippy::wildcard_enum_match_arm)]
             NodeKind::ConvertDecimal(_, target) => match self.pop()? {
                 Value::Decimal(source) => {
                     self.decimal(node, DecimalOperation::Round(&source), target)?
@@ -1122,6 +1136,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let ValueType::Reference(static_key) = reference.value_type() else {
                     return Err(invariant());
                 };
+                // Not the FR-063 seam: both matches below are over
+                // `ValueType` (checking already fixed this node's own type
+                // to one of two shapes), not `NodeKind`, so each fallback is
+                // a genuine invariant check, not an escape hatch over the
+                // seam's own enum.
+                #[allow(clippy::wildcard_enum_match_arm)]
                 let target_key = match node.value_type() {
                     ValueType::Reference(key) => *key,
                     ValueType::Option(payload) => match &**payload {

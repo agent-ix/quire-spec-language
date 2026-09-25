@@ -104,19 +104,7 @@ than accept it into the allow-list.
 | FR-064-AC-3 | `xtask string-edge` scans no file under a `tests/` directory and no `#[cfg(test)]` module; a string `match` placed only inside such a module is not reported even when unmarked and not allow-listed. | Test (TC-162) |
 | FR-064-AC-4 | `xtask string-edge` exits non-zero when its report is non-empty and exits zero when its report is empty; a test constructs one fixture tree of each shape and asserts both exit codes. | Test (TC-162) |
 | FR-064-AC-5 | Given one allow-list entry whose comparison result feeds an `if`/`match` condition that selects between two different code paths, and one entry whose comparison result feeds only a logged message, `xtask string-edge` rejects the first (naming its file and line) and accepts the second. A test attempts to add each of the five ADR-010 §4.3 production dispatch sites (named in this requirement's Behavior) as an allow-list entry and asserts the tool rejects all five; a wrong implementation that allow-lists all five to force a clean scan does not satisfy this criterion. | Test (TC-162) |
-| FR-064-AC-6 | The lint gate's own target list (the `Makefile`) names `string-edge` as a prerequisite of the gate it runs in, whose own recipe runs `cargo xtask string-edge`, and `xtask string-edge`'s non-zero exit propagates to that gate's own exit through `make`'s ordinary prerequisite-failure semantics -- a `.PHONY` aggregate target depending on a target whose recipe can fail. Both halves are checked directly: a grep-shaped check over the real `Makefile` confirms the prerequisite naming and the recipe, and a minimal fixture `Makefile` of the same aggregate/prerequisite shape demonstrates a failed prerequisite failing the aggregate target (and a succeeding one not failing it) -- without inventing a Rust-level gate-target-list abstraction to stub, which does not exist and which nothing in the design calls for. | Test (TC-162) |
-
-**Correction to merged spec (QSL-155).** This criterion's second clause
-originally read "a test that stubs the gate's target list shows the gate
-fails when `xtask string-edge` exits non-zero." There is no Rust-level gate
-abstraction to stub: the gate is a `Makefile` target, and nothing in the
-design calls for one (the same defect, and the same correction, as
-FR-063-AC-5's; found in #262's review, #214's own deferral table). Corrected
-here to assert what is real and checkable instead. This wording correction
-does not itself back the criterion: as this requirement's own Status section
-below states at length, no `Makefile` target invokes `xtask string-edge` as
-part of any gate yet (`make string-edge` runs it standalone) -- that
-production wiring is QSL-145's, not this correction's.
+| FR-064-AC-6 | The lint gate's own target list (the `Makefile`) names `string-edge` as a prerequisite of the gate it runs in, whose own recipe runs `cargo xtask string-edge`, and `xtask string-edge`'s non-zero exit propagates to that gate's own exit through `make`'s ordinary prerequisite-failure semantics -- a `.PHONY` aggregate target depending on a target whose recipe can fail. Both halves are checked directly: a grep-shaped check over the real `Makefile` confirms the prerequisite naming and the recipe, and a minimal fixture `Makefile` of the same aggregate/prerequisite shape demonstrates a failed prerequisite failing the aggregate target (and a succeeding one not failing it). | Test (TC-162) |
 
 ## Dependencies
 
@@ -138,6 +126,18 @@ Specified under
 find clean or flag once QSL's own edges are marked; that marking work is
 this ticket's and the family migration tickets' own, not this requirement's
 scan tool.
+
+**QSL-155 correction.** FR-064-AC-6's second clause originally read "a test
+that stubs the gate's target list shows the gate fails when
+`xtask string-edge` exits non-zero." There is no Rust-level gate abstraction
+to stub: the gate is a `Makefile` target, and nothing in the design calls
+for one (the same defect, and the same correction, as FR-063-AC-5's; found
+in #262's review, #214's own deferral table). Corrected to assert what is
+real and checkable instead: the AC-6 table row above already reflects the
+corrected text. This wording correction does not itself back the criterion:
+as the paragraph below states at length, no `Makefile` target invokes
+`xtask string-edge` as part of any gate yet (`make string-edge` runs it
+standalone) -- that production wiring is QSL-145's, not this correction's.
 
 **Scope of what #214 delivers.** `#[string_edge]` and `xtask string-edge`
 are both fully implemented and tested (TC-162): the scan correctly finds
@@ -190,8 +190,9 @@ tags as they exist in the delivered code today:**
   rejected`), untagged because they don't reach the criterion's other half.
   Its "each of the five ADR-010 §4.3 production dispatch sites" half is not,
   and QSL-150's own investigation found it cannot be backed as the criterion
-  is written, against the tool as built: `real_adr010_sites_are_not_flagged_
-  branch_gating_by_the_structural_detector` runs the real scan (not a
+  is written, against the tool as built: `real_adr010_sites_are_flagged_
+  branch_gating_by_the_structural_detector` (`#[ignore]`d, PR #434 review
+  LOW-3) runs the real scan (not a
   synthetic fixture) over the four of the five sites still present in the
   tree, at their real file and line (`Graph::profile` in
   `src/protocol_artifact/validate.rs`, `valid_digest`/`valid_adapter` in

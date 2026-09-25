@@ -81,6 +81,10 @@ pub enum Family {
 /// declaration's `families()` set becomes
 /// [`Disposition::InapplicableCapability`]: for example, a required
 /// `value-validity` request against a `State` or `Temporal` declaration.
+///
+/// ADR-012 §5.1 S7 seam-probe location (FR-063-AC-7): `#[deny(...)]` closes
+/// the `_ => unsupported(...)` escape hatch the seam probe alone cannot see.
+#[deny(clippy::wildcard_enum_match_arm)]
 pub fn families(capability: Capability) -> &'static [Family] {
     match capability {
         Capability::ValueValidity => &[Family::Predicate],
