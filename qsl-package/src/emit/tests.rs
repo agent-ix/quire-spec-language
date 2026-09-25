@@ -1460,3 +1460,115 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
         }
     }
 }
+
+/// QSpec's `unit-metre` node key (FR-094's vector key).
+const METRE: [u8; 32] = [
+    0x79, 0x63, 0x76, 0x23, 0xa4, 0x6d, 0x29, 0xe8, 0x84, 0xb6, 0x2c, 0x6f, 0xa2, 0x92, 0xae, 0xb2,
+    0x9d, 0x41, 0xe4, 0xec, 0xc4, 0xe8, 0x00, 0xb4, 0xd7, 0xee, 0x91, 0x0a, 0x3e, 0xaf, 0x23, 0xa4,
+];
+
+/// QSpec's `dimension-length` node key (FR-094's vector key).
+const LENGTH: &str = "b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca092266314e22b";
+
+/// The `metre` unit of dimension `Length`, owned by a definition, as the
+/// quantity table `check` types a `Length` quantity against.
+fn metre_units() -> qsl_semantics::value::quantity::UnitTable {
+    use qsl_semantics::value::{
+        DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage,
+    };
+    let owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"});
+    let length = DimensionPreimage::from_json(json!({
+        "version": "quire.dimension-node/v1",
+        "owner": owner,
+        "qualified_declaration": ["Example", "Length"],
+        "terms": [],
+    }))
+    .expect("a base dimension");
+    let metre = UnitPreimage::from_json(json!({
+        "version": "quire.unit-node/v1",
+        "owner": owner,
+        "qualified_declaration": ["Example", "metre"],
+        "dimension_node_id": {"domain": NODE_KEY_DOMAIN, "digest": LENGTH},
+        "target_unit_node_id": null,
+        "scale": {"numerator": "1", "denominator": "1"},
+        "offset": {"numerator": "0", "denominator": "1"},
+    }))
+    .expect("a root unit");
+    let length_key: [u8; 32] = std::array::from_fn(|index| {
+        u8::from_str_radix(&LENGTH[2 * index..2 * index + 2], 16).unwrap()
+    });
+    let graph = UnitGraph::admit(
+        [(length, NodeKey::from_digest(length_key))],
+        [(metre, NodeKey::from_digest(METRE))],
+        &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
+            authority: "agent-ix".into(),
+            identity: "example-model".into(),
+        })]),
+    )
+    .expect("the QSpec unit vectors admit");
+    qsl_semantics::value::quantity::UnitTable::declared(&graph)
+}
+
+/// IR-280: IR's v2 vocabulary holds `scalar_type`/`compound_unit` (FR-094),
+/// so a compound unit node is never omitted for its form. `q(a: Length):
+/// Boolean { a * a == a * a }` forms the `metre^2` compound unit node; it is
+/// omitted only because it names the `metre` unit node, which lowering names
+/// by key but does not build.
+#[trace("FR-094-AC-6", "TC-416")]
+#[test]
+fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
+    let square = || Expression::Binary {
+        operator: BinaryOperator::Multiply,
+        left: Box::new(name("a")),
+        right: Box::new(name("a")),
+    };
+    let q = FunctionDeclaration::new(
+        "q",
+        vec![("a".to_owned(), TypeForm::name("Length", SPAN))],
+        boolean(),
+        None,
+        Expression::Binary {
+            operator: BinaryOperator::Equal,
+            left: Box::new(square()),
+            right: Box::new(square()),
+        },
+    );
+    let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
+    let package = CheckedPackage::link(
+        PackageDeclarations {
+            types: TypeEnvironment::default().with_units(metre_units()),
+            aliases: vec![("Length".to_owned(), ValueType::Quantity(metre))],
+            functions: vec![q, t()],
+            ..PackageDeclarations::new(source())
+        }
+        .check(CheckingLimits::default())
+        .expect("q checks"),
+    );
+    let compound = package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .find(|node| node.semantic_form() == "compound_unit")
+        .expect("a * a forms a compound unit node");
+    let emission = emit(&package);
+    let cause = emission
+        .omitted
+        .iter()
+        .find(|omission| *omission.node.digest == compound.key().to_string())
+        .map(|omission| &omission.cause);
+    assert_eq!(
+        cause,
+        Some(&OmissionCause::NamesAbsentNode(node_id(
+            NodeKey::from_digest(METRE)
+        )))
+    );
+    assert!(
+        !emission
+            .omitted
+            .iter()
+            .any(|omission| matches!(omission.cause, OmissionCause::UnsupportedForm { .. })),
+        "{:?}",
+        emission.omitted
+    );
+    assert!(verified_exports(&emission).contains_key("t"));
+}
