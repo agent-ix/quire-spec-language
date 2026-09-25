@@ -933,9 +933,6 @@ mod tests {
         }
     }
 
-    /// FR-060 T12-B's debt list: the one shipped mint outside `check`.
-    const T12B_DEBT: (&str, &str) = ("qsl-eval/src/value/expression/family.rs", "decode_v2");
-
     /// The wire-admitted types a `NodeKey` mint must never be fed by.
     const WIRE_TYPES: [&str; 4] = [
         "WireNodeId",
@@ -946,12 +943,14 @@ mod tests {
 
     /// FR-087-AC-6 (TC-255 steps 1, 2 and 5, step 3 for direct feeding, and
     /// step 4's role): across the QSL crates, `library`, `qsl-package` (E4)
-    /// and `qsl-replay` (E9) mint no `NodeKey`; every mint is in `check` or
-    /// is T12-B's debt entry; and no minting item names a `WireNodeId`,
-    /// `PackageNodeKey`, `ImportView` or `VerifiedPackage`. A value that
-    /// reaches a mint through a call to another function is not traced.
-    /// `arch-lint api-surface` (T12-B) is not part of `make ci`; this test
-    /// is.
+    /// and `qsl-replay` (E9) mint no `NodeKey`; every mint is in `check`; and
+    /// no minting item names a `WireNodeId`, `PackageNodeKey`, `ImportView`
+    /// or `VerifiedPackage`. A value that reaches a mint through a call to
+    /// another function is not traced. `arch-lint api-surface` (T12-B) is
+    /// not part of `make ci`; this test is. QSL-248 (G2) removed T12-B's one
+    /// debt-list entry (`qsl-eval`'s `decode_v2`) along with the mint it
+    /// named, so this scan now requires every mint outside `check` to be
+    /// gone, not merely on a named exception list.
     #[trace("TC-255", "FR-087-AC-6")]
     #[test]
     fn tc_255_no_node_key_is_minted_outside_check_or_from_a_wire_id() {
@@ -980,9 +979,8 @@ mod tests {
                 assert!(!function.file.starts_with(forbidden), "mint at {site}");
             }
             assert!(
-                function.file.starts_with("qsl-semantics/src/check/")
-                    || (function.file.as_str(), function.name.as_str()) == T12B_DEBT,
-                "mint outside check and T12-B's debt list at {site}"
+                function.file.starts_with("qsl-semantics/src/check/"),
+                "mint outside check at {site}"
             );
             for wire in WIRE_TYPES {
                 assert!(

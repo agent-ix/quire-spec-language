@@ -233,12 +233,12 @@ pub(crate) const RULES: &[Rule] = &[
         // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists" --
         // every shipped mint outside `check` on origin/main, named by
         // enclosing module and function. This list only shrinks: an entry
-        // leaves in the change that removes its last mint.
-        debt_list: &[DebtEntry {
-            crate_src: "qsl-eval/src",
-            module: "value::expression::family",
-            function: "decode_v2",
-        }],
+        // leaves in the change that removes its last mint. QSL-248 (G2)
+        // removed the one entry this list ever carried (`qsl-eval`'s
+        // `value::expression::family::decode_v2`, the second v2 producer's
+        // own `NodeKey` mint from wire hex) along with the mint itself, so
+        // this is empty until a new one is found and named.
+        debt_list: &[],
     },
     Rule {
         id: "T12-C",
@@ -1082,6 +1082,20 @@ mod tests {
         }
     }
 
+    /// T12-B (`RULES[1]`) with `debt_list` replaced by `debt_list`. QSL-248
+    /// (G2) emptied the real rule's debt list along with the one mint it
+    /// ever named (`qsl-eval`'s `decode_v2`), so the debt-list mechanism's
+    /// own tests -- reported-as-debt, stale-entry-fails, and the crate-
+    /// scoping check beside them -- need a fixture entry of their own rather
+    /// than the production list, which no longer carries one.
+    fn t12b_with_debt(debt_list: &'static [DebtEntry]) -> Rule {
+        assert_eq!(RULES[1].id, "T12-B", "RULES[1] moved; update the index");
+        Rule {
+            debt_list,
+            ..RULES[1]
+        }
+    }
+
     /// tc_arch_lint_api_surface_001: module-path mapping matches Rust's own
     /// `mod.rs`/`foo.rs` convention and the crate-root special case.
     #[trace("TC-157")]
@@ -1690,6 +1704,16 @@ mod tests {
         assert!(!outcome.passed());
     }
 
+    /// A fixture debt entry for the debt-list mechanism's own tests below:
+    /// T12-B's real `debt_list` is empty since QSL-248 (G2) removed its one
+    /// entry along with the mint it named, so these tests exercise the
+    /// mechanism against a synthetic entry rather than production data.
+    const SYNTHETIC_DEBT_ENTRY: DebtEntry = DebtEntry {
+        crate_src: "qsl-eval/src",
+        module: "value::fixture",
+        function: "synthetic_mint",
+    };
+
     /// TC-157 step 6: a shipped mint in a function on the debt list is
     /// reported as debt and does not fail T12-B. The entry names its crate
     /// (QSL-183): the same module and function in another crate is a
@@ -1699,23 +1723,21 @@ mod tests {
     fn tc_157_debt_list_mint_is_reported_as_debt() {
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
-        // T12-B: debt list has qsl-eval's (value::expression::family, decode_v2)
-        let rule = &RULES[1];
+        let rule = &t12b_with_debt(&[SYNTHETIC_DEBT_ENTRY]);
         seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
-        // Overwrite `value::expression::family`'s seeded baseline with a
-        // shaped-like-the-real-thing mint -- T12-B's debt list has exactly
-        // one entry in this module, so nothing else to preserve.
+        // Overwrite `value::fixture`'s seeded baseline with a
+        // shaped-like-the-real-thing mint -- this fixture rule's debt list
+        // has exactly one entry in this module, so nothing else to preserve.
         let mint =
-            "fn decode_v2(bytes: [u8; 32]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n";
-        write(dir.path(), "qsl-eval/src/value/expression/family.rs", mint);
+            "fn synthetic_mint(bytes: [u8; 32]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n";
+        write(dir.path(), "qsl-eval/src/value/fixture.rs", mint);
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
         assert!(
             outcome
                 .debt
                 .iter()
-                .any(|site| site.module == "value::expression::family"
-                    && site.function == "decode_v2"),
+                .any(|site| site.module == "value::fixture" && site.function == "synthetic_mint"),
             "{:?}",
             outcome.debt
         );
@@ -1728,7 +1750,7 @@ mod tests {
 
         // The same module path and function in the root crate is not the
         // listed debt.
-        write(dir.path(), "src/value/expression/family.rs", mint);
+        write(dir.path(), "src/value/fixture.rs", mint);
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert_eq!(
             outcome
@@ -1736,7 +1758,7 @@ mod tests {
                 .iter()
                 .map(|site| (site.module.as_str(), site.function.as_str()))
                 .collect::<Vec<_>>(),
-            [("value::expression::family", "decode_v2")],
+            [("value::fixture", "synthetic_mint")],
             "{:?}",
             outcome.violations
         );
@@ -1758,18 +1780,14 @@ mod tests {
         );
         write(
             dir.path(),
-            "qsl-eval/src/value/expression/family.rs",
-            "fn decode_v2() -> u8 {\n    0\n}\n",
+            "qsl-eval/src/value/fixture.rs",
+            "fn synthetic_mint() -> u8 {\n    0\n}\n",
         );
-        let rule = &RULES[1]; // T12-B
+        let rule = &t12b_with_debt(&[SYNTHETIC_DEBT_ENTRY]);
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert!(outcome.violations.is_empty());
         assert!(outcome.debt.is_empty());
-        assert!(outcome.stale_debt_entries.contains(&DebtEntry {
-            crate_src: "qsl-eval/src",
-            module: "value::expression::family",
-            function: "decode_v2",
-        }));
+        assert!(outcome.stale_debt_entries.contains(&SYNTHETIC_DEBT_ENTRY));
         assert!(!outcome.passed());
     }
 

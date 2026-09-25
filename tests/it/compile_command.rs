@@ -373,6 +373,46 @@ fn a_complete_v1_program_compiles_through_the_spine() {
     assert_eq!(wire["contract_version"], "quire.checked-package/v2");
 }
 
+/// FR-029-AC-3 (TC-107): `lower` refuses a `1-draft` program with
+/// `unknown_edition`, naming the file and locating the edition literal by
+/// span, the same existing intake behavior FR-029 says `lower` retains from
+/// `compile`.
+///
+/// `lower`'s refusal comes from the native parser's own header check
+/// (`src/parser.rs`), not `compile`'s `Edition::of` dispatch
+/// (`an_edition_neither_compiler_reads_refuses`, above): its `message` is
+/// the generic "supported edition is 0-draft", naming neither the file nor
+/// the offered edition in prose, so this asserts the file through
+/// `details.path` and the edition through the refusal's own span, over the
+/// message text those two checks take there.
+#[test]
+#[trace("TC-107", "FR-029-AC-3")]
+fn lower_refuses_a_complete_v1_program_as_unknown_edition() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("lower")
+        .arg(directory.path().join("compile.json"))
+        .current_dir(directory.path().parent().unwrap())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "unknown_edition", "{failure}");
+    assert_eq!(failure["details"]["path"], "program.native", "{failure}");
+    let text = String::from_utf8(program).expect("the spine fixture is UTF-8");
+    let literal = text
+        .find("\"1-draft\"")
+        .expect("the fixture declares edition \"1-draft\"");
+    assert_eq!(failure["details"]["span"]["start"]["byte"], literal);
+    assert_eq!(
+        failure["details"]["span"]["end"]["byte"],
+        literal + "\"1-draft\"".len()
+    );
+}
+
 /// FR-027-AC-5 (TC-435 step 2): a `1-draft` compile validates the program's
 /// `document` and `formal_revision` but the v2 wire does not record them,
 /// so two requests differing only there write identical bytes; an invalid

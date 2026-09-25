@@ -718,10 +718,11 @@ the steps its test backs.
   that code, so each block is paired with one that must compile over the
   same names, and a renamed or moved item breaks the build.
 - AC-6: no item in `library`, `qsl-package` or `qsl-replay` mints a
-  `NodeKey`. Every mint is in `check` or is T12-B's one debt entry. No
-  minting item names `WireNodeId`, `PackageNodeKey`, `ImportView` or
-  `VerifiedPackage`. A wire value that reaches a mint through another
-  function's call is not traced (TC-255 steps 3 and 6).
+  `NodeKey`. Every mint is in `check`; T12-B's debt list is empty. No
+  minting item names `WireNodeId`,
+  `PackageNodeKey`, `ImportView` or `VerifiedPackage`. A wire value that
+  reaches a mint through another function's call is not traced (TC-255
+  steps 3 and 6).
 - AC-8 and AC-10: the two `EmittedPackage`s are defined at their two
   paths with no field name in common. `src/package/features.rs` and
   `view.rs` import `crate::checking::CheckedPackage`. No root-crate file

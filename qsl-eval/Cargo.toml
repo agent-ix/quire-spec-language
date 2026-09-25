@@ -9,28 +9,24 @@ description = "ADR-011 §6.1 layer 5: the S6a evaluator (value::expression) over
 
 # ADR-011 §6.1 layer 5 depends on "4, 3, F, K". The root crate's
 # `tests/it/family_outcome_layering.rs` (TC-390) asserts this table exactly:
-# the four layer crates, plus `qsl-attrs` and three third-party crates the
-# shipped code calls. No `test-support` feature: nothing here is test-only.
+# the four layer crates, plus one third-party crate the shipped code calls.
+# No `test-support` feature: nothing here is test-only.
 [dependencies]
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-package = { path = "../qsl-package" }
 qsl-semantics = { path = "../qsl-semantics" }
 quire-exact = { path = "../quire-exact" }
-# FR-064: the `#[string_edge]` marker on the v2 function-package codec's
-# version gate (`value::expression::family::decode_v2`). A proc-macro
-# identity transform with no runtime code, read only by `xtask string-edge`.
-qsl-attrs = { path = "../qsl-attrs" }
-# The layer-5 prototype v2 function-package codec (`emit_function_package_v2`,
-# `decode_function_package_v2`; deleted by M-4 S3): its wire structs derive
-# serde, and it encodes and decodes them with serde_json.
-serde = { version = "=1.0.228", features = ["derive"] }
-serde_json = "=1.0.151"
-# The derived `Error` impls of `InputRefusal`, `CallFailure`,
-# `InvalidQualifiedName` and `DecodeV2Error`.
+# The derived `Error` impls of `InputRefusal`, `CallFailure` and
+# `InvalidQualifiedName`.
 thiserror = "=2.0.20"
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+# QSL-248 (G2): test-only since the layer-5 `quire.checked-function-package/
+# v2` codec (`emit_function_package_v2`/`decode_function_package_v2`, its
+# one shipped caller) was deleted; several `tests/it/*.rs` fixtures still
+# build JSON directly.
+serde_json = "=1.0.151"
 # The evaluator's tests build `PackageDeclarations` from layer-2 parsed forms
 # (`Expression`, `FunctionDeclaration`, `TypeForm`): `check` takes forms as its
 # input and qsl-semantics exposes no builder of them. Layer 2 is below this

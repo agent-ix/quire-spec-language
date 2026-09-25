@@ -619,11 +619,6 @@ impl Signatures {
     pub fn as_slice(&self) -> &[Signature] {
         &self.entries
     }
-
-    /// Every signature, in declaration order.
-    pub fn iter(&self) -> std::slice::Iter<'_, Signature> {
-        self.entries.iter()
-    }
 }
 
 impl From<Vec<Signature>> for Signatures {

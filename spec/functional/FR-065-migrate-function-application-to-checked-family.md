@@ -313,24 +313,12 @@ delivered code today:
   `Into<CheckedPackage>`), and again passed directly to `CheckedPackage::
   link` itself (`E0308`, the wrong argument type), while a real checked
   node built through `check` and linked compiles and succeeds.
-- FR-065-AC-2: backed (`TC-163`): `identity_survives_v2_round_trip`
-  (`qsl-eval/src/value/expression/family.rs`) and
-  `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
-  (`qsl-eval/tests/it/dispatch_calls.rs`). Identity/provenance minting is the part this
-  ticket actually delivers. **Rebuilt (PR #262 review, coordinator round
-  3, finding 2).** The reordering half was previously backed by
-  `identity_ignores_unrelated_declarations`
-  (`src/value/expression/family.rs`), which minted the same identity twice
-  from the same declaration and compared it to itself -- no second
-  declaration was ever constructed, so the criterion's "does not depend on
-  any other declaration's existence or position" clause had nothing to be
-  independent of. It is deleted; the reordering clause is now backed by a
-  real fixture at the `PackageDeclarations::check` level (two functions,
-  checked in both orders, `CheckedPackage::function_identity` compared
-  across both) in `qsl-eval/tests/it/dispatch_calls.rs`, which also gives real test
-  callers to `CheckedPackage::occurrence`, `emit_function_package_v2` and
-  `decode_function_package_v2` (PR #262 review, coordinator round 3,
-  finding 3).
+- FR-065-AC-2: backed (`TC-163`): `a_function_identity_survives_emission_
+  and_the_i2_read` (`qsl-package/src/emit/tests.rs`) checks the identity
+  read after `check`, after S4 linking, and after decoding a real
+  `qsl_package::emit_checked`/I2 round trip, under two declaration
+  orderings. `CheckedPackage::occurrence`'s own real test callers are
+  `qsl-semantics/src/check/mod.rs` and `qsl-package/src/emit/tests.rs`.
 - FR-065-AC-3: backed (`TC-163`, QSL-154):
   `emit_checked_places_the_calls_occurrence_at_its_own_source_span`
   (`qsl-package/src/emit/tests.rs`) checks hand-built forms over a real
@@ -339,10 +327,9 @@ delivered code today:
   again after `CheckedPackage::link`, and again from the decoded
   `PackageSourceMap` of a real `emit_checked`/`read_checked_package_v2`
   round trip -- the real `quire.checked-package/v2` source map, which
-  carries a full (identity, role, ordinal) -> region map, unlike `qsl-eval`'s
-  minimal `emit_function_package_v2` (identity only, no source map at all).
-  A hand-built alternate package whose `DeclarationSpans` is genuinely one
-  byte wider resolves to a different region.
+  carries a full (identity, role, ordinal) -> region map. A hand-built
+  alternate package whose `DeclarationSpans` is genuinely one byte wider
+  resolves to a different region.
 - FR-065-AC-4: backed (`TC-376`). Amended by QSL-148's spec lane to a
   behavioural criterion; the thin-arm rule it used to test by code shape is
   FR-065-CON-3, verified by inspection, per the

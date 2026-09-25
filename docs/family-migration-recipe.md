@@ -146,10 +146,11 @@ above.
   returns -- and it was deleted along with those callers (PR #262 review,
   finding F7; FR-063's own "Correction to merged spec" note), not kept
   checked-in to pad this list.
-- Wire-totality: `family_contract_tests::value_function_family_checks_through_the_contract`
-  asserts the v2 round trip (`family::emit_v2` then
-  `decode_v2`) recovers the minted identity, and `qsl-semantics/src/family/mod.rs`'s own
-  `FamilyKind` `match`es (the seam-probe target above) have no `_` arm.
+- Wire-totality: `qsl-package/src/emit/tests.rs`'s
+  `a_function_identity_survives_emission_and_the_i2_read` asserts the real
+  `qsl_package::emit_checked`/I2 round trip recovers the minted identity, and
+  `qsl-semantics/src/family/mod.rs`'s own `FamilyKind` `match`es (the
+  seam-probe target above) have no `_` arm.
 - Backend-absence corpus: not applicable -- function declaration and
   application requests no FR-057 capability kind (see this document's
   `requirements()` note above), so there is no backend-absence case to
@@ -157,13 +158,13 @@ above.
   test category for real.
 
 **Required conversions, as delivered:**
-- v2 emitter: `CheckedPackage::emit_function_package_v2` in
-  `qsl-eval/src/value/expression/mod.rs`, calling `family::emit_v2`/`decode_v2`
-  directly. `FamilyContract::package` (and `ValueFunctionFamily`'s
-  implementation of it) is deleted (PR #262 review, findings F1/F2 -- see
-  the entry below): `emit_function_package_v2` originally called it into a
-  scratch buffer nothing read, then built its real returned bytes
-  independently, so the hook had no consumer.
+- v2 emitter: `qsl_package::emit_checked`, over the S4-linked
+  `CheckedPackage` (`qsl-package/src/emit.rs`). `FamilyContract::package`
+  (and `ValueFunctionFamily`'s implementation of it) is deleted (PR #262
+  review, findings F1/F2 -- see the entry below): the family's own
+  now-deleted `emit_function_package_v2` originally called it into a scratch
+  buffer nothing read, then built its real returned bytes independently, so
+  the hook had no consumer.
 - Evaluator: `impl ReferenceEvaluation for ValueFunctionFamily` in
   `qsl-eval/src/value/expression/family.rs` (`evaluate`); the trait is layer 5's, in
   `qsl-eval/src/value/expression/s6a.rs` beside `S6aFamilyKind`, so the impl sits in
