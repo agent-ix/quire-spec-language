@@ -3076,9 +3076,10 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // added the native source's `authority` and `revision_namespace`
             // to each of the four sources, which moves every figure but
             // `references`. QSL-64's domain-package `Model` paragraphs in that
-            // document (the `Model`, then its populations and operations)
-            // move `byte_work` by their length.
-            (4_822, 2_581, 1_173_542, 85_376)
+            // document (the `Model`, then its populations and operations, then
+            // its operations' parameters and result) move `byte_work` by their
+            // length.
+            (4_822, 2_581, 1_173_763, 85_376)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),
