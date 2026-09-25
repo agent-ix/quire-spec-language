@@ -1438,7 +1438,7 @@ fn emit_checked_places_the_calls_occurrence_at_its_own_source_span() {
     );
     let emission = emit_checked(&linked).expect("g and f emit");
     let outcome = read_back(&emission);
-    let V2ReadOutcome::Verified { source_map, .. } = outcome else {
+    let Read::Verified { source_map, .. } = outcome else {
         panic!("expected Verified, got {outcome:?}");
     };
     let key = OccurrenceKey::new(WireNodeId::from_digest(*identity.as_bytes()), origin.clone());
