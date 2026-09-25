@@ -182,9 +182,20 @@ comment.
 | FR-063-AC-2 | Adding a match arm for the probe variant at one seam function, without adding it at the others, leaves `xtask seam-probe` reporting that seam's location as no longer present while every other checked-in location still appears; `xtask seam-probe` fails, naming the missing location. | Test (TC-161) |
 | FR-063-AC-3 | Building the root crate, `qsl-route` and `qsl-eval` with no `RUSTFLAGS=--cfg seam_probe` set (the three normal builds) compiles cleanly, with `xtask seam-probe` confirming both that each build succeeds and that it reports zero `E0004` locations -- a probe variant reachable from a non-probe code path would surface as an `E0004` in this same build, not merely as an absent Cargo feature. A test inspects the repository for anything that could set `seam_probe` outside `xtask seam-probe`'s own build invocation -- a `[features]` table entry, `build.rs`, `.cargo/config.toml`, or a `RUSTFLAGS`/`rustflags` setting in any `Makefile` target or CI workflow -- and asserts none exists; this is a grep-shaped check over those specific files, not a proof that no code path anywhere could set the cfg (a `build.rs` added later, for instance, would need this check re-run, not exempt it from the pattern it greps for). | Test (TC-161) |
 | FR-063-AC-4 | `xtask seam-probe` runs to completion and exits non-zero when the checked-in list and the actual `E0004` location set differ in either direction (extra or missing), and exits zero only when the two sets are equal; a test with a deliberately wrong checked-in list (one entry removed) demonstrates the non-zero exit with a concrete example, not only an assertion that the tool "checks" the list. | Test (TC-161) |
-| FR-063-AC-5 | The full gate invokes `xtask seam-probe`, and a test that stubs the gate's target list shows the gate fails when `xtask seam-probe` exits non-zero. | Test (TC-161) |
+| FR-063-AC-5 | The full gate's own target list (the `Makefile`'s `ci:` target) names `seam-probe` as a prerequisite, whose own recipe runs `cargo xtask seam-probe`, and `xtask seam-probe`'s non-zero exit propagates to the full gate's own exit through `make`'s ordinary prerequisite-failure semantics -- a `.PHONY` aggregate target depending on a target whose recipe can fail. Both halves are checked directly: a grep-shaped check over the real `Makefile` confirms the prerequisite naming and the recipe, and a minimal fixture `Makefile` of the same `ci:`/`seam-probe:` shape demonstrates a failed prerequisite failing the aggregate target (and a succeeding one not failing it) -- without running the real, several-minutes seam-probe build itself, and without inventing a Rust-level gate-target-list abstraction to stub, which does not exist and which nothing in the design calls for. | Test (TC-161) |
 | FR-063-AC-6 | The checked-in seam-function list contains at least one entry for each of: the `FamilyKind` `catalog_code()` prefix arm; the S6a seam's `match` over the S6a family kind (`evaluate_declaration`); the parser's leading-token-kind entry table and the check seam over the parsed form enum; the checked node enum's evaluator, v2 emitter and requirement-derivation matches; and each family `Cause` enum's `catalog_code()`. A checked-in list missing the entry for any one of these categories, run against a real build that still has an `E0004` at that category's location (the source is unchanged), causes `xtask seam-probe` to fail, naming that category's location as present in the build but absent from the list (unexpected-but-present). | Test (TC-161) |
 | FR-063-AC-7 | A `match` at an S1 to S4 seam that carries a `_ => unsupported(...)` fallback arm produces no `E0004` for that seam under `RUSTFLAGS=--cfg seam_probe` and is therefore invisible to `xtask seam-probe` alone; `cargo clippy` over that seam's module fails on `clippy::wildcard_enum_match_arm` (or `clippy::match_wildcard_for_single_variants`, for the enum that trips it instead), so the lint gate, not the seam probe, is what catches this case. A test reintroduces such a fallback arm in a fixture module and asserts the clippy lint fires. A separate test inspects the definition of `FamilyKind`, the parsed form enum, the checked node enum and each family `Cause` enum and asserts none carries `#[non_exhaustive]`. | Test (TC-161) |
+
+**Correction to merged spec (QSL-155).** FR-063-AC-5's second clause
+originally read "a test that stubs the gate's target list shows the gate
+fails when `xtask seam-probe` exits non-zero." There is no Rust-level gate
+abstraction to stub: the gate is a `Makefile` target, and nothing in the
+design calls for one. Found in #262's review, #214's own deferral table
+("No Rust-level gate abstraction exists to stub"), and corrected here to
+assert what is real and checkable instead: the `Makefile`'s own target list
+names `seam-probe` as a `ci:` prerequisite, and `make`'s ordinary
+prerequisite-failure semantics -- not a stub -- are what propagate
+`xtask seam-probe`'s exit code to the gate's own.
 
 ## Dependencies
 
@@ -203,35 +214,53 @@ Specified under
 their enums are defined, by the owning repository; this requirement covers
 only S1-S4, which are wholly inside the QSL crate.
 
-**By Acceptance Criterion (PR #262 review, P3 accounting), with real trace
-tags as they exist in the delivered code today:** none carries a
-`#[trace(..., "FR-063-AC-N")]` tag.
+**By Acceptance Criterion, with real trace tags as they exist in the
+delivered code today (QSL-149, QSL-143, QSL-155):**
 
-- FR-063-AC-1 through AC-5 and AC-7 are exercised by `cargo xtask
-  seam-probe`'s real, end-to-end behavior -- verified manually this review
-  round (a genuine probe-build failure at exactly the checked-in location,
-  a clean normal build, a non-zero exit on a deliberate mismatch) -- but
-  none carries its own trace tag in a dedicated test, so all six are
-  recorded unbacked rather than claimed. Owner: QSL-149 (AC-1, 2, 3, 4, 6, 7).
-  AC-5's second half (the gate-stubbing test this criterion's own text
-  requires) is tracked as a spec defect against this requirement's text,
-  owned by QSL-155.
-- FR-063-AC-6: unbacked (untagged, PR #262 review, coordinator round 3,
-  finding 6; previously misrecorded as backed). It requires at least one
-  checked-in entry for *each of* five categories; the checked-in list has
-  the S1 `FamilyKind::catalog_code_prefix` prefix arm and the S6a seam
-  `evaluate_declaration`, but not the S2, S3 and S4 categories. A criterion
-  cannot be backed while its own Status text says it is not. The
-  untagged tests in `xtask/src/seam_probe.rs` check that each checked-in
-  location names a function holding a `match`
-  (`checked_in_locations_name_functions_that_hold_a_match`) and exercise
-  `enclosing_item_name`, the F14 line-to-item-name helper; neither is
-  evidence for AC-6's category coverage. Owner:
-  QSL-149, which owns this criterion alongside AC-1/2/3/4/7 (above) even
-  though it stays unbacked regardless of who owns it: the S2/S3 categories
-  land under QSL-143 and the S4 (family `Cause` `catalog_code()`) category
-  under QSL-152, so QSL-149 tracks the criterion's own probe-mechanism
-  coverage, not a promise that landing QSL-149 alone backs AC-6.
+- FR-063-AC-1: backed (`TC-161`,
+  `failing_builds_compare_their_union_against_the_checked_in_list`,
+  `xtask/src/seam_probe.rs`).
+- FR-063-AC-2: backed (`TC-161`,
+  `a_probe_build_that_compiles_names_its_package_and_missing_location`,
+  `xtask/src/seam_probe.rs`).
+- FR-063-AC-3: backed (`TC-161`,
+  `nothing_outside_xtask_seam_probe_can_set_the_seam_probe_cfg`,
+  `xtask/src/seam_probe.rs`) -- the grep-shaped check this criterion's own
+  text asks for, over the Makefile, CI workflows, every crate's `Cargo.toml`
+  and `.cargo/config.toml`.
+- FR-063-AC-4: backed (`TC-161`,
+  `a_wrong_checked_in_list_maps_to_a_non_zero_exit_code`,
+  `xtask/src/seam_probe.rs`).
+- FR-063-AC-5: backed (`TC-161`, `the_full_gate_invokes_seam_probe` and
+  `a_failed_prerequisite_fails_the_aggregate_gate_target`,
+  `xtask/src/seam_probe.rs`), against this criterion's own QSL-155-corrected
+  text (see the correction note above the table): the gate's real target
+  list, not a stub.
+- FR-063-AC-6: unbacked (PR #262 review, coordinator round 3, finding 6;
+  previously misrecorded as backed). It requires at least one checked-in
+  entry for *each of* five categories. QSL-143 lands S2
+  (`Typer::infer_form`, the check seam over `Expression`) and S3
+  (`Machine::apply`, the evaluator; `Lowering::lower_node`, the
+  identity-lowering pass feeding v2 emission), joining S1
+  (`FamilyKind::catalog_code_prefix`) and S6a/S7 (already checked in). S4
+  (each family `Cause` enum's `catalog_code()`) still has no cause-bearing
+  family to demonstrate it (owned by QSL-152); a criterion requiring *every*
+  category cannot be backed while one is still missing, so this stays
+  unbacked until QSL-152 lands it. `checked_in_locations`'s own doc in
+  `xtask/src/seam_probe.rs` records exactly which categories are covered and
+  why the parser's leading-token-kind table (part of S2) is not: it lives in
+  `qsl-forms`, a dependency of every one of the seam probe's four fixed
+  build targets but never itself one of them, so giving it the same
+  no-arm-under-plain-`seam_probe` treatment as a real seam would hide every
+  *other* seam behind it in every probe build.
+- FR-063-AC-7: backed by two tests (`TC-161`, `xtask/src/seam_probe.rs`):
+  `a_reintroduced_wildcard_arm_trips_the_clippy_lint` (a fixture crate
+  reintroduces a `_ => ...` fallback arm and the test asserts
+  `clippy::wildcard_enum_match_arm` fires) and
+  `closed_enums_carry_no_non_exhaustive_attribute` (`FamilyKind`,
+  `Expression`, `NodeKind` and `WrongSnapshotCause` each inspected for the
+  attribute's absence).
 
-Zero of this requirement's seven Acceptance Criteria are backed by a
-dedicated, trace-tagged test today.
+Six of this requirement's seven Acceptance Criteria are backed by a
+dedicated, trace-tagged test today; AC-6 stays unbacked until QSL-152 lands
+the S4 category.
