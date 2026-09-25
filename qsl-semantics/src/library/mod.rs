@@ -702,6 +702,13 @@ pub(crate) struct ConflictingPin {
 }
 
 impl PinnedRequest {
+    /// A pinned request holding the one selection `selection` of `library`
+    /// (ADR-015 D-1 step 6: a library's own freshly emitted package, read
+    /// back into its import view).
+    pub fn single(library: LibraryName, selection: Selection) -> Self {
+        Self(BTreeMap::from([(library, selection)]))
+    }
+
     /// A pinned request from `entries`. A repeated identity with an equal
     /// selection is one pin; a repeated identity with a different
     /// selection is refused.

@@ -1600,9 +1600,13 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
         .expect("S2 builds the unit");
-    let declarations =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
-            .expect("the assembler builds the package declarations");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler builds the package declarations");
     let package = CheckedPackage::link(
         declarations
             .check(CheckingLimits::default())
@@ -1890,7 +1894,7 @@ fn the_spine_compile_fixture_reads_back_verified_with_nothing_omitted() {
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
         .expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit, Vec::new())
+    let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");
@@ -1932,7 +1936,8 @@ fn assemble_with_models(
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .map_err(|refusal| format!("intake: {refusal:?}"))?;
-    PackageDeclarations::assemble(raw, unit, models).map_err(|refusal| format!("{refusal:?}"))
+    PackageDeclarations::assemble(raw, unit, models, Vec::new())
+        .map_err(|refusal| format!("{refusal:?}"))
 }
 
 /// The spine-model fixture's inherited field access, which QSL's I2 read
@@ -2146,8 +2151,13 @@ fn an_unknown_model_type_refuses_at_the_assembler_and_a_missing_package_at_intak
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .unwrap();
-    let refusal = PackageDeclarations::assemble(parsed.source().reference().clone(), unit, models)
-        .expect_err("M::Nope refuses");
+    let refusal = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        models,
+        Vec::new(),
+    )
+    .expect_err("M::Nope refuses");
     let [error] = &refusal.errors[..] else {
         panic!("one error: {refusal:?}");
     };
@@ -2201,9 +2211,13 @@ fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
     )
     .unwrap();
     let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default()).unwrap();
-    let refusal =
-        PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
-            .expect_err("no package is admitted for M");
+    let refusal = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect_err("no package is admitted for M");
     let first = &refusal.errors[0];
     assert_eq!(
         first.cause,

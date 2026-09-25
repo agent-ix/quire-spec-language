@@ -17,6 +17,9 @@ mod checked_v2;
 mod emit;
 
 pub use checked::{CheckedPackage, EmittedPackage, Import, LinkRefusal, ResolvedDependency};
+pub use checked_v2::{
+    read_import_view, ImportViewRefusal, SourceMapDefect, UnsupportedWire, V2ReadRefusal,
+};
 pub use emit::{emit_checked, Emission, EmitRefusal, OmissionCause, OmittedNode};
 
 // ADR-011 §4 I2: `read_checked_package_v2`, its outcome type

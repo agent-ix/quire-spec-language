@@ -356,8 +356,8 @@ pub fn compile(
                 refusal,
             })
         })?;
-    let declarations =
-        PackageDeclarations::assemble(raw.clone(), unit, models).map_err(|refusal| {
+    let declarations = PackageDeclarations::assemble(raw.clone(), unit, models, Vec::new())
+        .map_err(|refusal| {
             Box::new(CompileRefusal::Assembly {
                 // A type-environment stage limit names no declaration, so it
                 // has no region (FR-082, FR-096).

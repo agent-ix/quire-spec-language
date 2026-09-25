@@ -66,13 +66,14 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use quire_contract_ir::{
-    CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
-    CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId,
-    CheckedNodeKind, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
-    CheckedPackageIdentityPreimageV2, CheckedPackageLockV2, CheckedRevision, CheckedSelection,
-    CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2,
-    CheckedSourceMapEntry, CheckedSourceRegion, NominalIdentityPreimage, NominalOwner,
-    CHECKED_PACKAGE_V2, DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
+    CheckedArtifactLocator, CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition,
+    CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef,
+    CheckedNodeId, CheckedNodeKind, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
+    CheckedPackageEvidence, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2,
+    CheckedRevision, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
+    CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRegion,
+    NominalIdentityPreimage, NominalOwner, CHECKED_PACKAGE_V2, DOMAIN_PACKAGE_DIGEST,
+    PACKAGE_DOMAIN_V2,
 };
 use serde::Serialize;
 
@@ -211,6 +212,12 @@ pub struct Emission {
     pub(crate) package: EmittedPackage,
     /// Every node of the checked graph the wire omits, ascending by node id.
     pub(crate) omitted: Vec<OmittedNode>,
+    /// The artifacts the emitted lock and diagnostics name, each at the
+    /// digest this emission computed from the bytes it compiled against, and
+    /// the lock's required features: the current-artifact evidence IR's
+    /// reader checks the lock against when these bytes are read back as a
+    /// dependency's import view (ADR-015 D-1 step 6).
+    pub(crate) evidence: CheckedPackageEvidence,
 }
 
 impl Emission {
@@ -824,7 +831,46 @@ pub(crate) fn emit_package(
         };
         quire_canonical::to_vec(&wire, IDENTITY_LIMITS).map_err(EmitRefusal::from)
     })?;
-    Ok(Emission { package, omitted })
+    let evidence = own_evidence(&lock, &diagnostics);
+    Ok(Emission {
+        package,
+        omitted,
+        evidence,
+    })
+}
+
+/// The evidence that the artifacts `lock` and `diagnostics` name are
+/// current: each at the digest the emitter wrote for it, which it computed
+/// from the bytes the package was compiled against, and each of the lock's
+/// required features. It attests this emission only: [`Emission`] is built
+/// by [`emit_checked`] alone, so no caller can pair it with other bytes.
+fn own_evidence(
+    lock: &CheckedPackageLockV2,
+    diagnostics: &CheckedDiagnosticsV2,
+) -> CheckedPackageEvidence {
+    let mut evidence = CheckedPackageEvidence::new();
+    for artifact in lock
+        .sources
+        .iter()
+        .chain([&lock.edition.definition])
+        .chain(&lock.definition_selections)
+        .chain([&diagnostics.catalog])
+    {
+        evidence.insert_artifact_digest(
+            CheckedArtifactLocator {
+                authority: artifact.authority.clone(),
+                identity: artifact.identity.clone(),
+                revision_namespace: artifact.revision.namespace.clone(),
+                revision_value: artifact.revision.value.clone(),
+                domain: artifact.digest_domain.clone(),
+            },
+            artifact.digest.clone(),
+        );
+    }
+    for feature in &lock.required_features {
+        evidence.support_feature(feature.clone());
+    }
+    evidence
 }
 
 #[cfg(test)]

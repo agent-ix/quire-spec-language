@@ -44,6 +44,7 @@ use super::node_key::{declared_type_handle, NodeKeyRefusal, SourceOwner};
 use super::type_form::{
     parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
+use crate::library::{ImportView, LibraryName};
 use crate::model::domain_package::{
     DomainPackageRecord, FieldMemberRecord, NativeValueType, ValueTypeRef,
 };
@@ -114,10 +115,10 @@ pub enum AssemblyCause {
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
     Handle(NodeKeyRefusal),
-    /// An `import` declaration names a library no dependency input supplies:
-    /// the spine takes no dependency packages yet, so E3 refuses every
-    /// import rather than drop it from the package (ADR-011 §2.4, FR-307
-    /// `missing-selection`).
+    /// An `import` declaration has no admitted import: the S4 source
+    /// resolution admitted no library for its identity, so E3 refuses it
+    /// rather than drop it from the package (ADR-011 §2.4, ADR-015 D-1,
+    /// FR-307 `missing-selection`).
     UnsuppliedImport {
         /// The library identity the import names.
         identity: String,
@@ -794,6 +795,17 @@ fn admit_types(
     }
 }
 
+/// One `import` the S4 source resolution admitted (ADR-015 D-1): the
+/// library identity it names and the library's verified import view
+/// (ADR-011 §4).
+#[derive(Clone, Debug)]
+pub struct AdmittedImport {
+    /// The library identity the import names.
+    pub identity: LibraryName,
+    /// The library's import view, read from its emitted v2 bytes.
+    pub view: ImportView,
+}
+
 impl PackageDeclarations {
     /// FR-091's assembler: the package declared by `unit`, the S2 output of
     /// the source unit `source` names, whose authority and identity are the
@@ -801,10 +813,15 @@ impl PackageDeclarations {
     /// domain packages I1 admitted for the unit's `model` declarations
     /// (`model::intake::admit_unit`). An admitted model whose alias no
     /// declaration of the unit spells binds nothing.
+    ///
+    /// `imports` are the imports the S4 source resolution admitted for the
+    /// unit's `import` declarations (ADR-015 D-1); an `import` with no
+    /// admitted entry of its identity is refused.
     pub fn assemble(
         source: RawSourceRef,
         unit: ParsedUnit,
         models: Vec<SelectedModel>,
+        imports: Vec<AdmittedImport>,
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
@@ -875,12 +892,17 @@ impl PackageDeclarations {
             }
         }
         for import in &selections.imports {
-            errors.push(AssemblyError {
-                cause: AssemblyCause::UnsuppliedImport {
-                    identity: import.identity.clone(),
-                },
-                span: import.span,
-            });
+            let admitted = imports
+                .iter()
+                .any(|admitted| admitted.identity.as_str() == import.identity);
+            if !admitted {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UnsuppliedImport {
+                        identity: import.identity.clone(),
+                    },
+                    span: import.span,
+                });
+            }
         }
         let profiles: BTreeSet<&str> = selections
             .profiles
