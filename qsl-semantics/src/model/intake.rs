@@ -54,6 +54,7 @@ use crate::model::refusal::IntakeLimit;
 use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::{LocatedSpan, Position};
+use quire_exact::Presence;
 
 mod unit;
 pub use unit::{admit_unit, package_input, SelectedModel, UnitIntakeCause, UnitIntakeRefusal};
@@ -1382,6 +1383,20 @@ fn read_field_member(
     let type_ref = ctx.str_field("typeRef")?;
     let value_type = read_value_type_ref(package, &ctx, type_ref)?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
+    // QSpec's own Presence row (`model-complete.md`:158): `presence` is
+    // exactly `required` or `optional`, independent of `multiplicity`'s
+    // lower bound. An unrecognized value still refuses rather than
+    // aborting, so a future FCD pin widening this enum degrades to a
+    // refusal, not a crash.
+    let presence = match ctx.str_field("presence")? {
+        "required" => Presence::Required,
+        "optional" => Presence::Optional,
+        other => {
+            return Err(ctx.malformed(format!(
+                "presence: {other:?} is not required/optional, the only presences this reader recognizes"
+            )))
+        }
+    };
     let subsets = ctx.identity_keys(package, "subsets")?;
     let redefines = ctx
         .opt_str_field("redefines")
@@ -1391,6 +1406,7 @@ fn read_field_member(
         owner: declaration_key(package, owner_identity),
         value_type,
         multiplicity,
+        presence,
         subsets,
         redefines,
     })
@@ -3415,6 +3431,7 @@ mod tests {
             "identity": format!("ix://acme/orders/Money/{name}"),
             "name": name,
             "typeRef": type_ref,
+            "presence": "required",
             "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": false},
         })
     }

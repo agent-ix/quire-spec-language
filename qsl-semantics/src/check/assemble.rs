@@ -448,9 +448,19 @@ enum Unmapped {
 }
 
 /// `field` as an object type's field: named by its member name, typed by
-/// its value type, `[1, 1]` required, `[0, 1]` optional and any wider
-/// multiplicity the collection its `ordered`/`unique` flags name, bounded
-/// by it. An unbounded multiplicity with a lower bound has no kernel type.
+/// its value type and multiplicity, and made `Optional` exactly when the
+/// domain package's own `presence` is `optional` -- never by a lower bound
+/// of `0` (QSpec's `model-complete.md` Presence row: "a lower bound of `0`
+/// makes an empty collection legal and never makes a field optional").
+/// `[1, 1]` gives the element type `E`; any other multiplicity gives the
+/// collection its `ordered`/`unique` flags name (`Set`, `Bag`, `Sequence`
+/// or `OrderedSet`), bounded when the upper bound is finite, and unbounded
+/// only when the lower bound is `0` -- an unbounded multiplicity with a
+/// lower bound above `0` has no kernel type (STD-100's model-owned member
+/// type table). The returned declaration's own `value_type` is always the
+/// unwrapped element or collection type; `check`'s `attribute`/`field`
+/// readers wrap it in `Option` from `presence()` alone, as they already do
+/// for every other `FieldDeclaration`.
 fn model_field(
     field: &FieldMemberRecord,
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
@@ -482,9 +492,8 @@ fn model_field(
         },
     };
     let multiplicity = field.multiplicity;
-    let (value_type, presence) = match (multiplicity.lower, multiplicity.upper) {
-        (1, Some(1)) => (element, Presence::Required),
-        (0, Some(1)) => (element, Presence::Optional),
+    let value_type = match (multiplicity.lower, multiplicity.upper) {
+        (1, Some(1)) => element,
         (lower, upper) => {
             let kind = match (multiplicity.ordered, multiplicity.unique) {
                 (true, true) => CollectionKind::OrderedSet,
@@ -499,13 +508,10 @@ fn model_field(
                 None if lower == 0 => None,
                 None => return Err(Unmapped::Unsupported),
             };
-            (
-                ValueType::collection(CollectionType::new(kind, element, bound)),
-                Presence::Required,
-            )
+            ValueType::collection(CollectionType::new(kind, element, bound))
         }
     };
-    let declaration = FieldDeclaration::new(name, value_type, presence);
+    let declaration = FieldDeclaration::new(name, value_type, field.presence);
     let Some(target) = &field.redefines else {
         return Ok(declaration);
     };

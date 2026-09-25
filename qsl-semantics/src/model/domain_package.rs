@@ -10,7 +10,7 @@
 //! document's IR nodes into these records.
 
 use crate::model::key::DeclarationKey;
-use quire_exact::OrderingOperator;
+use quire_exact::{OrderingOperator, Presence};
 
 /// A field or association-end multiplicity (FCD FR-113).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -176,7 +176,7 @@ impl std::fmt::Display for ValueTypeRef {
 }
 
 /// A field member of an object type: `{key, owner, value_type, multiplicity,
-/// subsets, redefines}`.
+/// presence, subsets, redefines}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FieldMemberRecord {
     /// This member's own original declaration key.
@@ -187,6 +187,12 @@ pub struct FieldMemberRecord {
     pub value_type: ValueTypeRef,
     /// The declared multiplicity.
     pub multiplicity: Multiplicity,
+    /// This field's declared `presence` (`model-complete.md`'s Presence
+    /// row): `Required` when every object carries the field, `Optional`
+    /// when it may be absent. Independent of `multiplicity`'s lower bound --
+    /// a lower bound of `0` makes an empty collection legal and never makes
+    /// a field optional; only this carries that.
+    pub presence: Presence,
     /// This field's declared `subsets[]` (`model-complete.md`:161): every
     /// entry names a field of the owning type or of a supertype whose
     /// runtime values this field's are a subset of. An inline property of

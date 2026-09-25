@@ -71,6 +71,7 @@ fn field_member_redefining(
         owner: DeclarationKey::fixture(owner),
         value_type: ValueTypeRef::Package(DeclarationKey::fixture(value_type)),
         multiplicity: m,
+        presence: quire_exact::Presence::Required,
         subsets: subsets.into_iter().map(DeclarationKey::fixture).collect(),
         redefines: redefines.map(DeclarationKey::fixture),
     })
@@ -1443,6 +1444,7 @@ fn r13_field_refinement_same_type_check_does_not_confuse_two_packages_scalar_of_
                 owner: DeclarationKey::fixture("model.B"),
                 value_type: ValueTypeRef::Package(redefining_value_type),
                 multiplicity: mult(1, Some(1)),
+                presence: quire_exact::Presence::Required,
                 subsets: vec![],
                 redefines: Some(DeclarationKey::fixture("model.A.x")),
             }),

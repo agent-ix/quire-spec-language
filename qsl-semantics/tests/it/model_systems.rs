@@ -78,6 +78,7 @@ fn field_member(
             DeclarationKey::fixture(value_type),
         ),
         multiplicity: m,
+        presence: quire_exact::Presence::Required,
         subsets: vec![],
         redefines: None,
     })
