@@ -1127,6 +1127,7 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
             // only its counter's starting value.
             limit: 4,
             actual: 5,
+            region: None,
         }))
     );
 }

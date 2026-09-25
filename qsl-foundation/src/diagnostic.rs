@@ -994,7 +994,6 @@ pub struct UndefinedRecord {
 
 #[cfg(test)]
 mod foundation_tests {
-    use ix_trace_rs::trace;
 
     use super::{
         category_of, resource_exhausted, CatalogCode, Category, Code, InternalFault, Phase, Source,
@@ -1015,7 +1014,6 @@ mod foundation_tests {
     /// names its catalog `LimitKind` (revision `1-draft.7`): the token
     /// ceiling is `token-count-exceeded`. The native-v1 `Diagnostic` has no
     /// typed cause field, so the kind is named in the rendered message.
-    #[trace("TC-113", "FR-035-AC-5")]
     #[test]
     fn resource_exhausted_reports_the_kind_that_maps_to_the_catalog() {
         let source = source();

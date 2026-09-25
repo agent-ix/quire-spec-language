@@ -1095,6 +1095,7 @@ impl<'a> Typer<'a> {
                     kind,
                     limit,
                     actual: u128::from(actual),
+                    region: None,
                 })),
             )
         };

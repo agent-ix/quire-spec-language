@@ -282,7 +282,9 @@ Partly implemented under QSL-160.
 - A family `check` locates its declaration-level limits at the
   declaration's span, and `Typer`'s depth stop at the node whose entry
   failed. Declarations not read from a unit carry no locus (AC-4, AC-5,
-  AC-11).
+  AC-11). Package checking keeps that region on the `CheckRefusal` it
+  returns (`StageLimitCause.region`), and `DeclarationRegions::refusal_region`
+  resolves any check refusal to its region.
 - The I2 reader returns T-4's `Result<Staged<_>, StageFailure<_>>`. It
   carries IR's version refusal as `unknown_wire`/`unsupported-wire`
   located at `/contract_version`, locates every IR refusal and limit

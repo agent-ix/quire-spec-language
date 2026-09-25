@@ -2606,6 +2606,7 @@ mod locus_tests {
     };
     use super::*;
     use crate::check::refusal::Origin as CheckOrigin;
+    use crate::check::refusal::StageLimitCause;
     use crate::check::PackageDeclarations;
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
     use ix_trace_rs::trace;
@@ -2801,6 +2802,81 @@ mod locus_tests {
         let exceeded = limit(ValueFunctionFamily::check(&form, &mut cx));
         assert_eq!(exceeded.kind(), LimitKind::InputBytes);
         assert_eq!(exceeded.locus(), None);
+    }
+
+    /// The one stage-limit refusal package checking returns for `unit`
+    /// under `limits`, with the region FR-096 locates it at.
+    fn package_limit(
+        unit: PackageDeclarations,
+        limits: CheckingLimits,
+    ) -> (StageLimitCause, Option<SourceRegion>) {
+        let regions = unit.regions();
+        let refusals = unit
+            .check(limits)
+            .expect_err("the limit stops package checking");
+        let [refusal] = refusals.as_slice() else {
+            panic!("one refusal, got {refusals:?}");
+        };
+        let CheckCause::ResourceExhausted(cause) = &refusal.cause else {
+            panic!("a stage limit, got {refusal:?}");
+        };
+        ((**cause).clone(), regions.refusal_region(refusal))
+    }
+
+    /// The bytes `region` names in [`UNIT`].
+    fn unit_text(region: Option<SourceRegion>) -> &'static str {
+        let region = region.expect("the limit is located");
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        &UNIT[start..end]
+    }
+
+    /// FR-096 through package checking, `ValueFunctionFamily::check`'s
+    /// production caller: `Typer`'s depth stop on `not not not true` under
+    /// depth 3 keeps the region of `true`, and the declaration-level input
+    /// bytes and work limits keep the declaration's span.
+    #[trace("TC-427", "TC-378", "FR-096-AC-4", "FR-096-AC-5", "FR-096-AC-11")]
+    #[test]
+    fn package_checking_keeps_the_family_limit_region() {
+        let (depth, region) = package_limit(unit(), CheckingLimits::new(u64::MAX, 3).unwrap());
+        assert_eq!(depth.kind, CheckingLimitKind::Depth);
+        assert_eq!((depth.limit, depth.actual), (3, 4));
+        assert_eq!(unit_text(region), "true");
+
+        let declaration = "function f using v(): Boolean pure { not not not true }";
+        let bytes = measure_resolved(&empty_scope(), &unit().functions[0]).input_bytes;
+        let (input, region) = package_limit(
+            unit(),
+            CheckingLimits::default().with_input_bytes(bytes - 1),
+        );
+        assert_eq!(input.kind, CheckingLimitKind::InputBytes);
+        assert_eq!(unit_text(region), declaration);
+
+        let charge = measure_resolved(&empty_scope(), &unit().functions[0]).work_budget;
+        let (work, region) = package_limit(
+            unit(),
+            CheckingLimits::default().with_work_budget(charge - 1),
+        );
+        assert_eq!(work.kind, CheckingLimitKind::WorkBudget);
+        assert_eq!(unit_text(region), declaration);
+    }
+
+    /// FR-096 through package checking: a function with no form spans (one
+    /// synthesized for FR-151 dispatch) in a unit whose regions are
+    /// supplied reaches `Typer`'s depth stop with no region.
+    #[trace("TC-378", "FR-096-AC-11")]
+    #[test]
+    fn package_checking_locates_no_limit_in_a_function_without_spans() {
+        let nested = Expression::Not(Box::new(Expression::Not(Box::new(Expression::Not(
+            Box::new(Expression::Boolean(true)),
+        )))));
+        let mut unit = unit();
+        unit.functions = vec![declaration("f", nested)];
+        assert!(unit.functions[0].spans().is_none());
+        let (depth, region) = package_limit(unit, CheckingLimits::new(u64::MAX, 3).unwrap());
+        assert_eq!(depth.kind, CheckingLimitKind::Depth);
+        assert_eq!(depth.region, None);
+        assert_eq!(region, None);
     }
 
     /// FR-096-AC-5: a declaration whose work charge a budget `W` denies

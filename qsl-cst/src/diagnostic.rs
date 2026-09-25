@@ -345,7 +345,6 @@ pub fn resource_exhausted(
 #[cfg(test)]
 mod tests {
     use super::{resource_exhausted, CompleteCause, CompleteCode};
-    use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::LimitKind;
     use qsl_foundation::{Phase, Source, SourceIdentity, Span, SyntaxLimit};
 
@@ -362,7 +361,6 @@ mod tests {
     /// Every `SyntaxLimit` kind reports `stage_limit_exceeded/<kind>-exceeded`
     /// (catalog revision `1-draft.7`); the token ceiling is
     /// `token-count-exceeded`.
-    #[trace("TC-113", "FR-035-AC-5")]
     #[test]
     fn resource_exhausted_reports_the_kind_that_maps_to_the_catalog() {
         let source = source();

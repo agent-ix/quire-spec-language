@@ -106,8 +106,8 @@ use quire_contract_ir::{
 };
 
 use qsl_foundation::diagnostic::{
-    CatalogCode, CatalogCoded, Code, JsonPointer, LimitExceeded, LimitKind, Locus, RefusalRecord,
-    StageFailure, Staged,
+    CatalogCode, CatalogCoded, Code, InternalFault, JsonPointer, LimitExceeded, LimitKind, Locus,
+    RefusalRecord, StageFailure, Staged,
 };
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::{
@@ -340,6 +340,10 @@ pub(crate) enum V2ReadRefusal {
     /// crate's own provenance types, not a second admission decision.
     #[error("source map conversion failed: {0}")]
     SourceMap(#[from] SourceMapDefect),
+    /// A broken invariant between IR's reader and this one (ADR-013 T-4):
+    /// IR reported a pointer that is not RFC 6901 text.
+    #[error("internal fault: {} broke {}", .0.stage(), .0.invariant())]
+    Fault(InternalFault),
 }
 
 /// Why an admitted wire's `source_map` did not convert into a
@@ -446,6 +450,7 @@ impl V2ReadRefusal {
             Self::Structural(refusal) => refusal.code(),
             Self::Preimage(_) => Code::InvalidPackage,
             Self::SourceMap(_) => Code::InvalidSourceMap,
+            Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
 
@@ -462,7 +467,7 @@ impl V2ReadRefusal {
             Self::UnsupportedVersion { locus, .. }
             | Self::UnsupportedDependencySelections { locus } => Some(locus),
             Self::Envelope { locus, .. } => locus.as_deref(),
-            Self::Structural(_) | Self::Preimage(_) | Self::SourceMap(_) => None,
+            Self::Structural(_) | Self::Preimage(_) | Self::SourceMap(_) | Self::Fault(_) => None,
         }
     }
 
@@ -542,6 +547,9 @@ fn limit_kind(kind: CheckedPackageLimit) -> LimitKind {
     }
 }
 
+/// IR reported a pointer that is not RFC 6901 text.
+const IR_POINTER_FAULT: InternalFault = InternalFault::new("I2", "ir-pointer-is-rfc-6901");
+
 /// The supplied bytes' `raw-artifact-digest` record, and the loci it names.
 struct Artifact(DigestRecord);
 
@@ -559,12 +567,23 @@ impl Artifact {
     }
 
     /// `Locus::Artifact` at the pointer IR reported, or `None` when IR
-    /// reported none. IR builds every pointer as RFC 6901 text, which is
-    /// the grammar [`JsonPointer`] parses, so a reported pointer always
-    /// converts.
-    fn at_ir(&self, pointer: Option<&quire_contract_ir::JsonPointer>) -> Option<Locus> {
-        let pointer = pointer?.as_str().parse().ok()?;
-        Some(self.at(pointer))
+    /// reported none. IR builds every pointer as RFC 6901 text, the grammar
+    /// [`JsonPointer`] parses, so a pointer that does not parse is a broken
+    /// invariant between IR and this reader, never a property of the bytes.
+    fn at_ir(
+        &self,
+        pointer: Option<&quire_contract_ir::JsonPointer>,
+    ) -> Result<Option<Locus>, InternalFault> {
+        let Some(pointer) = pointer else {
+            return Ok(None);
+        };
+        match pointer.as_str().parse() {
+            Ok(pointer) => Ok(Some(self.at(pointer))),
+            Err(invalid) => {
+                debug_assert!(false, "IR reported a non-RFC-6901 pointer: {invalid}");
+                Err(IR_POINTER_FAULT)
+            }
+        }
     }
 }
 
@@ -720,7 +739,10 @@ pub(crate) fn read_checked_package_v2(
         }
         CheckedPackageDispatchResult::Refused(refusal) => {
             let artifact = Artifact::of(bytes);
-            let locus = artifact.at_ir(refusal.path.as_ref()).map(Box::new);
+            let locus = match artifact.at_ir(refusal.path.as_ref()) {
+                Ok(locus) => locus.map(Box::new),
+                Err(fault) => return refused(V2ReadRefusal::Fault(fault)),
+            };
             refused(match (refusal.code, &refusal.contract_version, locus) {
                 (CheckedPackageRefusalCode::UnknownContractVersion, Some(actual), Some(locus)) => {
                     V2ReadRefusal::UnsupportedVersion {
@@ -741,9 +763,11 @@ pub(crate) fn read_checked_package_v2(
             limit,
             consumed,
             path,
-        }) => Err(StageFailure::Limit(
-            LimitExceeded::new(limit_kind(kind), limit, u128::from(consumed))
-                .at(Artifact::of(bytes).at_ir(path.as_ref())),
-        )),
+        }) => match Artifact::of(bytes).at_ir(path.as_ref()) {
+            Ok(locus) => Err(StageFailure::Limit(
+                LimitExceeded::new(limit_kind(kind), limit, u128::from(consumed)).at(locus),
+            )),
+            Err(fault) => refused(V2ReadRefusal::Fault(fault)),
+        },
     }
 }

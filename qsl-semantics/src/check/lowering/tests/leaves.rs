@@ -570,6 +570,7 @@ fn a_text_reachable_cluster_refuses_on_the_default_node_ceiling() {
             kind: CheckingLimitKind::Nodes,
             limit: 100_000,
             actual: 100_001,
+            region: None,
         }))
     );
     assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");

@@ -2,6 +2,7 @@
 //! Located checking refusals and their closed codes and causes.
 
 use qsl_foundation::diagnostic::{Code, LimitKind};
+use qsl_foundation::source::provenance::SourceRegion;
 use quire_exact::EffectiveId;
 use quire_exact::Integer;
 use quire_exact::{IllTyped, IllTypedCause};
@@ -244,7 +245,7 @@ impl WrongSnapshotCause {
 /// [`CheckCause::ResourceExhausted`]'s payload (QSL-236): the checking
 /// stage, the limit kind reached, its declared bound and the counter value
 /// the refused step would have reached.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct StageLimitCause {
     /// The checking stage.
     pub stage: CheckingStage,
@@ -254,6 +255,11 @@ pub struct StageLimitCause {
     pub limit: u64,
     /// The counter value the refused step would have reached.
     pub actual: u128,
+    /// FR-096: the region where a family `check` reached the limit, when
+    /// the refusal's `location` cannot name it: a declaration's whole span,
+    /// or the node `Typer`'s depth stop failed at. `None` when `location`
+    /// names the position, or when no region of the unit does.
+    pub region: Option<SourceRegion>,
 }
 
 /// The typed cause of a checking refusal.
@@ -612,8 +618,8 @@ impl CheckRefusal {
 
 #[cfg(test)]
 mod tests {
-    use super::{CheckCause, CheckingLimitKind, CheckingStage, StageLimitCause};
-    use qsl_foundation::diagnostic::Code;
+    use super::{CheckCause, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause};
+    use qsl_foundation::diagnostic::{Code, LimitKind};
 
     /// QSL-236: every `CheckingLimitKind` reports `stage_limit_exceeded`
     /// with its own `<kind>-exceeded` cause, and carries the bound and
@@ -632,6 +638,7 @@ mod tests {
                 kind,
                 limit: 10,
                 actual: 11,
+                region: None,
             }));
             assert_eq!(refused.code(), Code::StageLimitExceeded, "{kind:?}");
             assert_eq!(refused.cause(), Some(cause), "{kind:?}");
@@ -641,5 +648,28 @@ mod tests {
             assert_eq!(exceeded.limit, 10);
             assert_eq!(exceeded.actual, 11);
         }
+    }
+
+    /// The four kinds a checking limit names convert back from
+    /// `LimitKind`; the S1 and I2 kinds no checking limit names refuse,
+    /// and name the `KeyFault` `check::mod` raises for them.
+    #[test]
+    fn only_checking_kinds_convert_from_a_limit_kind() {
+        for (kind, expected) in [
+            (LimitKind::NestingDepth, Ok(CheckingLimitKind::Depth)),
+            (LimitKind::NodeCount, Ok(CheckingLimitKind::Nodes)),
+            (LimitKind::InputBytes, Ok(CheckingLimitKind::InputBytes)),
+            (LimitKind::WorkBudget, Ok(CheckingLimitKind::WorkBudget)),
+            (LimitKind::TokenCount, Err(LimitKind::TokenCount)),
+            (LimitKind::EdgeCount, Err(LimitKind::EdgeCount)),
+            (LimitKind::OccurrenceCount, Err(LimitKind::OccurrenceCount)),
+            (LimitKind::DiagnosticCount, Err(LimitKind::DiagnosticCount)),
+        ] {
+            assert_eq!(CheckingLimitKind::try_from(kind), expected, "{kind:?}");
+        }
+        assert_eq!(
+            KeyFault::UncheckedLimitKind(LimitKind::TokenCount).invariant(),
+            "family-limit-is-a-checking-limit"
+        );
     }
 }

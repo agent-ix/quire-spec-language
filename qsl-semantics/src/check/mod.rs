@@ -108,7 +108,7 @@ use quire_exact::Identifier;
 
 use crate::family::FamilyContract;
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
-use qsl_foundation::diagnostic::StageFailure;
+use qsl_foundation::diagnostic::{Locus, StageFailure};
 use quire_exact::ValueType;
 
 pub use check::Scope;
@@ -887,6 +887,10 @@ impl PackageDeclarations {
                             kind,
                             limit: limit.configured_bound(),
                             actual: limit.actual(),
+                            region: match limit.locus() {
+                                Some(Locus::Region(region)) => Some(region.clone()),
+                                Some(Locus::Occurrence(_) | Locus::Artifact { .. }) | None => None,
+                            },
                         })),
                         Err(kind) => {
                             CheckCause::InternalFault(Box::new(KeyFault::UncheckedLimitKind(kind)))
