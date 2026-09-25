@@ -36,7 +36,7 @@ const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
 /// The fixture unit admitted as (`a`, `u`, `git`, `1`): its owner `(a, u)`
 /// is the one FR-092's golden vectors are keyed under.
-fn source() -> RawSourceRef {
+pub(super) fn source() -> RawSourceRef {
     qsl_semantics::check::admitted_source(
         qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
         TEXT,
@@ -44,7 +44,7 @@ fn source() -> RawSourceRef {
 }
 
 /// Places every occurrence at the whole fixture unit.
-fn whole_unit(_: &Location) -> Option<SourceRegion> {
+pub(super) fn whole_unit(_: &Location) -> Option<SourceRegion> {
     Some(SourceRegion::new(source(), 0, TEXT.len() as u64).unwrap())
 }
 
@@ -171,7 +171,7 @@ fn emit(package: &CheckedPackage) -> Emission {
     emit_package(package, whole_unit).expect("the package emits")
 }
 
-fn wire(emission: &Emission) -> Value {
+pub(super) fn wire(emission: &Emission) -> Value {
     serde_json::from_slice(emission.package.bytes()).expect("the wire is JSON")
 }
 
@@ -188,7 +188,7 @@ fn library() -> LibraryName {
 }
 
 /// Every artifact reference in `value`, recorded as current evidence.
-fn locked_artifacts(value: &Value, evidence: &mut CheckedPackageEvidence) {
+pub(super) fn locked_artifacts(value: &Value, evidence: &mut CheckedPackageEvidence) {
     match value {
         Value::Object(members) => {
             if let (Some(authority), Some(identity), Some(revision), Some(domain), Some(digest)) = (
@@ -262,7 +262,7 @@ fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     }
 }
 
-fn nodes(wire: &Value) -> &[Value] {
+pub(super) fn nodes(wire: &Value) -> &[Value] {
     wire["semantic_graph"]["nodes"].as_array().unwrap()
 }
 
