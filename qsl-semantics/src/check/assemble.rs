@@ -13,6 +13,14 @@
 //! error found, each with its typed cause and the span it concerns, and no
 //! partial output (ADR-011 §2.3 E3).
 //!
+//! Each `model M = … digest "sha256-jcs:…"` declaration names a domain
+//! package I1 admitted (`model::intake::admit_unit`, FR-056): its object
+//! types are named `M::T`, `T` the type's artifact id, and resolve to
+//! `ValueType::Reference` of their effective identity. The package's
+//! `TypeEnvironment` declares them with their supertypes, and its `models`
+//! carries each admitted domain package for `check` to key model nodes
+//! against (FR-094).
+//!
 //! Enum, dimension, unit and predicate declarations have no S2 production
 //! yet (FR-091-AC-6), so no enum or unit reaches here.
 
@@ -28,14 +36,16 @@ use qsl_foundation::{Code, Span};
 use quire_exact::{EffectiveId, IeeeWidth, Presence, RoundingMode, ValueType};
 
 use super::check::{PackageDeclarations, ResolvedSignature};
-use super::lowering::strongly_connected;
+use super::lowering::{strongly_connected, AdmittedModel};
 use super::node_key::{declared_type_handle, NodeKeyRefusal, SourceOwner};
 use super::type_form::{
     parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
+use crate::model::domain_package::DomainPackageRecord;
+use crate::model::intake::{type_identity_segment, SelectedModel};
 use crate::value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, InvalidDeclaration,
-    TypeEnvironment,
+    ObjectTypeDeclaration, TypeEnvironment,
 };
 
 /// Why the assembler refused one part of a unit (FR-091 "The assembler
@@ -98,6 +108,20 @@ pub enum AssemblyCause {
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
     Handle(NodeKeyRefusal),
+    /// A `model` declaration names no domain package admitted at I1.
+    UnadmittedModel {
+        /// The declaration's alias.
+        alias: String,
+    },
+    /// An admitted domain package's object type has no artifact id or no
+    /// effective identity in its view: a broken invariant of I1, never a
+    /// property of the source.
+    ModelType {
+        /// The declaration's alias.
+        alias: String,
+        /// The object type's IR node identity.
+        node: String,
+    },
 }
 
 impl AssemblyCause {
@@ -107,6 +131,8 @@ impl AssemblyCause {
             Self::UnresolvedTypeName { .. } | Self::UndeclaredAlias { .. } => {
                 Code::MissingDeclaration
             }
+            Self::UnadmittedModel { .. } => Code::MissingImport,
+            Self::ModelType { .. } => Code::RuntimeInvariant,
             Self::AmbiguousTypeName { .. } | Self::DuplicateAlias { .. } => {
                 Code::AmbiguousDeclaration
             }
@@ -142,7 +168,8 @@ impl AssemblyCause {
             Self::IllFormedBounds(_) => "type-mismatch",
             Self::FloatingType { .. } => "unsupported-feature",
             Self::AliasCycle { .. } => "definition-cycle",
-            Self::UndeclaredAlias { .. } => "missing-selection",
+            Self::UndeclaredAlias { .. } | Self::UnadmittedModel { .. } => "missing-selection",
+            Self::ModelType { .. } => "established-invariant-broken",
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
                 DeclarationCause::DuplicateMember(_) => "ambiguous-name",
                 DeclarationCause::Type(cause) => cause.tag().unwrap_or("type-mismatch"),
@@ -261,12 +288,14 @@ impl Unit {
 }
 
 /// The names the assembler resolves type forms against while it builds the
-/// package: each declared record's and tuple's `ValueType::Composite`, and
-/// each alias once resolved. The unit admits no domain package yet, so no
-/// name is an object type.
+/// package: each declared record's and tuple's `ValueType::Composite`, each
+/// alias once resolved, and each admitted domain package's object type
+/// `M::T` as `ValueType::Reference` (the order `check`'s scope binds them
+/// in).
 #[derive(Default)]
 struct Names {
     types: BTreeMap<String, Vec<ValueType>>,
+    object_types: BTreeMap<String, EffectiveId>,
 }
 
 impl TypeNames for Names {
@@ -274,9 +303,52 @@ impl TypeNames for Names {
         self.types.get(name).map_or(&[], Vec::as_slice)
     }
 
-    fn object_type_named(&self, _name: &str) -> Option<EffectiveId> {
-        None
+    fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
+        self.object_types.get(name).copied()
     }
+}
+
+/// The object types of the domain package admitted for the `model`
+/// declaration `alias`, each named `alias::T` with `T` its artifact id and
+/// declaring its supertypes by their effective identities.
+fn model_object_types(
+    alias: &str,
+    model: &SelectedModel,
+    span: Span,
+) -> Result<Vec<ObjectTypeDeclaration>, AssemblyError> {
+    let identities = model.view.type_identities();
+    let broken = |node: &str| AssemblyError {
+        cause: AssemblyCause::ModelType {
+            alias: alias.to_owned(),
+            node: node.to_owned(),
+        },
+        span,
+    };
+    let mut declarations = Vec::new();
+    for record in &model.view.domain_package().records {
+        let DomainPackageRecord::ObjectType(object) = record else {
+            continue;
+        };
+        let key = &object.key;
+        let artifact =
+            type_identity_segment(&key.package, &key.node).ok_or_else(|| broken(&key.node))?;
+        let identity = identities.get(key).ok_or_else(|| broken(&key.node))?;
+        let supertypes = object
+            .supertypes
+            .iter()
+            .map(|supertype| {
+                identities
+                    .get(supertype)
+                    .copied()
+                    .ok_or_else(|| broken(&supertype.node))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        declarations.push(
+            ObjectTypeDeclaration::new(*identity, format!("{alias}::{artifact}"), Vec::new())
+                .with_supertypes(supertypes),
+        );
+    }
+    Ok(declarations)
 }
 
 /// A function signature's type forms: its parameters' and its result's,
@@ -358,11 +430,12 @@ fn body_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
 }
 
 /// The declared-name check of one type form tree (FR-091 "The assembler
-/// refuses"): every name must bind exactly one declaration of the unit, a
-/// `Reference<Q>` target must name an object type of an admitted domain
-/// package (the unit admits none yet), and a floating type is refused.
+/// refuses"): every name must bind exactly one declaration of the unit or
+/// one object type of an admitted domain package, a `Reference<Q>` target
+/// must name such an object type, and a floating type is refused.
 fn check_names(
     unit: &Unit,
+    object_types: &BTreeMap<String, EffectiveId>,
     form: &TypeForm,
     profile: Option<&str>,
     errors: &mut Vec<AssemblyError>,
@@ -401,18 +474,21 @@ fn check_names(
             TypeFormHead::Builtin(BuiltinType::Reference) => {
                 for target in &form.arguments {
                     let name = match &target.head {
-                        TypeFormHead::Name(name) => name.clone(),
+                        TypeFormHead::Name(name) => name,
                         TypeFormHead::Builtin(_)
                         | TypeFormHead::Collection(_)
                         | TypeFormHead::Population => continue,
                     };
-                    errors.push(AssemblyError {
-                        cause: AssemblyCause::UnresolvedTypeName { name },
-                        span: target.span,
-                    });
+                    if !object_types.contains_key(name) {
+                        errors.push(AssemblyError {
+                            cause: AssemblyCause::UnresolvedTypeName { name: name.clone() },
+                            span: target.span,
+                        });
+                    }
                 }
             }
             TypeFormHead::Name(name) => match unit.declared.get(name).map(Vec::len) {
+                None | Some(0) if object_types.contains_key(name) => {}
                 None | Some(0) => errors.push(AssemblyError {
                     cause: AssemblyCause::UnresolvedTypeName { name: name.clone() },
                     span: form.span,
@@ -491,11 +567,12 @@ fn refuse<T>(errors: Vec<AssemblyError>) -> Result<T, AssemblyRefusal> {
 /// ends.
 fn admit_types(
     mut declarations: Vec<CompositeDeclaration>,
+    object_types: &[ObjectTypeDeclaration],
     spans: &BTreeMap<String, Span>,
 ) -> Result<TypeEnvironment, AssemblyRefusal> {
     let mut errors = Vec::new();
     loop {
-        match TypeEnvironment::new(declarations.clone(), []) {
+        match TypeEnvironment::new(declarations.clone(), object_types.iter().cloned()) {
             Ok(types) if errors.is_empty() => return Ok(types),
             Ok(_) => return refuse(errors),
             Err(StageFailure::Limit(limit)) => {
@@ -536,11 +613,43 @@ fn admit_types(
 impl PackageDeclarations {
     /// FR-091's assembler: the package declared by `unit`, the S2 output of
     /// the source unit `source` names, whose authority and identity are the
-    /// owner of every declared node (ADR-013 O-04).
-    pub fn assemble(source: RawSourceRef, unit: ParsedUnit) -> Result<Self, AssemblyRefusal> {
+    /// owner of every declared node (ADR-013 O-04), over `models`, the
+    /// domain packages I1 admitted for the unit's `model` declarations
+    /// (`model::intake::admit_unit`). An admitted model whose alias no
+    /// declaration of the unit spells binds nothing.
+    pub fn assemble(
+        source: RawSourceRef,
+        unit: ParsedUnit,
+        models: Vec<SelectedModel>,
+    ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
+
+        // Each `model` declaration's admitted domain package, and its
+        // object types by name.
+        let mut admitted = Vec::with_capacity(selections.models.len());
+        let mut object_types = Vec::new();
+        for selection in &selections.models {
+            let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UnadmittedModel {
+                        alias: selection.alias.clone(),
+                    },
+                    span: selection.span,
+                });
+                continue;
+            };
+            match model_object_types(&selection.alias, model, selection.span) {
+                Ok(declarations) => object_types.extend(declarations),
+                Err(error) => errors.push(error),
+            }
+            admitted.push(AdmittedModel::from_view(&model.view));
+        }
+        let object_names: BTreeMap<String, EffectiveId> = object_types
+            .iter()
+            .map(|declaration| (declaration.name().to_owned(), declaration.key()))
+            .collect();
 
         // Selection aliases are unique within a unit, and a `using` alias
         // names one of its profile selections.
@@ -612,18 +721,18 @@ impl PackageDeclarations {
 
         // Every type form names declarations of the unit only.
         for alias in &unit.aliases {
-            check_names(&unit, &alias.target, None, &mut errors);
+            check_names(&unit, &object_names, &alias.target, None, &mut errors);
         }
         for composite in &unit.composites {
             match &composite.members {
                 Members::Record(fields) => {
                     for field in fields {
-                        check_names(&unit, &field.type_form, None, &mut errors);
+                        check_names(&unit, &object_names, &field.type_form, None, &mut errors);
                     }
                 }
                 Members::Tuple(elements) => {
                     for element in elements {
-                        check_names(&unit, element, None, &mut errors);
+                        check_names(&unit, &object_names, element, None, &mut errors);
                     }
                 }
             }
@@ -631,10 +740,10 @@ impl PackageDeclarations {
         for function in &unit.functions {
             let profile = function.using().map(|using| using.alias.as_str());
             for form in signature_type_forms(function) {
-                check_names(&unit, form, profile, &mut errors);
+                check_names(&unit, &object_names, form, profile, &mut errors);
             }
             for form in body_type_forms(function) {
-                check_names(&unit, &form, profile, &mut errors);
+                check_names(&unit, &object_names, &form, profile, &mut errors);
             }
         }
         if !errors.is_empty() {
@@ -643,7 +752,17 @@ impl PackageDeclarations {
 
         // Each declared record and tuple's handle, over the unit's owner.
         let owner = SourceOwner::from(&source);
-        let mut names = Names::default();
+        let mut names = Names {
+            object_types: object_names.clone(),
+            ..Names::default()
+        };
+        for (name, identity) in &object_names {
+            names
+                .types
+                .entry(name.clone())
+                .or_default()
+                .push(ValueType::Reference(*identity));
+        }
         let mut handles = Vec::with_capacity(unit.composites.len());
         for composite in &unit.composites {
             match declared_type_handle(&owner, &composite.name.name) {
@@ -795,10 +914,11 @@ impl PackageDeclarations {
         if !errors.is_empty() {
             return refuse(errors);
         }
-        let types = admit_types(declarations, &declared_type_spans)?;
+        let types = admit_types(declarations, &object_types, &declared_type_spans)?;
 
         let mut package = PackageDeclarations::new(source);
         package.types = types;
+        package.models = admitted;
         package.aliases = unit
             .aliases
             .iter()

@@ -2732,7 +2732,7 @@ mod locus_tests {
         .expect("S1 reads the unit");
         assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
         let forms = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
-        PackageDeclarations::assemble(parsed.source().reference().clone(), forms)
+        PackageDeclarations::assemble(parsed.source().reference().clone(), forms, Vec::new())
             .expect("the unit assembles")
     }
 

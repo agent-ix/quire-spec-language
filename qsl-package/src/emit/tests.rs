@@ -1597,7 +1597,7 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
         .expect("S2 builds the unit");
-    let declarations = PackageDeclarations::assemble(parsed.source().reference().clone(), unit)
+    let declarations = PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
         .expect("the assembler builds the package declarations");
     let package = CheckedPackage::link(
         declarations
@@ -1886,7 +1886,7 @@ fn the_spine_compile_fixture_reads_back_verified_with_nothing_omitted() {
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
         .expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit)
+    let graph = PackageDeclarations::assemble(raw, unit, Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");
