@@ -75,7 +75,7 @@ pub enum ReplayRefusal {
     /// digest is one the executor cannot recompute and compare (QSpec
     /// FR-323-AC-5).
     #[error("the package reference names {} under {}, which is not a source the replay recompiles", .0.identity(), .0.digest().domain())]
-    NotASource(RawSourceRef),
+    NotASource(Box<RawSourceRef>),
     /// The package reference does not name exactly one source unit. The
     /// spine recompiles one unit: a package over more than one waits on
     /// E3 import resolution (FR-087-AC-13).
@@ -251,7 +251,7 @@ fn recompile(request: &ReplayRequest) -> Result<CheckedPackage, ReplayRefusal> {
         .iter()
         .find(|reference| reference.digest().domain() != DigestDomain::SourceBytesV1)
     {
-        return Err(ReplayRefusal::NotASource(other.clone()));
+        return Err(ReplayRefusal::NotASource(Box::new(other.clone())));
     }
     let [source] = request.source_digests() else {
         return Err(ReplayRefusal::SourceCount(request.source_digests().len()));

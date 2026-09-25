@@ -237,7 +237,8 @@ impl SemanticNode {
         let Some(SemanticTerm::Binding { name, value }) = members.first() else {
             return None;
         };
-        let (true, SemanticTerm::Aggregate { members }) = (name == "parameters", value.as_ref())
+        let (true, SemanticTerm::Aggregate { members }) =
+            (name == FUNCTION_PARAMETERS, value.as_ref())
         else {
             return None;
         };
@@ -250,6 +251,10 @@ impl SemanticNode {
             .collect()
     }
 }
+
+/// The name of the binding a function node's body holds its parameter
+/// nodes under, first among its members (FR-092 "Function nodes").
+const FUNCTION_PARAMETERS: &str = "parameters";
 
 /// The checked semantic graph: every lowered node by key.
 #[derive(Clone, Debug, Default)]
@@ -2401,7 +2406,7 @@ impl<'a> Lowering<'a> {
         let result = self.type_node(function.result, function.location)?;
         self.record(result, "type", function.location.clone());
         let mut members = vec![SemanticTerm::binding(
-            "parameters",
+            FUNCTION_PARAMETERS,
             SemanticTerm::Aggregate {
                 members: parameters
                     .iter()
