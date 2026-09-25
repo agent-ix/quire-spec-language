@@ -142,8 +142,7 @@ type is B-2 wherever it is read, including `ModelNormalizationLimitsV1`,
 which S3 `model` reads (QSpec FR-150, NFR-012, ADR-013 O-21). A ceiling of a
 stage's own limits type is B-3. On this rule the only reclassification is the
 expression checker's `TypeEnvironmentLimits{ancestor_steps, work_units}`: it
-is a check-stage limits type, so it is B-3, as FR-096 already states for
-every S3 ceiling. §12 amends FR-082 to match.
+is a check-stage limits type, so it is B-3. §12 amends FR-082, FR-096 and ADR-013 T-4 to say this rule.
 
 A caller may set a B-2 ceiling and a B-3 ceiling from one configured number,
 for example the same `ancestor_steps` value for population admission and for
@@ -184,7 +183,7 @@ invalid. No bound in QSL is "unspecified".
 | TR-1 | Trace identity | No new identity or digest domain. A counterexample trace is identified by its packet (obligation identity O-09, occurrence key O-07) and compared lexically over its canonical encoding, as O-25 compares a transcript. A sampled trace is identified by `SampleProvenance{seed, sampler_version}` plus its index in the run's output. An observation trace handed to S6a is an input value, not an identity | A trace never takes its identity from arrival order or storage position (ADR-013 R-05). QSpec FR-181 names the sampler by `DefinitionRef`; replacing `sampler_version: String` with it is the simulation lane's work |
 | TR-2 | Trace position | Layer-5 TemporalTrace evaluator: `TemporalPosition(u64)`, the zero-based index into the represented trace, prefix first, then loop. It crosses replay in `qsl_replay::TracePosition` as decimal ASCII with no leading zero (`0` is position zero). Replay stores it and does not read it (O-25) | Only the TemporalTrace evaluate hook decodes it. A position outside the represented trace refuses at reconstruction, `invalid_runtime_input`/`invalid-value` |
 | TR-3 | Interval | Layer-3 TemporalTrace `check`: `TemporalInterval{lower: u64, upper: u64}`, one validated constructor. It exists only under a bounded profile. Its key is QSpec FR-255's (`lower`, `upper`, profile identity, clock binding), and it is identified by the checked node id of the operator that carries it (O-04). A checked operator holds `Option<TemporalInterval>`: `Some` under a bounded profile, `None` under infinite-trace | `lower > upper`, a missing interval under a bounded profile, any interval (including `[a,*]`) under infinite-trace, and `[a,*]` under a bounded profile each refuse as QSpec FR-091, FR-092 and FR-090 state. Bounded and infinite-trace operators never share a representation |
-| TR-4 | Horizon | Derived, not stored. The TemporalTrace `check` computes the greatest reach of a bounded-profile formula's intervals with checked arithmetic. Overflow refuses `unsupported_construct`/`expression-form` at the operator. An infinite-trace formula has no horizon | A horizon is a B-1 consequence, never a budget |
+| TR-4 | Horizon | Derived, not stored. The TemporalTrace `check` computes the greatest reach of a bounded-profile formula's intervals with checked arithmetic. Overflow past `u64` refuses as a TemporalTrace `check` stage limit, `LimitExceeded` with limit kind work budget (`stage_limit_exceeded`), at the operator. An infinite-trace formula has no horizon | A horizon is a B-1 consequence, never a budget |
 | TR-5 | Evaluation budget | The kernel `Meter` (B-2). The S6a TemporalTrace evaluator charges `quire_exact::LimitKind::WorkUnits` once per (temporal node, position) visit | Running out yields `Incomplete`, never a truth value. The native `quire.native.temporal-work/1` counters retire with M-6c |
 | TR-6 | Seed | `SampleProvenance.seed` in `qsl_eval::simulation`. Exhaustive exploration (`explore`) has no seed: it is deterministic given its `Limits` and the model | The same seed and sampler reproduce the same traces |
 | TR-7 | Frontier | `qsl_eval::simulation::frontier::Frontier` in `explore::Outcome::{Bounded{frontier, limit}, Cancelled{frontier}}` | An exploration that stops early reports its frontier and never claims exhaustive success (QSpec FR-181) |
@@ -204,9 +203,11 @@ Three concepts, three types:
 - **Mode** is a property of a backend advertisement: `qsl_route::Mode{Bounded,
   Unbounded}`, which exists.
 
-**Domain key.** F `bound::DomainKey{parameter: WireNodeId, path: Vec<u32>}`
-names one type position: the parameter or bound variable node, then the
-child-index path into its type (element, field, variant payload). It is a
+**Domain key.** F `bound::DomainKey{node: WireNodeId, path: Vec<u32>}` names
+one unbounded domain: the checked node that carries it (a parameter, a bound
+variable, a loop, or a temporal clause), then, for a type position, the
+child-index path into that node's type (element, field, variant payload). A
+loop or a clause has an empty path. It is a
 wire-level key because it crosses to CG and to replay; layer 3 converts its
 `NodeKey`s to `WireNodeId`s when it builds the request (ADR-013 O-04). F
 `bound` is a new foundation module that imports only K and F `digest`, so
@@ -247,16 +248,18 @@ its terminal `requires-bound`. That closes the loop: a request with bounds is
 bounded, a request without them is not.
 
 The request writer refuses, before any request is emitted, a `ProofBound`
-whose `DomainKey` names no unbounded domain of the item, a set that misses a
-domain, and a `FiniteBound` whose range is empty or inverted (its constructor
-refuses those). The code is `invalid_runtime_input`/`invalid-value`. Two
+whose `DomainKey` names no unbounded domain of the item, a `ProofBound` on a
+domain that is not boundable, a `FiniteBound` whose variant does not match the
+domain's kind (for example `IntegerRange` on a collection), a set that misses
+a domain, and a `FiniteBound` whose range is empty or inverted (its
+constructor refuses those). The code is `invalid_runtime_input`/`invalid-value`. Two
 bounds for one domain cannot be built: the writer takes a map keyed by
 `DomainKey`.
 
 **IR's predicate.** AD-016's IR `requires-bound` is the same classification
-over the lowered form: which IR forms carry an unbounded domain. IR lowers
-from QSL's checked form, so the two agree by construction. A QSL-140 and IR
-conformance test pins that agreement over the §10 scenarios.
+over the lowered form: which IR forms carry an unbounded domain. IR reads the
+v2 wire QSL emits (ADR-011 FB-05), and a QSL-140 and IR conformance test over
+the §10 scenarios pins that the two agree.
 
 ### 5. The `quire.temporal.infinite-trace/v1` facet (ticket decision 4)
 
@@ -265,7 +268,7 @@ conformance test pins that agreement over the §10 scenarios.
 | A-1 | **Parse.** S1 and S2 parse the bare unbounded operators (no interval) under every profile. Parsing selects no meaning. The spine grammar makes the interval optional on the unary and binary temporal operators (QSL-43). |
 | A-2 | **Admit.** The S3 TemporalTrace `check` admits a bare operator only when the unit's temporal profile selection is `quire.temporal.infinite-trace/v1` (QSpec FR-090-AC-7). Otherwise it refuses `unsupported_construct`/`expression-form`, located at the operator (ADR-012 §3). Under that profile it refuses any interval (TR-3). A unit selects exactly one temporal profile. The profile uses the event-position sequence authority without false-extension closure (QSpec FR-250-AC-6). The clause's authored fairness constraints are checked with it (QSpec FR-161). |
 | A-3 | **Record.** An admitted infinite-trace clause yields `Requirements{kind: temporal-satisfaction, extent: Unbounded{domains}}`, where `domains` names the formula. |
-| A-4 | **Execute.** S6a never settles an infinite-trace claim `proved`. Over a finite trace it uses three-valued finite-prefix evaluation: it returns violation only when the formula is in the safety fragment (negation normal form over atoms, `and`, `or`, `always`, `release` and past operators) and the prefix makes it false for every extension; it returns pending otherwise, O-16 `inconclusive` (QSpec FR-161-AC-2, FR-324-AC-2). This rule is sound and incomplete: it never reports a false violation. Over a lasso (a non-empty prefix or none, then a non-empty loop that re-enters at its first position) it first checks the lasso against the clause's fairness constraints; a lasso that violates them is not an admitted trace and is refused, and a clause whose fairness premise is missing settles `unsupported` (QSpec FR-341). A fair lasso is evaluated exactly, with work charged per visit under TR-5. A false result is a violation for that lasso. A true result is `tested`, evidence for that lasso only. This is replay of a given trace, not a liveness solver. |
+| A-4 | **Execute.** S6a never settles an infinite-trace claim `proved`. Over a finite trace it uses three-valued finite-prefix evaluation: it returns violation only when the formula is in the safety fragment (negation normal form over atoms, `and`, `or`, `always`, `release` and past operators) and the prefix makes it false for every extension; it returns pending otherwise, O-16 `inconclusive` (QSpec FR-161-AC-2, FR-324-AC-2). This rule is sound and incomplete: it never reports a false violation. Over a lasso (a non-empty prefix or none, then a non-empty loop that re-enters at its first position) it first checks the lasso against the clause's fairness constraints; a lasso that violates them is not an admitted trace and is refused with `invalid_runtime_input`/`invalid-value`, and a clause whose fairness premise is missing yields no verdict: its S6a result is O-16 category unsupported, as QSpec FR-341 settles the same case for a backend. A fair lasso is evaluated exactly, with work charged per visit under TR-5. A false result is a violation for that lasso. A true result is `tested`, evidence for that lasso only. This is replay of a given trace, not a liveness solver. |
 | A-5 | **Discharge.** Proof of an infinite-trace claim goes only through negotiation (§6). QSpec FR-341 results map to O-16: `proved` → success, `refuted` → violation, `inconclusive` → inconclusive, `unsupported` → unsupported, `failed` → incomplete when resource-incomplete, otherwise internal failure. |
 
 ### 6. Capability negotiation for liveness and quantifier-capable backends (ticket decision 5)
@@ -307,7 +310,7 @@ No new capability kind, flag or mode is added. QSL records; CG settles.
 | Solver or tool absence at the probe | the routed backend's probe (ADR-012 §7.4) | QSpec FR-331 result `unsupported`, `UnavailabilityCause::SolverAbsent` | `unsupported_projection`/`tool-unavailable`; unsupported |
 | Tool changed after a passing probe | the run | QSpec FR-331 result `failed` | `unsupported_projection`/`tool-unavailable`; internal failure |
 | Bound exhaustion, S6a charge | S6a meter | `Outcome::Incomplete` | `resource_exhausted`/`insufficient-next-charge`; incomplete |
-| Bound exhaustion, read-only B-2 ceiling | S6a population admission | `Refused` with the `ancestor-steps` cause (FR-082) | `resource_exhausted`; refusal |
+| Bound exhaustion, read-only B-2 ceiling | S3 model normalization and S6a population admission | `Refused` with the `ancestor-steps` cause (FR-082) | `resource_exhausted`; refusal |
 | Bound exhaustion, finite exploration | `qsl_eval::simulation::explore` | `Outcome::Bounded{stats, frontier, limit}` | incomplete; never success, never violation |
 | Bound exhaustion, backend | backend | `IncompleteCause::ResourceExhausted` | QSpec FR-331 `incomplete`; incomplete |
 | Stage ceiling | S1 to S4, I2, `check`, `replay`, `route` | `StageFailure::Limit(LimitExceeded)` | `stage_limit_exceeded`; a stage failure |
@@ -411,8 +414,11 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    (including the temporal profile), `trace_position` (TR-2) and the
    TemporalTrace `FamilyPayload`, `TemporalCounterexample{prefix, loop,
    fairness, interval: Option<IntervalKey>}`, defined in `qsl-replay` beside
-   the other family payloads. `interval` is the failing operator's QSpec
-   FR-255 key under a bounded profile and `None` under infinite-trace.
+   the other family payloads. `IntervalKey{lower, upper, profile:
+   DefinitionRef, clock_binding}` is the wire-level QSpec FR-255 key, defined
+   in F `bound` so `qsl-replay` can name it; the TemporalTrace `check`
+   converts a `TemporalInterval` to it. `interval` is the failing operator's
+   key under a bounded profile and `None` under infinite-trace.
    `fairness` names the clause's fairness constraint nodes. At ADR-011 E9 the
    layer-6 `replay` facade recompiles from digest-addressed source and
    resolves the occurrence key to the operator node. It refuses, with
@@ -431,10 +437,11 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
 
 - the kernel field shapes `CollectionType.bound: Option<CardinalityBound>` and
   `ValueType::Population(Option<u64>)` (N-3);
-- F `bound`: `DomainKey`, `FiniteBound{Cardinality, IntegerRange, Depth}` and
-  `ProofBound`;
+- F `bound`: `DomainKey`, `FiniteBound{Cardinality, IntegerRange, Depth}`,
+  `ProofBound` and `IntervalKey`;
 - in `qsl-semantics::family`: `ClaimExtent`, the `Requirements` type and the
-  `FamilyContract::requirements()` method (this supersedes QSL-152's AC-4);
+  `FamilyContract::requirements()` method (this moves FR-062-AC-4 from QSL-152
+  to QSL-140);
 - the O-20 request writer: extent classification with
   `finite_bound_available`, `ProofBound` substitution and its refusals (§4);
 - in `qsl-replay`: `DeclaredDomain.domain: FiniteBound` and the rename of
@@ -480,7 +487,12 @@ classification) and `routing::route`, which is unchanged.
 - ADR-013: Q222-1 to Q222-3 answered in its §8 question table; O-20's owner
   row names §4 and IR's form predicate separately; O-21 and the S-6 row point
   here.
-- ADR-012 §1.1: the "available finite bound" predicate is §4 of this record.
+- ADR-012 §1.1: negotiation settles from QSL's extent classification, and the
+  "available finite bound" predicate is §4 of this record. ADR-012 §2's
+  `requirements()` deferral and its §14 row move to QSL-140.
+- ADR-013 T-4 and FR-096: "every stage ceiling" means a ceiling of a stage's
+  own limits type (§1); FR-096 gains a third no-region case for the
+  type environment.
 - FR-057: the `requires-bound` row cites §4.
 - FR-082: the expression checker's type-environment ceilings are stage limits
   (B-3), reported `stage_limit_exceeded` with limit kinds node count

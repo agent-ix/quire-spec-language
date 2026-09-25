@@ -80,7 +80,7 @@ declaration the assembler built from the unit, it SHALL resolve to a
 A declaration as a whole SHALL be located at its form's span (FR-091-AC-1),
 mapped the same way.
 
-A location SHALL resolve to no region in exactly two cases. In each, the
+A location SHALL resolve to no region in exactly three cases. In each, the
 tree holding the position was not read from the unit, so no region of the
 unit names it:
 
@@ -91,6 +91,9 @@ unit names it:
    handed to `check`, a tree `check` builds itself (the FR-094
    field-refinement guards), or a position `check` names for a table the
    caller built (dispatch tables and model selections).
+3. A position in the expression checker's type environment built from a
+   domain package's object types (FR-082). Those types were read from the
+   domain package, not the unit.
 
 The checked package SHALL resolve a `check::Location` of its own
 declarations by the same rule, so a consumer holding an S6a `Evaluation`
@@ -108,9 +111,14 @@ respectively.
 actual counter at the failed charge, and an optional `Locus`. Its catalog
 code is its kind's.
 
-Every ceiling of compiler stages S2 to S4, the I2 reader and a family
-`check` is a stage limit and SHALL be reported as `LimitExceeded`, never as
-`resource_exhausted`. The `quire.native.diagnostics/v1`
+Every ceiling of a stage's own limits type in compiler stages S2 to S4, the
+I2 reader and a family `check` is a stage limit and SHALL be reported as
+`LimitExceeded`, never as `resource_exhausted`. A ceiling of an
+accounting-contract limits type (`ModelNormalizationLimitsV1`,
+`PopulationAdmissionLimitsV1`, quire-specification FR-150) is the caller's
+meter wherever it is read and keeps `resource_exhausted`
+([ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
+§1). The `quire.native.diagnostics/v1`
 `stage_limit_exceeded` row (revision `1-draft.6`) names these surfaces,
 together with S1, `replay` and `route`, and the catalog keeps `resource_exhausted` for the caller's
 work-budget meter, adding that a semantic maximum is not a caller work

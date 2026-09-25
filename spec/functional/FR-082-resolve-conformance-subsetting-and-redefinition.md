@@ -43,7 +43,8 @@ contract for applying it.
   `creates`, `deletes`).
 - Established postcondition facts available for a narrowing field
   redefinition's refinement obligation.
-- `ModelNormalizationLimitsV1`.
+- `ModelNormalizationLimitsV1`, and the expression checker's
+  `TypeEnvironmentLimits`.
 
 ## Outputs
 
@@ -140,9 +141,10 @@ would spend more than its `work_units` budget, the expression checker SHALL
 return `StageFailure::Limit(LimitExceeded)` with limit kind work budget,
 catalog `stage_limit_exceeded`/`work-budget-exceeded`. Each `LimitExceeded` carries the
 configured ceiling, the actual counter (the ceiling plus one for
-`ancestor_steps`, the denied spend for `work_units`), and no `Locus`: the
+`ancestor_steps`; for `work_units`, the cumulative total the refused charge
+would have reached), and no `Locus`: the
 object types come from an admitted domain package, not a source unit, which
-is FR-096's case of a position no source region names.
+is FR-096's third no-region case.
 
 ### The expression checker decides the same relation over the same edges
 

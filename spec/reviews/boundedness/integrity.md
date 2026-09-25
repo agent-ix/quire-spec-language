@@ -77,3 +77,12 @@ What does not hold:
 Resolved by the author in the follow-up commit on `spec/17-boundedness-adr`.
 
 FND-001 fixed (TR-3, A-1, A-2, scenario 5, §13 item 2). FND-002 fixed: §4 "Bounded request". FND-003, FND-004, FND-005 fixed: §1 classification by limits type; FR-082 narrowed. FND-006 fixed: route guard dropped. FND-007 fixed: TR-1, TR-6, scenario 4. FND-008 fixed: §4 boundable table. FND-009 fixed: QSpec ids prefixed. FND-010 fixed: O-20 row and §4. FND-011 fixed: §7 cancellation row. FND-012 fixed: §1 "Relations between kinds". FND-013 fixed: front matter.
+
+A second, independent pass over the revision found nine incomplete fixes and
+six new issues. All were fixed in the next commit: ADR-012 §1.1 and §2 now
+match ADR-014 §4 and §11; ADR-013 T-4, the O-20 Validation row, Q222-1 and
+FR-096 carry the limits-type rule; `DomainKey` keys on the carrying node;
+the request writer refuses non-boundable and mismatched bounds; `IntervalKey`
+is defined in F `bound`; A-4 names the S6a outcomes; TR-4 uses a stage limit;
+FR-082 Inputs, `actual` wording and its no-region case (FR-096 case 3) are
+fixed.
