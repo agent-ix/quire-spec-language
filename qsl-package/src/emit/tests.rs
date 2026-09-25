@@ -5,6 +5,7 @@
 //! below are made on the bytes it admitted.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use ix_trace_rs::trace;
 use qsl_forms::{
@@ -2294,12 +2295,16 @@ fn root_graph() -> qsl_semantics::check::CheckedGraph {
     graph_of(vec![f()])
 }
 
+fn lib(identity: &str) -> LibraryName {
+    LibraryName::new(identity).expect("a non-empty library identity")
+}
+
 fn import(identity: &str, version: &str, package: CheckedPackage) -> crate::Import {
     crate::Import {
-        identity: identity.to_owned(),
+        identity: lib(identity),
         version: version.to_owned(),
-        package_id: emitted_id(&package),
-        package,
+        digest: emitted_id(&package).record(),
+        package: Arc::new(package),
     }
 }
 
@@ -2310,7 +2315,7 @@ fn linked(imports: Vec<crate::Import>) -> CheckedPackage {
 }
 
 /// The closure of `package` as `(identity, version, package_id, path)`.
-fn closure(package: &CheckedPackage) -> Vec<(String, String, PackageId, Vec<String>)> {
+fn closure(package: &CheckedPackage) -> Vec<(LibraryName, String, PackageId, Vec<LibraryName>)> {
     package
         .dependency_selections()
         .iter()
@@ -2325,11 +2330,8 @@ fn closure(package: &CheckedPackage) -> Vec<(String, String, PackageId, Vec<Stri
         .collect()
 }
 
-fn path(identities: &[&str]) -> Vec<String> {
-    identities
-        .iter()
-        .map(|identity| (*identity).to_owned())
-        .collect()
+fn path(identities: &[&str]) -> Vec<LibraryName> {
+    identities.iter().map(|identity| lib(identity)).collect()
 }
 
 /// QSL-255 (FR-322 `dependency_selections`, FR-307, ADR-011 §2.4): the E4
@@ -2381,15 +2383,15 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
     assert_eq!(
         closure(&root),
         [
-            ("test/b".to_owned(), "1".to_owned(), b_id, path(&["test/b"])),
+            (lib("test/b"), "1".to_owned(), b_id, path(&["test/b"])),
             (
-                "test/c".to_owned(),
+                lib("test/c"),
                 "1".to_owned(),
                 c_id,
                 path(&["test/b", "test/c"])
             ),
             (
-                "test/units".to_owned(),
+                lib("test/units"),
                 "2".to_owned(),
                 d,
                 path(&["test/b", "test/c", "test/units"])
@@ -2423,7 +2425,7 @@ fn a_diamond_selecting_one_package_unifies() {
         ],
     )
     .expect("one selection of test/units by two paths unifies");
-    let units = &root.dependency_selections()["test/units"];
+    let units = &root.dependency_selections()[&lib("test/units")];
     assert_eq!(units.selection.package_id, d);
     assert_eq!(units.path, path(&["test/units"]));
     assert!(matches!(read_back(&emit(&root)), Read::Verified { .. }));
@@ -2472,10 +2474,10 @@ fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
     let stale = CheckedPackage::link_with(
         root_graph(),
         vec![crate::Import {
-            identity: "test/units".to_owned(),
+            identity: lib("test/units"),
             version: "2".to_owned(),
-            package_id: other,
-            package: dependency(),
+            digest: other.record(),
+            package: Arc::new(dependency()),
         }],
     )
     .expect_err("the recorded package_id is not the dependency's");
@@ -2483,7 +2485,7 @@ fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
     assert!(matches!(
         stale,
         crate::LinkRefusal::DependencyIdentityMismatch { expected, recompiled, .. }
-            if expected == other && recompiled == d
+            if expected == other.record() && recompiled == d
     ));
 
     // Versions differ: root -> units@3 against root -> mid -> units@2.
@@ -2505,7 +2507,7 @@ fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
     else {
         panic!("expected ConflictingDefinition, got {diamond:?}");
     };
-    assert_eq!(identity, "test/units");
+    assert_eq!(*identity, lib("test/units"));
     assert_eq!(selections[0].selection.version, "3");
     assert_eq!(selections[0].path, path(&["test/units"]));
     assert_eq!(selections[1].selection.version, "2");
@@ -2530,33 +2532,32 @@ fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
     else {
         panic!("expected ConflictingDefinition, got {split:?}");
     };
-    assert_eq!(identity, "test/units");
+    assert_eq!(*identity, lib("test/units"));
     assert_eq!(selections[0].selection.package_id, d);
     assert_eq!(selections[0].path, path(&["test/mid", "test/units"]));
     assert_eq!(selections[1].selection.package_id, another_id);
     assert_eq!(selections[1].path, path(&["test/mid2", "test/units"]));
 
-    // An empty identity or version.
-    for (identity, version) in [("", "1"), ("test/units", "")] {
-        let empty =
-            CheckedPackage::link_with(root_graph(), vec![import(identity, version, dependency())])
-                .expect_err("FR-322 admits no empty identity or version");
-        assert!(
-            matches!(empty, crate::LinkRefusal::EmptySelection { .. }),
-            "{empty:?}"
-        );
-        assert_eq!(empty.code(), Code::InvalidPackage);
-    }
+    // An empty version (an empty identity is no `LibraryName`).
+    assert!(LibraryName::new("").is_err());
+    let empty =
+        CheckedPackage::link_with(root_graph(), vec![import("test/units", "", dependency())])
+            .expect_err("FR-322 admits no empty version");
+    assert!(
+        matches!(empty, crate::LinkRefusal::EmptySelection { .. }),
+        "{empty:?}"
+    );
+    assert_eq!(empty.code(), Code::InvalidPackage);
 
     // A dependency whose occurrences have no source region does not emit,
     // so its `package_id` cannot be recomputed.
     let unplaced = CheckedPackage::link_with(
         root_graph(),
         vec![crate::Import {
-            identity: "test/units".to_owned(),
+            identity: lib("test/units"),
             version: "2".to_owned(),
-            package_id: d,
-            package: package(vec![t()]),
+            digest: d.record(),
+            package: Arc::new(package(vec![t()])),
         }],
     )
     .expect_err("an unplaceable dependency does not emit");

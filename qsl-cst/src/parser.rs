@@ -13,12 +13,12 @@ use super::grammar::{self, Grammar, Rule, Terminal};
 use super::{CompleteCode, CompleteDiagnostic, ParsedSource};
 use crate::lexer::Limits;
 use crate::token::{Kind, LexError};
+use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::selection::{
     DefinitionDigest, DefinitionRef, ImportSelection, InvalidDefinitionComponent,
     InvalidModelComponent, ModelDigest, ModelRef, ModelSelection, ProfileSelection,
     SourceSelections,
 };
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{Phase, Source, Span, SyntaxLimit};
 
 #[derive(Clone, Debug)]
@@ -375,12 +375,12 @@ fn extract_selections(
         let version_value = text(version).ok_or_else(invalid_version)?;
         // Components first, so an invalid identity or version is located
         // before the digest is read.
-        DefinitionRef::validate_components(identity_value, version_value).map_err(
-            |component| match component {
+        DefinitionRef::validate_components(identity_value, version_value).map_err(|component| {
+            match component {
                 InvalidDefinitionComponent::Identity => invalid_identity(),
                 InvalidDefinitionComponent::Version => invalid_version(),
-            },
-        )?;
+            }
+        })?;
         let digest_value = DigestRecord::from_domain_and_hex(
             DigestDomain::PackageSemanticV2,
             text(digest).ok_or_else(invalid_digest)?,

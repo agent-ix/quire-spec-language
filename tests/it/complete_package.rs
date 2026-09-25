@@ -130,18 +130,18 @@ fn resolved_source(definitions: &[Definition], model: &ModelArtifact) -> ParsedS
     let source = format!(
         concat!(
             "language \"ix:native\" edition \"1-draft\";\n{profiles}",
-            "import \"{}\" version \"{}\" digest \"{}\" as Base;\n",
+            // An import records a library's bare 64-hex `package_id`
+            // (ADR-015 D-2); resolution does not read it.
+            "import \"acme/base\" version \"1\" digest \"{import_digest}\" as Base;\n",
             "model M = \"{}\" version \"{}\" digest \"{}\";\n",
             "record R {{ datum: Integer; }}\n",
             "record S {{ datum: Integer; }}"
         ),
-        definitions[0].exact().identity(),
-        definitions[0].exact().version(),
-        definitions[0].exact().digest().digest(),
         model.exact().identity(),
         model.exact().version(),
         model.exact().digest().digest(),
         profiles = profiles,
+        import_digest = "b".repeat(64),
     );
     parse_fixture("test:resolved-package", "resolved.native", &source)
 }
@@ -512,13 +512,6 @@ fn complete_bundle_is_closed_and_backend_authority_free() {
         .profiles
         .iter()
         .map(|selection| selection.definition.clone())
-        .chain(
-            source
-                .selections()
-                .imports
-                .iter()
-                .map(|selection| selection.definition.clone()),
-        )
         .collect();
     assert_eq!(
         admitted

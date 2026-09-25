@@ -877,7 +877,7 @@ impl PackageDeclarations {
         for import in &selections.imports {
             errors.push(AssemblyError {
                 cause: AssemblyCause::UnsuppliedImport {
-                    identity: import.definition.identity().to_owned(),
+                    identity: import.identity.clone(),
                 },
                 span: import.span,
             });

@@ -163,7 +163,11 @@ fn an_import_digest_is_bare_lowercase_hex() {
         (source, parsed)
     };
     let (_, parsed) = parse_import(&hex);
-    assert!(parsed.diagnostics().is_empty(), "{:?}", parsed.diagnostics());
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
     let import = &parsed.selections().imports[0];
     assert_eq!(import.identity, "test/geometry");
     assert_eq!(import.version, "1");
