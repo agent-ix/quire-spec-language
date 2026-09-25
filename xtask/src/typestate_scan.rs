@@ -779,7 +779,7 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 9] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 10] = [
         // S3: the checker.
         (
             "qsl-semantics/src/check/mod.rs",
@@ -802,6 +802,14 @@ mod tests {
             "qsl-semantics/src/library/mod.rs",
             Some("VerifiedPackage"),
             "into_import_view",
+        ),
+        // A shared handle to the graph `link` or `link_with` took, which an
+        // importing package's E3 types an imported name from (ADR-015 D-5);
+        // it builds no graph.
+        (
+            "qsl-package/src/checked.rs",
+            Some("CheckedPackage"),
+            "shared_graph",
         ),
         // I2 over a library's own emission: the verified binding, then
         // `into_import_view` (ADR-015 D-1 step 6).
