@@ -1457,6 +1457,7 @@ dependencies = [
  "qsl-package",
  "qsl-semantics",
  "quire-exact",
+ "serde_json",
  "thiserror",
 ]
 
