@@ -719,7 +719,8 @@ impl PackageDeclarations {
             }
         }
 
-        // Every type form names declarations of the unit only.
+        // Every type form names declarations of the unit or admitted model
+        // object types.
         for alias in &unit.aliases {
             check_names(&unit, &object_names, &alias.target, None, &mut errors);
         }

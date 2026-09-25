@@ -907,9 +907,9 @@ pub fn resolve_source_package(
         }
         let Some(model) = models.exact(selected) else {
             let cause = if models.contains_identity(selected.identity()) {
-                PackageError::StaleModel(selected.clone())
+                PackageError::StaleModel(Box::new(selected.clone()))
             } else {
-                PackageError::MissingModel(selected.clone())
+                PackageError::MissingModel(Box::new(selected.clone()))
             };
             return Err(refusal(Code::InvalidModelBinding, selection.span, cause));
         };
@@ -1411,10 +1411,10 @@ pub enum PackageError {
     StaleDefinition(DefinitionRef),
     /// A selected compiled-model artifact was absent.
     #[error("missing compiled-model artifact {0:?}")]
-    MissingModel(ModelRef),
+    MissingModel(Box<ModelRef>),
     /// A known compiled model was selected with stale version/digest.
     #[error("stale compiled-model artifact {0:?}")]
-    StaleModel(ModelRef),
+    StaleModel(Box<ModelRef>),
     /// Two source model selections conflict on one logical identity.
     #[error("conflicting compiled-model selections")]
     ConflictingModels(Box<ModelConflict>),
