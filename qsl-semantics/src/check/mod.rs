@@ -413,6 +413,8 @@ pub struct CallableFunction<'a> {
     pub identity: quire_exact::NodeKey,
     /// The declared parameters, for argument admission.
     pub parameters: &'a [(String, ValueType)],
+    /// The declared result type.
+    pub result: &'a ValueType,
 }
 
 fn root(origin: Origin) -> Location {
@@ -1293,6 +1295,7 @@ impl CheckedGraph {
             .map(|(signature, function)| CallableFunction {
                 identity: function.identity,
                 parameters: &signature.parameters,
+                result: &signature.result,
             })
     }
 

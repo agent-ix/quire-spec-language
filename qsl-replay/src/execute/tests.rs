@@ -26,7 +26,9 @@ fn proved() -> String {
         "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
          function small using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n\
          function flag using v(b: Boolean): Boolean pure {{ b }}\n\
-         function id using v(x: Int[0, 9]): Int[0, 9] pure {{ x }}\n"
+         function id using v(x: Int[0, 9]): Int[0, 9] pure {{ x }}\n\
+         function lt using v(a: Int[0, 9], b: Int[0, 9]): Boolean pure {{ a < b }}\n\
+         function maybe using v(t: Option<Boolean>): Boolean pure {{ true }}\n"
     )
 }
 
@@ -172,7 +174,7 @@ fn small(x: i64) -> ReplayRequestWire {
 /// with the executor's toolchain pin and the call's charges.
 #[trace("TC-444", "FR-098-AC-1", "FR-098-AC-2")]
 #[test]
-fn tc_443_an_input_counterexample_replays_and_agrees() {
+fn tc_444_an_input_counterexample_replays_and_agrees() {
     let ReplayResult::Input(result) = replay(small(7)).expect("the replay runs") else {
         panic!("an Input-sourced request settles on the Input arm");
     };
@@ -192,7 +194,7 @@ fn tc_443_an_input_counterexample_replays_and_agrees() {
 /// transcript binding no parameter refuses with the decode's cause.
 #[trace("TC-444", "FR-098-AC-2")]
 #[test]
-fn tc_443_a_witness_decodes_by_parameter_node_id() {
+fn tc_444_a_witness_decodes_by_parameter_node_id() {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
     let x = parameter(&compiled, "small", 0);
@@ -227,14 +229,14 @@ fn tc_443_a_witness_decodes_by_parameter_node_id() {
 /// too. Neither is repaired into agreement.
 #[trace("TC-444", "FR-098-AC-5")]
 #[test]
-fn tc_443_a_disagreement_settles_inconclusive() {
+fn tc_444_a_disagreement_settles_inconclusive() {
     let ReplayResult::Input(holds) = replay(small(3)).unwrap() else {
         panic!("Input arm");
     };
     assert_eq!(holds.settlement(), InputSettlement::Inconclusive);
     assert_eq!(
         holds.disagreement(),
-        Some(crate::DisagreementCause {
+        Some(crate::DisagreementCause::Verdicts {
             proved: Verdict::from_category(ProofCategory::Violation),
             replayed: Verdict::from_category(ProofCategory::Success),
         })
@@ -251,7 +253,9 @@ fn tc_443_a_disagreement_settles_inconclusive() {
     };
     assert_eq!(incomplete.settlement(), InputSettlement::Inconclusive);
     assert_eq!(
-        incomplete.disagreement().map(|cause| cause.replayed),
+        incomplete
+            .disagreement()
+            .map(crate::DisagreementCause::replayed),
         Some(Verdict::from_category(ProofCategory::Incomplete))
     );
     assert_eq!(incomplete.value(), None);
@@ -261,7 +265,7 @@ fn tc_443_a_disagreement_settles_inconclusive() {
 /// `package_id` and refuses by it, naming both identities.
 #[trace("TC-444", "FR-098-AC-3")]
 #[test]
-fn tc_443_a_meaning_edit_refuses_by_package_id() {
+fn tc_444_a_meaning_edit_refuses_by_package_id() {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
     let edited = source.replace("x < 5", "x < 6");
@@ -292,7 +296,7 @@ fn tc_443_a_meaning_edit_refuses_by_package_id() {
 /// referenced digest do not hash to it.
 #[trace("TC-444", "FR-098-AC-3", "FR-098-AC-4")]
 #[test]
-fn tc_443_a_presentation_edit_refuses_by_source_digest() {
+fn tc_444_a_presentation_edit_refuses_by_source_digest() {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
     let edited = source.replacen('\n', "\n\n", 1);
@@ -342,7 +346,7 @@ fn tc_443_a_presentation_edit_refuses_by_source_digest() {
 /// it replays; without it the recompile refuses at I1 (`missing_import`).
 #[trace("TC-444", "FR-098-AC-1", "FR-098-AC-4")]
 #[test]
-fn tc_443_a_domain_package_comes_from_the_byte_provision() {
+fn tc_444_a_domain_package_comes_from_the_byte_provision() {
     let document = std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../tests/fixtures/spine-model.semantic-ir.json"
@@ -391,7 +395,7 @@ fn tc_443_a_domain_package_comes_from_the_byte_provision() {
 /// recompiled.
 #[trace("TC-444", "FR-098-AC-4")]
 #[test]
-fn tc_443_an_unknown_version_refuses() {
+fn tc_444_an_unknown_version_refuses() {
     let mut unknown = small(7);
     unknown.contract_version = "quire.native-runtime/v2".to_owned();
     assert!(matches!(
@@ -406,7 +410,7 @@ fn tc_443_an_unknown_version_refuses() {
 /// name is undeclared or qualified.
 #[trace("TC-444", "FR-098-AC-4")]
 #[test]
-fn tc_443_a_selection_naming_no_function_refuses() {
+fn tc_444_a_selection_naming_no_function_refuses() {
     for selection in [name(&["large"]), name(&["module", "small"])] {
         let mut wire = small(7);
         wire.selected_function = selection.clone();
@@ -431,7 +435,7 @@ fn tc_443_a_selection_naming_no_function_refuses() {
 /// function (here `flag`'s parameter) and a parameter bound twice.
 #[trace("TC-444", "FR-098-AC-4")]
 #[test]
-fn tc_443_an_arity_mismatch_refuses() {
+fn tc_444_an_arity_mismatch_refuses() {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
     let x = parameter(&compiled, "small", 0);
@@ -481,29 +485,93 @@ fn tc_443_an_arity_mismatch_refuses() {
     );
 }
 
-/// FR-098-AC-4: S6a admission refuses a value of the wrong type (an
-/// integer for `flag`'s Boolean) and a value outside the declared domain
-/// (`12` for `Int[0, 9]`), each as `invalid_runtime_input`.
+/// FR-098-AC-4: an argument not of its parameter's kind -- any integer
+/// for an `Option<Boolean>` parameter, `2` for a Boolean one -- refuses before the
+/// call, and a value outside the declared domain (`12` for `Int[0, 9]`)
+/// refuses at S6a admission; each is `WrongValueKind`
+/// (`invalid_runtime_input`).
 #[trace("TC-444", "FR-098-AC-4")]
 #[test]
-fn tc_443_a_type_or_domain_mismatch_refuses_at_admission() {
+fn tc_444_a_type_or_domain_mismatch_refuses_as_wrong_value_kind() {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
-    let wrong_type = replay(request(
-        source.as_bytes(),
-        compiled.emitted.package_id(),
-        name(&["flag"]),
-        input(parameter(&compiled, "flag", 0), 1),
-    ))
-    .unwrap_err();
-    let outside = replay(small(12)).unwrap_err();
-    for refused in [wrong_type, outside] {
+    let with = |function: &str, value: i64| {
+        replay(request(
+            source.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&[function]),
+            input(parameter(&compiled, function, 0), value),
+        ))
+        .unwrap_err()
+    };
+    for refused in [with("maybe", 1), with("flag", 2), with("small", 12)] {
         let ReplayRefusal::Input(refusal) = &refused else {
             panic!("expected an admission refusal, got {refused:?}");
         };
         assert_eq!(refusal, &InputRefusal::WrongValueKind { parameter: 0 });
-        assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
+        assert_eq!(refused.code(), Code::InvalidRuntimeInput);
     }
+}
+
+/// FR-098-AC-2: a Boolean parameter takes `0` as `false` and `1` as
+/// `true`: `flag(0)` is `false` and agrees with the refuted property, and
+/// `flag(1)` is `true` and does not.
+#[trace("TC-444", "FR-098-AC-2")]
+#[test]
+fn tc_444_a_boolean_parameter_replays() {
+    let source = proved();
+    let compiled = spine(&source, &BTreeMap::new());
+    let flag = |value: i64| {
+        let ReplayResult::Input(result) = replay(request(
+            source.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&["flag"]),
+            input(parameter(&compiled, "flag", 0), value),
+        ))
+        .unwrap() else {
+            panic!("Input arm");
+        };
+        result
+    };
+    assert_eq!(
+        flag(0).settlement(),
+        InputSettlement::ReproducedWithoutWitness
+    );
+    assert_eq!(flag(1).settlement(), InputSettlement::Inconclusive);
+    assert_eq!(flag(1).value(), Some(EvaluatedValue::Boolean(true)));
+}
+
+/// FR-098-AC-2: arguments take the function's declared parameter order,
+/// not the order the assignments arrive in: `lt` with `b = 3` given before
+/// `a = 5` is `5 < 3`, `false`, and agrees.
+#[trace("TC-444", "FR-098-AC-2")]
+#[test]
+fn tc_444_arguments_follow_declared_parameter_order() {
+    let source = proved();
+    let compiled = spine(&source, &BTreeMap::new());
+    let ReplayResult::Input(result) = replay(request(
+        source.as_bytes(),
+        compiled.emitted.package_id(),
+        name(&["lt"]),
+        ReplaySource::Input(vec![
+            CanonicalAssignment {
+                parameter: parameter(&compiled, "lt", 1),
+                value: 3,
+            },
+            CanonicalAssignment {
+                parameter: parameter(&compiled, "lt", 0),
+                value: 5,
+            },
+        ]),
+    ))
+    .unwrap() else {
+        panic!("Input arm");
+    };
+    assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
+    assert_eq!(
+        result.settlement(),
+        InputSettlement::ReproducedWithoutWitness
+    );
 }
 
 /// FR-098-AC-4: an S1 limit above the reader limit refuses before the
@@ -511,7 +579,7 @@ fn tc_443_a_type_or_domain_mismatch_refuses_at_admission() {
 /// `stage_limit_exceeded`.
 #[trace("TC-444", "FR-098-AC-4")]
 #[test]
-fn tc_443_stage_limits_bound_the_recompile() {
+fn tc_444_stage_limits_bound_the_recompile() {
     let reader = u64::try_from(MAX_ENCODED_BYTES).unwrap();
     let mut above = small(7);
     above.stage_limits.s1.text_input_bytes = reader + 1;
@@ -533,6 +601,32 @@ fn tc_443_stage_limits_bound_the_recompile() {
     };
     assert_eq!(refusal.stage(), SpineStage::Source);
     assert_eq!(refusal.code(), Code::StageLimitExceeded);
+
+    let mut no_work = small(7);
+    no_work.stage_limits.s3.work_units = 0;
+    let refused = replay(no_work).unwrap_err();
+    let ReplayRefusal::Recompile(refusal) = &refused else {
+        panic!("expected a recompile refusal, got {refused:?}");
+    };
+    assert_eq!(refusal.stage(), SpineStage::Check);
+    assert_eq!(refusal.code(), Code::StageLimitExceeded);
+    assert_eq!(refused.code(), Code::StageLimitExceeded);
+}
+
+/// FR-098-AC-1 (FR-001): the recompile runs under the package reference's
+/// four labels, so a whitespace-only label refuses at S1 with
+/// `invalid_source_identity`.
+#[trace("TC-444", "FR-098-AC-1", "FR-001-AC-8")]
+#[test]
+fn tc_444_a_blank_label_refuses_at_the_source_stage() {
+    let mut blank = small(7);
+    blank.source_digests[0].0 = "   ".to_owned();
+    let refused = replay(blank).unwrap_err();
+    let ReplayRefusal::Recompile(refusal) = &refused else {
+        panic!("expected a recompile refusal, got {refused:?}");
+    };
+    assert_eq!(refusal.stage(), SpineStage::Source);
+    assert_eq!(refusal.code(), Code::InvalidSourceIdentity);
 }
 
 /// FR-098-AC-1: the package reference names exactly one source, and only
@@ -540,7 +634,7 @@ fn tc_443_stage_limits_bound_the_recompile() {
 /// refuse before anything is recompiled.
 #[trace("TC-444", "FR-098-AC-1")]
 #[test]
-fn tc_443_the_package_reference_names_one_source() {
+fn tc_444_the_package_reference_names_one_source() {
     let definition = b"definition bytes".to_vec();
     let digest = DigestRecord::mint(
         DigestDomain::DefinitionBytesV1,
@@ -585,20 +679,26 @@ fn tc_443_the_package_reference_names_one_source() {
     assert!(matches!(replay(two), Err(ReplayRefusal::SourceCount(2))));
 }
 
-/// FR-098-AC-4: a selected function that completes a non-Boolean value
-/// states no property, so its replay refuses rather than settling.
+/// FR-098-AC-4: a selected function whose declared result is not
+/// `Boolean` states no property, so its replay refuses from the
+/// declaration alone -- even with no accounting budget, where a call would
+/// have stopped `incomplete`.
 #[trace("TC-444", "FR-098-AC-4")]
 #[test]
-fn tc_443_a_non_predicate_refuses() {
+fn tc_444_a_non_predicate_refuses() {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
-    let refused = replay(request(
+    let mut starved = request(
         source.as_bytes(),
         compiled.emitted.package_id(),
         name(&["id"]),
         input(parameter(&compiled, "id", 0), 4),
-    ))
-    .unwrap_err();
+    );
+    starved.accounting_limits = ScalarLimits {
+        work_units: 0,
+        ..UNLIMITED
+    };
+    let refused = replay(starved).unwrap_err();
     assert!(
         matches!(
             &refused,

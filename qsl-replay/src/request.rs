@@ -22,6 +22,7 @@ use crate::witness::ReplaySource;
 use qsl_foundation::digest::{
     ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, ManifestDigest,
 };
+use qsl_foundation::Code;
 use qsl_semantics::model::intake::PackageDocument;
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
@@ -258,6 +259,10 @@ pub enum ReplayRequestRefusal {
     /// attempted, distinct from an actual byte/digest mismatch.
     #[error("invalid_digest/ineligible-domain: {0} is neither a raw-byte-addressed digest domain nor sha256-jcs and cannot be admitted as a byte-provision entry")]
     IneligibleByteProvisionDomain(DigestDomain),
+    /// A byte-provision entry under a `sha256-jcs` digest is not a domain
+    /// package document at all, so it has no `sha256-jcs` digest to match.
+    #[error("invalid_model_binding/malformed-declaration: entry under {0} is not a domain package document")]
+    NotAPackageDocument(String),
     /// A byte-provision entry does not hash to its own declared digest.
     #[error("stale_dependency/byte-digest-mismatch: entry under {0} does not hash to its own declared digest")]
     ByteDigestMismatch(String),
@@ -274,19 +279,41 @@ pub enum ReplayRequestRefusal {
 /// raw-byte-addressed domain (source and definition documents), and for
 /// `sha256-jcs` the domain package document's own digest, SHA-256 of its
 /// RFC 8785 bytes, exactly as I1 keys its package input
-/// (`model::intake::package_input`, ADR-013 QC-1). `None` when the bytes
-/// are not a domain package document at all, which matches no declared
-/// digest. Every other domain refuses as ineligible.
-fn digest_of(domain: DigestDomain, bytes: &[u8]) -> Result<Option<[u8; 32]>, ReplayRequestRefusal> {
+/// (`model::intake::package_input`, ADR-013 QC-1). Bytes that are not a
+/// domain package document refuse as such, and every other domain refuses
+/// as ineligible.
+fn digest_of(digest: DigestRecord, bytes: &[u8]) -> Result<[u8; 32], ReplayRequestRefusal> {
+    let domain = digest.domain();
     if domain == DigestDomain::Sha256Jcs {
-        return Ok(PackageDocument::parse(bytes)
-            .ok()
-            .map(|document| document.jcs_digest()));
+        return PackageDocument::parse(bytes)
+            .map(|document| document.jcs_digest())
+            .map_err(|_| ReplayRequestRefusal::NotAPackageDocument(format!("{digest:?}")));
     }
     if domain.is_raw_byte_addressed() {
-        return Ok(Some(ByteDigest::of(bytes).as_bytes()));
+        return Ok(ByteDigest::of(bytes).as_bytes());
     }
     Err(ReplayRequestRefusal::IneligibleByteProvisionDomain(domain))
+}
+
+impl ReplayRequestRefusal {
+    /// The catalog code of this refusal. The native catalog has no
+    /// `invalid_capability` code, so an unknown capability vocabulary
+    /// reports `unknown_wire`, the code of an unadmitted wire version.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::UnknownContractVersion(_) | Self::UnknownCapabilityVocabulary => {
+                Code::UnknownWire
+            }
+            Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
+            Self::DigestDomainMismatch(_) | Self::ByteDigestMismatch(_) => Code::StaleDependency,
+            Self::MalformedDigest(_) | Self::IneligibleByteProvisionDomain(_) => {
+                Code::InvalidDigest
+            }
+            Self::NotAPackageDocument(_) => Code::InvalidModelBinding,
+            Self::IncompleteByteProvision(_) => Code::MissingDeclaration,
+            Self::BoundExceeded(_) => Code::StageLimitExceeded,
+        }
+    }
 }
 
 /// Route `err` to [`ReplayRequestRefusal::DigestDomainMismatch`] or
@@ -391,7 +418,7 @@ impl ReplayRequest {
             // builds, so admitting one here would always refuse with a
             // misleading staleness cause instead of the real "wrong domain
             // for this position" one.
-            if digest_of(digest.domain(), &bytes)? != Some(*digest.as_bytes()) {
+            if digest_of(digest, &bytes)? != *digest.as_bytes() {
                 return Err(ReplayRequestRefusal::ByteDigestMismatch(format!(
                     "{digest:?}"
                 )));
@@ -676,6 +703,18 @@ mod tests {
             ReplayRequest::decode(stale_package),
             Err(ReplayRequestRefusal::ByteDigestMismatch(_))
         ));
+        let mut not_a_document = wire(1);
+        not_a_document.byte_provision.push((
+            Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
+            DigestRecord::mint(DigestDomain::Sha256Jcs, jcs).hex(),
+            b"not json".to_vec(),
+        ));
+        let refused = ReplayRequest::decode(not_a_document).unwrap_err();
+        assert!(matches!(
+            refused,
+            ReplayRequestRefusal::NotAPackageDocument(_)
+        ));
+        assert_eq!(refused.code(), Code::InvalidModelBinding);
 
         // Byte/digest mismatch.
         let mut mismatched = wire(1);

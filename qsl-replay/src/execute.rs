@@ -23,13 +23,13 @@
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, InputRefusal};
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_exact::{Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value};
+use quire_exact::{Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType};
 
 use crate::bounds::MAX_ENCODED_BYTES;
 use crate::identity::{QualifiedName, RawSourceRef};
@@ -116,14 +116,19 @@ pub enum ReplayRefusal {
     /// parameters.
     #[error("the witness does not decode: {0}")]
     Witness(DecodeRefusal),
-    /// S6a admission refused an argument: its type or its declared domain
-    /// (`CheckedPackage::call`, carried as ADR-011 §2.3's
-    /// `StageFailure::Refused` cause).
+    /// An argument refused admission as `WrongValueKind`: its value is not
+    /// of the parameter's declared type, whether that is found before the
+    /// call (an integer bound to a Boolean parameter other than 0 or 1, or
+    /// to a parameter of a kind an integer never is) or by S6a admission in
+    /// `CheckedPackage::call` (a value outside the declared domain, such as
+    /// `12` for `Int[0, 9]`) -- carried as ADR-011 §2.3's
+    /// `StageFailure::Refused` cause.
     #[error("{code} ({cause}): {refusal}", code = .0.code().as_str(), cause = .0.cause(), refusal = .0)]
     Input(InputRefusal),
-    /// The selected function completed a value that is not a Boolean, so
-    /// it states no property a counterexample refutes.
-    #[error("the selected function {selection} of package {} is not a predicate: it completed a non-Boolean value", .package.hex())]
+    /// The selected function's declared result is not `Boolean`, so it
+    /// states no property a counterexample refutes. Refused before the
+    /// call, from the declaration alone.
+    #[error("the selected function {selection} of package {} is not a predicate: its declared result is not Boolean", .package.hex())]
     NotAPredicate {
         /// The request's selection.
         selection: QualifiedName,
@@ -133,6 +138,29 @@ pub enum ReplayRefusal {
     /// An executor or S6a invariant broke.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
+}
+
+impl ReplayRefusal {
+    /// The catalog code of this refusal: the request's, the recompile
+    /// stage's or S6a admission's own where one refused, and the executor's
+    /// otherwise.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Request(refusal) => refusal.code(),
+            Self::LimitAboveReader(_) => Code::StageLimitExceeded,
+            Self::NotASource(_) | Self::SourceCount(_) => Code::InvalidRequest,
+            Self::Recompile(refusal) => refusal.code(),
+            Self::PackageIdMismatch { .. } => Code::StaleDependency,
+            Self::UnknownFunction { .. } => Code::MissingDeclaration,
+            Self::UnknownParameter(_)
+            | Self::DuplicateArgument(_)
+            | Self::UnboundParameter(_)
+            | Self::Witness(_)
+            | Self::NotAPredicate { .. } => Code::InvalidRuntimeInput,
+            Self::Input(refusal) => refusal.code(),
+            Self::Fault(_) => Code::RuntimeInvariant,
+        }
+    }
 }
 
 /// The executor's toolchain pin in every result it settles (ADR-013 O-27).
@@ -175,11 +203,12 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
             },
             Some(EvaluatedValue::Boolean(holds)),
         ),
+        // `select` admitted only a function declared `Boolean`.
         FamilyOutcome::Evaluated(Outcome::Completed(_)) => {
-            return Err(ReplayRefusal::NotAPredicate {
-                selection: request.selected_function().clone(),
-                package: compiled.emitted.package_id(),
-            });
+            return Err(ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "boolean-function-completes-a-boolean",
+            )));
         }
         FamilyOutcome::Evaluated(Outcome::Refused(_)) => (ProofCategory::Refusal, None),
         FamilyOutcome::Evaluated(Outcome::Incomplete(_)) => (ProofCategory::Incomplete, None),
@@ -214,14 +243,18 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
             proved,
             Verdict::from_category(replayed),
             replayed,
-            value,
             // A predicate's whole result decides it: the deciding element
             // is the value itself, at no index, path or trace position.
-            value.map(|value| SeparatingWitnessRecord {
-                deciding_element: value,
-                index: 0,
-                value_path: Vec::new(),
-                trace_position: None,
+            value.map(|value| {
+                (
+                    value,
+                    SeparatingWitnessRecord {
+                        deciding_element: value,
+                        index: 0,
+                        value_path: Vec::new(),
+                        trace_position: None,
+                    },
+                )
             }),
             regions,
             charges,
@@ -326,17 +359,19 @@ fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
     Ok(compiled)
 }
 
-/// The selected function: its S6a name and its parameter nodes in
-/// declared order.
+/// The selected function: its S6a name, and its parameter nodes and
+/// declared types in declared order.
 struct Selected {
     name: qsl_eval::value::QualifiedName,
     parameters: Vec<NodeKey>,
+    types: Vec<ValueType>,
 }
 
 /// OQ-5: resolve `name` by name lookup in the recompiled package's
 /// declarations -- the one name lookup after the check stage (R-06).
 /// Complete-V1 declares no qualified names, so only a one-segment name
-/// can resolve.
+/// can resolve. A function whose declared result is not `Boolean` states
+/// no property, and refuses here, before any call or charge.
 fn select(compiled: &Compiled, name: &QualifiedName) -> Result<Selected, ReplayRefusal> {
     let package = &compiled.package;
     let unknown = || ReplayRefusal::UnknownFunction {
@@ -350,6 +385,17 @@ fn select(compiled: &Compiled, name: &QualifiedName) -> Result<Selected, ReplayR
         .graph()
         .callable(segment.as_str())
         .ok_or_else(unknown)?;
+    if *callable.result != ValueType::Boolean {
+        return Err(ReplayRefusal::NotAPredicate {
+            selection: name.clone(),
+            package: compiled.emitted.package_id(),
+        });
+    }
+    let types: Vec<ValueType> = callable
+        .parameters
+        .iter()
+        .map(|(_, value_type)| value_type.clone())
+        .collect();
     let parameters = package
         .graph()
         .semantic_graph()
@@ -361,7 +407,17 @@ fn select(compiled: &Compiled, name: &QualifiedName) -> Result<Selected, ReplayR
         )))?;
     let name =
         qsl_eval::value::QualifiedName::unqualified(segment.as_str()).map_err(|_| unknown())?;
-    Ok(Selected { name, parameters })
+    if parameters.len() != types.len() {
+        return Err(ReplayRefusal::Fault(InternalFault::new(
+            "replay",
+            "function-node-parameters-match-signature",
+        )));
+    }
+    Ok(Selected {
+        name,
+        parameters,
+        types,
+    })
 }
 
 /// The call's arguments in declared parameter order (ADR-013 O-25, C-11):
@@ -406,10 +462,40 @@ fn arguments(
             witness.decode(&order).map_err(ReplayRefusal::Witness)?
         }
     };
-    Ok(values
+    values
         .into_iter()
-        .map(|value| Value::Integer(Integer::from(value)))
-        .collect())
+        .zip(&call.types)
+        .enumerate()
+        .map(|(parameter, (value, value_type))| argument(parameter, value, value_type))
+        .collect()
+}
+
+/// A canonical integer assignment as a value of its parameter's declared
+/// type: an integer for an integer type, and `0` or `1` for `Boolean`
+/// (`false`, `true`). Any other value, or a type no integer is a value of,
+/// refuses `WrongValueKind` before the call -- the refusal S6a admission
+/// gives an argument of the wrong kind.
+fn argument(parameter: usize, value: i64, value_type: &ValueType) -> Result<Value, ReplayRefusal> {
+    let wrong = || ReplayRefusal::Input(InputRefusal::WrongValueKind { parameter });
+    match value_type {
+        ValueType::Boolean => match value {
+            0 => Ok(Value::Boolean(false)),
+            1 => Ok(Value::Boolean(true)),
+            _ => Err(wrong()),
+        },
+        ValueType::Integer | ValueType::Int(_) => Ok(Value::Integer(Integer::from(value))),
+        ValueType::Rational(_)
+        | ValueType::Decimal(_)
+        | ValueType::Float(_)
+        | ValueType::Quantity(_)
+        | ValueType::Text(_)
+        | ValueType::Enum(_)
+        | ValueType::Option(_)
+        | ValueType::Composite(_)
+        | ValueType::Collection(_)
+        | ValueType::Reference(_)
+        | ValueType::Population(_) => Err(wrong()),
+    }
 }
 
 /// A checked node's wire spelling, for reporting and for the witness's

@@ -223,10 +223,10 @@ impl SemanticNode {
     }
 
     /// FR-092 "Function nodes": a function node's parameter nodes, in
-    /// declared parameter order, read from the `parameters` binding its
-    /// lowering writes first. `None` for every node that is not a function
-    /// node. The replay executor joins arguments keyed by parameter node
-    /// id to parameter positions through this (ADR-013 O-25, C-11).
+    /// declared parameter order, read from its `parameters` binding. `None`
+    /// for every node that is not a function node. The replay executor
+    /// joins arguments keyed by parameter node id to parameter positions
+    /// through this (ADR-013 O-25, C-11).
     pub fn function_parameters(&self) -> Option<Vec<NodeKey>> {
         if self.content.node_tag != NodeTag::Function {
             return None;
@@ -234,11 +234,13 @@ impl SemanticNode {
         let SemanticTerm::Aggregate { members } = &self.content.body else {
             return None;
         };
-        let Some(SemanticTerm::Binding { name, value }) = members.first() else {
-            return None;
-        };
-        let (true, SemanticTerm::Aggregate { members }) =
-            (name == FUNCTION_PARAMETERS, value.as_ref())
+        let SemanticTerm::Aggregate { members } =
+            members.iter().find_map(|member| match member {
+                SemanticTerm::Binding { name, value } if name == FUNCTION_PARAMETERS => {
+                    Some(value.as_ref())
+                }
+                _ => None,
+            })?
         else {
             return None;
         };
