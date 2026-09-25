@@ -3,7 +3,7 @@
 //! ADR-011 §7.3 X-2).
 //!
 //! Module order, per ADR-011 §6.1's F row: [`absence`] < [`json_number`] <
-//! [`serde_object`] < [`digest`] < [`wire_format`] < [`source`] (with
+//! [`serde_object`] < [`digest`] < [`wire_format`] < [`bound`] < [`source`] (with
 //! [`source_map`]) < [`selection`] < [`diagnostic`]. Every module here depends only on
 //! `quire-exact` (K) and external crates -- no module imports the QSL root
 //! crate or a SEAM module (ADR-011 §6.1's leaf-of-QSL-workspace rule for
@@ -18,6 +18,7 @@
 #![forbid(unsafe_code)]
 
 pub mod absence;
+pub mod bound;
 pub mod diagnostic;
 pub mod digest;
 pub mod json_number;
