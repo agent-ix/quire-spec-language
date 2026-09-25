@@ -894,7 +894,7 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
                 declaration(name)
                     .nodes()
                     .iter()
-                    .any(|node| node.ty.as_ref().is_some_and(|ty| expected(ty)))
+                    .any(|node| node.ty.as_ref().is_some_and(expected))
             };
             for name in ["Maybe", "Few", "Nested"] {
                 assert_eq!(
