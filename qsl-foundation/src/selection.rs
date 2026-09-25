@@ -108,28 +108,43 @@ impl DefinitionRef {
     }
 }
 
-/// Raw-byte SHA-256 digest of one compiled-model document.
+/// The digest a source `model` declaration selects its model by. The
+/// prefix names the slot: `sha256:` is the SHA-256 of a compiled-model
+/// artifact's raw bytes, and `sha256-jcs:` the SHA-256 of a domain
+/// package's RFC 8785 document (QSL FR-056-CON-4). Neither spelling selects
+/// the other kind of model.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ModelDigest(ByteDigest);
+pub enum ModelDigest {
+    /// `sha256:<hex>`: a compiled-model artifact's raw bytes.
+    Artifact(ByteDigest),
+    /// `sha256-jcs:<hex>`: a domain package's RFC 8785 document.
+    DomainPackage(ByteDigest),
+}
 
 impl ModelDigest {
-    /// Parse the canonical SHA-256 spelling selected by source.
+    /// Parse the canonical `sha256:` or `sha256-jcs:` spelling selected by
+    /// source.
     pub fn parse(value: &str) -> Result<Self, InvalidDigest> {
-        value.parse().map(Self)
+        match value.strip_prefix("sha256-jcs:") {
+            Some(hex) => ByteDigest::from_hex(hex).map(Self::DomainPackage),
+            None => value.parse().map(Self::Artifact),
+        }
     }
 
     /// Wrap an already-computed raw-byte digest.
     pub fn from_digest(digest: ByteDigest) -> Self {
-        Self(digest)
+        Self::Artifact(digest)
     }
 
-    /// Canonical selected value.
+    /// The SHA-256 value, in whichever slot it selects.
     pub fn digest(self) -> ByteDigest {
-        self.0
+        match self {
+            Self::Artifact(digest) | Self::DomainPackage(digest) => digest,
+        }
     }
 }
 
-/// Exact compiled-model identity/version/raw-byte-digest triple.
+/// Exact compiled-model identity/version/digest triple.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ModelRef {
     identity: String,
@@ -177,7 +192,7 @@ impl ModelRef {
         &self.version
     }
 
-    /// Exact raw-byte compiled-model digest.
+    /// Exact selected model digest.
     pub fn digest(&self) -> ModelDigest {
         self.digest
     }

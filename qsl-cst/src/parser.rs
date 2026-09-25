@@ -364,7 +364,7 @@ fn extract_selections(
         let invalid_digest = || InvalidDefinition {
             token: digest,
             cause: HostCause::SelectionDigest,
-            message: "compiled-model document digest must be canonical SHA-256",
+            message: "model digest must be canonical `sha256:` or `sha256-jcs:` SHA-256",
         };
         let identity_value = text(identity).ok_or_else(invalid_identity)?;
         let version_value = text(version).ok_or_else(invalid_version)?;
