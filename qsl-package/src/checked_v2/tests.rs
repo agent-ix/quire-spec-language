@@ -10,17 +10,19 @@
 
 use ix_trace_rs::trace;
 use quire_contract_ir::{
-    CheckedArtifactLocator, CheckedPackageEvidence, CheckedPackageLimit, CheckedPackageRefusalCode,
+    CheckedArtifactLocator, CheckedPackageEvidence, CheckedPackageRefusalCode,
     CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::{
-    read_checked_package_v2, V2ReadIncomplete, V2ReadLimits, V2ReadOutcome, V2ReadRefusal,
+use super::{read_v2, Read, V2ReadLimits, V2ReadRefusal};
+use std::collections::BTreeMap;
+
+use qsl_foundation::diagnostic::{
+    CatalogCode, CatalogCoded, Category, Code, LimitExceeded, LimitKind, Locus,
 };
-use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::check::CheckCause;
@@ -243,8 +245,18 @@ fn no_pins() -> PinnedRequest {
     PinnedRequest::default()
 }
 
-fn read(bytes: &[u8], pinned: &PinnedRequest) -> V2ReadOutcome {
-    read_checked_package_v2(
+/// The reader's own artifact byte ceiling at `limit`, reached by `actual`
+/// offered bytes: no locus (FR-096).
+fn input_bytes(limit: usize, actual: usize) -> LimitExceeded {
+    LimitExceeded::new(
+        LimitKind::InputBytes,
+        u64::try_from(limit).unwrap(),
+        u128::try_from(actual).unwrap(),
+    )
+}
+
+fn read(bytes: &[u8], pinned: &PinnedRequest) -> Read {
+    read_v2(
         bytes,
         identity("pkg"),
         "1".to_owned(),
@@ -256,9 +268,9 @@ fn read(bytes: &[u8], pinned: &PinnedRequest) -> V2ReadOutcome {
 
 /// The `library` refusal a wire read ended in, or a panic naming the
 /// outcome it got instead.
-fn structural(outcome: V2ReadOutcome) -> LibraryRefusal {
+fn structural(outcome: Read) -> LibraryRefusal {
     match outcome {
-        V2ReadOutcome::Refused(V2ReadRefusal::Structural(refusal)) => refusal,
+        Read::Refused(V2ReadRefusal::Structural(refusal)) => refusal,
         other => panic!("expected Refused(Structural(_)), got {other:?}"),
     }
 }
@@ -271,7 +283,7 @@ fn accepts_valid_bytes() {
     let preimage = identity_preimage(vec![]);
     let bytes = jcs(&valid_envelope(&preimage));
     match read(&bytes, &pinned_for(&preimage)) {
-        V2ReadOutcome::Verified { package, .. } => {
+        Read::Verified { package, .. } => {
             assert_eq!(package.library(), &identity("pkg"));
             assert_eq!(package.version(), "1");
             assert_eq!(
@@ -332,7 +344,7 @@ fn reversed_node_order_is_admitted_under_a_different_package_id() {
     let admitted = |exports: &[(&str, &str)]| {
         let (preimage, envelope) = envelope_in_graph_order(exports);
         match read(&jcs(&envelope), &pinned_for(&preimage)) {
-            V2ReadOutcome::Verified { package, .. } => package,
+            Read::Verified { package, .. } => package,
             other => panic!("expected Verified, got {other:?}"),
         }
     };
@@ -354,7 +366,7 @@ fn reversed_node_order_is_admitted_under_a_different_package_id() {
 fn import_view_of(exports: &[(&str, &str)]) -> (PackageId, ImportView) {
     let (preimage, envelope) = envelope_declaring(exports);
     let verified = match read(&jcs(&envelope), &pinned_for(&preimage)) {
-        V2ReadOutcome::Verified { package, .. } => package,
+        Read::Verified { package, .. } => package,
         other => panic!("expected Verified, got {other:?}"),
     };
     let package_id = verified.package_id();
@@ -505,18 +517,19 @@ fn refuses_unsupported_version_with_no_pin() {
     assert!(
         matches!(
             &outcome,
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
-                if refusal.code == CheckedPackageRefusalCode::UnknownContractVersion
+            Read::Refused(V2ReadRefusal::UnsupportedVersion { wire, .. })
+                if &*wire.actual == "quire.checked-package/v1"
         ),
-        "expected Refused(Envelope(UnknownContractVersion)), got {outcome:?}"
+        "expected Refused(UnsupportedVersion), got {outcome:?}"
     );
 }
 
-/// The refusal's stable `Code`; asserted rather than IR's own `path` text
-/// (which embeds `serde_json`'s line/column and is not a stable contract).
-fn envelope_code(outcome: &V2ReadOutcome) -> Option<Code> {
+/// The refusal's stable `Code`.
+fn envelope_code(outcome: &Read) -> Option<Code> {
     match outcome {
-        V2ReadOutcome::Refused(refusal @ V2ReadRefusal::Envelope(_)) => Some(refusal.code()),
+        Read::Refused(
+            refusal @ (V2ReadRefusal::Envelope { .. } | V2ReadRefusal::UnsupportedVersion { .. }),
+        ) => Some(refusal.code()),
         _ => None,
     }
 }
@@ -532,10 +545,9 @@ fn refuses_unknown_contract_version() {
     assert!(
         matches!(
             &outcome,
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
-                if refusal.code == CheckedPackageRefusalCode::UnknownContractVersion
+            Read::Refused(V2ReadRefusal::UnsupportedVersion { .. })
         ),
-        "expected Refused(Envelope(UnknownContractVersion)), got {outcome:?}"
+        "expected Refused(UnsupportedVersion), got {outcome:?}"
     );
     assert_eq!(envelope_code(&outcome), Some(Code::InvalidPackage));
 }
@@ -550,7 +562,7 @@ fn refuses_missing_member_as_malformed_wire() {
     assert!(
         matches!(
             &outcome,
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
                 if refusal.code == CheckedPackageRefusalCode::MalformedWire
         ),
         "expected Refused(Envelope(MalformedWire)), got {outcome:?}"
@@ -564,7 +576,7 @@ fn refuses_non_object_wire_as_malformed_wire() {
     assert!(
         matches!(
             &outcome,
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
                 if refusal.code == CheckedPackageRefusalCode::MalformedWire
         ),
         "expected Refused(Envelope(MalformedWire)), got {outcome:?}"
@@ -600,7 +612,7 @@ fn refuses_duplicate_top_level_member() {
     assert!(
         matches!(
             &outcome,
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
                 if refusal.code == CheckedPackageRefusalCode::DuplicateMember
         ),
         "expected Refused(Envelope(DuplicateMember)), got {outcome:?}"
@@ -617,7 +629,7 @@ fn refuses_unrecognized_top_level_member() {
     assert!(
         matches!(
             &outcome,
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
                 if refusal.code == CheckedPackageRefusalCode::UnknownMember
         ),
         "expected Refused(Envelope(UnknownMember)), got {outcome:?}"
@@ -634,7 +646,7 @@ fn refuses_digest_domain_mismatch() {
     assert!(
         matches!(
             &outcome,
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
                 if refusal.code == CheckedPackageRefusalCode::DigestDomainMismatch
         ),
         "expected Refused(Envelope(DigestDomainMismatch)), got {outcome:?}"
@@ -662,7 +674,7 @@ fn refuses_package_id_that_does_not_recompute() {
     assert!(
         matches!(
             &outcome,
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
                 if refusal.code == CheckedPackageRefusalCode::StaleDependency
         ),
         "expected Refused(Envelope(StaleDependency)), got {outcome:?}"
@@ -699,7 +711,7 @@ fn refuses_an_ambiguous_declaration_at_ir_intake() {
     ]);
     let bytes = jcs(&envelope);
     let outcome = read(&bytes, &pinned_for(&preimage));
-    let V2ReadOutcome::Refused(ref refusal @ V2ReadRefusal::Envelope(ref envelope)) = outcome
+    let Read::Refused(ref refusal @ V2ReadRefusal::Envelope { refusal: ref envelope, .. }) = outcome
     else {
         panic!("expected Refused(Envelope(AmbiguousDeclaration)), got {outcome:?}");
     };
@@ -715,7 +727,7 @@ fn refuses_dependency_selections_present() {
     let dependency = vec![selection("dependency", "dep-def")];
     let preimage = identity_preimage(dependency);
     let bytes = jcs(&valid_envelope(&preimage));
-    let outcome = read_checked_package_v2(
+    let outcome = read_v2(
         &bytes,
         identity("pkg"),
         "1".to_owned(),
@@ -723,9 +735,12 @@ fn refuses_dependency_selections_present() {
         &evidence(Some("dep-def")),
         &pinned_for(&preimage),
     );
-    assert_eq!(
-        outcome,
-        V2ReadOutcome::Refused(V2ReadRefusal::UnsupportedDependencySelections)
+    assert!(
+        matches!(
+            outcome,
+            Read::Refused(V2ReadRefusal::UnsupportedDependencySelections { .. })
+        ),
+        "{outcome:?}"
     );
 }
 
@@ -737,7 +752,7 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
         artifact_bytes: bytes.len() - 1,
         ..V2ReadLimits::default()
     };
-    let outcome = read_checked_package_v2(
+    let outcome = read_v2(
         &bytes,
         identity("pkg"),
         "1".to_owned(),
@@ -745,13 +760,7 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
         &evidence(None),
         &pinned_for(&preimage),
     );
-    assert_eq!(
-        outcome,
-        V2ReadOutcome::Incomplete(V2ReadIncomplete::Bytes {
-            limit: bytes.len() - 1,
-            actual: bytes.len(),
-        })
-    );
+    assert_eq!(outcome, Read::Limit(input_bytes(bytes.len() - 1, bytes.len())));
 }
 
 /// A valid wire of at least `min_bytes`, made large by one export whose
@@ -776,7 +785,7 @@ fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default()
     let default_bytes = V2ReadLimits::default().artifact_bytes;
     let (preimage, bytes) = wire_of_at_least(default_bytes + 1);
     let read_under = |limits: V2ReadLimits| {
-        read_checked_package_v2(
+        read_v2(
             &bytes,
             identity("pkg"),
             "1".to_owned(),
@@ -788,10 +797,7 @@ fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default()
 
     assert_eq!(
         read_under(V2ReadLimits::default()),
-        V2ReadOutcome::Incomplete(V2ReadIncomplete::Bytes {
-            limit: default_bytes,
-            actual: bytes.len(),
-        }),
+        Read::Limit(input_bytes(default_bytes, bytes.len())),
         "the default ceiling must refuse an oversized read at the byte-length gate"
     );
 
@@ -800,7 +806,7 @@ fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default()
         ..V2ReadLimits::default()
     };
     match read_under(raised) {
-        V2ReadOutcome::Verified {
+        Read::Verified {
             effective_limits, ..
         } => assert_eq!(effective_limits, raised),
         other => panic!("expected Verified under the raised ceiling, got {other:?}"),
@@ -826,7 +832,7 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
     let (preimage, envelope) = envelope_declaring(&exports);
     let bytes = jcs(&envelope);
     let read_under = |limits: V2ReadLimits| {
-        read_checked_package_v2(
+        read_v2(
             &bytes,
             identity("pkg"),
             "1".to_owned(),
@@ -843,9 +849,9 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
         ..V2ReadLimits::default()
     };
     match read_under(base) {
-        V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit { kind, limit, .. }) => {
-            assert_eq!(kind, CheckedPackageLimit::Nodes);
-            assert_eq!(limit, default_nodes);
+        Read::Limit(exceeded) => {
+            assert_eq!(exceeded.kind(), LimitKind::NodeCount);
+            assert_eq!(exceeded.configured_bound(), default_nodes);
         }
         other => panic!("expected Incomplete(Limit(Nodes)) at IR's default, got {other:?}"),
     }
@@ -855,7 +861,7 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
         ..base
     };
     match read_under(raised) {
-        V2ReadOutcome::Verified {
+        Read::Verified {
             effective_limits, ..
         } => assert_eq!(effective_limits, raised),
         other => panic!("expected Verified under the raised node ceiling, got {other:?}"),
@@ -874,7 +880,7 @@ fn a_verified_read_records_depth_as_the_enforced_serde_json_cap() {
         depth: 500,
         ..V2ReadLimits::default()
     };
-    match read_checked_package_v2(
+    match read_v2(
         &bytes,
         identity("pkg"),
         "1".to_owned(),
@@ -882,7 +888,7 @@ fn a_verified_read_records_depth_as_the_enforced_serde_json_cap() {
         &evidence(None),
         &pinned_for(&preimage),
     ) {
-        V2ReadOutcome::Verified {
+        Read::Verified {
             effective_limits, ..
         } => assert_eq!(
             effective_limits,
@@ -896,7 +902,7 @@ fn a_verified_read_records_depth_as_the_enforced_serde_json_cap() {
 }
 
 /// QSL-199 AC-3: reaching a *caller-raised* ceiling (not just the default)
-/// still refuses, naming the limit kind ([`V2ReadIncomplete::Bytes`]) and
+/// still refuses, naming the limit kind ([`LimitKind::InputBytes`]) and
 /// the caller's own configured bound.
 #[test]
 fn reaching_a_caller_raised_artifact_bytes_ceiling_refuses_naming_the_kind_and_bound() {
@@ -905,7 +911,7 @@ fn reaching_a_caller_raised_artifact_bytes_ceiling_refuses_naming_the_kind_and_b
         ..V2ReadLimits::default()
     };
     let oversized = vec![b'x'; raised.artifact_bytes + 1];
-    let outcome = read_checked_package_v2(
+    let outcome = read_v2(
         &oversized,
         identity("pkg"),
         "1".to_owned(),
@@ -915,10 +921,7 @@ fn reaching_a_caller_raised_artifact_bytes_ceiling_refuses_naming_the_kind_and_b
     );
     assert_eq!(
         outcome,
-        V2ReadOutcome::Incomplete(V2ReadIncomplete::Bytes {
-            limit: raised.artifact_bytes,
-            actual: oversized.len(),
-        }),
+        Read::Limit(input_bytes(raised.artifact_bytes, oversized.len())),
         "must name the raised ceiling actually in force, not the original default"
     );
 }
@@ -931,7 +934,7 @@ fn incomplete_when_a_depth_ceiling_is_reached() {
         depth: 1,
         ..V2ReadLimits::default()
     };
-    match read_checked_package_v2(
+    match read_v2(
         &bytes,
         identity("pkg"),
         "1".to_owned(),
@@ -939,10 +942,7 @@ fn incomplete_when_a_depth_ceiling_is_reached() {
         &evidence(None),
         &pinned_for(&preimage),
     ) {
-        V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
-            kind: CheckedPackageLimit::Depth,
-            ..
-        }) => {}
+        Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {}
         other => panic!("expected Incomplete(Limit(Depth)), got {other:?}"),
     }
 }
@@ -955,7 +955,7 @@ fn exact_selected_limits_admit_the_boundary() {
         artifact_bytes: bytes.len(),
         ..V2ReadLimits::default()
     };
-    let outcome = read_checked_package_v2(
+    let outcome = read_v2(
         &bytes,
         identity("pkg"),
         "1".to_owned(),
@@ -963,7 +963,7 @@ fn exact_selected_limits_admit_the_boundary() {
         &evidence(None),
         &pinned_for(&preimage),
     );
-    assert!(matches!(outcome, V2ReadOutcome::Verified { .. }));
+    assert!(matches!(outcome, Read::Verified { .. }));
 }
 
 #[test]
@@ -975,7 +975,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
     // test itself, rather than a second, drifting reimplementation of IR's
     // own `json_depth` (L5): an unreachably low ceiling forces
     // `Incomplete(Limit(Depth))`, whose `consumed` is IR's own count.
-    let actual_depth = match read_checked_package_v2(
+    let actual_depth = match read_v2(
         &bytes,
         identity("pkg"),
         "1".to_owned(),
@@ -986,11 +986,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         &evidence(None),
         &pinned_for(&preimage),
     ) {
-        V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
-            kind: CheckedPackageLimit::Depth,
-            consumed,
-            ..
-        }) => consumed,
+        Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => exceeded.actual(),
         other => panic!("expected Incomplete(Limit(Depth)) at depth 0, got {other:?}"),
     };
 
@@ -998,7 +994,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         depth: actual_depth as usize,
         ..V2ReadLimits::default()
     };
-    let outcome = read_checked_package_v2(
+    let outcome = read_v2(
         &bytes,
         identity("pkg"),
         "1".to_owned(),
@@ -1007,7 +1003,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         &pinned_for(&preimage),
     );
     assert!(
-        matches!(outcome, V2ReadOutcome::Verified { .. }),
+        matches!(outcome, Read::Verified { .. }),
         "expected Verified at the exact depth boundary, got {outcome:?}"
     );
 
@@ -1015,7 +1011,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         depth: (actual_depth - 1) as usize,
         ..V2ReadLimits::default()
     };
-    match read_checked_package_v2(
+    match read_v2(
         &bytes,
         identity("pkg"),
         "1".to_owned(),
@@ -1023,10 +1019,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         &evidence(None),
         &pinned_for(&preimage),
     ) {
-        V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
-            kind: CheckedPackageLimit::Depth,
-            ..
-        }) => {}
+        Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {}
         other => panic!("expected Incomplete(Limit(Depth)) one below the boundary, got {other:?}"),
     }
 }
@@ -1052,7 +1045,7 @@ fn depth_far_past_the_default_limit_is_refused_as_malformed_wire_not_incomplete(
     // configured. Bare bytes, not a valid envelope: the depth check runs
     // before schema decode, on any well-formed JSON document.
     let bytes = jcs(&nested_array(200, json!(1)));
-    let outcome = read_checked_package_v2(
+    let outcome = read_v2(
         &bytes,
         identity("pkg"),
         "1".to_owned(),
@@ -1063,7 +1056,7 @@ fn depth_far_past_the_default_limit_is_refused_as_malformed_wire_not_incomplete(
     assert!(
         matches!(
             &outcome,
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
                 if refusal.code == CheckedPackageRefusalCode::MalformedWire
         ),
         "expected Refused(Envelope(MalformedWire)) once nesting passes serde's recursion cap, got {outcome:?}"
@@ -1086,7 +1079,7 @@ fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
     };
     let is_depth_incomplete = |bytes: &[u8]| {
         matches!(
-            read_checked_package_v2(
+            read_v2(
                 bytes,
                 identity("pkg"),
                 "1".to_owned(),
@@ -1094,10 +1087,7 @@ fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
                 &evidence(None),
                 &no_pins()
             ),
-            V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
-                kind: CheckedPackageLimit::Depth,
-                ..
-            })
+            Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth
         )
     };
 
@@ -1149,7 +1139,7 @@ fn a_verified_read_carries_the_wire_source_map() {
         second,
     ]);
     let source_map = match read(&jcs(&envelope), &pinned_for(&preimage)) {
-        V2ReadOutcome::Verified { source_map, .. } => source_map,
+        Read::Verified { source_map, .. } => source_map,
         other => panic!("expected Verified, got {other:?}"),
     };
     let entries = envelope["source_map"].as_array().unwrap();
@@ -1196,11 +1186,11 @@ fn a_source_map_entry_naming_an_unknown_node_refuses() {
     let (preimage, mut envelope) = envelope_declaring(&[("pkg::A", "A")]);
     envelope["source_map"][0]["node_id"] = node_ref("pkg::unknown");
     match read(&jcs(&envelope), &pinned_for(&preimage)) {
-        V2ReadOutcome::Refused(refusal) => {
+        Read::Refused(refusal) => {
             assert!(
                 matches!(
                     &refusal,
-                    V2ReadRefusal::Envelope(ir)
+                    V2ReadRefusal::Envelope { refusal: ir, .. }
                         if ir.code == CheckedPackageRefusalCode::InvalidSourceMap
                 ),
                 "{refusal:?}"
@@ -1343,7 +1333,7 @@ fn read_fixture(path: &std::path::Path) -> Value {
 /// the fixture's own locked artifacts as current and its required features
 /// as supported. The published fixture is pretty-printed; the wire is its
 /// canonical form.
-fn read_fixture_wire(envelope: &Value) -> (PackageId, V2ReadOutcome) {
+fn read_fixture_wire(envelope: &Value) -> (PackageId, Read) {
     let mut evidence = CheckedPackageEvidence::new();
     locked_artifacts(&envelope["lock"], &mut evidence);
     locked_artifacts(&envelope["diagnostics"], &mut evidence);
@@ -1351,7 +1341,7 @@ fn read_fixture_wire(envelope: &Value) -> (PackageId, V2ReadOutcome) {
         evidence.support_feature(feature.as_str().unwrap());
     }
     let package_id = PackageId::of_preimage(&jcs(&envelope["identity_preimage"]));
-    let outcome = read_checked_package_v2(
+    let outcome = read_v2(
         &jcs(envelope),
         identity("pkg"),
         "1".to_owned(),
@@ -1383,7 +1373,7 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
     for path in &paths {
         let envelope = read_fixture(path);
         let source_map = match read_fixture_wire(&envelope).1 {
-            V2ReadOutcome::Verified { source_map, .. } => source_map,
+            Read::Verified { source_map, .. } => source_map,
             other => panic!("{}: expected Verified, got {other:?}", path.display()),
         };
         let entries = envelope["source_map"].as_array().unwrap();
@@ -1466,7 +1456,7 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
             unsorted += 1;
         }
         match read_fixture_wire(&envelope) {
-            (package_id, V2ReadOutcome::Verified { package, .. }) => {
+            (package_id, Read::Verified { package, .. }) => {
                 assert_eq!(package.package_id(), package_id, "{}", path.display());
             }
             (_, other) => panic!("{}: expected Verified, got {other:?}", path.display()),
@@ -1501,7 +1491,7 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
         assert!(
             matches!(
                 &outcome,
-                V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal)) if refusal.code == expected
+                Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) if refusal.code == expected
             ),
             "{id}: expected Refused(Envelope({expected:?})), got {outcome:?}"
         );
@@ -1510,4 +1500,237 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
         "conformance: {} adverse mutations refused with their expected causes",
         mutations.len()
     );
+}
+
+
+/// `Locus::Artifact` over `bytes`, computed here from the bytes themselves
+/// (FR-201 `raw-artifact-digest`: the SHA-256 of the complete supplied
+/// bytes), at `pointer`.
+fn artifact_locus(bytes: &[u8], pointer: &str) -> Locus {
+    Locus::Artifact {
+        digest: DigestRecord::mint(DigestDomain::RawArtifactDigest, Sha256::digest(bytes).into()),
+        pointer: pointer.parse().unwrap(),
+    }
+}
+
+/// FR-096-AC-9: IR's refusal of the contract version is
+/// `unknown_wire`/`unsupported-wire`, naming the version the bytes carry and
+/// the one this reader admits, located at the bytes' `raw-artifact-digest`
+/// and `/contract_version`. Bytes that are not JSON refuse with no locus.
+#[trace("TC-429", "FR-096-AC-9")]
+#[test]
+fn an_unknown_contract_version_is_unsupported_wire_at_contract_version() {
+    let preimage = identity_preimage(vec![]);
+    let mut envelope = valid_envelope(&preimage);
+    envelope["contract_version"] = json!("quire.checked-package/v3");
+    let bytes = jcs(&envelope);
+    let Read::Refused(refusal) = read(&bytes, &pinned_for(&preimage)) else {
+        panic!("an unknown contract version must refuse");
+    };
+    let expected_locus = artifact_locus(&bytes, "/contract_version");
+    assert_eq!(refusal.locus(), Some(&expected_locus));
+    let record = refusal
+        .unsupported_wire_record()
+        .expect("an unknown contract version is unsupported-wire");
+    assert_eq!(
+        record.code(),
+        CatalogCode::new("unknown_wire", "unsupported-wire")
+    );
+    assert_eq!(record.category(), Category::Refusal);
+    assert_eq!(record.locus(), Some(&expected_locus));
+    assert_eq!(
+        record.fields(),
+        &BTreeMap::from([
+            ("actual", "quire.checked-package/v3".to_owned()),
+            ("expected", "quire.checked-package/v2".to_owned()),
+        ])
+    );
+
+    let not_json = b"not json";
+    match read(not_json, &no_pins()) {
+        Read::Refused(refusal @ V2ReadRefusal::Envelope { .. }) => {
+            assert_eq!(refusal.locus(), None);
+            assert_eq!(refusal.unsupported_wire_record(), None);
+        }
+        other => panic!("bytes that are not JSON must refuse, got {other:?}"),
+    }
+}
+
+/// FR-096 "The I2 reader locates its refusals in the artifact": an IR
+/// refusal at a value is located at the bytes' `raw-artifact-digest` and
+/// the pointer of that value -- here a `package_id` digest domain and a
+/// graph node's tag. A lock naming dependency selections is located at
+/// `/lock/dependency_selections`.
+#[trace("TC-429", "FR-096-AC-9")]
+#[test]
+fn a_refusal_at_a_value_is_located_at_its_pointer() {
+    let preimage = identity_preimage(vec![]);
+    let mut domain = valid_envelope(&preimage);
+    domain["package_id"]["domain"] = json!(SOURCE_DOMAIN);
+    let mut tag = valid_envelope(&preimage);
+    tag["semantic_graph"]["nodes"][0]["node_tag"] = json!("nonsense");
+    for (envelope, code, pointer) in [
+        (
+            domain,
+            CheckedPackageRefusalCode::DigestDomainMismatch,
+            "/package_id/domain",
+        ),
+        (
+            tag,
+            CheckedPackageRefusalCode::UnsupportedNodeTag,
+            "/semantic_graph/nodes/0/node_tag",
+        ),
+    ] {
+        let bytes = jcs(&envelope);
+        match read(&bytes, &pinned_for(&preimage)) {
+            Read::Refused(refused @ V2ReadRefusal::Envelope { .. }) => {
+                let V2ReadRefusal::Envelope { refusal, .. } = &refused else {
+                    unreachable!("matched above");
+                };
+                assert_eq!(refusal.code, code);
+                assert_eq!(refused.locus(), Some(&artifact_locus(&bytes, pointer)));
+            }
+            other => panic!("expected an envelope refusal at {pointer}, got {other:?}"),
+        }
+    }
+
+    let preimage = identity_preimage(vec![selection("dependency", "dep")]);
+    let bytes = jcs(&valid_envelope(&preimage));
+    let outcome = read_v2(
+        &bytes,
+        identity("pkg"),
+        "1".to_owned(),
+        V2ReadLimits::default(),
+        &evidence(Some("dep")),
+        &pinned_for(&preimage),
+    );
+    match outcome {
+        Read::Refused(refusal @ V2ReadRefusal::UnsupportedDependencySelections { .. }) => {
+            assert_eq!(
+                refusal.locus(),
+                Some(&artifact_locus(&bytes, "/lock/dependency_selections"))
+            );
+        }
+        other => panic!("expected UnsupportedDependencySelections, got {other:?}"),
+    }
+}
+
+/// FR-096-AC-10 at catalog revision `1-draft.7`: each of IR's reader limits
+/// the reader can reach, lowered below a real fixture, stops the read with
+/// its own kind, the configured bound, IR's counter as actual, and
+/// `Locus::Artifact` at the bytes' `raw-artifact-digest` and the pointer IR
+/// reports. The reader's own artifact byte ceiling reports input bytes with
+/// no locus.
+#[trace("TC-429", "FR-096-AC-10")]
+#[test]
+fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
+    let defaults = V2ReadLimits::default();
+    let preimage = identity_preimage(vec![]);
+    let base = valid_envelope(&preimage);
+    let (two_preimage, two_nodes) = envelope_declaring(&[("pkg::A", "A"), ("pkg::B", "B")]);
+    let mut diagnosed = base.clone();
+    diagnosed["diagnostics"]["entries"] = json!([{
+        "stage": "type_checking",
+        "code": "invalid_syntax",
+        "cause_tag": "malformed-json",
+        "details": [],
+        "loci": [],
+    }]);
+    let mut edge_preimage = preimage.clone();
+    edge_preimage["identity_projection"][0]["dependencies"] = json!([node_ref("pkg::R")]);
+    let mut edged = valid_envelope(&edge_preimage);
+    edged["semantic_graph"]["nodes"][0]["dependencies"] = json!([node_ref("pkg::R")]);
+
+    let cases = [
+        (
+            &base,
+            &preimage,
+            V2ReadLimits { depth: 1, ..defaults },
+            LimitKind::NestingDepth,
+            1,
+            8,
+            "/capability_report",
+        ),
+        (
+            &two_nodes,
+            &two_preimage,
+            V2ReadLimits { nodes: 1, ..defaults },
+            LimitKind::NodeCount,
+            1,
+            2,
+            "/semantic_graph/nodes/1",
+        ),
+        (
+            &edged,
+            &edge_preimage,
+            V2ReadLimits { edges: 0, ..defaults },
+            LimitKind::EdgeCount,
+            0,
+            1,
+            "/semantic_graph/nodes/0/dependencies/0",
+        ),
+        (
+            &base,
+            &preimage,
+            V2ReadLimits { occurrences: 0, ..defaults },
+            LimitKind::OccurrenceCount,
+            0,
+            1,
+            "/source_map/0",
+        ),
+        (
+            &diagnosed,
+            &preimage,
+            V2ReadLimits { diagnostics: 0, ..defaults },
+            LimitKind::DiagnosticCount,
+            0,
+            1,
+            "/diagnostics/entries/0",
+        ),
+        (
+            &base,
+            &preimage,
+            V2ReadLimits { work: 0, ..defaults },
+            LimitKind::WorkBudget,
+            0,
+            1,
+            "/semantic_graph/nodes/0/body",
+        ),
+    ];
+    for (envelope, preimage, limits, kind, bound, actual, pointer) in cases {
+        let bytes = jcs(envelope);
+        let outcome = read_v2(
+            &bytes,
+            identity("pkg"),
+            "1".to_owned(),
+            limits,
+            &evidence(None),
+            &pinned_for(preimage),
+        );
+        let expected =
+            LimitExceeded::new(kind, bound, actual).at(Some(artifact_locus(&bytes, pointer)));
+        assert_eq!(outcome, Read::Limit(expected.clone()), "{kind:?}");
+        assert_eq!(
+            expected.catalog_code(),
+            CatalogCode::new("stage_limit_exceeded", kind.catalog_cause())
+        );
+    }
+
+    let bytes = jcs(&base);
+    let outcome = read_v2(
+        &bytes,
+        identity("pkg"),
+        "1".to_owned(),
+        V2ReadLimits {
+            artifact_bytes: bytes.len() - 1,
+            ..defaults
+        },
+        &evidence(None),
+        &pinned_for(&preimage),
+    );
+    let Read::Limit(exceeded) = outcome else {
+        panic!("the artifact byte ceiling must stop the read, got {outcome:?}");
+    };
+    assert_eq!(exceeded.kind(), LimitKind::InputBytes);
+    assert_eq!(exceeded.locus(), None);
 }

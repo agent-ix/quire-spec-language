@@ -26,7 +26,7 @@ use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 
 use super::*;
-use crate::checked_v2::{read_checked_package_v2, V2ReadLimits, V2ReadOutcome};
+use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 /// The unit the fixture packages are read from; every occurrence's region is
 /// the whole of it.
@@ -222,7 +222,7 @@ fn locked_artifacts(value: &Value, evidence: &mut CheckedPackageEvidence) {
 
 /// QSL's full I2 read of `emission`, pinned at its own `package_id`, with
 /// the emitted lock's artifacts as current evidence.
-fn read_back(emission: &Emission) -> V2ReadOutcome {
+fn read_back(emission: &Emission) -> Read {
     let wire = wire(emission);
     let mut evidence = CheckedPackageEvidence::new();
     locked_artifacts(&wire["lock"], &mut evidence);
@@ -237,7 +237,7 @@ fn read_back(emission: &Emission) -> V2ReadOutcome {
             package_id: emission.package.package_id(),
         },
     );
-    read_checked_package_v2(
+    read_v2(
         emission.package.bytes(),
         library(),
         "1".to_owned(),
@@ -250,7 +250,7 @@ fn read_back(emission: &Emission) -> V2ReadOutcome {
 /// The verified package's exports: declared name to node id hex.
 fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     match read_back(emission) {
-        V2ReadOutcome::Verified { package, .. } => {
+        Read::Verified { package, .. } => {
             assert_eq!(package.package_id(), emission.package.package_id());
             package
                 .into_import_view()
@@ -309,7 +309,7 @@ fn the_lock_selects_the_catalog_definitions() {
     let emission = emit(&package(vec![t()]));
     assert!(matches!(
         read_back(&emission),
-        V2ReadOutcome::Verified { .. }
+        Read::Verified { .. }
     ));
     let wire = wire(&emission);
     let lock = DefinitionLock::pinned();
@@ -1259,7 +1259,7 @@ fn emit_checked_places_occurrences_at_the_form_spans() {
     let emission = emit_checked(&package(vec![t_read_from_text()])).expect("t emits");
     assert!(matches!(
         read_back(&emission),
-        V2ReadOutcome::Verified { .. }
+        Read::Verified { .. }
     ));
     let wire = wire(&emission);
     let entries = wire["source_map"].as_array().unwrap();
@@ -1352,7 +1352,7 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
     );
     let emission = emit_checked(&package).expect("inc emits");
     assert!(
-        matches!(read_back(&emission), V2ReadOutcome::Verified { .. }),
+        matches!(read_back(&emission), Read::Verified { .. }),
         "{:?}",
         read_back(&emission)
     );
@@ -1644,7 +1644,7 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
             package_id,
         },
     );
-    let outcome = read_checked_package_v2(
+    let outcome = read_v2(
         &jcs(&wire),
         library(),
         "1".to_owned(),
@@ -1652,7 +1652,7 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
         &evidence,
         &pinned,
     );
-    let V2ReadOutcome::Refused(crate::checked_v2::V2ReadRefusal::Structural(
+    let Read::Refused(crate::checked_v2::V2ReadRefusal::Structural(
         qsl_semantics::library::LibraryRefusal::InvalidPreimage {
             library: refused,
             defect:
