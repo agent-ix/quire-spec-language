@@ -77,6 +77,14 @@ exemplar.
   the fixed O-16-category-to-verdict map) SHALL settle `inconclusive` with a
   typed cause, with no public API path on the result type that constructs
   an agreement result from disagreeing verdicts.
+- An arm result's evaluated value and a `Witness`-arm result's FR-351
+  record SHALL be absent when the replay completed no value (a `refused`,
+  `incomplete` or `undefined` S6a outcome, or a family result). Such a
+  replay's verdict never equals the proved `violation`, so it settles
+  `inconclusive`. The evaluated value is a Boolean or an integer, a
+  stand-in for the kernel `Value`, which has no structural equality.
+  **Amended by QSL-5** (FR-098): both used to be required, so a replay that
+  completed no value could not be represented.
 - A construct → serialize → read round trip of a decisive `Witness`-arm
   result SHALL preserve the nested FR-351 record's deciding element, index,
   value path and trace position exactly.
