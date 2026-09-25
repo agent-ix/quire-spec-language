@@ -84,15 +84,18 @@ impl<'a> DomainType<'a> {
         let DomainPackageRecord::FieldMember(field) = member.record else {
             return DomainField::Missing;
         };
-        match value_type(self.package, &field.value_type, field.multiplicity) {
+        match domain_value_type(self.package, &field.value_type, field.multiplicity) {
             Some(ty) => DomainField::Typed(ty),
             None => DomainField::Unrepresented,
         }
     }
 }
 
-/// The native type of a domain value typed `value_type` with `multiplicity`.
-fn value_type<'a>(
+/// The native type of a domain value typed `value_type` with `multiplicity`,
+/// or `None` when it has none here: a native value type other than
+/// `Boolean`, a domain value type, or a multiplicity other than `1`, `0..1`
+/// or `0..n`.
+pub(crate) fn domain_value_type<'a>(
     package: &'a AdmittedPackage,
     value_type: &ValueTypeRef,
     multiplicity: Multiplicity,

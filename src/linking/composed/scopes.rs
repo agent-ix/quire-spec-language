@@ -119,6 +119,24 @@ pub enum BinderType {
     Initializer(ExprId),
     /// Query domain whose element type is established by the existing checker.
     ElementOf(ExprId),
+    /// A declared parameter or the result of the domain operation selected by
+    /// a state clause over `context`; the checker types it from the admitted
+    /// FR-154 operation member.
+    DomainOperation {
+        /// The clause's authored context, locating its operation selector.
+        context: QualifiedName,
+        /// Which of the operation's declared values this binder is.
+        slot: DomainOperationSlot,
+    },
+}
+
+/// A domain operation member's declared value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DomainOperationSlot {
+    /// The parameter at this signature position.
+    Parameter(usize),
+    /// The declared result.
+    Result,
 }
 
 /// One immutable declaration-owned value. For model inputs `span` locates the

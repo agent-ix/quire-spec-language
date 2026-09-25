@@ -15,7 +15,7 @@ Planned public Rust controls for the full
 boundary, using the exact [wire contract](../../docs/compiled-protocol-v1.md).
 The positive emitter fixture starts with native Quire source, an admitted domain
 package and actual definition contracts; a hand-built wire fixture exercises only
-reader behavior. The thirteen groups below correspond to the thirteen acceptance
+reader behavior. The fourteen groups below correspond to the fourteen acceptance
 criteria.
 
 Use source-owned orders O1/O2 sharing payment provider P, split shipments S1/S2,
@@ -300,6 +300,21 @@ observations belong only to the later consumer fixture.
     each to refuse as `Invalid::Binding`. Add `BigPump`, whose only supertype
     is `Pump`: a population listing `Pump` covers it, and one listing only
     `Sys` does not, refusing emission.
+14. Over the same bundle, add to `Pump` the operations
+    `fill(level: Reading, forced: Boolean): Boolean`, `swap(peer: Pump)`,
+    `meter(amount: Integer)` and `total(): Integer`. Compile a precondition of
+    `fill` reading `forced`, a postcondition reading `result`, `level.ok` and
+    `forced`, and a postcondition of `swap` reading `peer.id`. Confirm each
+    parameter is an `invocation_parameter` binder at the `invocation_input`
+    anchor typed by the `Reading` record export, `Boolean` or the `Pump`
+    object export, the result a `Boolean` `result` binder at `invocation_post`,
+    `peer` carries its population and closure pair at `invocation_input`, and
+    the strict reader reads the bytes back unchanged. Require a clause over
+    `meter` and a postcondition of `total` each to refuse checking as
+    `DomainRepresentation`, a precondition of `total` to type (it binds no
+    result), and a precondition of `fill` reading the undeclared `amount`, and
+    clauses over `latch(result: Boolean): Boolean` and `hold(self: Boolean)`,
+    whose parameters spell the ambient slots, to refuse at scope resolution.
 
 ## Expected Results
 

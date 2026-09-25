@@ -13,7 +13,7 @@
 
 use crate::composed_domain_models::{
     admitted_with, admitted_with_bytes, admitted_with_populations, architecture_bundle, hex,
-    record_value_type,
+    pump_operations, record_value_type,
 };
 use crate::support::native_protocol::{Inputs, Unit};
 
@@ -961,4 +961,246 @@ fn a_dropped_domain_object_population_pair_refuses() {
 #[test]
 fn a_dropped_reached_object_population_pair_refuses() {
     dropped_pair_refuses("FleetOk");
+}
+
+/// A precondition and two postconditions of domain operations with
+/// parameters and a result: `FillReady` reads `fill`'s Boolean parameter,
+/// `Filled` its result and both parameters, and `Swapped` `swap`'s `Pump`
+/// parameter.
+const FILLS: &str = "pre FillReady using S on D::Pump::fill { forced }\n\
+post Filled using S on D::Pump::fill { result and level.ok and forced }\n\
+post Swapped using S on D::Pump::swap { peer.id }";
+
+/// `FILLS` over the bundle with `Reading`, `Pump`'s added operations and
+/// `PLANT`, each clause bound to its operation's execution anchor, its name,
+/// and expected to name `fill` or `swap`.
+fn fill_inputs(fill: &w::ExportRef, swap: &w::ExportRef) -> Inputs {
+    let bundle = architecture_bundle(|root| {
+        std::fs::write(root.join("spec/model/Reading.md"), READING).expect("write Reading");
+        pump_operations(root);
+    });
+    let (package, bytes) = admitted_with_populations(bundle.path(), PLANT);
+    let mut inputs = Inputs::with_domain(
+        &pump_units(FILLS, &["FillReady", "Filled", "Swapped"]),
+        package,
+        bytes,
+    );
+    let anchor = |name: &str| ir::AnchorName::new(name).expect("anchor name");
+    inputs.execution(
+        "FillReady",
+        ir::ExecutionPoint::Pre {
+            operation: anchor("fill"),
+        },
+        w::Execution::Pre {
+            operation: fill.clone(),
+        },
+    );
+    inputs.execution(
+        "Filled",
+        ir::ExecutionPoint::Post {
+            operation: anchor("fill"),
+        },
+        w::Execution::Post {
+            operation: fill.clone(),
+        },
+    );
+    inputs.execution(
+        "Swapped",
+        ir::ExecutionPoint::Post {
+            operation: anchor("swap"),
+        },
+        w::Execution::Post {
+            operation: swap.clone(),
+        },
+    );
+    inputs
+}
+
+/// Each binder of `declaration` as `(name, kind, anchor kind, type)`.
+fn binder_rows(
+    package: &w::Package,
+    declaration: &w::Declaration,
+) -> Vec<(String, w::BinderKind, w::AnchorKind, w::Type)> {
+    declaration
+        .binders
+        .iter()
+        .map(|binder| {
+            (
+                binder.name.clone(),
+                binder.kind,
+                declaration.anchors[binder.anchor.index as usize].kind,
+                package.types[binder.value_type as usize].clone(),
+            )
+        })
+        .collect()
+}
+
+/// A precondition reading a domain operation's parameter and postconditions
+/// reading its parameters and result check, emit and read back: each
+/// parameter is an `invocation_parameter` binder at the `invocation_input`
+/// anchor, typed by the package's own exports (`level` by the `Reading`
+/// record export) or `Boolean`, the result a `result` binder at
+/// `invocation_post`, and each clause names its operation's own export
+/// `[Pump, fill]` or `[Pump, swap]`. `swap`'s `Pump` parameter carries its
+/// population and closure pair at the `invocation_input` anchor.
+#[trace("TC-121", "FR-042-AC-14")]
+#[test]
+fn domain_operation_parameters_and_result_emit_and_read_back() {
+    let placeholder = w::ExportRef {
+        model: 0,
+        export: 0,
+    };
+    let mut exports = None;
+    fill_inputs(&placeholder, &placeholder).with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("domain operation clauses emit");
+            let package = admitted.package();
+            let operation = |name: &str| {
+                let (w::Execution::Pre { operation } | w::Execution::Post { operation }) =
+                    &declaration(package, name).execution
+                else {
+                    panic!("{name} is an operation clause")
+                };
+                operation.clone()
+            };
+            exports = Some((operation("FillReady"), operation("Swapped")));
+        },
+    );
+    let (fill, swap) = exports.expect("emitted");
+    let inputs = fill_inputs(&fill, &swap);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("domain operation clauses emit");
+            let package = admitted.package();
+            let (domain_index, domain) = domain_model(&package.models);
+            assert_eq!(
+                export(package, &fill),
+                (w::ExportKind::Operation, path(&["Pump", "fill"]))
+            );
+            assert_eq!(
+                export(package, &swap),
+                (w::ExportKind::Operation, path(&["Pump", "swap"]))
+            );
+            let w::Execution::Post { operation } = &declaration(package, "Filled").execution else {
+                panic!("Filled is a postcondition")
+            };
+            assert_eq!(operation, &fill);
+            let reading = domain
+                .exports
+                .iter()
+                .position(|export| {
+                    export.kind == w::ExportKind::Record && export.path == ["Reading"]
+                })
+                .expect("the Reading record export");
+            let reading = w::Type::Record {
+                export: w::ExportRef {
+                    model: domain_index,
+                    export: u32::try_from(reading).unwrap(),
+                },
+            };
+            let boolean = w::Type::Boolean {};
+            let parameter = |name: &str, ty: &w::Type| {
+                (
+                    name.to_owned(),
+                    w::BinderKind::InvocationParameter,
+                    w::AnchorKind::InvocationInput,
+                    ty.clone(),
+                )
+            };
+
+            let ready = binder_rows(package, declaration(package, "FillReady"));
+            assert!(ready.contains(&parameter("forced", &boolean)), "{ready:?}");
+            assert!(ready.contains(&parameter("level", &reading)), "{ready:?}");
+            assert!(ready
+                .iter()
+                .all(|(_, kind, _, _)| *kind != w::BinderKind::Result));
+
+            let filled = binder_rows(package, declaration(package, "Filled"));
+            assert!(
+                filled.contains(&parameter("forced", &boolean)),
+                "{filled:?}"
+            );
+            assert!(filled.contains(&parameter("level", &reading)), "{filled:?}");
+            assert!(
+                filled.contains(&(
+                    "result".to_owned(),
+                    w::BinderKind::Result,
+                    w::AnchorKind::InvocationPost,
+                    boolean.clone(),
+                )),
+                "{filled:?}"
+            );
+            // `result` and `level.ok` are read from those binders.
+            let filled_declaration = declaration(package, "Filled");
+            let read_binders: Vec<&str> = filled_declaration
+                .values
+                .iter()
+                .filter_map(|value| match &value.operation {
+                    w::ValueOperation::Read { binder } => Some(
+                        filled_declaration.binders[binder.index as usize]
+                            .name
+                            .as_str(),
+                    ),
+                    _ => None,
+                })
+                .collect();
+            for name in ["result", "level", "forced"] {
+                assert!(read_binders.contains(&name), "{name}: {read_binders:?}");
+            }
+
+            let swapped = declaration(package, "Swapped");
+            let pump = binder_rows(package, swapped)
+                .into_iter()
+                .find(|(name, ..)| name == "peer")
+                .expect("peer is bound");
+            let w::Type::Object { export: object } = &pump.3 else {
+                panic!("peer is a Pump")
+            };
+            assert_eq!(
+                export(package, object),
+                (w::ExportKind::Object, path(&["Pump"]))
+            );
+            assert_eq!(
+                (pump.1, pump.2),
+                (
+                    w::BinderKind::InvocationParameter,
+                    w::AnchorKind::InvocationInput
+                )
+            );
+            let input_pairs: Vec<_> = population_pairs(swapped)
+                .into_iter()
+                .filter(|binding| {
+                    swapped.anchors[binding.anchor.index as usize].kind
+                        == w::AnchorKind::InvocationInput
+                })
+                .collect();
+            assert_eq!(input_pairs.len(), 2, "{input_pairs:?}");
+            for binding in input_pairs {
+                assert_eq!(
+                    export(
+                        package,
+                        binding.model.0.as_ref().expect("population export")
+                    ),
+                    (w::ExportKind::Population, path(&["Pump", "Plant"]))
+                );
+            }
+
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .expect("emits");
+            let read = inputs.read(proofs, &emitted);
+            let read = read.result().expect("the strict reader admits the bytes");
+            assert_eq!(read.package(), package);
+        },
+    );
 }
