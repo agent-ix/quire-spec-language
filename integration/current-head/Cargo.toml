@@ -63,6 +63,10 @@ quire-contract-runtime = { path = ".deps/quire-contract-runtime" }
 
 [patch."https://github.com/agent-ix/quire-spec-language"]
 quire-spec-language = { path = "../.." }
+# quire-protocol (reached through quire-contract-ir's pin) depends on
+# qsl-foundation by git as well as on quire-spec-language; both must resolve
+# to this checkout so A's `ByteDigest`/`Source`/`SourceIdentity` unify.
+qsl-foundation = { path = "../../qsl-foundation" }
 
 [lints.rust]
 unsafe_code = "forbid"
