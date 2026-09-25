@@ -828,7 +828,8 @@ fn occurrence_span_survives_link_a_v2_round_trip_and_a_corrupted_alternate_diffe
         call: qsl_foundation::Span,
     ) -> PackageDeclarations {
         let boolean = || crate::support::type_form::type_form(&ValueType::Boolean);
-        let g = FunctionDeclaration::new("g", Vec::new(), boolean(), None, Expression::Boolean(true));
+        let g =
+            FunctionDeclaration::new("g", Vec::new(), boolean(), None, Expression::Boolean(true));
         let declaration = find("function f using v(): Boolean pure { g() }");
         let spans = DeclarationSpans {
             declaration,
@@ -932,7 +933,9 @@ fn occurrence_span_survives_link_a_v2_round_trip_and_a_corrupted_alternate_diffe
     let declaration_region_after_v2 = linked
         .graph()
         .region(&declaration_location_after_v2)
-        .expect("f's declaration region still resolves once its identity has travelled a v2 round trip");
+        .expect(
+            "f's declaration region still resolves once its identity has travelled a v2 round trip",
+        );
     assert_eq!(
         declaration_region_after_v2, declaration_region_before,
         "f's declaration region must be unchanged after the v2 round trip"
