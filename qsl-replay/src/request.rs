@@ -78,10 +78,20 @@ impl std::fmt::Debug for ByteProvision {
 }
 
 impl ByteProvision {
-    /// Look up an entry by its own declared digest. The only accessor this
-    /// type has; there is no path- or location-typed alternative.
+    /// Look up an entry by its own declared digest. The only public
+    /// accessor this type has; there is no path- or location-typed
+    /// alternative.
     pub fn get(&self, digest: DigestRecord) -> Option<&[u8]> {
         self.0.get(&digest).map(Vec::as_slice)
+    }
+
+    /// Every entry with its declared digest, ascending by digest: how the
+    /// executor finds the domain packages the provision carries under
+    /// their `sha256-jcs` digests (QC-1).
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (DigestRecord, &[u8])> {
+        self.0
+            .iter()
+            .map(|(digest, bytes)| (*digest, bytes.as_slice()))
     }
 }
 

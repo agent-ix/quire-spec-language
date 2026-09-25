@@ -118,7 +118,7 @@ pub struct WitnessArmResult {
     settlement: WitnessSettlement,
     disagreement: Option<DisagreementCause>,
     category: ProofCategory,
-    value: EvaluatedValue,
+    value: Option<EvaluatedValue>,
     record: Option<SeparatingWitnessRecord>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
@@ -130,7 +130,9 @@ impl WitnessArmResult {
     /// `ReproducedWithEvaluatedWitness` with `record` attached when `proved`
     /// and `replayed` agree, or `Inconclusive` with no record and a typed
     /// [`DisagreementCause`] otherwise. No other public API on this type
-    /// can turn a disagreement into an agreement result.
+    /// can turn a disagreement into an agreement result. `value` and
+    /// `record` are `None` for a replay that completed no value; such a
+    /// replay's verdict is never an agreeing one (FR-098).
     // The 8 parameters are the O-27 witness-arm members this envelope
     // carries; `settle` is the type's only constructor (FR-072-AC-2), so
     // splitting them behind a builder would just relocate the same 8-field
@@ -142,8 +144,8 @@ impl WitnessArmResult {
         proved: Verdict,
         replayed: Verdict,
         category: ProofCategory,
-        value: EvaluatedValue,
-        record: SeparatingWitnessRecord,
+        value: Option<EvaluatedValue>,
+        record: Option<SeparatingWitnessRecord>,
         resolved_regions: Vec<SourceRegion>,
         charges: ScalarLimits,
         toolchain_pin: ToolPin,
@@ -154,7 +156,7 @@ impl WitnessArmResult {
                 disagreement: None,
                 category,
                 value,
-                record: Some(record),
+                record,
                 resolved_regions,
                 charges,
                 toolchain_pin,
@@ -187,8 +189,9 @@ impl WitnessArmResult {
     pub fn category(&self) -> ProofCategory {
         self.category
     }
-    /// The evaluated value this arm produced.
-    pub fn value(&self) -> EvaluatedValue {
+    /// The evaluated value this arm produced, or `None` when the replay
+    /// completed no value.
+    pub fn value(&self) -> Option<EvaluatedValue> {
         self.value
     }
     /// The nested FR-351 record, present only when the settlement basis is
@@ -220,7 +223,7 @@ pub struct InputArmResult {
     settlement: InputSettlement,
     disagreement: Option<DisagreementCause>,
     category: ProofCategory,
-    value: EvaluatedValue,
+    value: Option<EvaluatedValue>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
     toolchain_pin: ToolPin,
@@ -234,7 +237,7 @@ impl InputArmResult {
         proved: Verdict,
         replayed: Verdict,
         category: ProofCategory,
-        value: EvaluatedValue,
+        value: Option<EvaluatedValue>,
         resolved_regions: Vec<SourceRegion>,
         charges: ScalarLimits,
         toolchain_pin: ToolPin,
@@ -275,8 +278,9 @@ impl InputArmResult {
     pub fn category(&self) -> ProofCategory {
         self.category
     }
-    /// The evaluated value this arm produced.
-    pub fn value(&self) -> EvaluatedValue {
+    /// The evaluated value this arm produced, or `None` when the replay
+    /// completed no value.
+    pub fn value(&self) -> Option<EvaluatedValue> {
         self.value
     }
     /// The resolved source regions this arm's result cites.
@@ -423,8 +427,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue::Integer(1),
-            record(vec!["field"]),
+            Some(EvaluatedValue::Integer(1)),
+            Some(record(vec!["field"])),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -433,7 +437,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue::Integer(1),
+            Some(EvaluatedValue::Integer(1)),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -468,8 +472,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Refusal),
             ProofCategory::Refusal,
-            EvaluatedValue::Integer(0),
-            record(vec!["field"]),
+            Some(EvaluatedValue::Integer(0)),
+            Some(record(vec!["field"])),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -489,7 +493,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Refusal),
             ProofCategory::Refusal,
-            EvaluatedValue::Integer(0),
+            Some(EvaluatedValue::Integer(0)),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -518,8 +522,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue::Integer(9),
-            record(vec!["outer", "items", "member"]),
+            Some(EvaluatedValue::Integer(9)),
+            Some(record(vec!["outer", "items", "member"])),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -535,8 +539,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue::Integer(9),
-            read_back_record.clone(),
+            Some(EvaluatedValue::Integer(9)),
+            Some(read_back_record.clone()),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -560,8 +564,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue::Integer(9),
-            record(vec!["outer", "items", "other_member"]),
+            Some(EvaluatedValue::Integer(9)),
+            Some(record(vec!["outer", "items", "other_member"])),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -583,8 +587,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue::Integer(9),
-            record(vec![huge_segment.as_str()]),
+            Some(EvaluatedValue::Integer(9)),
+            Some(record(vec![huge_segment.as_str()])),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -696,8 +700,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Violation),
             Verdict::from_category(ProofCategory::Violation),
             ProofCategory::Violation,
-            EvaluatedValue::Integer(1),
-            record(vec!["x"]),
+            Some(EvaluatedValue::Integer(1)),
+            Some(record(vec!["x"])),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
