@@ -1523,11 +1523,13 @@ fn population_refused_as_record_field() {
         ],
     );
     match result {
-        Err(invalid) => assert_eq!(
+        Err(qsl_foundation::diagnostic::StageFailure::Refused(invalid)) => assert_eq!(
             invalid.cause,
             DeclarationCause::Type(IllTypedCause::OperatorIneligible)
         ),
-        Ok(_) => panic!("expected a refused declaration for a Population record field"),
+        other => {
+            panic!("expected a refused declaration for a Population record field, got {other:?}")
+        }
     }
 }
 
@@ -1553,11 +1555,13 @@ fn population_refused_as_object_attribute() {
         ],
     );
     match result {
-        Err(invalid) => assert_eq!(
+        Err(qsl_foundation::diagnostic::StageFailure::Refused(invalid)) => assert_eq!(
             invalid.cause,
             DeclarationCause::Type(IllTypedCause::OperatorIneligible)
         ),
-        Ok(_) => panic!("expected a refused declaration for a Population object attribute"),
+        other => panic!(
+            "expected a refused declaration for a Population object attribute, got {other:?}"
+        ),
     }
 }
 

@@ -14,8 +14,7 @@ use qsl_semantics::check::{
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::declaration::{
-    FieldDeclaration, InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
-    TypeEnvironmentLimits,
+    Admission, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
 };
 use qsl_semantics::value::enumeration::{
     EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
@@ -284,7 +283,7 @@ pub fn object_chain(depth: usize) -> Vec<ObjectTypeDeclaration> {
 pub fn admit_object_types(
     object_types: Vec<ObjectTypeDeclaration>,
     work_units: u64,
-) -> Result<TypeEnvironment, InvalidDeclaration> {
+) -> Admission<TypeEnvironment> {
     TypeEnvironment::bounded(
         [],
         object_types,

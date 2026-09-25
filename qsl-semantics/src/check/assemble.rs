@@ -22,7 +22,7 @@ use qsl_forms::{
     AliasForm, BuiltinType, DeclarationForm, DeclaredName, Expression, FunctionDeclaration,
     ParsedUnit, RecordFieldForm, TypeForm, TypeFormHead,
 };
-use qsl_foundation::diagnostic::CatalogCode;
+use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded, StageFailure};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, Span};
 use quire_exact::{EffectiveId, IeeeWidth, Presence, RoundingMode, ValueType};
@@ -92,6 +92,9 @@ pub enum AssemblyCause {
     /// (FR-143): a duplicate field name, an ill-typed member, or a
     /// recursion the rule refuses.
     InvalidTypeDeclaration(InvalidDeclaration),
+    /// Admitting the unit's records and tuples reached a
+    /// `TypeEnvironmentLimits` ceiling (FR-082, ADR-014 B-3).
+    TypeLimit(LimitExceeded),
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
     Handle(NodeKeyRefusal),
@@ -123,10 +126,9 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownObjectType(_)
                 | DeclarationCause::RedefinitionTarget(_)
                 | DeclarationCause::RedefinitionConflict(_)
-                | DeclarationCause::RedefinitionWidens(_)
-                | DeclarationCause::AncestorSteps { .. }
-                | DeclarationCause::WorkUnits { .. } => Code::RuntimeInvariant,
+                | DeclarationCause::RedefinitionWidens(_) => Code::RuntimeInvariant,
             },
+            Self::TypeLimit(_) => Code::StageLimitExceeded,
             Self::Handle(_) => Code::RuntimeInvariant,
         }
     }
@@ -151,10 +153,9 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownObjectType(_)
                 | DeclarationCause::RedefinitionTarget(_)
                 | DeclarationCause::RedefinitionConflict(_)
-                | DeclarationCause::RedefinitionWidens(_)
-                | DeclarationCause::AncestorSteps { .. }
-                | DeclarationCause::WorkUnits { .. } => "established-invariant-broken",
+                | DeclarationCause::RedefinitionWidens(_) => "established-invariant-broken",
             },
+            Self::TypeLimit(limit) => limit.kind().catalog_cause(),
             Self::Handle(_) => "established-invariant-broken",
         };
         CatalogCode::new(self.code().as_str(), cause)
@@ -491,7 +492,17 @@ fn admit_types(
         match TypeEnvironment::new(declarations.clone(), []) {
             Ok(types) if errors.is_empty() => return Ok(types),
             Ok(_) => return refuse(errors),
-            Err(invalid) => {
+            Err(StageFailure::Limit(limit)) => {
+                // Records and tuples charge no type-environment work, so
+                // this is unreachable today; a ceiling names no declaration,
+                // hence the empty span.
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::TypeLimit(limit),
+                    span: Span { start: 0, end: 0 },
+                });
+                return refuse(errors);
+            }
+            Err(StageFailure::Refused(invalid)) => {
                 let before = declarations.len();
                 declarations.retain(|declaration| declaration.name() != invalid.declaration);
                 let set_aside = declarations.len() < before;

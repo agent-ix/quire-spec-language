@@ -218,3 +218,13 @@ pub enum StageFailure<C> {
     /// The stage refused its input with its own typed cause.
     Refused(C),
 }
+
+impl<C> StageFailure<C> {
+    /// The stage's refusal cause, or the limit it reached instead.
+    pub fn into_refused(self) -> Result<C, LimitExceeded> {
+        match self {
+            Self::Refused(cause) => Ok(cause),
+            Self::Limit(limit) => Err(limit),
+        }
+    }
+}

@@ -63,6 +63,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use qsl_foundation::diagnostic::{LimitExceeded, LimitKind as StageLimitKind, StageFailure};
+
 use quire_exact::{
     compare_shifted, power_of_ten_bits, sbits, sdigits, Charge, ChargePoint, ComparisonOperator,
     Decimal, DecimalOperation, DecimalType, IllTyped, IllTypedCause, Integer, LimitKind, Meter,
@@ -489,7 +491,7 @@ pub struct TypeEnvironmentLimits {
     /// Cumulative work units admission may spend building the ancestor
     /// closure and flattening every object type's attributes. One unit is
     /// one ancestor or attribute copied into a type's set, or one field a
-    /// lineage names. Running out refuses [`DeclarationCause::WorkUnits`].
+    /// lineage names. Running out is a work-budget stage limit.
     pub work_units: u64,
 }
 
@@ -513,18 +515,63 @@ impl WorkBudget {
         Self { spent: 0, limit }
     }
 
-    /// Charge `units`, or the refusal cause once the budget would be passed.
-    fn charge(&mut self, units: usize) -> Result<(), DeclarationCause> {
+    /// Charge `units`, or the work-budget stage limit (FR-082, ADR-014 B-3)
+    /// once the budget would be passed, naming the cumulative total the
+    /// refused charge would have reached.
+    fn charge(&mut self, units: usize) -> Result<(), LimitExceeded> {
         let units = u64::try_from(units).unwrap_or(u64::MAX);
         match self.spent.checked_add(units) {
             Some(spent) if spent <= self.limit => {
                 self.spent = spent;
                 Ok(())
             }
-            _ => Err(DeclarationCause::WorkUnits { limit: self.limit }),
+            _ => Err(LimitExceeded::new(
+                StageLimitKind::WorkBudget,
+                self.limit,
+                u128::from(self.spent) + u128::from(units),
+            )),
         }
     }
 }
+
+/// Why admitting one declaration stopped: a refusal of the input, or a
+/// reached stage limit, which names no declaration.
+enum Stopped {
+    Refused(DeclarationCause),
+    Limit(LimitExceeded),
+}
+
+impl From<DeclarationCause> for Stopped {
+    fn from(cause: DeclarationCause) -> Self {
+        Self::Refused(cause)
+    }
+}
+
+impl From<LimitExceeded> for Stopped {
+    fn from(limit: LimitExceeded) -> Self {
+        Self::Limit(limit)
+    }
+}
+
+impl Stopped {
+    /// This stop as the admission's stage failure, a refusal naming
+    /// `declaration`.
+    fn at(self, declaration: &str) -> StageFailure<InvalidDeclaration> {
+        match self {
+            Self::Refused(cause) => StageFailure::Refused(InvalidDeclaration {
+                declaration: declaration.to_owned(),
+                cause,
+            }),
+            Self::Limit(limit) => StageFailure::Limit(limit),
+        }
+    }
+}
+
+/// Type-environment admission's outcome (FR-082): a refusal of the
+/// declarations, or a `TypeEnvironmentLimits` ceiling reached, which is a
+/// stage limit (ADR-014 B-3) with no locus, since the object types come
+/// from an admitted domain package, not a source unit (FR-096).
+pub type Admission<T> = Result<T, StageFailure<InvalidDeclaration>>;
 
 /// Why a declaration set is not admitted.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
@@ -550,9 +597,6 @@ impl InvalidDeclaration {
             | DeclarationCause::Recursion { .. }
             | DeclarationCause::GeneralizationCycle { .. }
             | DeclarationCause::RedefinitionWidens(_) => IllTyped::CODE,
-            DeclarationCause::AncestorSteps { .. } | DeclarationCause::WorkUnits { .. } => {
-                "resource_exhausted"
-            }
         }
     }
 }
@@ -586,19 +630,6 @@ pub enum DeclarationCause {
     /// a required field, or a value type admitting a value the redefined
     /// field's type does not.
     RedefinitionWidens(FieldRef),
-    /// An object type's conformance walk (itself plus every ancestor, as
-    /// FR-082 counts it) expands more types than the admitted
-    /// `ancestor_steps` ceiling, named here.
-    AncestorSteps {
-        /// The ceiling.
-        limit: u64,
-    },
-    /// Building the ancestor closure and the flattened attribute sets
-    /// would spend more than the admitted `work_units` budget, named here.
-    WorkUnits {
-        /// The budget.
-        limit: u64,
-    },
     /// A type names a key that is no declaration of the package.
     UnknownDeclaration(NodeKey),
     /// A declared supertype names an effective identity that is no admitted
@@ -662,7 +693,7 @@ impl TypeEnvironment {
     pub fn new(
         composites: impl IntoIterator<Item = CompositeDeclaration>,
         object_types: impl IntoIterator<Item = ObjectTypeDeclaration>,
-    ) -> Result<Self, InvalidDeclaration> {
+    ) -> Admission<Self> {
         Self::bounded(composites, object_types, TypeEnvironmentLimits::default())
     }
 
@@ -671,24 +702,25 @@ impl TypeEnvironment {
     /// `limits.ancestor_steps` is the FR-082 ceiling the model walks this
     /// package's conformance under at evaluation (the population binding's
     /// own `ancestor_steps`). An object type whose walk would expand more
-    /// types than that, itself included, is refused here with
-    /// [`DeclarationCause::AncestorSteps`]. Check time is the stricter
+    /// types than that, itself included, stops admission with a node-count
+    /// stage limit (FR-082, ADR-014 B-3). Check time is the stricter
     /// side: every conformance question the checker answers from this
     /// environment is one evaluation completes with the same verdict.
     ///
     /// `limits.work_units` bounds the whole admission's ancestor-closure
-    /// and flattening work; running out refuses
-    /// [`DeclarationCause::WorkUnits`].
+    /// and flattening work; running out is a work-budget stage limit.
     pub fn bounded(
         composites: impl IntoIterator<Item = CompositeDeclaration>,
         object_types: impl IntoIterator<Item = ObjectTypeDeclaration>,
         limits: TypeEnvironmentLimits,
-    ) -> Result<Self, InvalidDeclaration> {
+    ) -> Admission<Self> {
         let mut environment = Self::default();
         for declaration in composites {
-            let refuse = |cause| InvalidDeclaration {
-                declaration: declaration.name.clone(),
-                cause,
+            let refuse = |cause| {
+                StageFailure::Refused(InvalidDeclaration {
+                    declaration: declaration.name.clone(),
+                    cause,
+                })
             };
             if let CompositeShape::Record(fields) = &declaration.shape {
                 if let Some(name) = duplicate_name(fields) {
@@ -704,9 +736,11 @@ impl TypeEnvironment {
             environment.composites.insert(declaration.key, declaration);
         }
         for declaration in object_types {
-            let refuse = |cause| InvalidDeclaration {
-                declaration: declaration.name.clone(),
-                cause,
+            let refuse = |cause| {
+                StageFailure::Refused(InvalidDeclaration {
+                    declaration: declaration.name.clone(),
+                    cause,
+                })
             };
             if let Some(name) = duplicate_name(&declaration.attributes) {
                 return Err(refuse(DeclarationCause::DuplicateMember(name)));
@@ -718,15 +752,25 @@ impl TypeEnvironment {
                 .object_types
                 .insert(declaration.key, declaration);
         }
-        environment.check_member_types()?;
-        environment.check_recursion(RecursionEdges::Unnamed)?;
-        environment.check_recursion(RecursionEdges::NonEscaping)?;
+        environment
+            .check_member_types()
+            .map_err(StageFailure::Refused)?;
+        environment
+            .check_recursion(RecursionEdges::Unnamed)
+            .map_err(StageFailure::Refused)?;
+        environment
+            .check_recursion(RecursionEdges::NonEscaping)
+            .map_err(StageFailure::Refused)?;
         let mut budget = WorkBudget::new(limits.work_units);
         environment.check_supertypes(&mut budget)?;
         environment.ancestry = environment.compute_ancestors(&mut budget)?;
-        environment.check_ancestor_steps(limits.ancestor_steps)?;
+        environment
+            .check_ancestor_steps(limits.ancestor_steps)
+            .map_err(StageFailure::Limit)?;
         let table = FieldTable::new(&environment.object_types);
-        environment.check_redefinitions(&table)?;
+        environment
+            .check_redefinitions(&table)
+            .map_err(StageFailure::Refused)?;
         let effective = environment.compute_effective(&table, &mut budget)?;
         environment.effective = effective;
         Ok(environment)
@@ -1043,7 +1087,7 @@ impl TypeEnvironment {
     /// Each type is marked while it is on the walk's path, so a back edge is
     /// found without scanning the path, and `budget` is charged each edge
     /// the walk follows.
-    fn check_supertypes(&self, budget: &mut WorkBudget) -> Result<(), InvalidDeclaration> {
+    fn check_supertypes(&self, budget: &mut WorkBudget) -> Admission<()> {
         let name = |key: &EffectiveId| {
             self.object_types
                 .get(key)
@@ -1052,10 +1096,10 @@ impl TypeEnvironment {
         for declaration in self.object_types.values() {
             for supertype in &declaration.supertypes {
                 if !self.object_types.contains_key(supertype) {
-                    return Err(InvalidDeclaration {
+                    return Err(StageFailure::Refused(InvalidDeclaration {
                         declaration: declaration.name.clone(),
                         cause: DeclarationCause::UnknownObjectType(*supertype),
-                    });
+                    }));
                 }
             }
         }
@@ -1080,10 +1124,7 @@ impl TypeEnvironment {
                     continue;
                 };
                 *next += 1;
-                budget.charge(1).map_err(|cause| InvalidDeclaration {
-                    declaration: name(&node),
-                    cause,
-                })?;
+                budget.charge(1).map_err(StageFailure::Limit)?;
                 if on_path.contains(target) {
                     // Found once, on the refusal path only.
                     let start = path
@@ -1093,10 +1134,10 @@ impl TypeEnvironment {
                     let mut cycle: Vec<String> =
                         path.iter().skip(start).map(|(key, _)| name(key)).collect();
                     cycle.push(name(target));
-                    return Err(InvalidDeclaration {
+                    return Err(StageFailure::Refused(InvalidDeclaration {
                         declaration: name(target),
                         cause: DeclarationCause::GeneralizationCycle { cycle },
-                    });
+                    }));
                 }
                 if !finished.contains(target) {
                     on_path.insert(*target);
@@ -1119,22 +1160,18 @@ impl TypeEnvironment {
     /// closure costs the sum of every type's ancestor count; `budget` is
     /// charged that, a supertype and its ancestors at a time, before the
     /// copy is made.
-    fn compute_ancestors(&self, budget: &mut WorkBudget) -> Result<Ancestry, InvalidDeclaration> {
+    fn compute_ancestors(&self, budget: &mut WorkBudget) -> Admission<Ancestry> {
         // Positions are `u32`: a package with more object types than that
-        // could never be flattened within any budget either.
+        // could never be flattened within any budget either. Flattening
+        // charges at least one unit a type, so the count is the least the
+        // budget would have to reach.
         if u32::try_from(self.object_types.len()).is_err() {
-            // The last type in key order is one past the positions that fit.
-            let past = self
-                .object_types
-                .values()
-                .next_back()
-                .map_or_else(String::new, |declaration| declaration.name.clone());
-            return Err(InvalidDeclaration {
-                declaration: past,
-                cause: DeclarationCause::WorkUnits {
-                    limit: budget.limit,
-                },
-            });
+            let types = u128::try_from(self.object_types.len()).unwrap_or(u128::MAX);
+            return Err(StageFailure::Limit(LimitExceeded::new(
+                StageLimitKind::WorkBudget,
+                budget.limit,
+                types.max(u128::from(budget.limit) + 1),
+            )));
         }
         let positions: BTreeMap<EffectiveId, u32> = self
             .object_types
@@ -1166,13 +1203,8 @@ impl TypeEnvironment {
                     continue;
                 }
                 path.pop();
-                let own =
-                    Self::own_ancestors(node, &positions, &ancestors, budget).map_err(|cause| {
-                        InvalidDeclaration {
-                            declaration: node.name.clone(),
-                            cause,
-                        }
-                    })?;
+                let own = Self::own_ancestors(node, &positions, &ancestors, budget)
+                    .map_err(StageFailure::Limit)?;
                 if let Some(slot) = positions
                     .get(&node.key)
                     .and_then(|position| ancestors.get_mut(*position as usize))
@@ -1200,7 +1232,7 @@ impl TypeEnvironment {
         positions: &BTreeMap<EffectiveId, u32>,
         ancestors: &[Option<Vec<u32>>],
         budget: &mut WorkBudget,
-    ) -> Result<Vec<u32>, DeclarationCause> {
+    ) -> Result<Vec<u32>, LimitExceeded> {
         let mut own: Vec<u32> = Vec::new();
         for supertype in &node.supertypes {
             let Some(position) = positions.get(supertype).copied() else {
@@ -1239,24 +1271,27 @@ impl TypeEnvironment {
         Ok(own)
     }
 
-    /// Refuse the first object type, in key order, whose FR-082 conformance
-    /// walk expands more than `limit` types. The model's walk from `S`
+    /// Stop at the first object type, in key order, whose FR-082 conformance
+    /// walk expands more than `limit` types: a node-count stage limit whose
+    /// actual counter is the ceiling plus one, the step the walk would stop
+    /// at (FR-082). The model's walk from `S`
     /// (`ModelIndex::conforms`) expands `S` and then each distinct ancestor
     /// once, and stops early only when it meets its target, so `1 +` the
     /// ancestor count is the most any walk from `S` expands. Admitting only
     /// types within `limit` makes every walk from an admitted type complete
     /// under the same ceiling at evaluation.
-    fn check_ancestor_steps(&self, limit: u64) -> Result<(), InvalidDeclaration> {
+    fn check_ancestor_steps(&self, limit: u64) -> Result<(), LimitExceeded> {
         for declaration in self.object_types.values() {
             let ancestors = self.ancestry.count(declaration.key);
             let expanded = u64::try_from(ancestors)
                 .unwrap_or(u64::MAX)
                 .saturating_add(1);
             if expanded > limit {
-                return Err(InvalidDeclaration {
-                    declaration: declaration.name.clone(),
-                    cause: DeclarationCause::AncestorSteps { limit },
-                });
+                return Err(LimitExceeded::new(
+                    StageLimitKind::NodeCount,
+                    limit,
+                    u128::from(limit) + 1,
+                ));
             }
         }
         Ok(())
@@ -1348,7 +1383,7 @@ impl TypeEnvironment {
         &self,
         table: &FieldTable<'_>,
         budget: &mut WorkBudget,
-    ) -> Result<BTreeMap<EffectiveId, Vec<EffectiveAttribute>>, InvalidDeclaration> {
+    ) -> Admission<BTreeMap<EffectiveId, Vec<EffectiveAttribute>>> {
         let mut effective: BTreeMap<EffectiveId, Vec<EffectiveAttribute>> = BTreeMap::new();
         let mut scratch = Scratch::new(table.len(), table.name_count());
         for (root, declaration) in &self.object_types {
@@ -1370,10 +1405,7 @@ impl TypeEnvironment {
                 path.pop();
                 let attributes = self
                     .flatten(node, &effective, table, &mut scratch, budget)
-                    .map_err(|cause| InvalidDeclaration {
-                        declaration: node.name.clone(),
-                        cause,
-                    })?;
+                    .map_err(|stopped| stopped.at(&node.name))?;
                 effective.insert(node.key, attributes);
             }
         }
@@ -1396,7 +1428,7 @@ impl TypeEnvironment {
         table: &FieldTable<'_>,
         scratch: &mut Scratch,
         budget: &mut WorkBudget,
-    ) -> Result<Vec<EffectiveAttribute>, DeclarationCause> {
+    ) -> Result<Vec<EffectiveAttribute>, Stopped> {
         scratch.next_type();
         let mut candidates: Vec<EffectiveAttribute> =
             Vec::with_capacity(declaration.attributes.len());
@@ -1490,7 +1522,7 @@ impl TypeEnvironment {
                     .shared(*root)
                     .and_then(|position| table.reference(position))
                     .unwrap_or_else(|| winner.identity());
-                return Err(DeclarationCause::RedefinitionConflict(shared));
+                return Err(DeclarationCause::RedefinitionConflict(shared).into());
             }
             let merged = merge(
                 winner,
@@ -1529,7 +1561,7 @@ impl TypeEnvironment {
             .filter(|(_, fresh)| **fresh)
             .find_map(|(attribute, _)| self.widened(attribute, table))
         {
-            return Err(DeclarationCause::RedefinitionWidens(widened));
+            return Err(DeclarationCause::RedefinitionWidens(widened).into());
         }
         budget.charge(attributes.len())?;
         for attribute in &attributes {
@@ -1537,9 +1569,9 @@ impl TypeEnvironment {
                 .name_of(attribute.0.identity)
                 .is_some_and(|name| !scratch.claim_name(name));
             if taken {
-                return Err(DeclarationCause::DuplicateMember(
-                    attribute.field().name().to_owned(),
-                ));
+                return Err(
+                    DeclarationCause::DuplicateMember(attribute.field().name().to_owned()).into(),
+                );
             }
         }
         Ok(attributes)
@@ -1717,7 +1749,7 @@ fn own_attribute(
     field: &FieldDeclaration,
     table: &FieldTable<'_>,
     budget: &mut WorkBudget,
-) -> Result<EffectiveAttribute, DeclarationCause> {
+) -> Result<EffectiveAttribute, Stopped> {
     let own = FieldRef::new(owner, field.name());
     let identity = table
         .position(&own)
@@ -1750,7 +1782,7 @@ fn merge<'a>(
     group: impl IntoIterator<Item = &'a EffectiveAttribute>,
     table: &FieldTable<'_>,
     budget: &mut WorkBudget,
-) -> Result<EffectiveAttribute, DeclarationCause> {
+) -> Result<EffectiveAttribute, LimitExceeded> {
     let mut members: Vec<usize> = Vec::new();
     for attribute in group {
         budget.charge(attribute.0.members.len())?;

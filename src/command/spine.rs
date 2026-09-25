@@ -183,6 +183,12 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::InvalidTypeDeclaration(_) => {
             "the records and tuples are not an admitted declaration set".to_owned()
         }
+        AssemblyCause::TypeLimit(limit) => format!(
+            "{} (bound {}, reached {})",
+            limit.kind().catalog_cause(),
+            limit.configured_bound(),
+            limit.actual()
+        ),
         AssemblyCause::Handle(_) => "a declared type's handle could not be encoded".to_owned(),
     };
     with_more(message, refusal.errors.len())
