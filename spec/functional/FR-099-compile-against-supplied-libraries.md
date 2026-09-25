@@ -111,8 +111,9 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   at a use of an imported name other than as a callee, or that names a
   declaration other than a function, or a function one of whose nodes in
   the transitive closure of its signature type nodes' `dependencies`
-  carries an FR-322 `declaration` or a `ModelOwner`. The importing graph
-  SHALL hold exactly the type nodes its own nodes reference.
+  carries an FR-322 `declaration` or a `ModelOwner`.
+- The lowering SHALL write into the importing graph exactly the type nodes
+  its own nodes reference, and no other node of an imported signature.
 - E4 SHALL link each import's checked library package through
   `CheckedPackage::link_with` (FR-087-AC-14). A supplied library no import
   reaches SHALL be neither compiled nor recorded.
