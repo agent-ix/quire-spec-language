@@ -43,8 +43,9 @@ fn a_function_compiled_from_source_is_called_by_name() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
         .expect("S2 builds the unit");
-    let declarations = PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
-        .expect("the assembler builds the package declarations");
+    let declarations =
+        PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
+            .expect("the assembler builds the package declarations");
     let digit =
         ValueType::Int(quire_exact::IntegerInterval::new(0_i64.into(), 9_i64.into()).unwrap());
     assert_eq!(declarations.aliases, [("Digit".to_owned(), digit)]);
