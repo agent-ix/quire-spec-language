@@ -584,6 +584,75 @@ fn the_most_derived_redefinition_wins() {
     }
 }
 
+/// A plain diamond: `B` and `C` both inherit `A.x`, and `D` inherits both.
+/// `A.x` is one slot of `D`, not two, and a read resolved through either
+/// path (`x` in `B`'s set, `x` in `C`'s) finds that one slot. `D`'s slots
+/// are its own fields first, then `B`'s, then `C`'s (its supertypes in
+/// declaration order), each attribute once.
+#[trace("TC-196", "FR-151-AC-1")]
+#[test]
+fn a_diamond_shares_one_slot_and_orders_supertypes_by_declaration() {
+    let environment = TypeEnvironment::new(
+        [],
+        [
+            object("M::A", vec![integer_field("x")], &[]),
+            object("M::B", vec![integer_field("b")], &["M::A"]),
+            object("M::C", vec![integer_field("c")], &["M::A"]),
+            object("M::D", vec![integer_field("d")], &["M::B", "M::C"]),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        slots(&environment, "M::D"),
+        vec![
+            (effective("M::D"), "d".to_owned()),
+            (effective("M::B"), "b".to_owned()),
+            (effective("M::A"), "x".to_owned()),
+            (effective("M::C"), "c".to_owned()),
+        ]
+    );
+
+    let d1 = reference("M::D", "d1");
+    let objects = ObjectEnvironment::new(
+        &environment,
+        [(
+            d1.clone(),
+            vec![("x", int(5)), ("b", int(6)), ("c", int(7)), ("d", int(8))],
+        )],
+    )
+    .unwrap();
+    for path in ["M::B", "M::C"] {
+        let resolved = environment.attribute(effective(path), "x").unwrap();
+        assert_eq!(resolved.identity(), field_ref("M::A", "x"), "via {path}");
+        assert_eq!(
+            slot_integer(objects.attribute(&environment, &d1, &resolved.identity())),
+            Integer::from(5_i64),
+            "via {path}"
+        );
+    }
+
+    // Reversing `D`'s supertypes reverses the inherited order.
+    let reversed = TypeEnvironment::new(
+        [],
+        [
+            object("M::A", vec![integer_field("x")], &[]),
+            object("M::B", vec![integer_field("b")], &["M::A"]),
+            object("M::C", vec![integer_field("c")], &["M::A"]),
+            object("M::D", vec![integer_field("d")], &["M::C", "M::B"]),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        slots(&reversed, "M::D"),
+        vec![
+            (effective("M::D"), "d".to_owned()),
+            (effective("M::C"), "c".to_owned()),
+            (effective("M::A"), "x".to_owned()),
+            (effective("M::B"), "b".to_owned()),
+        ]
+    );
+}
+
 /// FR-151 conflict: `B.x` and `C.x` both redefine `A.x`, and `D` inherits
 /// both with neither owner more derived than the other. Refused
 /// `RedefinitionConflict` naming `A.x`; a `D.x` redefining `A.x` itself
@@ -993,6 +1062,45 @@ fn a_linear_chain_costs_admission_work_linear_in_its_flattened_slots() {
                 .cause,
             DeclarationCause::WorkUnits { limit: slots },
             "depth {depth}"
+        );
+    }
+}
+
+/// `M::W` with `width` direct supertypes `M::R0..`, each a root declaring
+/// one field: `2 * width + 1` flattened slots in all.
+fn wide(width: usize) -> Vec<ObjectTypeDeclaration> {
+    let roots: Vec<String> = (0..width).map(|root| format!("M::R{root}")).collect();
+    let mut types: Vec<ObjectTypeDeclaration> = roots
+        .iter()
+        .enumerate()
+        .map(|(root, label)| object(label, vec![integer_field(&format!("r{root}"))], &[]))
+        .collect();
+    let supertypes: Vec<&str> = roots.iter().map(String::as_str).collect();
+    types.push(object("M::W", vec![integer_field("w")], &supertypes));
+    types
+}
+
+/// Wide multiple inheritance is charged what it costs: one type with 2,000
+/// direct supertypes gathers their ancestor sets and sorts them once, and
+/// admission stays within a fixed number of units a flattened slot (the
+/// sort's `log` factor included); a budget below the slot count refuses.
+#[trace("TC-220", "FR-082-AC-7")]
+#[test]
+fn wide_multiple_inheritance_costs_admission_work_bounded_in_its_slots() {
+    for width in [500_u64, 2_000] {
+        let types = || wide(usize::try_from(width).unwrap());
+        let slots = 2 * width + 1;
+        let environment = TypeEnvironment::bounded([], types(), work_units(24 * slots)).unwrap();
+        assert_eq!(
+            environment.attributes(effective("M::W")).unwrap().len(),
+            usize::try_from(width + 1).unwrap()
+        );
+        assert_eq!(
+            TypeEnvironment::bounded([], types(), work_units(slots))
+                .unwrap_err()
+                .cause,
+            DeclarationCause::WorkUnits { limit: slots },
+            "width {width}"
         );
     }
 }

@@ -721,8 +721,8 @@ impl TypeEnvironment {
         environment.check_member_types()?;
         environment.check_recursion(RecursionEdges::Unnamed)?;
         environment.check_recursion(RecursionEdges::NonEscaping)?;
-        environment.check_supertypes()?;
         let mut budget = WorkBudget::new(limits.work_units);
+        environment.check_supertypes(&mut budget)?;
         environment.ancestry = environment.compute_ancestors(&mut budget)?;
         environment.check_ancestor_steps(limits.ancestor_steps)?;
         let table = FieldTable::new(&environment.object_types);
@@ -1039,7 +1039,11 @@ impl TypeEnvironment {
     /// type, and the whole graph must be acyclic -- refuses the first cycle
     /// found, in declaration-key order, exactly as [`Self::check_recursion`]
     /// does for the separate field-containment graph.
-    fn check_supertypes(&self) -> Result<(), InvalidDeclaration> {
+    ///
+    /// Each type is marked while it is on the walk's path, so a back edge is
+    /// found without scanning the path, and `budget` is charged each edge
+    /// the walk follows.
+    fn check_supertypes(&self, budget: &mut WorkBudget) -> Result<(), InvalidDeclaration> {
         let name = |key: &EffectiveId| {
             self.object_types
                 .get(key)
@@ -1056,11 +1060,13 @@ impl TypeEnvironment {
             }
         }
         let mut finished: BTreeSet<EffectiveId> = BTreeSet::new();
+        let mut on_path: BTreeSet<EffectiveId> = BTreeSet::new();
         for root in self.object_types.keys() {
             if finished.contains(root) {
                 continue;
             }
             let mut path: Vec<(EffectiveId, usize)> = vec![(*root, 0)];
+            on_path.insert(*root);
             while let Some((node, next)) = path.last_mut() {
                 let node = *node;
                 let Some(target) = self
@@ -1069,11 +1075,21 @@ impl TypeEnvironment {
                     .and_then(|declaration| declaration.supertypes.get(*next))
                 else {
                     finished.insert(node);
+                    on_path.remove(&node);
                     path.pop();
                     continue;
                 };
                 *next += 1;
-                if let Some(start) = path.iter().position(|(on_path, _)| on_path == target) {
+                budget.charge(1).map_err(|cause| InvalidDeclaration {
+                    declaration: name(&node),
+                    cause,
+                })?;
+                if on_path.contains(target) {
+                    // Found once, on the refusal path only.
+                    let start = path
+                        .iter()
+                        .position(|(on_path, _)| on_path == target)
+                        .unwrap_or_default();
                     let mut cycle: Vec<String> =
                         path.iter().skip(start).map(|(key, _)| name(key)).collect();
                     cycle.push(name(target));
@@ -1083,6 +1099,7 @@ impl TypeEnvironment {
                     });
                 }
                 if !finished.contains(target) {
+                    on_path.insert(*target);
                     path.push((*target, 0));
                 }
             }
@@ -1106,8 +1123,14 @@ impl TypeEnvironment {
         // Positions are `u32`: a package with more object types than that
         // could never be flattened within any budget either.
         if u32::try_from(self.object_types.len()).is_err() {
+            // The last type in key order is one past the positions that fit.
+            let past = self
+                .object_types
+                .values()
+                .next_back()
+                .map_or_else(String::new, |declaration| declaration.name.clone());
             return Err(InvalidDeclaration {
-                declaration: String::new(),
+                declaration: past,
                 cause: DeclarationCause::WorkUnits {
                     limit: budget.limit,
                 },
@@ -1169,7 +1192,9 @@ impl TypeEnvironment {
 
     /// `node`'s proper ancestors, ascending, from its direct supertypes'
     /// finished sets. `budget` is charged each supertype plus its ancestor
-    /// count before that set is copied.
+    /// count before that set is copied; with several supertypes, the
+    /// gathered positions are sorted and deduplicated once, and that sort
+    /// is charged too (`k` units a doubling of the `k` gathered).
     fn own_ancestors(
         node: &ObjectTypeDeclaration,
         positions: &BTreeMap<EffectiveId, u32>,
@@ -1186,16 +1211,27 @@ impl TypeEnvironment {
                 .and_then(Option::as_deref)
                 .unwrap_or_default();
             budget.charge(further.len().saturating_add(1))?;
-            if own.is_empty() {
-                // One supertype, the common case: its set is already
-                // ascending, so the copy needs no sort.
-                own.extend_from_slice(further);
-                if let Err(at) = own.binary_search(&position) {
-                    own.insert(at, position);
+            own.push(position);
+            own.extend_from_slice(further);
+        }
+        match node.supertypes.len() {
+            // No supertype, or one: its set is already ascending, and only
+            // its own position needs placing.
+            0 => {}
+            1 => {
+                own.rotate_left(1);
+                if let Some(position) = own.pop() {
+                    if let Err(at) = own.binary_search(&position) {
+                        own.insert(at, position);
+                    }
                 }
-            } else {
-                own.push(position);
-                own.extend_from_slice(further);
+            }
+            _ => {
+                let gathered = own.len();
+                let doublings = usize::try_from(gathered.max(1).ilog2())
+                    .unwrap_or(usize::MAX)
+                    .saturating_add(1);
+                budget.charge(gathered.saturating_mul(doublings))?;
                 own.sort_unstable();
                 own.dedup();
             }
@@ -1387,6 +1423,7 @@ impl TypeEnvironment {
                         let Some(existing) = candidates.get(kept) else {
                             continue;
                         };
+                        budget.charge(attribute.0.members.len())?;
                         if Arc::ptr_eq(&existing.0, &attribute.0)
                             || existing.0.members == attribute.0.members
                         {
@@ -1442,23 +1479,19 @@ impl TypeEnvironment {
             let conflict = members
                 .iter()
                 .any(|&member| member != best && !properly(best, member));
-            if conflict {
-                let shared = groups
-                    .shared(*root)
-                    .and_then(|position| table.reference(position));
-                return Err(match shared {
-                    Some(field) => DeclarationCause::RedefinitionConflict(field),
-                    None => DeclarationCause::RedefinitionConflict(
-                        candidates
-                            .get(best)
-                            .map(EffectiveAttribute::identity)
-                            .unwrap_or_else(|| FieldRef::new(declaration.key, "")),
-                    ),
-                });
-            }
             let Some(winner) = candidates.get(best) else {
                 continue;
             };
+            if conflict {
+                // A group of two or more was joined over a common field, so
+                // `shared` is always set; the winner's own field is named
+                // otherwise, never an invented one.
+                let shared = groups
+                    .shared(*root)
+                    .and_then(|position| table.reference(position))
+                    .unwrap_or_else(|| winner.identity());
+                return Err(DeclarationCause::RedefinitionConflict(shared));
+            }
             let merged = merge(
                 winner,
                 members.iter().filter_map(|&member| candidates.get(member)),
@@ -1723,6 +1756,7 @@ fn merge<'a>(
         budget.charge(attribute.0.members.len())?;
         members.extend_from_slice(&attribute.0.members);
     }
+    budget.charge(winner.0.members.len())?;
     members.extend_from_slice(&winner.0.members);
     members.sort_unstable();
     members.dedup();
