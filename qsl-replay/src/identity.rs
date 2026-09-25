@@ -24,6 +24,7 @@
 //! vocabulary to carry.
 use std::fmt;
 
+use qsl_foundation::bound::FiniteBound;
 use qsl_foundation::digest::{DigestRecord, ManifestDigest, WireNodeId};
 use quire_exact::Identifier;
 
@@ -241,16 +242,19 @@ impl ProfileSelection {
 }
 
 /// One obligation argument's declared per-argument domain (ADR-013 O-09):
-/// the parameter's wire node id and its declared-domain descriptor.
+/// the parameter's wire node id and the finite domain the proving run
+/// declared for it (ADR-014 B-4, §11). It is a typed [`FiniteBound`], so an
+/// empty or inverted domain cannot be carried, and no accounting limit,
+/// stage limit or profile ceiling can stand in for it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeclaredDomain {
     parameter: WireNodeId,
-    domain: String,
+    domain: FiniteBound,
 }
 
 impl DeclaredDomain {
-    /// Name a declared domain by parameter and domain descriptor.
-    pub fn new(parameter: WireNodeId, domain: String) -> Self {
+    /// Name a declared domain by parameter and finite domain.
+    pub fn new(parameter: WireNodeId, domain: FiniteBound) -> Self {
         Self { parameter, domain }
     }
 
@@ -259,8 +263,8 @@ impl DeclaredDomain {
         self.parameter
     }
 
-    /// The declared-domain descriptor.
-    pub fn domain(&self) -> &str {
+    /// The declared finite domain.
+    pub fn domain(&self) -> &FiniteBound {
         &self.domain
     }
 }

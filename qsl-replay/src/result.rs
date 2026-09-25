@@ -657,7 +657,7 @@ mod tests {
                     package_contract_version: Some("quire.checked-package/v2".to_owned()),
                     source_digests: Some(vec![]),
                     profile_selections: Some(vec![]),
-                    proof_bounds: Some(charges()),
+                    run_limits: Some(charges()),
                     declared_domains: Some(vec![]),
                     backend: Some((
                         "kani-backend-1".to_owned(),
