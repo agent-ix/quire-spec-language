@@ -158,6 +158,7 @@ pub use checked_dispatch::{
     MissingClauseField, OperationClauses,
 };
 pub use field_refinement::check_field_refinement_obligation;
+pub use region::DeclarationRegions;
 pub use type_form::TypeFormFault;
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an

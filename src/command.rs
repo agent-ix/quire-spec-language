@@ -361,13 +361,17 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
                 packages: 0,
             },
         )?;
-        let models = compilation::models(&mut intake, &request.models)?;
+        // The edition is decided before any model is read: a `1-draft`
+        // program takes no model, whatever state the model files are in.
         let source = intake.source(&request.program.source)?;
         match Edition::of(source.source())? {
             Edition::Complete => complete(&request, source.source()),
-            Edition::Native => Ok(compilation::package_of(source, &request.program, &models)?
-                .bytes()
-                .to_vec()),
+            Edition::Native => {
+                let models = compilation::models(&mut intake, &request.models)?;
+                Ok(compilation::package_of(source, &request.program, &models)?
+                    .bytes()
+                    .to_vec())
+            }
         }
     })
 }
@@ -408,7 +412,10 @@ impl Edition {
 }
 
 /// Spine-compile a `1-draft` program. Model sources and clause bindings
-/// select native constructs; a complete-V1 program compiles alone.
+/// select native constructs; a complete-V1 program compiles alone. The
+/// program's `document` and `formal_revision` were validated when intake
+/// read it; the v2 wire has no member for them, so they do not reach the
+/// bytes (FR-027 Outputs).
 fn complete(request: &wire::CompileRequest, source: &Source) -> Result<Vec<u8>> {
     if !request.models.is_empty() {
         return Err(RunCause::CompleteSelection(CompleteSelection::Models));

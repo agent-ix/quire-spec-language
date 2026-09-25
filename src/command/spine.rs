@@ -7,11 +7,13 @@
 //! no semantic decision.
 
 use qsl_cst::CompleteDiagnostic;
-use qsl_forms::{build_unit, FormsFailure, FormsLimits};
+use qsl_forms::{build_unit, FormsCause, FormsFailure, FormsLimits};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{emit_checked, CheckedPackage, EmitRefusal, OmittedNode};
-use qsl_semantics::check::{AssemblyRefusal, CheckRefusal, CheckingLimits, PackageDeclarations};
+use qsl_semantics::check::{
+    AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, CheckingLimits, PackageDeclarations,
+};
 
 /// Why spine `compile` wrote no `quire.checked-package/v2` bytes. Each
 /// variant is the stage that refused, with its typed cause and, where the
@@ -23,7 +25,7 @@ pub enum CompileRefusal {
     #[error("{}", .0.message)]
     Source(Box<CompleteDiagnostic>),
     /// E2: the forms stage refused the unit or reached its depth limit.
-    #[error("the forms stage refused the unit: {failure:?}")]
+    #[error("the forms stage refused the unit: {}", forms_message(.failure))]
     Forms {
         /// The S2 failure.
         failure: FormsFailure,
@@ -31,7 +33,7 @@ pub enum CompileRefusal {
         region: Option<SourceRegion>,
     },
     /// E3: the FR-091 assembler refused the unit.
-    #[error("the assembler refused the unit: {refusal:?}")]
+    #[error("the assembler refused the unit: {}", assembly_message(.refusal))]
     Assembly {
         /// Every assembly error, never empty.
         refusal: AssemblyRefusal,
@@ -39,7 +41,7 @@ pub enum CompileRefusal {
         region: Option<SourceRegion>,
     },
     /// E3: the checker refused the package.
-    #[error("the checker refused the package: {refusals:?}")]
+    #[error("the checker refused the package: {}", check_message(.refusals))]
     Check {
         /// Every check refusal, never empty.
         refusals: Vec<CheckRefusal>,
@@ -52,7 +54,7 @@ pub enum CompileRefusal {
     /// E4: the v2 emitter would omit these nodes. A package missing part of
     /// the checked graph is partial output, which E4 never writes
     /// (ADR-011 §2.3).
-    #[error("the checked-package/v2 wire would omit {} node(s): {:?}", .0.len(), .0)]
+    #[error("the checked-package/v2 wire would omit {} node(s)", .0.len())]
     Omitted(Vec<OmittedNode>),
 }
 
@@ -65,10 +67,7 @@ impl CompileRefusal {
             Self::Assembly { refusal, .. } => refusal
                 .errors
                 .first()
-                .and_then(|error| Code::from_code(error.cause.catalog_code().code()))
-                // Every assembler cause's code is catalogued (FR-091-AC-21);
-                // one that is not is a broken invariant, not a refusal.
-                .unwrap_or(Code::RuntimeInvariant),
+                .map_or(Code::RuntimeInvariant, |error| error.cause.code()),
             Self::Check { refusals, .. } => refusals
                 .first()
                 .map_or(Code::RuntimeInvariant, |refusal| refusal.cause.code()),
@@ -78,15 +77,14 @@ impl CompileRefusal {
         }
     }
 
-    /// The stage that refused: `source`, `forms`, `assembly`, `check` or
-    /// `emit`.
-    pub fn stage(&self) -> &'static str {
+    /// The stage that refused.
+    pub fn stage(&self) -> SpineStage {
         match self {
-            Self::Source(_) => "source",
-            Self::Forms { .. } => "forms",
-            Self::Assembly { .. } => "assembly",
-            Self::Check { .. } => "check",
-            Self::Emit(_) | Self::Omitted(_) => "emit",
+            Self::Source(_) => SpineStage::Source,
+            Self::Forms { .. } => SpineStage::Forms,
+            Self::Assembly { .. } => SpineStage::Assembly,
+            Self::Check { .. } => SpineStage::Check,
+            Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
         }
     }
 
@@ -100,6 +98,119 @@ impl CompileRefusal {
             | Self::Check { region, .. } => region.as_ref(),
             Self::Emit(_) | Self::Omitted(_) => None,
         }
+    }
+}
+
+/// The spine stage a [`CompileRefusal`] comes from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SpineStage {
+    /// S1: `qsl_cst::parse`.
+    Source,
+    /// S2: `qsl_forms::build_unit`.
+    Forms,
+    /// The FR-091 assembler.
+    Assembly,
+    /// S3: `PackageDeclarations::check`.
+    Check,
+    /// S4: the v2 emitter.
+    Emit,
+}
+
+impl SpineStage {
+    /// The stage's name in the command-error envelope.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Forms => "forms",
+            Self::Assembly => "assembly",
+            Self::Check => "check",
+            Self::Emit => "emit",
+        }
+    }
+}
+
+/// A readable account of an S2 failure.
+fn forms_message(failure: &FormsFailure) -> String {
+    match failure {
+        FormsFailure::Refused(refusal) => match &refusal.cause {
+            FormsCause::RecoveringCst => {
+                "the source has a syntax error the parser recovered from".to_owned()
+            }
+            FormsCause::DiagnosedSource(code) => {
+                format!("the source carries a {} diagnostic", code.as_str())
+            }
+            FormsCause::NoDispatchEntry { spelling } => {
+                format!("no form reads a `{spelling}` declaration")
+            }
+            FormsCause::UnrepresentedConstruct { .. } => {
+                "no form represents this construct".to_owned()
+            }
+            FormsCause::UnexpectedShape { .. } => {
+                "a node does not have the shape of its grammar rule".to_owned()
+            }
+        },
+        FormsFailure::Limit { limit, .. } => format!(
+            "{} (bound {}, reached {})",
+            limit.kind().catalog_cause(),
+            limit.configured_bound(),
+            limit.actual()
+        ),
+    }
+}
+
+/// A readable account of the assembler's first error, and how many more.
+fn assembly_message(refusal: &AssemblyRefusal) -> String {
+    let Some(first) = refusal.errors.first() else {
+        return "no error recorded".to_owned();
+    };
+    let message = match &first.cause {
+        AssemblyCause::UnresolvedTypeName { name } => format!("no declaration is named `{name}`"),
+        AssemblyCause::AmbiguousTypeName { name, .. } => {
+            format!("`{name}` names more than one declaration")
+        }
+        AssemblyCause::IllFormedBounds(_) => "a type's declared bounds are ill-formed".to_owned(),
+        AssemblyCause::FloatingType { .. } => "a floating type is not admitted".to_owned(),
+        AssemblyCause::AliasCycle { edges } => format!(
+            "the alias `{}` reaches itself",
+            edges.first().map_or("", |(alias, _)| alias.as_str())
+        ),
+        AssemblyCause::UndeclaredAlias { alias } => {
+            format!("`using {alias}` names no profile selection")
+        }
+        AssemblyCause::DuplicateAlias { alias, .. } => {
+            format!("the selection alias `{alias}` is declared more than once")
+        }
+        AssemblyCause::InvalidTypeDeclaration(_) => {
+            "the records and tuples are not an admitted declaration set".to_owned()
+        }
+        AssemblyCause::Handle(_) => "a declared type's handle could not be encoded".to_owned(),
+    };
+    with_more(message, refusal.errors.len())
+}
+
+/// A readable account of the checker's first refusal, and how many more.
+fn check_message(refusals: &[CheckRefusal]) -> String {
+    let Some(first) = refusals.first() else {
+        return "no refusal recorded".to_owned();
+    };
+    let mut message = first.cause.code().as_str().to_owned();
+    if let Some(cause) = first.cause.cause() {
+        message = format!("{message} ({cause})");
+    }
+    match &first.cause {
+        CheckCause::MissingName(name) | CheckCause::AmbiguousName { name, .. } => {
+            message = format!("{message}: `{name}`");
+        }
+        _ => {}
+    }
+    with_more(message, refusals.len())
+}
+
+/// `message`, noting the `total - 1` further errors it does not describe.
+fn with_more(message: String, total: usize) -> String {
+    match total.saturating_sub(1) {
+        0 => message,
+        more => format!("{message}, and {more} more"),
     }
 }
 
@@ -145,7 +256,7 @@ pub fn compile(
             refusal,
         })
     })?;
-    let regions = declarations.clone();
+    let regions = declarations.regions();
     let graph = declarations
         .check(CheckingLimits::default())
         .map_err(|refusals| {
@@ -168,7 +279,7 @@ pub fn compile(
 
 #[cfg(test)]
 mod tests {
-    use super::CompileRefusal;
+    use super::{CompileRefusal, SpineStage};
     use ix_trace_rs::trace;
     use qsl_foundation::Code;
 
@@ -180,7 +291,7 @@ mod tests {
     #[test]
     fn an_omitting_emission_refuses_at_the_emit_stage() {
         let refusal = CompileRefusal::Omitted(Vec::new());
-        assert_eq!(refusal.stage(), "emit");
+        assert_eq!(refusal.stage(), SpineStage::Emit);
         assert_eq!(refusal.code(), Code::UnsupportedProjection);
         assert!(refusal.region().is_none());
     }

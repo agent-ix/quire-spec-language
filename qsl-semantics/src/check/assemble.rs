@@ -24,7 +24,7 @@ use qsl_forms::{
 };
 use qsl_foundation::diagnostic::CatalogCode;
 use qsl_foundation::source::provenance::RawSourceRef;
-use qsl_foundation::Span;
+use qsl_foundation::{Code, Span};
 use quire_exact::{EffectiveId, IeeeWidth, Presence, RoundingMode, ValueType};
 
 use super::check::{PackageDeclarations, ResolvedSignature};
@@ -98,34 +98,23 @@ pub enum AssemblyCause {
 }
 
 impl AssemblyCause {
-    /// This cause's catalog code (FR-091 "Catalog codes", ADR-013 O-17).
-    pub fn catalog_code(&self) -> CatalogCode {
+    /// This cause's catalog code (FR-091 "Catalog codes").
+    pub fn code(&self) -> Code {
         match self {
-            Self::UnresolvedTypeName { .. } => {
-                CatalogCode::new("missing_declaration", "missing-name")
+            Self::UnresolvedTypeName { .. } | Self::UndeclaredAlias { .. } => {
+                Code::MissingDeclaration
             }
             Self::AmbiguousTypeName { .. } | Self::DuplicateAlias { .. } => {
-                CatalogCode::new("ambiguous_declaration", "ambiguous-name")
+                Code::AmbiguousDeclaration
             }
-            Self::IllFormedBounds(_) => CatalogCode::new("ill_typed", "type-mismatch"),
-            Self::FloatingType { .. } => {
-                CatalogCode::new("unknown_required_feature", "unsupported-feature")
-            }
-            Self::AliasCycle { .. } => CatalogCode::new("invalid_package", "definition-cycle"),
-            Self::UndeclaredAlias { .. } => {
-                CatalogCode::new("missing_declaration", "missing-selection")
-            }
+            Self::IllFormedBounds(_) => Code::IllTyped,
+            Self::FloatingType { .. } => Code::UnknownRequiredFeature,
+            Self::AliasCycle { .. } => Code::InvalidPackage,
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
-                DeclarationCause::DuplicateMember(_) => {
-                    CatalogCode::new("ambiguous_declaration", "ambiguous-name")
-                }
-                DeclarationCause::Type(cause) => {
-                    CatalogCode::new("ill_typed", cause.tag().unwrap_or("type-mismatch"))
-                }
-                DeclarationCause::Recursion { .. }
-                | DeclarationCause::GeneralizationCycle { .. } => {
-                    CatalogCode::new("ill_typed", "type-mismatch")
-                }
+                DeclarationCause::DuplicateMember(_) => Code::AmbiguousDeclaration,
+                DeclarationCause::Type(_)
+                | DeclarationCause::Recursion { .. }
+                | DeclarationCause::GeneralizationCycle { .. } => Code::IllTyped,
                 // The assembler admits records and tuples only: an object-type
                 // cause, or a `redefines` it never writes, is a broken
                 // invariant.
@@ -136,14 +125,39 @@ impl AssemblyCause {
                 | DeclarationCause::RedefinitionConflict(_)
                 | DeclarationCause::RedefinitionWidens(_)
                 | DeclarationCause::AncestorSteps { .. }
-                | DeclarationCause::WorkUnits { .. } => {
-                    CatalogCode::new("runtime_invariant", "established-invariant-broken")
-                }
+                | DeclarationCause::WorkUnits { .. } => Code::RuntimeInvariant,
             },
-            Self::Handle(_) => {
-                CatalogCode::new("runtime_invariant", "established-invariant-broken")
-            }
+            Self::Handle(_) => Code::RuntimeInvariant,
         }
+    }
+
+    /// This cause's catalog code and cause (FR-091 "Catalog codes",
+    /// ADR-013 O-17).
+    pub fn catalog_code(&self) -> CatalogCode {
+        let cause = match self {
+            Self::UnresolvedTypeName { .. } => "missing-name",
+            Self::AmbiguousTypeName { .. } | Self::DuplicateAlias { .. } => "ambiguous-name",
+            Self::IllFormedBounds(_) => "type-mismatch",
+            Self::FloatingType { .. } => "unsupported-feature",
+            Self::AliasCycle { .. } => "definition-cycle",
+            Self::UndeclaredAlias { .. } => "missing-selection",
+            Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
+                DeclarationCause::DuplicateMember(_) => "ambiguous-name",
+                DeclarationCause::Type(cause) => cause.tag().unwrap_or("type-mismatch"),
+                DeclarationCause::Recursion { .. }
+                | DeclarationCause::GeneralizationCycle { .. } => "type-mismatch",
+                DeclarationCause::DuplicateKey
+                | DeclarationCause::UnknownDeclaration(_)
+                | DeclarationCause::UnknownObjectType(_)
+                | DeclarationCause::RedefinitionTarget(_)
+                | DeclarationCause::RedefinitionConflict(_)
+                | DeclarationCause::RedefinitionWidens(_)
+                | DeclarationCause::AncestorSteps { .. }
+                | DeclarationCause::WorkUnits { .. } => "established-invariant-broken",
+            },
+            Self::Handle(_) => "established-invariant-broken",
+        };
+        CatalogCode::new(self.code().as_str(), cause)
     }
 }
 

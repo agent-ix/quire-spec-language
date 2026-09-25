@@ -25,7 +25,7 @@ pub(super) enum Stage {
     Lower,
     Input,
     /// The spine stage that refused a `1-draft` program.
-    Spine(&'static str),
+    Spine(crate::command::spine::SpineStage),
 }
 
 impl Serialize for Stage {
@@ -44,7 +44,7 @@ impl Serialize for Stage {
             Self::SelectedPackage => "selected_package",
             Self::Lower => "lower",
             Self::Input => "input",
-            Self::Spine(stage) => stage,
+            Self::Spine(stage) => stage.as_str(),
         })
     }
 }

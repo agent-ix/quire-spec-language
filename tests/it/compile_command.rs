@@ -373,6 +373,41 @@ fn a_complete_v1_program_compiles_through_the_spine() {
     assert_eq!(wire["contract_version"], "quire.checked-package/v2");
 }
 
+/// FR-027-AC-5 (TC-435 step 2): a `1-draft` compile validates the program's
+/// `document` and `formal_revision` but the v2 wire does not record them,
+/// so two requests differing only there write identical bytes; an invalid
+/// `document` still refuses.
+#[test]
+#[trace("TC-435", "FR-027-AC-5")]
+fn formal_labels_are_validated_but_not_recorded_by_a_spine_compile() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let first = compile(directory.path());
+    assert_eq!(first.status.code(), Some(0));
+    let path = directory.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    job["request"]["program"]["source"]["document"] = json!("Elsewhere");
+    job["request"]["program"]["source"]["formal_revision"] = json!(9);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let second = compile(directory.path());
+    assert_eq!(
+        second.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+    assert!(!first.stdout.is_empty());
+    assert_eq!(first.stdout, second.stdout);
+    job["request"]["program"]["source"]["document"] = json!("");
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let invalid = compile(directory.path());
+    assert_eq!(invalid.status.code(), Some(20));
+    assert!(invalid.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&invalid.stderr).unwrap();
+    assert_eq!(failure["stage"], "request", "{failure}");
+}
+
 /// FR-027-AC-7 (TC-435 step 4): an edition neither compiler reads refuses
 /// with `unknown_edition` at its literal, naming the file and the edition.
 #[test]
@@ -411,7 +446,8 @@ fn an_edition_neither_compiler_reads_refuses() {
 }
 
 /// FR-027-AC-7 (TC-435 step 5): a `1-draft` program compiles alone; a
-/// request that selects models or clause bindings for it refuses.
+/// request that selects models or clause bindings for it refuses, whatever
+/// state the model files are in.
 #[test]
 #[trace("TC-435", "FR-027-AC-7")]
 fn a_complete_v1_request_selecting_native_inputs_refuses() {
@@ -423,6 +459,12 @@ fn a_complete_v1_request_selecting_native_inputs_refuses() {
     let mut job: Value = serde_json::from_slice(&std::fs::read(&request).unwrap()).unwrap();
     job["request"]["program"]["source"]["digest"] = json!(ByteDigest::of(&program).to_string());
     assert!(!job["request"]["models"].as_array().unwrap().is_empty());
+    // Malformed model files: the edition is decided before any model is
+    // read, so the refusal names the selection, not the files.
+    for model in job["request"]["models"].as_array().unwrap() {
+        let file = model["source"]["file"].as_str().unwrap();
+        std::fs::write(directory.path().join(file), b"not a model {").unwrap();
+    }
     assert!(!job["request"]["program"]["clauses"]
         .as_array()
         .unwrap()
@@ -459,40 +501,46 @@ fn a_complete_v1_request_selecting_native_inputs_refuses() {
 #[test]
 #[trace("TC-435", "FR-027-AC-8")]
 fn each_spine_stage_refusal_reports_its_stage_and_code() {
-    for (body, stage, code, exit) in [
+    for (body, stage, code, exit, located) in [
         (
             "function f using v(): Int[0, 9] pure { 7\n",
             "source",
             "invalid_syntax",
             20,
+            None,
         ),
         (
             "predicate p using v(): Boolean { true }\n",
             "forms",
             "unsupported_construct",
             21,
+            Some("predicate p using v(): Boolean { true }"),
         ),
         (
             "function f using v(p: Nope): Int[0, 9] pure { 1 }\n",
             "assembly",
             "missing_declaration",
             20,
+            Some("Nope"),
         ),
         (
             "function f using v(): Int[0, 9] pure { true }\n",
             "check",
             "ill_typed",
             20,
+            Some("true"),
         ),
         (
             "type Digit = Int[0, 9];\n",
             "emit",
             "unsupported_projection",
             21,
+            None,
         ),
     ] {
+        let text = format!("{SPINE_HEADER}{body}");
         let directory = tempfile::tempdir().unwrap();
-        spine_request(directory.path(), format!("{SPINE_HEADER}{body}").as_bytes());
+        spine_request(directory.path(), text.as_bytes());
         let output = compile(directory.path());
         assert_eq!(output.status.code(), Some(exit), "{stage}");
         assert!(output.stdout.is_empty(), "{stage}");
@@ -501,5 +549,52 @@ fn each_spine_stage_refusal_reports_its_stage_and_code() {
         assert_eq!(failure["code"], code, "{failure}");
         assert_eq!(failure["status"], "refused", "{failure}");
         assert_eq!(failure["details"]["path"], "program.native", "{failure}");
+        let message = failure["message"].as_str().unwrap();
+        assert!(!message.contains('{'), "a Debug dump: {message}");
+        let span = &failure["details"]["span"];
+        match located {
+            Some(located) => {
+                let start = SPINE_HEADER.len() + body.find(located).unwrap();
+                assert_eq!(span["start"]["byte"], start, "{failure}");
+                assert_eq!(span["end"]["byte"], start + located.len(), "{failure}");
+            }
+            None if stage == "emit" => assert!(span.is_null(), "{failure}"),
+            None => assert!(span.is_object(), "{failure}"),
+        }
+    }
+}
+
+/// FR-027-AC-5 (TC-435 step 7): a source that does not open with an
+/// `ix:native` header declares no edition and goes to native compile, whose
+/// parser reports its header.
+#[test]
+#[trace("TC-435", "FR-027-AC-5")]
+fn a_source_without_an_ix_native_header_goes_to_native() {
+    for (program, code) in [
+        (
+            "function f using v(): Int[0, 9] pure { 7 }\n".to_owned(),
+            "invalid_syntax",
+        ),
+        (
+            SPINE_HEADER.replacen("ix:native", "ix:other", 1)
+                + "function f using v(): Int[0, 9] pure { 7 }\n",
+            "unknown_language",
+        ),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        spine_request(directory.path(), program.as_bytes());
+        let output = compile(directory.path());
+        assert_eq!(output.status.code(), Some(20), "{program}");
+        assert!(output.stdout.is_empty());
+        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(failure["code"], code, "{failure}");
+        // The native parser's diagnostic carries its phase; no spine
+        // refusal does.
+        assert!(failure["details"]["phase"].is_string(), "{failure}");
+        assert!(
+            !["source", "forms", "assembly", "check", "emit"]
+                .contains(&failure["stage"].as_str().unwrap()),
+            "{failure}"
+        );
     }
 }
