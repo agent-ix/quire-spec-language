@@ -66,15 +66,21 @@ through it, or a crate alias or glob import that reaches it.
 - The executor SHALL build the dependency input (FR-099) from the
   `dependencies` entries: each entry's `identity` and `version`, and its
   source's labels, identity as path and provided bytes. Spine `compile`
-  resolves the proved source's imports against it (ADR-015 D-1), so a
-  dependency whose source recompiles to a `package_id` other than its
-  import's recorded digest refuses there, at that import.
-- When the recompile succeeds, the executor SHALL require each entry's `package_id`
-  to equal the recompiled closure's selection of the entry's `identity`,
-  refusing `DependencyIdentityMismatch` otherwise, and SHALL require the
-  entries' `{identity, version, package_id}` to equal the recompiled
-  package's `dependency_selections` in order, refusing
-  `invalid_package`/`invalid-value` at `/package/dependencies` otherwise.
+  resolves the proved source's imports against it (ADR-015 D-1), and the
+  executor carries its refusal as `ReplayRefusal::Recompile`: a dependency
+  whose source recompiles to a `package_id` other than its import's
+  recorded digest refuses there as `DependencyIdentityMismatch` at that
+  import, a removed entry as `missing_import`/`missing-selection`, and an
+  entry with a changed version as `stale_dependency`/`revision-mismatch`.
+- When the recompile succeeds, the executor SHALL check the entries against
+  the recompiled package's `dependency_selections` in this order: an entry
+  whose identity the closure does not hold refuses
+  `ReplayRefusal::DependencySelections`
+  (`invalid_package`/`invalid-value` at `/package/dependencies`); an entry
+  whose `package_id` differs from the closure's selection refuses
+  `ReplayRefusal::DependencyIdentityMismatch` (`stale_dependency`), naming
+  the identity, the entry's `package_id` and the recompiled one; entries
+  out of the closure's order refuse `ReplayRefusal::DependencySelections`.
 - The recompile SHALL run under the stage limits the request carries. The
   request's S1 `text_input_bytes` bounds S1's source bytes, and its S3
   `work_units` bounds the checker's work budget. No
@@ -125,8 +131,8 @@ through it, or a crate alias or glob import that reaches it.
 | FR-098-AC-3 | A meaning-affecting source edit refuses by `package_id`, naming both identities. A presentation-only edit, which keeps the `package_id`, refuses by source digest. | Test (TC-444) |
 | FR-098-AC-4 | Each refusal in Behavior -- unknown version, a missing input, a byte/digest mismatch, a stale `package_id`, a selection naming no function node, an arity mismatch, a type mismatch and a value outside the declared domain (each `WrongValueKind`), a limit above the reader limit, a recompile stage limit at S1 or S3, and a selection whose declared result is not `Boolean` (refused before any call, even with no accounting budget) -- refuses with its typed variant and no partial result. | Test (TC-444) |
 | FR-098-AC-5 | A replay that disagrees with the refuted property settles `inconclusive` with cause `Verdicts`, and one that completes no value with cause `NoValue`, each holding both verdicts; neither is repaired. | Test (TC-444) |
-| FR-098-AC-6 | A request for a proved package importing `test/units`, whose `dependencies` entry names `test/units`, its `package_id` and its one source, replays from the byte provision alone. With that entry's source bytes replaced by an edit that changes `test/units`'s `package_id` (digests updated to match), the replay refuses `DependencyIdentityMismatch` (`stale_dependency`), naming `test/units`, the recorded `package_id` and the recompiled one, with no verdict; with only the entry's `package_id` changed, it refuses `DependencyIdentityMismatch` naming the same identity. | Test (TC-444) |
-| FR-098-AC-7 | A request whose `dependencies` entries are swapped, or lack one entry, refuses `invalid_package`/`invalid-value` at `/package/dependencies`; an entry naming two sources, or a definition document, refuses as a source reference that is not one source unit. None yields a verdict. | Test (TC-444) |
+| FR-098-AC-6 | A request for a proved package importing `test/units`, whose `dependencies` entry names `test/units`, its `package_id` and its one source, replays from the byte provision alone. With that entry's source bytes replaced by an edit that changes `test/units`'s `package_id` (digests updated to match), the replay refuses `ReplayRefusal::Recompile` carrying `DependencyIdentityMismatch` (`stale_dependency`), naming `test/units`, the recorded `package_id` and the recompiled one, with no verdict; with only the entry's `package_id` changed, it refuses `ReplayRefusal::DependencyIdentityMismatch` naming the same identity. | Test (TC-444) |
+| FR-098-AC-7 | A request whose `dependencies` entries are swapped, or carry an extra entry no import reaches, refuses `ReplayRefusal::DependencySelections` (`invalid_package`/`invalid-value` at `/package/dependencies`); one lacking an entry refuses `ReplayRefusal::Recompile` carrying `missing_import`/`missing-selection` at the import; an entry naming two sources, or a definition document, refuses as a source reference that is not one source unit. None yields a verdict. | Test (TC-444) |
 
 ## Dependencies
 

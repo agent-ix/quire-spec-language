@@ -136,7 +136,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-6 | A byte-provision entry whose stored bytes do not hash to its own declared digest, under its declared digest domain's algorithm, refuses at construction with cause `stale_dependency`/`byte-digest-mismatch`; this is this requirement's own decode-time half of "stale package identity" and is distinct from #243's execution-time recompiled-`package_id` check. | Test (TC-186) |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
 | FR-071-AC-8 | A request whose `package_contract_version` is not exactly `quire.checked-package/v2` refuses at decode with the catalog's unsupported-wire refusal, naming the actual version supplied, before the package reference or byte provision is read. | Test (TC-445) |
-| FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
+| FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity or an empty version, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
 
 ## Dependencies
 

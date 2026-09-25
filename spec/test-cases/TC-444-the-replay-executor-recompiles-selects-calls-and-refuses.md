@@ -58,8 +58,8 @@ compiled package.
    package_id>, [its one source]}`, and the byte provision carries both.
    Replay `q(3)`. Then replace `test/units`'s bytes with `x > 6`, with the
    entry's digest updated to the new bytes; then restore them and change
-   only the entry's `package_id`; then remove the entry; then give the entry
-   a second source.
+   only the entry's `package_id`; then add an extra entry no import
+   reaches; then remove the entry; then give the entry a second source.
 
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
@@ -100,12 +100,14 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `quire.checked-package/v2` emit and IR's own I2 decode.
 
 - Step 7: `q(3)` is `false` and agrees (`reproduced-without-witness`). The
-  edited bytes refuse `DependencyIdentityMismatch` (`stale_dependency`)
-  naming `test/units`, the recorded and the recompiled `package_id`; the
-  changed entry refuses `DependencyIdentityMismatch` naming `test/units`;
-  the removed entry refuses `invalid_package`/`invalid-value` at
-  `/package/dependencies`; the second source refuses `SourceCount(2)`. None
-  yields a verdict.
+  edited bytes refuse `Recompile` carrying `DependencyIdentityMismatch`
+  (`stale_dependency`) naming `test/units`, the recorded and the recompiled
+  `package_id`; the changed entry refuses `DependencyIdentityMismatch`
+  naming `test/units`; the extra entry refuses `DependencySelections`
+  (`invalid_package`/`invalid-value` at `/package/dependencies`); the
+  removed entry refuses `Recompile` carrying
+  `missing_import`/`missing-selection` at the import; the second source
+  refuses `SourceCount(2)`. None yields a verdict.
 
 ## Status
 
