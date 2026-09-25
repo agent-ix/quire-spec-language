@@ -1152,6 +1152,50 @@ fn a_population_naming_an_undeclared_member_type_refuses_instead_of_being_ignore
     }
 }
 
+/// FR-208-AC-9: a population member type naming a record value type refuses
+/// `invalid_model_binding`/`malformed-declaration`, not `missing-name`: the
+/// type is declared, with a meaning a population cannot hold.
+#[trace("TC-195")]
+#[test]
+fn a_population_naming_a_record_value_type_refuses_malformed() {
+    let mut domain_package = fixture_f1();
+    domain_package
+        .records
+        .push(DomainPackageRecord::RecordValueType(
+            qsl_semantics::model::domain_package::RecordValueTypeRecord {
+                key: DeclarationKey::fixture("model.Money"),
+            },
+        ));
+    domain_package.records.push(field_member(
+        "model.Money.amount",
+        "model.Money",
+        "ix://test/orders/A",
+    ));
+    domain_package.records.push(DomainPackageRecord::Population(
+        qsl_semantics::model::domain_package::PopulationRecord {
+            key: DeclarationKey::fixture("model.pop.p1"),
+            member_types: vec![DeclarationKey::fixture("model.Money")],
+            extent: qsl_semantics::model::domain_package::Extent::Closed,
+        },
+    ));
+    let NormalizeOutcome::Refused(refusals) =
+        normalize(&domain_package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("the package refuses")
+    };
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(
+        refusals[0],
+        ModelRefusal {
+            code: qsl_foundation::diagnostic::Code::InvalidModelBinding,
+            cause: ModelRefusalCause::MalformedDeclaration,
+            detail: "population model.pop.p1 names member type model.Money, \
+                     a record value type, not an object type"
+                .to_owned(),
+        }
+    );
+}
+
 /// A field member's own inline `subsets` property
 /// (`model-complete.md`:161) naming a member that is not a declared field
 /// or operation member refuses `dangling_reference`/`unknown-member`

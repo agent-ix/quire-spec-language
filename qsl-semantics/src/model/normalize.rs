@@ -1299,7 +1299,18 @@ fn check_node<'a>(
         // `missing_declaration`/`missing-name`.
         DomainPackageRecord::Population(population) => {
             for type_name in &population.member_types {
-                if !index.is_object_type(type_name) {
+                // FR-208-AC-9: a record value type is a declared type of
+                // another meaning, not a missing one.
+                if index.is_record_value_type(type_name) {
+                    refusals.push(ModelRefusal {
+                        code: Code::InvalidModelBinding,
+                        cause: ModelRefusalCause::MalformedDeclaration,
+                        detail: format!(
+                            "population {} names member type {}, a record value type, not an object type",
+                            population.key.node, type_name.node
+                        ),
+                    });
+                } else if !index.is_object_type(type_name) {
                     refusals.push(ModelRefusal {
                         code: Code::MissingDeclaration,
                         cause: ModelRefusalCause::UnknownPopulationMemberType {

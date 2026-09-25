@@ -11,7 +11,9 @@
 //! value type, `Count`, has only an `Integer` field, which has no native type
 //! here yet.
 
-use crate::composed_domain_models::{admitted_with_bytes, architecture_bundle, hex};
+use crate::composed_domain_models::{
+    admitted_with_bytes, architecture_bundle, hex, record_value_type,
+};
 use crate::support::native_protocol::{Inputs, Unit};
 
 use ix_trace_rs::trace;
@@ -314,6 +316,50 @@ fn a_domain_object_population_refuses_emission_as_unsupported() {
             let report = native::admit(proofs, selected, Limits::default());
             match report.result() {
                 Ok(_) => panic!("a domain object population emitted"),
+                Err(error) => assert_eq!(error, &Error::Unsupported(Unsupported::Export)),
+            }
+        },
+    );
+}
+
+/// A record value type that reaches a domain object type through a field
+/// with no native type here (`pumps: Pump [0..*]`) still needs a population
+/// input for `Pump`: emission refuses it as unsupported rather than treating
+/// the record as population-free.
+#[trace("TC-121", "FR-042-AC-11")]
+#[test]
+fn a_record_reaching_an_object_through_an_unrepresented_field_refuses_emission() {
+    let bundle = architecture_bundle(|root| {
+        record_value_type(
+            root,
+            "Fleet",
+            &[("ok", "Boolean", "1"), ("pumps", "Pump", "0..*")],
+        );
+    });
+    let (package, bytes) = admitted_with_bytes(bundle.path());
+    let inputs = Inputs::with_domain(
+        &[
+            Unit {
+                name: "simple",
+                body: SIMPLE,
+                declarations: &["Simple"],
+            },
+            Unit {
+                name: "fleet",
+                body: "predicate FleetOk using S (fleet: D::Fleet): Boolean { fleet.ok }",
+                declarations: &["FleetOk"],
+            },
+        ],
+        package,
+        bytes,
+    );
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            match native::admit(proofs, selected, Limits::default()).result() {
+                Ok(_) => panic!("a record reaching a domain object type emitted"),
                 Err(error) => assert_eq!(error, &Error::Unsupported(Unsupported::Export)),
             }
         },

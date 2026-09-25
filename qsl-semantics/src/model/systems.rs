@@ -204,6 +204,7 @@ pub fn classify(
     let mut allocations: Vec<&AllocationRecord> = Vec::new();
     let mut object_types: HashSet<DeclarationKey> = HashSet::new();
     let mut interface_types: HashSet<DeclarationKey> = HashSet::new();
+    let mut record_value_types: HashSet<DeclarationKey> = HashSet::new();
 
     for record in &domain_package.records {
         match record {
@@ -217,8 +218,10 @@ pub fn classify(
                     interface_types.insert(object_type.key.clone());
                 }
             }
+            DomainPackageRecord::RecordValueType(record) => {
+                record_value_types.insert(record.key.clone());
+            }
             DomainPackageRecord::FieldMember(_)
-            | DomainPackageRecord::RecordValueType(_)
             | DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::OperationMember(_)
             | DomainPackageRecord::Population(_) => {}
@@ -278,7 +281,29 @@ pub fn classify(
         charge_kind(meter)?;
         let source_is_type = object_types.contains(&relationship.source.type_identity);
         let target_is_type = object_types.contains(&relationship.target.type_identity);
-        let kind = if source_is_type && target_is_type {
+        // FR-208-AC-9: a relationship end names an object type or a Port; a
+        // record value type is a declared type of neither meaning, so each
+        // such end refuses malformed and the other end is not resolved.
+        let record_ends: Vec<_> = [
+            (&relationship.source, "source"),
+            (&relationship.target, "target"),
+        ]
+        .into_iter()
+        .filter(|(end, _)| record_value_types.contains(&end.type_identity))
+        .collect();
+        let kind = if !record_ends.is_empty() {
+            for (end, label) in record_ends {
+                refusals.push(ModelRefusal {
+                    code: Code::InvalidModelBinding,
+                    cause: ModelRefusalCause::MalformedDeclaration,
+                    detail: format!(
+                        "{} end of {} names {}, a record value type",
+                        label, relationship.key.node, end.type_identity.node
+                    ),
+                });
+            }
+            Kind::None
+        } else if source_is_type && target_is_type {
             Kind::None // navigation relationship: no kind, not an error.
         } else {
             let mut ends_ok = true;

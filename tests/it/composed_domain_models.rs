@@ -790,3 +790,148 @@ fn domain_typed_declarations_type_check() {
         },
     );
 }
+
+/// A test-authored record value type written into the temp bundle copy, with
+/// one `Boolean` field per `(name, multiplicity)`.
+pub(crate) fn record_value_type(root: &Path, name: &str, fields: &[(&str, &str, &str)]) {
+    let rows: String = fields
+        .iter()
+        .map(|(field, ty, multiplicity)| format!("| {field} | {ty} | {multiplicity} | |\n"))
+        .collect();
+    std::fs::write(
+        root.join(format!("spec/model/{name}.md")),
+        format!(
+            "---\nid: {name}\ntitle: {name}\nobject: value_object\ntype: FR\nname: {name}\n---\n\n\
+             # {name}: {name}\n\n## Description\n\nA test-authored record value type.\n\n\
+             ## Properties\n\n| Field | Type | Multiplicity | Constraints |\n\
+             |-------|------|--------------|-------------|\n{rows}"
+        ),
+    )
+    .expect("write record value type");
+}
+
+/// The checker's field multiplicity rules over record value types written
+/// into the bundle: `0..1` types as an option and `0..3` as a sequence of at
+/// most 3, while `0..*` (unbounded) and `1..3` (a lower bound other than 0 or
+/// the single value) refuse as an unsupported domain representation. A read
+/// through a field typed by another record value type types its inner field
+/// (`o.inner.ok`).
+#[trace("TC-148", "FR-042-AC-11")]
+#[test]
+fn domain_field_multiplicities_and_nested_reads_type_check() {
+    use quire_spec_language::checking::composed::{
+        self, CauseKind, Prerequisite, TypeDisposition, TypeLimits,
+    };
+    use quire_spec_language::checking::NativeType;
+    use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+
+    let bundle = architecture_bundle(|root| {
+        record_value_type(
+            root,
+            "Gauge",
+            &[
+                ("maybe", "Boolean", "0..1"),
+                ("few", "Boolean", "0..3"),
+                ("many", "Boolean", "0..*"),
+                ("some", "Boolean", "1..3"),
+            ],
+        );
+        record_value_type(root, "Inner", &[("ok", "Boolean", "1")]);
+        record_value_type(root, "Outer", &[("inner", "Inner", "1")]);
+    });
+    let package = admitted(bundle.path());
+    let selection = package.selection().clone();
+    let profile = R::StateQueries.selection();
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile S = \"{}\" version \"{}\" digest \"{}\";\n\
+         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+         predicate Maybe using S (g: M::Gauge): Boolean {{ present(g.maybe) }}\n\
+         predicate Few using S (g: M::Gauge): Boolean {{ let few = g.few in true }}\n\
+         predicate Many using S (g: M::Gauge): Boolean {{ let many = g.many in true }}\n\
+         predicate Some using S (g: M::Gauge): Boolean {{ let some = g.some in true }}\n\
+         predicate Nested using S (o: M::Outer): Boolean {{ o.inner.ok }}\n",
+        profile.identity,
+        profile.revision,
+        profile.digest,
+        selection.identity,
+        selection.version,
+        hex(&selection.digest)
+    );
+    let source = Source::read(
+        SourceIdentity {
+            authority: "test".into(),
+            identity: "gauges".into(),
+            revision_namespace: "test".into(),
+            revision: "selected".into(),
+        },
+        "gauges.native".to_owned(),
+        text.as_bytes(),
+        Limits::default().source_bytes,
+    )
+    .expect("source reads");
+    let sources = [source];
+    let formal = crate::support::composed_types::formal_sources(&sources);
+    let inputs = [ModelInput::Domain(&package)];
+    crate::support::composed_types::with_binding_inputs(
+        &sources,
+        &inputs,
+        BindingLimits::default(),
+        |binding| {
+            let namespace = binding.namespace();
+            let report = composed::admit_types(binding, &formal, TypeLimits::default());
+            assert!(report.exhaustion().is_none(), "{:?}", report.exhaustion());
+            let id = |name: &str| namespace.lookup(name)[0];
+            let declaration = |name: &str| report.declaration(id(name)).expect("typed record");
+            let causes = |name: &str| -> Vec<CauseKind> {
+                declaration(name)
+                    .causes()
+                    .iter()
+                    .map(|cause| cause.kind.clone())
+                    .collect()
+            };
+            let has_node = |name: &str, expected: &dyn Fn(&NativeType<'_>) -> bool| {
+                declaration(name)
+                    .nodes()
+                    .iter()
+                    .any(|node| node.ty.as_ref().is_some_and(|ty| expected(ty)))
+            };
+            for name in ["Maybe", "Few", "Nested"] {
+                assert_eq!(
+                    report.disposition(id(name)),
+                    Some(TypeDisposition::Typed),
+                    "{name}: {:?}",
+                    causes(name)
+                );
+            }
+            assert!(has_node("Maybe", &|ty| matches!(
+                ty,
+                NativeType::Option(inner) if **inner == NativeType::Boolean
+            )));
+            assert!(has_node("Few", &|ty| matches!(
+                ty,
+                NativeType::Sequence { element, maximum: 3 } if **element == NativeType::Boolean
+            )));
+            // `o.inner` is the `Inner` record value type; `o.inner.ok` its
+            // Boolean field.
+            assert!(has_node("Nested", &|ty| matches!(
+                ty,
+                NativeType::Domain(inner) if inner.declaration.key == &key("Inner")
+            )));
+            for name in ["Many", "Some"] {
+                assert_eq!(
+                    report.disposition(id(name)),
+                    Some(TypeDisposition::Refused),
+                    "{name}"
+                );
+                assert!(
+                    causes(name).contains(&CauseKind::UnsupportedPrerequisite(
+                        Prerequisite::DomainRepresentation
+                    )),
+                    "{name}: {:?}",
+                    causes(name)
+                );
+            }
+        },
+    );
+}

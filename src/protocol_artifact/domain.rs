@@ -13,9 +13,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
-use crate::checking::{DomainField, DomainType, NativeType};
+use crate::checking::DomainType;
 use qsl_semantics::model::admitted::AdmittedPackage;
-use qsl_semantics::model::domain_package::{DomainPackageRecord, DomainPackageRef};
+use qsl_semantics::model::domain_package::{DomainPackageRecord, DomainPackageRef, ValueTypeRef};
 use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
 
 /// `Model.profile` of a domain-package model: the Semantic IR contract its
@@ -81,15 +81,10 @@ pub(super) fn exports<'a>(
     let mut result = BTreeMap::new();
     for declaration in package.declarations() {
         work.visit()?;
-        type Member<'a> = fn(DomainType<'a>, &'a str) -> DomainTarget<'a>;
-        let (kind, owner, member): (_, _, Member<'a>) = match declaration.record {
-            DomainPackageRecord::FieldMember(field) => {
-                (w::ExportKind::Field, &field.owner, DomainTarget::Field)
-            }
+        let (kind, owner) = match declaration.record {
+            DomainPackageRecord::FieldMember(field) => (w::ExportKind::Field, &field.owner),
             DomainPackageRecord::OperationMember(operation) => {
-                (w::ExportKind::Operation, &operation.owner, |_, _| {
-                    DomainTarget::Operation
-                })
+                (w::ExportKind::Operation, &operation.owner)
             }
             DomainPackageRecord::ObjectType(_) | DomainPackageRecord::RecordValueType(_) => {
                 let Some(ty) = DomainType::new(package, declaration) else {
@@ -124,11 +119,12 @@ pub(super) fn exports<'a>(
             .ok_or(Error::Invalid(Invalid::Model))?;
         work.bytes(owner.artifact_id().len().saturating_add(name.len()))?;
         work.charge(Dimension::Entries, 1)?;
+        let target = match declaration.record {
+            DomainPackageRecord::FieldMember(_) => DomainTarget::Field(owner, name),
+            _ => DomainTarget::Operation,
+        };
         if result
-            .insert(
-                (kind.as_str(), owner.artifact_id(), name),
-                (kind, member(owner, name)),
-            )
+            .insert((kind.as_str(), owner.artifact_id(), name), (kind, target))
             .is_some()
         {
             return Err(Error::Invalid(Invalid::Duplicate));
@@ -220,7 +216,8 @@ pub(super) fn verify_document(
 
 /// Refuses a domain type whose values reach an object type: a population
 /// input for a domain object type has no compiled-protocol export yet. A
-/// record value type is walked through its fields, each record once.
+/// record value type is walked through its fields' declared value types,
+/// whatever their multiplicity or native representation, each record once.
 pub(super) fn require_no_population(ty: &DomainType<'_>, work: &mut Work) -> Result<(), Error> {
     let mut seen = BTreeSet::new();
     let mut pending = vec![*ty];
@@ -241,27 +238,17 @@ pub(super) fn require_no_population(ty: &DomainType<'_>, work: &mut Work) -> Res
             if &field.owner != ty.declaration.key {
                 continue;
             }
-            let name = member_name(&ty.declaration.key.node, &field.key.node)
-                .ok_or(Error::Invalid(Invalid::Model))?;
-            let mut native = match ty.field(name) {
-                DomainField::Typed(native) => native,
-                DomainField::Missing | DomainField::Unrepresented => continue,
+            let ValueTypeRef::Package(key) = &field.value_type else {
+                continue;
             };
-            let mut depth = 0;
-            loop {
-                work.visit()?;
-                depth += 1;
-                work.charge(Dimension::Depth, depth)?;
-                native = match native {
-                    NativeType::Option(value) | NativeType::Sequence { element: value, .. } => {
-                        *value
-                    }
-                    NativeType::Domain(inner) => {
-                        pending.push(inner);
-                        break;
-                    }
-                    _ => break,
-                };
+            let target = ty
+                .package
+                .declaration_by_key(key)
+                .ok_or(Error::Invalid(Invalid::Model))?;
+            // A domain value type carries no object.
+            if let Some(inner) = DomainType::new(ty.package, target) {
+                work.charge(Dimension::Entries, 1)?;
+                pending.push(inner);
             }
         }
     }

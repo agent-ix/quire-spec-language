@@ -1436,17 +1436,22 @@ fn read_object_type(
 /// A record value type has one or more fields and no identity field: an
 /// empty `fields` or a non-empty `identityFields` refuses
 /// `invalid_model_binding`/`malformed-declaration`. An operation refuses
-/// `unsupported_construct`/`declaration-form` naming the operation. So does a
-/// declared `supertypes` entry: record-value-type generalization is not read
-/// yet, and reading it without checking that each supertype is itself a
-/// record value type would admit a wrong model. An inline relationship
-/// refuses `malformed-declaration`, since a relationship end must name an
-/// object type.
+/// `unsupported_construct`/`declaration-form` naming the operation. A
+/// `supertypes` entry naming a type of another meaning refuses
+/// `malformed-declaration` at that entry (FR-208-AC-12), one naming no type
+/// of the document `dangling_reference`/`unknown-general`, and one naming a
+/// record value type `declaration-form`: record-value-type generalization is
+/// not read yet. An inline relationship refuses `malformed-declaration`,
+/// since a relationship end must name an object type.
+///
+/// `type_meanings` maps each type identity of the document to the meaning
+/// its `kind` resolves to.
 fn read_record_value_type(
     package: &str,
     type_value: &Value,
     node: &str,
     at: &str,
+    type_meanings: &HashMap<&str, &str>,
     records: &mut Vec<DomainPackageRecord>,
 ) -> Result<(), ModelRefusal> {
     let ctx = NodeCtx::new(type_value, at);
@@ -1461,7 +1466,35 @@ fn read_record_value_type(
             format!("{}:operations", meaning::RECORD_VALUE_TYPE),
         ));
     }
-    if !ctx.array_field("supertypes")?.is_empty() {
+    let supertypes = ctx.identity_keys(package, "supertypes")?;
+    for (position, general) in supertypes.iter().enumerate() {
+        match type_meanings.get(general.node.as_str()) {
+            Some(&meaning::RECORD_VALUE_TYPE) => {}
+            Some(other) => {
+                return Err(NodeCtx::new(type_value, format!("{at}.supertypes[{position}]"))
+                    .malformed(format!(
+                        "{} resolves to {other:?}; a record value type generalizes only a record value type",
+                        general.node
+                    )))
+            }
+            None => {
+                return Err(ModelRefusal {
+                    code: Code::DanglingReference,
+                    cause: ModelRefusalCause::UnknownGeneral {
+                        supertype: declaration_key(package, node),
+                        general: general.clone(),
+                    },
+                    detail: format!(
+                        "{at}.supertypes[{position}]: {} names no type of this domain package",
+                        general.node
+                    ),
+                })
+            }
+        }
+    }
+    // Every entry names a record value type: a generalization this reader
+    // does not read yet.
+    if !supertypes.is_empty() {
         return Err(unsupported_at(
             type_value,
             at,
@@ -1810,6 +1843,7 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
 fn read_type_node(
     package: &str,
     meanings: &HashMap<(String, String), String>,
+    type_meanings: &HashMap<&str, &str>,
     type_value: &Value,
     at: &str,
 ) -> Result<Vec<DomainPackageRecord>, ModelRefusal> {
@@ -1842,7 +1876,7 @@ fn read_type_node(
             read_object_type(package, type_value, node, at, true, &mut records)?
         }
         meaning::RECORD_VALUE_TYPE => {
-            read_record_value_type(package, type_value, node, at, &mut records)?
+            read_record_value_type(package, type_value, node, at, type_meanings, &mut records)?
         }
         meaning::SYSTEMS_PART => {
             records.push(DomainPackageRecord::Component(read_component(
@@ -1923,6 +1957,20 @@ fn read_nodes(
         .array_field("populations")
         .map_err(|refusal| vec![refusal])?;
 
+    // Each type identity -> the meaning its `kind` resolves to, for the
+    // cross-node meaning checks (a record value type's supertypes).
+    let type_meanings: HashMap<&str, &str> = types
+        .iter()
+        .filter_map(|type_value| {
+            let identity = type_value.get("identity")?.as_str()?;
+            let kind = type_value.get("kind")?;
+            let key = (
+                kind.get("module")?.as_str()?.to_owned(),
+                kind.get("name")?.as_str()?.to_owned(),
+            );
+            Some((identity, meanings.get(&key)?.as_str()))
+        })
+        .collect();
     let mut nodes: Vec<DocumentNode<'_>> = Vec::with_capacity(types.len() + populations.len());
     for (position, type_value) in types.iter().enumerate() {
         let at = format!("$.types[{position}]");
@@ -1949,7 +1997,7 @@ fn read_nodes(
         match node {
             DocumentNode::Type(type_value, position, _) => {
                 let at = format!("$.types[{position}]");
-                match read_type_node(package_identity, &meanings, type_value, &at) {
+                match read_type_node(package_identity, &meanings, &type_meanings, type_value, &at) {
                     Ok(mut new_records) => records.append(&mut new_records),
                     Err(refusal) => refusals.push(refusal),
                 }
@@ -3357,6 +3405,12 @@ mod tests {
             &money(extra),
             "ix://acme/orders/Money",
             "$.types[0]",
+            &HashMap::from([
+                ("ix://acme/orders/Money", meaning::RECORD_VALUE_TYPE),
+                ("ix://acme/orders/Base", meaning::RECORD_VALUE_TYPE),
+                ("ix://acme/orders/Order", meaning::OBJECT_TYPE),
+                ("ix://acme/orders/Placed", meaning::EVENT_TYPE),
+            ]),
             &mut records,
         )
         .map(|()| records)
@@ -3392,8 +3446,12 @@ mod tests {
 
     /// A record value type with an identity field, an operation, a
     /// supertype, an inline relationship or no field is not valid for its
-    /// meaning: each refuses with FR-208-AC-4's cause, naming the node (the
-    /// operation for an operation), and reads nothing.
+    /// meaning: each refuses with FR-208-AC-4/AC-12's cause, naming the node
+    /// (the operation for an operation), and reads nothing. A supertype of
+    /// another meaning (an object type, an event type) refuses
+    /// `malformed-declaration` at that entry; a record value type supertype
+    /// is a generalization this reader does not read yet
+    /// (`declaration-form`); one naming no type is a dangling reference.
     #[trace("TC-146", "FR-056-AC-3")]
     #[test]
     fn refuses_a_record_value_type_its_meaning_does_not_admit() {
@@ -3418,6 +3476,30 @@ mod tests {
                 "$.types[0]:",
             ),
             (
+                serde_json::json!({"supertypes": ["ix://acme/orders/Order"]}),
+                Code::InvalidModelBinding,
+                "ix://acme/orders/Money",
+                "$.types[0].supertypes[0]:",
+            ),
+            (
+                serde_json::json!({"supertypes": ["ix://acme/orders/Base", "ix://acme/orders/Placed"]}),
+                Code::InvalidModelBinding,
+                "ix://acme/orders/Money",
+                "$.types[0].supertypes[1]:",
+            ),
+            (
+                serde_json::json!({"supertypes": ["ix://acme/orders/Placed"]}),
+                Code::InvalidModelBinding,
+                "ix://acme/orders/Money",
+                "$.types[0].supertypes[0]:",
+            ),
+            (
+                serde_json::json!({"supertypes": ["ix://acme/orders/Ghost"]}),
+                Code::DanglingReference,
+                "ix://acme/orders/Money",
+                "$.types[0].supertypes[0]:",
+            ),
+            (
                 serde_json::json!({"relationships": [{"identity": "ix://acme/orders/Money/owner"}]}),
                 Code::InvalidModelBinding,
                 "ix://acme/orders/Money",
@@ -3435,6 +3517,7 @@ mod tests {
             let named = match &refusal.cause {
                 ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
                 | ModelRefusalCause::UnsupportedDeclarationForm { node, .. } => node,
+                ModelRefusalCause::UnknownGeneral { supertype, .. } => &supertype.node,
                 other => panic!("{extra}: {other:?}"),
             };
             assert_eq!(named, node, "{extra}");

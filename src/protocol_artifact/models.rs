@@ -12,7 +12,7 @@ use super::{
     wire as w, work::Work, AdmittedDomainPackage, AdmittedModel, Dimension, Error, Invalid,
     SuppliedDependency, Unsupported, DOMAIN_PACKAGE_PROFILE,
 };
-use crate::checking::{Catalog, NativeType};
+use crate::checking::{Catalog, DomainField, NativeType};
 use crate::native_model::{
     NativeModel, ObjectRole, OperationRole, ScalarKind, ScalarRole, ScalarSite, Unit,
 };
@@ -1067,9 +1067,9 @@ fn domain_field<'a>(
     work.bytes(name.len())?;
     work.charge(Dimension::Entries, 1)?;
     match owner.field(name) {
-        crate::checking::DomainField::Typed(native) => Ok(native),
-        crate::checking::DomainField::Unrepresented => Err(Error::Unsupported(Unsupported::Export)),
-        crate::checking::DomainField::Missing => Err(Error::Invalid(Invalid::Type)),
+        DomainField::Typed(native) => Ok(native),
+        DomainField::Unrepresented => Err(Error::Unsupported(Unsupported::Export)),
+        DomainField::Missing => Err(Error::Invalid(Invalid::Type)),
     }
 }
 
