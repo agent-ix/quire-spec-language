@@ -560,6 +560,7 @@ pub(crate) fn read_checked_package_v2(
             limit_kind,
             limit,
             consumed,
+            path: _,
         }) => V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
             kind: limit_kind,
             limit,
