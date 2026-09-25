@@ -645,7 +645,7 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
             .iter()
             .map(|declared| {
                 finite_bound_bytes(declared.bound())
-                    + declared.domain().path().len() * std::mem::size_of::<u32>()
+                    + std::mem::size_of_val(declared.domain().path())
             })
             .sum()
     });
