@@ -85,9 +85,9 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 - E3 SHALL resolve `a::Name` through the import's `ImportView` (FR-087-AC-13)
   and SHALL type the use from the library's `CheckedGraph`, finding the
   declaration by lookup of the resolved `WireNodeId` among that graph's keys
-  and never by minting a `NodeKey`. A call `l::f(x)` SHALL check its
-  arguments against `f`'s checked parameter types, and its result type
-  SHALL be `f`'s checked result type.
+  and never by minting a `NodeKey`. E3 SHALL check a call `l::f(x)`'s
+  arguments against `f`'s checked parameter types and SHALL give the call
+  `f`'s checked result type.
 - E4 SHALL link each import's checked library package through
   `CheckedPackage::link_with` (FR-087-AC-14). A supplied library no import
   reaches SHALL be neither compiled nor recorded.

@@ -69,7 +69,7 @@ through it, or a crate alias or glob import that reaches it.
   resolves the proved source's imports against it (ADR-015 D-1), so a
   dependency whose source recompiles to a `package_id` other than its
   import's recorded digest refuses there, at that import.
-- After the recompile, the executor SHALL require each entry's `package_id`
+- When the recompile succeeds, the executor SHALL require each entry's `package_id`
   to equal the recompiled closure's selection of the entry's `identity`,
   refusing `DependencyIdentityMismatch` otherwise, and SHALL require the
   entries' `{identity, version, package_id}` to equal the recompiled
