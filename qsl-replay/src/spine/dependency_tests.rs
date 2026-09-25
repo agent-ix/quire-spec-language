@@ -915,3 +915,103 @@ fn a_changed_library_function_changes_the_calling_node_id() {
     assert_ne!(call, changed_call);
     assert_ne!(package, changed_package);
 }
+
+/// ADR-015 D-5: an imported call evaluates the library function's body
+/// against the library's own package, where its own calls resolve, and the
+/// caller's package is restored when it returns.
+#[trace("FR-099-AC-5", "TC-446")]
+#[test]
+fn an_imported_call_evaluates_in_the_library_and_returns_to_the_caller() {
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use qsl_semantics::family::FamilyOutcome;
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
+
+    let geometry = library(
+        "test/geometry",
+        "1",
+        "geometry",
+        "function small using v(x: Int[0, 9]): Boolean pure { x < 5 }\n\
+         function f using v(x: Int[0, 9]): Boolean pure { small(x) }\n",
+    );
+    let d = package_id(&geometry, &DependencyInput::default());
+    let source = unit(&format!(
+        "{}function local using v(y: Int[0, 9]): Boolean pure {{ y > 1 }}\n\
+         function p using v(y: Int[0, 9]): Boolean pure {{ g::f(y) and local(y) }}\n",
+        import("test/geometry", "1", &d.hex(), "g")
+    ));
+    let compiled = compile_as("u", &source, &input(vec![geometry]))
+        .unwrap_or_else(|refusal| panic!("p checks: {refusal}"));
+    let limits = ScalarLimits {
+        integer_bits: u64::MAX,
+        decimal_digits: u64::MAX,
+        scale_expansion: u64::MAX,
+        text_input_bytes: u64::MAX,
+        text_scalars: u64::MAX,
+        normalized_scalars: u64::MAX,
+        unit_edges: u64::MAX,
+        value_occurrences: u64::MAX,
+        work_units: u64::MAX,
+        result_units: u64::MAX,
+    };
+    let p = QualifiedName::unqualified("p").unwrap();
+    for (y, expected) in [(3_i64, true), (1, false), (7, false)] {
+        let evaluation = compiled
+            .package
+            .call(
+                &p,
+                vec![Value::Integer(Integer::from(y))],
+                &ObjectEnvironment::default(),
+                &mut Meter::new(limits),
+            )
+            .expect("the call runs");
+        let FamilyOutcome::Evaluated(outcome) = evaluation.outcome else {
+            panic!("a kernel outcome, not {:?}", evaluation.outcome);
+        };
+        assert_eq!(
+            format!("{outcome:?}"),
+            format!("{:?}", Outcome::Completed(Value::Boolean(expected))),
+            "p({y})"
+        );
+    }
+}
+
+/// FR-087-AC-13 (TC-379 steps 1 and 3): an import with no `as` binds no
+/// qualifier, so neither `f` nor `test/geometry`'s own spelling reaches
+/// the library; `l::f` resolves through the import view to `{d, f's node
+/// id}` (the callee [`an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_reference`]
+/// checks); `l::Q`, which the library does not export, refuses
+/// `missing_declaration`/`missing-name`.
+#[trace("FR-087-AC-13", "TC-379")]
+#[test]
+fn e3_resolves_an_imported_name_only_through_its_qualifier() {
+    let geometry = library("test/geometry", "1", "geometry", F);
+    let d = package_id(&geometry, &DependencyInput::default());
+    let dependencies = input(vec![geometry]);
+    let unqualified = format!(
+        "import \"test/geometry\" version \"1\" digest \"{}\";\n",
+        d.hex()
+    );
+    let qualified = import("test/geometry", "1", &d.hex(), "l");
+    for (declaration, call, name) in [
+        (&unqualified, "f(y)", "f"),
+        (&unqualified, "geometry::f(y)", "geometry::f"),
+        (&qualified, "l::Q(y)", "Q"),
+    ] {
+        let source = unit(&format!(
+            "{declaration}function p using v(y: Int[0, 9]): Boolean pure {{ {call} }}\n"
+        ));
+        let refusal = compile_as("u", &source, &dependencies).expect_err("no such name");
+        assert_eq!(refusal.stage(), SpineStage::Check, "{call}");
+        assert_eq!(refusal.code(), Code::MissingDeclaration, "{call}");
+        let CompileRefusal::Check { refusals, .. } = &*refusal else {
+            panic!("{call}: expected a check refusal, got {refusal:?}");
+        };
+        assert!(
+            matches!(&refusals[0].cause, qsl_semantics::check::CheckCause::MissingName(missing) if missing == name),
+            "{call}: {:?}",
+            refusals[0].cause
+        );
+        assert_eq!(refusals[0].cause.cause(), Some("missing-name"), "{call}");
+    }
+}
