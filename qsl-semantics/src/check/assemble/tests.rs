@@ -2,15 +2,25 @@
 //! FR-091's assembler over real complete-V1 source: S1 (`qsl_cst::parse`),
 //! S2 (`qsl_forms::build_unit`), then [`PackageDeclarations::assemble`].
 
+use std::collections::BTreeMap;
+
 use ix_trace_rs::trace;
 use qsl_forms::{build_unit, FormsLimits};
 use qsl_foundation::{SourceIdentity, Span};
-use quire_exact::{IeeeWidth, IntegerInterval, RoundingMode, ValueType};
+use quire_exact::{
+    CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
+    Presence, RoundingMode, ValueType,
+};
 
-use super::{AssemblyCause, AssemblyError, AssemblyRefusal};
+use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, Unmapped};
 use crate::check::{
     CheckCause, CheckingLimits, Location, Origin, PackageDeclarations, TypeFormFault,
 };
+use crate::model::domain_package::{
+    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ValueTypeRef,
+};
+use crate::model::key::DeclarationKey;
+use crate::value::declaration::FieldDeclaration;
 
 const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\" version \"1\" digest \
     \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
@@ -597,4 +607,172 @@ fn every_record_refusal_is_reported() {
             "{error:?}"
         );
     }
+}
+
+// QSL-252: `model_field` follows QSpec's own Presence row
+// (`model-complete.md`:158) and STD-100's model-owned member type table
+// (FR-322 step 4): multiplicity alone gives the value type, and `presence`
+// alone -- never a lower bound of `0` -- gives `Option`.
+
+/// A native-`Integer` field member at `multiplicity`/`presence`, with no
+/// redefinition. `model_field` never consults `records`/`identities` for a
+/// native value type, so [`model_field_of`] passes empty maps.
+fn presence_field(multiplicity: Multiplicity, presence: Presence) -> FieldMemberRecord {
+    FieldMemberRecord {
+        key: DeclarationKey::fixture("model.A/f"),
+        owner: DeclarationKey::fixture("model.A"),
+        value_type: ValueTypeRef::Native(NativeValueType::Integer),
+        multiplicity,
+        presence,
+        subsets: Vec::new(),
+        redefines: None,
+    }
+}
+
+fn model_field_of(
+    multiplicity: Multiplicity,
+    presence: Presence,
+) -> Result<FieldDeclaration, Unmapped> {
+    let field = presence_field(multiplicity, presence);
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = BTreeMap::new();
+    let identities: BTreeMap<DeclarationKey, EffectiveId> = BTreeMap::new();
+    model_field(&field, &records, &identities)
+}
+
+fn mult(lower: u64, upper: Option<u64>, ordered: bool, unique: bool) -> Multiplicity {
+    Multiplicity {
+        lower,
+        upper,
+        ordered,
+        unique,
+    }
+}
+
+fn bounded(kind: CollectionKind, lower: u64, upper: u64) -> ValueType {
+    ValueType::collection(CollectionType::new(
+        kind,
+        ValueType::Integer,
+        Some(CardinalityBound::new(lower, upper).unwrap()),
+    ))
+}
+
+/// STD-100's table: `[1, 1]` gives the element type `E` outright, whatever
+/// `ordered`/`unique` says.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn one_one_required_gives_the_element_type() {
+    let declaration = model_field_of(mult(1, Some(1), false, true), Presence::Required).unwrap();
+    assert_eq!(declaration.value_type(), &ValueType::Integer);
+    assert_eq!(declaration.presence(), Presence::Required);
+}
+
+/// A lower bound of `0` makes an empty collection legal; it never makes a
+/// field optional (QSpec's Presence row). `[0, 1]` required is the bounded
+/// collection `K<E>[0, 1]`, never `Option<E>`.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn zero_one_required_gives_the_bounded_collection_not_option() {
+    let declaration = model_field_of(mult(0, Some(1), false, true), Presence::Required).unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &bounded(CollectionKind::Set, 0, 1)
+    );
+    assert_eq!(declaration.presence(), Presence::Required);
+}
+
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn zero_five_required_gives_the_bounded_collection() {
+    let declaration = model_field_of(mult(0, Some(5), false, true), Presence::Required).unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &bounded(CollectionKind::Set, 0, 5)
+    );
+}
+
+/// `[0, unbounded]` gives the unbounded collection `K<E>`, with no
+/// `collection_bounds` node -- distinct from an unbounded upper with a
+/// lower bound above `0`, which has no kernel type at all.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn zero_unbounded_gives_the_unbounded_collection() {
+    let declaration = model_field_of(mult(0, None, false, true), Presence::Required).unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &ValueType::collection(CollectionType::new(
+            CollectionKind::Set,
+            ValueType::Integer,
+            None
+        ))
+    );
+}
+
+/// An unbounded upper bound with a lower bound above `0` has no kernel
+/// type at all (STD-100's table); the assembler refuses it.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn one_unbounded_refuses() {
+    let outcome = model_field_of(mult(1, None, false, true), Presence::Required);
+    assert!(matches!(outcome, Err(Unmapped::Unsupported)), "{outcome:?}");
+}
+
+/// Optional presence over `[1, 1]` leaves `model_field`'s own value type as
+/// the plain element `E` -- `check`'s `attribute`/`field` readers wrap an
+/// `Optional`-presence declaration's value type in `Option` from
+/// `presence()` alone (`check/check.rs`'s `attribute`/`field`), exactly as
+/// they already do for every other `FieldDeclaration`, giving the STD-100
+/// table's `Option<E>` without `model_field` baking `Option` in itself.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn optional_presence_over_one_one_is_optional_not_multiplicity_driven() {
+    let declaration = model_field_of(mult(1, Some(1), false, true), Presence::Optional).unwrap();
+    assert_eq!(declaration.value_type(), &ValueType::Integer);
+    assert_eq!(declaration.presence(), Presence::Optional);
+    assert_eq!(
+        ValueType::option(declaration.value_type().clone()),
+        ValueType::option(ValueType::Integer)
+    );
+}
+
+/// Each `ordered`/`unique` combination names its own collection kind
+/// (STD-100's table), over a finite multiplicity distinct from the
+/// `[1, 1]`/`[0, 1]` special cases above.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn ordered_and_unique_selects_ordered_set() {
+    let declaration = model_field_of(mult(2, Some(4), true, true), Presence::Required).unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &bounded(CollectionKind::OrderedSet, 2, 4)
+    );
+}
+
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn ordered_and_not_unique_selects_sequence() {
+    let declaration = model_field_of(mult(2, Some(4), true, false), Presence::Required).unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &bounded(CollectionKind::Sequence, 2, 4)
+    );
+}
+
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn unordered_and_unique_selects_set() {
+    let declaration = model_field_of(mult(2, Some(4), false, true), Presence::Required).unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &bounded(CollectionKind::Set, 2, 4)
+    );
+}
+
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn unordered_and_not_unique_selects_bag() {
+    let declaration = model_field_of(mult(2, Some(4), false, false), Presence::Required).unwrap();
+    assert_eq!(
+        declaration.value_type(),
+        &bounded(CollectionKind::Bag, 2, 4)
+    );
 }

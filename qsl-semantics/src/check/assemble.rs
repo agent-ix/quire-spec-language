@@ -438,6 +438,7 @@ fn model_object_types(
 }
 
 /// Why a domain package field has no type environment field.
+#[derive(Debug)]
 enum Unmapped {
     /// No kernel type or presence represents it.
     Unsupported,
