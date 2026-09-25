@@ -637,16 +637,34 @@ fn execution_operation(
 ) -> Result<w::ExportRef, Error> {
     for occurrence in &context.exports.occurrences {
         work.visit()?;
-        if let ModelTarget::Operation(op) = &occurrence.target {
-            if &op.role().anchor == operation {
-                return builder.export(
-                    op.model(),
-                    w::ExportKind::Operation,
-                    op.role().context.as_str(),
-                    Some(op.role().name.as_str()),
-                    work,
-                );
+        match &occurrence.target {
+            ModelTarget::Operation(op) => {
+                if &op.role().anchor == operation {
+                    return builder.export(
+                        op.model(),
+                        w::ExportKind::Operation,
+                        op.role().context.as_str(),
+                        Some(op.role().name.as_str()),
+                        work,
+                    );
+                }
             }
+            // A domain operation's execution anchor is its name.
+            ModelTarget::Declaration(bound) => {
+                if let Some((owner, name)) = crate::protocol_artifact::domain::operation(bound)? {
+                    work.bytes(operation.as_str().len().saturating_add(name.len()))?;
+                    if operation.as_str() == name {
+                        return builder.domain_export(
+                            owner.package,
+                            w::ExportKind::Operation,
+                            owner.artifact_id(),
+                            Some(name),
+                            work,
+                        );
+                    }
+                }
+            }
+            ModelTarget::Type(_) => {}
         }
     }
     Err(Error::Invalid(Invalid::Model))

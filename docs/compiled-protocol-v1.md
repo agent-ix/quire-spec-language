@@ -141,14 +141,37 @@ A model that names a domain package selects, through `artifact`, the
 document; the reader re-admits those bytes under the named identity, version and
 `sha256-jcs` digest. Its `profile` is `semantic-ir/2.0.0`. Its exports are the
 package's object types and Interfaces (`object`, path `[artifact id]`), record
-value types (`record`, path `[artifact id]`), and their fields and operations
-(`field`/`operation`, path `[artifact id, name]`). Domain intake retains no
-per-declaration span yet, so every such export's locus names the model's own
-dependency reference, formal document equal to the package identity, formal
-revision `{namespace:"ix:domain-package-version",value:<package version>}` and
-span `[0, document length)`. A domain object type's population input has no
-export yet, so a declaration requiring one refuses emission as
-`Unsupported::Export`.
+value types (`record`, path `[artifact id]`), their fields and operations
+(`field`/`operation`, path `[artifact id, name]`), and one `population` export,
+path `[object artifact id, population artifact id]`, for each object type an
+FR-153 population declaration covers: the object type is a member type of the
+declaration or conforms to one through its declared supertypes. Domain intake
+retains no per-declaration span yet, so every such export's locus names the
+model's own dependency reference, formal document equal to the package identity,
+formal revision `{namespace:"ix:domain-package-version",value:<package version>}`
+and span `[0, document length)`.
+A domain object type's population input is derived as a native object role's
+is, with the domain object type in place of the role: a population and a
+closure requirement per object type and original observation anchor, whose
+`value_type` is the object type and whose `model` is its `population` export.
+The object types required are those each input binder or anchored value's
+domain type reaches: the type itself when it is an object type or Interface,
+and every object type reached through its fields' declared value types,
+whatever their multiplicity. The requirement names the one population
+declaration covering the object type; with none, or more than one, emission
+refuses as `Unsupported::Export`. The reader requires exactly that pair set and
+that covering declaration, refusing a missing, surplus or mis-keyed pair as
+`Invalid::Binding`. A domain operation is exported like a native model
+operation: an attempt, compensation or operation clause names its `operation`
+export, keyed by the FR-154 member key `<owner>/<name>`, and its context is
+the owning object type's `object` export in the same model; the reader refuses
+a context other than that owner as `Invalid::Type`. A pre- or postcondition of
+a domain operation executes at the anchor named by the operation's member name,
+and binds only an operation with no parameters and, for a postcondition, no
+result, since their domain value types have no native binder type yet. A domain type may type an
+event, commit or compensation record, and a domain object type keys a FIFO
+channel by identity; a record value type key refuses as `Invalid::Type`, as a
+native record does.
 
 `package_definition` and every `profile` index `definitions`; `Definition.requires`
 indexes definitions, while its `artifact`/`rules` and `Dependency.requires` index

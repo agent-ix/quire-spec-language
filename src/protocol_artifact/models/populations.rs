@@ -3,14 +3,18 @@
 
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
+use crate::checking::DomainType;
 use crate::linking::composed::definition_source::RegisteredDefinition;
+use crate::native_model::ObjectRole;
 
 use super::{
     ir, local_value, reference_target, reserve_formal, same_model, target, w, Dimension,
     DomainTarget, Error, Invalid, NativeType, ScalarSite, Target, View, Work,
 };
 
-type RoleKey<'a> = (u32, &'a ir::SymbolName, u32);
+/// A population input: model index, object record name (native) or object
+/// artifact id (domain), and anchor index.
+type RoleKey<'a> = (u32, &'a str, u32);
 type Pair = (Option<u32>, Option<u32>);
 
 struct Pending<'p, 'a> {
@@ -18,6 +22,32 @@ struct Pending<'p, 'a> {
     name: &'a ir::SymbolName,
     anchor: u32,
     locus: &'p w::Locus,
+}
+
+/// A domain type a binder or anchored value carries, at a model and anchor.
+struct DomainSeed<'p, 'a> {
+    model: u32,
+    ty: DomainType<'a>,
+    anchor: u32,
+    locus: &'p w::Locus,
+}
+
+/// The object a population binding names: a native object role, or a
+/// domain object type.
+enum Population<'a> {
+    Native(&'a ObjectRole),
+    Domain(DomainType<'a>),
+}
+
+impl<'a> Population<'a> {
+    /// The pair key's object name: the role's record, or the domain type's
+    /// artifact id.
+    fn name(&self) -> &'a str {
+        match self {
+            Self::Native(role) => role.record.as_str(),
+            Self::Domain(ty) => ty.artifact_id(),
+        }
+    }
 }
 
 pub(super) struct Validation<'p, 'v, 'a> {
@@ -142,16 +172,27 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             let population = match (binding.kind, &binding.model.0) {
                 (w::BindingKind::Population, Some(export)) => Some(export),
                 (w::BindingKind::Population, None) => return Err(Error::Invalid(Invalid::Binding)),
-                (w::BindingKind::Closure, Some(export)) => {
-                    matches!(target(self.views, export, work)?.1, Target::Population(_))
-                        .then_some(export)
-                }
+                (w::BindingKind::Closure, Some(export)) => matches!(
+                    target(self.views, export, work)?.1,
+                    Target::Population(_) | Target::Domain(DomainTarget::Population(..))
+                )
+                .then_some(export),
                 _ => None,
             };
             let Some(export) = population else { continue };
             work.locus = Some(binding.locus.clone());
-            let (_, Target::Population(role)) = target(self.views, export, work)? else {
-                return Err(Error::Invalid(Invalid::Binding));
+            let object_name = match target(self.views, export, work)?.1 {
+                Target::Population(role) => Population::Native(role),
+                Target::Domain(DomainTarget::Population(object, declaration)) => {
+                    // FR-153: the input binds the one declaration covering
+                    // the object type.
+                    let covering = crate::protocol_artifact::domain::population(&object, work)?;
+                    if covering.key != declaration.key {
+                        return Err(Error::Invalid(Invalid::Binding));
+                    }
+                    Population::Domain(object)
+                }
+                _ => return Err(Error::Invalid(Invalid::Binding)),
             };
             let w::Subject::Declaration { declaration } = binding.subject else {
                 return Err(Error::Invalid(Invalid::Binding));
@@ -172,10 +213,16 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             let w::Type::Object { export: object } = self.ty(ty, work)? else {
                 return Err(Error::Invalid(Invalid::Binding));
             };
-            let (_, Target::Object(actual, _)) = target(self.views, object, work)? else {
-                return Err(Error::Invalid(Invalid::Binding));
+            let same_object = match (target(self.views, object, work)?.1, &object_name) {
+                (Target::Object(actual, _), Population::Native(role)) => {
+                    std::ptr::eq(actual, *role)
+                }
+                (Target::Domain(DomainTarget::Type(actual)), Population::Domain(expected)) => {
+                    super::same_domain_type(&actual, expected, work)?
+                }
+                _ => false,
             };
-            if object.model != export.model || !std::ptr::eq(actual, role) {
+            if object.model != export.model || !same_object {
                 return Err(Error::Invalid(Invalid::Binding));
             }
             let population = binding.kind == w::BindingKind::Population;
@@ -194,8 +241,9 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                     return Err(Error::Invalid(Invalid::Binding));
                 }
             }
-            work.bytes(role.record.as_str().len())?;
-            let key = (export.model, &role.record, binding.anchor.index);
+            let name = object_name.name();
+            work.bytes(name.len())?;
+            let key = (export.model, name, binding.anchor.index);
             let pair = match pairs.entry(key) {
                 Entry::Vacant(entry) => {
                     work.charge(Dimension::Entries, 1)?;
@@ -266,6 +314,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
 
     fn required(&self, pairs: &BTreeMap<RoleKey<'a>, Pair>, work: &mut Work) -> Result<(), Error> {
         let mut records = Vec::new();
+        let mut domains = Vec::new();
         for binder in &self.declaration.binders {
             work.visit()?;
             if !matches!(
@@ -277,7 +326,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                     binder.value_type,
                     &binder.anchor,
                     &binder.locus,
-                    &mut records,
+                    (&mut records, &mut domains),
                     work,
                 )?;
             }
@@ -286,10 +335,37 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             work.visit()?;
             if let w::Origin::Anchor { anchor } = &value.origin {
                 work.locus = Some(value.locus.clone());
-                self.seed(value.value_type, anchor, &value.locus, &mut records, work)?;
+                self.seed(
+                    value.value_type,
+                    anchor,
+                    &value.locus,
+                    (&mut records, &mut domains),
+                    work,
+                )?;
             }
         }
         let mut seen = BTreeSet::new();
+        // Every domain object type a seeded domain type reaches needs its
+        // population pair at that same model and anchor.
+        for DomainSeed {
+            model,
+            ty,
+            anchor,
+            locus,
+        } in domains
+        {
+            work.locus = Some(locus.clone());
+            for object in crate::protocol_artifact::domain::reached_objects(&ty, work)? {
+                let key = (model, object.artifact_id(), anchor);
+                work.bytes(key.1.len())?;
+                if !pairs.contains_key(&key) {
+                    return Err(Error::Invalid(Invalid::Binding));
+                }
+                if seen.insert(key) {
+                    work.charge(Dimension::Entries, 1)?;
+                }
+            }
+        }
         while let Some(Pending {
             model,
             name,
@@ -311,7 +387,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             let record = match ty {
                 NativeType::Object { role, .. } | NativeType::Reference { role, .. } => {
                     work.bytes(role.record.as_str().len())?;
-                    if !pairs.contains_key(&(model, &role.record, anchor)) {
+                    if !pairs.contains_key(&(model, role.record.as_str(), anchor)) {
                         return Err(Error::Invalid(Invalid::Binding));
                     }
                     &role.record
@@ -320,11 +396,10 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                 _ => return Err(Error::Invalid(Invalid::Type)),
             };
             work.bytes(record.as_str().len())?;
-            if seen.contains(&(model, record, anchor)) {
+            if !seen.insert((model, record.as_str(), anchor)) {
                 continue;
             }
             work.charge(Dimension::Entries, 1)?;
-            seen.insert((model, record, anchor));
             let declaration = view
                 .catalog()?
                 .records
@@ -364,7 +439,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
         // record closure must reach that same role at that same anchor.
         for (key, (population, _)) in pairs {
             work.visit()?;
-            work.bytes(key.1.as_str().len())?;
+            work.bytes(key.1.len())?;
             if !seen.contains(key) {
                 let population = population.ok_or(Error::Invalid(Invalid::Binding))?;
                 work.visit()?;
@@ -385,7 +460,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
         mut ty: u32,
         anchor: &w::Handle,
         locus: &'p w::Locus,
-        records: &mut Vec<Pending<'p, 'a>>,
+        (records, domains): (&mut Vec<Pending<'p, 'a>>, &mut Vec<DomainSeed<'p, 'a>>),
         work: &mut Work,
     ) -> Result<(), Error> {
         self.anchor(anchor, work)?;
@@ -403,13 +478,17 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                     let name = match selected {
                         Target::Record(record) => record.name(),
                         Target::Object(role, _) | Target::Reference(role) => &role.record,
-                        // A domain type needs no population input unless it
-                        // reaches a domain object type, which has no
-                        // population export yet.
+                        // A domain type needs the population input of every
+                        // domain object type it reaches.
                         Target::Domain(DomainTarget::Type(ty)) => {
-                            return crate::protocol_artifact::domain::require_no_population(
-                                &ty, work,
-                            );
+                            work.charge(Dimension::Entries, 1)?;
+                            domains.push(DomainSeed {
+                                model: export.model,
+                                ty,
+                                anchor: anchor.index,
+                                locus,
+                            });
+                            return Ok(());
                         }
                         _ => return Err(Error::Invalid(Invalid::Type)),
                     };

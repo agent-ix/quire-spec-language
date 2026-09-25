@@ -1188,11 +1188,7 @@ fn validate_operations(
     match &declaration.execution {
         w::Execution::Pre { operation } | w::Execution::Post { operation } => {
             match target(views, operation, work)?.1 {
-                Target::Operation(_) => {}
-                // A domain operation has no execution authority here yet.
-                Target::Domain(DomainTarget::Operation) => {
-                    return Err(Error::Unsupported(Unsupported::Export))
-                }
+                Target::Operation(_) | Target::Domain(DomainTarget::Operation(_)) => {}
                 _ => return Err(Error::Invalid(Invalid::Type)),
             }
         }
@@ -1284,21 +1280,31 @@ fn operation_context(
     operation: &w::ExportRef,
     work: &mut Work,
 ) -> Result<(), Error> {
+    let context_index = context.model;
+    let operation_index = operation.model;
     let (context_model, context) = target(views, context, work)?;
     let (operation_model, operation) = target(views, operation, work)?;
-    if let Target::Domain(DomainTarget::Operation) = operation {
-        // A domain operation has no attempt or compensation authority yet.
-        return Err(Error::Unsupported(Unsupported::Export));
-    }
-    let (Target::Object(_, context), Target::Operation(operation)) = (context, operation) else {
-        return Err(Error::Invalid(Invalid::Type));
-    };
-    work.bytes(context.name().as_str().len())?;
-    work.bytes(operation.context.as_str().len())?;
-    if !same_model(context_model.model()?, operation_model.model()?)
-        || context.name() != &operation.context
-    {
-        return Err(Error::Invalid(Invalid::Type));
+    match (context, operation) {
+        (Target::Object(_, context), Target::Operation(operation)) => {
+            work.bytes(context.name().as_str().len())?;
+            work.bytes(operation.context.as_str().len())?;
+            if !same_model(context_model.model()?, operation_model.model()?)
+                || context.name() != &operation.context
+            {
+                return Err(Error::Invalid(Invalid::Type));
+            }
+        }
+        // A domain operation's context is exactly its owning object type,
+        // in the same domain-package model.
+        (
+            Target::Domain(DomainTarget::Type(context)),
+            Target::Domain(DomainTarget::Operation(owner)),
+        ) => {
+            if context_index != operation_index || !same_domain_type(&context, &owner, work)? {
+                return Err(Error::Invalid(Invalid::Type));
+            }
+        }
+        _ => return Err(Error::Invalid(Invalid::Type)),
     }
     Ok(())
 }

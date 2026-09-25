@@ -7,7 +7,7 @@ use crate::linking::composed::{
     definition_source::RegisteredDefinition as Definition,
     scopes::{Anchor, BinderKind, DeclarationScope, StructuralKind, SymbolKind},
 };
-use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
+use crate::protocol_artifact::{wire as w, work::Work, Dimension, Error, Invalid};
 use crate::syntax::composed as c;
 use qsl_foundation::{Span, Spanned};
 
@@ -208,11 +208,13 @@ fn stable_equality(ty: &NativeType<'_>) -> Result<(), Error> {
         | NativeType::Enumeration { .. }
         | NativeType::Object { .. }
         | NativeType::Reference { .. } => Ok(()),
-        NativeType::Record { .. } | NativeType::Option(_) | NativeType::Sequence { .. } => {
-            Err(Error::Invalid(Invalid::Type))
-        }
-        // No domain-package channel key equality is admitted yet.
-        NativeType::Domain(_) => Err(Error::Unsupported(Unsupported::Export)),
+        // A domain object type keys by identity, as a native object does; a
+        // record value type is structural, as a native record is.
+        NativeType::Domain(domain) if domain.is_object() => Ok(()),
+        NativeType::Record { .. }
+        | NativeType::Domain(_)
+        | NativeType::Option(_)
+        | NativeType::Sequence { .. } => Err(Error::Invalid(Invalid::Type)),
     }
 }
 

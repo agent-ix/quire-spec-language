@@ -93,8 +93,9 @@ per-group counts before moving this row to Passed.
 | FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 QSL handoff passed; Protocol #11 pending |
-| FR-042 | FR-042-AC-11 | TC-121 | ✅ Passed locally (`tests/it/protocol_artifact.rs`, `tests/it/domain_protocol_emission.rs`); a declaration over a domain object type refuses emission as unsupported until its population input has an export |
+| FR-042 | FR-042-AC-11 | TC-121 | ✅ Passed locally (`tests/it/protocol_artifact.rs`, `tests/it/domain_protocol_emission.rs`) |
 | FR-042 | FR-042-AC-12 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-13 | TC-121 | ✅ Passed locally (`tests/it/domain_protocol_emission.rs`) |
 | FR-046 | FR-046-AC-1 | TC-126 | ✅ Passed |
 | FR-046 | FR-046-AC-2 | TC-126 | ✅ Passed |
 | FR-046 | FR-046-AC-3 | TC-127 | ✅ Passed |
@@ -199,7 +200,7 @@ invented for that criterion.
 | TC-119 | Composed value types and guarded definedness | Integration | P1 | FR-040-AC-1..FR-040-AC-10 | ✅ Passed locally (tests/composed_types.rs, tests/composed_type_pipeline.rs, tests/composed_proofs.rs, tests/composed_query_proofs.rs, tests/native_query_emission.rs) |
 | TC-120 | Explicit rational model profile and historical isolation | Integration | P1 | FR-041-AC-1..FR-041-AC-7 | ✅ Passed locally (tests/native_model_profiles.rs, src/checking/types.rs, src/linking.rs) |
 | TC-117 | Exact numeric wire values and strict refusal | Integration | P1 | FR-038-AC-1..FR-038-AC-5 | ✅ Passed |
-| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-12 | 🚧 QSL `/1` publication and strict read passed locally (`tests/published_protocol_v1.rs`, `src/protocol_artifact/handoff.rs`); Protocol #11 consumer acceptance pending; FR-042-AC-11/AC-12 passed locally (`tests/it/domain_protocol_emission.rs`, `tests/it/native_protocol_emission.rs`) |
+| TC-121 | Full compiled protocol artifact and Rust handoff requiring [B's IT-001](ix://agent-ix/quire-protocol/IT-001) | Integration | P1 | FR-042-AC-1..FR-042-AC-13 | 🚧 QSL `/1` publication and strict read passed locally (`tests/published_protocol_v1.rs`, `src/protocol_artifact/handoff.rs`); Protocol #11 consumer acceptance pending; FR-042-AC-11/AC-12/AC-13 passed locally (`tests/it/domain_protocol_emission.rs`, `tests/it/native_protocol_emission.rs`) |
 | TC-126 | Preserve exact predicate meaning at cross-family calls | Integration | P1 | FR-046-AC-1, FR-046-AC-2, FR-046-AC-8 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-127 | Evaluate ordered query values against independent expected results | Integration | P1 | FR-046-AC-3, FR-046-AC-4, FR-046-AC-5, FR-046-AC-8 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
 | TC-128 | Keep incomplete query inputs and exhausted work distinct from values | Integration | P1 | FR-046-AC-6, FR-046-AC-7 | ✅ Passed locally (tests/composed_state_evaluation.rs) |
@@ -403,9 +404,10 @@ coverage --scope . --json` reports those minted targets as backed. AC-10's QSL
 test proves only the compiler-owned publication and strict-reader leg; the
 cross-repository Protocol leg remains open. FR-042-AC-11's positive half runs
 over the architecture bundle: a domain-typed declaration checks, emits a
-`Model` naming its domain package, and reads back. A domain object type still
-refuses emission, because its population input has no compiled-protocol export
-yet. One module carrying each criterion's tag:
+`Model` naming its domain package, and reads back. FR-042-AC-13 runs over the
+same bundle with a population declaration added to its lifted document: a
+domain object population and a domain operation check, emit and read back.
+One module carrying each criterion's tag:
 
 | Criterion | Module carrying the tag |
 | --- | --- |
@@ -421,6 +423,7 @@ yet. One module carrying each criterion's tag:
 | FR-042-AC-10 | `tests/published_protocol_v1.rs`; Protocol #11 remains below |
 | FR-042-AC-11 | `tests/it/protocol_artifact.rs`, `tests/it/domain_protocol_emission.rs` |
 | FR-042-AC-12 | `tests/it/protocol_artifact.rs`, `tests/it/native_protocol_emission.rs` |
+| FR-042-AC-13 | `tests/it/domain_protocol_emission.rs` |
 
 Per-criterion backing comes from those minted criterion targets and not from the
 row status: the `functional-coverage` declaration classifies a row by its
@@ -451,8 +454,9 @@ consumer side. TC-135 records the separate D-owned campaign gate.
 | FR-042 | FR-042-AC-8 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-9 | TC-121 | ✅ Passed locally |
 | FR-042 | FR-042-AC-10 | TC-121, TC-135 | 🚧 QSL handoff passed; Protocol #11 pending |
-| FR-042 | FR-042-AC-11 | TC-121 | ✅ Passed locally (`tests/it/protocol_artifact.rs`, `tests/it/domain_protocol_emission.rs`); a declaration over a domain object type refuses emission as unsupported until its population input has an export |
+| FR-042 | FR-042-AC-11 | TC-121 | ✅ Passed locally (`tests/it/protocol_artifact.rs`, `tests/it/domain_protocol_emission.rs`) |
 | FR-042 | FR-042-AC-12 | TC-121 | ✅ Passed |
+| FR-042 | FR-042-AC-13 | TC-121 | ✅ Passed locally (`tests/it/domain_protocol_emission.rs`) |
 
 ## Authenticated temporal artifact selections (L5/L6)
 

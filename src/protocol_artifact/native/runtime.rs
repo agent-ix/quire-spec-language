@@ -2,6 +2,7 @@
 //! FR-042: authored family bodies and static requirements for later runtime input.
 mod compensations;
 use super::context::Declaration;
+use super::populations::Population;
 use super::{
     layout::DeclLayout,
     metadata::{copy_reference, Metadata},
@@ -688,20 +689,22 @@ pub(super) fn body(
     };
     for need in super::populations::collect(context, work)? {
         work.locus = Some(layout.locus(need.span)?);
-        let model = builder.export(
-            need.model,
-            w::ExportKind::Population,
-            need.role.record.as_str(),
-            Some(need.role.universe.as_str()),
-            work,
-        )?;
-        let value_type = builder.ty(
-            &NativeType::Object {
-                model: need.model,
-                role: need.role,
-            },
-            work,
-        )?;
+        let (model, value_type) = match need.population {
+            Population::Native { model, role } => (
+                builder.export(
+                    model,
+                    w::ExportKind::Population,
+                    role.record.as_str(),
+                    Some(role.universe.as_str()),
+                    work,
+                )?,
+                builder.ty(&NativeType::Object { model, role }, work)?,
+            ),
+            Population::Domain { object, population } => (
+                builder.domain_population_export(&object, &population, work)?,
+                builder.ty(&NativeType::Domain(object), work)?,
+            ),
+        };
         let anchor = layout.anchor(need.anchor)?.index;
         work.visit()?;
         let prerequisite = runtime
@@ -798,9 +801,20 @@ pub(super) fn operation_export(
                         work,
                     );
                 }
-                // A domain operation clause has no compiled-protocol
-                // execution authority yet.
-                ModelTarget::Declaration(_) => return Err(Error::Unsupported(Unsupported::Export)),
+                // A domain operation: `[owner artifact id, name]` of its
+                // package, keyed by its FR-154 member key.
+                ModelTarget::Declaration(bound) => {
+                    if let Some((owner, name)) = crate::protocol_artifact::domain::operation(bound)?
+                    {
+                        return builder.domain_export(
+                            owner.package,
+                            w::ExportKind::Operation,
+                            owner.artifact_id(),
+                            Some(name),
+                            work,
+                        );
+                    }
+                }
                 ModelTarget::Type(_) => {}
             }
         }

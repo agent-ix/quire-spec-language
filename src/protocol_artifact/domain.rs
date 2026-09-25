@@ -6,7 +6,9 @@
 //! names the package directly in `domain_package`: its identity, version and
 //! `sha256-jcs` digest. Its exports are the package's object types and
 //! Interfaces (`object`), record value types (`record`), and their field and
-//! operation members, each under its artifact id. Intake keeps no per-node
+//! operation members, each under its artifact id, and one `population`
+//! export `[object artifact id, population artifact id]` for every object
+//! type an FR-153 population declaration covers. Intake keeps no per-node
 //! source span yet (FR-056-AC-1), so every export's locus is the whole
 //! document in that dependency.
 
@@ -14,9 +16,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::checking::DomainType;
-use qsl_semantics::model::admitted::AdmittedPackage;
-use qsl_semantics::model::domain_package::{DomainPackageRecord, DomainPackageRef, ValueTypeRef};
-use qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN;
+use crate::linking::composed::models::BoundDeclaration;
+use qsl_semantics::model::admitted::{AdmittedPackage, Declaration};
+use qsl_semantics::model::domain_package::{
+    DomainPackageRecord, DomainPackageRef, PopulationRecord, ValueTypeRef,
+};
+use qsl_semantics::model::key::{DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 
 /// `Model.profile` of a domain-package model: the Semantic IR contract its
 /// document is admitted under (FR-056).
@@ -44,9 +49,11 @@ pub(super) enum DomainTarget<'a> {
     Type(DomainType<'a>),
     /// A field of such a type.
     Field(DomainType<'a>, &'a str),
-    /// An operation of such a type; no compiled-protocol execution or
-    /// attempt authority reads one yet.
-    Operation,
+    /// An operation of an object type or Interface, by its owning type.
+    Operation(DomainType<'a>),
+    /// The population input of an object type: the object type and the
+    /// FR-153 population declaration covering it.
+    Population(DomainType<'a>, Declaration<'a>),
 }
 
 /// One export: its kind, path and target, ascending by `(kind, path)`.
@@ -70,6 +77,14 @@ pub(super) fn type_export_kind(ty: &DomainType<'_>) -> w::ExportKind {
 /// The name a member key carries after its owner's key: `<owner>/<name>`.
 fn member_name<'a>(owner: &str, member: &'a str) -> Option<&'a str> {
     member.strip_prefix(owner)?.strip_prefix('/')
+}
+
+/// The artifact id a type-definition or population node is exported under:
+/// its key's `ix://<package>/<artifact id>` segment.
+pub(super) fn artifact_id(key: &DeclarationKey) -> &str {
+    key.node
+        .rsplit_once('/')
+        .map_or(key.node.as_str(), |(_, artifact)| artifact)
 }
 
 /// Every export of `package`, ascending by `(kind, owner, member)` exactly
@@ -104,12 +119,42 @@ pub(super) fn exports<'a>(
                 }
                 continue;
             }
+            DomainPackageRecord::Population(population) => {
+                for covered in package.declarations() {
+                    work.visit()?;
+                    let Some(object) = DomainType::new(package, covered) else {
+                        continue;
+                    };
+                    if !object.is_object() || !covers(population, &object, work)? {
+                        continue;
+                    }
+                    let name = artifact_id(declaration.key);
+                    work.bytes(object.artifact_id().len().saturating_add(name.len()))?;
+                    work.charge(Dimension::Entries, 1)?;
+                    if result
+                        .insert(
+                            (
+                                w::ExportKind::Population.as_str(),
+                                object.artifact_id(),
+                                name,
+                            ),
+                            (
+                                w::ExportKind::Population,
+                                DomainTarget::Population(object, declaration),
+                            ),
+                        )
+                        .is_some()
+                    {
+                        return Err(Error::Invalid(Invalid::Duplicate));
+                    }
+                }
+                continue;
+            }
             DomainPackageRecord::ScalarType(_)
             | DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Relationship(_)
-            | DomainPackageRecord::Allocation(_)
-            | DomainPackageRecord::Population(_) => continue,
+            | DomainPackageRecord::Allocation(_) => continue,
         };
         let owner = package
             .declaration_by_key(owner)
@@ -121,7 +166,7 @@ pub(super) fn exports<'a>(
         work.charge(Dimension::Entries, 1)?;
         let target = match declaration.record {
             DomainPackageRecord::FieldMember(_) => DomainTarget::Field(owner, name),
-            _ => DomainTarget::Operation,
+            _ => DomainTarget::Operation(owner),
         };
         if result
             .insert((kind.as_str(), owner.artifact_id(), name), (kind, target))
@@ -214,22 +259,80 @@ pub(super) fn verify_document(
         .map_err(|_| Error::Invalid(Invalid::Model))
 }
 
-/// Refuses a domain type whose values reach an object type: a population
-/// input for a domain object type has no compiled-protocol export yet. A
-/// record value type is walked through its fields' declared value types,
-/// whatever their multiplicity or native representation, each record once.
-pub(super) fn require_no_population(ty: &DomainType<'_>, work: &mut Work) -> Result<(), Error> {
+/// Whether `population` covers the object type `object` (FR-153): one of
+/// its member types is `object` itself or a type `object` conforms to
+/// through its declared supertypes, walked transitively, each type once.
+fn covers(
+    population: &PopulationRecord,
+    object: &DomainType<'_>,
+    work: &mut Work,
+) -> Result<bool, Error> {
     let mut seen = BTreeSet::new();
+    let mut pending = vec![object.declaration.key];
+    while let Some(key) = pending.pop() {
+        work.visit()?;
+        if population.member_types.contains(key) {
+            return Ok(true);
+        }
+        if !seen.insert(key) {
+            continue;
+        }
+        work.charge(Dimension::Entries, 1)?;
+        if let Some(DomainPackageRecord::ObjectType(record)) = object
+            .package
+            .declaration_by_key(key)
+            .map(|declaration| declaration.record)
+        {
+            work.charge(Dimension::Entries, record.supertypes.len())?;
+            pending.extend(&record.supertypes);
+        }
+    }
+    Ok(false)
+}
+
+/// The one population declaration of `object`'s package that covers the
+/// object type `object`: its population input binds that declaration.
+/// With no covering declaration there is no population export to bind, and
+/// with more than one the source selects none of them, so both refuse as
+/// `Unsupported::Export`.
+pub(super) fn population<'a>(
+    object: &DomainType<'a>,
+    work: &mut Work,
+) -> Result<Declaration<'a>, Error> {
+    let mut found = None;
+    for declaration in object.package.declarations() {
+        work.visit()?;
+        let DomainPackageRecord::Population(population) = declaration.record else {
+            continue;
+        };
+        if covers(population, object, work)? && found.replace(declaration).is_some() {
+            return Err(Error::Unsupported(Unsupported::Export));
+        }
+    }
+    found.ok_or(Error::Unsupported(Unsupported::Export))
+}
+
+/// The object types a value of domain type `ty` reaches, each once: `ty`
+/// itself when it is an object type or Interface, and every object type
+/// reached through the declared value types of its fields, transitively,
+/// whatever their multiplicity or native representation. Each reached
+/// object type needs a population input.
+pub(super) fn reached_objects<'a>(
+    ty: &DomainType<'a>,
+    work: &mut Work,
+) -> Result<Vec<DomainType<'a>>, Error> {
+    let mut seen = BTreeSet::new();
+    let mut reached = Vec::new();
     let mut pending = vec![*ty];
     while let Some(ty) = pending.pop() {
         work.visit()?;
-        if ty.is_object() {
-            return Err(Error::Unsupported(Unsupported::Export));
-        }
         if !seen.insert(ty.declaration.key) {
             continue;
         }
         work.charge(Dimension::Entries, 1)?;
+        if ty.is_object() {
+            reached.push(ty);
+        }
         for declaration in ty.package.declarations() {
             work.visit()?;
             let DomainPackageRecord::FieldMember(field) = declaration.record else {
@@ -252,5 +355,21 @@ pub(super) fn require_no_population(ty: &DomainType<'_>, work: &mut Work) -> Res
             }
         }
     }
-    Ok(())
+    Ok(reached)
+}
+
+/// The owning type and name of a bound domain operation, `None` when
+/// `bound` is not an operation member.
+pub(super) fn operation<'a>(
+    bound: &BoundDeclaration<'a>,
+) -> Result<Option<(DomainType<'a>, &'a str)>, Error> {
+    let Some((owner, name)) = bound.operation() else {
+        return Ok(None);
+    };
+    let package = bound.package();
+    let owner = package
+        .declaration_by_key(owner)
+        .and_then(|owner| DomainType::new(package, owner))
+        .ok_or(Error::Invalid(Invalid::Model))?;
+    Ok(Some((owner, name)))
 }

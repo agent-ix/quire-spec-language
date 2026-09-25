@@ -588,12 +588,13 @@ fn related_occurrences(
     Err(Error::Unsupported(Unsupported::Export))
 }
 
+/// An event, commit or compensation record type: a record or object type,
+/// native or declared by a domain package.
 pub(super) fn require_record(ty: &crate::checking::NativeType<'_>) -> Result<(), Error> {
     match ty {
-        crate::checking::NativeType::Record { .. } | crate::checking::NativeType::Object { .. } => {
-            Ok(())
-        }
-        crate::checking::NativeType::Domain(_) => Err(Error::Unsupported(Unsupported::Export)),
+        crate::checking::NativeType::Record { .. }
+        | crate::checking::NativeType::Object { .. }
+        | crate::checking::NativeType::Domain(_) => Ok(()),
         crate::checking::NativeType::Boolean
         | crate::checking::NativeType::Scalar { .. }
         | crate::checking::NativeType::Enumeration { .. }
@@ -702,10 +703,11 @@ pub(super) fn operation_context(
                         work,
                     );
                 }
-                // A domain operation has no compiled-protocol attempt or
-                // compensation authority yet.
-                ModelTarget::Declaration(_) => {
-                    return Err(Error::Unsupported(Unsupported::Export));
+                // A domain operation's context is its owning object type.
+                ModelTarget::Declaration(bound) => {
+                    if let Some((owner, _)) = crate::protocol_artifact::domain::operation(bound)? {
+                        return builder.domain_type_export(&owner, work);
+                    }
                 }
                 ModelTarget::Type(_) => {}
             }

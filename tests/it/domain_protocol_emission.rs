@@ -12,13 +12,14 @@
 //! here yet.
 
 use crate::composed_domain_models::{
-    admitted_with_bytes, architecture_bundle, hex, record_value_type,
+    admitted_with_bytes, admitted_with_populations, architecture_bundle, hex, record_value_type,
 };
 use crate::support::native_protocol::{Inputs, Unit};
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
 use qsl_semantics::model::domain_package::DomainPackageRef;
+use quire_contract_ir as ir;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::protocol_artifact::{
     self as artifact, native, wire as w, Error, Invalid, Limits, Unsupported,
@@ -289,13 +290,13 @@ fn a_substituted_domain_package_naming_refuses() {
     );
 }
 
-/// A domain object type needs a population input, which has no
-/// compiled-protocol export yet: a declaration over `Pump` checks but its
-/// emission refuses as unsupported rather than emitting a population it
-/// cannot name.
-#[trace("TC-121", "FR-042-AC-11")]
+/// A domain object type needs a population input, and the unedited bundle
+/// declares no population covering `Pump`: a declaration over `Pump` checks
+/// but its emission refuses as unsupported rather than emitting a population
+/// it cannot name.
+#[trace("TC-121", "FR-042-AC-13")]
 #[test]
-fn a_domain_object_population_refuses_emission_as_unsupported() {
+fn a_domain_object_with_no_covering_population_refuses_emission() {
     let inputs = domain_inputs(&[
         Unit {
             name: "simple",
@@ -324,34 +325,438 @@ fn a_domain_object_population_refuses_emission_as_unsupported() {
 
 /// A record value type that reaches a domain object type through a field
 /// with no native type here (`pumps: Pump [0..*]`) still needs a population
-/// input for `Pump`: emission refuses it as unsupported rather than treating
-/// the record as population-free.
-#[trace("TC-121", "FR-042-AC-11")]
+/// input for `Pump`: with no population covering `Pump` its emission refuses
+/// as unsupported rather than treating the record as population-free, and
+/// with `Plant` covering it the declaration carries exactly `Pump`'s
+/// population and closure pair.
+#[trace("TC-121", "FR-042-AC-13")]
 #[test]
-fn a_record_reaching_an_object_through_an_unrepresented_field_refuses_emission() {
-    let bundle = architecture_bundle(|root| {
-        record_value_type(
-            root,
-            "Fleet",
-            &[("ok", "Boolean", "1"), ("pumps", "Pump", "0..*")],
+fn a_record_reaching_an_object_through_an_unrepresented_field_needs_its_population() {
+    for populations in [&[][..], PLANT] {
+        let bundle = architecture_bundle(|root| {
+            record_value_type(
+                root,
+                "Fleet",
+                &[("ok", "Boolean", "1"), ("pumps", "Pump", "0..*")],
+            );
+        });
+        let (package, bytes) = admitted_with_populations(bundle.path(), populations);
+        let inputs = Inputs::with_domain(
+            &[
+                Unit {
+                    name: "simple",
+                    body: SIMPLE,
+                    declarations: &["Simple"],
+                },
+                Unit {
+                    name: "fleet",
+                    body: "predicate FleetOk using S (fleet: D::Fleet): Boolean { fleet.ok }",
+                    declarations: &["FleetOk"],
+                },
+            ],
+            package,
+            bytes,
         );
+        inputs.with_proofs(
+            TypeLimits::default(),
+            proofs::ProofLimits::default(),
+            |proofs, selected| {
+                discharged(proofs);
+                let report = native::admit(proofs, selected, Limits::default());
+                if populations.is_empty() {
+                    match report.result() {
+                        Ok(_) => panic!("a record reaching an uncovered domain object emitted"),
+                        Err(error) => {
+                            assert_eq!(error, &Error::Unsupported(Unsupported::Export));
+                        }
+                    }
+                    return;
+                }
+                let admitted = report.into_result().expect("the covered record emits");
+                let package = admitted.package();
+                let pairs = population_pairs(declaration(package, "FleetOk"));
+                assert_eq!(pairs.len(), 2, "{pairs:?}");
+                for binding in pairs {
+                    assert_eq!(
+                        export(
+                            package,
+                            binding.model.0.as_ref().expect("population export")
+                        ),
+                        (w::ExportKind::Population, path(&["Pump", "Plant"]))
+                    );
+                }
+                let emitted = native::emit(&admitted, Limits::default())
+                    .into_result()
+                    .expect("emits");
+                let read = inputs.read(proofs, &emitted);
+                assert_eq!(read.result().expect("reads back").package(), package);
+            },
+        );
+    }
+}
+
+/// The architecture bundle plus `Reading` and `populations`, admitted, as
+/// the inputs of `units`.
+fn populated_inputs(units: &[Unit<'_>], populations: &[(&str, &[&str])]) -> Inputs {
+    let bundle = architecture_bundle(|root| {
+        std::fs::write(root.join("spec/model/Reading.md"), READING).expect("write Reading");
     });
-    let (package, bytes) = admitted_with_bytes(bundle.path());
-    let inputs = Inputs::with_domain(
-        &[
-            Unit {
-                name: "simple",
-                body: SIMPLE,
-                declarations: &["Simple"],
-            },
-            Unit {
-                name: "fleet",
-                body: "predicate FleetOk using S (fleet: D::Fleet): Boolean { fleet.ok }",
-                declarations: &["FleetOk"],
-            },
-        ],
-        package,
-        bytes,
+    let (package, bytes) = admitted_with_populations(bundle.path(), populations);
+    Inputs::with_domain(units, package, bytes)
+}
+
+/// `Plant`, one closed population over `Pump` and `Sys`.
+const PLANT: &[(&str, &[&str])] = &[("Plant", &["Pump", "Sys"])];
+
+/// A predicate over a `Pump`, a precondition of `Pump::run`, and a protocol
+/// whose role plays `Pump`, attempting `Pump::run` and sending `Pump`s on a
+/// channel keyed by the `Pump` itself.
+const PUMPS: &str = "predicate PumpUp using S (pump: D::Pump): Boolean { pump.id }\n\
+pre PumpReady using S on D::Pump::run { self.id }\n\
+protocol Pumping using P over (view: D::Pump) on origin {\n\
+ role Operator on D::Pump;\n\
+ channel Pumps from Operator to Operator carries D::Pump ordering fifo by (keyed: D::Pump) { keyed } delivery [0,2];\n\
+ run sequence Main {\n\
+  attempt Ran by Operator on D::Pump::run contracts [] as (ran: D::Pump) { ran.id };\n\
+  send Sent via Pumps as (sent: D::Pump) { sent.id };\n\
+  receive Got via Pumps of Sent as (got: D::Pump) { got.id };\n\
+ }\n\
+ finish Closed as (closed: D::Pump) { true };\n\
+}";
+
+fn pump_units(body: &'static str, declarations: &'static [&'static str]) -> [Unit<'static>; 2] {
+    [
+        Unit {
+            name: "simple",
+            body: SIMPLE,
+            declarations: &["Simple"],
+        },
+        Unit {
+            name: "pumps",
+            body,
+            declarations,
+        },
+    ]
+}
+
+/// `PUMPS` over `PLANT`, `PumpReady` bound to `Pump::run`'s execution
+/// anchor, its name, and expected to name `operation`.
+fn pump_inputs(operation: w::ExportRef) -> Inputs {
+    let mut inputs = populated_inputs(
+        &pump_units(PUMPS, &["PumpUp", "PumpReady", "Pumping"]),
+        PLANT,
+    );
+    inputs.execution(
+        "PumpReady",
+        ir::ExecutionPoint::Pre {
+            operation: ir::AnchorName::new("run").expect("anchor name"),
+        },
+        w::Execution::Pre { operation },
+    );
+    inputs
+}
+
+/// The export `reference` names in `package`, as `(kind, path)`.
+fn export(package: &w::Package, reference: &w::ExportRef) -> (w::ExportKind, Vec<String>) {
+    let export = &package.models[reference.model as usize].exports[reference.export as usize];
+    (export.kind, export.path.clone())
+}
+
+fn path(parts: &[&str]) -> Vec<String> {
+    parts.iter().map(|part| (*part).to_owned()).collect()
+}
+
+fn declaration<'p>(package: &'p w::Package, name: &str) -> &'p w::Declaration {
+    package
+        .declarations
+        .iter()
+        .find(|declaration| declaration.name == name)
+        .unwrap_or_else(|| panic!("{name} emitted"))
+}
+
+/// The population and closure requirements of `declaration`.
+fn population_pairs(declaration: &w::Declaration) -> Vec<&w::BindingRequirement> {
+    declaration
+        .bindings
+        .iter()
+        .filter(|binding| {
+            matches!(
+                binding.kind,
+                w::BindingKind::Population | w::BindingKind::Closure
+            )
+        })
+        .collect()
+}
+
+/// Emits `PUMPS` and returns the operation export `PumpReady`'s execution
+/// names, after asserting it is `Pump::run`'s own `operation` export.
+fn emitted_run_export() -> w::ExportRef {
+    let placeholder = w::ExportRef {
+        model: 0,
+        export: 0,
+    };
+    let inputs = pump_inputs(placeholder);
+    let mut run = None;
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("domain populations and operations emit");
+            let package = admitted.package();
+            let w::Execution::Pre { operation } = &declaration(package, "PumpReady").execution
+            else {
+                panic!("PumpReady is a precondition")
+            };
+            assert_eq!(
+                export(package, operation),
+                (w::ExportKind::Operation, path(&["Pump", "run"]))
+            );
+            run = Some(operation.clone());
+        },
+    );
+    run.expect("emitted")
+}
+
+/// A predicate over a domain object type, a precondition of a domain
+/// operation and a protocol attempting it check and emit: each domain
+/// object input carries exactly one population and one closure requirement,
+/// typed by the object type's `object` export and naming its `population`
+/// export `[Pump, Plant]`; the operation is named by its own `operation`
+/// export `[Pump, run]` in the precondition's execution and body and in the
+/// attempt, with `Pump` as its context; the channel keys on the `Pump`
+/// itself. The strict reader reads the bytes back unchanged.
+#[trace("TC-121", "FR-042-AC-13")]
+#[test]
+fn domain_object_populations_and_operations_emit_and_read_back() {
+    let run = emitted_run_export();
+    let inputs = pump_inputs(run.clone());
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("domain populations and operations emit");
+            let package = admitted.package();
+            let (domain_index, domain) = domain_model(&package.models);
+            assert_eq!(run.model, domain_index);
+            let populations: Vec<_> = domain
+                .exports
+                .iter()
+                .filter(|export| export.kind == w::ExportKind::Population)
+                .map(|export| export.path.clone())
+                .collect();
+            assert_eq!(
+                populations,
+                [path(&["Pump", "Plant"]), path(&["Sys", "Plant"])]
+            );
+
+            let pump_up = declaration(package, "PumpUp");
+            let pairs = population_pairs(pump_up);
+            assert_eq!(pairs.len(), 2, "{pairs:?}");
+            let population = pairs
+                .iter()
+                .find(|binding| binding.kind == w::BindingKind::Population)
+                .expect("a population requirement");
+            let closure = pairs
+                .iter()
+                .find(|binding| binding.kind == w::BindingKind::Closure)
+                .expect("a closure requirement");
+            let model = population.model.0.as_ref().expect("population export");
+            assert_eq!(
+                export(package, model),
+                (w::ExportKind::Population, path(&["Pump", "Plant"]))
+            );
+            assert_eq!(closure.model, population.model);
+            assert_eq!(closure.value_type, population.value_type);
+            let w::Type::Object { export: object } =
+                &package.types[population.value_type.0.expect("typed") as usize]
+            else {
+                panic!("a population is typed by its object type")
+            };
+            assert_eq!(
+                export(package, object),
+                (w::ExportKind::Object, path(&["Pump"]))
+            );
+
+            let ready = declaration(package, "PumpReady");
+            let w::Body::State {
+                context, operation, ..
+            } = &ready.body
+            else {
+                panic!("PumpReady is a state clause")
+            };
+            assert_eq!(operation.0.as_ref(), Some(&run));
+            assert_eq!(
+                export(package, context),
+                (w::ExportKind::Object, path(&["Pump"]))
+            );
+
+            let pumping = declaration(package, "Pumping");
+            let w::Body::Protocol {
+                roles,
+                controls,
+                channels,
+                ..
+            } = &pumping.body
+            else {
+                panic!("Pumping is a protocol")
+            };
+            assert_eq!(
+                export(package, &roles[0].model),
+                (w::ExportKind::Object, path(&["Pump"]))
+            );
+            let attempted = controls
+                .iter()
+                .find_map(|control| match &control.operation {
+                    w::ControlOperation::Event {
+                        event: w::Event::Attempt { operation, .. },
+                        ..
+                    } => Some(operation),
+                    _ => None,
+                })
+                .expect("an attempt");
+            assert_eq!(attempted, &run);
+            assert!(matches!(channels[0].ordering, w::Ordering::Fifo { .. }));
+
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .expect("emits");
+            let read = inputs.read(proofs, &emitted);
+            let read = read.result().expect("the strict reader admits the bytes");
+            assert_eq!(read.package(), package);
+        },
+    );
+}
+
+/// Adverse payloads over the emitted population and operation bytes: a
+/// changed package digest and an export the package does not declare (a
+/// population declaration, or an operation) refuse as `Invalid::Model`; a
+/// population pair keyed to another object type of the same declaration
+/// refuses as `Invalid::Binding`; and a precondition whose context is not
+/// its operation's owner refuses as `Invalid::Type`.
+#[trace("TC-121", "FR-042-AC-13")]
+#[test]
+fn substituted_domain_population_and_operation_keys_refuse() {
+    let run = emitted_run_export();
+    let inputs = pump_inputs(run);
+    let selection = inputs
+        .domain
+        .as_ref()
+        .expect("domain input")
+        .package
+        .selection()
+        .clone();
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("emits");
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .expect("encodes");
+            let text = std::str::from_utf8(emitted.bytes()).expect("UTF-8 payload");
+            let digest = hex(&selection.digest);
+            let mut changed = selection.digest;
+            changed[0] ^= 1;
+            let naming = format!("\"digest\":\"{digest}\"}}");
+            assert_eq!(text.matches(&naming).count(), 1, "{text}");
+            for (mutated, expected) in [
+                (
+                    text.replace(&naming, &format!("\"digest\":\"{}\"}}", hex(&changed))),
+                    Invalid::Model,
+                ),
+                (
+                    text.replace("[\"Pump\",\"Plant\"]", "[\"Pump\",\"Pond\"]"),
+                    Invalid::Model,
+                ),
+                (
+                    text.replace("[\"Pump\",\"run\"]", "[\"Pump\",\"halt\"]"),
+                    Invalid::Model,
+                ),
+            ] {
+                assert_ne!(mutated, text);
+                let bytes = mutated.into_bytes();
+                refused(
+                    &inputs.read_bytes(proofs, &bytes, ByteDigest::of(&bytes)),
+                    Error::Invalid(expected),
+                );
+            }
+
+            let package = admitted.package();
+            let (domain_index, domain) = domain_model(&package.models);
+            let find = |kind: w::ExportKind, parts: &[&str]| w::ExportRef {
+                model: domain_index,
+                export: u32::try_from(
+                    domain
+                        .exports
+                        .iter()
+                        .position(|export| export.kind == kind && export.path == path(parts))
+                        .expect("declared export"),
+                )
+                .unwrap(),
+            };
+            let sys_population = find(w::ExportKind::Population, &["Sys", "Plant"]);
+            let sys_object = find(w::ExportKind::Object, &["Sys"]);
+            let at = |package: &w::Package, name: &str| {
+                package
+                    .declarations
+                    .iter()
+                    .position(|declaration| declaration.name == name)
+                    .expect("declared")
+            };
+
+            // `PumpUp`'s pair, keyed to `Sys` under the same declaration.
+            let mut wrong_population = package.clone();
+            let pump_up = at(package, "PumpUp");
+            for binding in &mut wrong_population.declarations[pump_up].bindings {
+                if matches!(
+                    binding.kind,
+                    w::BindingKind::Population | w::BindingKind::Closure
+                ) {
+                    binding.model = w::Nullable(Some(sys_population.clone()));
+                }
+            }
+            // `PumpReady`'s context, `Sys` rather than `run`'s owner `Pump`.
+            let mut wrong_context = package.clone();
+            let ready = at(package, "PumpReady");
+            let w::Body::State { context, .. } = &mut wrong_context.declarations[ready].body else {
+                panic!("PumpReady is a state clause")
+            };
+            *context = sys_object;
+            for (mutated, expected) in [
+                (wrong_population, Invalid::Binding),
+                (wrong_context, Invalid::Type),
+            ] {
+                let candidate = artifact::encode_candidate(&mutated, Limits::default())
+                    .into_result()
+                    .expect("the mutated package encodes");
+                refused(
+                    &inputs.read_bytes(proofs, candidate.bytes(), candidate.digest()),
+                    Error::Invalid(expected),
+                );
+            }
+        },
+    );
+}
+
+/// With two population declarations covering `Pump`, the source selects
+/// neither, so a declaration over a `Pump` refuses emission as unsupported.
+#[trace("TC-121", "FR-042-AC-13")]
+#[test]
+fn a_domain_object_covered_by_two_populations_refuses_emission() {
+    let inputs = populated_inputs(
+        &pump_units(
+            "predicate PumpUp using S (pump: D::Pump): Boolean { pump.id }",
+            &["PumpUp"],
+        ),
+        &[("Plant", &["Pump"]), ("Yard", &["Pump", "Sys"])],
     );
     inputs.with_proofs(
         TypeLimits::default(),
@@ -359,8 +764,40 @@ fn a_record_reaching_an_object_through_an_unrepresented_field_refuses_emission()
         |proofs, selected| {
             discharged(proofs);
             match native::admit(proofs, selected, Limits::default()).result() {
-                Ok(_) => panic!("a record reaching a domain object type emitted"),
+                Ok(_) => panic!("an ambiguous domain population emitted"),
                 Err(error) => assert_eq!(error, &Error::Unsupported(Unsupported::Export)),
+            }
+        },
+    );
+}
+
+/// A FIFO channel keyed by a record value type has no identity to key on:
+/// emission refuses it as `Invalid::Type`, as it does a native record key.
+#[trace("TC-121", "FR-042-AC-13")]
+#[test]
+fn a_record_value_type_channel_key_refuses_emission() {
+    let inputs = populated_inputs(
+        &pump_units(
+            "protocol Readings using P over (view: D::Pump) on origin {\n\
+             role Operator on D::Pump;\n\
+             channel Values from Operator to Operator carries D::Reading ordering fifo by (keyed: D::Reading) { keyed } delivery [0,2];\n\
+             run sequence Main {\n\
+              send Sent via Values as (sent: D::Reading) { sent.ok };\n\
+             }\n\
+             finish Closed as (closed: D::Pump) { true };\n\
+             }",
+            &["Readings"],
+        ),
+        PLANT,
+    );
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            match native::admit(proofs, selected, Limits::default()).result() {
+                Ok(_) => panic!("a record value type channel key emitted"),
+                Err(error) => assert_eq!(error, &Error::Invalid(Invalid::Type)),
             }
         },
     );
