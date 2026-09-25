@@ -43,8 +43,10 @@ use crate::{
             MutationCase, MutationInput, MutationManifest, SelectedArtifactLimits,
             SelectedClockInput, SelectedDeclaration, SelectedDependency, SelectedModel,
             SelectedSource, SelectedTemporal, Selection, SelectionV2, MUTATION_MANIFEST_FORMAT,
-            PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_MUTATION_MANIFEST_FILE,
-            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
+            PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_CHECKSUMS_FILE,
+            PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
+            PUBLISHED_V1_ARTIFACT_REFERENCE_FILE, PUBLISHED_V1_CHECKSUMS_FILE,
+            PUBLISHED_V1_OFFER_FILE, PUBLISHED_V1_SELECTION_FILE,
         },
         native, v2, wire as w,
     },
@@ -626,6 +628,14 @@ fn digest_reference(
 /// dependency's exact-byte content.
 fn producer_source_digest() -> ByteDigest {
     ByteDigest::of(PRODUCER_SOURCE)
+}
+
+/// The FR-001 `ByteDigest` of a clock input's exact embedded bytes, as
+/// recorded on its `SelectedClockInput.digest`. Its own tiny function so the
+/// arch-lint canonical-encoder exemption stays pinned to this one hash site
+/// rather than the whole (JSON-producing) `emit_and_read_v2`.
+fn clock_input_digest(clock_bytes: &[u8]) -> String {
+    ByteDigest::of(clock_bytes).to_string()
 }
 
 fn formal(source: Source, document: &str) -> Result<FormalSource, Error> {
@@ -1759,7 +1769,7 @@ fn emit_and_read_v2(
                         "{AUTHORITY}/examples/protocol-handoff/{}",
                         recipe.clock_identity
                     ),
-                    digest: ByteDigest::of(recipe.clock_bytes).to_string(),
+                    digest: clock_input_digest(recipe.clock_bytes),
                     file: recipe.clock_file.into(),
                     configuration: clocks[index].clone(),
                 },
@@ -1959,13 +1969,16 @@ fn write_files(
         &directory.join(&selection.model.source_file),
         selection.model.source.text.as_bytes(),
     )?;
-    write_file(&directory.join("expected.json"), &selected_bytes)?;
     write_file(
-        &directory.join("compiled-protocol.ref.json"),
+        &directory.join(PUBLISHED_V1_SELECTION_FILE),
+        &selected_bytes,
+    )?;
+    write_file(
+        &directory.join(PUBLISHED_V1_ARTIFACT_REFERENCE_FILE),
         &reference_bytes,
     )?;
-    write_file(&directory.join("compiled-protocol.json"), bytes)?;
-    write_checksum_inventory(directory)
+    write_file(&directory.join(PUBLISHED_V1_OFFER_FILE), bytes)?;
+    write_checksum_inventory(directory, PUBLISHED_V1_CHECKSUMS_FILE)
 }
 
 fn collect_handoff_files(
@@ -1992,7 +2005,7 @@ fn collect_handoff_files(
     Ok(())
 }
 
-fn write_checksum_inventory(directory: &Path) -> Result<(), Error> {
+fn write_checksum_inventory(directory: &Path, checksums_file: &str) -> Result<(), Error> {
     let mut files = BTreeSet::new();
     collect_handoff_files(directory, directory, &mut files)?;
     let mut sums = String::new();
@@ -2008,7 +2021,7 @@ fn write_checksum_inventory(directory: &Path) -> Result<(), Error> {
         )
         .map_err(|error| Error::HandoffPath(error.to_string()))?;
     }
-    write_file(&directory.join("SHA256SUMS"), sums.as_bytes())
+    write_file(&directory.join(checksums_file), sums.as_bytes())
 }
 
 fn write_files_v2(
@@ -2056,7 +2069,7 @@ fn write_files_v2(
         &reference_bytes,
     )?;
     write_file(&directory.join(PUBLISHED_OFFER_FILE), bytes)?;
-    write_checksum_inventory(directory)
+    write_checksum_inventory(directory, PUBLISHED_CHECKSUMS_FILE)
 }
 
 fn mutation_fixtures(

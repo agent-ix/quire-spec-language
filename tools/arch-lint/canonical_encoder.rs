@@ -232,18 +232,29 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         functions: &[
             "reference",
             "producer_source_digest",
+            "clock_input_digest",
             "DefinitionInputs::new",
-            "compile_with",
-            "emit_and_read",
-            "emit_and_read_v2",
             "write_checksum_inventory",
         ],
         calls: &[],
         kind: ExemptionKind::NotAnIdentity,
         reason: "QSL-251: the handoff writer's FR-001 `ByteDigest`s of exact bytes it has \
                  emitted or embedded (offer, mutation offers, sources, clock inputs, rule \
-                 placeholders, its own source, `SHA256SUMS` members), and its calls into \
-                 the binding and admission stages; not an identity over a canonical form",
+                 placeholders, its own source, `SHA256SUMS` members); not an identity over a \
+                 canonical form",
+    },
+    Exemption {
+        crate_src: "src",
+        module: "protocol_artifact::handoff::writer",
+        functions: &["compile_with", "emit_and_read"],
+        calls: &["bind", "admit"],
+        kind: ExemptionKind::NotAnIdentity,
+        reason: "QSL-251: these two functions name no `serde_json` themselves; their only \
+                 hash sites are their calls into `linking::composed::binding::bind` and \
+                 `protocol_artifact::native::admit`, which hash the admission evidence they \
+                 construct, not a canonical form of it. Pinned to those two calls so this \
+                 exemption cannot silently widen if either function grows a local hash or a \
+                 JSON call of its own.",
     },
     Exemption {
         crate_src: "src",

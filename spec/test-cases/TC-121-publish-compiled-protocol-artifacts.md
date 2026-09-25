@@ -318,8 +318,9 @@ observations belong only to the later consumer fixture.
 
 15. Behind the `handoff-writer` feature, call
     `protocol_artifact::handoff::write_v1` twice, each time into a fresh
-    temporary directory, from a downstream-style test that does not build this
-    crate's examples or dev-dependencies. Confirm the two written trees are
+    temporary directory, from a test that calls only that public function --
+    exactly as a downstream crate would, never an example, a private helper or
+    a dev-dependency-only type. Confirm the two written trees are
     byte-identical, that every file `SHA256SUMS` lists is present with the
     matching digest, that the written `expected.json` selection's artifact
     reference and digest match the written offer and reference files, and that
@@ -327,7 +328,14 @@ observations belong only to the later consumer fixture.
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001)) admits the
     written offer against that written selection with no other input. Call
     `write_v1` a third time into an already-existing directory and require
-    refusal, and confirm that directory's contents are unchanged.
+    refusal, and confirm that directory's contents, including a sentinel file
+    already there, are unchanged.
+    Separately, `make ci`'s `ci-clean-build` target runs
+    `cargo check -p quire-spec-language --lib --no-default-features --features
+    handoff-writer`: the acceptance this step's test cannot demonstrate by
+    itself, because a test in this crate's own `tests/` always builds inside
+    its dev-dependency closure. That `cargo check` line is what actually
+    resolves `write_v1`'s dependency graph with no dev-dependency in it.
 
 ## Expected Results
 

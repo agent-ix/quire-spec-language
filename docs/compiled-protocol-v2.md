@@ -209,7 +209,7 @@ original clock-input files. The historical `/1` recipe and bytes are unchanged.
 Build and run it into a new directory:
 
 ```console
-CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --example native_protocol_v2_handoff -- /tmp/quire-native-v2-handoff
+CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --features handoff-writer --example native_protocol_v2_handoff -- /tmp/quire-native-v2-handoff
 ```
 
 The producer calls `native::admit_v2` with the real parser/linker/type/proof

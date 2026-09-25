@@ -343,6 +343,72 @@ fn write_v2_handoff_admits_from_its_files_through_the_strict_v2_reader() {
         admitted.package().temporal_bindings.len(),
         expected_temporal.len()
     );
+
+    let manifest: handoff::MutationManifest = serde_json::from_slice(
+        &fs::read(root.join(handoff::PUBLISHED_MUTATION_MANIFEST_FILE))
+            .expect("written mutation manifest"),
+    )
+    .expect("decode the written mutation manifest");
+    assert!(
+        !manifest.cases.is_empty(),
+        "the writer emits a nonempty mutation corpus"
+    );
+    for case in &manifest.cases {
+        match &case.input {
+            handoff::MutationInput::Offer { file, .. } => assert!(
+                root.join(file).is_file(),
+                "{}: mutation offer file {file} exists",
+                case.identity
+            ),
+            handoff::MutationInput::ReplaceOriginal { target, file } => {
+                assert!(
+                    root.join(target).is_file(),
+                    "{}: replacement target {target} exists",
+                    case.identity
+                );
+                assert!(
+                    root.join(file).is_file(),
+                    "{}: replacement file {file} exists",
+                    case.identity
+                );
+            }
+        }
+    }
+
+    // Replay one case's exact bytes against the strict reader and confirm it
+    // refuses with the manifest's own recorded code, rather than trusting the
+    // manifest's claim unverified.
+    let (case, file, mutated_artifact) = manifest
+        .cases
+        .iter()
+        .find_map(|case| match &case.input {
+            handoff::MutationInput::Offer { file, artifact } => Some((case, file, artifact)),
+            handoff::MutationInput::ReplaceOriginal { .. } => None,
+        })
+        .expect("the corpus carries at least one offer-mutation case");
+    let mutated_bytes = fs::read(root.join(file)).expect("written mutation offer bytes");
+    let refusal = loaded
+        .with_expected(|inherited| {
+            v2::read(
+                &mutated_bytes,
+                &v2::Expected {
+                    inherited: artifact::Expected {
+                        artifact: mutated_artifact,
+                        ..inherited
+                    },
+                    temporal: &expected_temporal,
+                },
+                artifact::Limits::default(),
+            )
+        })
+        .into_result()
+        .expect_err("a mutation case must not admit");
+    assert_eq!(
+        refusal.code(),
+        case.expected_refusal_code.as_str(),
+        "{}: replayed refusal code",
+        case.identity
+    );
 }
 
 #[test]
@@ -387,6 +453,8 @@ fn written_producer_identity_is_the_writer_source_digest() {
 #[trace("TC-121", "FR-042-AC-15")]
 fn write_refuses_an_existing_directory() {
     let directory = tempfile::tempdir().expect("temporary directory");
+    let sentinel = directory.path().join("sentinel.txt");
+    fs::write(&sentinel, b"do not touch").expect("write sentinel");
     for write in [handoff::write_v1, handoff::write_v2] {
         let error = write(directory.path()).expect_err("an existing directory is refused");
         assert!(
@@ -396,7 +464,12 @@ fn write_refuses_an_existing_directory() {
     }
     assert_eq!(
         fs::read_dir(directory.path()).expect("read").count(),
-        0,
+        1,
         "a refused write leaves the existing directory untouched"
+    );
+    assert_eq!(
+        fs::read(&sentinel).expect("read sentinel"),
+        b"do not touch",
+        "a refused write does not modify a file already in the existing directory"
     );
 }

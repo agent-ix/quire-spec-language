@@ -433,13 +433,19 @@ One module carrying each criterion's tag:
 | FR-042-AC-15 | `tests/it/handoff_writer.rs` |
 
 FR-042-AC-15 is the public in-process producer QSL-251 asked for: behind the
-`handoff-writer` feature (no dev-dependency), `handoff::write_v1` compiles the
-same authored recipe, reads its own output back through the strict reader used
-above, then writes a complete handoff -- including `dependencies/` bytes --
-to a caller-chosen directory. `tests/it/handoff_writer.rs` calls it exactly as
-a downstream crate would, without building this crate's examples or
-dev-dependencies, and checks determinism, checksum completeness and refusal of
-an existing directory.
+`handoff-writer` feature, `handoff::write_v1` compiles the same authored
+recipe, reads its own output back through the strict reader used above, then
+writes a complete handoff -- including `dependencies/` bytes -- to a
+caller-chosen directory. `tests/it/handoff_writer.rs` calls only that public
+function, exactly as a downstream crate would, and checks determinism,
+checksum completeness and refusal of an existing directory (leaving a sentinel
+file already there untouched). The no-dev-dependency half of the acceptance is
+not, and cannot be, this test's claim: a test under this crate's own `tests/`
+always builds inside its dev-dependency closure. `make ci`'s `ci-clean-build`
+target's `cargo check -p quire-spec-language --lib --no-default-features
+--features handoff-writer` line is the actual check -- it resolves
+`write_v1`/`write_v2`'s dependency graph on the library target alone, with no
+dev-dependency in it (Makefile).
 
 Per-criterion backing comes from those minted criterion targets and not from the
 row status: the `functional-coverage` declaration classifies a row by its
@@ -498,8 +504,13 @@ handoff -- offer, selection, reference, sources, model source, the three clock
 inputs, every dependency's exact bytes, the `mutations/` corpus and manifest,
 and a checksum inventory -- to a caller-chosen directory, in-process, replaying
 every mutation to its expected refusal before writing. `tests/it/handoff_writer.rs`
-covers it beside `write_v1`, checking determinism, checksum completeness,
-strict-reader admission and refusal of an existing directory.
+calls only `write_v2`, beside `write_v1`, checking determinism, checksum
+completeness, strict-reader admission, that every mutation case's referenced
+file(s) exist, a replayed mutation case's refusal code against the strict
+reader, and refusal of an existing directory (leaving a sentinel file already
+there untouched). The same `make ci` `cargo check --lib --no-default-features
+--features handoff-writer` line backs its no-dev-dependency half; see
+FR-042-AC-15 above.
 
 ## Composed evaluation admission and bounds (L3/L4)
 

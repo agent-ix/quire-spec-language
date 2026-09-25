@@ -113,10 +113,12 @@ syn = { version = "=2.0.119", features = ["full", "visit"] }
 [[example]]
 name = "native_protocol_handoff"
 required-features = ["handoff-writer"]
+test = true
 
 [[example]]
 name = "native_protocol_v2_handoff"
 required-features = ["handoff-writer"]
+test = true
 
 [[bin]]
 name = "quire-spec"

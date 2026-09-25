@@ -58,14 +58,24 @@ the corresponding handoff bytes without consulting an environment variable or
 redeclaring a path, filename or format literal in the consumer harness.
 
 Behind the `handoff-writer` feature, call `protocol_artifact::handoff::write_v2`
-twice, each time into a fresh temporary directory, from a downstream-style test
-that does not build this crate's examples or dev-dependencies. Confirm the two
+twice, each time into a fresh temporary directory, from a test that calls only
+that public function -- exactly as a downstream crate would. Confirm the two
 written trees are byte-identical, that every file the written checksum
 inventory lists is present with the matching digest, that each written clock
 input's bytes match its selection entry's digest, and that the strict `/2`
 reader admits the written offer against the written selection with no other
-input. Call `write_v2` a third time into an already-existing directory and
-require refusal, and confirm that directory's contents are unchanged.
+input. Decode the written mutation manifest, confirm every case's referenced
+file(s) exist, and replay one case's exact bytes through the strict `/2`
+reader, requiring the manifest's own recorded refusal code. Call `write_v2` a
+third time into an already-existing directory and require refusal, and confirm
+that directory's contents, including a sentinel file already there, are
+unchanged.
+Separately, `make ci`'s `ci-clean-build` target runs `cargo check -p
+quire-spec-language --lib --no-default-features --features handoff-writer`:
+the no-dev-dependency acceptance this step's test cannot demonstrate by
+itself, because a test in this crate's own `tests/` always builds inside its
+dev-dependency closure. That `cargo check` line is what actually resolves
+`write_v2`'s dependency graph with no dev-dependency in it.
 
 ## Expected Results
 
