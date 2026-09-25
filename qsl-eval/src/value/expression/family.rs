@@ -305,9 +305,14 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
     type Env<'a> = EvaluationEnv<'a>;
     type Key = NodeKey;
 
-    /// FR-062-AC-6: reads only `checked` (a bare identity) and `env`'s
-    /// checked package/object environment -- no CST, token or display
-    /// string. `meter` (the shared kernel meter every family's `evaluate`
+    /// Reads only `checked` (a bare identity) and `env`'s
+    /// checked package/object environment; this hook's own body touches no
+    /// CST, token or display string, though `env.package` is a
+    /// `&CheckedPackage`, which exposes string-shaped accessors this hook
+    /// simply does not call -- so this is a description of what the code
+    /// does today, not a type-level guarantee (FR-062-AC-6's second
+    /// sentence stays unbacked; see FR-062's own Status).
+    /// `meter` (the shared kernel meter every family's `evaluate`
     /// takes) is charged one `ChargePoint::FunctionCall` -- "one checked
     /// function call"'s own documented meaning, matching what this hook is
     /// about to run -- per call, denied into
@@ -397,24 +402,24 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
 }
 
 // FR-062-AC-8/FR-063-AC-6 (ADR-012 §5.1 S4, "each family Cause enum's
-// catalog_code()" seam-probe coverage) is still deferred, though QSL-148
-// gives `Value`'s function-declaration family a real `Cause` at last:
+// catalog_code()" seam-probe coverage) is real now, not deferred. QSL-148
+// gives `Value`'s function-declaration family a real `Cause`:
 // `ValueFunctionFamily::Cause = qsl_semantics::check::CheckRefusal`
 // (`qsl_semantics::check::family`), returned through
 // `qsl_foundation::diagnostic::StageFailure::Refused` when `check` genuinely refuses
 // (an ill-typed or undefined body). `CheckRefusal`'s own `catalog_code()`
 // mapping (`CheckCause::code`/`CheckCause::cause`, `src/check/refusal.rs`)
-// already exists and is exhaustive by construction -- it is `Value`'s
+// already existed and was exhaustive by construction -- it is `Value`'s
 // pre-existing checking-refusal vocabulary, not a new enum authored to fill
-// this associated type. What remains deferred is FR-063's S4 seam probe
-// itself: demonstrating, under `--cfg seam_probe`, that a *newly added*
-// `CheckCause` variant with no `code()`/`cause()` arm fails to compile
-// (`E0004`) the way `FamilyKind::catalog_code_prefix`'s S1 probe already
-// does for a new family. `CheckCause` was not authored under that probe
-// discipline (it predates FR-062's contract entirely), and wiring the S4
-// probe onto it, plus doing the same for whichever of the other five
-// families migrates a real `Cause` next, is QSL-152's remaining scope here
-// -- not "no family has a cause yet," which QSL-148 makes no longer true.
+// this associated type. QSL-152 wires FR-063's S4 seam probe onto it:
+// `CheckCause::code` (`qsl-semantics/src/check/refusal.rs`) carries a
+// `#[cfg(seam_probe)]` variant with no arm, the same shape
+// `FamilyKind::catalog_code_prefix`'s S1 probe already used, and
+// `xtask::seam_probe::checked_in_locations` checks it in as this
+// repository's one S4 location (FR-062-AC-8, TC-161); `CheckCause::cause`
+// carries the probe variant's arm instead. Doing the same for whichever of
+// the other five families migrates a real `Cause` next remains open work,
+// but S4 itself is no longer unimplemented.
 //
 // An earlier version of this file instead kept an uninhabited
 // `DeclarationCause` with a `#[cfg(seam_probe)]` probe variant, on the

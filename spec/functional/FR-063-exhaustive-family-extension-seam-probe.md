@@ -238,37 +238,39 @@ delivered code today (QSL-149, QSL-143, QSL-155):**
   (untagged) is supporting evidence only: it shows `make`'s prerequisite-
   failure mechanism works in general, on a fixture, not that it fires for
   the real `xtask seam-probe` exit code.
-- FR-063-AC-6: unbacked (PR #262 review, coordinator round 3, finding 6;
-  previously misrecorded as backed). It requires at least one checked-in
-  entry for *each of* five categories. QSL-143 lands S2
+- FR-063-AC-6: partly backed (PR #262 review, coordinator round 3, finding
+  6; previously misrecorded as backed, then unbacked). It requires at least
+  one checked-in entry for *each of* five categories. QSL-143 landed S2
   (`Typer::infer_form`, the check seam over `Expression`) and S3
   (`Machine::apply`, the evaluator; `Lowering::lower_node`, the
   identity-lowering pass feeding v2 emission), joining S1
   (`FamilyKind::catalog_code_prefix`) and S6a/S7 (already checked in). S4
-  (each family `Cause` enum's `catalog_code()`) still has no cause-bearing
-  family to demonstrate it (owned by QSL-152); a criterion requiring *every*
-  category cannot be backed while one is still missing, so this stays
-  unbacked until QSL-152 lands it. `checked_in_locations`'s own doc in
-  `xtask/src/seam_probe.rs` records exactly which categories are covered and
-  why the parser's leading-token-kind table (part of S2) is not: it lives in
-  `qsl-forms`, a dependency of every one of the seam probe's four fixed
-  build targets but never itself one of them, so giving it the same
-  no-arm-under-plain-`seam_probe` treatment as a real seam would hide every
-  *other* seam behind it in every probe build. QSL-244 tracks widening the
-  probe to reach this table.
+  (each family `Cause` enum's `catalog_code()`) has now landed too:
+  `CheckCause::code` (`qsl-semantics/src/check/refusal.rs`), QSL-152,
+  FR-062-AC-8. Four of the five named categories are checked in;
+  `checked_in_locations`'s own doc in `xtask/src/seam_probe.rs` records
+  exactly which and why the parser's leading-token-kind table (the other
+  half of the S2 category) is not: it lives in `qsl-forms`, a dependency of
+  every one of the seam probe's four fixed build targets but never itself
+  one of them, so giving it the same no-arm-under-plain-`seam_probe`
+  treatment as a real seam would hide every *other* seam behind it in every
+  probe build. A criterion requiring *every* category cannot be backed
+  while one is still missing, so this stays partly backed until QSL-244
+  widens the probe to reach that table.
 - FR-063-AC-7: backed by three tests (`TC-161`, `xtask/src/seam_probe.rs`):
   `checked_in_seam_functions_deny_the_wildcard_lint` (walks every
   `checked_in_locations()` entry in the real tree with `syn` and asserts
   each carries `#[deny(clippy::wildcard_enum_match_arm)]` or
   `#[deny(clippy::match_wildcard_for_single_variants)]` -- the test that
   actually backs this AC), `closed_enums_carry_no_non_exhaustive_attribute`
-  (`FamilyKind`, `Expression`, `NodeKind` and `WrongSnapshotCause` each
-  inspected for the attribute's absence), and
+  (`FamilyKind`, `Expression`, `NodeKind`, `WrongSnapshotCause` and
+  `CheckCause` each inspected for the attribute's absence), and
   `a_reintroduced_wildcard_arm_trips_the_clippy_lint` (untagged supporting
   evidence only: a fixture crate that enables the lint itself, showing the
   lint's mechanism works, not that it is enabled at the real checked-in
   locations).
 
 Six of this requirement's seven Acceptance Criteria are backed by a
-dedicated, trace-tagged test today; AC-6 stays unbacked until QSL-152 lands
-the S4 category.
+dedicated, trace-tagged test today; AC-6 is partly backed -- four of its
+five named categories are checked in, and it stays partly backed until
+QSL-244 widens the probe to reach the parser's leading-token-kind table.

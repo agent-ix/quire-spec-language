@@ -11,7 +11,8 @@ use qsl_forms::{
     BinaryOperator, BuiltinType, DeclarationSpans, Expression, ExpressionSpans,
     FunctionDeclaration, TypeForm,
 };
-use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
 use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
 use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
 use qsl_semantics::value::declaration::{
@@ -20,7 +21,8 @@ use qsl_semantics::value::declaration::{
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
 use quire_contract_ir::{CheckedArtifactLocator, CheckedPackageEvidence};
 use quire_exact::{
-    CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, ValueType, NODE_KEY_DOMAIN,
+    CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
+    NODE_KEY_DOMAIN,
 };
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
@@ -1280,6 +1282,205 @@ fn emit_checked_places_occurrences_at_the_form_spans() {
         emit_checked(&package(vec![t()])),
         Err(EmitRefusal::UnlocatedOccurrence { .. })
     ));
+}
+
+/// A unit whose function `f` calls another, `g` -- FR-065-AC-3's own
+/// scenario: a call's own source occurrence, not a declaration's.
+const CALL_TEXT: &[u8] =
+    b"function g using v(): Boolean pure { true }\nfunction f using v(): Boolean pure { g() }\n";
+
+/// The unique "g()" span in [`CALL_TEXT`].
+fn call_span() -> qsl_foundation::Span {
+    let text = std::str::from_utf8(CALL_TEXT).unwrap();
+    let start = text.rfind("g()").expect("the call is in the fixture");
+    qsl_foundation::Span {
+        start,
+        end: start + "g()".len(),
+    }
+}
+
+/// `f`'s own declaration span in [`CALL_TEXT`]: from `function f` to the
+/// unit's end.
+fn f_declaration_span() -> qsl_foundation::Span {
+    let text = std::str::from_utf8(CALL_TEXT).unwrap();
+    let start = text
+        .rfind("function f")
+        .expect("f's declaration is in the fixture");
+    qsl_foundation::Span {
+        start,
+        end: text.len(),
+    }
+}
+
+/// `g`, with real spans: every occurrence `emit_checked` walks must resolve
+/// a region (`emit_checked_places_occurrences_at_the_form_spans`'s own
+/// "a package whose form carries no spans has no region to place" case,
+/// above), so `g` needs its own spans just as much as `f` does, even though
+/// this test's assertions are all about `f`'s call.
+fn g_with_spans() -> FunctionDeclaration {
+    let text = std::str::from_utf8(CALL_TEXT).unwrap();
+    let declaration_end = text
+        .find("function f")
+        .expect("f's declaration is in the fixture");
+    let body_start = text.find("true").expect("g's body is in the fixture");
+    let body = qsl_foundation::Span {
+        start: body_start,
+        end: body_start + "true".len(),
+    };
+    function("g", &[], Expression::Boolean(true))
+        .with_spans(DeclarationSpans {
+            declaration: qsl_foundation::Span {
+                start: 0,
+                end: declaration_end,
+            },
+            body: ExpressionSpans::new(body).expect("g's body span admits a root"),
+            measure: None,
+        })
+        .expect("g's body is its own root, with no children")
+}
+
+/// `g` (`true`) and `f` (`g()`), with `f`'s call span set to `call` -- the
+/// unit's own "g()" text for the real fixture, or a one-byte-wider
+/// corruption of it for the alternate-package control.
+fn f_calls_g(call: qsl_foundation::Span) -> (FunctionDeclaration, FunctionDeclaration) {
+    let g = g_with_spans();
+    let spans = DeclarationSpans {
+        declaration: f_declaration_span(),
+        body: ExpressionSpans::new(call).expect("a call span admits a root"),
+        measure: None,
+    };
+    let f = FunctionDeclaration::new(
+        "f",
+        Vec::new(),
+        boolean(),
+        None,
+        Expression::Call {
+            name: "g".to_owned(),
+            arguments: Vec::new(),
+        },
+    )
+    .with_spans(spans)
+    .expect("the call is the body's own root, with no children");
+    (g, f)
+}
+
+/// `g`/`f`'s own source, distinct from [`source`]'s [`TEXT`] fixture.
+fn call_source() -> RawSourceRef {
+    qsl_semantics::check::admitted_source(
+        qsl_foundation::SourceIdentity::new("a", "call-occurrence", "git", "1"),
+        CALL_TEXT,
+    )
+}
+
+/// `functions`, checked (not yet linked) against [`call_source`].
+fn checked_call_package(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
+    PackageDeclarations {
+        functions,
+        ..PackageDeclarations::new(call_source())
+    }
+    .check(CheckingLimits::default())
+    .expect("g and f check cleanly")
+}
+
+/// The call node's own key and (identity, role, ordinal) occurrence,
+/// resolved against `checked`.
+fn call_identity_and_location(
+    checked: &qsl_semantics::check::CheckedGraph,
+) -> (NodeKey, Origin, Location) {
+    let identity = checked
+        .semantic_graph()
+        .nodes()
+        .find(|node| node.semantic_form() == "call")
+        .map(|node| node.key())
+        .expect("the call node was lowered");
+    let origin = Origin::new(Role::new("expression"), 0);
+    let location = checked
+        .occurrence(identity, &origin)
+        .expect("check records the call's own occurrence")
+        .clone();
+    (identity, origin, location)
+}
+
+/// FR-065-AC-3 (QSL-154): the call's own source occurrence resolves to the
+/// same byte span through a real `quire.checked-package/v2` emit/decode
+/// round trip -- the leg `qsl-eval`'s minimal `quire.checked-function-
+/// package/v2` encoding (`emit_function_package_v2`) cannot exercise, since
+/// that encoding carries no source map at all (only a declared function's
+/// own name and identity). `emit_checked`'s real source map does, so this
+/// is where FR-065-AC-3's v2 checkpoint actually lives.
+#[trace("FR-065-AC-3", "TC-163")]
+#[test]
+fn emit_checked_places_the_calls_occurrence_at_its_own_source_span() {
+    let call = call_span();
+    let (g, f) = f_calls_g(call);
+    let checked = checked_call_package(vec![g, f]);
+    let (identity, origin, location) = call_identity_and_location(&checked);
+    let pre_link = checked
+        .region(&location)
+        .expect("the call's region resolves before linking");
+    assert_eq!(
+        qsl_foundation::Span {
+            start: usize::try_from(pre_link.start()).unwrap(),
+            end: usize::try_from(pre_link.end()).unwrap(),
+        },
+        call,
+        "the resolved region must be the call's own source span"
+    );
+
+    let linked = CheckedPackage::link(checked);
+    let after_linking = linked
+        .graph()
+        .region(&location)
+        .expect("the call's region resolves after S4 linking");
+    assert_eq!(
+        after_linking, pre_link,
+        "S4 linking must not move or drop the call's own source region"
+    );
+    let emission = emit_checked(&linked).expect("g and f emit");
+    let outcome = read_back(&emission);
+    let Read::Verified { source_map, .. } = outcome else {
+        panic!("expected Verified, got {outcome:?}");
+    };
+    let key = OccurrenceKey::new(
+        WireNodeId::from_digest(*identity.as_bytes()),
+        origin.clone(),
+    );
+    let regions = source_map
+        .regions(&key)
+        .expect("the decoded source map carries the call's own occurrence");
+    assert_eq!(
+        regions.len(),
+        1,
+        "the call has exactly one recorded occurrence"
+    );
+    assert_eq!(
+        regions[0], pre_link,
+        "the call's region must survive a real v2 emit/decode round trip unchanged"
+    );
+
+    // A hand-built alternate package whose `DeclarationSpans` is one byte
+    // wider, fed through the same real `check` -> `region()` pipeline as
+    // the fixture above.
+    let corrupted_call = qsl_foundation::Span {
+        start: call.start,
+        end: call.end + 1,
+    };
+    let (alternate_g, alternate_f) = f_calls_g(corrupted_call);
+    let alternate = checked_call_package(vec![alternate_g, alternate_f]);
+    let (alternate_identity, alternate_origin, alternate_location) =
+        call_identity_and_location(&alternate);
+    let alternate_region = alternate
+        .region(&alternate_location)
+        .expect("the corrupted alternate's call region resolves");
+    assert_ne!(
+        alternate_region, pre_link,
+        "a one-byte-wider span must resolve to a genuinely different region"
+    );
+    // Sanity: the corrupted alternate still records the call under the same
+    // (identity, role, ordinal) key -- content, not the occurrence key
+    // shape, is what differs.
+    assert_eq!(alternate_identity, identity);
+    assert_eq!(alternate_origin, origin);
 }
 
 /// A unit whose function takes and returns bounded integers.

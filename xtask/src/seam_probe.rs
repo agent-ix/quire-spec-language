@@ -6,9 +6,9 @@
 //! (non-exhaustive match) locations rustc reports against a checked-in
 //! list, exactly as FR-063 requires.
 //!
-//! **Scope: S1, S2, S3 (partial), one S4-shaped (not S4 proper) location,
-//! and S7 (PR #262 review, finding F7; PR #305 review, finding 6; QSL-143;
-//! PR #434 review, LOW-4).** FR-063-AC-6 names five categories: S1's
+//! **Scope: S1, S2, S3 (partial), S4 (one S4-shaped location plus, now,
+//! S4 proper, QSL-152), and S7 (PR #262 review, finding F7; PR #305 review,
+//! finding 6; QSL-143; PR #434 review, LOW-4).** FR-063-AC-6 names five categories: S1's
 //! stage-participation table and prefix arm, S2, S3, S4. S1 originally
 //! had two checked-in `match`es over `FamilyKind` in `src/family/mod.rs` --
 //! `catalog_code_prefix`'s prefix arm and `stage_hooks`'s
@@ -37,8 +37,9 @@
 //! pass feeding v2 emission) -- see [`checked_in_locations`]'s own doc for
 //! why the parser's leading-token-kind table itself (`qsl-forms::dispatch::
 //! dispatch`) stays out of this list. S4 (each family `Cause` enum's
-//! `catalog_code()`) has no cause-bearing family to demonstrate it yet --
-//! see `crate::family::outcome`'s own doc in the QSL crate.
+//! `catalog_code()`) now has one demonstration, `CheckCause::code`
+//! (FR-062-AC-8, TC-161, QSL-152) -- see that entry in
+//! [`checked_in_locations`]'s own doc below.
 //!
 //! **S7 (QSL-46/#185, ADR-012 §5.1's row: "requirement derivation per
 //! family; registry advertisement check; CG `negotiate_*` capability arm").**
@@ -169,17 +170,29 @@ pub struct SeamLocation {
 /// *one* checked-in entry per category, and `Typer::infer_form` already
 /// supplies S2's.
 ///
-/// S4 proper (each family's `FamilyContract`-associated `Cause` enum's
-/// `catalog_code()`) still has no cause-bearing family to demonstrate it
-/// (`crate::family::outcome`'s own doc, QSL-152); the S4-*shaped*
-/// `WrongSnapshotCause` location above is FR-090's own cause, not a family
-/// `Cause`, so it does not stand in for this category (see the note above
-/// `checked_in_locations`'s `ProtocolClauseSnapshot::catalog_code` entry).
+/// **S4 proper (FR-062-AC-8, TC-161, QSL-152):**
+/// `qsl-semantics/src/check/refusal.rs`'s `CheckCause::code`, the one family
+/// `Cause` enum's `catalog_code()`-shaped mapping S4 names, now that
+/// `Value`'s function family has a real cause (`CheckCause`, QSL-148) to
+/// demonstrate the seam over. `CheckCause`'s `#[cfg(seam_probe)]` variant
+/// has an arm only in `CheckCause::cause` (this list's own sibling
+/// function, and a `seam_probe_downstream` arm in `code`), the same
+/// "arm everywhere but the one checked-in seam" shape
+/// `WrongSnapshotCause` and `FamilyKind` already use above. The S4-*shaped*
+/// `WrongSnapshotCause` location above is FR-090's own ad hoc cause, not a
+/// family's `FamilyContract`-associated one, so it never stood in for this
+/// category (see the note above `checked_in_locations`'s
+/// `ProtocolClauseSnapshot::catalog_code` entry) -- `CheckCause::code` is
+/// what actually closes it.
 pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
     [
         SeamLocation {
             file: "qsl-semantics/src/family/mod.rs".to_owned(),
             item: "FamilyKind::catalog_code_prefix".to_owned(),
+        },
+        SeamLocation {
+            file: "qsl-semantics/src/check/refusal.rs".to_owned(),
+            item: "CheckCause::code".to_owned(),
         },
         SeamLocation {
             file: "src/linking/composed/requests.rs".to_owned(),
@@ -537,9 +550,8 @@ pub fn run(workspace_root: &Path) -> Result<String> {
     Ok(format!(
         "seam-probe: {} checked-in locations confirmed under RUSTFLAGS=--cfg seam_probe \
          (qsl-semantics, then quire-spec-language, qsl-route and qsl-eval); normal builds have none: \
-         {locations}. The parser's leading-token-kind table (S2, QSL-244) and S4 proper (no \
-         cause-bearing family yet, QSL-152) are not covered by this checked-in list -- see \
-         `checked_in_locations`'s own doc.\n",
+         {locations}. The parser's leading-token-kind table (S2, QSL-244) is not covered by this \
+         checked-in list -- see `checked_in_locations`'s own doc.\n",
         checked_in.len()
     ))
 }
@@ -611,6 +623,18 @@ mod tests {
                 visitor.found
             );
         }
+    }
+
+    /// FR-062-AC-8 (QSL-152): the checked-in list actually names
+    /// `CheckCause::code` as the S4 seam location -- not just a doc claim
+    /// above.
+    #[ix_trace_rs::trace("TC-161", "FR-062-AC-8")]
+    #[test]
+    fn checked_in_locations_contains_check_causes_code() {
+        assert!(checked_in_locations().contains(&SeamLocation {
+            file: "qsl-semantics/src/check/refusal.rs".to_owned(),
+            item: "CheckCause::code".to_owned(),
+        }));
     }
 
     /// F14: the checked-in key is the enclosing item, not a line number --
@@ -1010,13 +1034,10 @@ mod tests {
     }
 
     /// FR-063-AC-7 (second test): none of `FamilyKind`, the parsed form
-    /// enum (`Expression`), the checked node enum (`NodeKind`) or a family
-    /// `Cause` enum carries `#[non_exhaustive]`. `WrongSnapshotCause`
-    /// (`ProtocolClauseSnapshot`'s own cause, already a checked-in S4-shaped
-    /// location above) is the one cause-bearing type this repository has
-    /// today; no migrated family yet has its own top-level `Cause` (this
-    /// module's own doc, and `crate::family::outcome`'s), so there is no
-    /// other family `Cause` enum to check yet.
+    /// enum (`Expression`), the checked node enum (`NodeKind`), `Value`'s
+    /// function family's own `Cause` (`CheckCause`, QSL-152) or
+    /// `WrongSnapshotCause` (`ProtocolClauseSnapshot`'s own S4-shaped, not
+    /// family-`Cause`, cause) carries `#[non_exhaustive]`.
     #[ix_trace_rs::trace("TC-161", "FR-063-AC-7")]
     #[test]
     fn closed_enums_carry_no_non_exhaustive_attribute() {
@@ -1028,6 +1049,7 @@ mod tests {
             ("qsl-forms/src/syntax.rs", "Expression"),
             ("qsl-semantics/src/check/ir.rs", "NodeKind"),
             ("qsl-semantics/src/check/refusal.rs", "WrongSnapshotCause"),
+            ("qsl-semantics/src/check/refusal.rs", "CheckCause"),
         ] {
             assert_enum_is_not_non_exhaustive(workspace_root, file, name);
         }

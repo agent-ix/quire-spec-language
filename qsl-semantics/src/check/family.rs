@@ -2043,37 +2043,66 @@ pub(crate) mod checking_tests {
         assert_eq!(diagnostics.entries().len(), 0);
     }
 
-    /// Two independently constructed contexts each observe exactly one
-    /// diagnostic from checking the same form -- if `check` wrote through
-    /// any shared/global state instead of `cx.diagnostics`, one of the two
-    /// independent sinks would show zero or more than one entry (PR #262
-    /// review, finding F6: the previous version of this test compared
-    /// `diagnostics_a`'s count against an unrelated, freshly constructed
-    /// `DiagnosticSink::default()` rather than against `diagnostics_b`, so
-    /// it never actually observed `cx_b`'s own state, and separately
-    /// asserted a pure function's output against itself by comparing
-    /// `staged_a.value` to `staged_b.value` -- both deleted).
+    /// FR-062-AC-3's central clause (QSL-161): two independently
+    /// constructed typing contexts, checking the same form, produce
+    /// *identical checked output* -- not merely "each observes one
+    /// diagnostic" (this test's own isolation half, kept below).
     ///
-    /// **Untagged (PR #262 review, coordinator round 3, finding 5).** This
-    /// test was tagged `FR-062-AC-3`, whose central clause is that two
-    /// typing contexts checking the same declarations produce *identical
-    /// checked output* -- F6 correctly deleted the `staged_a.value ==
-    /// staged_b.value` self-comparison that used to (fabricatedly) stand in
-    /// for that, but kept the tag on what remained: two counts, each
-    /// asserted only against the literal `1` the loop below guarantees by
-    /// construction, not against each other's checked output. That is a
-    /// real isolation test, not an identical-output test, so it is untagged
-    /// rather than left claiming to back a criterion it does not; see
-    /// FR-062's own amended Acceptance Criteria for AC-3's current status.
+    /// **Rebuilt (QSL-161).** PR #262 review F6 deleted this test's earlier
+    /// `staged_a.value == staged_b.value` assertion as a self-comparison
+    /// (both sides came from the same deterministic call, so nothing could
+    /// make it fail) and left the tag on what remained -- two diagnostic
+    /// counts, each compared only to the literal `1` the loop already
+    /// guarantees by construction. Comparing `CheckedDeclaration` by `==`
+    /// is not available: its checked `Node` tree deliberately carries no
+    /// `PartialEq` (`ir.rs`'s own doc on `Node`'s privacy), and adding one
+    /// across the whole IR is a change no ticket here owns. This repo's own
+    /// established substitute for exactly this situation --
+    /// `qsl-eval/tests/it/collection_algebra.rs` and
+    /// `collection_queries.rs` both compare `format!("{:?}", ..)` of two
+    /// computed values where no `PartialEq` exists -- applies the same way
+    /// here: `CheckedDeclaration` and `StageFailure<CheckRefusal>` both
+    /// derive `Debug`, and two independently constructed, differently
+    /// shaped contexts producing the same `Debug` text is a real assertion
+    /// a divergent implementation could fail.
+    ///
+    /// **Not a self-comparison this time.** Context `b` is seeded with
+    /// `unrelated` ahead of `helper` in `signatures_b` (not the plain
+    /// `helper`-only set in `a`) -- an extra declaration `f`'s body never
+    /// calls, placed so it also shifts `helper`'s own position in `b`'s
+    /// signature table. If `check` leaked *any* shared state (a global
+    /// cache keyed by declaration count or position, rather than reading
+    /// only `cx`), the two outputs would diverge in some way this
+    /// normalization does not account for; if it does not, they match
+    /// exactly once each context's own legitimate, positional `function`/
+    /// `callee` index is normalized to a name (see `normalize`, below) --
+    /// `Signatures::callable`'s own doc records that this index is
+    /// "index-aligned with the package's functions," so an extra
+    /// declaration ahead of `helper` in `b`'s table is expected to change
+    /// it there, without that being the state leak this test looks for.
+    /// `f` itself takes a parameter and calls `helper` with it, rather
+    /// than a bare literal, so there is a real call to check identically
+    /// in both contexts, not just a trivial body neither context can
+    /// diverge on.
+    #[trace("TC-160", "FR-062-AC-3")]
     #[test]
     fn two_contexts_from_the_same_declarations_check_identically() {
         let scalar_limits = SCALAR_LIMITS_UNLIMITED;
-        let form = declaration("f", Expression::Boolean(true));
-        let own_signature = declaration_signature("f");
+        let form = FunctionDeclaration::new(
+            "f",
+            vec![("p0".to_owned(), boolean_type_form())],
+            boolean_type_form(),
+            None,
+            Expression::Call {
+                name: "helper".to_owned(),
+                arguments: vec![Expression::Name("p0".to_owned())],
+            },
+        );
+        let own_signature = boolean_signature("f", 1);
 
         let scope_a = empty_scope();
         let location_a = root_location();
-        let signatures_a = Signatures::default();
+        let signatures_a = Signatures::from(vec![boolean_signature("helper", 1)]);
         let declarations_a = declarations_for(
             &scope_a,
             &signatures_a,
@@ -2092,11 +2121,23 @@ pub(crate) mod checking_tests {
             &mut diagnostics_a,
             &mut scopes_a,
         );
-        ValueFunctionFamily::check(&form, &mut cx_a).unwrap();
+        let outcome_a = ValueFunctionFamily::check(&form, &mut cx_a);
+        assert!(
+            outcome_a.is_ok(),
+            "the fixture must check successfully in context a: {outcome_a:?}"
+        );
 
         let scope_b = empty_scope();
         let location_b = root_location();
-        let signatures_b = Signatures::default();
+        // `helper`, which `f`'s body actually calls, plus an extra
+        // declaration `f`'s body never calls -- so a correct
+        // implementation's output is unaffected, but a leaky one (reading
+        // declaration count or position from somewhere other than `cx`)
+        // would not be.
+        let signatures_b = Signatures::from(vec![
+            boolean_signature("unrelated", 0),
+            boolean_signature("helper", 1),
+        ]);
         let declarations_b = declarations_for(
             &scope_b,
             &signatures_b,
@@ -2115,7 +2156,40 @@ pub(crate) mod checking_tests {
             &mut diagnostics_b,
             &mut scopes_b,
         );
-        ValueFunctionFamily::check(&form, &mut cx_b).unwrap();
+        let outcome_b = ValueFunctionFamily::check(&form, &mut cx_b);
+        assert!(
+            outcome_b.is_ok(),
+            "the fixture must check successfully in context b too: {outcome_b:?}"
+        );
+
+        // `helper`'s own index differs between `a` and `b` (0 and 1) purely
+        // because `b`'s table lists `unrelated` first -- a legitimate,
+        // positional property of `Signatures::callable` (its own doc: "index-
+        // aligned with the package's functions"), not a state leak. Replace
+        // each context's own index, wherever a `NodeKind::Call` or
+        // `CallSite` embeds it, with a shared placeholder before comparing,
+        // so this assertion is still sensitive to a real leak (anything else
+        // that diverges) without failing on this expected difference.
+        let index_a = signatures_a
+            .callable("helper")
+            .expect("helper is declared in signatures_a")
+            .0;
+        let index_b = signatures_b
+            .callable("helper")
+            .expect("helper is declared in signatures_b")
+            .0;
+        let normalize = |outcome: &str, index: usize| {
+            outcome
+                .replace(&format!("function: {index}"), "function: HELPER")
+                .replace(&format!("callee: {index}"), "callee: HELPER")
+        };
+        assert_eq!(
+            normalize(&format!("{outcome_a:?}"), index_a),
+            normalize(&format!("{outcome_b:?}"), index_b),
+            "two independently constructed typing contexts checking the same \
+             form must produce identical checked output, once each one's own \
+             legitimate signature-table position is normalized away"
+        );
 
         // Each independently constructed sink shows exactly its own one
         // entry -- a shared/global sink would leak entries into whichever

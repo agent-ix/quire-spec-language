@@ -146,6 +146,56 @@ impl CheckedPackage {
     /// no #213 slice before S-3a gives the checker an import syntax to
     /// populate it from. M-4 adds the dependency-bearing step
     /// (`pub(crate)`, with verification) when it lands.
+    ///
+    /// TC-163 (FR-065-AC-1, QSL-154): the function packaging/lowering
+    /// public API accepts only a checked node -- built solely through the
+    /// `crate::family::FamilyContract::check` hook and carried this far as
+    /// a `CheckedGraph` -- never a raw S1 CST node or a raw source string
+    /// it would have to derive function semantics from itself. Neither
+    /// converts into `CheckedPackage`:
+    /// ```compile_fail,E0277
+    /// use qsl_package::CheckedPackage;
+    /// fn forge(cst: qsl_cst::ParsedSource) -> CheckedPackage {
+    ///     cst.into()
+    /// }
+    /// ```
+    /// ```compile_fail,E0277
+    /// use qsl_package::CheckedPackage;
+    /// fn forge(source: String) -> CheckedPackage {
+    ///     source.into()
+    /// }
+    /// ```
+    /// The same restriction stated the other way: `link` itself takes no
+    /// type but `CheckedGraph`, so calling it directly with a raw CST node
+    /// or a raw source string also fails to compile, not only the `.into()`
+    /// spelling above.
+    /// ```compile_fail,E0308
+    /// use qsl_package::CheckedPackage;
+    /// fn forge(cst: qsl_cst::ParsedSource) -> CheckedPackage {
+    ///     CheckedPackage::link(cst)
+    /// }
+    /// ```
+    /// ```compile_fail,E0308
+    /// use qsl_package::CheckedPackage;
+    /// fn forge(source: String) -> CheckedPackage {
+    ///     CheckedPackage::link(source)
+    /// }
+    /// ```
+    /// Their shared pair (this file's own doc, above, states why every
+    /// `compile_fail` block here is paired): a real checked node, run
+    /// through `check` and linked, does compile and succeed.
+    /// ```no_run
+    /// use qsl_package::CheckedPackage;
+    /// use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+    /// fn build(
+    ///     source: qsl_foundation::source::provenance::RawSourceRef,
+    /// ) -> CheckedPackage {
+    ///     let graph = PackageDeclarations::new(source)
+    ///         .check(CheckingLimits::default())
+    ///         .expect("an empty package checks cleanly");
+    ///     CheckedPackage::link(graph)
+    /// }
+    /// ```
     pub fn link(graph: CheckedGraph) -> Self {
         Self {
             graph,

@@ -303,8 +303,16 @@ declaration is checked.
 
 By Acceptance Criterion, with real trace tags as they exist in the
 delivered code today:
-- FR-065-AC-1: unbacked. No `#[trace(..., "FR-065-AC-1")]` tag exists.
-  Owner: QSL-154.
+- FR-065-AC-1: backed (`TC-163`, QSL-154). The function packaging/lowering
+  public API's sole checked-node entry, `CheckedPackage::link`, accepts
+  only a `CheckedGraph` -- built solely through the contract's `check`
+  hook -- and four `compile_fail` doctests on `CheckedPackage::link`
+  (`qsl-package/src/checked.rs`), sharing one `no_run` pair, demonstrate a
+  raw CST node (`qsl_cst::ParsedSource`) and a raw source string (`String`)
+  both fail to compile against it: once through `.into()` (`E0277`, no
+  `Into<CheckedPackage>`), and again passed directly to `CheckedPackage::
+  link` itself (`E0308`, the wrong argument type), while a real checked
+  node built through `check` and linked compiles and succeeds.
 - FR-065-AC-2: backed (`TC-163`): `identity_survives_v2_round_trip`
   (`qsl-eval/src/value/expression/family.rs`) and
   `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
@@ -323,11 +331,18 @@ delivered code today:
   callers to `CheckedPackage::occurrence`, `emit_function_package_v2` and
   `decode_function_package_v2` (PR #262 review, coordinator round 3,
   finding 3).
-- FR-065-AC-3: unbacked. No `#[trace(..., "FR-065-AC-3")]` tag exists
-  anywhere in the crate (the one test that exercised it,
-  `occurrence_span_survives_link_and_a_corrupted_alternate_differs`, was
-  deleted as self-corrupting in the PR #262 review round, finding F6, and
-  not replaced). Owner: QSL-154.
+- FR-065-AC-3: backed (`TC-163`, QSL-154):
+  `emit_checked_places_the_calls_occurrence_at_its_own_source_span`
+  (`qsl-package/src/emit/tests.rs`) checks hand-built forms over a real
+  admitted source text whose `f` calls `g`, resolves the call's own region
+  immediately after `check`,
+  again after `CheckedPackage::link`, and again from the decoded
+  `PackageSourceMap` of a real `emit_checked`/`read_checked_package_v2`
+  round trip -- the real `quire.checked-package/v2` source map, which
+  carries a full (identity, role, ordinal) -> region map, unlike `qsl-eval`'s
+  minimal `emit_function_package_v2` (identity only, no source map at all).
+  A hand-built alternate package whose `DeclarationSpans` is genuinely one
+  byte wider resolves to a different region.
 - FR-065-AC-4: backed (`TC-376`). Amended by QSL-148's spec lane to a
   behavioural criterion; the thin-arm rule it used to test by code shape is
   FR-065-CON-3, verified by inspection, per the
@@ -372,10 +387,12 @@ delivered code today:
   key builder in `qsl-semantics/src/check/node_key/` reproduces QSpec's
   operation vectors under the opt-in `make conformance`.
 
-Four of this requirement's eight Acceptance Criteria are backed (AC-2,
-identity/provenance; AC-4, the application check's verdicts; AC-7, the
-contract `check` hook's typing verdict and F1; AC-8, on the A4b branch); the
-other four (AC-1, AC-3, AC-5, AC-6) are unbacked, for the reasons above.
+Six of this requirement's eight Acceptance Criteria are backed (AC-1, the
+packaging API's checked-node-only entry; AC-2, identity/provenance; AC-3,
+occurrence-span survival across check, linking and a v2 round trip; AC-4,
+the application check's verdicts; AC-7, the contract `check` hook's typing
+verdict and F1; AC-8, on the A4b branch); the other two (AC-5, AC-6) are
+unbacked, for the reasons above.
 `TC-164`, `TC-165` and `TC-166` have zero tests each in the delivered code.
 
 ## Open Questions
