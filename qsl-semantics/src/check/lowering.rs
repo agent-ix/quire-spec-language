@@ -3219,6 +3219,21 @@ impl<'a> Lowering<'a> {
                 Keyed::Application(Operator::Pre, plain("quire.op.state.pre")),
                 Operands::One(operand),
             ),
+            // FR-063/S3 seam (QSL-143): no arm for `NodeKind::__SeamProbe`
+            // under `--cfg seam_probe` alone -- this match (already
+            // `#[deny(clippy::wildcard_enum_match_arm)]`, this function's own
+            // attribute above) is deliberately non-exhaustive (`E0004`) in
+            // `xtask seam-probe`'s build of `qsl-semantics`, the seam
+            // probe's evidence for the FR-093 identity-lowering pass that
+            // feeds v2 emission (ADR-012 §5.1 row S3, "v2 emitter"). Do not
+            // add a catch-all to make it compile.
+            //
+            // The arm below exists only in the probe's build of the crates
+            // that depend on this one (`--cfg seam_probe --cfg
+            // seam_probe_downstream`), the same shape `FamilyKind::
+            // catalog_code_prefix`'s own doc explains.
+            #[cfg(seam_probe_downstream)]
+            NodeKind::__SeamProbe => unreachable!("never constructed outside the probe build"),
         };
         self.next_operand(
             Box::new(OperandsFrame {

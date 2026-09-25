@@ -269,6 +269,12 @@ impl DispatchTable {
 
 #[derive(Clone, Debug)]
 /// What a checked [`Node`] computes.
+///
+/// `#[cfg(seam_probe)]` adds one further probe-only variant (ADR-012 §5.1
+/// S3, FR-063, QSL-143): under `--cfg seam_probe`, every closed `match` over
+/// this type below this module's own [`Node::children`] becomes
+/// non-exhaustive (`E0004`) unless it has its own probe arm. Never
+/// constructed outside the probe build.
 pub enum NodeKind {
     /// A literal value.
     Literal(Value),
@@ -485,6 +491,11 @@ pub enum NodeKind {
     /// underneath it reading the invocation pre population. Identity-typed:
     /// this node's `value_type` is always exactly its operand's.
     Pre(Box<Node>),
+    /// FR-063/S3 (QSL-143): exists only so `--cfg seam_probe` makes every
+    /// match over `NodeKind` outside this module non-exhaustive. Never
+    /// constructed outside the probe build.
+    #[cfg(seam_probe)]
+    __SeamProbe,
 }
 
 impl Node {
@@ -564,6 +575,11 @@ impl Node {
                 children.extend(arguments);
                 children
             }
+            // Not the S3 seam (`Machine::apply`'s own doc, `qsl-eval`): this
+            // is `NodeKind`'s own module, so its match gets an unconditional
+            // probe arm rather than being left to break.
+            #[cfg(seam_probe)]
+            NodeKind::__SeamProbe => unreachable!("never constructed outside the probe build"),
         }
     }
 

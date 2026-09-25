@@ -559,6 +559,12 @@ fn encode_expression(
                 out.write_str("pre");
                 pending.push(operand);
             }
+            // Not the S2 seam (`Typer::infer_form`'s own doc,
+            // `qsl-semantics/src/check/check/typing.rs`): an unconditional
+            // probe arm so this match keeps compiling under `--cfg
+            // seam_probe`.
+            #[cfg(seam_probe)]
+            Expression::__SeamProbe => unreachable!("never constructed outside the probe build"),
         }
         pending[first..].reverse();
     }

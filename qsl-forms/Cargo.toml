@@ -34,6 +34,14 @@ path = "tests/it/main.rs"
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+# FR-063/QSL-143: `seam_probe` is the `RUSTFLAGS`-set `--cfg` `xtask
+# seam-probe` builds this crate under (as a dependency of `qsl-semantics` and
+# every crate above it): it adds `Expression::__SeamProbe`, a probe-only
+# variant this crate's own `Expression::children`/`detach_children`/
+# `is_childless` each carry an unconditional arm for, so this crate keeps
+# compiling under the probe (the real S2 seam it exists to demonstrate is
+# `qsl-semantics`' `Typer::infer_form`, above this crate).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)"] }
 
 [lints.clippy]
 all = "deny"

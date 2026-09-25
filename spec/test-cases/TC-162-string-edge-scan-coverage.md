@@ -26,10 +26,26 @@ unmarked, mostly branch-gating occurrences outside `qsl-semantics/src/family/*` 
 `qsl-eval/src/value/expression/*`, which the allow-list cannot admit and which
 #214 does not own converting (see
 [QSL-145](https://linear.app/agent-ix/issue/QSL-145) and FR-064's own
-Status section). No test in this delivery stubs the gate's target list to
-demonstrate step 7's mechanism in isolation from the real crate's current
-state; this is recorded as a gap alongside QSL-145 rather than asserted as
-satisfied.
+Status section). QSL-155 corrects step 7's original "stub the gate's target
+list" wording (the same defect as FR-063-AC-5's, and the same fix -- see
+below); the corrected version is still not satisfied, since no `Makefile`
+target invokes `xtask string-edge` yet, which remains QSL-145's gap, not
+this correction's.
+
+**QSL-150's real-site investigation (step 6).** Running the real scan (not
+a fixture) over the four of ADR-010 §4.3's five named sites still present in
+the tree, at their real file and line, found every one comes back
+`branch_gating: false`: each comparison is a term of a `&&`/`||` boolean
+expression or a `match` arm body whose *result*, not the comparison itself,
+is what an outer branch reads -- a shape this scanner's structural
+(syntactic-nesting-only) detector does not see, by its own documented scope.
+`branch_gating_entries` therefore does not reject an allow-list entry at any
+of the four real sites today. This is recorded as a concrete, tested finding
+(`xtask::string_edge::tests::real_adr010_sites_are_flagged_branch_gating_
+by_the_structural_detector`, `#[ignore]`d and asserting the desired
+rejection so it fails for a documented reason rather than passing on the
+current, wrong behavior) rather than left to the synthetic fixtures in
+step 6 below implying more than they show.
 
 **Correction: steps 2 and 6 (PR #262 review, finding F11).** An earlier
 draft of `xtask/src/string_edge.rs` checked the allow-list only through
@@ -53,6 +69,10 @@ production sites are fixtures shaped like each named site, not the real
 crate's own occurrences of them (those 60 sites are QSL-145's, not #214's,
 per this test's own earlier scope correction); the fixtures demonstrate the
 rejection rule works, not that the real crate's five sites are converted.
+QSL-150 lands step 2's own dedicated test the same way: `run`'s allow-list
+filtering is split into a separate, pure `unreported_occurrences`, and
+`allow_listed_occurrence_is_silent_removing_the_entry_reports_it_again`
+exercises the real add-then-remove-reappears sequence through it.
 
 ## Test Procedure
 
@@ -77,9 +97,14 @@ rejection rule works, not that the real crate's five sites are converted.
    `clock:` prefix), construct a fixture occurrence shaped like that site
    (a string comparison whose result selects one of two branches) and an
    allow-list entry naming it; submit each to `xtask string-edge` in turn.
-7. Stub the lint gate's target list to include `xtask string-edge`, then
-   simulate a non-zero exit from the tool and observe the gate's own exit
-   code.
+7. Confirm whether any real `Makefile` target invokes `xtask string-edge`
+   as part of a gate (QSL-155's correction to this criterion's original
+   "stub the gate's target list" text: a grep-shaped check over the real
+   file, not a stub of an abstraction that does not exist). Separately, on
+   a minimal fixture `Makefile` of an aggregate-target/prerequisite shape,
+   confirm a failed prerequisite fails the aggregate target and a
+   succeeding one does not (the same mechanism FR-063-AC-5/TC-161 step 7
+   demonstrates).
 
 ## Expected Results
 
@@ -96,5 +121,10 @@ rejection rule works, not that the real crate's five sites are converted.
 - Step 5: the branch-gating entry is rejected, naming its file and line; the
   display-only entry is accepted.
 - Step 6: each of the five constructed entries is rejected; none of the five
-  is accepted into the allow-list under any submitted reason text.
-- Step 7: the lint gate exits non-zero when `xtask string-edge` does.
+  is accepted into the allow-list under any submitted reason text. Separately
+  (QSL-150's real-site investigation, above): none of the four real sites
+  still present in the tree is rejected today, since none is flagged
+  branch-gating by the structural detector.
+- Step 7: no real `Makefile` target invokes `xtask string-edge` yet
+  (QSL-145's own gap); the fixture `Makefile` fails its aggregate target
+  exactly when the prerequisite's recipe fails, and not otherwise.

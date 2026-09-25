@@ -933,6 +933,21 @@ impl<'a> Typer<'a> {
                     receiver_location,
                 )));
             }
+            // FR-063/S2 seam (QSL-143): no arm for `Expression::__SeamProbe`
+            // under `--cfg seam_probe` alone -- this match is deliberately
+            // non-exhaustive (`E0004`) in `xtask seam-probe`'s build of
+            // `qsl-semantics`, the seam probe's evidence for "the check seam
+            // over the parsed form enum" (ADR-012 §5.1 row S2). Do not add a
+            // catch-all to make it compile (this function's own
+            // `#[deny(clippy::wildcard_enum_match_arm)]` already forbids
+            // that for every other arm).
+            //
+            // The arm below exists only in the probe's build of the crates
+            // that depend on this one (`--cfg seam_probe --cfg
+            // seam_probe_downstream`), the same shape `FamilyKind::
+            // catalog_code_prefix`'s own doc explains.
+            #[cfg(seam_probe_downstream)]
+            Expression::__SeamProbe => unreachable!("never constructed outside the probe build"),
         };
         Ok(Step::Typed(typed))
     }

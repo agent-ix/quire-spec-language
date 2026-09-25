@@ -242,6 +242,13 @@ impl From<DeclaredClauseKind> for ClauseKind {
 }
 
 /// One value expression.
+///
+/// `#[cfg(seam_probe)]` adds one further probe-only variant (ADR-012 §5.1
+/// S2, FR-063, QSL-143): under `--cfg seam_probe`, every closed `match` over
+/// this type below this module's own [`Expression::children`],
+/// `detach_children` and `is_childless` becomes non-exhaustive (`E0004`)
+/// unless it has its own probe arm. Never constructed outside the probe
+/// build.
 #[derive(Clone, Debug)]
 pub enum Expression {
     /// `true` or `false`.
@@ -437,6 +444,11 @@ pub enum Expression {
     /// valid only where a checked declaration's postcondition body admits
     /// it; `e`'s own type is unchanged.
     Pre(Box<Expression>),
+    /// FR-063/S2 (QSL-143): exists only so `--cfg seam_probe` makes every
+    /// match over `Expression` outside this module non-exhaustive. Never
+    /// constructed outside the probe build.
+    #[cfg(seam_probe)]
+    __SeamProbe,
 }
 
 impl Expression {
@@ -503,6 +515,11 @@ impl Expression {
                 children.extend(arguments);
                 children
             }
+            // Not the S2 seam (`Typer::infer_form`'s own doc): this is
+            // `Expression`'s own module, so its match gets an unconditional
+            // probe arm rather than being left to break.
+            #[cfg(seam_probe)]
+            Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
         }
     }
 
@@ -615,6 +632,8 @@ impl Expression {
                         .filter(|e| !e.is_childless()),
                 );
             }
+            #[cfg(seam_probe)]
+            Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
         }
     }
 
@@ -649,6 +668,8 @@ impl Expression {
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
             | Self::Pre(_) => false,
+            #[cfg(seam_probe)]
+            Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
         }
     }
 }

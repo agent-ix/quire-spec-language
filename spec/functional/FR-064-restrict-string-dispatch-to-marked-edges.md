@@ -104,7 +104,7 @@ than accept it into the allow-list.
 | FR-064-AC-3 | `xtask string-edge` scans no file under a `tests/` directory and no `#[cfg(test)]` module; a string `match` placed only inside such a module is not reported even when unmarked and not allow-listed. | Test (TC-162) |
 | FR-064-AC-4 | `xtask string-edge` exits non-zero when its report is non-empty and exits zero when its report is empty; a test constructs one fixture tree of each shape and asserts both exit codes. | Test (TC-162) |
 | FR-064-AC-5 | Given one allow-list entry whose comparison result feeds an `if`/`match` condition that selects between two different code paths, and one entry whose comparison result feeds only a logged message, `xtask string-edge` rejects the first (naming its file and line) and accepts the second. A test attempts to add each of the five ADR-010 §4.3 production dispatch sites (named in this requirement's Behavior) as an allow-list entry and asserts the tool rejects all five; a wrong implementation that allow-lists all five to force a clean scan does not satisfy this criterion. | Test (TC-162) |
-| FR-064-AC-6 | The lint gate invokes `xtask string-edge`, and a test that stubs the gate's target list shows the gate fails when `xtask string-edge` exits non-zero. | Test (TC-162) |
+| FR-064-AC-6 | The lint gate's own target list (the `Makefile`) names `string-edge` as a prerequisite of the gate it runs in, whose own recipe runs `cargo xtask string-edge`, and `xtask string-edge`'s non-zero exit propagates to that gate's own exit through `make`'s ordinary prerequisite-failure semantics -- a `.PHONY` aggregate target depending on a target whose recipe can fail. Both halves are checked directly: a grep-shaped check over the real `Makefile` confirms the prerequisite naming and the recipe, and a minimal fixture `Makefile` of the same aggregate/prerequisite shape demonstrates a failed prerequisite failing the aggregate target (and a succeeding one not failing it). | Test (TC-162) |
 
 ## Dependencies
 
@@ -126,6 +126,18 @@ Specified under
 find clean or flag once QSL's own edges are marked; that marking work is
 this ticket's and the family migration tickets' own, not this requirement's
 scan tool.
+
+**QSL-155 correction.** FR-064-AC-6's second clause originally read "a test
+that stubs the gate's target list shows the gate fails when
+`xtask string-edge` exits non-zero." There is no Rust-level gate abstraction
+to stub: the gate is a `Makefile` target, and nothing in the design calls
+for one (the same defect, and the same correction, as FR-063-AC-5's; found
+in #262's review, #214's own deferral table). Corrected to assert what is
+real and checkable instead: the AC-6 table row above already reflects the
+corrected text. This wording correction does not itself back the criterion:
+as the paragraph below states at length, no `Makefile` target invokes
+`xtask string-edge` as part of any gate yet (`make string-edge` runs it
+standalone) -- that production wiring is QSL-145's, not this correction's.
 
 **Scope of what #214 delivers.** `#[string_edge]` and `xtask string-edge`
 are both fully implemented and tested (TC-162): the scan correctly finds
@@ -158,37 +170,56 @@ the real crate is clean under it.
 **By Acceptance Criterion (PR #262 review, P3 accounting), with real trace
 tags as they exist in the delivered code today:**
 - FR-064-AC-1: backed (`TC-162`, `xtask/src/string_edge.rs`).
-- FR-064-AC-2: unbacked (untagged). The scanning half is real (any occurrence
-  the allow-list doesn't cover is reported); the specific
-  add-then-remove-reappears sequence has no dedicated tagged test. Owner:
-  QSL-150.
+- FR-064-AC-2: backed (`TC-162`, `FR-064-AC-2`,
+  `allow_listed_occurrence_is_silent_removing_the_entry_reports_it_again` in
+  `xtask/src/string_edge.rs`). Exercises the real add-then-remove-reappears
+  sequence against `unreported_occurrences`, the pure function `run` itself
+  calls (split out, the same reason `branch_gating_entries` was, because
+  `allow_list()` is permanently empty). QSL-150.
 - FR-064-AC-3: backed (`TC-162`, `xtask/src/string_edge.rs`).
-- FR-064-AC-4: unbacked (untagged). No test asserts the CLI's process exit
-  code directly (the underlying `Result`/`Err` shape that drives it is
-  exercised indirectly through other tagged tests). Owner: QSL-150.
+- FR-064-AC-4: backed (`TC-162`, `FR-064-AC-4`,
+  `a_non_empty_report_exits_non_zero_a_clean_scan_exits_zero` in
+  `xtask/src/string_edge.rs`). Builds a fixture workspace tree of each shape
+  and calls `run` end to end, asserting the `Result`/`Error::exit_code()`
+  shape `main` derives the process exit code from. QSL-150.
 - FR-064-AC-5: unbacked (untagged; PR #262 review, coordinator round 3,
   finding 7; previously misrecorded as backed). Its branch-gating/
   non-branching distinction half is exercised by two real tests in
   `xtask/src/string_edge.rs` (`branch_gating_is_distinguished_from_a_non_
   branching_sink`, `allow_list_entry_at_a_branch_gating_occurrence_is_
-  rejected`), now untagged rather than left implying the whole criterion.
-  Its "each of the five ADR-010 §4.3 production dispatch sites" half is
-  not: `none_of_the_five_adr010_production_sites_can_be_allow_listed`
-  builds five *synthetic* fixtures shaped like the five sites, but
-  `branch_gating_entries` filters only on `(file, line, branch_gating)`,
-  never on the literal string compared, so the test passes identically for
-  five arbitrary branch-gating strings -- it never actually attempts to
-  allow-list the five real, named sites at their real file:line. One of
-  those five (the `"allocation"` relationship-category site, `QSL:model/
-  systems.rs:269` per ADR-010 §4.3's own evidence column, which that same
-  column already flags "PR-sensitive") is confirmed gone from
-  `qsl-semantics/src/model/systems.rs` on this branch, so a real test against the
-  current tree could not reject all five as currently named regardless.
-  Owner: QSL-150.
+  rejected`), untagged because they don't reach the criterion's other half.
+  Its "each of the five ADR-010 §4.3 production dispatch sites" half is not,
+  and QSL-150's own investigation found it cannot be backed as the criterion
+  is written, against the tool as built: `real_adr010_sites_are_flagged_
+  branch_gating_by_the_structural_detector` (`#[ignore]`d, PR #434 review
+  LOW-3) runs the real scan (not a
+  synthetic fixture) over the four of the five sites still present in the
+  tree, at their real file and line (`Graph::profile` in
+  `src/protocol_artifact/validate.rs`, `valid_digest`/`valid_adapter` in
+  `src/state/evaluation.rs`, `expected_definition` in
+  `src/protocol_artifact/native_temporal/request.rs`), and every one comes
+  back `branch_gating: false` -- each comparison is a term of a `&&`/`||`
+  boolean expression (or a `match` arm body) whose *result*, not the
+  comparison itself, is what a branch further up the function reads, which
+  this scanner's structural (syntactic-nesting) detector does not see (its
+  own module doc already names this as out of scope: "a comparison assigned
+  to a variable that is later used in a branch is not detected as
+  branch-gating here"). `branch_gating_entries` therefore does *not* reject
+  an allow-list entry at any of these four real sites today -- the opposite
+  of what this criterion requires. The fifth (the `"allocation"`
+  relationship-category site, `QSL:model/systems.rs:269` per ADR-010 §4.3's
+  own evidence column) remains confirmed gone from
+  `qsl-semantics/src/model/systems.rs`. Backing this half needs the detector
+  widened to see a boolean-combinator/match-arm result feeding an outer
+  branch (a dataflow extension this ticket does not build), not a better
+  test. Owner: QSL-150 (recorded unbacked with this concrete reason);
+  whoever widens the detector reopens this criterion.
 - FR-064-AC-6: unbacked, as this section's own paragraph above already
-  states at length (no production gate wiring in #214). Owner: QSL-145
-  (the first half -- no production gate wiring); QSL-155, a spec defect,
-  owns the second half.
+  states at length (no production gate wiring in #214). QSL-155 corrected
+  this criterion's own wording (the "stub the gate's target list" defect,
+  above) but that correction does not itself wire anything in: no `Makefile`
+  target invokes `xtask string-edge` yet. Owner: QSL-145 (the gate wiring
+  this now-corrected criterion needs to become backable).
 
-Two of six ACs are backed (AC-1, AC-3); four are unbacked
-(AC-2, AC-4, AC-5, AC-6).
+Four of six ACs are backed (AC-1, AC-2, AC-3, AC-4); two are unbacked
+(AC-5, AC-6).

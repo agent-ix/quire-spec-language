@@ -47,6 +47,9 @@ pub(crate) struct PreconditionFailure {
 pub(crate) struct ProtocolClauseSnapshot(pub(crate) WrongSnapshotCause);
 
 impl CatalogCoded for ProtocolClauseSnapshot {
+    /// FR-063-AC-7: `#[deny(...)]` closes the `_ => unsupported(...)` escape
+    /// hatch the seam probe alone cannot see.
+    #[deny(clippy::wildcard_enum_match_arm)]
     fn catalog_code(&self) -> CatalogCode {
         match self.0 {
             WrongSnapshotCause::WrongAnchor => CatalogCode::new("wrong_snapshot", "wrong-anchor"),

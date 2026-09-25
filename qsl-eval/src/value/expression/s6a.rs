@@ -103,6 +103,10 @@ impl S6aFamilyKind {
     ///
     /// FR-063 seam: adding an `S6aFamilyKind` variant with no arm here fails
     /// `--cfg seam_probe` with `E0004`.
+    ///
+    /// FR-063-AC-7: `#[deny(...)]` closes the `_ => unsupported(...)` escape
+    /// hatch the seam probe alone cannot see.
+    #[deny(clippy::wildcard_enum_match_arm)]
     pub(crate) const fn family(self) -> FamilyKind {
         match self {
             Self::Value => FamilyKind::Value,

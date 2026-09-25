@@ -330,6 +330,13 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
     /// denied entry charge records `None` and no losses, since no node ran.
     /// A consumed `env` faults before the meter is charged, so a reused env
     /// never reports an earlier call's location or losses.
+    ///
+    /// FR-063-AC-7: `#[deny(...)]` closes the `_ => unsupported(...)` escape
+    /// hatch this function's own `FamilyOutcome` match -- the seam probe's
+    /// evidence for "the one match over `crate::family::FamilyOutcome`"
+    /// (`checked_in_locations`'s own doc) -- would otherwise let slip past
+    /// unnoticed by the probe alone.
+    #[deny(clippy::wildcard_enum_match_arm)]
     fn evaluate<'a>(
         checked: &NodeKey,
         env: &mut EvaluationEnv<'a>,
