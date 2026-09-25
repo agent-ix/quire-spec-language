@@ -305,7 +305,7 @@ pub enum StaleCause {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum StalePin {
     /// An importing package's own import declaration ([`resolve_libraries`]).
-    Import(ImportDeclaration),
+    Import(Box<ImportDeclaration>),
     /// A consumer's library-lock or pinned-request entry, checked by the
     /// ADR-011 §4 verified binding's condition 3.
     Pinned(Box<PinMismatch>),
@@ -954,7 +954,7 @@ pub fn resolve_libraries(
             };
             return Err(LibraryRefusal::StaleDependency {
                 path,
-                pin: StalePin::Import(import.clone()),
+                pin: StalePin::Import(Box::new(import.clone())),
                 cause,
             });
         };

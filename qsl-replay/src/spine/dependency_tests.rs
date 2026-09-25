@@ -276,8 +276,8 @@ fn selection_and_dependency_input_refusals() {
         twice,
         DependencyInputRefusal::DuplicateIdentity {
             identity: lib("test/geometry"),
-            first: SourceIdentity::new("a", "geometry", "git", "1"),
-            second: SourceIdentity::new("a", "geometry-2", "git", "1"),
+            first: Box::new(SourceIdentity::new("a", "geometry", "git", "1")),
+            second: Box::new(SourceIdentity::new("a", "geometry-2", "git", "1")),
         }
     );
 

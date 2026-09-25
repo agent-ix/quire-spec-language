@@ -408,7 +408,7 @@ pub enum DependencyInputRefusal {
     #[error("invalid_identifier: a library from source {} has an empty identity", .labels.identity)]
     EmptyIdentity {
         /// The library's source labels.
-        labels: SourceIdentity,
+        labels: Box<SourceIdentity>,
     },
     /// A library is supplied with an empty version (`invalid_identifier`,
     /// [`HostCause::SelectionVersion`]).
@@ -428,9 +428,9 @@ pub enum DependencyInputRefusal {
         /// The identity supplied twice.
         identity: LibraryName,
         /// The first library's source labels.
-        first: SourceIdentity,
+        first: Box<SourceIdentity>,
         /// The second library's source labels.
-        second: SourceIdentity,
+        second: Box<SourceIdentity>,
     },
     /// A library's source has the authority and identity of the unit's or
     /// of another library's source: one owner per compile (ADR-013 O-04)
@@ -491,7 +491,7 @@ impl DependencyInput {
         for library in libraries {
             let Ok(identity) = LibraryName::new(library.identity.as_str()) else {
                 return Err(DependencyInputRefusal::EmptyIdentity {
-                    labels: library.source,
+                    labels: Box::new(library.source),
                 });
             };
             if library.version.is_empty() {
@@ -500,8 +500,8 @@ impl DependencyInput {
             if let Some(first) = held.get(&identity) {
                 return Err(DependencyInputRefusal::DuplicateIdentity {
                     identity,
-                    first: first.source.clone(),
-                    second: library.source,
+                    first: Box::new(first.source.clone()),
+                    second: Box::new(library.source),
                 });
             }
             if let Some((first, _)) = held
@@ -788,7 +788,7 @@ impl Resolution<'_> {
             links.push(Import {
                 identity,
                 version: import.version.clone(),
-                digest: import.digest.clone(),
+                digest: import.digest,
                 package: Arc::clone(&library.package),
             });
         }
@@ -857,7 +857,7 @@ impl Resolution<'_> {
         let visit = VisitedImport {
             path,
             version: import.version.clone(),
-            digest: import.digest.clone(),
+            digest: import.digest,
         };
         // 2. Diamond; an equal earlier import reuses its completed library.
         if let Some(first) = self.visited.get(&identity) {
@@ -907,7 +907,7 @@ impl Resolution<'_> {
             return Err(refuse(
                 ImportRefusal::DependencyIdentityMismatch {
                     identity,
-                    recorded: import.digest.clone(),
+                    recorded: import.digest,
                     recompiled,
                 },
                 at_import(),
