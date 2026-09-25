@@ -443,10 +443,7 @@ fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
 /// [`Error::StringEdgeFound`], not `Ok`, so the caller's exit code reflects
 /// the finding.
 pub fn run(workspace_root: &Path) -> Result<String> {
-    let allow_list: BTreeSet<(String, String)> = allow_list()
-        .into_iter()
-        .map(|entry| (entry.file, entry.item))
-        .collect();
+    let allow_list = allow_list();
     if let Some(entry) = allow_list_branch_gating_check(workspace_root)?
         .into_iter()
         .next()
@@ -456,19 +453,19 @@ pub fn run(workspace_root: &Path) -> Result<String> {
             item: entry.item,
         });
     }
-    let mut reported = Vec::new();
+    let mut all_occurrences = Vec::new();
     for root in crate_roots(workspace_root) {
         if !root.exists() {
             return Err(Error::StringEdgeMissingRoot { path: root });
         }
         for relative in source_files(&root, workspace_root)? {
-            for occurrence in scan_file(workspace_root, &relative)? {
-                if !allow_list.contains(&(occurrence.file.clone(), occurrence.item.clone())) {
-                    reported.push(occurrence);
-                }
-            }
+            all_occurrences.extend(scan_file(workspace_root, &relative)?);
         }
     }
+    let reported: Vec<Occurrence> = unreported_occurrences(&all_occurrences, &allow_list)
+        .into_iter()
+        .cloned()
+        .collect();
     if reported.is_empty() {
         Ok(
             "string-edge: no unmarked, unlisted string comparison or string match found\n"
@@ -493,6 +490,32 @@ pub fn run(workspace_root: &Path) -> Result<String> {
         }
         Err(Error::StringEdgeFound { summary })
     }
+}
+
+/// Every occurrence in `occurrences` not covered by an entry in
+/// `allow_list` (matched by `(file, item)`, the same key
+/// [`AllowListEntry::item`]'s own doc explains -- an allow-list entry admits
+/// every occurrence in the same item, not one specific comparison). Pure
+/// over its two inputs, split out of [`run`] for the same reason
+/// [`branch_gating_entries`] below was (PR #262 review, finding F11):
+/// [`allow_list`] itself is permanently empty today (nothing has yet been
+/// reviewed and admitted), so a test that could only call through that
+/// production list could never observe an allow-listed occurrence actually
+/// being suppressed, or reappearing once its entry is removed (FR-064-AC-2).
+fn unreported_occurrences<'a>(
+    occurrences: &'a [Occurrence],
+    allow_list: &'a [AllowListEntry],
+) -> Vec<&'a Occurrence> {
+    let allow_list: BTreeSet<(&str, &str)> = allow_list
+        .iter()
+        .map(|entry| (entry.file.as_str(), entry.item.as_str()))
+        .collect();
+    occurrences
+        .iter()
+        .filter(|occurrence| {
+            !allow_list.contains(&(occurrence.file.as_str(), occurrence.item.as_str()))
+        })
+        .collect()
 }
 
 /// FR-064's own rule: an allow-list entry that gates a branch is refused,
@@ -757,6 +780,39 @@ mod tests {
         assert_eq!(rejected[0].item, branch_gating_item);
     }
 
+    /// FR-064-AC-2: an allow-listed occurrence's `(file, item)` key is not
+    /// reported; removing that same entry, with no change to the source,
+    /// causes it to be reported again. Exercises [`unreported_occurrences`]
+    /// directly (`run`'s own real filtering logic) rather than the
+    /// permanently empty production [`allow_list`], the same "structurally
+    /// untestable otherwise" reason [`branch_gating_entries`]'s own tests
+    /// already do this for FR-064-AC-5.
+    #[trace("TC-162", "FR-064-AC-2")]
+    #[test]
+    fn allow_listed_occurrence_is_silent_removing_the_entry_reports_it_again() {
+        let occurrences = scan_source(
+            r#"
+            fn dispatch(kind: &str) -> bool { kind == "value" }
+            "#,
+        );
+        let entry = AllowListEntry {
+            file: occurrences[0].file.clone(),
+            item: occurrences[0].item.clone(),
+            reason: "test: added",
+        };
+        assert!(
+            unreported_occurrences(&occurrences, std::slice::from_ref(&entry)).is_empty(),
+            "an allow-listed occurrence must not be reported while its entry exists"
+        );
+        // The entry removed, with no change to `occurrences` (the source):
+        // the same occurrence's key is reported again on the next scan.
+        assert_eq!(
+            unreported_occurrences(&occurrences, &[]).len(),
+            1,
+            "removing the allow-list entry must report the occurrence again"
+        );
+    }
+
     /// F8: the allow-list key survives a line shift that touches nothing
     /// about the comparison itself -- the exact brittleness line-keying had.
     /// A doc comment inserted above the function moves the comparison's
@@ -880,5 +936,150 @@ mod tests {
             let rejected = branch_gating_entries(&occurrences, [&candidate]);
             assert_eq!(rejected.len(), 1, "{label} must be rejected");
         }
+    }
+
+    /// **Untagged -- this is why FR-064-AC-5's "each of the five ADR-010
+    /// §4.3 production dispatch sites" half stays unbacked (QSL-150), not
+    /// evidence that it is.** Runs the real scan (not a synthetic fixture)
+    /// over the four of the five named sites still present in the current
+    /// tree at their real file and line -- `Graph::profile`
+    /// (`src/protocol_artifact/validate.rs`, the
+    /// `"quire.protocol.finite-global/v1"` profile string),
+    /// `valid_digest`/`valid_adapter` (`src/state/evaluation.rs`, the
+    /// `"filament-canonical-json-1"` canonicalization string and the
+    /// `"quire.state.authority-adapter"` adapter string) and
+    /// `expected_definition`
+    /// (`src/protocol_artifact/native_temporal/request.rs`, the `clock:`
+    /// prefix, found through `strip_prefix`). The fifth, the `"allocation"`
+    /// relationship-category site, is confirmed gone from the tree already
+    /// (FR-064's own Status section; only the reverse `Self::Allocation =>
+    /// "allocation"` encoding arms remain, which this scan's `&str`-scrutinee
+    /// detection does not even see).
+    ///
+    /// Every one of the four real occurrences this test finds comes back
+    /// `branch_gating: false`. Each site's comparison is a term of a
+    /// `&&`/`||` boolean expression (or a `let valid = match ... { arm =>
+    /// state || ... || name == "..." }` arm body) whose *result* selects a
+    /// branch further up the function -- exactly the "assigned to a
+    /// variable [or expression] that is later used in a branch" limit this
+    /// module's own doc already names as out of the structural (syntactic-
+    /// nesting-only) detector's scope, not a dataflow analysis. Since
+    /// [`branch_gating_entries`] rejects an allow-list entry only when its
+    /// occurrence's `branch_gating` flag is `true`, attempting to allow-list
+    /// any of these four real sites at their real `(file, item)` is *not*
+    /// rejected today -- the opposite of what FR-064-AC-5 requires. Backing
+    /// AC-5's real-site half needs the detector to see these shapes (a
+    /// dataflow extension, or widening the structural walk to boolean
+    /// combinators feeding an outer `if`), which is new scanner behavior
+    /// this ticket does not build; QSL-150 records the criterion unbacked
+    /// with this concrete reason rather than a synthetic pass.
+    #[test]
+    fn real_adr010_sites_are_not_flagged_branch_gating_by_the_structural_detector() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask lives one level below the workspace root")
+            .to_path_buf();
+        let sites = [
+            (
+                "src/protocol_artifact/validate.rs",
+                "Graph::profile",
+                "quire.protocol.finite-global/v1",
+            ),
+            (
+                "src/state/evaluation.rs",
+                "valid_digest",
+                "filament-canonical-json-1",
+            ),
+            (
+                "src/state/evaluation.rs",
+                "valid_adapter",
+                "quire.state.authority-adapter",
+            ),
+            (
+                "src/protocol_artifact/native_temporal/request.rs",
+                "expected_definition",
+                "clock:",
+            ),
+        ];
+        for (file, item, label) in sites {
+            let occurrences = scan_file(&workspace_root, Path::new(file))
+                .unwrap_or_else(|error| panic!("{file}: {error}"));
+            let occurrence = occurrences
+                .iter()
+                .find(|occurrence| occurrence.item == item)
+                .unwrap_or_else(|| panic!("{file}::{item} ({label}) is no longer found by the scan"));
+            assert!(
+                !occurrence.branch_gating,
+                "{file}::{item} ({label}) is now flagged branch-gating -- FR-064-AC-5's \
+                 real-site half may be backable; update this test and its own doc"
+            );
+            let candidate = AllowListEntry {
+                file: occurrence.file.clone(),
+                item: occurrence.item.clone(),
+                reason: "test: a real ADR-010 §4.3 production dispatch site",
+            };
+            let rejected = branch_gating_entries(&occurrences, [&candidate]);
+            assert!(
+                rejected.is_empty(),
+                "{file}::{item} ({label}) is rejected today -- FR-064-AC-5's real-site half \
+                 may be backable; update this test and its own doc"
+            );
+        }
+    }
+
+    /// FR-064-AC-4: `xtask string-edge` exits non-zero when its report is
+    /// non-empty and zero when it is empty. Builds one fixture workspace
+    /// tree with every root [`crate_roots`] requires (`run`'s own
+    /// `root.exists()` check refuses a missing one), then swaps one file's
+    /// content between "one unmarked, un-allow-listed occurrence" and
+    /// "none" to get both shapes from the same tree, calling the real
+    /// [`run`] end to end: `main` maps its `Ok` to `ExitCode::SUCCESS` (zero)
+    /// and its `Err` to `Error::exit_code()` (non-zero for every
+    /// `Code::StringEdge` variant), so this test exercises exactly the
+    /// function that exit code is derived from.
+    #[trace("TC-162", "FR-064-AC-4")]
+    #[test]
+    fn a_non_empty_report_exits_non_zero_a_clean_scan_exits_zero() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let root = dir.path();
+        for member in [
+            "src",
+            "xtask/src",
+            "quire-exact/src",
+            "qsl-foundation/src",
+            "qsl-cst/src",
+            "qsl-source/src",
+            "qsl-forms/src",
+            "qsl-semantics/src",
+            "qsl-package/src",
+            "qsl-eval/src",
+            "qsl-route/src",
+            "qsl-replay/src",
+            "qsl-bench/src",
+        ] {
+            fs::create_dir_all(root.join(member)).expect("create a crate root");
+        }
+        let fixture = root.join("src/string_edge_fixture.rs");
+
+        fs::write(
+            &fixture,
+            "fn dispatch(kind: &str) -> bool { kind == \"value\" }\n",
+        )
+        .expect("write a violating fixture file");
+        let error = run(root).expect_err("a non-empty report must be an Err, not an Ok");
+        assert_eq!(error.code(), crate::error::Code::StringEdge);
+        assert_ne!(
+            error.exit_code(),
+            0,
+            "a non-empty report must map to a non-zero exit code"
+        );
+
+        fs::write(&fixture, "fn dispatch(kind: &str) -> bool { false }\n")
+            .expect("clean the same fixture file, with no change to the tree otherwise");
+        let summary = run(root).expect("a clean scan must be Ok");
+        assert!(
+            summary.contains("no unmarked, unlisted"),
+            "a clean scan's own Ok summary: {summary}"
+        );
     }
 }
