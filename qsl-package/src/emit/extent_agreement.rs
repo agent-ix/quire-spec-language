@@ -4,8 +4,7 @@
 //! emits.
 //!
 //! Each fixture record is checked, emitted, read by IR's own v2 reader at
-//! the pinned revision (`quire-contract-model` `1d7884c`, this crate's
-//! `Cargo.toml`) and lowered by IR with `require_bounds` set. QSL classifies
+//! the pinned revision (`quire-contract-model`, this crate's `Cargo.toml`) and lowered by IR with `require_bounds` set. QSL classifies
 //! the same record type with `family::classify_extent`. IR must report
 //! `RequiresBound` exactly when QSL's extent is `Unbounded`, and IR's first
 //! unbounded node must be the form QSL named: a collection with no bound, or
@@ -22,6 +21,15 @@
 //!   `integer` node its `collection_bounds` literals are typed at.
 //! - **IR-284.** IR has no recursion rule, so it lowers the recursive
 //!   `RangedTree`, which ADR-014 §4 classifies as unbounded by depth.
+//! - **A quantity** (`Measure{len: metre}`). QSL classifies it unbounded
+//!   and unboundable (ADR-014 §4). It cannot be compared yet: the emitter
+//!   omits the record, because it names the declared unit node lowering
+//!   does not build (`NamesAbsentNode`). IR's pinned `requires_bound`
+//!   reads unit types as needing no bound, so once the record is written it
+//!   is expected to disagree too.
+//!
+//! The ignored test gathers every fixture's disagreement before failing,
+//! so one run reports them all.
 
 use quire_contract_ir::{
     read_checked_package, CheckedNodeId, CheckedNodeTag, CheckedPackageDispatchResult,
@@ -43,7 +51,8 @@ use quire_exact::{
 };
 
 use super::tests::{locked_artifacts, nodes, source, whole_unit, wire};
-use super::{emit_package, CheckedPackage};
+use super::tests::{metre_units, METRE};
+use super::{emit_package, CheckedPackage, OmittedNode};
 
 const LIMIT: u64 = 1_000;
 
@@ -130,16 +139,23 @@ fn records() -> Vec<CompositeDeclaration> {
 /// v2 reader.
 fn emitted() -> (TypeEnvironment, Value, Box<CheckedPackageV2>) {
     let types = TypeEnvironment::new(records(), []).expect("FR-143 admits the fixtures");
+    let (wire, admitted, omitted) = emit_and_read(types.clone());
+    assert_eq!(omitted, []);
+    (types, wire, admitted)
+}
+
+/// Check and emit a package declaring `types`, and read it with IR's v2
+/// reader: the wire, IR's package and the emitter's omissions.
+fn emit_and_read(types: TypeEnvironment) -> (Value, Box<CheckedPackageV2>, Vec<OmittedNode>) {
     let package = CheckedPackage::link(
         PackageDeclarations {
-            types: types.clone(),
+            types,
             ..PackageDeclarations::new(source())
         }
         .check(CheckingLimits::default())
         .expect("the fixture records check"),
     );
     let emission = emit_package(&package, whole_unit).expect("the package emits");
-    assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
     let mut evidence = CheckedPackageEvidence::new();
     locked_artifacts(&wire["lock"], &mut evidence);
@@ -154,7 +170,7 @@ fn emitted() -> (TypeEnvironment, Value, Box<CheckedPackageV2>) {
     ) else {
         panic!("IR admits the emitted package");
     };
-    (types, wire, admitted)
+    (wire, admitted, emission.omitted)
 }
 
 /// The written node declaring `name`, as IR's node id and QSL's wire id.
@@ -252,23 +268,64 @@ fn both_sides(name: &str) -> (ClaimExtent, CompleteLoweringRecordV2, Value) {
 #[test]
 #[ignore = "IR-283/IR-284: IR's pinned requires-bound predicate does not distinguish integer positions and has no recursion rule"]
 fn tc_440_qsl_extent_agrees_with_ir_requires_bound_pending_ir_283_284() {
+    let mut disagreements = Vec::new();
     for (name, expected) in [
         ("Flags", None),
         ("RangedTree", Some(DomainKind::Recursive)),
         ("Mixed", Some(DomainKind::Integer)),
     ] {
         let (extent, lowering, _) = both_sides(name);
-        match (expected, &extent, &lowering) {
-            (None, ClaimExtent::Bounded, CompleteLoweringRecordV2::Lowered { .. }) => {}
-            (
-                Some(kind),
-                ClaimExtent::Unbounded(domains),
-                CompleteLoweringRecordV2::RequiresBound { .. },
-            ) => assert!(
-                domains.iter().any(|(_, domain)| domain == kind),
-                "{name}: QSL names a {kind:?} domain: {domains:?}"
-            ),
-            _ => panic!("{name}: QSL {extent:?} disagrees with IR {lowering:?}"),
+        if let Some(disagreement) = disagreement(name, expected, &extent, &lowering) {
+            disagreements.push(disagreement);
         }
+    }
+    // A quantity (QSL-140 review M4): its magnitude is an unbounded
+    // `Rational`, so QSL classifies it unbounded and unboundable.
+    let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
+    let measure = record(10, "Measure", vec![("len", ValueType::Quantity(metre))]);
+    // `Flag` keeps the package non-empty when `Measure` is
+    // omitted.
+    let filler = record(11, "Flag", vec![("b", ValueType::Boolean)]);
+    let types = TypeEnvironment::new([measure.clone(), filler], [])
+        .expect("FR-143 admits Measure")
+        .with_units(metre_units());
+    let (wire, package, omitted) = emit_and_read(types.clone());
+    let written = nodes(&wire)
+        .iter()
+        .any(|node| node["declaration"]["qualified_name"] == json!(["Measure"]));
+    if written {
+        let (ir_id, wire_id) = declared(&wire, "Measure");
+        let checked_type = ValueType::Composite(measure.key());
+        let extent = classify_extent(&[(wire_id, &checked_type)], &types, LIMIT).unwrap();
+        let lowering = ir_lowering(&package, &ir_id);
+        if let Some(disagreement) =
+            disagreement("Measure", Some(DomainKind::Quantity), &extent, &lowering)
+        {
+            disagreements.push(disagreement);
+        }
+    } else {
+        disagreements.push(format!(
+            "Measure: not compared: the emitter omits it ({omitted:?})"
+        ));
+    }
+    assert!(disagreements.is_empty(), "{}", disagreements.join("\n"));
+}
+
+/// Whether QSL's `extent` and IR's `lowering` of `name` agree, given QSL's
+/// `expected` domain kind (`None` for bounded); the disagreement if not.
+fn disagreement(
+    name: &str,
+    expected: Option<DomainKind>,
+    extent: &ClaimExtent,
+    lowering: &CompleteLoweringRecordV2,
+) -> Option<String> {
+    match (expected, extent, lowering) {
+        (None, ClaimExtent::Bounded, CompleteLoweringRecordV2::Lowered { .. }) => None,
+        (
+            Some(kind),
+            ClaimExtent::Unbounded(domains),
+            CompleteLoweringRecordV2::RequiresBound { .. },
+        ) if domains.iter().any(|(_, domain)| domain == kind) => None,
+        _ => Some(format!("{name}: QSL {extent:?}; IR {lowering:?}")),
     }
 }

@@ -2009,7 +2009,7 @@ fn tc_441_an_unbounded_collection_is_its_composite_node_alone() {
 /// maximum refuses to lower with `UnrepresentableBound`, before any node
 /// is written, since its bare set node would be an unbounded
 /// `Set<Reference<T>>`.
-#[trace("TC-441", "FR-097-AC-7")]
+#[trace("TC-441", "FR-097-AC-8")]
 #[test]
 fn tc_441_an_unbounded_population_refuses_to_lower() {
     let scope = empty_scope();

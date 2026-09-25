@@ -363,7 +363,7 @@ fn lookup_key(
 /// `ReferenceSet`'s `bound` from `CardinalityBound::new(0, declared_maximum)`
 /// to `CardinalityBound::new(0, u64::MAX)`, which left the binding's own
 /// declared maximum unreflected in the Outputs — the
-/// `selected_a.bound().expect("a bounded selection").maximum() == 3` assertion went red as expected,
+/// `selected_a.bound().maximum() == 3` assertion went red as expected,
 /// reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5", "FR-153-AC-6")]
@@ -1649,13 +1649,13 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
 ///
 /// Mutation used (constant): in `all_instances`, changed
 /// `CardinalityBound::new(0, declared_maximum)` to
-/// `CardinalityBound::new(0, 3)` — `selected_a.bound().expect("a bounded selection").maximum() == 5` went
+/// `CardinalityBound::new(0, 3)` — `selected_a.bound().maximum() == 5` went
 /// red as expected (got `3`), reverted.
 ///
 /// Mutation used (member count): in `all_instances`, changed
 /// `CardinalityBound::new(0, declared_maximum)` to
 /// `CardinalityBound::new(0, length_amount(binding.members().len()))` —
-/// `selected_a.bound().expect("a bounded selection").maximum() == 5` went red as expected (got `3`),
+/// `selected_a.bound().maximum() == 5` went red as expected (got `3`),
 /// reverted.
 #[test]
 #[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5")]
@@ -3289,4 +3289,35 @@ fn qsl204_admission_reads_the_domain_package_the_view_was_normalized_from() {
         ),
         "a cyclic package yields no view to admit against"
     );
+}
+
+/// TC-240 step 3 (FR-084-AC-5, QSpec FR-153-AC-9): a binding admitted with
+/// no declared maximum selects all three qualifying members, with no
+/// cardinality refusal, and its result carries no bound: the unbounded
+/// `Set<Reference<T>>`.
+#[test]
+#[trace("TC-240", "FR-084-AC-5")]
+fn an_unbounded_binding_selects_every_member_with_no_bound() {
+    let domain_package = fixture_f1();
+    let view = view_of(&domain_package);
+    let mut admission = AdmissionMeter::new(PopulationAdmissionLimits::UNLIMITED);
+    let binding = match admit_binding(
+        &view,
+        &p1("test/orders"),
+        &p1_population_key(),
+        GeneralizationClosure::Closed,
+        None,
+        &mut admission,
+    ) {
+        AdmissionOutcome::Admitted(binding) => binding,
+        other => panic!("expected an admitted binding, got {other:?}"),
+    };
+    assert_eq!(binding.declared_maximum(), None);
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let selected = match all_instances(&binding, &DeclarationKey::fixture("model.A"), &mut meter) {
+        AllInstancesOutcome::Completed(set) => set,
+        other => panic!("expected a completed selection, got {other:?}"),
+    };
+    assert_eq!(selected.len(), 3);
+    assert_eq!(selected.bound(), None);
 }

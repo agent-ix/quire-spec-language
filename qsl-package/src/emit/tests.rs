@@ -1462,7 +1462,7 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
 }
 
 /// QSpec's `unit-metre` node key (FR-094's vector key).
-const METRE: [u8; 32] = [
+pub(super) const METRE: [u8; 32] = [
     0x79, 0x63, 0x76, 0x23, 0xa4, 0x6d, 0x29, 0xe8, 0x84, 0xb6, 0x2c, 0x6f, 0xa2, 0x92, 0xae, 0xb2,
     0x9d, 0x41, 0xe4, 0xec, 0xc4, 0xe8, 0x00, 0xb4, 0xd7, 0xee, 0x91, 0x0a, 0x3e, 0xaf, 0x23, 0xa4,
 ];
@@ -1472,7 +1472,7 @@ const LENGTH: &str = "b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca0922663
 
 /// The `metre` unit of dimension `Length`, owned by a definition, as the
 /// quantity table `check` types a `Length` quantity against.
-fn metre_units() -> qsl_semantics::value::quantity::UnitTable {
+pub(super) fn metre_units() -> qsl_semantics::value::quantity::UnitTable {
     use qsl_semantics::value::{
         DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage,
     };

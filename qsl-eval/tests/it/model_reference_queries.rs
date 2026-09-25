@@ -3312,7 +3312,7 @@ fn unbounded_binding(view: &EffectiveView, document: &PopulationDocument) -> Pop
 /// admission and S6a's own maximum match, over a binding admitted with no
 /// declared maximum.
 #[test]
-#[trace("TC-441", "FR-097-AC-7")]
+#[trace("TC-441", "FR-097-AC-8")]
 fn tc_441_all_instances_over_an_unbounded_population_is_unbounded() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -3349,7 +3349,7 @@ fn tc_441_all_instances_over_an_unbounded_population_is_unbounded() {
 /// absence included: an unbounded parameter refuses a binding with a
 /// maximum, and a bounded parameter refuses an unbounded binding.
 #[test]
-#[trace("TC-441", "FR-097-AC-7")]
+#[trace("TC-441", "FR-097-AC-8")]
 fn tc_441_population_maximum_absence_must_match_at_admission() {
     let scenario = scenario();
     let package = package(&scenario);

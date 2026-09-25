@@ -1700,8 +1700,7 @@ pub fn all_instances(
         return AllInstancesOutcome::Incomplete(incomplete);
     }
 
-    // `[0, N]` is never empty, so `CardinalityBound::new` cannot refuse it.
-    let bound = declared_maximum.and_then(|maximum| CardinalityBound::new(0, maximum).ok());
+    let bound = declared_maximum.map(CardinalityBound::at_most);
     AllInstancesOutcome::Completed(ReferenceSet {
         element_type: t.clone(),
         bound,

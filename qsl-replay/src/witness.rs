@@ -29,8 +29,6 @@ use crate::identity::{
     SourceDigestWire, TracePosition,
 };
 use qsl_foundation::bound::FiniteBound;
-#[cfg(test)]
-use qsl_foundation::bound::{DomainKey, ProofBound};
 use qsl_foundation::digest::{
     ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, ManifestDigest, WireNodeId,
 };
@@ -863,6 +861,7 @@ mod envelope_tests {
     use super::*;
     use crate::bounds::MAX_ENCODED_BYTES;
     use ix_trace_rs::trace;
+    use qsl_foundation::bound::{DomainKey, ProofBound};
     use quire_exact::Identifier;
 
     fn digest(byte: u8) -> [u8; 32] {
@@ -1193,6 +1192,31 @@ mod envelope_tests {
         packet.package_contract_version = Some("x".repeat(MAX_ENCODED_BYTES + 1));
         assert!(matches!(
             WitnessEnvelope::reconstruct(packet),
+            Err(WitnessRefusal::BoundExceeded(_))
+        ));
+    }
+
+    /// TC-181 (FR-070-AC-7): a declared domain's key path counts toward the
+    /// measured size, so a path long enough to pass the reader bound on its
+    /// own refuses, where the same domain with a one-entry path admits.
+    #[trace("TC-181", "FR-070-AC-7")]
+    #[test]
+    fn tc_181_a_long_declared_domain_path_counts_toward_the_bound() {
+        let domain = |path: Vec<u32>| {
+            DeclaredDomain::new(ProofBound {
+                domain: DomainKey::new(WireNodeId::from_digest(digest(6)), path),
+                bound: FiniteBound::cardinality(8),
+            })
+        };
+        let mut short = full_packet(0);
+        short.declared_domains = Some(vec![domain(vec![0])]);
+        assert!(WitnessEnvelope::reconstruct(short).is_ok());
+
+        let entries = MAX_ENCODED_BYTES / std::mem::size_of::<u32>() + 1;
+        let mut long = full_packet(0);
+        long.declared_domains = Some(vec![domain(vec![0; entries])]);
+        assert!(matches!(
+            WitnessEnvelope::reconstruct(long),
             Err(WitnessRefusal::BoundExceeded(_))
         ));
     }

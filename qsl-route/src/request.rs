@@ -222,26 +222,22 @@ impl RequestWriter {
             });
         }
         // An item with a domain no finite bound can stand for can never be
-        // bounded, whatever else is supplied.
-        if let Some((domain, kind)) = unbounded
-            .iter()
-            .find(|(_, kind)| kind.finite_kind().is_none())
-        {
-            return Err(BoundRefusal::UnboundableDomain {
-                domain: domain.clone(),
-                kind,
-            });
-        }
+        // bounded, whatever else is supplied. Otherwise each domain's
+        // expected bound kind is known from here on.
+        let mut expected_kinds = Vec::with_capacity(unbounded.len());
         for (domain, kind) in unbounded.iter() {
-            let Some(bound) = bounds.get(domain) else {
-                return Err(BoundRefusal::MissingDomain {
-                    domain: domain.clone(),
-                });
-            };
             let Some(expected) = kind.finite_kind() else {
                 return Err(BoundRefusal::UnboundableDomain {
                     domain: domain.clone(),
                     kind,
+                });
+            };
+            expected_kinds.push((domain, expected));
+        }
+        for (domain, expected) in expected_kinds {
+            let Some(bound) = bounds.get(domain) else {
+                return Err(BoundRefusal::MissingDomain {
+                    domain: domain.clone(),
                 });
             };
             if bound.kind() != expected {
@@ -500,6 +496,43 @@ mod tests {
                 BTreeMap::new(),
                 BoundRefusal::MissingDomain {
                     domain: key(1, &[]),
+                },
+            ),
+            // Refusal order: an unknown key before an unboundable domain.
+            (
+                claim(&[
+                    (key(1, &[]), DomainKind::Collection),
+                    (key(2, &[]), DomainKind::Loop),
+                ]),
+                BTreeMap::from([(key(5, &[]), FiniteBound::cardinality(8))]),
+                BoundRefusal::UnknownDomain {
+                    domain: key(5, &[]),
+                },
+            ),
+            // An unboundable domain before a missing one.
+            (
+                claim(&[
+                    (key(1, &[]), DomainKind::Collection),
+                    (key(2, &[]), DomainKind::Loop),
+                ]),
+                BTreeMap::new(),
+                BoundRefusal::UnboundableDomain {
+                    domain: key(2, &[]),
+                    kind: DomainKind::Loop,
+                },
+            ),
+            // Domain by domain in key order: key 1's wrong kind before key
+            // 2's missing bound.
+            (
+                claim(&[
+                    (key(1, &[]), DomainKind::Collection),
+                    (key(2, &[]), DomainKind::Recursive),
+                ]),
+                BTreeMap::from([(key(1, &[]), depth(3))]),
+                BoundRefusal::KindMismatch {
+                    domain: key(1, &[]),
+                    expected: FiniteBoundKind::Cardinality,
+                    supplied: FiniteBoundKind::Depth,
                 },
             ),
         ];

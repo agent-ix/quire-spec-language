@@ -566,8 +566,14 @@ mod tests {
         requirements: Requirements,
     }
 
+    /// A claim declaration: its source region and its argument types.
+    struct ClaimForm {
+        region: qsl_foundation::source::provenance::SourceRegion,
+        arguments: Vec<(WireNodeId, ValueType)>,
+    }
+
     impl crate::family::FamilyContract for ValidityClaim {
-        type Form = Vec<(WireNodeId, ValueType)>;
+        type Form = ClaimForm;
         type Checked = CheckedClaim;
         type Cause = InternalFault;
         type Declarations<'a> = TypeEnvironment;
@@ -577,13 +583,17 @@ mod tests {
             cx: &mut crate::family::CheckContext<'a, TypeEnvironment>,
         ) -> crate::family::CheckOutcome<CheckedClaim, InternalFault> {
             let roots: Vec<(WireNodeId, &ValueType)> = form
+                .arguments
                 .iter()
                 .map(|(node, value_type)| (*node, value_type))
                 .collect();
             let extent = classify_extent(&roots, cx.declarations(), cx.limits().node_count)
                 .map_err(|failure| match failure {
+                    // FR-096's family-`check` row: the declaration's region.
                     ClassifyFailure::Limit(exceeded) => {
-                        qsl_foundation::diagnostic::StageFailure::Limit(exceeded)
+                        qsl_foundation::diagnostic::StageFailure::Limit(exceeded.at(Some(
+                            qsl_foundation::diagnostic::Locus::Region(form.region.clone()),
+                        )))
                     }
                     ClassifyFailure::Fault(fault) => {
                         qsl_foundation::diagnostic::StageFailure::Refused(fault)
@@ -599,7 +609,25 @@ mod tests {
         }
     }
 
+    /// The whole fixture unit, as the claim declaration's region.
+    fn claim_region() -> qsl_foundation::source::provenance::SourceRegion {
+        let source = crate::check::admitted_source(
+            qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+            b"claim",
+        );
+        qsl_foundation::source::provenance::SourceRegion::new(source, 0, 5).unwrap()
+    }
+
     fn check_claim(form: &[(WireNodeId, ValueType)]) -> CheckedClaim {
+        try_check_claim(form, LIMIT)
+            .expect("the claim checks")
+            .into_value()
+    }
+
+    fn try_check_claim(
+        form: &[(WireNodeId, ValueType)],
+        node_count: u64,
+    ) -> crate::family::CheckOutcome<CheckedClaim, InternalFault> {
         use crate::family::{
             CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits,
         };
@@ -623,15 +651,37 @@ mod tests {
             StageLimits {
                 nesting_depth: 8,
                 input_bytes: u64::MAX,
-                node_count: LIMIT,
+                node_count,
             },
             &mut meter,
             &mut diagnostics,
             &mut scopes,
         );
-        ValidityClaim::check(&form.to_vec(), &mut cx)
-            .expect("the claim checks")
-            .into_value()
+        let form = ClaimForm {
+            region: claim_region(),
+            arguments: form.to_vec(),
+        };
+        ValidityClaim::check(&form, &mut cx)
+    }
+
+    /// TC-437 (FR-096 family-`check` row): a claim family's `check` that
+    /// reaches the classifier's node-count ceiling reports the limit at its
+    /// declaration's region.
+    #[trace("TC-437", "FR-097-AC-2")]
+    #[test]
+    fn tc_437_a_claim_family_locates_the_classifier_limit_at_its_declaration() {
+        // `Point` and its two fields: three positions, ceiling 2.
+        let Err(qsl_foundation::diagnostic::StageFailure::Limit(exceeded)) =
+            try_check_claim(&[(node(7), ValueType::Composite(point_key()))], 2)
+        else {
+            panic!("expected a node-count limit");
+        };
+        assert_eq!(exceeded.kind(), LimitKind::NodeCount);
+        assert_eq!((exceeded.configured_bound(), exceeded.actual()), (2, 3));
+        assert_eq!(
+            exceeded.locus(),
+            Some(&qsl_foundation::diagnostic::Locus::Region(claim_region()))
+        );
     }
 
     /// TC-437 (ADR-014 §10 scenario 3): a claim form with a

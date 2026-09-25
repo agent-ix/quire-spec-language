@@ -72,7 +72,8 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
 | FR-097-AC-4 | The writer refuses, in this order: a bounded request for an item with no unbounded domain; a bound whose key names no unbounded domain of the item; an item with any domain no finite bound can stand for (loop, infinite trace, quantity), whether or not a bound was supplied for it; then, domain by domain in key order, a missing bound or a bound of the wrong kind. Each refusal is `invalid_runtime_input`/`invalid-value`, and no item is written. | Test (TC-438) |
 | FR-097-AC-5 | `explore::Outcome::category()` maps `Exhaustive` to success and `Bounded` and `Cancelled` to incomplete; the stopped outcomes keep their frontier and, for `Bounded`, the limit reached. | Test (TC-439) |
 | FR-097-AC-6 | For records QSL checks and emits, IR's v2 lowering at the pinned revision with `require_bounds` returns `RequiresBound` exactly when QSL's extent is `Unbounded`, and IR's first unbounded node is a form QSL names as a domain. | Test (TC-440) |
-| FR-097-AC-7 | An unbounded collection type admits a collection value of any size with no cardinality refusal; it still charges `collection.bound`, and stops with `Incomplete` at that charge point only when the caller's meter runs out. `K<T>` and `K<T>[0, u64::MAX]` are different types and different v2 nodes. The checker types `map`, `flatMap`, `filter` and `flatten` over an unbounded source, and `allInstances` over a population with no maximum, as unbounded, and proves no size maximum for them. A population parameter admits a binding only when their declared maxima are equal, absence included. A population with no maximum refuses to lower (`UnrepresentableBound`) until it has a node of its own. | Test (TC-441) |
+| FR-097-AC-7 | An unbounded collection type admits a collection value of any size with no cardinality refusal; it still charges `collection.bound`, and stops with `Incomplete` at that charge point only when the caller's meter runs out. `K<T>` and `K<T>[0, u64::MAX]` are different types and different v2 nodes. The checker types `map`, `flatMap`, `filter` and `flatten` over an unbounded source as unbounded, and proves no size maximum for it. | Test (TC-441) |
+| FR-097-AC-8 | A `Population<T>` with no declared maximum is unbounded: `allInstances` over it checks to an unbounded `Set<Reference<T>>` and selects every member with no cardinality refusal; a population parameter admits a binding only when their declared maxima are equal, absence included; and it lowers to its own v2 node, distinct from an unbounded `Set<Reference<T>>`. | Test (TC-441) |
 
 ## Dependencies
 
@@ -90,10 +91,15 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
 ## Status
 
 Specified and implemented under QSL-140. TC-436 to TC-439 and TC-441 pass
-locally. TC-440 is partly passed: its agreeing fixtures pass, and an ignored
-test asserts agreement for three fixtures IR's predicate at `1d7884c` gets
+locally. FR-097-AC-8's lowering clause is not implemented: until QSL-42 gives
+an unbounded population its own node, lowering one refuses with
+`UnrepresentableBound` rather than writing the bare set node an unbounded
+`Set<Reference<T>>` also has. TC-441 step 5 checks that interim refusal. TC-440 is partly passed: its agreeing fixtures pass, and an ignored
+test asserts agreement for three fixtures IR's predicate at the pinned revision gets
 wrong. IR-283: IR's `requires-bound` does not distinguish positions, so a
 `bounded_domain` over the shared `integer` scalar bounds every integer
 position, and the `collection_bounds` literals typed at that node read as an
-unbounded integer. IR-284: IR has no recursion rule. The ignored test is
+unbounded integer. IR-284: IR has no recursion rule. A quantity fixture is not
+compared yet: the emitter omits a record whose field names a declared unit
+node, because lowering does not build that node. The ignored test is
 un-ignored when both land.

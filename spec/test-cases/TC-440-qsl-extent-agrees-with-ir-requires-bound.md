@@ -37,4 +37,7 @@ Partly passed. `Bag` to `Ints` pass
 and `Mixed` are in the ignored
 `tc_440_qsl_extent_agrees_with_ir_requires_bound_pending_ir_283_284`, which
 waits on IR-283 (the predicate does not distinguish integer positions) and
-IR-284 (no recursion rule).
+IR-284 (no recursion rule). It also holds a quantity fixture, `Measure`,
+which cannot be compared yet: the emitter omits the record because it
+names the unit node lowering does not build. It reports every fixture's
+disagreement in one run.

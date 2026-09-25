@@ -100,6 +100,14 @@ impl CardinalityBound {
         Ok(Self { minimum, maximum })
     }
 
+    /// The bound `[0, maximum]`, which is never empty, so this cannot fail.
+    pub const fn at_most(maximum: u64) -> Self {
+        Self {
+            minimum: 0,
+            maximum,
+        }
+    }
+
     /// The inclusive minimum.
     pub fn minimum(self) -> u64 {
         self.minimum
