@@ -642,7 +642,9 @@ fn parser_budget_exhaustion_keeps_its_distinct_source_bound_cause() {
     };
     let report = admit_namespace(&selected, &supplied, WorkLimits::default(), parser);
     assert!(report.namespace().is_none());
-    assert!(report.is_incomplete());
+    // A syntax budget is a stage limit (`stage_limit_exceeded`, catalog
+    // revision `1-draft.7`): a refusal, not incomplete work.
+    assert!(!report.is_incomplete());
     assert_eq!(report.exhaustion(), None);
     assert_eq!(report.parser_limits().tokens, 0);
     assert_eq!(report.issues().len(), 1);
@@ -654,7 +656,7 @@ fn parser_budget_exhaustion_keeps_its_distinct_source_bound_cause() {
         panic!("parser exhaustion must retain its actual parser cause");
     };
     assert_eq!(*offered, 0);
-    assert_eq!(diagnostic.code, Code::ResourceExhausted);
+    assert_eq!(diagnostic.code, Code::StageLimitExceeded);
     assert_eq!(&diagnostic.source, supplied[0].identity());
     assert_eq!(diagnostic.path, "parser.native");
     assert!(admit(&selected, &supplied).namespace().is_some());
