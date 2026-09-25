@@ -247,10 +247,6 @@ impl CheckedFunctions {
     ) -> Option<(&Signature, &CheckedFunction)> {
         self.get(*self.by_identity.get(&identity)?)
     }
-
-    fn iter(&self) -> impl Iterator<Item = (&Signature, &CheckedFunction)> {
-        self.signatures.iter().zip(&self.bodies)
-    }
 }
 
 fn function_state<'a>(
@@ -1281,18 +1277,6 @@ impl CheckedGraph {
                 identity: function.identity,
                 parameters: &signature.parameters,
             })
-    }
-
-    /// Every admitted function's own name and minted identity -- the
-    /// accessor
-    /// `value::expression::CheckedPackageEvaluation::emit_function_package_v2`
-    /// reads to build its v2 entries, since the v2 codec and `QualifiedName`
-    /// are `value::expression::family` types this module must not import
-    /// (FR-068-AC-3).
-    pub fn function_identities(&self) -> impl Iterator<Item = (&str, quire_exact::NodeKey)> + '_ {
-        self.functions
-            .iter()
-            .map(|(signature, function)| (signature.name.as_str(), function.identity))
     }
 
     /// The scope every declared name resolves against -- the accessor

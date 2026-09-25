@@ -35,7 +35,7 @@ use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
 pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
-pub use family::{decode_function_package_v2, DecodeV2Error, InvalidQualifiedName, QualifiedName};
+pub use family::{InvalidQualifiedName, QualifiedName};
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
 // imports it from `qsl_semantics::check` and re-exports none of it (FR-068-AC-10 is
@@ -252,7 +252,7 @@ fn evaluate_declaration(
     })
 }
 
-/// `call`, `evaluate` and `emit_function_package_v2` over a
+/// `call` and `evaluate` over a
 /// [`CheckedPackage`] (ADR-011 §4, ADR-013 T-1, AD-016 Owner decision 6).
 /// Once `CheckedPackage` is `qsl-package`'s own foreign type (X-7), an
 /// inherent `impl CheckedPackage` here is E0116, so layer 5 exposes its
@@ -309,27 +309,6 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
-
-    /// FR-062/FR-065: this package's `quire.checked-function-package/v2`
-    /// bytes -- the checked-package producer's own public entry point.
-    /// S4-links each identity first (`family::link_function_identity`),
-    /// then emits directly through `family::emit_v2`. Reads no CST, no
-    /// source text, only each function's already-checked identity, through
-    /// `check`'s `CheckedGraph::function_identities` (`pub(crate)`, not
-    /// part of this crate's public doc surface) accessor, reached through
-    /// [`CheckedPackage::graph`] -- this method itself, not `check` and not
-    /// `package`, is what builds `QualifiedName` and calls the v2 codec,
-    /// both `value::expression` types/functions `check` must not import
-    /// (FR-068-AC-3).
-    ///
-    /// `Result<_, InvalidQualifiedName>`: the v2 wire format is typed on
-    /// `QualifiedName`, matching `call`'s own `&QualifiedName` parameter,
-    /// not a bare `String` a decode caller has to re-parse and re-validate
-    /// one function over. A declared function name that is not
-    /// identifier-shaped refuses here rather than either panicking or
-    /// silently emitting v2 bytes that could never decode back into a
-    /// `QualifiedName` anyway.
-    fn emit_function_package_v2(&self) -> Result<Vec<u8>, InvalidQualifiedName>;
 }
 
 impl CheckedPackageEvaluation for CheckedPackage {
@@ -380,18 +359,6 @@ impl CheckedPackageEvaluation for CheckedPackage {
         )
         .run(expression.root(), expression.slots(), arguments)
         .map_err(CallFailure::Fault)
-    }
-
-    fn emit_function_package_v2(&self) -> Result<Vec<u8>, InvalidQualifiedName> {
-        let entries = self
-            .graph()
-            .function_identities()
-            .map(|(name, identity)| {
-                let linked = family::link_function_identity(identity);
-                QualifiedName::unqualified(name.to_owned()).map(|name| (name, linked))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(family::emit_v2(&entries))
     }
 }
 

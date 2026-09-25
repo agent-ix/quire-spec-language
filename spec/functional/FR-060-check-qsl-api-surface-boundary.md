@@ -141,11 +141,10 @@ functions rather than counting sites, because a count is met by a broken
 state (one new mint and one fixed mint cancel out) and changes whenever the
 patterns become more accurate.
 
-T12-B's debt list:
-
-| Crate | Module | Function | Why it is debt |
-| --- | --- | --- | --- |
-| `qsl-eval` (QSL-183) | `value::expression::family` | `decode_v2` | wraps the wire-read identity hex of the QSL v2 function-package codec into a `NodeKey`; the entry leaves when that codec is deleted |
+T12-B's debt list is empty (QSL-248/G2 removed its one entry -- `qsl-eval`'s
+`value::expression::family::decode_v2`, which wrapped the wire-read identity
+hex of that crate's own second `quire.checked-function-package/v2` producer
+into a `NodeKey` -- by deleting the codec that mint belonged to).
 
 T12-C's debt list is empty: QSL-131 typed a reference's type component as
 `EffectiveId` (ADR-013 O-05), which removed the OBS-018 transfers in
@@ -243,12 +242,13 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
 - T12-A is CG-role and live: its target `qsl-replay/src/lib.rs` exists, and
   with no `--cg <checkout>` (the Makefile's `CG_CLONE` variable) it reports
   not evaluated and the run exits 2 while the other three rules run.
-- T12-B reports its one debt-list function as debt:
-  `qsl-eval`'s `value/expression/family.rs` `decode_v2`. QSL-131 K4 removed the six
+- T12-B passes with an empty debt list. QSL-131 K4 removed the six
   `value::enumeration`, `value::unit` and `value::node` entries, and
-  QSL-131 V1 the `value::model_query` entry, by deleting their mints.
-  The node-key mints QSL-156 added are under `check` (`check::node_key`),
-  so T12-B passes.
+  QSL-131 V1 the `value::model_query` entry, by deleting their mints; QSL-248
+  (G2) removed the list's last entry, `qsl-eval`'s `value/expression/
+  family.rs` `decode_v2`, the same way, by deleting the second v2 producer
+  that mint belonged to. The node-key mints QSL-156 added are under `check`
+  (`check::node_key`), so T12-B passes.
 - T12-C passes with an empty debt list and no call site outside `model`.
 - T12-D passes with zero call sites. Its only `PopulationId::from_digest`
   outside `model`, `qsl-eval/src/value/expression/evaluate.rs`, is a test literal

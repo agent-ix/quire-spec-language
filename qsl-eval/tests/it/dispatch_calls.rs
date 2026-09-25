@@ -15,8 +15,7 @@ use ix_trace_rs::trace;
 use sha2::{Digest, Sha256};
 
 use qsl_eval::value::{
-    decode_function_package_v2, CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal,
-    QualifiedName,
+    CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
 };
 use qsl_forms::{
     BinaryOperator, ClauseKind, DeclaredClauseKind, Expression, FunctionDeclaration, TypeForm,
@@ -50,13 +49,6 @@ use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_exact::{ObjectId, ObjectReference, UniverseId};
 use quire_exact::{Value, ValueType};
-
-// This crate's own `value::Origin` (imported above) is a different type
-// from `quire_exact::Origin` -- `CheckedPackage::occurrence` takes the
-// latter (ADR-013 O-07's kernel occurrence key), never the former, so both
-// are in scope here under distinct names.
-use quire_exact::Origin as ExactOrigin;
-use quire_exact::Role as ExactRole;
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -653,121 +645,21 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
     );
 }
 
-/// FR-065-AC-2's reordering clause: a declaration's checked identity does
-/// not depend on any other declaration's existence or position in the
-/// package.
-///
-/// **Rebuilt (PR #262 review, coordinator round 3).** The previous version
-/// (`identity_ignores_unrelated_declarations`, `src/check/family.rs`
-/// post-QSL-139, formerly `src/value/expression/family.rs`, `TC-163`) minted
-/// the same identity twice from the same
-/// `FunctionDeclaration` and compared it to itself; no second declaration
-/// was ever constructed, so there was nothing for the property to be
-/// independent *of*. This version checks two packages whose two functions
-/// are declared in opposite order and compares `target`'s checked identity
-/// across both -- a real reordering, at the one level position could
-/// actually leak (`PackageDeclarations::check`: a typed body's
-/// `NodeKind::Call { function: usize, .. }` index is a checked position,
-/// while the call node's key hashes its callee's key, not that index).
-///
-/// Also gives a real, non-fabricated test caller to four `pub`
-/// `CheckedPackage` methods PR #262 review (coordinator round 3, finding 3)
-/// found with zero callers and zero tests anywhere in the crate:
-/// `function_identity` (read back here across both orderings), `occurrence`
-/// (the target's own declaration occurrence), and the
-/// `emit_function_package_v2`/`decode_function_package_v2` round trip
-/// (which also exercises `family::link_function_identity`, `emit_function_
-/// package_v2`'s own one caller, previously itself uncalled).
-#[trace("TC-163", "FR-065-AC-2")]
-#[test]
-fn function_identity_survives_reordering_check_linking_and_a_v2_round_trip() {
-    fn declaration(name: &str, body: Expression) -> FunctionDeclaration {
-        FunctionDeclaration::new(
-            name,
-            Vec::new(),
-            crate::support::type_form::type_form(&ValueType::Boolean),
-            None,
-            body,
-        )
-    }
-
-    let target = declaration("target", Expression::Boolean(true));
-    let unrelated = declaration("unrelated", Expression::Boolean(false));
-
-    let target_first = PackageDeclarations {
-        functions: vec![target.clone(), unrelated.clone()],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
-    }
-    .check(CheckingLimits::default())
-    .expect("two unrelated boolean-literal functions check cleanly");
-    let unrelated_first = PackageDeclarations {
-        functions: vec![unrelated, target],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
-    }
-    .check(CheckingLimits::default())
-    .expect("reordering the same two declarations checks cleanly too");
-
-    let identity_target_first = target_first
-        .function_identity("target")
-        .expect("target is declared in this package");
-    let identity_unrelated_first = unrelated_first
-        .function_identity("target")
-        .expect("target is declared in this package, just declared second here");
-    assert_eq!(
-        identity_target_first, identity_unrelated_first,
-        "target's checked identity must not depend on unrelated's existence or position"
-    );
-
-    let origin = ExactOrigin::new(ExactRole::new("declaration"), 0);
-    assert!(
-        target_first
-            .occurrence(identity_target_first, &origin)
-            .is_some(),
-        "check must record target's own declaration occurrence, resolvable by (identity, origin)"
-    );
-
-    let target_name = QualifiedName::unqualified("target").expect("\"target\" is an identifier");
-    let target_first = CheckedPackage::link(target_first);
-    let bytes = target_first
-        .emit_function_package_v2()
-        .expect("every declared name here is identifier-shaped");
-    let decoded = decode_function_package_v2(&bytes)
-        .expect("this crate's own emit_function_package_v2 output decodes cleanly");
-    let decoded_identity = decoded
-        .into_iter()
-        .find(|(name, _)| *name == target_name)
-        .map(|(_, identity)| identity)
-        .expect("target survives the v2 round trip");
-    assert_eq!(
-        decoded_identity, identity_target_first,
-        "identity must survive check, S4 linking and a v2 emit/decode round trip unchanged"
-    );
-
-    // FR-065-AC-2 says identity is unchanged at all three checkpoints
-    // (check, linking, v2) *under reordering* -- the assertions above only
-    // exercise `target_first`'s v2 round trip; without this, `unrelated_
-    // first` (the reordered package) is checked and its `function_identity`
-    // compared, but never itself emitted to v2, so the reordering claim was
-    // only half-covered at the v2 checkpoint (PR #262 review round 4, item
-    // 6). Round-trip `unrelated_first` too and compare against the same
-    // target identity.
-    let unrelated_first = CheckedPackage::link(unrelated_first);
-    let unrelated_first_bytes = unrelated_first
-        .emit_function_package_v2()
-        .expect("every declared name here is identifier-shaped");
-    let unrelated_first_decoded = decode_function_package_v2(&unrelated_first_bytes)
-        .expect("unrelated_first's own emit_function_package_v2 output decodes cleanly");
-    let unrelated_first_decoded_identity = unrelated_first_decoded
-        .into_iter()
-        .find(|(name, _)| *name == target_name)
-        .map(|(_, identity)| identity)
-        .expect("target survives the v2 round trip from the reordered package too");
-    assert_eq!(
-        unrelated_first_decoded_identity, identity_target_first,
-        "target's identity must survive check, linking and a v2 round trip identically \
-         regardless of unrelated's position"
-    );
-}
+// QSL-248 (G2) deleted this crate's second `quire.checked-function-package/
+// v2` producer -- `CheckedPackageEvaluation::emit_function_package_v2`,
+// `family::emit_v2`/`decode_v2` and `family::link_function_identity` -- so
+// `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
+// (TC-163, FR-065-AC-2), which round-tripped `target`'s identity through
+// that codec under two declaration orderings, no longer has a codec to call
+// from this crate: `qsl_package::emit_checked`'s I2 reader is `pub(crate)`
+// to `qsl-package`, unreachable from here (ADR-011 §6.1's layer-4/layer-5
+// direction). `qsl-package/src/emit/tests.rs`'s
+// `a_function_identity_survives_emission_and_the_i2_read` is FR-065-AC-2's
+// real `emit_checked`/I2 round trip now, under the same two-orderings
+// reordering property this test used to check by hand; `occurrence`'s own
+// direct callers (`qsl-semantics/src/check/mod.rs`,
+// `qsl-package/src/emit/tests.rs`) already exercise the declaration-
+// occurrence lookup this test's middle section gave a caller to.
 
 /// PR #262 review, finding F4: `PackageDeclarations::check` used to hardcode
 /// the checked-family contract's own nesting-depth `StageLimits` at

@@ -1403,9 +1403,9 @@ fn call_identity_and_location(
 
 /// FR-065-AC-3 (QSL-154): the call's own source occurrence resolves to the
 /// same byte span through a real `quire.checked-package/v2` emit/decode
-/// round trip -- the leg `qsl-eval`'s minimal `quire.checked-function-
-/// package/v2` encoding (`emit_function_package_v2`) cannot exercise, since
-/// that encoding carries no source map at all (only a declared function's
+/// round trip -- a leg `qsl-eval`'s own minimal `quire.checked-function-
+/// package/v2` encoding (deleted, QSL-248/G2) never could exercise, since
+/// that encoding carried no source map at all (only a declared function's
 /// own name and identity). `emit_checked`'s real source map does, so this
 /// is where FR-065-AC-3's v2 checkpoint actually lives.
 #[trace("FR-065-AC-3", "TC-163")]

@@ -12,13 +12,10 @@
 
 mod expression;
 
-// `CheckedPackageEvaluation` is the trait that carries `call`, `evaluate`
-// and `emit_function_package_v2` over the foreign-to-`value`
-// `CheckedPackage` typestate, since an inherent impl here is E0116:
-// `CheckedPackage` is `qsl-package`'s own type (X-7).
-// `decode_function_package_v2` takes no package, so it is a free function
-// beside the v2 codec it wraps.
+// `CheckedPackageEvaluation` is the trait that carries `call` and `evaluate`
+// over the foreign-to-`value` `CheckedPackage` typestate, since an inherent
+// impl here is E0116: `CheckedPackage` is `qsl-package`'s own type (X-7).
 pub use expression::{
-    decode_function_package_v2, CallFailure, CheckedPackageEvaluation, DecodeV2Error, Evaluation,
-    InputRefusal, InvalidQualifiedName, LocatedLoss, QualifiedName, ValueLoss,
+    CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal, InvalidQualifiedName,
+    LocatedLoss, QualifiedName, ValueLoss,
 };

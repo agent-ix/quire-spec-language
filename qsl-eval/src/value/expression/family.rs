@@ -3,9 +3,16 @@
 //! function-declaration and function-application checked-family glue.
 //!
 //! This module holds `QualifiedName` (the layer-6 `replay`/[`super::
-//! CheckedPackage::call`] lookup key), S4 linking
-//! (`link_function_identity`), the v2 emit/decode codec, and
-//! [`ValueFunctionFamily`]'s [`super::s6a::ReferenceEvaluation`] half.
+//! CheckedPackage::call`] lookup key) and [`ValueFunctionFamily`]'s
+//! [`super::s6a::ReferenceEvaluation`] half. QSL-248 (G2) deleted this
+//! crate's own second `quire.checked-function-package/v2` producer --
+//! `emit_v2`/`decode_v2`, `link_function_identity` and the
+//! `FunctionPackageV2` wire they built -- which bypassed
+//! `qsl_package::emit_checked` and minted a `NodeKey` from wire hex outside
+//! `check` (T12-B debt). `qsl_package::emit_checked` plus its I2 reader are
+//! the checked-package producer FR-065-AC-2 now verifies against
+//! (`qsl-package/src/emit/tests.rs`), and S4 linking itself is
+//! `qsl_package::CheckedPackage::link`, not a step this module repeats.
 //! ADR-011 §7.3 M-5 (QSL-139/FR-068) moved this module's checking-only
 //! half -- identity minting, [`qsl_semantics::check::PackageDeclarations::check`]'s
 //! own [`qsl_semantics::family::FamilyContract`] hook, and the `OccurrenceMap`
@@ -18,8 +25,6 @@
 //! evaluation half over it -- layer 5 depending on layer 3 is the
 //! permitted direction (ADR-011 §6.1).
 
-use qsl_attrs::string_edge;
-
 use qsl_foundation::diagnostic::InternalFault;
 use quire_exact::{is_identifier, NodeKey, Value};
 
@@ -31,18 +36,7 @@ use qsl_semantics::check::ValueFunctionFamily;
 /// bare `&str`; the one allowed name lookup (R-06) resolves this against a
 /// checked package's declarations, and nothing compares it as a display
 /// string (FR-065-AC-6).
-///
-/// `Serialize`/`Deserialize` (PR #262 review, finding F6) round-trip through
-/// the same `::`-joined spelling [`std::fmt::Display`] and [`std::str::FromStr`]
-/// already use, via `#[serde(try_from = "String", into = "String")]` --
-/// `emit_v2`/`decode_v2`'s wire `name` field is typed on `QualifiedName`
-/// itself now, not a bare `String` a caller has to re-parse and re-validate
-/// (the same hole `call`'s own `&QualifiedName` parameter closes one
-/// function over).
-#[derive(
-    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
-)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct QualifiedName(Box<[String]>);
 
 /// A `QualifiedName` must be one or more identifiers; this segment sequence
@@ -98,146 +92,6 @@ impl std::str::FromStr for QualifiedName {
     }
 }
 
-impl TryFrom<String> for QualifiedName {
-    type Error = InvalidQualifiedName;
-
-    fn try_from(spelling: String) -> Result<Self, Self::Error> {
-        spelling.parse()
-    }
-}
-
-impl From<QualifiedName> for String {
-    fn from(name: QualifiedName) -> Self {
-        name.to_string()
-    }
-}
-
-/// One entry in the checked-package producer's minimal v2 encoding: a
-/// declared function's qualified name and its checked identity.
-///
-/// `deny_unknown_fields` (PR #262 review, finding F16): decoded through the
-/// `pub` [`crate::value::decode_function_package_v2`], from bytes an external caller
-/// supplies, not only from this crate's own `emit_v2` output -- an unknown
-/// field should refuse, not silently disappear.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FunctionEntryV2 {
-    /// Typed on `QualifiedName` (PR #262 review, finding F6), not a bare
-    /// `String`: an entry whose wire spelling is not a valid qualified name
-    /// fails `serde_json::from_slice` itself (via `QualifiedName`'s own
-    /// `#[serde(try_from = "String")]`), which `decode_v2` already maps to
-    /// `DecodeV2Error::Malformed` -- no separate malformed-name variant
-    /// needed.
-    name: QualifiedName,
-    identity: String,
-}
-
-/// `quire.checked-function-package/v2`: this ticket's self-consistent v2
-/// encoding for function-declaration identity. It is not a claim of
-/// conformance to the external `quire.checked-package-id/v2` schema -- it
-/// exists to demonstrate, and let
-/// a test assert, that identity survives check, S4 linking and a v2
-/// emit/decode round trip unchanged (FR-065-AC-2).
-const FUNCTION_PACKAGE_V2_VERSION: &str = "quire.checked-function-package/v2";
-
-/// `deny_unknown_fields` (PR #262 review, finding F16): see
-/// [`FunctionEntryV2`]'s own doc -- same reason, same externally-decoded
-/// input.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FunctionPackageV2 {
-    version: String,
-    functions: Vec<FunctionEntryV2>,
-}
-
-/// S4 linking, for this migration's minimal scope: a checked function's
-/// identity carried forward unchanged. Complete-V1 has no cross-package
-/// import to resolve for function declarations, so linking here is
-/// genuinely a pass-through -- named and exercised as its own step (rather
-/// than folded into `check`) so FR-065-AC-2's three checkpoints (after
-/// `check`, after linking, after v2 decode) are three real, distinct calls.
-pub(crate) fn link_function_identity(identity: NodeKey) -> NodeKey {
-    identity
-}
-
-/// Emit v2 bytes for a linked set of (qualified name, identity) pairs.
-pub(crate) fn emit_v2(functions: &[(QualifiedName, NodeKey)]) -> Vec<u8> {
-    let package = FunctionPackageV2 {
-        version: FUNCTION_PACKAGE_V2_VERSION.to_owned(),
-        functions: functions
-            .iter()
-            .map(|(name, identity)| FunctionEntryV2 {
-                name: name.clone(),
-                identity: identity.to_string(),
-            })
-            .collect(),
-    };
-    serde_json::to_vec(&package).expect("FunctionPackageV2 always serializes")
-}
-
-/// Why v2 bytes could not be decoded.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum DecodeV2Error {
-    /// The bytes did not parse as `FunctionPackageV2`'s JSON shape at all
-    /// (`serde_json::from_slice` failed).
-    #[error("malformed quire.checked-function-package/v2 bytes")]
-    Malformed,
-    /// The bytes parsed, but the package's `version` field did not match
-    /// this module's `FUNCTION_PACKAGE_V2_VERSION`.
-    #[error("unrecognised version")]
-    Version,
-    // PR #262 review (F16): this used to say "64 lowercase hex digits",
-    // which `decode_hex_32` never enforced -- it accepts either case via
-    // `is_ascii_hexdigit`. `emit_v2` always emits lowercase
-    // (`NodeKey`'s `Display` impl, `quire-exact/src/node.rs`), so nothing
-    // this crate produces is ever uppercase, but decode is genuinely
-    // case-insensitive; the message now says what the code does.
-    /// An entry's `identity` string was not 64 hex digits (either case
-    /// accepted; see the note above on why the message doesn't say
-    /// "lowercase").
-    #[error("identity is not 64 hex digits")]
-    InvalidIdentity,
-}
-
-/// Decode v2 bytes back into (qualified name, identity) pairs, refusing an
-/// unrecognised version or a malformed identity rather than guessing.
-///
-/// `#[string_edge]` (PR #262 review, finding F5): the `package.version !=
-/// FUNCTION_PACKAGE_V2_VERSION` wire-version gate below is one of ADR-012
-/// §9's own listed edges ("the typed v2 reader"), but compares against a
-/// named `const`, not a literal, so `xtask string-edge`'s literal-operand
-/// scan cannot see it -- it was unmarked and undetected until this pass.
-/// Marking it declares this reader as the sanctioned edge ADR-012 §9
-/// already lists it as, independent of whatever the scanner's own
-/// const-operand blind spot does or does not catch.
-#[string_edge]
-pub(crate) fn decode_v2(bytes: &[u8]) -> Result<Vec<(QualifiedName, NodeKey)>, DecodeV2Error> {
-    let package: FunctionPackageV2 =
-        serde_json::from_slice(bytes).map_err(|_| DecodeV2Error::Malformed)?;
-    if package.version != FUNCTION_PACKAGE_V2_VERSION {
-        return Err(DecodeV2Error::Version);
-    }
-    package
-        .functions
-        .into_iter()
-        .map(|entry| {
-            let bytes = decode_hex_32(&entry.identity).ok_or(DecodeV2Error::InvalidIdentity)?;
-            Ok((entry.name, NodeKey::from_digest(bytes)))
-        })
-        .collect()
-}
-
-/// Decode `quire.checked-function-package/v2` bytes emitted by
-/// [`super::CheckedPackageEvaluation::emit_function_package_v2`] back into
-/// (qualified name, identity) pairs, for a caller verifying identity
-/// survived the round trip (FR-065-AC-2). The public entry point to
-/// `decode_v2`.
-pub fn decode_function_package_v2(
-    bytes: &[u8],
-) -> Result<Vec<(QualifiedName, NodeKey)>, DecodeV2Error> {
-    decode_v2(bytes)
-}
-
 /// Seals [`super::CheckedPackageEvaluation`]: [`super::CheckedPackage`] is
 /// its one implementor, and an implementation for any other type would have
 /// no meaning. Declared here because `value::expression`'s own `mod.rs`
@@ -246,21 +100,6 @@ pub(super) mod sealed {
     /// The private supertrait of [`super::super::CheckedPackageEvaluation`].
     pub trait Sealed {}
     impl Sealed for super::super::CheckedPackage {}
-}
-
-fn decode_hex_32(hex: &str) -> Option<[u8; 32]> {
-    if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return None;
-    }
-    let (pairs, []) = hex.as_bytes().as_chunks::<2>() else {
-        return None;
-    };
-    let mut out = [0_u8; 32];
-    for (slot, pair) in out.iter_mut().zip(pairs) {
-        let text = std::str::from_utf8(pair).ok()?;
-        *slot = u8::from_str_radix(text, 16).ok()?;
-    }
-    Some(out)
 }
 
 /// `ValueFunctionFamily`'s real evaluation environment (ADR-012 §2's
@@ -451,11 +290,14 @@ mod family_contract_tests {
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
     /// implementation, reachable through the trait, not a free-standing
-    /// function with no shared associated-type binding -- and its minted
-    /// identity survives a real v2 emit/decode round trip through
-    /// `family::emit_v2`/`decode_v2` directly (PR #262 review, F1/F2:
-    /// no longer routed through the deleted `FamilyContract::package`,
-    /// which nothing consumed). Untagged for FR-062-AC-1 (PR #262 review,
+    /// function with no shared associated-type binding (PR #262 review,
+    /// F1/F2: no longer routed through the deleted `FamilyContract::package`,
+    /// which nothing consumed). QSL-248 deleted this crate's own
+    /// `emit_v2`/`decode_v2` round trip this test used to end on;
+    /// `qsl-package/src/emit/tests.rs`'s `a_function_identity_survives_
+    /// emission_and_the_i2_read` is FR-065-AC-2's own real `emit_checked`/I2
+    /// round trip now, so this test asserts only the checked identity
+    /// itself. Untagged for FR-062-AC-1 (PR #262 review,
     /// finding F3): AC-1 requires all six contract parts as compile-time
     /// obligations, and this trait now has only `check` -- see FR-062's own
     /// amended Acceptance Criteria for why AC-1 is recorded unbacked rather
@@ -504,9 +346,6 @@ mod family_contract_tests {
             expected.to_string(),
             "dbd06f242fc36f1ed1b5773a7e59fb89ebc862494d8512b44e84942bea153e79"
         );
-        let declaration_name = QualifiedName::unqualified("declaration").unwrap();
-        let v2 = emit_v2(&[(declaration_name.clone(), expected)]);
-        assert_eq!(decode_v2(&v2).unwrap(), vec![(declaration_name, expected)]);
     }
 
     /// TC-160 (FR-062-AC-4): a function declaration carries no FR-057
@@ -847,32 +686,22 @@ mod tests {
         .expect("f is declared")
     }
 
-    /// FR-065-AC-2: identity read after `check` survives a real v2
-    /// emit/decode round trip unchanged. Does not exercise a distinct
-    /// "after S4 linking" checkpoint (PR #262 review, finding F6):
-    /// `link_function_identity` is `fn(x) -> x` for this migration's real
-    /// scope (`link_function_identity`'s own doc), so comparing its input
-    /// to its output is comparing a value to itself, not something a
-    /// broken implementation could fail. QSL-154 owns the real before/
-    /// after linking assertion, for a family whose linking is a real
-    /// transformation (FR-065-AC-1/AC-3, occurrence-span survival across
-    /// S4 linking) -- against this family's pass-through linking, that
-    /// assertion would not have been testing anything.
-    #[trace("TC-163", "FR-065-AC-2")]
-    #[test]
-    fn identity_survives_v2_round_trip() {
-        let after_check = checked_identity(fixture_source());
-        let name = QualifiedName::unqualified("f").unwrap();
-        let bytes = emit_v2(&[(name.clone(), after_check)]);
-        let decoded = decode_v2(&bytes).unwrap();
-        assert_eq!(decoded, vec![(name, after_check)]);
-    }
-
     /// ADR-013 O-11/FR-088-AC-6: a [`QualifiedName`] is a declared preimage
     /// component, never an identity in its own right. Two entries that
     /// share an equal qualified name but were declared by different owners
-    /// (FR-092) carry different node ids, and a v2 round trip keeps both
-    /// pairs distinct rather than collapsing them onto their shared name.
+    /// (FR-092) carry different node ids, so an identity comparison over the
+    /// pair keeps both distinct rather than collapsing them onto their
+    /// shared name.
+    ///
+    /// QSL-248 deleted this crate's own `quire.checked-function-package/v2`
+    /// codec this test used to round-trip both entries through: that wire
+    /// format is gone (`qsl_package::emit_checked`'s real wire never holds
+    /// two declarations under one shared name -- a single `CheckedPackage`
+    /// admits one declaration per name). What FR-088-AC-6 step 4 actually
+    /// asks is that an identity comparison distinguish the pair by node id,
+    /// not by their shared `QualifiedName`; a `BTreeSet` over the full
+    /// `(QualifiedName, NodeKey)` pair demonstrates that directly, with no
+    /// wire codec needed to state it.
     #[trace("TC-258", "FR-088-AC-6")]
     #[test]
     fn equal_qualified_names_do_not_collapse_distinct_declarations() {
@@ -887,54 +716,14 @@ mod tests {
             "distinct declarations must not share a node id"
         );
 
-        let bytes = emit_v2(&[(name.clone(), first), (name.clone(), second)]);
-        let decoded = decode_v2(&bytes).unwrap();
-        assert_eq!(decoded, vec![(name.clone(), first), (name, second)]);
-    }
-
-    /// F16 (rust-review, pre-handoff pass): `#[serde(deny_unknown_fields)]`
-    /// on `FunctionPackageV2`/`FunctionEntryV2` (decoded from externally
-    /// supplied bytes through the `pub` `decode_function_package_v2`)
-    /// actually refuses an unknown field, rather than silently dropping it.
-    #[test]
-    fn decode_v2_refuses_an_unknown_top_level_field() {
-        let bytes =
-            br#"{"version":"quire.checked-function-package/v2","functions":[],"extra":true}"#;
-        assert_eq!(decode_v2(bytes), Err(DecodeV2Error::Malformed));
-    }
-
-    /// F16: same, for an unknown field on one entry rather than the
-    /// top-level package.
-    #[test]
-    fn decode_v2_refuses_an_unknown_entry_field() {
-        let bytes = br#"{"version":"quire.checked-function-package/v2","functions":[{"name":"f","identity":"00000000000000000000000000000000000000000000000000000000000000","extra":true}]}"#;
-        assert_eq!(decode_v2(bytes), Err(DecodeV2Error::Malformed));
-    }
-
-    /// Existing (pre-#262-review) coverage this pass confirmed is real: an
-    /// unrecognised version and a non-hex identity are each refused with
-    /// their own distinct variant, not `Malformed`.
-    #[test]
-    fn decode_v2_distinguishes_version_and_identity_refusals() {
-        let wrong_version = br#"{"version":"quire.checked-function-package/v1","functions":[]}"#;
-        assert_eq!(decode_v2(wrong_version), Err(DecodeV2Error::Version));
-
-        let bad_identity = br#"{"version":"quire.checked-function-package/v2","functions":[{"name":"f","identity":"not-hex"}]}"#;
-        assert_eq!(decode_v2(bad_identity), Err(DecodeV2Error::InvalidIdentity));
-    }
-
-    /// F6 (rust-review, PR #262 review): `FunctionEntryV2.name` is typed on
-    /// `QualifiedName` (`#[serde(try_from = "String")]`), so a wire `name`
-    /// that is not a valid qualified name fails to deserialize at all --
-    /// `serde_json::from_slice` itself returns `Err`, which `decode_v2`
-    /// already maps to `Malformed`. A bare `String` field would have
-    /// accepted this silently.
-    #[test]
-    fn decode_v2_refuses_a_non_identifier_name() {
-        let identity = NodeKey::from_digest([7; 32]);
-        let bytes = format!(
-            r#"{{"version":"{FUNCTION_PACKAGE_V2_VERSION}","functions":[{{"name":"not an identifier","identity":"{identity}"}}]}}"#
+        let entries: std::collections::BTreeSet<(QualifiedName, NodeKey)> =
+            [(name.clone(), first), (name, second)]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            entries.len(),
+            2,
+            "equal qualified names must not collapse distinct declarations"
         );
-        assert_eq!(decode_v2(bytes.as_bytes()), Err(DecodeV2Error::Malformed));
     }
 }

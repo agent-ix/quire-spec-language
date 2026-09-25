@@ -246,13 +246,15 @@ impl<'a, D> CheckContext<'a, D> {
 /// version of this trait also required `package(checked: &Self::Checked,
 /// out: &mut Vec<u8>)`. `ValueFunctionFamily`'s implementation emitted v2
 /// bytes into `out`, but `CheckedPackage::emit_function_package_v2` (the
-/// one real caller) passed it a scratch `Vec` that it never read back,
+/// one real caller, deleted itself under QSL-248/G2 along with the second
+/// `quire.checked-function-package/v2` producer it and `family::emit_v2`/
+/// `decode_v2` made up) passed it a scratch `Vec` that it never read back,
 /// then built its actual returned bytes independently through
 /// `family::emit_v2` -- gut `package`'s body and
-/// `emit_function_package_v2`'s output is byte-identical. A hook nothing
+/// `emit_function_package_v2`'s output was byte-identical. A hook nothing
 /// consumes is the same fabricated-surface shape as the deleted
-/// `requirements`, so it is deleted rather than wired up speculatively;
-/// `family::emit_v2`/`decode_v2` are the real v2 emitter for this family,
+/// `requirements`, so it is deleted rather than wired up speculatively.
+/// `qsl_package::emit_checked` is this family's real v2 emitter now,
 /// called directly, not through this trait. FR-062's packaging-related
 /// rows (the `package` mention in AC-1, and AC-9's fault-injection
 /// criterion) are recorded unbacked rather than backed by an unconsumed

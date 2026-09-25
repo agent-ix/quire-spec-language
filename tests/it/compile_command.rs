@@ -373,6 +373,30 @@ fn a_complete_v1_program_compiles_through_the_spine() {
     assert_eq!(wire["contract_version"], "quire.checked-package/v2");
 }
 
+/// FR-027-AC-7 (TC-435): `lower` reads no edition of its own -- its native
+/// parser's header check (`src/parser.rs`) is the same "supported edition is
+/// `0-draft`" `unknown_edition` refusal `compile`'s `Edition::of` dispatch
+/// hands the `1-draft` spine fixture to a different compiler for. This
+/// closes the coverage gap TC-435's own steps leave: nothing exercised
+/// `lower`'s side of the same edition contract, only `compile`'s.
+#[test]
+#[trace("TC-435", "FR-027-AC-7")]
+fn lower_refuses_a_complete_v1_program_as_unknown_edition() {
+    let program = std::fs::read(SPINE_FIXTURE).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
+        .arg("lower")
+        .arg(directory.path().join("compile.json"))
+        .current_dir(directory.path().parent().unwrap())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "unknown_edition", "{failure}");
+}
+
 /// FR-027-AC-5 (TC-435 step 2): a `1-draft` compile validates the program's
 /// `document` and `formal_revision` but the v2 wire does not record them,
 /// so two requests differing only there write identical bytes; an invalid
