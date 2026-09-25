@@ -1514,7 +1514,7 @@ fn metre_units() -> qsl_semantics::value::quantity::UnitTable {
 /// Boolean { a * a == a * a }` forms the `metre^2` compound unit node; it is
 /// omitted only because it names the `metre` unit node, which lowering names
 /// by key but does not build.
-#[trace("FR-094-AC-6", "TC-416")]
+#[trace("TC-416")]
 #[test]
 fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
     let square = || Expression::Binary {
