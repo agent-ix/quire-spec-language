@@ -494,8 +494,9 @@ fn admit_types(
             Ok(_) => return refuse(errors),
             Err(StageFailure::Limit(limit)) => {
                 // Records and tuples charge no type-environment work, so
-                // this is unreachable today; a ceiling names no declaration,
-                // hence the empty span.
+                // this is unreachable today. A ceiling names no declaration
+                // and has no locus (FR-082, FR-096): the span is empty and
+                // names no region, and the compile reports none.
                 errors.push(AssemblyError {
                     cause: AssemblyCause::TypeLimit(limit),
                     span: Span { start: 0, end: 0 },

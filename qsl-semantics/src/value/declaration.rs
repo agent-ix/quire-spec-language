@@ -2563,3 +2563,24 @@ fn decimal_to_rational(value: &Decimal, meter: &mut Meter) -> Result<Value, Stop
     )?;
     Ok(Value::Rational(rational))
 }
+
+#[cfg(test)]
+mod work_budget_tests {
+    use super::WorkBudget;
+    use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
+
+    /// FR-082: a denied charge names the cumulative total it would have
+    /// reached: 3 spent, a budget of 4 and a charge of 2 report 5. The
+    /// admitted spend is unchanged.
+    #[test]
+    fn a_denied_charge_reports_the_total_it_would_have_reached() {
+        let mut budget = WorkBudget::new(4);
+        assert_eq!(budget.charge(3), Ok(()));
+        assert_eq!(
+            budget.charge(2),
+            Err(LimitExceeded::new(LimitKind::WorkBudget, 4, 5))
+        );
+        assert_eq!(budget.spent, 3);
+        assert_eq!(budget.charge(1), Ok(()));
+    }
+}

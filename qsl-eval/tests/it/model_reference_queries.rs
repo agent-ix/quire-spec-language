@@ -23,7 +23,7 @@ use qsl_eval::value::{
 };
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::UndefinedReason;
+use qsl_foundation::diagnostic::{StageFailure, UndefinedReason};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     AdmittedModel, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits,
@@ -1523,7 +1523,7 @@ fn population_refused_as_record_field() {
         ],
     );
     match result {
-        Err(qsl_foundation::diagnostic::StageFailure::Refused(invalid)) => assert_eq!(
+        Err(StageFailure::Refused(invalid)) => assert_eq!(
             invalid.cause,
             DeclarationCause::Type(IllTypedCause::OperatorIneligible)
         ),
@@ -1555,7 +1555,7 @@ fn population_refused_as_object_attribute() {
         ],
     );
     match result {
-        Err(qsl_foundation::diagnostic::StageFailure::Refused(invalid)) => assert_eq!(
+        Err(StageFailure::Refused(invalid)) => assert_eq!(
             invalid.cause,
             DeclarationCause::Type(IllTypedCause::OperatorIneligible)
         ),

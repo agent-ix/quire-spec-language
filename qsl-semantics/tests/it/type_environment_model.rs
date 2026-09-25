@@ -366,9 +366,9 @@ fn divergence_chain_within_the_ceiling_agrees_at_check_and_at_evaluation() {
 /// Divergence row 3, one past the ceiling: the same chain under a ceiling of
 /// `depth`. The model still normalizes it (its longest path is `depth`
 /// steps) but refuses the walk from `c.0` to `z` with `resource_exhausted`/
-/// `ancestor-steps`; the checker refuses the environment with the same code
-/// and ceiling rather than answering `false` from a closure the model
-/// cannot compute.
+/// `ancestor-steps`. Check time stops at a node-count stage limit naming the
+/// same ceiling (FR-082, ADR-014 B-3) rather than answering `false` from a
+/// closure the model cannot compute.
 #[trace("TC-220", "FR-082-AC-3", "FR-082-AC-6")]
 #[test]
 fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
