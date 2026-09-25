@@ -67,11 +67,12 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use quire_contract_ir::{
-    CheckedArtifactRef, CheckedCapability, CheckedDeclaration, CheckedDiagnosticsV2, CheckedNodeId,
-    CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole, CheckedPackageIdentityPreimageV2,
-    CheckedPackageLockV2, CheckedRevision, CheckedSelection, CheckedSemanticGraphV2,
-    CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRegion,
-    NominalIdentityPreimage, NominalOwner, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
+    CheckedDiagnosticsV2, CheckedNodeId, CheckedNodeKind, CheckedNodeTag, CheckedOccurrence,
+    CheckedOccurrenceRole, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2, CheckedRevision,
+    CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticId,
+    CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRegion, NominalIdentityPreimage,
+    NominalOwner, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde::Serialize;
 
@@ -354,7 +355,7 @@ impl<'g> Candidate<'g> {
     }
 
     fn form_is_supported(&self) -> bool {
-        self.tag.forms().contains(&self.node.semantic_form())
+        CheckedNodeKind::decode(self.tag, self.node.semantic_form()).is_some()
     }
 
     /// FR-322's declaration rule, as IR applies it: `declaration` is absent
@@ -599,7 +600,7 @@ fn catalog_entry(role: CatalogRole) -> &'static CatalogEntry {
 fn catalog_selections(laws: &[DefinitionReference]) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
     // Informational; no reader verifies these digests yet.
     let edition = CheckedSelection {
-        role: CatalogRole::Edition.as_str().into(),
+        role: CheckedSelectionRole::Edition,
         definition: artifact(&catalog_entry(CatalogRole::Edition).reference()),
     };
     let mut definitions: Vec<CheckedArtifactRef> = DefinitionLock::pinned()
@@ -772,7 +773,7 @@ pub(crate) fn emit_package(
     };
     let capability_report = [CheckedCapability {
         feature: root.into(),
-        disposition: "available".into(),
+        disposition: CheckedCapabilityDisposition::Available,
     }];
     let diagnostics = CheckedDiagnosticsV2 {
         catalog: diagnostics_catalog(),

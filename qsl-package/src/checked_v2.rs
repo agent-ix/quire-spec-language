@@ -371,6 +371,7 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
         CheckedPackageRefusalCode::UnknownRequiredCapability => Code::UnknownRequiredFeature,
         CheckedPackageRefusalCode::InvalidSourceMap => Code::InvalidSourceMap,
         CheckedPackageRefusalCode::MissingDeclaration => Code::MissingDeclaration,
+        CheckedPackageRefusalCode::AmbiguousDeclaration => Code::AmbiguousDeclaration,
         CheckedPackageRefusalCode::InvalidModelBinding => Code::InvalidModelBinding,
         CheckedPackageRefusalCode::IllTyped => Code::IllTyped,
     }
