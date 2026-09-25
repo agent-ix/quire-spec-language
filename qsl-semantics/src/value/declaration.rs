@@ -61,6 +61,7 @@
 //! directly as a bare parameter type.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use quire_exact::{
     compare_shifted, power_of_ten_bits, sbits, sdigits, Charge, ChargePoint, ComparisonOperator,
@@ -416,42 +417,55 @@ impl ObjectTypeDeclaration {
 /// One attribute of an object type's effective attribute set: a field the
 /// type declares or inherits and that no other field of the set redefines.
 /// It is one storage slot of every object of that type.
+///
+/// A cheap handle: every descendant that inherits the attribute unchanged
+/// shares the one allocation its declaring type made, so a deep chain holds
+/// each field's declaration once, not once per descendant.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EffectiveAttribute {
+pub struct EffectiveAttribute(Arc<AttributeSlot>);
+
+#[derive(Debug, Eq, PartialEq)]
+struct AttributeSlot {
     owner: EffectiveId,
     field: FieldDeclaration,
     /// This field and every field it stands in for: those it redefines,
     /// transitively, and those a more derived redefinition of the same
-    /// target hid. Ascending, so [`Self::stands_for`] is a binary search.
+    /// target hid. Ascending, so [`EffectiveAttribute::stands_for`] is a
+    /// binary search.
     lineage: Vec<FieldRef>,
+    /// The same fields as `lineage`, as positions in the admission's
+    /// [`FieldTable`], ascending.
+    members: Vec<usize>,
+    /// This field's own position in the admission's [`FieldTable`].
+    identity: usize,
 }
 
 impl EffectiveAttribute {
     /// The object type that declares this field.
     pub fn owner(&self) -> EffectiveId {
-        self.owner
+        self.0.owner
     }
 
     /// The field's declaration.
     pub fn field(&self) -> &FieldDeclaration {
-        &self.field
+        &self.0.field
     }
 
     /// This field's own identity.
     pub fn identity(&self) -> FieldRef {
-        FieldRef::new(self.owner, self.field.name())
+        FieldRef::new(self.0.owner, self.0.field.name())
     }
 
     /// Whether this slot holds `field`: `field` is this attribute, or a field
     /// it redefines or hides.
     pub fn stands_for(&self, field: &FieldRef) -> bool {
-        self.lineage.binary_search(field).is_ok()
+        self.0.lineage.binary_search(field).is_ok()
     }
 }
 
 impl AsRef<FieldDeclaration> for EffectiveAttribute {
     fn as_ref(&self) -> &FieldDeclaration {
-        &self.field
+        &self.0.field
     }
 }
 
@@ -459,6 +473,58 @@ impl AsRef<FieldDeclaration> for EffectiveAttribute {
 /// admits under. The model's own `ModelNormalizationLimits` and
 /// `PopulationAdmissionLimits` defaults read this same value.
 pub const DEFAULT_ANCESTOR_STEPS: u64 = 100_000;
+
+/// The NFR-012 default admission `work_units` budget, the same value as the
+/// model's own `ModelNormalizationLimits::work_units` and
+/// `PopulationAdmissionLimits::work_units` defaults.
+pub const DEFAULT_WORK_UNITS: u64 = 16_777_216;
+
+/// The ceilings [`TypeEnvironment::bounded`] admits object types under.
+/// Every member is a real limit; zero is never "unlimited".
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TypeEnvironmentLimits {
+    /// FR-082's `ancestor_steps`: the most types one conformance walk may
+    /// expand, the type it starts from included.
+    pub ancestor_steps: u64,
+    /// Cumulative work units admission may spend building the ancestor
+    /// closure and flattening every object type's attributes. One unit is
+    /// one ancestor or attribute copied into a type's set, or one field a
+    /// lineage names. Running out refuses [`DeclarationCause::WorkUnits`].
+    pub work_units: u64,
+}
+
+impl Default for TypeEnvironmentLimits {
+    fn default() -> Self {
+        Self {
+            ancestor_steps: DEFAULT_ANCESTOR_STEPS,
+            work_units: DEFAULT_WORK_UNITS,
+        }
+    }
+}
+
+/// The admission work meter: charges fail once `limit` units are spent.
+struct WorkBudget {
+    spent: u64,
+    limit: u64,
+}
+
+impl WorkBudget {
+    fn new(limit: u64) -> Self {
+        Self { spent: 0, limit }
+    }
+
+    /// Charge `units`, or the refusal cause once the budget would be passed.
+    fn charge(&mut self, units: usize) -> Result<(), DeclarationCause> {
+        let units = u64::try_from(units).unwrap_or(u64::MAX);
+        match self.spent.checked_add(units) {
+            Some(spent) if spent <= self.limit => {
+                self.spent = spent;
+                Ok(())
+            }
+            _ => Err(DeclarationCause::WorkUnits { limit: self.limit }),
+        }
+    }
+}
 
 /// Why a declaration set is not admitted.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
@@ -484,7 +550,9 @@ impl InvalidDeclaration {
             | DeclarationCause::Recursion { .. }
             | DeclarationCause::GeneralizationCycle { .. }
             | DeclarationCause::RedefinitionWidens(_) => IllTyped::CODE,
-            DeclarationCause::AncestorSteps { .. } => "resource_exhausted",
+            DeclarationCause::AncestorSteps { .. } | DeclarationCause::WorkUnits { .. } => {
+                "resource_exhausted"
+            }
         }
     }
 }
@@ -525,6 +593,12 @@ pub enum DeclarationCause {
         /// The ceiling.
         limit: u64,
     },
+    /// Building the ancestor closure and the flattened attribute sets
+    /// would spend more than the admitted `work_units` budget, named here.
+    WorkUnits {
+        /// The budget.
+        limit: u64,
+    },
     /// A type names a key that is no declaration of the package.
     UnknownDeclaration(NodeKey),
     /// A declared supertype names an effective identity that is no admitted
@@ -562,7 +636,7 @@ pub struct TypeEnvironment {
     /// transitive, not just direct, `supertypes`. Precomputed once in
     /// [`TypeEnvironment::new`], after the supertypes graph is known
     /// acyclic, so [`Self::conforms`] is a plain set lookup.
-    ancestors: BTreeMap<EffectiveId, BTreeSet<EffectiveId>>,
+    ancestry: Ancestry,
     /// Every object type's effective attribute set (QSL-57): its own fields
     /// plus every ancestor's, less each field another field of the set
     /// redefines. Computed once in [`TypeEnvironment::bounded`]; an object's
@@ -583,28 +657,32 @@ struct Edge {
 
 impl TypeEnvironment {
     /// Admit `composites` and `object_types` as one closed environment,
-    /// under the NFR-012 default `ancestor_steps` ceiling
-    /// ([`DEFAULT_ANCESTOR_STEPS`]). See [`Self::bounded`].
+    /// under the NFR-012 default ceilings ([`TypeEnvironmentLimits::default`]).
+    /// See [`Self::bounded`].
     pub fn new(
         composites: impl IntoIterator<Item = CompositeDeclaration>,
         object_types: impl IntoIterator<Item = ObjectTypeDeclaration>,
     ) -> Result<Self, InvalidDeclaration> {
-        Self::bounded(composites, object_types, DEFAULT_ANCESTOR_STEPS)
+        Self::bounded(composites, object_types, TypeEnvironmentLimits::default())
     }
 
     /// Admit `composites` and `object_types` as one closed environment.
     ///
-    /// `ancestor_steps` is the FR-082 ceiling the model walks this package's
-    /// conformance under at evaluation (the population binding's own
-    /// `ancestor_steps`). An object type whose walk would expand more types
-    /// than that, itself included, is refused here with
-    /// [`DeclarationCause::AncestorSteps`]: every conformance question the
-    /// checker answers from this environment is then one evaluation also
-    /// answers, with the same verdict, never one evaluation refuses.
+    /// `limits.ancestor_steps` is the FR-082 ceiling the model walks this
+    /// package's conformance under at evaluation (the population binding's
+    /// own `ancestor_steps`). An object type whose walk would expand more
+    /// types than that, itself included, is refused here with
+    /// [`DeclarationCause::AncestorSteps`]. Check time is the stricter
+    /// side: every conformance question the checker answers from this
+    /// environment is one evaluation completes with the same verdict.
+    ///
+    /// `limits.work_units` bounds the whole admission's ancestor-closure
+    /// and flattening work; running out refuses
+    /// [`DeclarationCause::WorkUnits`].
     pub fn bounded(
         composites: impl IntoIterator<Item = CompositeDeclaration>,
         object_types: impl IntoIterator<Item = ObjectTypeDeclaration>,
-        ancestor_steps: u64,
+        limits: TypeEnvironmentLimits,
     ) -> Result<Self, InvalidDeclaration> {
         let mut environment = Self::default();
         for declaration in composites {
@@ -644,17 +722,21 @@ impl TypeEnvironment {
         environment.check_recursion(RecursionEdges::Unnamed)?;
         environment.check_recursion(RecursionEdges::NonEscaping)?;
         environment.check_supertypes()?;
-        environment.ancestors = environment.compute_ancestors();
-        environment.check_ancestor_steps(ancestor_steps)?;
-        environment.check_redefinitions()?;
-        environment.effective = environment.compute_effective()?;
+        let mut budget = WorkBudget::new(limits.work_units);
+        environment.ancestry = environment.compute_ancestors(&mut budget)?;
+        environment.check_ancestor_steps(limits.ancestor_steps)?;
+        let table = FieldTable::new(&environment.object_types);
+        environment.check_redefinitions(&table)?;
+        let effective = environment.compute_effective(&table, &mut budget)?;
+        environment.effective = effective;
         Ok(environment)
     }
 
     /// The object type's effective attribute set, in slot order: its own
-    /// fields in declaration order, then each proper ancestor's (ascending
-    /// by key) in declaration order, each field another field of the set
-    /// redefines left out. `None` for a key that is no admitted object type.
+    /// fields in declaration order, then each direct supertype's slots in
+    /// that supertype's order and in declaration order of the supertypes,
+    /// each attribute once, each field another field of the set stands for
+    /// left out and a redefiner in the place of the first slot it hides. `None` for a key that is no admitted object type.
     pub fn attributes(&self, object_type: EffectiveId) -> Option<&[EffectiveAttribute]> {
         self.effective.get(&object_type).map(Vec::as_slice)
     }
@@ -663,7 +745,7 @@ impl TypeEnvironment {
     pub fn attribute(&self, object_type: EffectiveId, name: &str) -> Option<&EffectiveAttribute> {
         self.attributes(object_type)?
             .iter()
-            .find(|attribute| attribute.field.name() == name)
+            .find(|attribute| attribute.field().name() == name)
     }
 
     /// This environment with `units` as its quantity unit table.
@@ -703,11 +785,7 @@ impl TypeEnvironment {
     /// `sub` in the admitted supertypes graph. `false` for either key
     /// outside this environment's own admitted object types, never a panic.
     pub fn conforms(&self, sub: EffectiveId, sup: EffectiveId) -> bool {
-        sub == sup
-            || self
-                .ancestors
-                .get(&sub)
-                .is_some_and(|ancestors| ancestors.contains(&sup))
+        sub == sup || self.ancestry.is_ancestor(sub, sup)
     }
 
     /// Check a type named outside a declaration (a parameter or result type):
@@ -1018,42 +1096,106 @@ impl TypeEnvironment {
     /// folded in only after every direct supertype's own ancestors are
     /// already known (a post-order finish), so each node is visited once and
     /// the walk is bounded by the object-type count, not call-stack depth.
-    fn compute_ancestors(&self) -> BTreeMap<EffectiveId, BTreeSet<EffectiveId>> {
-        let mut ancestors: BTreeMap<EffectiveId, BTreeSet<EffectiveId>> = BTreeMap::new();
-        let mut finished: BTreeSet<EffectiveId> = BTreeSet::new();
-        for root in self.object_types.keys() {
-            if finished.contains(root) {
+    ///
+    /// Each type's set is a copy of its supertypes' sets, so the whole
+    /// closure costs the sum of every type's ancestor count; `budget` is
+    /// charged that, a supertype and its ancestors at a time, before the
+    /// copy is made.
+    fn compute_ancestors(&self, budget: &mut WorkBudget) -> Result<Ancestry, InvalidDeclaration> {
+        // Positions are `u32`: a package with more object types than that
+        // could never be flattened within any budget either.
+        if u32::try_from(self.object_types.len()).is_err() {
+            return Err(InvalidDeclaration {
+                declaration: String::new(),
+                cause: DeclarationCause::WorkUnits {
+                    limit: budget.limit,
+                },
+            });
+        }
+        let positions: BTreeMap<EffectiveId, u32> = self
+            .object_types
+            .keys()
+            .zip(0_u32..)
+            .map(|(key, position)| (*key, position))
+            .collect();
+        let mut ancestors: Vec<Option<Vec<u32>>> = vec![None; self.object_types.len()];
+        let finished = |ancestors: &[Option<Vec<u32>>], key: &EffectiveId| {
+            positions
+                .get(key)
+                .and_then(|position| ancestors.get(*position as usize))
+                .is_some_and(Option::is_some)
+        };
+        for root in self.object_types.values() {
+            if finished(&ancestors, &root.key) {
                 continue;
             }
-            let mut path: Vec<(EffectiveId, usize)> = vec![(*root, 0)];
+            let mut path: Vec<(&ObjectTypeDeclaration, usize)> = vec![(root, 0)];
             while let Some((node, next)) = path.last_mut() {
                 let node = *node;
-                let Some(target) = self
-                    .object_types
-                    .get(&node)
-                    .and_then(|declaration| declaration.supertypes.get(*next))
-                else {
-                    let mut own_ancestors = BTreeSet::new();
-                    if let Some(declaration) = self.object_types.get(&node) {
-                        for supertype in &declaration.supertypes {
-                            own_ancestors.insert(*supertype);
-                            if let Some(further) = ancestors.get(supertype) {
-                                own_ancestors.extend(further.iter().copied());
-                            }
+                if let Some(target) = node.supertypes.get(*next) {
+                    *next += 1;
+                    if !finished(&ancestors, target) {
+                        if let Some(general) = self.object_types.get(target) {
+                            path.push((general, 0));
                         }
                     }
-                    ancestors.insert(node, own_ancestors);
-                    finished.insert(node);
-                    path.pop();
                     continue;
-                };
-                *next += 1;
-                if !finished.contains(target) {
-                    path.push((*target, 0));
+                }
+                path.pop();
+                let own = Self::own_ancestors(node, &positions, &ancestors, budget).map_err(
+                    |cause| InvalidDeclaration {
+                        declaration: node.name.clone(),
+                        cause,
+                    },
+                )?;
+                if let Some(slot) = positions
+                    .get(&node.key)
+                    .and_then(|position| ancestors.get_mut(*position as usize))
+                {
+                    *slot = Some(own);
                 }
             }
         }
-        ancestors
+        Ok(Ancestry {
+            positions,
+            ancestors: ancestors.into_iter().map(Option::unwrap_or_default).collect(),
+        })
+    }
+
+    /// `node`'s proper ancestors, ascending, from its direct supertypes'
+    /// finished sets. `budget` is charged each supertype plus its ancestor
+    /// count before that set is copied.
+    fn own_ancestors(
+        node: &ObjectTypeDeclaration,
+        positions: &BTreeMap<EffectiveId, u32>,
+        ancestors: &[Option<Vec<u32>>],
+        budget: &mut WorkBudget,
+    ) -> Result<Vec<u32>, DeclarationCause> {
+        let mut own: Vec<u32> = Vec::new();
+        for supertype in &node.supertypes {
+            let Some(position) = positions.get(supertype).copied() else {
+                continue;
+            };
+            let further = ancestors
+                .get(position as usize)
+                .and_then(Option::as_deref)
+                .unwrap_or_default();
+            budget.charge(further.len().saturating_add(1))?;
+            if own.is_empty() {
+                // One supertype, the common case: its set is already
+                // ascending, so the copy needs no sort.
+                own.extend_from_slice(further);
+                if let Err(at) = own.binary_search(&position) {
+                    own.insert(at, position);
+                }
+            } else {
+                own.push(position);
+                own.extend_from_slice(further);
+                own.sort_unstable();
+                own.dedup();
+            }
+        }
+        Ok(own)
     }
 
     /// Refuse the first object type, in key order, whose FR-082 conformance
@@ -1065,10 +1207,7 @@ impl TypeEnvironment {
     /// under the same ceiling at evaluation.
     fn check_ancestor_steps(&self, limit: u64) -> Result<(), InvalidDeclaration> {
         for declaration in self.object_types.values() {
-            let ancestors = self
-                .ancestors
-                .get(&declaration.key)
-                .map_or(0, BTreeSet::len);
+            let ancestors = self.ancestry.count(declaration.key);
             let expanded = u64::try_from(ancestors)
                 .unwrap_or(u64::MAX)
                 .saturating_add(1);
@@ -1085,18 +1224,15 @@ impl TypeEnvironment {
     /// Refuse the first object-type field, in key then declaration order,
     /// whose `redefines` names no field of a proper ancestor of its owner
     /// (FR-151: the target must be inherited by the owning type).
-    fn check_redefinitions(&self) -> Result<(), InvalidDeclaration> {
+    fn check_redefinitions(&self, table: &FieldTable<'_>) -> Result<(), InvalidDeclaration> {
         for declaration in self.object_types.values() {
             for target in declaration
                 .attributes
                 .iter()
                 .filter_map(FieldDeclaration::redefines)
             {
-                let inherited = self
-                    .ancestors
-                    .get(&declaration.key)
-                    .is_some_and(|ancestors| ancestors.contains(&target.owner))
-                    && self.declared_field(target).is_some();
+                let inherited = self.ancestry.is_ancestor(declaration.key, target.owner)
+                    && table.position(target).is_some();
                 if !inherited {
                     return Err(InvalidDeclaration {
                         declaration: declaration.name.clone(),
@@ -1113,62 +1249,39 @@ impl TypeEnvironment {
     /// must be required where that field's is, and every value its type
     /// admits that field's type must admit ([`Self::narrows`]). Otherwise
     /// the read would yield a value its checked type does not describe.
-    fn widened(&self, attribute: &EffectiveAttribute) -> Option<FieldRef> {
-        let field = &attribute.field;
+    fn widened(&self, attribute: &EffectiveAttribute, table: &FieldTable<'_>) -> Option<FieldRef> {
+        let field = attribute.field();
         attribute
-            .lineage
+            .0
+            .members
             .iter()
-            .find(|hidden| {
-                self.declared_field(hidden).is_some_and(|redefined| {
+            .zip(&attribute.0.lineage)
+            .find(|(member, _)| {
+                table.field(**member).is_some_and(|redefined| {
                     (field.presence == Presence::Optional
                         && redefined.presence == Presence::Required)
-                        || !self.narrows(&field.value_type, &redefined.value_type)
+                        || !Self::narrows(&field.value_type, &redefined.value_type)
                 })
             })
-            .cloned()
+            .map(|(_, hidden)| hidden.clone())
     }
 
-    /// Whether every value `narrower` admits, `wider` admits: the same
-    /// type, an `Int` interval within `Integer` or within a wider `Int`
-    /// interval, or a `Reference` to a type conforming to the other's.
-    /// Any other pair is refused, never guessed.
-    fn narrows(&self, narrower: &ValueType, wider: &ValueType) -> bool {
+    /// Whether every value `narrower` admits, `wider` admits *and*
+    /// evaluation's `ValueType::admits` accepts a value of `narrower` where
+    /// `wider` is declared: the same type, or an `Int` interval within
+    /// `Integer` or within a wider `Int` interval. A reference field is
+    /// redefined only with the identical reference type, since `admits`
+    /// matches a reference's object type exactly. Any other pair is refused,
+    /// never guessed.
+    fn narrows(narrower: &ValueType, wider: &ValueType) -> bool {
         match (narrower, wider) {
             (narrower, wider) if narrower == wider => true,
             (ValueType::Int(_), ValueType::Integer) => true,
             (ValueType::Int(inner), ValueType::Int(outer)) => {
                 outer.contains(inner.lower()) && outer.contains(inner.upper())
             }
-            (ValueType::Reference(sub), ValueType::Reference(sup)) => self.conforms(*sub, *sup),
             _ => false,
         }
-    }
-
-    /// The field `field.owner` itself declares under `field.name`.
-    fn declared_field(&self, field: &FieldRef) -> Option<&FieldDeclaration> {
-        self.object_types
-            .get(&field.owner)?
-            .attributes
-            .iter()
-            .find(|declared| declared.name() == field.name)
-    }
-
-    /// `field` (declared by `owner`) and every field it redefines,
-    /// transitively, ascending. [`Self::check_redefinitions`] has admitted
-    /// every link, and each one moves to a proper ancestor of an acyclic
-    /// graph, so the walk ends within the ancestor count.
-    fn lineage(&self, owner: EffectiveId, field: &FieldDeclaration) -> Vec<FieldRef> {
-        let mut lineage = vec![FieldRef::new(owner, field.name())];
-        let mut next = field.redefines();
-        while let Some(target) = next {
-            lineage.push(target.clone());
-            next = self
-                .declared_field(target)
-                .and_then(FieldDeclaration::redefines);
-        }
-        lineage.sort_unstable();
-        lineage.dedup();
-        lineage
     }
 
     /// Every object type's effective attribute set (QSL-57), flattened once.
@@ -1184,84 +1297,214 @@ impl TypeEnvironment {
     /// ([`DeclarationCause::RedefinitionConflict`]), and two exposed
     /// attributes of one name are two fields, not a redefinition
     /// ([`DeclarationCause::DuplicateMember`]).
+    ///
+    /// Types are flattened supertypes first (an explicit post-order stack),
+    /// each from its own fields and its direct supertypes' finished sets, so
+    /// no type re-walks its ancestors and an inherited attribute is shared,
+    /// not copied. `budget` is charged every attribute and lineage field a
+    /// type's flattening reads.
     fn compute_effective(
         &self,
+        table: &FieldTable<'_>,
+        budget: &mut WorkBudget,
     ) -> Result<BTreeMap<EffectiveId, Vec<EffectiveAttribute>>, InvalidDeclaration> {
-        let mut effective = BTreeMap::new();
-        for declaration in self.object_types.values() {
-            let refuse = |cause| InvalidDeclaration {
-                declaration: declaration.name.clone(),
-                cause,
-            };
-            let ancestors = self
-                .ancestors
-                .get(&declaration.key)
-                .into_iter()
-                .flatten()
-                .filter_map(|key| self.object_types.get(key));
-            let collected: Vec<(EffectiveId, &FieldDeclaration)> = std::iter::once(declaration)
-                .chain(ancestors)
-                .flat_map(|owner| owner.attributes.iter().map(move |field| (owner.key, field)))
-                .collect();
-            let redefined: BTreeSet<&FieldRef> = collected
-                .iter()
-                .filter_map(|(_, field)| field.redefines())
-                .collect();
-            let mut attributes: Vec<EffectiveAttribute> = collected
-                .iter()
-                .filter(|(owner, field)| !redefined.contains(&FieldRef::new(*owner, field.name())))
-                .map(|(owner, field)| EffectiveAttribute {
-                    owner: *owner,
-                    field: (*field).clone(),
-                    lineage: self.lineage(*owner, field),
-                })
-                .collect();
-            while let Some((loser, winner)) = self.dominated(&attributes) {
-                let hidden = attributes.remove(loser);
-                let winner = if winner > loser { winner - 1 } else { winner };
-                if let Some(winner) = attributes.get_mut(winner) {
-                    winner.lineage.extend(hidden.lineage);
-                    winner.lineage.sort_unstable();
-                    winner.lineage.dedup();
+        let mut effective: BTreeMap<EffectiveId, Vec<EffectiveAttribute>> = BTreeMap::new();
+        let mut scratch = Scratch::new(table.len(), table.name_count());
+        for (root, declaration) in &self.object_types {
+            if effective.contains_key(root) {
+                continue;
+            }
+            let mut path: Vec<(&ObjectTypeDeclaration, usize)> = vec![(declaration, 0)];
+            while let Some((node, next)) = path.last_mut() {
+                let node = *node;
+                if let Some(supertype) = node.supertypes.get(*next) {
+                    *next += 1;
+                    if !effective.contains_key(supertype) {
+                        if let Some(general) = self.object_types.get(supertype) {
+                            path.push((general, 0));
+                        }
+                    }
+                    continue;
                 }
+                path.pop();
+                let attributes = self
+                    .flatten(node, &effective, table, &mut scratch, budget)
+                    .map_err(|cause| InvalidDeclaration {
+                        declaration: node.name.clone(),
+                        cause,
+                    })?;
+                effective.insert(node.key, attributes);
             }
-            if let Some(shared) = first_overlap(&attributes) {
-                return Err(refuse(DeclarationCause::RedefinitionConflict(shared)));
-            }
-            if let Some(widened) = attributes
-                .iter()
-                .find_map(|attribute| self.widened(attribute))
-            {
-                return Err(refuse(DeclarationCause::RedefinitionWidens(widened)));
-            }
-            let mut names = BTreeSet::new();
-            if let Some(duplicate) = attributes
-                .iter()
-                .find(|attribute| !names.insert(attribute.field.name()))
-            {
-                return Err(refuse(DeclarationCause::DuplicateMember(
-                    duplicate.field.name().to_owned(),
-                )));
-            }
-            effective.insert(declaration.key, attributes);
         }
         Ok(effective)
     }
 
-    /// The first `(loser, winner)` pair of `attributes` positions that stand
-    /// for a common field where the winner's owner is a proper descendant of
-    /// the loser's: FR-151's "only the redefining member of the most derived
-    /// owner is exposed".
-    fn dominated(&self, attributes: &[EffectiveAttribute]) -> Option<(usize, usize)> {
-        attributes.iter().enumerate().find_map(|(loser, low)| {
-            attributes.iter().enumerate().find_map(|(winner, high)| {
-                (loser != winner
-                    && high.owner != low.owner
-                    && self.conforms(high.owner, low.owner)
-                    && shared_field(&low.lineage, &high.lineage).is_some())
-                .then_some((loser, winner))
-            })
-        })
+    /// One object type's effective attribute set, from its own fields and
+    /// its direct supertypes' already flattened sets.
+    ///
+    /// Every attribute standing for a common field is one redefinition
+    /// group (a union-find over the fields their lineages name). A group of
+    /// one is kept as it is. A larger group keeps only the attribute whose
+    /// owner is a proper descendant of every other member's owner, with the
+    /// members' lineages merged into it; a group with no such member is
+    /// FR-151's conflict.
+    fn flatten(
+        &self,
+        declaration: &ObjectTypeDeclaration,
+        effective: &BTreeMap<EffectiveId, Vec<EffectiveAttribute>>,
+        table: &FieldTable<'_>,
+        scratch: &mut Scratch,
+        budget: &mut WorkBudget,
+    ) -> Result<Vec<EffectiveAttribute>, DeclarationCause> {
+        scratch.next_type();
+        let mut candidates: Vec<EffectiveAttribute> =
+            Vec::with_capacity(declaration.attributes.len());
+        let mut fresh: Vec<bool> = Vec::with_capacity(declaration.attributes.len());
+        for field in &declaration.attributes {
+            let attribute = own_attribute(declaration.key, field, table, budget)?;
+            scratch.claim_identity(attribute.0.identity, candidates.len());
+            candidates.push(attribute);
+            fresh.push(true);
+        }
+        for supertype in &declaration.supertypes {
+            let inherited = effective.get(supertype).map_or(&[][..], Vec::as_slice);
+            budget.charge(inherited.len())?;
+            for attribute in inherited {
+                // A diamond passes one field down two paths: keep it once,
+                // with both paths' lineages when they differ.
+                match scratch.identity(attribute.0.identity) {
+                    None => {
+                        scratch.claim_identity(attribute.0.identity, candidates.len());
+                        candidates.push(attribute.clone());
+                        fresh.push(false);
+                    }
+                    Some(kept) => {
+                        let Some(existing) = candidates.get(kept) else {
+                            continue;
+                        };
+                        if Arc::ptr_eq(&existing.0, &attribute.0)
+                            || existing.0.members == attribute.0.members
+                        {
+                            continue;
+                        }
+                        let merged = merge(existing, [existing, attribute], table, budget)?;
+                        if let (Some(slot), Some(flag)) =
+                            (candidates.get_mut(kept), fresh.get_mut(kept))
+                        {
+                            *slot = merged;
+                            *flag = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut groups = UnionFind::new(candidates.len());
+        for (index, attribute) in candidates.iter().enumerate() {
+            budget.charge(attribute.0.members.len())?;
+            for &member in &attribute.0.members {
+                match scratch.holder(member) {
+                    Some(holder) => groups.union(holder, index, member),
+                    None => scratch.hold(member, index),
+                }
+            }
+        }
+
+        let mut members_of: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut roots = Vec::with_capacity(candidates.len());
+        for index in 0..candidates.len() {
+            let root = groups.find(index);
+            roots.push(root);
+            if groups.size(root) > 1 {
+                members_of.entry(root).or_default().push(index);
+            }
+        }
+        // Each group's surviving position, and its (possibly merged) attribute.
+        let mut survivors: BTreeMap<usize, (usize, EffectiveAttribute)> = BTreeMap::new();
+        for (root, members) in &members_of {
+            budget.charge(members.len())?;
+            let owner = |index: usize| candidates.get(index).map(EffectiveAttribute::owner);
+            let properly = |sub: usize, sup: usize| match (owner(sub), owner(sup)) {
+                (Some(sub), Some(sup)) => sub != sup && self.conforms(sub, sup),
+                _ => false,
+            };
+            let mut best = members.first().copied().unwrap_or(*root);
+            for &member in members {
+                if properly(member, best) {
+                    best = member;
+                }
+            }
+            let conflict = members
+                .iter()
+                .any(|&member| member != best && !properly(best, member));
+            if conflict {
+                let shared = groups
+                    .shared(*root)
+                    .and_then(|position| table.reference(position));
+                return Err(match shared {
+                    Some(field) => DeclarationCause::RedefinitionConflict(field),
+                    None => DeclarationCause::RedefinitionConflict(
+                        candidates
+                            .get(best)
+                            .map(EffectiveAttribute::identity)
+                            .unwrap_or_else(|| FieldRef::new(declaration.key, "")),
+                    ),
+                });
+            }
+            let Some(winner) = candidates.get(best) else {
+                continue;
+            };
+            let merged = merge(
+                winner,
+                members.iter().filter_map(|&member| candidates.get(member)),
+                table,
+                budget,
+            )?;
+            if let Some(flag) = fresh.get_mut(best) {
+                *flag |= !Arc::ptr_eq(&merged.0, &winner.0);
+            }
+            survivors.insert(*root, (best, merged));
+        }
+
+        let mut attributes = Vec::with_capacity(candidates.len());
+        let mut checked = Vec::with_capacity(candidates.len());
+        for (index, attribute) in candidates.into_iter().enumerate() {
+            let root = roots.get(index).copied().unwrap_or(index);
+            let is_fresh = fresh.get(index).copied().unwrap_or(true);
+            match survivors.get(&root) {
+                Some((best, merged)) if *best == index => {
+                    attributes.push(merged.clone());
+                    checked.push(is_fresh);
+                }
+                Some(_) => {}
+                None => {
+                    attributes.push(attribute);
+                    checked.push(is_fresh);
+                }
+            }
+        }
+        // An attribute a supertype already admitted unchanged was checked
+        // there; only this type's own and merged attributes can widen.
+        if let Some(widened) = attributes
+            .iter()
+            .zip(&checked)
+            .filter(|(_, fresh)| **fresh)
+            .find_map(|(attribute, _)| self.widened(attribute, table))
+        {
+            return Err(DeclarationCause::RedefinitionWidens(widened));
+        }
+        budget.charge(attributes.len())?;
+        for attribute in &attributes {
+            let taken = table
+                .name_of(attribute.0.identity)
+                .is_some_and(|name| !scratch.claim_name(name));
+            if taken {
+                return Err(DeclarationCause::DuplicateMember(
+                    attribute.field().name().to_owned(),
+                ));
+            }
+        }
+        Ok(attributes)
     }
 
     /// Construct a record from its supplied fields. An omitted `?` field is
@@ -1397,21 +1640,304 @@ impl TypeEnvironment {
     }
 }
 
-/// The first field both ascending lineages hold.
-fn shared_field(left: &[FieldRef], right: &[FieldRef]) -> Option<FieldRef> {
-    left.iter()
-        .find(|field| right.binary_search(field).is_ok())
-        .cloned()
+/// Every admitted object type's proper ancestors, as positions in key
+/// order: four bytes an ancestor, so the closure of a deep chain stays
+/// small.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Ancestry {
+    positions: BTreeMap<EffectiveId, u32>,
+    /// By position: that type's proper ancestors, ascending.
+    ancestors: Vec<Vec<u32>>,
 }
 
-/// The first field two distinct attributes both stand for.
-fn first_overlap(attributes: &[EffectiveAttribute]) -> Option<FieldRef> {
-    attributes.iter().enumerate().find_map(|(index, left)| {
-        attributes
+impl Ancestry {
+    fn of(&self, key: EffectiveId) -> Option<&[u32]> {
+        let position = self.positions.get(&key)?;
+        self.ancestors.get(*position as usize).map(Vec::as_slice)
+    }
+
+    /// Whether `ancestor` is a proper ancestor of `key`.
+    fn is_ancestor(&self, key: EffectiveId, ancestor: EffectiveId) -> bool {
+        match (self.of(key), self.positions.get(&ancestor)) {
+            (Some(ancestors), Some(position)) => ancestors.binary_search(position).is_ok(),
+            _ => false,
+        }
+    }
+
+    /// How many proper ancestors `key` has.
+    fn count(&self, key: EffectiveId) -> usize {
+        self.of(key).map_or(0, <[u32]>::len)
+    }
+}
+
+/// `field`'s own attribute, declared by `owner`: it stands for itself and
+/// every field it redefines, transitively. [`TypeEnvironment::check_redefinitions`]
+/// has admitted every link, and each one moves to a proper ancestor of an
+/// acyclic graph; `budget` is charged each link all the same.
+fn own_attribute(
+    owner: EffectiveId,
+    field: &FieldDeclaration,
+    table: &FieldTable<'_>,
+    budget: &mut WorkBudget,
+) -> Result<EffectiveAttribute, DeclarationCause> {
+    let own = FieldRef::new(owner, field.name());
+    let identity = table
+        .position(&own)
+        .ok_or_else(|| DeclarationCause::RedefinitionTarget(own.clone()))?;
+    let mut members = vec![identity];
+    let mut next = field.redefines();
+    while let Some(target) = next {
+        budget.charge(1)?;
+        let position = table
+            .position(target)
+            .ok_or_else(|| DeclarationCause::RedefinitionTarget(target.clone()))?;
+        members.push(position);
+        next = table.field(position).and_then(FieldDeclaration::redefines);
+    }
+    members.sort_unstable();
+    members.dedup();
+    Ok(EffectiveAttribute(Arc::new(AttributeSlot {
+        owner,
+        field: field.clone(),
+        lineage: table.references(&members),
+        members,
+        identity,
+    })))
+}
+
+/// `winner` standing for every field any of `group` stands for. `winner`
+/// itself, shared, when it already does.
+fn merge<'a>(
+    winner: &EffectiveAttribute,
+    group: impl IntoIterator<Item = &'a EffectiveAttribute>,
+    table: &FieldTable<'_>,
+    budget: &mut WorkBudget,
+) -> Result<EffectiveAttribute, DeclarationCause> {
+    let mut members: Vec<usize> = Vec::new();
+    for attribute in group {
+        budget.charge(attribute.0.members.len())?;
+        members.extend_from_slice(&attribute.0.members);
+    }
+    members.extend_from_slice(&winner.0.members);
+    members.sort_unstable();
+    members.dedup();
+    if members == winner.0.members {
+        return Ok(winner.clone());
+    }
+    Ok(EffectiveAttribute(Arc::new(AttributeSlot {
+        owner: winner.0.owner,
+        field: winner.0.field.clone(),
+        lineage: table.references(&members),
+        members,
+        identity: winner.0.identity,
+    })))
+}
+
+/// Every object-type field of one admission, numbered in [`FieldRef`]
+/// order (owner, then name), so a sorted list of positions and the sorted
+/// list of the fields they name line up. Names are numbered too, for the
+/// duplicate-member check.
+struct FieldTable<'e> {
+    positions: BTreeMap<(EffectiveId, &'e str), usize>,
+    /// By position: the owner, the declaration and the name's number.
+    fields: Vec<(EffectiveId, &'e FieldDeclaration, usize)>,
+    names: usize,
+}
+
+impl<'e> FieldTable<'e> {
+    fn new(object_types: &'e BTreeMap<EffectiveId, ObjectTypeDeclaration>) -> Self {
+        let mut sorted: BTreeMap<(EffectiveId, &'e str), &'e FieldDeclaration> = BTreeMap::new();
+        for declaration in object_types.values() {
+            for field in &declaration.attributes {
+                sorted.insert((declaration.key, field.name()), field);
+            }
+        }
+        let mut names: BTreeMap<&'e str, usize> = BTreeMap::new();
+        let mut positions = BTreeMap::new();
+        let mut fields = Vec::with_capacity(sorted.len());
+        for (position, ((owner, name), field)) in sorted.into_iter().enumerate() {
+            let next = names.len();
+            let number = *names.entry(name).or_insert(next);
+            positions.insert((owner, name), position);
+            fields.push((owner, field, number));
+        }
+        Self {
+            positions,
+            fields,
+            names: names.len(),
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    fn name_count(&self) -> usize {
+        self.names
+    }
+
+    fn position(&self, field: &FieldRef) -> Option<usize> {
+        self.positions
+            .get(&(field.owner, field.name.as_str()))
+            .copied()
+    }
+
+    fn field(&self, position: usize) -> Option<&'e FieldDeclaration> {
+        self.fields.get(position).map(|(_, field, _)| *field)
+    }
+
+    fn name_of(&self, position: usize) -> Option<usize> {
+        self.fields.get(position).map(|(_, _, name)| *name)
+    }
+
+    fn reference(&self, position: usize) -> Option<FieldRef> {
+        self.fields
+            .get(position)
+            .map(|(owner, field, _)| FieldRef::new(*owner, field.name()))
+    }
+
+    /// The fields at `positions`, in the same (ascending) order.
+    fn references(&self, positions: &[usize]) -> Vec<FieldRef> {
+        positions
             .iter()
-            .skip(index + 1)
-            .find_map(|right| shared_field(&left.lineage, &right.lineage))
-    })
+            .filter_map(|position| self.reference(*position))
+            .collect()
+    }
+}
+
+/// Per-type marks for [`TypeEnvironment::flatten`], reused across types:
+/// a mark counts only when it carries the current type's epoch, so moving
+/// to the next type clears every mark at once.
+struct Scratch {
+    epoch: u64,
+    /// By field position: the candidate holding that field as its identity.
+    identities: Vec<(u64, usize)>,
+    /// By field position: the first candidate whose lineage names it.
+    holders: Vec<(u64, usize)>,
+    /// By name number: whether a kept attribute already has that name.
+    names: Vec<u64>,
+}
+
+impl Scratch {
+    fn new(fields: usize, names: usize) -> Self {
+        Self {
+            epoch: 0,
+            identities: vec![(0, 0); fields],
+            holders: vec![(0, 0); fields],
+            names: vec![0; names],
+        }
+    }
+
+    fn next_type(&mut self) {
+        self.epoch = self.epoch.saturating_add(1);
+    }
+
+    fn marked(marks: &[(u64, usize)], epoch: u64, position: usize) -> Option<usize> {
+        marks
+            .get(position)
+            .filter(|(mark, _)| *mark == epoch)
+            .map(|(_, candidate)| *candidate)
+    }
+
+    fn identity(&self, position: usize) -> Option<usize> {
+        Self::marked(&self.identities, self.epoch, position)
+    }
+
+    fn claim_identity(&mut self, position: usize, candidate: usize) {
+        if let Some(mark) = self.identities.get_mut(position) {
+            *mark = (self.epoch, candidate);
+        }
+    }
+
+    fn holder(&self, position: usize) -> Option<usize> {
+        Self::marked(&self.holders, self.epoch, position)
+    }
+
+    fn hold(&mut self, position: usize, candidate: usize) {
+        if let Some(mark) = self.holders.get_mut(position) {
+            *mark = (self.epoch, candidate);
+        }
+    }
+
+    /// Mark `name` taken; `false` when it already was.
+    fn claim_name(&mut self, name: usize) -> bool {
+        match self.names.get_mut(name) {
+            Some(mark) if *mark == self.epoch => false,
+            Some(mark) => {
+                *mark = self.epoch;
+                true
+            }
+            None => true,
+        }
+    }
+}
+
+/// Redefinition groups: a union-find over one type's candidates, joined
+/// whenever two lineages name a common field. Each group remembers the
+/// first such field, for the conflict refusal.
+struct UnionFind {
+    parent: Vec<usize>,
+    size: Vec<usize>,
+    shared: Vec<Option<usize>>,
+}
+
+impl UnionFind {
+    fn new(len: usize) -> Self {
+        Self {
+            parent: (0..len).collect(),
+            size: vec![1; len],
+            shared: vec![None; len],
+        }
+    }
+
+    fn find(&mut self, mut node: usize) -> usize {
+        loop {
+            let parent = self.parent.get(node).copied().unwrap_or(node);
+            if parent == node {
+                return node;
+            }
+            let grandparent = self.parent.get(parent).copied().unwrap_or(parent);
+            if let Some(slot) = self.parent.get_mut(node) {
+                *slot = grandparent;
+            }
+            node = grandparent;
+        }
+    }
+
+    /// Join `left`'s and `right`'s groups over the common field `field`.
+    fn union(&mut self, left: usize, right: usize, field: usize) {
+        let (left, right) = (self.find(left), self.find(right));
+        if left == right {
+            return;
+        }
+        let (small, large) = if self.size(left) < self.size(right) {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        let merged = self.size(small).saturating_add(self.size(large));
+        let shared = self
+            .shared(large)
+            .or(self.shared(small))
+            .or(Some(field));
+        if let Some(slot) = self.parent.get_mut(small) {
+            *slot = large;
+        }
+        if let Some(slot) = self.size.get_mut(large) {
+            *slot = merged;
+        }
+        if let Some(slot) = self.shared.get_mut(large) {
+            *slot = shared;
+        }
+    }
+
+    fn size(&self, root: usize) -> usize {
+        self.size.get(root).copied().unwrap_or(1)
+    }
+
+    fn shared(&self, root: usize) -> Option<usize> {
+        self.shared.get(root).copied().flatten()
+    }
 }
 
 fn duplicate_name(fields: &[FieldDeclaration]) -> Option<String> {

@@ -37,7 +37,7 @@ use qsl_semantics::model::population::{
 use qsl_semantics::value::declaration::{
     Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
     DeclarationCause, FieldDeclaration, FieldRef, InvalidDeclaration, ObjectTypeDeclaration,
-    TypeEnvironment,
+    TypeEnvironment, TypeEnvironmentLimits,
 };
 use quire_exact::{
     FieldValue, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, Presence, ScalarLimits,
@@ -123,7 +123,10 @@ fn environment_of(
         supertypes.into_iter().map(|(key, generals)| {
             ObjectTypeDeclaration::new(key, key.to_string(), vec![]).with_supertypes(generals)
         }),
-        ancestor_steps,
+        TypeEnvironmentLimits {
+            ancestor_steps,
+            ..TypeEnvironmentLimits::default()
+        },
     )
 }
 

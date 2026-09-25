@@ -135,7 +135,8 @@ impl AssemblyCause {
                 | DeclarationCause::RedefinitionTarget(_)
                 | DeclarationCause::RedefinitionConflict(_)
                 | DeclarationCause::RedefinitionWidens(_)
-                | DeclarationCause::AncestorSteps { .. } => {
+                | DeclarationCause::AncestorSteps { .. }
+                | DeclarationCause::WorkUnits { .. } => {
                     CatalogCode::new("runtime_invariant", "established-invariant-broken")
                 }
             },
