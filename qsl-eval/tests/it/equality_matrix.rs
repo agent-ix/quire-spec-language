@@ -998,6 +998,8 @@ fn animal_environment() -> TypeEnvironment {
             ObjectTypeDeclaration::new(object_type("M::Animal"), "Animal", vec![]),
             ObjectTypeDeclaration::new(object_type("M::Dog"), "Dog", vec![])
                 .with_supertypes(vec![object_type("M::Animal")]),
+            ObjectTypeDeclaration::new(object_type("M::Cat"), "Cat", vec![])
+                .with_supertypes(vec![object_type("M::Animal")]),
             ObjectTypeDeclaration::new(object_type("M::Rock"), "Rock", vec![]),
         ],
     )
@@ -1046,22 +1048,20 @@ fn e16a_references_admit_a_conforming_upcast_in_either_order() {
 #[test]
 fn e16b_references_to_unrelated_object_types_refuse() {
     let env = animal_environment();
-    let (dog, rock) = (
+    let (dog, cat, rock) = (
         ValueType::Reference(object_type("M::Dog")),
+        ValueType::Reference(object_type("M::Cat")),
         ValueType::Reference(object_type("M::Rock")),
     );
-    assert_eq!(
-        check(&env, &dog, &rock).map(|_| ()),
-        Err(IllTyped {
-            cause: IllTypedCause::TypeMismatch
-        })
-    );
-    assert_eq!(
-        check(&env, &rock, &dog).map(|_| ()),
-        Err(IllTyped {
-            cause: IllTypedCause::TypeMismatch
-        })
-    );
+    for (left, right) in [(&dog, &rock), (&rock, &dog), (&dog, &cat), (&cat, &dog)] {
+        assert_eq!(
+            check(&env, left, right).map(|_| ()),
+            Err(IllTyped {
+                cause: IllTypedCause::TypeMismatch
+            }),
+            "{left:?} = {right:?}"
+        );
+    }
 }
 
 // ---- IEEE rows -------------------------------------------------------------

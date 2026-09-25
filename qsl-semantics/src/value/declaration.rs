@@ -1142,12 +1142,13 @@ impl TypeEnvironment {
                     continue;
                 }
                 path.pop();
-                let own = Self::own_ancestors(node, &positions, &ancestors, budget).map_err(
-                    |cause| InvalidDeclaration {
-                        declaration: node.name.clone(),
-                        cause,
-                    },
-                )?;
+                let own =
+                    Self::own_ancestors(node, &positions, &ancestors, budget).map_err(|cause| {
+                        InvalidDeclaration {
+                            declaration: node.name.clone(),
+                            cause,
+                        }
+                    })?;
                 if let Some(slot) = positions
                     .get(&node.key)
                     .and_then(|position| ancestors.get_mut(*position as usize))
@@ -1158,7 +1159,10 @@ impl TypeEnvironment {
         }
         Ok(Ancestry {
             positions,
-            ancestors: ancestors.into_iter().map(Option::unwrap_or_default).collect(),
+            ancestors: ancestors
+                .into_iter()
+                .map(Option::unwrap_or_default)
+                .collect(),
         })
     }
 
@@ -1916,10 +1920,7 @@ impl UnionFind {
             (right, left)
         };
         let merged = self.size(small).saturating_add(self.size(large));
-        let shared = self
-            .shared(large)
-            .or(self.shared(small))
-            .or(Some(field));
+        let shared = self.shared(large).or(self.shared(small)).or(Some(field));
         if let Some(slot) = self.parent.get_mut(small) {
             *slot = large;
         }
@@ -2340,6 +2341,8 @@ pub fn operand_value(
     // the object as found): `ValueType::admits`'s exact type match would
     // refuse a real upcast, so a reference operand is checked by kind only.
     // The checker already proved the static types related.
+    // The checker guarantees the value's type conforms to `T`; the plan then
+    // compares only the identity triple, so the kind check is sufficient.
     let admitted = match (&operand.source, value) {
         (ValueType::Reference(_), value) => matches!(value, Value::Reference(_)),
         (source, value) => source.admits(value),

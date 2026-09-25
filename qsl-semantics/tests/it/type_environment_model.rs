@@ -37,7 +37,7 @@ use qsl_semantics::model::population::{
 use qsl_semantics::value::declaration::{
     Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
     DeclarationCause, FieldDeclaration, FieldRef, InvalidDeclaration, ObjectTypeDeclaration,
-    TypeEnvironment, TypeEnvironmentLimits,
+    TypeEnvironment, TypeEnvironmentLimits, DEFAULT_WORK_UNITS,
 };
 use quire_exact::{
     FieldValue, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, Presence, ScalarLimits,
@@ -869,6 +869,132 @@ fn the_most_derived_redefinition_must_narrow_every_field_it_hides() {
         refusal.cause,
         DeclarationCause::RedefinitionWidens(field_ref("M::B", "x"))
     );
+}
+
+fn reference_field(name: &str, target: &str) -> FieldDeclaration {
+    FieldDeclaration::new(
+        name,
+        ValueType::Reference(effective(target)),
+        Presence::Optional,
+    )
+}
+
+/// A reference field is redefined only with its own reference type:
+/// evaluation's `ValueType::admits` matches a reference's object type
+/// exactly, so `B.o: Reference<B>?` redefining `A.o: Reference<A>?` would
+/// pass the check and then refuse `CheckedInvariant` when `o` is read
+/// through `A`. Refused `RedefinitionWidens` naming `A.o`; the same
+/// redefinition typed `Reference<A>?` is admitted.
+#[trace("TC-196", "FR-151-AC-2")]
+#[test]
+fn a_reference_field_is_redefined_only_with_its_own_reference_type() {
+    let redefined = |b_field: FieldDeclaration| {
+        TypeEnvironment::new(
+            [],
+            [
+                object("M::A", vec![reference_field("o", "M::A")], &[]),
+                object(
+                    "M::B",
+                    vec![b_field.with_redefines(field_ref("M::A", "o"))],
+                    &["M::A"],
+                ),
+            ],
+        )
+    };
+    let refusal = redefined(reference_field("o", "M::B")).unwrap_err();
+    assert_eq!(refusal.declaration, "M::B");
+    assert_eq!(
+        refusal.cause,
+        DeclarationCause::RedefinitionWidens(field_ref("M::A", "o"))
+    );
+    assert_eq!(refusal.code(), "ill_typed");
+
+    let environment = redefined(reference_field("o", "M::A")).unwrap();
+    let exposed = environment.attribute(effective("M::B"), "o").unwrap();
+    assert_eq!(exposed.owner(), effective("M::B"));
+    assert!(exposed.stands_for(&field_ref("M::A", "o")));
+}
+
+// ---- admission work budget -------------------------------------------------
+
+/// A linear chain `M::T0 <- M::T1 <- ...` of `depth` types, each declaring
+/// one integer field of its own.
+fn chain(depth: usize) -> Vec<ObjectTypeDeclaration> {
+    (0..depth)
+        .map(|level| {
+            let label = format!("M::T{level}");
+            let supertypes = match level.checked_sub(1) {
+                Some(previous) => vec![effective(&format!("M::T{previous}"))],
+                None => vec![],
+            };
+            ObjectTypeDeclaration::new(
+                effective(&label),
+                label,
+                vec![integer_field(&format!("f{level}"))],
+            )
+            .with_supertypes(supertypes)
+        })
+        .collect()
+}
+
+/// The flattened slots of a `depth`-type chain: type `k` has `k + 1`.
+fn chain_slots(depth: u64) -> u64 {
+    depth * (depth + 1) / 2
+}
+
+fn work_units(work_units: u64) -> TypeEnvironmentLimits {
+    TypeEnvironmentLimits {
+        work_units,
+        ..TypeEnvironmentLimits::default()
+    }
+}
+
+/// A 5,000-type chain holds 12.5 million flattened slots. Admission charges
+/// its ancestor closure and flattening to the default `work_units` budget
+/// and refuses `resource_exhausted` naming it, instead of running
+/// unmetered; a 1,000-type chain fits and admits.
+#[trace("TC-220", "FR-082-AC-7")]
+#[test]
+fn a_deep_chain_refuses_the_admission_work_budget() {
+    let refusal = TypeEnvironment::new([], chain(5_000)).unwrap_err();
+    assert_eq!(
+        refusal.cause,
+        DeclarationCause::WorkUnits {
+            limit: DEFAULT_WORK_UNITS
+        }
+    );
+    assert_eq!(refusal.code(), "resource_exhausted");
+
+    let environment = TypeEnvironment::new([], chain(1_000)).unwrap();
+    assert_eq!(
+        environment.attributes(effective("M::T999")).unwrap().len(),
+        1_000
+    );
+}
+
+/// Admission work grows with the flattened output, not faster: a linear
+/// chain of every depth admits within four units a flattened slot, and
+/// refuses when given fewer units than it has slots, so each slot is
+/// charged. The pre-budget algorithm's all-pairs scans cost a cube of the
+/// depth; so would any regression back to them.
+#[trace("TC-220", "FR-082-AC-7")]
+#[test]
+fn a_linear_chain_costs_admission_work_linear_in_its_flattened_slots() {
+    for depth in [50_u64, 100, 200, 400] {
+        let types = || chain(usize::try_from(depth).unwrap());
+        let slots = chain_slots(depth);
+        assert!(
+            TypeEnvironment::bounded([], types(), work_units(4 * slots)).is_ok(),
+            "depth {depth} admits within 4 units a slot"
+        );
+        assert_eq!(
+            TypeEnvironment::bounded([], types(), work_units(slots))
+                .unwrap_err()
+                .cause,
+            DeclarationCause::WorkUnits { limit: slots },
+            "depth {depth}"
+        );
+    }
 }
 
 // ---- object_type_supertypes -------------------------------------------------

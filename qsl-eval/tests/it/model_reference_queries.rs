@@ -1165,6 +1165,24 @@ fn attribute_world(
     b_fields: Vec<FieldDeclaration>,
     b1_slots: Vec<(&str, quire_exact::FieldValue)>,
 ) -> (CheckedPackage, ObjectEnvironment) {
+    attribute_world_of(
+        scenario,
+        a_fields,
+        b_fields,
+        vec![(
+            object_reference(&scenario.universe, &scenario.b, "b1"),
+            b1_slots,
+        )],
+    )
+}
+
+/// [`attribute_world`] with the object world given whole.
+fn attribute_world_of(
+    scenario: &Scenario,
+    a_fields: Vec<FieldDeclaration>,
+    b_fields: Vec<FieldDeclaration>,
+    world: Vec<(ObjectReference, Vec<(&str, quire_exact::FieldValue)>)>,
+) -> (CheckedPackage, ObjectEnvironment) {
     let types = TypeEnvironment::new(
         [],
         [
@@ -1174,16 +1192,10 @@ fn attribute_world(
         ],
     )
     .unwrap();
-    let objects = ObjectEnvironment::new(
-        &types,
-        [(
-            object_reference(&scenario.universe, &scenario.b, "b1"),
-            b1_slots,
-        )],
-    )
-    .unwrap()
-    .with_population(scenario.binding.clone())
-    .unwrap();
+    let objects = ObjectEnvironment::new(&types, world)
+        .unwrap()
+        .with_population(scenario.binding.clone())
+        .unwrap();
     let graph = PackageDeclarations {
         types,
         models: vec![scenario.model.clone()],
@@ -1291,6 +1303,45 @@ fn l11_deref_through_a_supertype_reference_reads_the_redefiner() {
         integer_of(read_through_a(&package, &objects, "x")),
         Integer::from(3_i64)
     );
+}
+
+/// TC-198 L11 with a reference field (QSL-57): `B.o: Reference<M::A>?`
+/// redefines `A.o: Reference<M::A>?`, the one reference redefinition the
+/// checker admits, and `b1.o` holds the `A` object `a1`. `deref(r).o` for a
+/// `Reference<M::A>` holding `b1` completes with `a1`, never
+/// `CheckedInvariant`. The narrowing `B.o: Reference<M::B>?` is refused at
+/// admission (`type_environment_model.rs`), since evaluation matches a
+/// reference's object type exactly.
+#[test]
+#[trace("TC-198", "FR-153-AC-6")]
+#[trace("TC-196", "FR-151-AC-2")]
+fn l11_deref_through_a_supertype_reference_reads_a_redefined_reference_field() {
+    let scenario = scenario();
+    let reference_to_a =
+        || FieldDeclaration::new("o", ValueType::Reference(scenario.a), Presence::Optional);
+    let a1 = object_reference(&scenario.universe, &scenario.a, "a1");
+    let (package, objects) = attribute_world_of(
+        &scenario,
+        vec![reference_to_a()],
+        vec![reference_to_a().with_redefines(FieldRef::new(scenario.a, "o"))],
+        vec![
+            (a1.clone(), vec![]),
+            (
+                object_reference(&scenario.universe, &scenario.b, "b1"),
+                vec![(
+                    "o",
+                    quire_exact::FieldValue::Present(Value::Reference(a1.clone())),
+                )],
+            ),
+        ],
+    );
+    match read_through_a(&package, &objects, "o") {
+        Value::Option(option) => match option.payload() {
+            Some(Value::Reference(read)) => assert_eq!(*read, a1),
+            other => panic!("expected a1, got {other:?}"),
+        },
+        other => panic!("expected a present option, got {other:?}"),
+    }
 }
 
 /// TC-198 L08's adverse case (QSL-57 item 1): references to two object types
