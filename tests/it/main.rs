@@ -67,6 +67,9 @@ mod extracted_command;
 mod family_outcome_layering;
 mod fixture_audit;
 mod formal_source;
+// QSL-251: the handoff writer is behind its feature; the all-features lane runs this.
+#[cfg(feature = "handoff-writer")]
+mod handoff_writer;
 mod integer_lowering;
 mod layer_crate_reexports;
 mod linking;

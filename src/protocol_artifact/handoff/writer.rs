@@ -1,5 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-042/TC-121: example compilation recipe and independent input selections.
+//! FR-042-AC-15 / FR-050-AC-8 (QSL-251): the complete compiled-protocol
+//! handoff producer, callable in-process by a downstream crate.
+//!
+//! [`write_v1`] and [`write_v2`] compile the authored protocol-handoff recipe
+//! (the native units and model under `examples/protocol-handoff/`, embedded at
+//! compile time) through the real compiler stages, read the emitted bytes back
+//! through the strict public reader, and only then write a fresh handoff
+//! directory: original sources, model source, `dependencies/` exact bytes, the
+//! independent `expected*.json` selection, the artifact reference, the offer
+//! and a complete `SHA256SUMS`. The `native_protocol_handoff` and
+//! `native_protocol_v2_handoff` examples are thin callers of these functions.
+//!
+//! Every written dependency byte is first-party content this crate already
+//! owns: the admitted model artifact, `docs/compiled-protocol-v{1,2}.md`, and
+//! the synthetic identity/path placeholders of
+//! [`crate::linking::composed::definition_source::RegisteredDefinition`].
+//!
 //! It calls production APIs; it is not a production request format or B reader.
 
 use std::{
@@ -9,9 +25,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use qsl_foundation::{ByteDigest, Source, SourceIdentity};
-use quire_contract_ir as ir;
-use quire_spec_language::{
+use crate::{
     checking::{
         composed::{self, proofs},
         CheckBindings, ClauseBinding,
@@ -29,30 +43,34 @@ use quire_spec_language::{
             MutationCase, MutationInput, MutationManifest, SelectedArtifactLimits,
             SelectedClockInput, SelectedDeclaration, SelectedDependency, SelectedModel,
             SelectedSource, SelectedTemporal, Selection, SelectionV2, MUTATION_MANIFEST_FORMAT,
-            PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_MUTATION_MANIFEST_FILE,
-            PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
+            PUBLISHED_ARTIFACT_REFERENCE_FILE, PUBLISHED_CHECKSUMS_FILE,
+            PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_OFFER_FILE, PUBLISHED_SELECTION_FILE,
+            PUBLISHED_V1_ARTIFACT_REFERENCE_FILE, PUBLISHED_V1_CHECKSUMS_FILE,
+            PUBLISHED_V1_OFFER_FILE, PUBLISHED_V1_SELECTION_FILE,
         },
         native, v2, wire as w,
     },
 };
+use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+use quire_contract_ir as ir;
 
 const AUTHORITY: &str = "ix://agent-ix/quire-spec-language";
 const STANDARD: &str = "ix://agent-ix/quire-specification";
 const FORMAL_NAMESPACE: &str = "quire-contract-ir/source-revision";
 const REQUIREMENT_NAMESPACE: &str = "quire-contract-ir/requirement-revision";
 const DEFINITION_NAMESPACE: &str = "quire/native-definition-revision";
-const CONTRACT: &[u8] = include_bytes!("../../docs/compiled-protocol-v1.md");
-const CONTRACT_V2: &[u8] = include_bytes!("../../docs/compiled-protocol-v2.md");
+const CONTRACT: &[u8] = include_bytes!("../../../docs/compiled-protocol-v1.md");
+const CONTRACT_V2: &[u8] = include_bytes!("../../../docs/compiled-protocol-v2.md");
 /// The producer's own source text. `Producer.binary` identifies this file by
 /// a digest over these bytes (see `producer_source_digest`), so its identity
 /// is exactly what anyone with this repository can independently recompute
-/// (`sha256sum examples/protocol-handoff/producer.rs`) -- unlike a compiled
+/// (`sha256sum src/protocol_artifact/handoff/writer.rs`) -- unlike a compiled
 /// executable, which nobody retains and which moves with the toolchain. The
-/// digest covers `producer.rs` alone -- not this example's other files, and
-/// not the `quire_spec_language` library that actually performs compilation
-/// -- so "producer identity" means exactly this file, not the example
-/// binary or its dependency closure.
-const PRODUCER_SOURCE: &[u8] = include_bytes!("producer.rs");
+/// digest covers `writer.rs` alone -- not the embedded recipe inputs, and not
+/// the rest of the library that actually performs compilation -- so
+/// "producer identity" means exactly this file, not a binary or its
+/// dependency closure.
+const PRODUCER_SOURCE: &[u8] = include_bytes!("writer.rs");
 const EVENT_CLOCK: &[u8] =
     b"{ \"kind\": \"event_position\", \"sequence_authority\": \"workflow-events\" }\n";
 const SAMPLE_CLOCK: &[u8] = b"{ \"kind\": \"fixed_sample\", \"epoch\": { \"kind\": \"integer\", \"decimal\": \"0\" }, \"period\": { \"kind\": \"rational\", \"numerator\": \"1\", \"denominator\": \"2\" }, \"unit\": \"second\" }\n";
@@ -121,7 +139,7 @@ const UNITS: &[UnitRecipe] = &[
         identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/predicates",
         document: "ProtocolHandoffPredicates",
         requirement: "HandoffPredicates",
-        body: include_str!("predicates.body.native"),
+        body: include_str!("../../../examples/protocol-handoff/predicates.body.native"),
         clauses: &[
             AuthoredClause {
                 name: "Allowed",
@@ -145,7 +163,7 @@ const UNITS: &[UnitRecipe] = &[
         identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/state",
         document: "ProtocolHandoffState",
         requirement: "HandoffState",
-        body: include_str!("state.body.native"),
+        body: include_str!("../../../examples/protocol-handoff/state.body.native"),
         clauses: &[
             AuthoredClause {
                 name: "Healthy",
@@ -174,7 +192,7 @@ const UNITS: &[UnitRecipe] = &[
         identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/temporal",
         document: "ProtocolHandoffTemporal",
         requirement: "HandoffTemporal",
-        body: include_str!("temporal.body.native"),
+        body: include_str!("../../../examples/protocol-handoff/temporal.body.native"),
         clauses: &[AuthoredClause {
             name: "Due",
             clause: "due",
@@ -191,7 +209,7 @@ const UNITS: &[UnitRecipe] = &[
         identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/workflow",
         document: "ProtocolHandoffWorkflow",
         requirement: "HandoffWorkflow",
-        body: include_str!("workflow.body.native"),
+        body: include_str!("../../../examples/protocol-handoff/workflow.body.native"),
         clauses: &[AuthoredClause {
             name: "Flow",
             clause: "flow",
@@ -214,7 +232,7 @@ const UNITS_V2: &[UnitRecipe] = &[
         identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/predicates",
         document: "ProtocolHandoffPredicates",
         requirement: "HandoffPredicates",
-        body: include_str!("predicates.body.native"),
+        body: include_str!("../../../examples/protocol-handoff/predicates.body.native"),
         clauses: &[
             AuthoredClause {
                 name: "Allowed",
@@ -240,7 +258,7 @@ const UNITS_V2: &[UnitRecipe] = &[
         identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/state",
         document: "ProtocolHandoffState",
         requirement: "HandoffState",
-        body: include_str!("state.body.native"),
+        body: include_str!("../../../examples/protocol-handoff/state.body.native"),
         clauses: &[
             AuthoredClause {
                 name: "Healthy",
@@ -271,7 +289,7 @@ const UNITS_V2: &[UnitRecipe] = &[
         identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/temporal-v2",
         document: "ProtocolHandoffTemporalV2",
         requirement: "HandoffTemporalV2",
-        body: include_str!("temporal-v2.body.native"),
+        body: include_str!("../../../examples/protocol-handoff/temporal-v2.body.native"),
         clauses: &[
             AuthoredClause {
                 name: "Due",
@@ -302,7 +320,7 @@ const UNITS_V2: &[UnitRecipe] = &[
         identity: "ix://agent-ix/quire-spec-language/examples/protocol-handoff/workflow",
         document: "ProtocolHandoffWorkflow",
         requirement: "HandoffWorkflow",
-        body: include_str!("workflow-v2-frozen.body.native"),
+        body: include_str!("../../../examples/protocol-handoff/workflow-v2-frozen.body.native"),
         clauses: &[AuthoredClause {
             name: "Flow",
             clause: "flow",
@@ -318,89 +336,142 @@ const UNITS_V2: &[UnitRecipe] = &[
     },
 ];
 
+/// Why [`write_v1`] or [`write_v2`] wrote no complete handoff.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("usage: native_protocol_handoff <new-output-directory>")]
-    Arguments,
-    #[error("usage: native_protocol_v2_handoff <new-output-directory>")]
-    ArgumentsV2,
+    /// A filesystem operation on `path` failed, including an existing output
+    /// directory.
     #[error("cannot access {path}: {source}")]
     Io {
+        /// The path the operation named.
         path: PathBuf,
+        /// The underlying I/O failure.
         #[source]
         source: io::Error,
     },
+    /// An authored recipe identifier is not a valid Contract IR identifier.
     #[error("invalid authored formal identifier: {0:?}")]
     Identifier(ir::Diagnostic),
+    /// An authored source unit could not be read.
     #[error("{0}")]
     Source(#[from] Box<qsl_foundation::Diagnostic>),
+    /// The authored model source could not be read or admitted.
     #[error("{0}")]
     Model(#[from] Box<model_source::ModelSourceError>),
+    /// A compiler stage did not complete every authored record.
     #[error("{stage} did not complete: {completed}/{expected} records, {issues} issues, incomplete={incomplete}; first issue: {first:?}")]
     Stage {
+        /// The stage that did not complete.
         stage: &'static str,
+        /// Records the stage completed.
         completed: usize,
+        /// Records the recipe authored.
         expected: usize,
+        /// Issues the stage reported.
         issues: usize,
+        /// Whether the stage exhausted a limit.
         incomplete: bool,
+        /// A fixed-size summary of the first issue.
         first: Option<Box<StageIssue>>,
     },
+    /// Admission, emission or the independent reader refused.
     #[error("{stage}: {cause}; source locus: {locus:?}")]
     Artifact {
+        /// The admission, emission or reader stage that refused.
         stage: &'static str,
+        /// The typed refusal.
         #[source]
         cause: artifact::Error,
+        /// The refusal's source locus, when it has one.
         locus: Option<Box<w::Locus>>,
     },
-    #[error("cannot serialize an example selection: {0}")]
+    /// A selection, reference or mutation record could not be serialized.
+    #[error("cannot serialize a handoff selection: {0}")]
     Json(#[from] serde_json::Error),
+    /// The selected reader limits do not fit their wire width.
     #[error("cannot serialize the selected reader limits: {0}")]
     HandoffLimits(#[from] artifact::handoff::LimitWidthError),
+    /// A generated handoff entry is not a plain file below the output root.
     #[error("invalid generated handoff path: {0}")]
     HandoffPath(String),
+    /// The independently read package differs from the native emission.
     #[error("the independently read package differs from the native emission")]
     RoundTrip,
+    /// An authored declaration does not correspond to the compiled namespace.
     #[error("authored declaration {name}: {cause}")]
     Declaration {
+        /// The authored declaration name.
         name: String,
+        /// How the correspondence failed.
         #[source]
         cause: DeclarationCause,
     },
+    /// A dependency identity does not select exactly one dependency.
     #[error("dependency {identity}: expected one selection, found {matches}")]
-    Dependency { identity: String, matches: usize },
+    Dependency {
+        /// The dependency identity looked up.
+        identity: String,
+        /// Dependencies carrying that identity.
+        matches: usize,
+    },
+    /// A declaration span exceeds the wire offset range.
     #[error("source span {span:?} exceeds the wire offset range")]
-    Span { span: qsl_foundation::Span },
+    Span {
+        /// The offending span.
+        span: qsl_foundation::Span,
+    },
+    /// The authored model does not declare exactly one operation.
     #[error("the authored recipe requires one operation, found {count}")]
-    OperationCount { count: usize },
+    OperationCount {
+        /// Operations the model declares.
+        count: usize,
+    },
+    /// The authored model's operation is not `Workflow::apply`.
     #[error("the authored recipe requires Workflow::apply, found {context:?}::{name:?}")]
     OperationIdentity {
+        /// The operation's context.
         context: ir::SymbolName,
+        /// The operation's name.
         name: ir::SymbolName,
     },
+    /// A precondition names another operation's anchor.
     #[error(
         "authored precondition {name}: expected operation anchor {expected:?}, found {actual:?}"
     )]
     PreAnchorMismatch {
+        /// The authored declaration name.
         name: String,
+        /// The selected operation's anchor.
         expected: ir::AnchorName,
+        /// The anchor the precondition names.
         actual: ir::AnchorName,
     },
+    /// A postcondition names another operation's anchor.
     #[error(
         "authored postcondition {name}: expected operation anchor {expected:?}, found {actual:?}"
     )]
     PostAnchorMismatch {
+        /// The authored declaration name.
         name: String,
+        /// The selected operation's anchor.
         expected: ir::AnchorName,
+        /// The anchor the postcondition names.
         actual: ir::AnchorName,
     },
+    /// The authored inventory exceeds the wire index range.
     #[error("the authored recipe inventory exceeds the wire index range")]
     InventoryLimit,
+    /// A `/2` mutation case could not be constructed from the emitted package.
     #[error("cannot construct deterministic v2 mutation fixture {0}")]
     MutationFixture(&'static str),
+    /// A `/2` mutation case did not refuse with its manifest's code.
     #[error("v2 mutation {identity} expected refusal {expected}, got {actual}")]
     MutationReplay {
+        /// The mutation case identity.
         identity: String,
+        /// The refusal code the manifest records.
         expected: String,
+        /// What the strict reader actually returned.
         actual: String,
     },
 }
@@ -408,14 +479,22 @@ pub enum Error {
 /// Distinct failures of the recipe's authored declaration correspondence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum DeclarationCause {
+    /// The name is not declared.
     #[error("not present in the original namespace")]
     Missing,
+    /// The name is declared more than once.
     #[error("ambiguous in the original namespace: {matches} declarations")]
-    Ambiguous { matches: usize },
+    Ambiguous {
+        /// Declarations carrying the name.
+        matches: usize,
+    },
+    /// The declaration's syntax is unavailable.
     #[error("original syntax is unavailable")]
     MissingSyntax,
+    /// The declaration's source unit is unavailable.
     #[error("original unit is unavailable")]
     MissingUnit,
+    /// The declaration sits in another source unit than its clause.
     #[error("clause was selected in a different source unit")]
     DifferentSource,
 }
@@ -423,34 +502,57 @@ pub enum DeclarationCause {
 /// Fixed-size summaries never retain a report, source body or diagnostic list.
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 pub enum StageIssue {
+    /// A namespace admission issue.
     #[error("{kind}, supplied={supplied:?}, span={span:?}, code={code:?}")]
     Namespace {
+        /// The issue kind.
         kind: &'static str,
+        /// The supplied source index, when the issue names one.
         supplied: Option<usize>,
+        /// The source span, when the issue names one.
         span: Option<qsl_foundation::Span>,
+        /// The diagnostic code, when the issue carries one.
         code: Option<qsl_foundation::Code>,
     },
+    /// A declaration whose proof did not discharge.
     #[error("declaration {declaration}: {disposition:?}, site={site:?}, cause={cause:?}")]
     Proof {
+        /// The declaration index.
         declaration: usize,
+        /// Its proof disposition.
         disposition: proofs::ProofDisposition,
+        /// The first cause's site, or the exhaustion site.
         site: Option<composed::Site>,
+        /// The first cause.
         cause: Option<ProofCause>,
     },
 }
 
+/// A fixed-size summary of one proof cause.
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 pub enum ProofCause {
+    /// An upstream type refusal.
     #[error("upstream type refusal")]
     UpstreamType,
+    /// An authored correspondence failure.
     #[error("authored correspondence: {0:?}")]
     Correspondence(proofs::CorrespondenceError),
+    /// An unproved obligation.
     #[error("unproved obligation: {diagnostics} diagnostics")]
-    Unproved { diagnostics: usize },
+    Unproved {
+        /// Diagnostics the obligation carried.
+        diagnostics: usize,
+    },
+    /// An unsupported proof prerequisite.
     #[error("unsupported proof prerequisite: {0:?}")]
     Unsupported(proofs::Unsupported),
+    /// A failed dependency declaration.
     #[error("dependency declaration {declaration}")]
-    Dependency { declaration: usize },
+    Dependency {
+        /// The dependency's declaration index.
+        declaration: usize,
+    },
+    /// A proof cause this summary does not name.
     #[error("unrecognized proof cause")]
     Unrecognized,
 }
@@ -518,7 +620,7 @@ fn digest_reference(
 
 /// FR-042-AC-10: identify the producer by a digest over its own source text,
 /// checkable by anyone with this repository (`sha256sum
-/// examples/protocol-handoff/producer.rs`) rather than by hashing a compiled
+/// src/protocol_artifact/handoff/writer.rs`) rather than by hashing a compiled
 /// executable that nobody retains and that moves with the toolchain. This is
 /// `Producer.binary` -- not a dependency whose original bytes an independent
 /// reader must recover -- so `PRODUCER_SOURCE` is read only to compute the
@@ -526,6 +628,14 @@ fn digest_reference(
 /// dependency's exact-byte content.
 fn producer_source_digest() -> ByteDigest {
     ByteDigest::of(PRODUCER_SOURCE)
+}
+
+/// The FR-001 `ByteDigest` of a clock input's exact embedded bytes, as
+/// recorded on its `SelectedClockInput.digest`. Its own tiny function so the
+/// arch-lint canonical-encoder exemption stays pinned to this one hash site
+/// rather than the whole (JSON-producing) `emit_and_read_v2`.
+fn clock_input_digest(clock_bytes: &[u8]) -> String {
+    ByteDigest::of(clock_bytes).to_string()
 }
 
 fn formal(source: Source, document: &str) -> Result<FormalSource, Error> {
@@ -548,7 +658,7 @@ fn model(bytes: &[u8]) -> Result<NativeModel, Error> {
         },
         "examples/protocol-handoff/model.json",
         bytes,
-        quire_spec_language::Limits::default().source_bytes,
+        crate::Limits::default().source_bytes,
     )?;
     Ok(model_source::read(
         formal(source, "ProtocolHandoffModel")?,
@@ -603,7 +713,7 @@ fn source(model: &NativeModel, recipe: &UnitRecipe) -> Result<Source, Error> {
         },
         format!("examples/protocol-handoff/{}", recipe.file),
         text.as_bytes(),
-        quire_spec_language::Limits::default().source_bytes,
+        crate::Limits::default().source_bytes,
     )?)
 }
 
@@ -839,14 +949,18 @@ impl UnitInput {
 
 impl Inputs {
     fn new() -> Result<Self, Error> {
-        Self::new_with(UNITS, &[R::EventPosition], include_bytes!("model.json"))
+        Self::new_with(
+            UNITS,
+            &[R::EventPosition],
+            include_bytes!("../../../examples/protocol-handoff/model.json"),
+        )
     }
 
     fn new_v2() -> Result<Self, Error> {
         Self::new_with(
             UNITS_V2,
             &[R::EventPosition, R::FixedSample, R::TimestampedWindow],
-            include_bytes!("model-v2-frozen.json"),
+            include_bytes!("../../../examples/protocol-handoff/model-v2-frozen.json"),
         )
     }
 
@@ -1212,7 +1326,7 @@ fn compile_with<T>(
         &inventory,
         &sources,
         linking::WorkLimits::default(),
-        quire_spec_language::Limits::default(),
+        crate::Limits::default(),
     );
     let namespace = namespace
         .namespace()
@@ -1655,7 +1769,7 @@ fn emit_and_read_v2(
                         "{AUTHORITY}/examples/protocol-handoff/{}",
                         recipe.clock_identity
                     ),
-                    digest: ByteDigest::of(recipe.clock_bytes).to_string(),
+                    digest: clock_input_digest(recipe.clock_bytes),
                     file: recipe.clock_file.into(),
                     configuration: clocks[index].clone(),
                 },
@@ -1734,8 +1848,23 @@ impl<'a> ExpectedUnit<'a> {
     }
 }
 
-/// Compile the authored recipe and publish its exact selections in a fresh directory.
-pub fn write(directory: &Path) -> Result<(), Error> {
+/// Compile the authored `/1` recipe and write its complete handoff to
+/// `directory`, which must not exist yet.
+///
+/// The directory receives `compiled-protocol.json`, its
+/// `compiled-protocol.ref.json` seal, the `expected.json` [`Selection`], every
+/// original source and `model-source.json`, each selected dependency's exact
+/// bytes under `dependencies/`, and a `SHA256SUMS` inventory of all of them.
+/// The emitted bytes are read back through [`crate::protocol_artifact::read`]
+/// before anything is written. The output is deterministic: two calls write
+/// byte-identical trees.
+///
+/// # Errors
+///
+/// A compiler, emission or reader stage refusal, an existing `directory`, or
+/// an I/O failure. Publication is not atomic: an I/O failure may leave a
+/// partial directory.
+pub fn write_v1(directory: &Path) -> Result<(), Error> {
     let inputs = Inputs::new()?;
     let selected = SelectedInputs::new(&inputs)?;
     let output = compile(&inputs, &selected)?;
@@ -1747,7 +1876,19 @@ pub fn write(directory: &Path) -> Result<(), Error> {
     )
 }
 
-/// Compile the authored temporal recipe as strict v2 and publish its complete handoff.
+/// Compile the authored temporal recipe as strict `/2` and write its complete
+/// handoff to `directory`, which must not exist yet.
+///
+/// Beside the `/1` members (under their `/2` names: see
+/// [`super::PUBLISHED_OFFER_FILE`] and its siblings) it writes the three clock
+/// inputs and the `mutations/` adverse corpus with its manifest. The emitted
+/// bytes are read back through [`crate::protocol_artifact::v2::read`], and
+/// every mutation is replayed to its expected refusal, before anything is
+/// written. The output is deterministic: two calls write byte-identical trees.
+///
+/// # Errors
+///
+/// As [`write_v1`], plus a mutation that does not refuse as its manifest says.
 pub fn write_v2(directory: &Path) -> Result<(), Error> {
     let inputs = Inputs::new_v2()?;
     let selected = SelectedInputs::new_v2(&inputs)?;
@@ -1828,13 +1969,16 @@ fn write_files(
         &directory.join(&selection.model.source_file),
         selection.model.source.text.as_bytes(),
     )?;
-    write_file(&directory.join("expected.json"), &selected_bytes)?;
     write_file(
-        &directory.join("compiled-protocol.ref.json"),
+        &directory.join(PUBLISHED_V1_SELECTION_FILE),
+        &selected_bytes,
+    )?;
+    write_file(
+        &directory.join(PUBLISHED_V1_ARTIFACT_REFERENCE_FILE),
         &reference_bytes,
     )?;
-    write_file(&directory.join("compiled-protocol.json"), bytes)?;
-    write_checksum_inventory(directory)
+    write_file(&directory.join(PUBLISHED_V1_OFFER_FILE), bytes)?;
+    write_checksum_inventory(directory, PUBLISHED_V1_CHECKSUMS_FILE)
 }
 
 fn collect_handoff_files(
@@ -1861,7 +2005,7 @@ fn collect_handoff_files(
     Ok(())
 }
 
-fn write_checksum_inventory(directory: &Path) -> Result<(), Error> {
+fn write_checksum_inventory(directory: &Path, checksums_file: &str) -> Result<(), Error> {
     let mut files = BTreeSet::new();
     collect_handoff_files(directory, directory, &mut files)?;
     let mut sums = String::new();
@@ -1877,7 +2021,7 @@ fn write_checksum_inventory(directory: &Path) -> Result<(), Error> {
         )
         .map_err(|error| Error::HandoffPath(error.to_string()))?;
     }
-    write_file(&directory.join("SHA256SUMS"), sums.as_bytes())
+    write_file(&directory.join(checksums_file), sums.as_bytes())
 }
 
 fn write_files_v2(
@@ -1925,7 +2069,7 @@ fn write_files_v2(
         &reference_bytes,
     )?;
     write_file(&directory.join(PUBLISHED_OFFER_FILE), bytes)?;
-    write_checksum_inventory(directory)
+    write_checksum_inventory(directory, PUBLISHED_CHECKSUMS_FILE)
 }
 
 fn mutation_fixtures(

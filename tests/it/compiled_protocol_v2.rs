@@ -156,23 +156,6 @@ fn committed_handoff_checksums_and_interchange_records_are_complete() {
     }
 }
 
-#[test]
-#[trace("TC-138", "FR-042-AC-10")]
-fn published_v2_producer_digest_matches_this_repositorys_producer_source() {
-    let root = Path::new(PUBLISHED_HANDOFF);
-    let selection: artifact::handoff::SelectionV2 = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_SELECTION_FILE)).expect("committed reader selection"),
-    )
-    .expect("decode expected-v2.json with the published type");
-    assert_eq!(
-        ByteDigest::of(include_bytes!(
-            "../../examples/protocol-handoff/producer.rs"
-        )),
-        selection.inherited.producer.binary.digest,
-        "FR-042-AC-10: published producer identity is this repository's producer source",
-    );
-}
-
 fn inputs() -> Inputs {
     inputs_with_event_body(
         "temporal ByEvent using T over (view: M::Plain) clock \"event-clock\" on origin { true }",

@@ -38,16 +38,25 @@ Their registration, activation, retry anchors and recovery predicates remain
 distinct static requirements; the example supplies no runtime
 observations, population-completeness claims or recovery results.
 
+The producer is the library API
+`quire_spec_language::protocol_artifact::handoff::{write_v1, write_v2}`, behind
+the `handoff-writer` feature (source:
+[`src/protocol_artifact/handoff/writer.rs`](../../src/protocol_artifact/handoff/writer.rs)).
+It embeds this directory's recipe inputs at compile time, so a downstream crate
+calls it in-process -- as a git dependency with
+`features = ["handoff-writer"]` -- without building these examples or this
+crate's dev-dependencies. The two examples are thin command-line callers of it.
+
 Build and run the Rust example with a new output directory:
 
 ```console
-CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --example native_protocol_handoff -- /tmp/quire-native-handoff
+CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --features handoff-writer --example native_protocol_handoff -- /tmp/quire-native-handoff
 ```
 
 Run the named producer test:
 
 ```console
-cargo test --locked --offline --example native_protocol_handoff stripped_release_producer_keeps_original_owners_and_compensations
+cargo test --locked --offline --features handoff-writer --example native_protocol_handoff stripped_release_producer_keeps_original_owners_and_compensations
 ```
 
 This test uses a fresh temporary output directory and checks original source and
@@ -55,13 +64,13 @@ declaration owners, joined receive/choice provenance and Full/Partial compensati
 independent reader succeeds. It does not exercise B's acceptance interface.
 
 The producer identifies itself by a digest over its own source text
-(`examples/protocol-handoff/producer.rs`, embedded at compile time via
+(`src/protocol_artifact/handoff/writer.rs`, embedded at compile time via
 `include_bytes!`) and records only that digest as `Producer.binary` -- the
 bytes are never retained, written to a fixture file, or supplied as a
 dependency's exact-byte content, so no size ceiling applies to them, and the
 value is the same across a debug or release build, stripped or not, and
 across any toolchain: anyone with this repository can independently
-recompute it (`sha256sum examples/protocol-handoff/producer.rs`). All compiler
+recompute it (`sha256sum src/protocol_artifact/handoff/writer.rs`). All compiler
 stages retain their own default limits; no limit is disabled to accommodate a
 build. Existing
 output directories are refused. Publication is not atomic: an I/O failure may
@@ -89,7 +98,10 @@ constants prevent consumers from guessing filenames. It omits `dependencies/`:
 this repository does not commit exact-byte dependency fixtures, so the checked-in
 `expected.json`/`expected-v2.json` selections carry an empty `dependencies` list.
 A fresh run of the producer still writes its own `dependencies/` directory to
-its (uncommitted) output path, exactly as described above. Selecting the pinned
+its (uncommitted) output path, exactly as described above. The checked-in
+copies are therefore not admissible, and their `Producer.binary` digest is
+informational (the producer source when they were taken); a consumer that must
+admit a handoff calls `write_v1`/`write_v2` into its own directory. Selecting the pinned
 crate and this owner-published directory is separate from offering the package bytes:
 decoding `Selection` remains inert until the caller constructs and invokes the
 strict public reader.

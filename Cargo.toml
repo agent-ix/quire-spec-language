@@ -22,6 +22,11 @@ default = []
 # ADR-011 §7.3 X-4 (QSL-179): the I3 adapter crate `qsl-source` owns the
 # quire-rs dependency; this feature builds it with its own `quire-extraction`.
 quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
+# QSL-251: `protocol_artifact::handoff::{write_v1, write_v2}`, the complete
+# compiled-protocol handoff producer a downstream crate calls in-process. It
+# embeds the authored `examples/protocol-handoff/` recipe inputs, so the
+# default build leaves it out. It adds no dependency.
+handoff-writer = []
 
 [dependencies]
 # ADR-013 O-05: only `model` calls the kernel `EffectiveId` constructor,
@@ -104,6 +109,16 @@ quire-contract-ir-historical = { package = "quire-contract-ir", git = "https://g
 # review round 2, L5 dropped the "extra-traits" feature that used to exist
 # solely to put `Debug` on `syn::Type` for that string search.
 syn = { version = "=2.0.119", features = ["full", "visit"] }
+
+[[example]]
+name = "native_protocol_handoff"
+required-features = ["handoff-writer"]
+test = true
+
+[[example]]
+name = "native_protocol_v2_handoff"
+required-features = ["handoff-writer"]
+test = true
 
 [[bin]]
 name = "quire-spec"

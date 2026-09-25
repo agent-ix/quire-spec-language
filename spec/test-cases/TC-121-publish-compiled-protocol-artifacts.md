@@ -15,8 +15,8 @@ Planned public Rust controls for the full
 boundary, using the exact [wire contract](../../docs/compiled-protocol-v1.md).
 The positive emitter fixture starts with native Quire source, an admitted domain
 package and actual definition contracts; a hand-built wire fixture exercises only
-reader behavior. The fourteen groups below correspond to the fourteen acceptance
-criteria.
+reader behavior. The first fourteen groups below correspond to the first fourteen
+acceptance criteria; step 15 covers FR-042-AC-15's in-process public writer.
 
 Use source-owned orders O1/O2 sharing payment provider P, split shipments S1/S2,
 payment attempts A1/A2 and effect E1, refund registration and distinct refund
@@ -315,6 +315,27 @@ observations belong only to the later consumer fixture.
     result), and a precondition of `fill` reading the undeclared `amount`, and
     clauses over `latch(result: Boolean): Boolean` and `hold(self: Boolean)`,
     whose parameters spell the ambient slots, to refuse at scope resolution.
+
+15. Behind the `handoff-writer` feature, call
+    `protocol_artifact::handoff::write_v1` twice, each time into a fresh
+    temporary directory, from a test that calls only that public function --
+    exactly as a downstream crate would, never an example, a private helper or
+    a dev-dependency-only type. Confirm the two written trees are
+    byte-identical, that every file `SHA256SUMS` lists is present with the
+    matching digest, that the written `expected.json` selection's artifact
+    reference and digest match the written offer and reference files, and that
+    the strict public reader (used in step 7 and by
+    [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001)) admits the
+    written offer against that written selection with no other input. Call
+    `write_v1` a third time into an already-existing directory and require
+    refusal, and confirm that directory's contents, including a sentinel file
+    already there, are unchanged.
+    Separately, `make ci`'s `ci-clean-build` target runs
+    `cargo check -p quire-spec-language --lib --no-default-features --features
+    handoff-writer`: the acceptance this step's test cannot demonstrate by
+    itself, because a test in this crate's own `tests/` always builds inside
+    its dev-dependency closure. That `cargo check` line is what actually
+    resolves `write_v1`'s dependency graph with no dev-dependency in it.
 
 ## Expected Results
 
