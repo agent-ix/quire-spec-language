@@ -30,7 +30,8 @@ impl Solver<'_, '_, '_, '_> {
                                 }
                                 scopes::BinderType::Declared(_)
                                 | scopes::BinderType::Context(_)
-                                | scopes::BinderType::ModelValue(_) => {
+                                | scopes::BinderType::ModelValue(_)
+                                | scopes::BinderType::DomainOperation { .. } => {
                                     if let Some(value) = self.captures.get(&id.index()) {
                                         self.output.nodes[self.var(*value)].origin
                                     } else if matches!(

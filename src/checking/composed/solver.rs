@@ -12,7 +12,7 @@ mod validation;
 use super::sources::Correspondence;
 use super::work::{Dimension as D, Work};
 use super::*;
-use crate::checking::{variables::Variables, Catalog, DomainField, DomainType};
+use crate::checking::{domain_value_type, variables::Variables, Catalog, DomainField, DomainType};
 use crate::linking::composed::models::ModelTarget;
 use crate::linking::composed::scopes::{self, DeclarationScope};
 use crate::linking::composed::{DependencyKind, DependencySite};
@@ -475,7 +475,61 @@ impl<'b, 'a, 's, 'w> Solver<'b, 'a, 's, 'w> {
                 )?;
                 Ok(None)
             }
+            scopes::BinderType::DomainOperation { context, slot } => {
+                self.domain_operation_value(context, *slot, at)
+            }
         }
+    }
+    /// The native type of a declared parameter or the result of the domain
+    /// operation a state clause over `context` selects, from its admitted
+    /// FR-154 member; a value type or multiplicity with no native type here
+    /// refuses as `DomainRepresentation`.
+    fn domain_operation_value(
+        &mut self,
+        context: &c::QualifiedName,
+        slot: scopes::DomainOperationSlot,
+        at: ExprId,
+    ) -> Result<Option<NativeType<'a>>> {
+        for occurrence in &self.binding.exports()[self.output.declaration.index()].occurrences {
+            self.work.charge(D::Constraints, 1, self.site(at))?;
+            if occurrence.span.start != context.model.span.start {
+                continue;
+            }
+            let ModelTarget::Declaration(bound) = &occurrence.target else {
+                continue;
+            };
+            let DomainPackageRecord::OperationMember(operation) = bound.declaration().record else {
+                continue;
+            };
+            let declared = match slot {
+                scopes::DomainOperationSlot::Parameter(position) => operation
+                    .parameters
+                    .get(position)
+                    .map(|parameter| (&parameter.value_type, parameter.multiplicity)),
+                scopes::DomainOperationSlot::Result => operation
+                    .result
+                    .as_ref()
+                    .map(|result| (&result.value_type, result.multiplicity)),
+            };
+            let Some((value_type, multiplicity)) = declared else {
+                break;
+            };
+            return match domain_value_type(bound.package(), value_type, multiplicity) {
+                Some(ty) => {
+                    charge_type(&ty, self.work, self.site(at), 1)?;
+                    Ok(Some(ty))
+                }
+                None => {
+                    self.cause(
+                        at,
+                        CauseKind::UnsupportedPrerequisite(Prerequisite::DomainRepresentation),
+                    )?;
+                    Ok(None)
+                }
+            };
+        }
+        self.cause(at, CauseKind::UpstreamBinding)?;
+        Ok(None)
     }
     fn formal_type(
         &mut self,

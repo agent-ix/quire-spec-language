@@ -1049,3 +1049,209 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
         },
     );
 }
+
+/// Appends three operations with parameters or a result to the temp copy's
+/// `Pump`: `fill(level: Reading, forced: Boolean): Boolean`,
+/// `meter(amount: Integer)` and
+/// `total(): Integer`. The bundle's own only operation, `run`, takes no
+/// parameters and returns nothing. `Reading` is written by the caller.
+pub(crate) fn pump_operations(root: &Path) {
+    let pump = root.join("spec/model/Pump.md");
+    let mut text = std::fs::read_to_string(&pump).expect("read Pump");
+    text.push_str(
+        "\n### fill\n\nFill the pump to a reading.\n\n\
+         | Param | Type | Multiplicity | Constraints |\n\
+         |-------|------|--------------|-------------|\n\
+         | level | Reading | 1 | |\n\
+         | forced | Boolean | 1 | |\n\n\
+         Returns: Boolean [1]\n\n\
+         ### meter\n\nMeter an amount.\n\n\
+         | Param | Type | Multiplicity | Constraints |\n\
+         |-------|------|--------------|-------------|\n\
+         | amount | Integer | 1 | |\n\n\
+         ### total\n\nThe pumped total.\n\n\
+         Returns: Integer [1]\n",
+    );
+    std::fs::write(&pump, text).expect("write Pump");
+}
+
+/// A state clause over a domain operation binds its declared parameters as
+/// invocation parameters, in the admitted member's order, and, in a
+/// postcondition, its
+/// declared result, each typed from the admitted operation member: `level`
+/// by the `Reading` record value type, `forced` and `result` by `Boolean`.
+/// As for a native operation, a precondition reads a Boolean parameter, and
+/// a record-typed parameter, observed at the invocation input, is read in a
+/// postcondition; read in a precondition it refuses as `InvalidPreSelection`.
+/// A parameter or result typed `Integer` has no native type here and refuses
+/// as an unsupported domain representation, whether or not the body reads
+/// it, while a precondition of `total` binds no result and types. A name the
+/// operation does not declare, and `result` in a precondition, refuse at
+/// scope resolution.
+#[trace("TC-148", "FR-036-AC-9", "FR-042-AC-14")]
+#[test]
+fn domain_operation_parameters_and_result_bind_and_type_check() {
+    use quire_spec_language::checking::composed::{
+        self, CauseKind, Prerequisite, TypeDisposition, TypeLimits,
+    };
+    use quire_spec_language::checking::NativeType;
+    use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+    use quire_spec_language::linking::composed::scopes::{
+        Anchor, BinderKind, ScopeDisposition, ScopeIssue,
+    };
+
+    let bundle = architecture_bundle(|root| {
+        record_value_type(root, "Reading", &[("ok", "Boolean", "1")]);
+        pump_operations(root);
+    });
+    let package = admitted(bundle.path());
+    let selection = package.selection().clone();
+    let profile = R::StateQueries.selection();
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile S = \"{}\" version \"{}\" digest \"{}\";\n\
+         model M = \"{}\" version \"{}\" digest \"sha256-jcs:{}\";\n\
+         pre FillReady using S on M::Pump::fill {{ forced }}\n\
+         post Filled using S on M::Pump::fill {{ result and level.ok and forced }}\n\
+         pre LevelFirst using S on M::Pump::fill {{ level.ok }}\n\
+         pre Metered using S on M::Pump::meter {{ true }}\n\
+         post Totalled using S on M::Pump::total {{ true }}\n\
+         pre TotalReady using S on M::Pump::total {{ true }}\n\
+         pre Undeclared using S on M::Pump::fill {{ amount }}\n\
+         pre EarlyResult using S on M::Pump::fill {{ result }}\n",
+        profile.identity,
+        profile.revision,
+        profile.digest,
+        selection.identity,
+        selection.version,
+        hex(&selection.digest)
+    );
+    let source = Source::read(
+        SourceIdentity {
+            authority: "test".into(),
+            identity: "fills".into(),
+            revision_namespace: "test".into(),
+            revision: "selected".into(),
+        },
+        "fills.native".to_owned(),
+        text.as_bytes(),
+        Limits::default().source_bytes,
+    )
+    .expect("source reads");
+    let sources = [source];
+    let formal = crate::support::composed_types::formal_sources(&sources);
+    let inputs = [ModelInput::Domain(&package)];
+    crate::support::composed_types::with_binding_inputs(
+        &sources,
+        &inputs,
+        BindingLimits::default(),
+        |binding| {
+            let namespace = binding.namespace();
+            let scopes = binding.scopes().expect("scopes resolved");
+            let report = composed::admit_types(binding, &formal, TypeLimits::default());
+            assert!(report.exhaustion().is_none(), "{:?}", report.exhaustion());
+            let id = |name: &str| namespace.lookup(name)[0];
+            let scope = |name: &str| scopes.declaration(id(name)).expect("scope record");
+            let causes = |name: &str| -> Vec<CauseKind> {
+                report
+                    .declaration(id(name))
+                    .expect("typed record")
+                    .causes()
+                    .iter()
+                    .map(|cause| cause.kind.clone())
+                    .collect()
+            };
+            for name in ["FillReady", "Filled", "TotalReady"] {
+                assert_eq!(
+                    report.disposition(id(name)),
+                    Some(TypeDisposition::Typed),
+                    "{name}: {:?}",
+                    causes(name)
+                );
+            }
+            // Each binder of `name` of `kind`, with its name, anchor and type.
+            let binders = |name: &str, kind: BinderKind| {
+                let typed = report.declaration(id(name)).expect("typed record");
+                scope(name)
+                    .binders
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, binder)| binder.kind == kind)
+                    .map(|(index, binder)| {
+                        let ty = typed
+                            .binders()
+                            .iter()
+                            .find(|typed| typed.binder == index)
+                            .and_then(|typed| typed.ty.clone());
+                        (binder.name.clone(), binder.anchor, ty)
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let is_reading = |ty: &Option<NativeType<'_>>| {
+                matches!(ty, Some(NativeType::Domain(reading))
+                    if reading.declaration.key == &key("Reading"))
+            };
+            for name in ["FillReady", "Filled"] {
+                // The lift orders an operation's parameters by identity.
+                let [(Some(forced), Anchor::InvocationInput, Some(NativeType::Boolean)), (Some(level), Anchor::InvocationInput, level_ty)] =
+                    &binders(name, BinderKind::InvocationParameter)[..]
+                else {
+                    panic!("{name}: two invocation parameters")
+                };
+                assert_eq!((level.as_str(), forced.as_str()), ("level", "forced"));
+                assert!(is_reading(level_ty), "{name}: {level_ty:?}");
+            }
+            assert!(binders("FillReady", BinderKind::ResultValue).is_empty());
+            assert!(binders("TotalReady", BinderKind::ResultValue).is_empty());
+            let [(None, Anchor::InvocationPost, Some(NativeType::Boolean))] =
+                &binders("Filled", BinderKind::ResultValue)[..]
+            else {
+                panic!("Filled: one Boolean result")
+            };
+
+            assert_eq!(
+                report.disposition(id("LevelFirst")),
+                Some(TypeDisposition::Refused)
+            );
+            assert!(causes("LevelFirst").contains(&CauseKind::InvalidPreSelection));
+            for name in ["Metered", "Totalled"] {
+                assert_eq!(
+                    report.disposition(id(name)),
+                    Some(TypeDisposition::Refused),
+                    "{name}"
+                );
+                assert!(
+                    causes(name).contains(&CauseKind::UnsupportedPrerequisite(
+                        Prerequisite::DomainRepresentation
+                    )),
+                    "{name}: {:?}",
+                    causes(name)
+                );
+            }
+
+            let undeclared = scope("Undeclared");
+            assert_eq!(undeclared.disposition(), ScopeDisposition::Refused);
+            let [ScopeIssue::MissingValue { name, .. }] = undeclared.issues.as_slice() else {
+                panic!("one missing value: {:?}", undeclared.issues)
+            };
+            assert_eq!(name, "amount");
+            let early = scope("EarlyResult");
+            assert_eq!(early.disposition(), ScopeDisposition::Refused);
+            assert!(
+                matches!(
+                    early.issues.as_slice(),
+                    [ScopeIssue::AmbientUnavailable { .. }]
+                ),
+                "{:?}",
+                early.issues
+            );
+            for name in ["Undeclared", "EarlyResult"] {
+                assert_ne!(
+                    report.disposition(id(name)),
+                    Some(TypeDisposition::Typed),
+                    "{name}"
+                );
+            }
+        },
+    );
+}

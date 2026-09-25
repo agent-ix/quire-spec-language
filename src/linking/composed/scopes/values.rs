@@ -300,19 +300,48 @@ impl Resolver<'_, '_> {
                 context: context.clone(),
                 name: name.clone(),
             };
-            // A domain operation's inputs and result have no native binder
-            // type yet, so only an operation with neither binds here.
             match models.resolve_domain_operation(self.output.unit, &operation, self.work) {
                 Ok(Some(bound)) => {
-                    let bindable = matches!(
-                        bound.declaration().record,
-                        DomainPackageRecord::OperationMember(record)
-                            if record.parameters.is_empty()
-                                && (kind != ClauseKind::Postcondition || record.result.is_none())
-                    );
-                    if !bindable {
+                    let DomainPackageRecord::OperationMember(record) = bound.declaration().record
+                    else {
                         self.issue(ScopeIssue::ModelOperationUnavailable { span: name.span })?;
                         return Ok(());
+                    };
+                    // A parameter's FR-154 key is `<operation key>/<name>`.
+                    let prefix = bound.declaration().key.node.as_str();
+                    for (position, parameter) in record.parameters.iter().enumerate() {
+                        let Some(parameter_name) = parameter
+                            .key
+                            .node
+                            .strip_prefix(prefix)
+                            .and_then(|rest| rest.strip_prefix('/'))
+                        else {
+                            self.issue(ScopeIssue::ModelOperationUnavailable { span: name.span })?;
+                            return Ok(());
+                        };
+                        let binder = self.binder(Binder {
+                            name: Some(parameter_name.to_owned()),
+                            span: name.span,
+                            kind: BinderKind::InvocationParameter,
+                            anchor: Anchor::InvocationInput,
+                            ty: BinderType::DomainOperation {
+                                context: context.clone(),
+                                slot: DomainOperationSlot::Parameter(position),
+                            },
+                        })?;
+                        env = self.extend(env, binder)?;
+                    }
+                    if kind == ClauseKind::Postcondition && record.result.is_some() {
+                        env.result = Some(self.binder(Binder {
+                            name: None,
+                            span: name.span,
+                            kind: BinderKind::ResultValue,
+                            anchor: Anchor::InvocationPost,
+                            ty: BinderType::DomainOperation {
+                                context: context.clone(),
+                                slot: DomainOperationSlot::Result,
+                            },
+                        })?);
                     }
                     return self.expression(body, env);
                 }

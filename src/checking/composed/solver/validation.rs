@@ -47,6 +47,7 @@ impl<'a> Solver<'_, 'a, '_, '_> {
                     found
                 }
                 scopes::BinderType::ModelValue(_)
+                | scopes::BinderType::DomainOperation { .. }
                 | scopes::BinderType::Initializer(_)
                 | scopes::BinderType::ElementOf(_) => None,
             };
