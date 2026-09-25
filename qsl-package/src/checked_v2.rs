@@ -22,8 +22,6 @@
 //!   constructor;
 //! - deriving the FR-307 export node keys from that preimage
 //!   (`qsl_semantics::library::declared_exports`/`verify_package`, layer-3);
-//! - refusing a lock that names `dependency_selections` this reader cannot
-//!   yet derive imports from (QC-10, ADR-013 TK-08, not yet mapped);
 //! - the ADR-011 §4 verified binding itself (`qsl_semantics::library::verify_binding`,
 //!   layer-3, QSL-6 slice A1): once IR admits the wire, this reader mints
 //!   the condition-1 witness (`qsl_semantics::library::SupportedV2Wire`, which only
@@ -308,14 +306,6 @@ pub(crate) enum V2ReadRefusal {
         /// bytes at no value (malformed JSON, non-canonical bytes).
         locus: Option<Box<Locus>>,
     },
-    /// The admitted wire's lock names one or more `dependency_selections`;
-    /// this reader does not yet derive imports from a lock (QC-10, ADR-013
-    /// TK-08).
-    #[error("dependency_selections present; import derivation is not yet implemented")]
-    UnsupportedDependencySelections {
-        /// `Locus::Artifact` at `/lock/dependency_selections`.
-        locus: Box<Locus>,
-    },
     /// `library`'s verified-binding entry point refused the candidate
     /// derived from an admitted wire (its identity preimage's declared
     /// names, never its already-IR-checked `package_id`).
@@ -446,7 +436,6 @@ impl V2ReadRefusal {
         match self {
             Self::UnsupportedVersion { .. } => Code::UnknownWire,
             Self::Envelope { refusal, .. } => map_refusal_code(refusal.code),
-            Self::UnsupportedDependencySelections { .. } => Code::UnsupportedDependencySelections,
             Self::Structural(refusal) => refusal.code(),
             Self::Preimage(_) => Code::InvalidPackage,
             Self::SourceMap(_) => Code::InvalidSourceMap,
@@ -464,8 +453,7 @@ impl V2ReadRefusal {
     )]
     pub(crate) fn locus(&self) -> Option<&Locus> {
         match self {
-            Self::UnsupportedVersion { locus, .. }
-            | Self::UnsupportedDependencySelections { locus } => Some(locus),
+            Self::UnsupportedVersion { locus, .. } => Some(locus),
             Self::Envelope { locus, .. } => locus.as_deref(),
             Self::Structural(_) | Self::Preimage(_) | Self::SourceMap(_) | Self::Fault(_) => None,
         }
@@ -664,12 +652,6 @@ pub(crate) fn read_checked_package_v2(
     }
     match read_checked_package(bytes, limits.for_ir(), evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => {
-            if !package.lock().dependency_selections.is_empty() {
-                let pointer = JsonPointer::root().key("lock").key("dependency_selections");
-                return refused(V2ReadRefusal::UnsupportedDependencySelections {
-                    locus: Box::new(Artifact::of(bytes).at(pointer)),
-                });
-            }
             // The preimage's RFC 8785 bytes, from `quire-canonical` (ADR-013
             // §2, ADR-013:113: the one RFC 8785 implementation), encoded
             // straight from IR's typed preimage: the encoder orders members

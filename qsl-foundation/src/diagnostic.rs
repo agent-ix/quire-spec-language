@@ -160,10 +160,6 @@ pub enum Code {
     /// ADR-013 O-01/QC-5: a second selection of a domain-package identity
     /// already selected at a different (or the same) version.
     DuplicateSelection,
-    /// FR-322 I2: an admitted `quire.checked-package/v2` wire's lock names
-    /// one or more `dependency_selections`; this reader does not yet derive
-    /// imports from a lock (QC-10, ADR-013 TK-08).
-    UnsupportedDependencySelections,
     /// QSL-236: a stage-entry limit was reached (`stage_limit_exceeded`,
     /// catalog revision `1-draft.7`). The exhausted kind is a `SyntaxLimit`
     /// or [`LimitKind`] carried alongside, not part of this code.
@@ -220,7 +216,6 @@ impl Code {
             Self::ForeignReference => "foreign_reference",
             Self::CardinalityOutOfBound => "cardinality_out_of_bound",
             Self::DuplicateSelection => "duplicate_selection",
-            Self::UnsupportedDependencySelections => "unsupported_dependency_selections",
             Self::StageLimitExceeded => "stage_limit_exceeded",
         }
     }
@@ -274,7 +269,6 @@ impl Code {
             Self::ForeignReference,
             Self::CardinalityOutOfBound,
             Self::DuplicateSelection,
-            Self::UnsupportedDependencySelections,
             Self::StageLimitExceeded,
         ]
     }

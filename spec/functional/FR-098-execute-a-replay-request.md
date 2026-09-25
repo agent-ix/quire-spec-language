@@ -125,4 +125,9 @@ added TC-444 coverage of a predicate whose body calls another declared
 function (the QSL-22 Layer 3 exemplar's shape), confirming the S4 emitter
 writes the checked `call` node codegen's FR-021 oracle generator reads.
 
-AC-6 is not delivered. QSL-255 owns it.
+AC-6 is not delivered. QSL-255 owns it. E4's dependency binding exists
+(`CheckedPackage::link_with` refuses `DependencyIdentityMismatch`,
+FR-087-AC-14), but the replay request does not yet say which of its
+package-reference sources is the proved package and which is a
+dependency, and E3 refuses every `import` until spine `compile` takes a
+dependency input (ADR-011 §2.4).

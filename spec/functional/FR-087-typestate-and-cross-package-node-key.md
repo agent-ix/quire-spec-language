@@ -578,6 +578,7 @@ reachable until its successor covers it.
 | FR-087-AC-11 | `value::library` and `value::package_identity` no longer exist as modules under `value` after this requirement's implementation; `LibraryName`, `LibraryPackage`, `PackageId`, `ImportDeclaration`, `LibraryLock`, `resolve_libraries` and `package_identity`'s preimage-reading functions are reachable only from the new `library` module, unchanged in shape (Description, item 3, owner ruling (a), (e), (f)); `LibraryRefusal`'s own variant set is likewise unchanged, though two of its payloads are not: `PreimageDefect`, per the exception below, and `StaleDependency`'s `pin: StalePin`, which replaces `import: ImportDeclaration` so that a refusal from the §4 binding's condition 3 names the pinned lock entry and the selection the candidate presented rather than an import declaration that does not exist (`StalePin::Import` keeps `resolve_libraries`' import declaration); `value::library`'s `ExportIdentity{package, node: NodeKey}` and `resolve_name` do not relocate in their pre-move shape (owner ruling (b), (c)): `library` after relocation defines no type with a `node: NodeKey` field and no function resolving a name to a declaration or node id (`PackageNodeKey`, FR-087-AC-5, is the module's sole cross-package node reference). Every field or return value anywhere in `library` that is built from wire-read or preimage-read data is typed `WireNodeId`, never `NodeKey` (owner ruling (d)): `package_identity`'s `node_key`-equivalent function returns a `WireNodeId` and calls no `NodeKey` constructor; `PreimageDefect`'s `AmbiguousDeclaration.nodes` and `DeclarationNominalMismatch.node` fields are `WireNodeId`-typed; and `ProjectedDeclarations`'s internal map is keyed to `WireNodeId` values, not `NodeKey`. FR-307's acceptance criteria and TC-227's vectors pass against the relocated code, updated to these shapes. A whole-crate scan confirms no `NodeKey::from_hex`, `NodeKey::from_bytes`, `NodeKey::of` or other `NodeKey`-constructing call inside `library` or `package`, and no `NodeKey`-typed field, anywhere in `library`, that is populated from wire-read or preimage-read data — not only on a cross-package reference type, but on any type `library` defines, including `PreimageDefect` and `ProjectedDeclarations`. A definition of `value::library` or `value::package_identity` still present, an `ExportIdentity`-shaped type with a `NodeKey` field, a `resolve_name` function in `library`, a `NodeKey`-constructing call inside `library` or `package`, or a wire/preimage-fed `NodeKey`-typed field anywhere in `library`, each fails this criterion. | Test (TC-281) |
 | FR-087-AC-12 | Every `LibraryRefusal` variant `resolve_libraries` (relocated into `library`) can return classifies to exactly one of: an ADR-011 I2 graph rule (`:203-210`), the §4 binding's condition 2, the §4 binding's condition 3, or E3 name resolution — with `DuplicatePackageId` named as the one stated exception, lying outside all four (Description, item 3, owner ruling (e), which gives the per-variant classification and DuplicatePackageId's own reasoning). Concretely: `PackageIdMismatch` classifies to condition 2 itself (the digest recomputation and comparison); `InvalidPreimage` and `UndeclaredExport` classify alongside condition 2 as per-package admission checks (raised by the same reused `verify_package`, FR-087-AC-3, but only after condition 2's own comparison has completed — neither is a prerequisite condition 2 needs to run); `StaleDependency{RevisionMismatch}` classifies to condition 3 (the identity is present; only the lock-recorded version disagrees); `InvalidQualifier` classifies to E3 name resolution (it moves conceptually with `resolve_name`, owner ruling (b)); `MissingImport` and `StaleDependency{ByteDigestMismatch}` classify to I2's first rule (missing or unlisted identity); `ConflictingDefinition` classifies to I2's second rule; `ImportCycle` classifies to I2's third rule; `DuplicatePackageId` is the stated exception (conflicting metadata over identical identity content, a supplied-pool precondition, not an I2/§4/E3 question). This criterion does not require `resolve_libraries` to gain a new refusal variant, and does not require force-fitting `DuplicatePackageId` into one of the four; it requires every variant to be classified, honestly, to one of the four or to the named exception, with no variant left unclassified or misclassified (for example, mapping `StaleDependency{RevisionMismatch}` to "missing or unlisted" rather than condition 3, or mapping `DuplicatePackageId` to I2's second rule, each fails this criterion). | Test (TC-282) |
 | FR-087-AC-13 | The importing package's checker resolves imported names as Behavior, "E3 resolves an imported name in the importing package's checker", states. Given package `P` importing library `L@1` (which exports `R`) with no `as` qualifier, and declaring no `R` of its own, `P`'s checker refuses both `R` and `L::R` with `missing_declaration` / `missing-name`. Given `P` importing `A@1` and `B@1` both `as a`, each of two uses of `a::R` in `P` is refused `ambiguous_declaration` / `ambiguous-name`, and each refusal carries the loci of both imports. Given `P` importing `L@1` `as l`, `l::R` resolves to `PackageNodeKey{package: <L@1's package_id>, node: <R's WireNodeId>}`, and `l::Q`, which `L@1` does not export, is refused `missing_declaration` / `missing-name`. Given `P` importing `L@1` `as l`, checked against a library lock that holds no selection for `L`, `l::R` is refused `missing_declaration` / `missing-name`. | Test (TC-379) |
+| FR-087-AC-14 | The E4 link step with dependencies (`CheckedPackage::link_with`) recomputes each imported package's `package_id` by emitting it and refuses one that differs from the `package_id` its import records with `DependencyIdentityMismatch` (`stale_dependency`), naming both; it records one selection per library identity over the direct imports and every dependency's own closure, and refuses two selections of one identity that differ in version or `package_id` with `invalid_package`/`conflicting-definition` (FR-307's diamond rule), naming both selections. A refusal yields no package. `CheckedPackage::dependencies` holds each direct import's checked package by `package_id`, and `CheckedPackage::dependency_selections` the closure in ascending UTF-8 byte order of identity. | Test (TC-253) |
 
 ## Dependencies
 
@@ -710,6 +711,7 @@ the steps its test backs.
   owned `CheckedGraph`, `CheckedPackage`, `EmittedPackage`,
   `VerifiedPackage` or `ImportView`. The named constructors are
   `PackageDeclarations::check`, `CheckedPackage::link`,
+  `CheckedPackage::link_with`,
   `EmittedPackage::new`, `verify_binding` and
   `VerifiedPackage::into_import_view`, plus the two lane-private
   producers. `compile_fail` doctests cover TC-244 rows 1 to 5. Rows 3 to 5
@@ -751,19 +753,20 @@ AC-7 (TC-246) and AC-13 (TC-379) are not delivered:
   `DefinitionRef` that `resolve_source_package` resolves against
   `DefinitionCatalog`; an I2 import view is keyed by `package_id`
   (ADR-011 §2.4). Remaining work: QSL-6, QSL-189.
-- **AC-13.** E3's resolution rule is specified, but ADR-011 §2 blocks it
-  today. FR-322, `library::ImportDeclaration` and the complete-V1
-  `import … digest …` grammar all key a dependency by its `package_id`.
-  QSpec's checked-package v2 schema types a `dependency_selections` entry
-  as a `Selection` over a `DefinitionRef`, which ADR-011 §2 records as a
-  QSpec schema defect. Until QSpec corrects it, ADR-011 §2's interim rule
-  holds: E3 refuses a unit that declares an `import`, E4 emits
-  `dependency_selections: []`, and the I2 reader refuses a non-empty one.
-  So no import reaches E3 name resolution. The resolution against an
-  `ImportView` (`check::imports::ImportedNames`) exists and names QSL-6
-  (ADR-011 M-4) as its caller; M-4 also fills the E4 dependency closure a
-  resolved `PackageNodeKey` needs. Remaining work: the QSpec schema defect
-  (ADR-011 §2), then QSL-6.
+- **AC-13.** E3's resolution rule is specified, and the QSpec schema defect
+  that blocked it is fixed (QSpec STD-105, IR-287). E4 fills the dependency
+  closure (`CheckedPackage::link_with`, AC-14), the emitter writes
+  `dependency_selections`, and the I2 reader admits a non-empty one. E3
+  still refuses a unit that declares an `import`
+  (`missing_import`/`missing-selection`, FR-091), because spine `compile`
+  and `replay` take no dependency input, so no import reaches E3 name
+  resolution. The resolution against an `ImportView`
+  (`check::imports::ImportedNames`) exists. Remaining work: QSL-255 (the
+  dependency input, and typing an imported declaration at E3).
+
+AC-14 (TC-253) is backed by `qsl-package`'s
+`e4_refuses_a_stale_dependency_and_a_conflicting_diamond` and
+`the_dependency_closure_is_written_in_the_lock_and_the_preimage`.
 
 **Owner ruling on QSL-158 (2026-09-21): ADR-013 T-1 stands unamended.**
 `CheckedPackage` is canonically layer-4 `package`; `check`'s S3 output is

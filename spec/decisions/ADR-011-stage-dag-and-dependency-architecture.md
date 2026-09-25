@@ -509,15 +509,27 @@ definition selections (identity, revision and digest) from QSL's
 digests are the ones `complete-value-lock.json` records. No reader verifies
 those digests yet.
 
-A `dependency_selections` entry holds the dependency's `package_id`. FR-322's
-`lock` prose, its `dependency_reference` member and FR-322-AC-26, QSL
-`library::ImportDeclaration` and the complete-V1 `import … digest …` grammar
-all key a dependency by its `package_id`. QSpec's
-`proposals/checked-package-v2/schema.json` types the entry as a `Selection`
-with a `quire.definition.bytes/v1` `DefinitionRef`, which is a QSpec schema
-defect. Until QSpec corrects the schema, E4 emits `dependency_selections: []`,
-E3 refuses a unit that declares an `import`, and the I2 reader refuses a
-non-empty `dependency_selections` (Remaining work: the QSpec schema defect).
+A `dependency_selections` entry is a QSpec `DependencySelection`
+`{identity, version, package_id}`: the library identity and version an
+`import "L" version "v" digest "d"` names, and the dependency's own
+`quire.package.semantic/v2` `package_id` (FR-322, QSpec STD-105). The lock
+and the identity preimage hold the same entries, one per library identity,
+in strictly ascending UTF-8 byte order of `identity`, so each dependency's
+`package_id` enters the importing package's. E4
+(`CheckedPackage::link_with`) builds the closure from the direct imports and
+each dependency's own closure, refusing two selections of one identity that
+differ in version or `package_id` (FR-307's diamond rule,
+`invalid_package`/`conflicting-definition`) and a dependency whose
+recomputed `package_id` differs from its import's
+(`DependencyIdentityMismatch`, §4). The emitter writes the closure in both
+members, and the I2 reader admits a non-empty `dependency_selections`.
+
+**Amended (2026-09-25, QSL-255).** The QSpec schema defect this section
+recorded is fixed (QSpec STD-105; IR-287 types the entry as
+`CheckedDependencySelection`). E3 still refuses a unit that declares an
+`import` (`missing_import`/`missing-selection`, FR-091), because spine
+`compile` and `replay` take no dependency input yet. Remaining work:
+QSL-255 (the dependency input of spine `compile` and of the replay request).
 
 ## 3. Forbidden bypasses
 

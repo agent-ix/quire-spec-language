@@ -114,6 +114,14 @@ pub enum AssemblyCause {
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
     Handle(NodeKeyRefusal),
+    /// An `import` declaration names a library no dependency input supplies:
+    /// the spine takes no dependency packages yet, so E3 refuses every
+    /// import rather than drop it from the package (ADR-011 §2.4, FR-307
+    /// `missing-selection`).
+    UnsuppliedImport {
+        /// The library identity the import names.
+        identity: String,
+    },
     /// A `model` declaration names no domain package admitted at I1.
     UnadmittedModel {
         /// The declaration's alias.
@@ -147,7 +155,7 @@ impl AssemblyCause {
             Self::UnresolvedTypeName { .. } | Self::UndeclaredAlias { .. } => {
                 Code::MissingDeclaration
             }
-            Self::UnadmittedModel { .. } => Code::MissingImport,
+            Self::UnadmittedModel { .. } | Self::UnsuppliedImport { .. } => Code::MissingImport,
             Self::ModelType { .. } => Code::RuntimeInvariant,
             Self::AmbiguousTypeName { .. } | Self::DuplicateAlias { .. } => {
                 Code::AmbiguousDeclaration
@@ -188,7 +196,9 @@ impl AssemblyCause {
                 "unsupported-feature"
             }
             Self::AliasCycle { .. } => "definition-cycle",
-            Self::UndeclaredAlias { .. } | Self::UnadmittedModel { .. } => "missing-selection",
+            Self::UndeclaredAlias { .. }
+            | Self::UnadmittedModel { .. }
+            | Self::UnsuppliedImport { .. } => "missing-selection",
             Self::ModelType { .. } => "established-invariant-broken",
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
                 DeclarationCause::DuplicateMember(_) => "ambiguous-name",
@@ -863,6 +873,14 @@ impl PackageDeclarations {
                     span: *second,
                 });
             }
+        }
+        for import in &selections.imports {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::UnsuppliedImport {
+                    identity: import.definition.identity().to_owned(),
+                },
+                span: import.span,
+            });
         }
         let profiles: BTreeSet<&str> = selections
             .profiles

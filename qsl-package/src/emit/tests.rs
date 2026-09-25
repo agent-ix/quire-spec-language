@@ -127,15 +127,17 @@ fn h() -> FunctionDeclaration {
     )
 }
 
+fn graph_of(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
+    PackageDeclarations {
+        functions,
+        ..PackageDeclarations::new(source())
+    }
+    .check(CheckingLimits::default())
+    .expect("the fixture functions check")
+}
+
 fn package(functions: Vec<FunctionDeclaration>) -> CheckedPackage {
-    CheckedPackage::link(
-        PackageDeclarations {
-            functions,
-            ..PackageDeclarations::new(source())
-        }
-        .check(CheckingLimits::default())
-        .expect("the fixture functions check"),
-    )
+    CheckedPackage::link(graph_of(functions))
 }
 
 /// `record Tree { kids: Sequence<Tree>[0, 3]; }`, FR-092's G7 to G9.
@@ -2272,4 +2274,135 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
     assert_eq!(refusals[0].code, qsl_foundation::Code::InvalidModelBinding);
     assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
     assert!(text[refused.span.start..refused.span.end].starts_with("model M = "));
+}
+
+/// A checked graph of `t` read from [`TEXT`], so `emit_checked` places its
+/// occurrences: an E4 dependency's `package_id` is recomputed by emitting it.
+fn dependency() -> CheckedPackage {
+    package(vec![t_read_from_text()])
+}
+
+/// The `package_id` `package` emits under.
+fn emitted_id(package: &CheckedPackage) -> PackageId {
+    emit_checked(package)
+        .expect("the dependency emits")
+        .package
+        .package_id()
+}
+
+fn root_graph() -> qsl_semantics::check::CheckedGraph {
+    graph_of(vec![f()])
+}
+
+fn import(identity: &str, version: &str, package: CheckedPackage) -> crate::Import {
+    crate::Import {
+        identity: identity.to_owned(),
+        version: version.to_owned(),
+        package_id: emitted_id(&package),
+        package,
+    }
+}
+
+/// QSL-255 (FR-322 `dependency_selections`, FR-307, ADR-011 §2.4): the E4
+/// closure is written as one `{identity, version, package_id}` entry per
+/// library identity, in ascending UTF-8 byte order, identically in the lock
+/// and the identity preimage. The package reads back Verified through IR's
+/// reader, and the entries enter its `package_id`. A transitive dependency's
+/// own selections join the closure.
+#[trace("FR-093-AC-16", "TC-416")]
+#[test]
+fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
+    let d = emitted_id(&dependency());
+    let unlinked = emit(&CheckedPackage::link(root_graph()));
+    let linked = CheckedPackage::link_with(
+        root_graph(),
+        vec![
+            import("test/units", "2", dependency()),
+            import("test/geometry", "1", dependency()),
+        ],
+    )
+    .expect("two imports of one package link");
+    assert_eq!(linked.dependencies().keys().collect::<Vec<_>>(), [&d]);
+    let emission = emit(&linked);
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+    let wire = wire(&emission);
+    let entry = |identity: &str, version: &str| {
+        json!({
+            "identity": identity,
+            "version": version,
+            "package_id": {"domain": PACKAGE_DOMAIN_V2, "algorithm": "sha256", "digest": d.hex()},
+        })
+    };
+    let expected = json!([entry("test/geometry", "1"), entry("test/units", "2")]);
+    assert_eq!(wire["lock"]["dependency_selections"], expected);
+    assert_eq!(wire["identity_preimage"]["dependency_selections"], expected);
+    assert_ne!(emission.package.package_id(), unlinked.package.package_id());
+
+    // Transitive: `mid` imports `test/units`, and the root imports `mid`.
+    let mid = CheckedPackage::link_with(
+        graph_of(vec![t_read_from_text()]),
+        vec![import("test/units", "2", dependency())],
+    )
+    .expect("mid links");
+    let mid_id = emitted_id(&mid);
+    let root = CheckedPackage::link_with(root_graph(), vec![import("test/mid", "1", mid)])
+        .expect("the root links through mid");
+    assert_eq!(
+        root.dependency_selections()
+            .iter()
+            .map(|(identity, selection)| (identity.as_str(), selection.package_id))
+            .collect::<Vec<_>>(),
+        [("test/mid", mid_id), ("test/units", d)]
+    );
+}
+
+/// ADR-011 §4 dependency binding at E4 (QSL-255): a dependency whose
+/// recomputed `package_id` is not the one its import records refuses
+/// `stale_dependency` naming both, and FR-307's diamond rule refuses two
+/// selections of one identity at different versions as
+/// `invalid_package`/`conflicting-definition`. Neither yields a package.
+#[trace("FR-087-AC-14", "TC-253")]
+#[test]
+fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
+    let d = emitted_id(&dependency());
+    let other = emit(&CheckedPackage::link(root_graph()))
+        .package
+        .package_id();
+    let stale = CheckedPackage::link_with(
+        root_graph(),
+        vec![crate::Import {
+            identity: "test/units".to_owned(),
+            version: "2".to_owned(),
+            package_id: other,
+            package: dependency(),
+        }],
+    )
+    .expect_err("the recorded package_id is not the dependency's");
+    assert_eq!(stale.code(), Code::StaleDependency);
+    assert!(matches!(
+        stale,
+        crate::LinkRefusal::DependencyIdentityMismatch { expected, recompiled, .. }
+            if expected == other && recompiled == d
+    ));
+
+    let mid = CheckedPackage::link_with(
+        graph_of(vec![t_read_from_text()]),
+        vec![import("test/units", "2", dependency())],
+    )
+    .expect("mid links");
+    let diamond = CheckedPackage::link_with(
+        root_graph(),
+        vec![
+            import("test/units", "3", dependency()),
+            import("test/mid", "1", mid),
+        ],
+    )
+    .expect_err("units 3 and units 2 do not unify");
+    assert_eq!(diamond.code(), Code::InvalidPackage);
+    assert_eq!(diamond.cause(), Some("conflicting-definition"));
+    assert!(matches!(
+        &diamond,
+        crate::LinkRefusal::ConflictingDefinition { identity, selections }
+            if identity == "test/units" && selections[0].version == "3" && selections[1].version == "2"
+    ));
 }

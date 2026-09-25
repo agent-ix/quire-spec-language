@@ -71,6 +71,16 @@ fn selection(role: &str, label: &str) -> Value {
     json!({"role": role, "definition": artifact_ref(label)})
 }
 
+/// A FR-322 `DependencySelection`: library `identity` at `version`, whose
+/// `package_id` digest is `label`'s hash.
+fn dependency_selection(identity: &str, version: &str, label: &str) -> Value {
+    json!({
+        "identity": identity,
+        "version": version,
+        "package_id": {"domain": PACKAGE_DOMAIN_V2, "algorithm": "sha256", "digest": hex(label)},
+    })
+}
+
 /// Fields shared by a `semantic_graph` node and its identity-projection
 /// counterpart: `quire_contract_ir::CheckedNodeProjectionV2::from`'s own
 /// definition of the projection is exactly a `CheckedSemanticNodeV2` with
@@ -195,9 +205,8 @@ fn locator(domain: &str, label: &str) -> CheckedArtifactLocator {
     }
 }
 
-/// Evidence proving `src`, `edition-def` and `diag-catalog` are current, plus
-/// (when `dependency` is set) the dependency selection's own definition.
-fn evidence(dependency: Option<&str>) -> CheckedPackageEvidence {
+/// Evidence proving `src`, `edition-def` and `diag-catalog` are current.
+fn evidence() -> CheckedPackageEvidence {
     let mut evidence = CheckedPackageEvidence::new();
     evidence.insert_artifact_digest(locator(SOURCE_DOMAIN, "src"), hex("src"));
     evidence.insert_artifact_digest(
@@ -208,9 +217,6 @@ fn evidence(dependency: Option<&str>) -> CheckedPackageEvidence {
         locator(DEFINITION_DOMAIN, "diag-catalog"),
         hex("diag-catalog"),
     );
-    if let Some(label) = dependency {
-        evidence.insert_artifact_digest(locator(DEFINITION_DOMAIN, label), hex(label));
-    }
     evidence
 }
 
@@ -261,7 +267,7 @@ fn read(bytes: &[u8], pinned: &PinnedRequest) -> Read {
         identity("pkg"),
         "1".to_owned(),
         V2ReadLimits::default(),
-        &evidence(None),
+        &evidence(),
         pinned,
     )
 }
@@ -727,26 +733,54 @@ fn refuses_an_ambiguous_declaration_at_ir_intake() {
     assert_eq!(refusal.code(), Code::AmbiguousDeclaration);
 }
 
+/// FR-322 `dependency_selections` (QSL-255): a lock and identity preimage
+/// carrying two `DependencySelection` entries, one per identity in ascending
+/// order, is admitted, and the entries enter `package_id`. An entry in the
+/// retired `Selection` shape is a wire-shape refusal located under
+/// `/identity_preimage/dependency_selections/0`.
+#[trace("TC-253", "FR-087-AC-3")]
 #[test]
-fn refuses_dependency_selections_present() {
-    let dependency = vec![selection("dependency", "dep-def")];
-    let preimage = identity_preimage(dependency);
+fn admits_dependency_selections() {
+    let dependencies = vec![
+        dependency_selection("geometry", "1", "geometry-pkg"),
+        dependency_selection("units", "2", "units-pkg"),
+    ];
+    let preimage = identity_preimage(dependencies);
     let bytes = jcs(&valid_envelope(&preimage));
-    let outcome = read_v2(
-        &bytes,
-        identity("pkg"),
-        "1".to_owned(),
-        V2ReadLimits::default(),
-        &evidence(Some("dep-def")),
-        &pinned_for(&preimage),
-    );
-    assert!(
-        matches!(
-            outcome,
-            Read::Refused(V2ReadRefusal::UnsupportedDependencySelections { .. })
-        ),
-        "{outcome:?}"
-    );
+    match read(&bytes, &pinned_for(&preimage)) {
+        Read::Verified { package, .. } => {
+            assert_eq!(
+                package.package_id(),
+                PackageId::of_preimage(&jcs(&preimage))
+            );
+            assert_ne!(
+                package.package_id(),
+                PackageId::of_preimage(&jcs(&identity_preimage(vec![])))
+            );
+        }
+        other => panic!("expected Verified, got {other:?}"),
+    }
+
+    let preimage = identity_preimage(vec![selection("profile", "dep-def")]);
+    let bytes = jcs(&valid_envelope(&preimage));
+    match read(&bytes, &pinned_for(&preimage)) {
+        Read::Refused(refusal @ V2ReadRefusal::Envelope { .. }) => {
+            let V2ReadRefusal::Envelope { refusal: ir, .. } = &refusal else {
+                unreachable!("matched above");
+            };
+            assert_eq!(ir.code, CheckedPackageRefusalCode::MalformedWire);
+            let Some(Locus::Artifact { pointer, .. }) = refusal.locus() else {
+                panic!("a shape refusal is located, got {refusal:?}");
+            };
+            assert!(
+                pointer
+                    .as_str()
+                    .starts_with("/identity_preimage/dependency_selections/0"),
+                "{pointer:?}"
+            );
+        }
+        other => panic!("expected a wire-shape refusal, got {other:?}"),
+    }
 }
 
 #[test]
@@ -762,7 +796,7 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
         identity("pkg"),
         "1".to_owned(),
         limits,
-        &evidence(None),
+        &evidence(),
         &pinned_for(&preimage),
     );
     assert_eq!(
@@ -798,7 +832,7 @@ fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default()
             identity("pkg"),
             "1".to_owned(),
             limits,
-            &evidence(None),
+            &evidence(),
             &pinned_for(&preimage),
         )
     };
@@ -845,7 +879,7 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
             identity("pkg"),
             "1".to_owned(),
             limits,
-            &evidence(None),
+            &evidence(),
             &pinned_for(&preimage),
         )
     };
@@ -893,7 +927,7 @@ fn a_verified_read_records_depth_as_the_enforced_serde_json_cap() {
         identity("pkg"),
         "1".to_owned(),
         requested,
-        &evidence(None),
+        &evidence(),
         &pinned_for(&preimage),
     ) {
         Read::Verified {
@@ -924,7 +958,7 @@ fn reaching_a_caller_raised_artifact_bytes_ceiling_refuses_naming_the_kind_and_b
         identity("pkg"),
         "1".to_owned(),
         raised,
-        &evidence(None),
+        &evidence(),
         &no_pins(),
     );
     assert_eq!(
@@ -947,7 +981,7 @@ fn incomplete_when_a_depth_ceiling_is_reached() {
         identity("pkg"),
         "1".to_owned(),
         limits,
-        &evidence(None),
+        &evidence(),
         &pinned_for(&preimage),
     ) {
         Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {}
@@ -968,7 +1002,7 @@ fn exact_selected_limits_admit_the_boundary() {
         identity("pkg"),
         "1".to_owned(),
         limits,
-        &evidence(None),
+        &evidence(),
         &pinned_for(&preimage),
     );
     assert!(matches!(outcome, Read::Verified { .. }));
@@ -991,7 +1025,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
             depth: 0,
             ..V2ReadLimits::default()
         },
-        &evidence(None),
+        &evidence(),
         &pinned_for(&preimage),
     ) {
         Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => exceeded.actual(),
@@ -1007,7 +1041,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         identity("pkg"),
         "1".to_owned(),
         admits,
-        &evidence(None),
+        &evidence(),
         &pinned_for(&preimage),
     );
     assert!(
@@ -1024,7 +1058,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         identity("pkg"),
         "1".to_owned(),
         refuses,
-        &evidence(None),
+        &evidence(),
         &pinned_for(&preimage),
     ) {
         Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {}
@@ -1058,7 +1092,7 @@ fn depth_far_past_the_default_limit_is_refused_as_malformed_wire_not_incomplete(
         identity("pkg"),
         "1".to_owned(),
         V2ReadLimits::default(),
-        &evidence(None),
+        &evidence(),
         &no_pins(),
     );
     assert!(
@@ -1092,7 +1126,7 @@ fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
                 identity("pkg"),
                 "1".to_owned(),
                 limits,
-                &evidence(None),
+                &evidence(),
                 &no_pins()
             ),
             Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth
@@ -1519,6 +1553,144 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
     );
 }
 
+/// QSL-255 over QSpec's `dependency-selection-vectors.json` (FR-322-AC-35,
+/// QSpec TC-233), read at run time from `$QSPEC_DIR`: the published
+/// `DependencySelection` entries, inserted into the all-families fixture's
+/// lock and identity preimage, recompute the recorded `package_id` and pass
+/// QSL's full I2 read; each authored entry mutation is refused at the
+/// mutated entry (a shape mutation in either member, a digest-domain
+/// mutation in both); and each order vector gets its recorded outcome, a
+/// refusal located at its last recorded locus (the repeating or misordered
+/// entry). Skipped when `QSPEC_DIR` is unset; `make conformance` requires it.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn conformance_dependency_selection_vectors() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let vectors = read_fixture(&directory.join("../dependency-selection-vectors.json"));
+    let base = read_fixture(
+        &directory.join(
+            vectors["base"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("fixtures/"),
+        ),
+    );
+    let with = |lock: &Value, preimage: &Value| {
+        let mut envelope = base.clone();
+        envelope["lock"]["dependency_selections"] = lock.clone();
+        envelope["identity_preimage"]["dependency_selections"] = preimage.clone();
+        envelope["package_id"]["digest"] =
+            json!(PackageId::of_preimage(&jcs(&envelope["identity_preimage"])).hex());
+        envelope
+    };
+    let selections = &vectors["dependency_selections"];
+    let (package_id, outcome) = read_fixture_wire(&with(selections, selections));
+    assert_eq!(package_id.hex(), vectors["package_id"].as_str().unwrap());
+    assert!(matches!(outcome, Read::Verified { .. }), "{outcome:?}");
+
+    let refused_at = |outcome: &Read, bytes: &[u8]| -> (CheckedPackageRefusalCode, String) {
+        match outcome {
+            Read::Refused(refusal @ V2ReadRefusal::Envelope { refusal: ir, .. }) => {
+                let Some(Locus::Artifact { pointer, digest }) = refusal.locus() else {
+                    panic!("an entry refusal is located, got {refusal:?}");
+                };
+                assert_eq!(
+                    digest,
+                    &DigestRecord::mint(
+                        DigestDomain::RawArtifactDigest,
+                        Sha256::digest(bytes).into(),
+                    )
+                );
+                (ir.code, pointer.as_str().to_owned())
+            }
+            other => panic!("expected an envelope refusal, got {other:?}"),
+        }
+    };
+    let mut mutations = 0_usize;
+    for mutation in vectors["entry_mutations"].as_array().unwrap() {
+        let id = mutation["id"].as_str().unwrap();
+        let mut mutated = selections.clone();
+        mutated[0] = mutation["entry"].clone();
+        let cases: Vec<(Value, &str, CheckedPackageRefusalCode)> =
+            match mutation["outcome"].as_str().unwrap() {
+                "refused:malformed_wire" => vec![
+                    (
+                        with(&mutated, selections),
+                        "/lock",
+                        CheckedPackageRefusalCode::MalformedWire,
+                    ),
+                    (
+                        with(selections, &mutated),
+                        "/identity_preimage",
+                        CheckedPackageRefusalCode::MalformedWire,
+                    ),
+                ],
+                "refused:digest_domain_mismatch" => vec![(
+                    with(&mutated, &mutated),
+                    "/lock",
+                    CheckedPackageRefusalCode::DigestDomainMismatch,
+                )],
+                other => panic!("{id}: unmapped entry-mutation outcome {other}"),
+            };
+        for (envelope, member, expected) in cases {
+            let bytes = jcs(&envelope);
+            let (code, pointer) = refused_at(&read_fixture_wire(&envelope).1, &bytes);
+            assert_eq!(code, expected, "{id} in {member}");
+            assert!(
+                pointer.starts_with(&format!("{member}/dependency_selections/0")),
+                "{id} in {member}: refused at {pointer}"
+            );
+            mutations += 1;
+        }
+    }
+
+    let order_vectors = vectors["order_vectors"].as_array().unwrap();
+    for vector in order_vectors {
+        let id = vector["id"].as_str().unwrap();
+        let entries = &vector["dependency_selections"];
+        let envelope = with(entries, entries);
+        let bytes = jcs(&envelope);
+        let (_, outcome) = read_fixture_wire(&envelope);
+        let expected = vector["outcome"].as_str().unwrap();
+        if expected == "admitted" {
+            assert!(
+                matches!(outcome, Read::Verified { .. }),
+                "{id}: {outcome:?}"
+            );
+            continue;
+        }
+        let cause = match expected {
+            "refused:invalid_package/conflicting-definition" => {
+                quire_contract_ir::CheckedPackageRefusalCause::ConflictingDefinition
+            }
+            "refused:invalid_package/invalid-value" => {
+                quire_contract_ir::CheckedPackageRefusalCause::InvalidValue
+            }
+            other => panic!("{id}: unmapped order outcome {other}"),
+        };
+        let Read::Refused(V2ReadRefusal::Envelope { refusal: ir, .. }) = &outcome else {
+            panic!("{id}: expected an envelope refusal, got {outcome:?}");
+        };
+        assert_eq!(ir.cause, Some(cause), "{id}");
+        let (code, pointer) = refused_at(&outcome, &bytes);
+        assert_eq!(code, CheckedPackageRefusalCode::InvalidPackage, "{id}");
+        let loci = vector["loci"].as_array().unwrap();
+        assert_eq!(
+            Some(pointer.as_str()),
+            loci.last().and_then(Value::as_str),
+            "{id}: refused at the repeating or misordered entry"
+        );
+    }
+    println!(
+        "conformance: {} dependency-selection entry mutations and {} order vectors",
+        mutations,
+        order_vectors.len()
+    );
+}
+
 /// `Locus::Artifact` over `bytes`, computed here from the bytes themselves
 /// (FR-201 `raw-artifact-digest`: the SHA-256 of the complete supplied
 /// bytes), at `pointer`.
@@ -1578,8 +1750,8 @@ fn an_unknown_contract_version_is_unsupported_wire_at_contract_version() {
 /// FR-096 "The I2 reader locates its refusals in the artifact": an IR
 /// refusal at a value is located at the bytes' `raw-artifact-digest` and
 /// the pointer of that value -- here a `package_id` digest domain and a
-/// graph node's tag. A lock naming dependency selections is located at
-/// `/lock/dependency_selections`.
+/// graph node's tag. A repeated dependency identity is located at the
+/// repeating entry, `/lock/dependency_selections/1` (FR-322).
 #[trace("TC-429", "FR-096-AC-9")]
 #[test]
 fn a_refusal_at_a_value_is_located_at_its_pointer() {
@@ -1613,24 +1785,23 @@ fn a_refusal_at_a_value_is_located_at_its_pointer() {
         }
     }
 
-    let preimage = identity_preimage(vec![selection("dependency", "dep")]);
+    let preimage = identity_preimage(vec![
+        dependency_selection("geometry", "1", "geometry-pkg"),
+        dependency_selection("geometry", "2", "geometry-pkg-2"),
+    ]);
     let bytes = jcs(&valid_envelope(&preimage));
-    let outcome = read_v2(
-        &bytes,
-        identity("pkg"),
-        "1".to_owned(),
-        V2ReadLimits::default(),
-        &evidence(Some("dep")),
-        &pinned_for(&preimage),
-    );
-    match outcome {
-        Read::Refused(refusal @ V2ReadRefusal::UnsupportedDependencySelections { .. }) => {
+    match read(&bytes, &pinned_for(&preimage)) {
+        Read::Refused(refusal @ V2ReadRefusal::Envelope { .. }) => {
+            let V2ReadRefusal::Envelope { refusal: ir, .. } = &refusal else {
+                unreachable!("matched above");
+            };
+            assert_eq!(ir.code, CheckedPackageRefusalCode::InvalidPackage);
             assert_eq!(
                 refusal.locus(),
-                Some(&artifact_locus(&bytes, "/lock/dependency_selections"))
+                Some(&artifact_locus(&bytes, "/lock/dependency_selections/1"))
             );
         }
-        other => panic!("expected UnsupportedDependencySelections, got {other:?}"),
+        other => panic!("expected a repeated identity to refuse, got {other:?}"),
     }
 }
 
@@ -1741,7 +1912,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
             identity("pkg"),
             "1".to_owned(),
             limits,
-            &evidence(None),
+            &evidence(),
             &pinned_for(preimage),
         );
         let expected =
@@ -1762,7 +1933,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
             artifact_bytes: bytes.len() - 1,
             ..defaults
         },
-        &evidence(None),
+        &evidence(),
         &pinned_for(&preimage),
     );
     let Read::Limit(exceeded) = outcome else {
