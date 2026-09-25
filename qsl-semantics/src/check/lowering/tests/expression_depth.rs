@@ -452,6 +452,7 @@ fn assert_depth_refusals(form: Form, refusals: &[CheckRefusal], limit: u64) {
                 kind: CheckingLimitKind::Depth,
                 limit,
                 actual: u128::from(limit) + 1,
+                region: None,
             })),
             "{form:?}: {refusal:?}"
         );
@@ -582,6 +583,7 @@ fn a_postcondition_pre_over_1000_levels_refuses_on_a_small_stack() {
             kind: CheckingLimitKind::Depth,
             limit: MAX_CHECKING_DEPTH,
             actual: u128::from(MAX_CHECKING_DEPTH) + 1,
+            region: None,
         }))
     );
 }

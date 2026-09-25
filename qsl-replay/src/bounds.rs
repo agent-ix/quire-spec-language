@@ -19,7 +19,7 @@ pub const MAX_ENCODED_BYTES: usize = 1 << 20;
 
 /// A #231 reader refused an encoding exceeding [`MAX_ENCODED_BYTES`]:
 /// `stage_limit_exceeded/input-bytes-exceeded` (QSL-236, catalog revision
-/// `1-draft.6`), through [`qsl_foundation::diagnostic::CatalogCoded`].
+/// `1-draft.7`), through [`qsl_foundation::diagnostic::CatalogCoded`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error(
     "stage_limit_exceeded/input-bytes-exceeded: encoded size {actual} exceeds the configured reader bound of {} bytes",

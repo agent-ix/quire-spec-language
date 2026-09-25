@@ -31,7 +31,7 @@ Token recognition is declarative. Expression precedence uses the approved gramma
 | FR-002-AC-1 | The parent example produces status parsed. | Test |
 | FR-002-AC-2 | A chained comparison receives invalid_syntax. | Test |
 | FR-002-AC-3 | A balanced reserved collect form receives unsupported_construct. | Test |
-| FR-002-AC-4 | An exhausted syntax-node budget receives resource_exhausted. | Test |
+| FR-002-AC-4 | An exhausted syntax-node budget receives `stage_limit_exceeded`. | Test |
 | FR-002-AC-5 | A grouped expression retains its delimiter-inclusive source span. | Test |
 | FR-002-AC-6 | The bounded malformed/truncation corpus returns syntax or a located diagnostic without panic; any admitted variant retains its exact submitted bytes. | Test |
 

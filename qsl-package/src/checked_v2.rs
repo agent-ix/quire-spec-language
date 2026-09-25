@@ -83,13 +83,32 @@
 //!   reader's agree there). A caller that needs exact-boundary admission
 //!   for scalar-terminated documents must widen its own configured limit
 //!   by one; this reader does not guess which kind of path is deepest.
+//!
+//! # Loci (FR-096)
+//!
+//! The read returns ADR-013 T-4's `Result<Staged<V2Read>,
+//! StageFailure<V2ReadRefusal>>`. Every refusal and limit IR reports at a
+//! value carries `Locus::Artifact`: the `raw-artifact-digest` record of the
+//! supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports. An IR
+//! refusal at no value (malformed JSON, non-canonical bytes) and IR's byte
+//! budget carry no locus, since the whole-document pointer would stand in
+//! for a position it does not name. So does this reader's own artifact byte
+//! ceiling, which refuses without hashing the oversized bytes. IR's refusal
+//! of the contract version is `unknown_wire`/`unsupported-wire`, naming the
+//! version IR read (ADR-013 O-22).
+use std::collections::BTreeMap;
+
 use quire_contract_ir::{
     read_checked_package, CheckedArtifactRef, CheckedOccurrenceRole, CheckedPackageDispatchResult,
-    CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageReadLimits,
-    CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedSourceMapEntry, CheckedSourceRegion,
+    CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageLimit,
+    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode,
+    CheckedSourceMapEntry, CheckedSourceRegion, CHECKED_PACKAGE_V2,
 };
 
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{
+    CatalogCode, CatalogCoded, Code, InternalFault, JsonPointer, LimitExceeded, LimitKind, Locus,
+    RefusalRecord, StageFailure, Staged,
+};
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, Revision, SourceRegion,
@@ -103,6 +122,54 @@ use quire_exact::{Origin, Role};
 
 #[cfg(test)]
 mod tests;
+
+/// A test's view of one [`read_checked_package_v2`] outcome, T-4's
+/// `Result` unpacked so a test matches every arm by pattern.
+#[cfg(test)]
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum Read {
+    /// The read admitted the bytes.
+    Verified {
+        /// See [`V2Read::package`].
+        package: VerifiedPackage,
+        /// See [`V2Read::source_map`].
+        source_map: PackageSourceMap,
+        /// See [`V2Read::effective_limits`].
+        effective_limits: V2ReadLimits,
+    },
+    /// `StageFailure::Refused`.
+    Refused(V2ReadRefusal),
+    /// `StageFailure::Limit`.
+    Limit(LimitExceeded),
+}
+
+/// [`read_checked_package_v2`], viewed as a [`Read`].
+#[cfg(test)]
+pub(crate) fn read_v2(
+    bytes: &[u8],
+    identity: LibraryName,
+    version: String,
+    limits: V2ReadLimits,
+    evidence: &CheckedPackageEvidence,
+    pinned: &PinnedRequest,
+) -> Read {
+    match read_checked_package_v2(bytes, identity, version, limits, evidence, pinned) {
+        Ok(staged) => {
+            let V2Read {
+                package,
+                source_map,
+                effective_limits,
+            } = staged.into_value();
+            Read::Verified {
+                package,
+                source_map,
+                effective_limits,
+            }
+        }
+        Err(StageFailure::Refused(refusal)) => Read::Refused(refusal),
+        Err(StageFailure::Limit(limit)) => Read::Limit(limit),
+    }
+}
 
 /// serde_json's fixed container-recursion cap, which IR's
 /// `strict_json_value` inherits because it never calls
@@ -181,35 +248,81 @@ impl V2ReadLimits {
     }
 }
 
+/// ADR-013 O-22: IR refused the artifact's contract version.
+/// `unknown_wire`/`unsupported-wire`, naming the version IR read and the one
+/// this reader admits.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct UnsupportedWire {
+    /// The `contract_version` IR read.
+    pub(crate) actual: Box<str>,
+}
+
+impl CatalogCoded for UnsupportedWire {
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("unknown_wire", "unsupported-wire")
+    }
+}
+
+impl UnsupportedWire {
+    /// The catalog row's payload: the actual selected wire and the expected
+    /// one (FR-096).
+    pub(crate) fn catalog_fields(&self) -> BTreeMap<&'static str, String> {
+        BTreeMap::from([
+            ("actual", self.actual.to_string()),
+            ("expected", CHECKED_PACKAGE_V2.to_owned()),
+        ])
+    }
+}
+
 /// Why the reader could not admit the offered bytes (ADR-011 §4). Distinct
-/// from [`V2ReadIncomplete`]: a refusal names a defect in the input, never a
+/// from a [`LimitExceeded`]: a refusal names a defect in the input, never a
 /// resource ceiling (FR-322-AC-9).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum V2ReadRefusal {
+    /// IR refused the contract version (ADR-013 O-22), located at the
+    /// artifact's `/contract_version`.
+    #[error("unsupported contract version {:?}", wire.actual)]
+    UnsupportedVersion {
+        /// The version IR read.
+        wire: UnsupportedWire,
+        /// `Locus::Artifact` at IR's pointer, `/contract_version`.
+        locus: Box<Locus>,
+    },
     /// IR's I04 `checked_package` reader refused the wire, carrying its own
-    /// closed refusal code, the closed-schema path admission failed at, and
-    /// (where IR determined one) the paired cause tag and offending node
-    /// key. Covers contract-version, envelope-shape, digest-domain,
-    /// canonical-form and (once node arms land) semantic-graph and lock
-    /// refusals -- every I04 refusal this slice does not classify more
-    /// specifically than IR itself already does. `unknown_contract_version`,
-    /// `malformed_wire`, `duplicate_member`, `unknown_member`,
-    /// `noncanonical_wire` and `digest_domain_mismatch` all name defects in
-    /// the wire's own envelope shape and share `Code::InvalidPackage`: this
-    /// crate does not mirror IR's own closed refusal-code vocabulary with a
-    /// duplicate set of variants (team decision, no-copy rule).
-    #[error("checked-package/v2 wire refused ({0:?})")]
-    Envelope(CheckedPackageRefusal),
+    /// closed refusal code, the pointer of the value it refused, and (where
+    /// IR determined one) the paired cause tag and offending node key.
+    /// Covers envelope-shape, digest-domain, canonical-form, semantic-graph
+    /// and lock refusals -- every I04 refusal this slice does not classify
+    /// more specifically than IR itself already does. `malformed_wire`,
+    /// `duplicate_member`, `unknown_member`, `noncanonical_wire` and
+    /// `digest_domain_mismatch` all name defects in the wire's own envelope
+    /// shape and share `Code::InvalidPackage`: this crate does not mirror
+    /// IR's own closed refusal-code vocabulary with a duplicate set of
+    /// variants (team decision, no-copy rule).
+    #[error("checked-package/v2 wire refused ({refusal:?})")]
+    Envelope {
+        /// IR's refusal. Boxed: IR's refusal is the largest payload, and
+        /// every read's `Result` carries this type.
+        refusal: Box<CheckedPackageRefusal>,
+        /// `Locus::Artifact` at IR's pointer; `None` when IR refused the
+        /// bytes at no value (malformed JSON, non-canonical bytes).
+        locus: Option<Box<Locus>>,
+    },
     /// The admitted wire's lock names one or more `dependency_selections`;
     /// this reader does not yet derive imports from a lock (QC-10, ADR-013
     /// TK-08).
     #[error("dependency_selections present; import derivation is not yet implemented")]
-    UnsupportedDependencySelections,
+    UnsupportedDependencySelections {
+        /// `Locus::Artifact` at `/lock/dependency_selections`.
+        locus: Box<Locus>,
+    },
     /// `library`'s verified-binding entry point refused the candidate
     /// derived from an admitted wire (its identity preimage's declared
     /// names, never its already-IR-checked `package_id`).
+    /// Boxed: `LibraryRefusal` is the largest refusal, and every read's
+    /// `Result` carries this type.
     #[error(transparent)]
-    Structural(#[from] LibraryRefusal),
+    Structural(Box<LibraryRefusal>),
     /// `quire-canonical` refused to encode an admitted wire's identity
     /// preimage. Practically unreachable: IR has already decoded the
     /// preimage into typed Rust structs it itself just re-serialized without
@@ -227,6 +340,10 @@ pub(crate) enum V2ReadRefusal {
     /// crate's own provenance types, not a second admission decision.
     #[error("source map conversion failed: {0}")]
     SourceMap(#[from] SourceMapDefect),
+    /// A broken invariant between IR's reader and this one (ADR-013 T-4):
+    /// IR reported a pointer that is not RFC 6901 text.
+    #[error("internal fault: {} broke {}", .0.stage(), .0.invariant())]
+    Fault(InternalFault),
 }
 
 /// Why an admitted wire's `source_map` did not convert into a
@@ -327,20 +444,59 @@ impl V2ReadRefusal {
     )]
     pub(crate) fn code(&self) -> Code {
         match self {
-            Self::Envelope(refusal) => map_refusal_code(refusal.code),
-            Self::UnsupportedDependencySelections => Code::UnsupportedDependencySelections,
+            Self::UnsupportedVersion { .. } => Code::UnknownWire,
+            Self::Envelope { refusal, .. } => map_refusal_code(refusal.code),
+            Self::UnsupportedDependencySelections { .. } => Code::UnsupportedDependencySelections,
             Self::Structural(refusal) => refusal.code(),
             Self::Preimage(_) => Code::InvalidPackage,
             Self::SourceMap(_) => Code::InvalidSourceMap,
+            Self::Fault(_) => Code::RuntimeInvariant,
+        }
+    }
+
+    /// Where in the artifact the refusal was raised (FR-096). `None` for an
+    /// IR refusal at no value, and for the refusals this reader raises
+    /// against the caller's pins or its own re-encoding, which name no
+    /// position in the bytes.
+    #[allow(
+        dead_code,
+        reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) wires this reader in; until then only this module's own tests call it"
+    )]
+    pub(crate) fn locus(&self) -> Option<&Locus> {
+        match self {
+            Self::UnsupportedVersion { locus, .. }
+            | Self::UnsupportedDependencySelections { locus } => Some(locus),
+            Self::Envelope { locus, .. } => locus.as_deref(),
+            Self::Structural(_) | Self::Preimage(_) | Self::SourceMap(_) | Self::Fault(_) => None,
+        }
+    }
+
+    /// The O-17 record of an unsupported contract version: code
+    /// `unknown_wire`/`unsupported-wire`, the `actual` and `expected`
+    /// versions, and its locus. `None` for every other refusal, whose
+    /// catalog mapping is IR conformance work (ADR-013 O-17).
+    #[allow(
+        dead_code,
+        reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) wires this reader in; until then only this module's own tests call it"
+    )]
+    pub(crate) fn unsupported_wire_record(&self) -> Option<RefusalRecord> {
+        match self {
+            Self::UnsupportedVersion { wire, locus } => Some(RefusalRecord::new(
+                wire.catalog_code(),
+                wire.catalog_fields(),
+                Some((**locus).clone()),
+            )),
+            _ => None,
         }
     }
 }
 
 /// Maps IR's closed I04 refusal-code vocabulary onto this crate's own FR-010
 /// codes. Exhaustive on purpose: a new IR variant must be triaged here
-/// rather than silently falling into a catch-all bucket. Every envelope-
-/// shape code (contract-version, malformed/noncanonical wire, duplicate or
-/// unknown member, digest-domain mismatch) collapses to the crate's own
+/// rather than silently falling into a catch-all bucket. A contract-version
+/// refusal is `unknown_wire` (ADR-013 O-22). Every envelope-shape code
+/// (malformed/noncanonical wire, duplicate or unknown member, digest-domain
+/// mismatch) collapses to the crate's own
 /// pre-existing `Code::InvalidPackage`, exactly as `UnsupportedNodeTag`
 /// already does -- no per-IR-variant `Code` is minted to mirror IR's own
 /// closed vocabulary (team decision, no-copy rule). IR's full
@@ -358,8 +514,8 @@ impl V2ReadRefusal {
 )]
 fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     match code {
-        CheckedPackageRefusalCode::UnknownContractVersion
-        | CheckedPackageRefusalCode::MalformedWire
+        CheckedPackageRefusalCode::UnknownContractVersion => Code::UnknownWire,
+        CheckedPackageRefusalCode::MalformedWire
         | CheckedPackageRefusalCode::DuplicateMember
         | CheckedPackageRefusalCode::UnknownMember
         | CheckedPackageRefusalCode::NoncanonicalWire
@@ -377,63 +533,85 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     }
 }
 
-/// The reader ran out of a selected resource ceiling before it could decide
-/// admission (FR-322-AC-6/AC-9): no partial package, distinct from a
-/// refusal.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum V2ReadIncomplete {
-    /// The offered bytes exceed [`V2ReadLimits::artifact_bytes`], checked
-    /// before the bytes are handed to IR's v2 reader.
-    Bytes {
-        /// The configured ceiling.
-        limit: usize,
-        /// The bytes actually offered.
-        actual: usize,
-    },
-    /// IR's v2 reader stopped at a named resource ceiling before reaching a
-    /// conclusion. No catalog cause yet for `Edges`/`Occurrences`/
-    /// `Diagnostics` (STD-95); this reader has no production caller yet
-    /// either (ADR-011 §4's round trip, QSL-6), so none of `kind`'s values
-    /// are moved onto `stage_limit_exceeded` here (QSL-236).
-    Limit {
-        /// The exhausted resource.
-        kind: quire_contract_ir::CheckedPackageLimit,
-        /// The configured ceiling.
-        limit: u64,
-        /// The counter value at the failed charge.
-        consumed: u64,
-    },
+/// The T-4 [`LimitKind`] each of IR's reader limits carries (catalog
+/// revision `1-draft.7`'s `stage_limit_exceeded` row).
+fn limit_kind(kind: CheckedPackageLimit) -> LimitKind {
+    match kind {
+        CheckedPackageLimit::Bytes => LimitKind::InputBytes,
+        CheckedPackageLimit::Depth => LimitKind::NestingDepth,
+        CheckedPackageLimit::Nodes => LimitKind::NodeCount,
+        CheckedPackageLimit::Edges => LimitKind::EdgeCount,
+        CheckedPackageLimit::Occurrences => LimitKind::OccurrenceCount,
+        CheckedPackageLimit::Diagnostics => LimitKind::DiagnosticCount,
+        CheckedPackageLimit::Work => LimitKind::WorkBudget,
+    }
 }
 
-/// I2's own outcome: exactly a verified package, refused or incomplete
-/// (FR-322-AC-9). `pub(crate)`: ADR-011 §4's round trip (QSL-6 slice S3, A7)
-/// has no production caller yet; until then only this module's own tests
-/// construct one.
+/// IR reported a pointer that is not RFC 6901 text.
+const IR_POINTER_FAULT: InternalFault = InternalFault::new("I2", "ir-pointer-is-rfc-6901");
+
+/// The supplied bytes' `raw-artifact-digest` record, and the loci it names.
+struct Artifact(DigestRecord);
+
+impl Artifact {
+    fn of(bytes: &[u8]) -> Self {
+        Self(DigestRecord::raw_artifact(bytes))
+    }
+
+    /// `Locus::Artifact` at `pointer`.
+    fn at(&self, pointer: JsonPointer) -> Locus {
+        Locus::Artifact {
+            digest: self.0,
+            pointer,
+        }
+    }
+
+    /// `Locus::Artifact` at the pointer IR reported, or `None` when IR
+    /// reported none. IR builds every pointer as RFC 6901 text, the grammar
+    /// [`JsonPointer`] parses, so a pointer that does not parse is a broken
+    /// invariant between IR and this reader, never a property of the bytes.
+    fn at_ir(
+        &self,
+        pointer: Option<&quire_contract_ir::JsonPointer>,
+    ) -> Result<Option<Locus>, InternalFault> {
+        let Some(pointer) = pointer else {
+            return Ok(None);
+        };
+        match pointer.as_str().parse() {
+            Ok(pointer) => Ok(Some(self.at(pointer))),
+            Err(invalid) => {
+                debug_assert!(false, "IR reported a non-RFC-6901 pointer: {invalid}");
+                Err(IR_POINTER_FAULT)
+            }
+        }
+    }
+}
+
+/// An I2 read that admitted the bytes: the three ADR-011 §4
+/// verified-binding conditions held (FR-087-AC-1, AC-3): a supported schema
+/// version, a recomputed `package_id` equal to the declared one, and an
+/// identity listed in the caller's `pinned` library lock or pinned request.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(
-    dead_code,
-    reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) wires this reader in; until then only this module's own tests construct one"
-)]
-pub(crate) enum V2ReadOutcome {
-    /// The bytes held all three ADR-011 §4 verified-binding conditions
-    /// (FR-087-AC-1, AC-3): a supported schema version, a recomputed
-    /// `package_id` equal to the declared one, and an identity listed in
-    /// the caller's `pinned` library lock or pinned request.
-    Verified {
-        /// The verified package.
-        package: VerifiedPackage,
-        /// The package source map (ADR-013 O-12), read from the wire's
-        /// `source_map`.
-        source_map: PackageSourceMap,
-        /// The ceilings this read actually enforced: the caller's
-        /// [`V2ReadLimits`] as given, with `depth` reported as at most
-        /// [`SERDE_JSON_RECURSION_LIMIT`] (see [`V2ReadLimits::enforced`]).
-        effective_limits: V2ReadLimits,
-    },
-    /// A named defect in the input.
-    Refused(V2ReadRefusal),
-    /// A resource ceiling stopped the reader first.
-    Incomplete(V2ReadIncomplete),
+pub(crate) struct V2Read {
+    /// The verified package.
+    pub(crate) package: VerifiedPackage,
+    /// The package source map (ADR-013 O-12), read from the wire's
+    /// `source_map`.
+    pub(crate) source_map: PackageSourceMap,
+    /// The ceilings this read actually enforced: the caller's
+    /// [`V2ReadLimits`] as given, with `depth` reported as at most
+    /// [`SERDE_JSON_RECURSION_LIMIT`] (see [`V2ReadLimits::enforced`]).
+    pub(crate) effective_limits: V2ReadLimits,
+}
+
+/// I2's own outcome, ADR-013 T-4's stage result (FR-322-AC-9): a verified
+/// package, a refusal of the input, or a reached limit with no partial
+/// package.
+pub(crate) type V2ReadOutcome = Result<Staged<V2Read>, StageFailure<V2ReadRefusal>>;
+
+/// A refused read.
+fn refused(refusal: V2ReadRefusal) -> V2ReadOutcome {
+    Err(StageFailure::Refused(refusal))
 }
 
 /// `preimage`'s RFC 8785 bytes, encoded by `quire-canonical` (ADR-013 §2,
@@ -475,15 +653,21 @@ pub(crate) fn read_checked_package_v2(
     pinned: &PinnedRequest,
 ) -> V2ReadOutcome {
     if bytes.len() > limits.artifact_bytes {
-        return V2ReadOutcome::Incomplete(V2ReadIncomplete::Bytes {
-            limit: limits.artifact_bytes,
-            actual: bytes.len(),
-        });
+        // No locus: the ceiling refuses without hashing the oversized bytes,
+        // and a digest over them is the only name the artifact has (FR-096).
+        return Err(StageFailure::Limit(LimitExceeded::new(
+            LimitKind::InputBytes,
+            u64::try_from(limits.artifact_bytes).unwrap_or(u64::MAX),
+            u128::try_from(bytes.len()).unwrap_or(u128::MAX),
+        )));
     }
     match read_checked_package(bytes, limits.for_ir(), evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => {
             if !package.lock().dependency_selections.is_empty() {
-                return V2ReadOutcome::Refused(V2ReadRefusal::UnsupportedDependencySelections);
+                let pointer = JsonPointer::root().key("lock").key("dependency_selections");
+                return refused(V2ReadRefusal::UnsupportedDependencySelections {
+                    locus: Box::new(Artifact::of(bytes).at(pointer)),
+                });
             }
             // The preimage's RFC 8785 bytes, from `quire-canonical` (ADR-013
             // §2, ADR-013:113: the one RFC 8785 implementation), encoded
@@ -493,7 +677,7 @@ pub(crate) fn read_checked_package_v2(
             let preimage_bytes =
                 match canonical_preimage(package.identity_preimage(), limits.artifact_bytes) {
                     Ok(bytes) => bytes,
-                    Err(reason) => return V2ReadOutcome::Refused(V2ReadRefusal::Preimage(reason)),
+                    Err(reason) => return refused(V2ReadRefusal::Preimage(reason)),
                 };
             let package_id = PackageId::of_preimage(&preimage_bytes);
             // L2: cross-check this reader's own recompute against IR's
@@ -505,13 +689,13 @@ pub(crate) fn read_checked_package_v2(
             // value IR derived independently, can.
             let ir_digest = package.package_id().digest.as_ref();
             if package_id.hex() != ir_digest {
-                return V2ReadOutcome::Refused(V2ReadRefusal::Structural(
+                return refused(V2ReadRefusal::Structural(Box::new(
                     LibraryRefusal::IdentityDivergedFromIr {
                         library: identity.clone(),
                         ir_digest: ir_digest.into(),
                         recomputed_hex: package_id.hex(),
                     },
-                ));
+                )));
             }
             // `PreimageDefect::AmbiguousDeclaration` cannot reach here: IR's
             // `validate_declaration_names` refuses a repeated `qualified_name`
@@ -520,17 +704,17 @@ pub(crate) fn read_checked_package_v2(
             let exports = match declared_exports(&preimage_bytes) {
                 Ok(exports) => exports,
                 Err(defect) => {
-                    return V2ReadOutcome::Refused(V2ReadRefusal::Structural(
+                    return refused(V2ReadRefusal::Structural(Box::new(
                         LibraryRefusal::InvalidPreimage {
                             library: identity,
                             defect,
                         },
-                    ))
+                    )));
                 }
             };
             let source_map = match package_source_map(package.source_map()) {
                 Ok(source_map) => source_map,
-                Err(defect) => return V2ReadOutcome::Refused(defect.into()),
+                Err(defect) => return refused(defect.into()),
             };
             let candidate = LibraryPackage {
                 library: identity,
@@ -545,25 +729,45 @@ pub(crate) fn read_checked_package_v2(
             // verified_binding_witness.rs` fails on any other.
             let admitted = SupportedV2Wire::attest_ir_admitted_v2();
             match verify_binding(admitted, candidate, pinned) {
-                Ok(verified) => V2ReadOutcome::Verified {
+                Ok(verified) => Ok(Staged::new(V2Read {
                     package: verified,
                     source_map,
                     effective_limits: limits.enforced(),
-                },
-                Err(refusal) => V2ReadOutcome::Refused(V2ReadRefusal::Structural(refusal)),
+                })),
+                Err(refusal) => refused(V2ReadRefusal::Structural(Box::new(refusal))),
             }
         }
         CheckedPackageDispatchResult::Refused(refusal) => {
-            V2ReadOutcome::Refused(V2ReadRefusal::Envelope(refusal))
+            let artifact = Artifact::of(bytes);
+            let locus = match artifact.at_ir(refusal.path.as_ref()) {
+                Ok(locus) => locus.map(Box::new),
+                Err(fault) => return refused(V2ReadRefusal::Fault(fault)),
+            };
+            refused(match (refusal.code, &refusal.contract_version, locus) {
+                (CheckedPackageRefusalCode::UnknownContractVersion, Some(actual), Some(locus)) => {
+                    V2ReadRefusal::UnsupportedVersion {
+                        wire: UnsupportedWire {
+                            actual: actual.clone(),
+                        },
+                        locus,
+                    }
+                }
+                (_, _, locus) => V2ReadRefusal::Envelope {
+                    refusal: Box::new(refusal),
+                    locus,
+                },
+            })
         }
         CheckedPackageDispatchResult::Incomplete(CheckedPackageIncomplete {
-            limit_kind,
+            limit_kind: kind,
             limit,
             consumed,
-        }) => V2ReadOutcome::Incomplete(V2ReadIncomplete::Limit {
-            kind: limit_kind,
-            limit,
-            consumed,
-        }),
+            path,
+        }) => match Artifact::of(bytes).at_ir(path.as_ref()) {
+            Ok(locus) => Err(StageFailure::Limit(
+                LimitExceeded::new(limit_kind(kind), limit, u128::from(consumed)).at(locus),
+            )),
+            Err(fault) => refused(V2ReadRefusal::Fault(fault)),
+        },
     }
 }

@@ -34,7 +34,7 @@ The types are layer F's, in `qsl_foundation::diagnostic` (ADR-011 §6.1).
 ## Inputs
 
 - ADR-013 T-4, T-5, O-12, O-16, O-17, O-18 and O-22.
-- `quire.native.diagnostics/v1` revision `1-draft.6`
+- `quire.native.diagnostics/v1` revision `1-draft.7`
   (`ix://agent-ix/quire-specification`,
   `proposals/quire-v1/definitions/native-diagnostics.md`, cited by
   reference): the common structured context ("original source region and
@@ -101,11 +101,13 @@ resolves `Evaluation.location` without the forms.
 
 ### A stage limit names its kind, bound, counter and locus
 
-`LimitKind` SHALL have four variants: input bytes, nesting depth, node
-count and work budget. Its `catalog_code()` SHALL be
-`stage_limit_exceeded` with cause `input-bytes-exceeded`,
-`nesting-depth-exceeded`, `node-count-exceeded` or `work-budget-exceeded`
-respectively.
+`LimitKind` SHALL have eight variants: input bytes, nesting depth, token
+count, node count, edge count, occurrence count, diagnostic count and work
+budget. Its `catalog_code()` SHALL be `stage_limit_exceeded` with cause
+`input-bytes-exceeded`, `nesting-depth-exceeded`, `token-count-exceeded`,
+`node-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`,
+`diagnostic-count-exceeded` or `work-budget-exceeded` respectively
+(revision `1-draft.7`).
 
 `LimitExceeded` SHALL carry its `LimitKind`, the configured bound, the
 actual counter at the failed charge, and an optional `Locus`. Its catalog
@@ -119,16 +121,18 @@ accounting-contract limits type (`ModelNormalizationLimitsV1`,
 meter wherever it is read and keeps `resource_exhausted`
 ([ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
 §1). The `quire.native.diagnostics/v1`
-`stage_limit_exceeded` row (revision `1-draft.6`) names these surfaces,
+`stage_limit_exceeded` row (revision `1-draft.7`) names these surfaces,
 together with S1, `replay` and `route`, and the catalog keeps `resource_exhausted` for the caller's
 work-budget meter, adding that a semantic maximum is not a caller work
 budget. The check stage's `CheckingLimits` ceilings (nesting depth, node
 count, declaration input bytes and work, NFR-011) are therefore stage
-limits. Three sets of ceilings migrate under QSL-236 once STD-95 answers,
-and this requirement does not rule on them: S1's syntax budgets
-(`SyntaxLimit`, FR-035), the complete-V1 package-graph resolution limit
-(`ResolutionCause::InsufficientNextCharge`), and the `replay` envelope
-readers' encoded-byte bound (`BoundExceeded`). The native-v1 parser's
+limits. S1's syntax budgets (`SyntaxLimit`, FR-035) report
+`stage_limit_exceeded` with their kind's cause, the token budget as
+`token-count-exceeded`; S1 names its position by its diagnostic's region.
+The `replay` envelope readers' encoded-byte bound (`BoundExceeded`) is
+`input-bytes-exceeded`. This requirement does not rule on the complete-V1
+package-graph resolution limits other than its depth
+(`ResolutionCause::InsufficientNextCharge`). The native-v1 parser's
 budgets (FR-002-AC-4) report through the lane-private native-v1 `Code`
 (ADR-013 §6 Diagnostics row). S4 and the `route` module have no stage limit
 yet; their owners specify one with its locus when they add it.
@@ -141,11 +145,11 @@ Each producer's locus is the position at which its charge failed:
 | S3, a family `check`, for a declaration as a whole | the contract's nesting entry, and the declaration's preimage input bytes, node count and work charge | `Locus::Region` over that declaration's span |
 | S3, `Typer` and lowering, under `CheckingLimits` | nesting depth, and the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `check::Location`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
 | S3, package checking, under `CheckingLimits` | a declaration's input bytes and the package's work (NFR-011) | `Locus::Region` over the declaration being charged |
-| I2 reader, IR's reported limits | IR's `Bytes`, `Depth`, `Nodes` and `Work` as input bytes, nesting depth, node count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
+| I2 reader, IR's reported limits | IR's `Bytes`, `Depth`, `Nodes`, `Edges`, `Occurrences`, `Diagnostics` and `Work` as input bytes, nesting depth, node count, edge count, occurrence count, diagnostic count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
 
 `LimitExceeded`'s locus SHALL be absent in exactly these cases:
 
-1. The position resolves to no region (the two cases above).
+1. The position resolves to no region (the three cases above).
 2. The I2 reader's own artifact byte ceiling. The reader refuses without
    hashing the oversized bytes, which is the ceiling's purpose, and a digest
    over them is the only name the artifact has.
@@ -173,7 +177,7 @@ variant and never from a message.
 
 The keys of the family causes S6a raises are these. Each key names the
 catalog payload item beside it (`quire.native.diagnostics/v1` revision
-`1-draft.6`):
+`1-draft.7`):
 
 | Cause type | Code / cause | Key: catalog payload item |
 | --- | --- | --- |
@@ -220,15 +224,15 @@ name.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-096-AC-1 | For function `0` with body `if a then b else c + d` and measure `n`, under a unit reference `r`: location (`Body{0}`, `[]`) resolves to the region of the `If` node's span, (`Body{0}`, `[2]`) to the span of `c + d`, (`Body{0}`, `[2, 1]`) to the span of `d`, and (`Measure{0}`, `[]`) to the span of `n`. Each region is under `r`. The checked package of those declarations resolves the same four locations to the same four regions. When the unit is a body embedded at byte offset `k` of a document with reference `d`, with no layout deletions, the same locations resolve under `d` to the same spans shifted by `k`. A location in an FR-151 synthesized function and a location with `Origin::Expression` resolve to no region. | Test (TC-426) |
-| FR-096-AC-2 | `LimitKind`'s `catalog_code()` gives `stage_limit_exceeded` with causes `input-bytes-exceeded`, `nesting-depth-exceeded`, `node-count-exceeded` and `work-budget-exceeded` for its four variants, and a `LimitExceeded` gives its kind's code. | Test (TC-427) |
+| FR-096-AC-2 | `LimitKind`'s `catalog_code()` gives `stage_limit_exceeded` with causes `input-bytes-exceeded`, `nesting-depth-exceeded`, `token-count-exceeded`, `node-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`, `diagnostic-count-exceeded` and `work-budget-exceeded` for its eight variants, and a `LimitExceeded` gives its kind's code. | Test (TC-427) |
 | FR-096-AC-3 | With S2 nesting-depth bound `L = 8`, S2 over a body of `not`×8 `a` returns a limit with kind nesting depth, bound 8, actual 9, and `Locus::Region` over the span of the node at depth 9, under the unit's `RawSourceRef`. | Test (TC-427) |
 | FR-096-AC-4 | A declaration whose preimage input bytes exceed a configured bound `B` returns `StageFailure::Limit` with kind input bytes, bound `B`, actual equal to the measured bytes, and `Locus::Region` over the declaration's span. The same limit reached for an FR-151 synthesized function carries no locus. | Test (TC-427) |
 | FR-096-AC-5 | A declaration whose work charge is denied by a work budget `W` returns `StageFailure::Limit` with kind work budget, bound `W`, actual equal to the spend the denied charge would have reached, and `Locus::Region` over the declaration's span. | Test (TC-427) |
 | FR-096-AC-6 | A family refusal of `lookup<T>(p, r) absent refused` with no member for `r` builds a `RefusalRecord` with code `invalid_runtime_input`/`absent-key`, category refusal, fields `binding` and `key` naming the population binding and the requested key, and `Locus::Region` over the span of the `lookup` expression. An `Evaluation` whose `location` is `None` builds a record with no locus. | Test (TC-428) |
 | FR-096-AC-7 | For each cause in the key table, `catalog_fields()` holds exactly the keys the table lists for it. | Test (TC-428) |
 | FR-096-AC-8 | A `RefusalRecord` built from an S6a `Evaluation` whose outcome is a kernel `Refused` carries the code QSL's kernel map gives that cause, category refusal, and the evaluation's resolved locus. | Test (TC-428) |
-| FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. | Test (TC-429) |
-| FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test (TC-429) |
+| FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. A refusal IR reports at a value, such as a `package_id` digest domain, is located at `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer of that value. | Test (TC-429) |
+| FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. The same holds for IR's depth, edge, occurrence, diagnostic and work limits, each with its own kind. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test (TC-429) |
 | FR-096-AC-11 | A function whose body is the source text `not not not true` (four nodes deep), parsed under a unit reference so its forms carry spans and checked through `ValueFunctionFamily::check` with `CheckingLimits` depth 3, returns `StageFailure::Limit` with kind nesting depth, bound 3, actual 4, and `Locus::Region` over the span of `true`, reported as `stage_limit_exceeded`/`nesting-depth-exceeded`. With depth 4 and nothing else changed, it returns no nesting-depth limit. The same depth stop inside an FR-151 synthesized function carries no locus. | Test (TC-378) |
 
 ## Dependencies
@@ -246,47 +250,59 @@ name.
   per-declaration limits and the package node budget.
 - [FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md):
   `CatalogCoded`, `UndefinedCoded`, `Evaluation` and `FamilyResult`.
-- The catalog revision QSL claims. `quire.native.diagnostics/v1` states
-  that a producer claiming revision `1-draft.5` or earlier emits no
-  `stage_limit_exceeded`. QSL's complete-source diagnostics claim `1-draft.3`
-  (`qsl-cst/src/diagnostic.rs`, `qsl-semantics/src/complete/package.rs`).
-  Emitting any `LimitExceeded` this requirement specifies is gated on QSL's
-  claim reaching `1-draft.6`, the revision FR-322 selects (ADR-013 O-17).
-  Remaining work: QSL-236.
+- The catalog revision QSL claims: `1-draft.7`
+  (`qsl-cst/src/diagnostic.rs`, `qsl-semantics/src/complete/package.rs`,
+  the checked-package emitter's diagnostics catalog and the native
+  Diagnostics registration). `token-count-exceeded`, `edge-count-exceeded`,
+  `occurrence-count-exceeded` and `diagnostic-count-exceeded` are revision
+  `1-draft.7`.
 - [NFR-011](../non-functional/NFR-011-bound-value-checking-work.md): the
   `CheckingLimits` ceilings.
 - IR (`agent-ix/quire-contract-ir`, `quire-contract-model`'s
-  `checked_package`), conformance work with no ticket (ADR-013 §7). AC-9
-  and AC-10 need all three:
-  1. `CheckedPackageRefusal.path` is the RFC 6901 JSON pointer of the value
-     the refusal concerns, and is absent for a refusal at no value. Today it
-     is a bare member name (`contract_version`) or `document`.
-  2. The `UnknownContractVersion` refusal carries the contract version it
-     read.
-  3. `CheckedPackageIncomplete` carries the RFC 6901 pointer of the value at
-     which the charge failed, for every limit other than `Bytes`.
+  `checked_package`, IR-281): `CheckedPackageRefusal.path` is the RFC 6901
+  pointer of the value the refusal concerns, absent for a refusal at no
+  value; the `UnknownContractVersion` refusal carries the contract version
+  it read; and `CheckedPackageIncomplete` carries the pointer of the value
+  at which the charge failed, for every limit other than `Bytes`.
 
 ## Open Questions
 
-- **FR-096-OQ-1: What stage limit kind do IR's `Edges`, `Occurrences` and
-  `Diagnostics` limits map to?** IR's `CheckedPackageLimit` has seven
-  kinds. `stage_limit_exceeded` has four causes, and none names edges,
-  occurrences or diagnostics. The catalog forbids a producer from choosing
-  a broader cause to discard a distinction it knows. ADR-013 QC-28 carries
-  the question, and S-5b's I2 limit conversion waits on it. Remaining work:
-  QSL-236.
+- **FR-096-OQ-1 (answered):** IR's `Edges`, `Occurrences` and `Diagnostics`
+  limits carry `edge-count-exceeded`, `occurrence-count-exceeded` and
+  `diagnostic-count-exceeded`, which `quire.native.diagnostics/v1` revision
+  `1-draft.7` adds (ADR-013 QC-28, STD-95).
 
 ## Status
 
-Specified under QSL-160. Not implemented. QSL-160 part 1 moved
-`LimitExceeded`, `StageFailure` and `Staged` into the foundation
-`diagnostic` module and gave the family `check`'s four limits their actual
-counter (FR-062-AC-12, TC-432), which FR-096-AC-4 and FR-096-AC-5 name.
-Neither criterion is backed: neither limit carries a locus, and
-`LimitKind` has no `catalog_code()`, whose code is revision `1-draft.6`
-(QSL-236). `RefusalRecord` and `catalog_fields` do not exist.
-The `CheckingLimits` ceilings surface as
-`resource_exhausted`, and `Typer`'s depth stop as `StageFailure::Refused`.
+Partly implemented under QSL-160.
+
+- `LimitKind` has the eight `1-draft.7` kinds, and `LimitExceeded` carries
+  an optional `Locus` (AC-2).
+- S2's depth limit is located at the first node past the bound (AC-3).
+- A family `check` locates its declaration-level limits at the
+  declaration's span, and `Typer`'s depth stop at the node whose entry
+  failed. Declarations not read from a unit carry no locus (AC-4, AC-5,
+  AC-11). Package checking keeps that region on the `CheckRefusal` it
+  returns (`StageLimitCause.region`), and `DeclarationRegions::refusal_region`
+  resolves any check refusal to its region.
+- The I2 reader returns T-4's `Result<Staged<_>, StageFailure<_>>`. It
+  carries IR's version refusal as `unknown_wire`/`unsupported-wire`
+  located at `/contract_version`, locates every IR refusal and limit
+  reported at a value, and gives its own byte ceiling and a refusal at no
+  value no locus (AC-9, AC-10).
+- The expression checker's `TypeEnvironmentLimits` ceilings return
+  `StageFailure::Limit(LimitExceeded)` (node count for `ancestor_steps`,
+  work budget for `work_units`) with no locus (FR-082).
+- `RefusalRecord` exists in F `diagnostic`, carrying the code, category,
+  locus and catalog fields. The I2 reader builds one for its version
+  refusal.
+
+Not implemented: `CatalogCoded::catalog_fields`, and the S6a record built
+from an `Evaluation` (AC-6 to AC-8, TC-428).
 `ModelRefusalCause::AbsentKey` carries the key but not the population
 binding, and `WrongSnapshotCause::WrongAnchor` carries neither anchor
-selection, so both causes gain the payload the key table names.
+selection, so both causes still need the payload the key table names. The
+`CheckingLimits` ceilings that `Typer` (other than its depth stop),
+lowering and package checking reach still surface as a
+`CheckRefusal` located by its `check::Location`, not as a
+`LimitExceeded`.

@@ -260,10 +260,10 @@ fn exact_header_versions_and_source_validation() {
 #[trace("TC-011", "TC-012", "FR-001-AC-4", "FR-002-AC-4")]
 #[test]
 fn resource_limits_never_become_boolean_results() {
-    // QSL-236: `tokens` has no catalog cause yet (STD-95) and stays
-    // `resource_exhausted` (incomplete, exit 22); `source_bytes`, `nodes`
-    // and `nesting` are stage limits (`stage_limit_exceeded`, a refusal,
-    // exit 20) -- neither ever becomes a boolean result either way.
+    // Every syntax ceiling, `tokens` included (`token-count-exceeded`,
+    // catalog revision `1-draft.7`), is a stage limit
+    // (`stage_limit_exceeded`, a refusal, exit 20), and never becomes a
+    // boolean result.
     for (limits, incomplete) in [
         (
             Limits {
@@ -277,7 +277,7 @@ fn resource_limits_never_become_boolean_results() {
                 tokens: 2,
                 ..Limits::default()
             },
-            true,
+            false,
         ),
         (
             Limits {

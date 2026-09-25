@@ -113,6 +113,7 @@ fn assert_depth_refusals(refusals: &[CheckRefusal], limit: u64) {
                 kind: CheckingLimitKind::Depth,
                 limit,
                 actual: u128::from(limit) + 1,
+                region: None,
             })),
             "{refusal:?}"
         );

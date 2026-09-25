@@ -126,7 +126,7 @@ fn a_caller_raised_token_ceiling_admits_past_the_default_and_refuses_one_less() 
     assert!(leaves > Limits::default().tokens);
     assert_eq!(
         parse("tokens-default", &text, Limits::default()).unwrap_err(),
-        CompleteCode::ResourceExhausted,
+        CompleteCode::StageLimitExceeded,
     );
 
     let raised = Limits {
@@ -148,7 +148,8 @@ fn a_caller_raised_token_ceiling_admits_past_the_default_and_refuses_one_less() 
         },
     )
     .unwrap_err();
-    assert_eq!(refusal.code, CompleteCode::ResourceExhausted);
+    assert_eq!(refusal.code, CompleteCode::StageLimitExceeded);
+    assert_eq!(refusal.cause.as_str(), "token-count-exceeded");
     assert_eq!(
         refusal.limit(),
         Some(SyntaxLimit::Tokens { bound: leaves - 1 })

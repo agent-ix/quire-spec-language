@@ -22,7 +22,7 @@ use qsl_forms::DeclarationSpans;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Span;
 
-use super::{CheckedGraph, Location, Origin, PackageDeclarations};
+use super::{CheckCause, CheckRefusal, CheckedGraph, Location, Origin, PackageDeclarations};
 
 /// The region `location` names, given each function's form spans by
 /// declaration index.
@@ -88,6 +88,24 @@ impl DeclarationRegions {
             &self.type_spans,
             location,
         )
+    }
+
+    /// FR-096: the region of function `index`'s whole declaration form, or
+    /// `None` when it was not read from the unit.
+    pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
+        let spans = self.spans.get(index)?.as_ref()?;
+        region(&self.source, spans.declaration)
+    }
+
+    /// FR-096: the region a check refusal names. A stage limit a family
+    /// `check` located carries its own region (a declaration's span, or the
+    /// node `Typer`'s depth stop failed at); every other refusal is located
+    /// by its `location`.
+    pub fn refusal_region(&self, refusal: &CheckRefusal) -> Option<SourceRegion> {
+        match &refusal.cause {
+            CheckCause::ResourceExhausted(limit) if limit.region.is_some() => limit.region.clone(),
+            _ => self.region(&refusal.location),
+        }
     }
 }
 

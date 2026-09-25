@@ -9,6 +9,8 @@ mod stage;
 pub use locus::{InvalidJsonPointer, JsonPointer, Locus, UnresolvedLocus};
 pub use stage::{LimitExceeded, LimitKind, StageFailure, Staged};
 
+use std::collections::BTreeMap;
+
 /// Native processing phase; successful syntax does not imply later execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Phase {
@@ -163,7 +165,7 @@ pub enum Code {
     /// imports from a lock (QC-10, ADR-013 TK-08).
     UnsupportedDependencySelections,
     /// QSL-236: a stage-entry limit was reached (`stage_limit_exceeded`,
-    /// catalog revision `1-draft.6`). The exhausted kind is a `SyntaxLimit`
+    /// catalog revision `1-draft.7`). The exhausted kind is a `SyntaxLimit`
     /// or [`LimitKind`] carried alongside, not part of this code.
     StageLimitExceeded,
 }
@@ -361,9 +363,9 @@ pub enum SyntaxLimit {
         /// Selected nesting ceiling, in bracket pairs.
         bound: usize,
     },
-    /// Token (complete-V1: retained CST leaf) ceiling. No catalog cause yet
-    /// (STD-95): stays `resource_exhausted` rather than moving onto
-    /// `stage_limit_exceeded` with the other four kinds (QSL-236).
+    /// Token (complete-V1: retained CST leaf) ceiling:
+    /// `stage_limit_exceeded`/`token-count-exceeded` (catalog revision
+    /// `1-draft.7`).
     Tokens {
         /// Selected token ceiling.
         bound: usize,
@@ -403,35 +405,36 @@ impl std::fmt::Display for SyntaxLimit {
 }
 
 impl SyntaxLimit {
-    /// The T-4 [`LimitKind`] this ceiling names, where the catalog already
-    /// admits one (QSL-236). `None` for [`Self::Tokens`]: no catalog cause
-    /// yet (STD-95).
-    pub const fn stage_kind(self) -> Option<LimitKind> {
+    /// The T-4 [`LimitKind`] this ceiling names (catalog revision
+    /// `1-draft.7`).
+    pub const fn stage_kind(self) -> LimitKind {
         match self {
-            Self::NestingDepth { .. } => Some(LimitKind::NestingDepth),
-            Self::Tokens { .. } => None,
-            Self::Nodes { .. } => Some(LimitKind::NodeCount),
-            Self::Work { .. } => Some(LimitKind::WorkBudget),
-            Self::SourceBytes { .. } => Some(LimitKind::InputBytes),
+            Self::NestingDepth { .. } => LimitKind::NestingDepth,
+            Self::Tokens { .. } => LimitKind::TokenCount,
+            Self::Nodes { .. } => LimitKind::NodeCount,
+            Self::Work { .. } => LimitKind::WorkBudget,
+            Self::SourceBytes { .. } => LimitKind::InputBytes,
         }
     }
 }
 
 /// The one constructor for a syntax-ceiling refusal, at `span`: code
-/// `stage_limit_exceeded` for every [`SyntaxLimit`] kind the catalog admits
-/// (QSL-236), `resource_exhausted` for [`SyntaxLimit::Tokens`] (no catalog
-/// cause yet, STD-95), and a message rendered from `limit` either way.
+/// `stage_limit_exceeded` for every [`SyntaxLimit`] kind (catalog revision
+/// `1-draft.7`), and a message rendered from `limit`.
 pub fn resource_exhausted(
     source: &Source,
     phase: Phase,
     span: Span,
     limit: SyntaxLimit,
 ) -> Box<Diagnostic> {
-    let code = match limit.stage_kind() {
-        Some(_) => Code::StageLimitExceeded,
-        None => Code::ResourceExhausted,
-    };
-    let mut diagnostic = error(source, code, phase, span.start, span.end, limit.to_string());
+    let mut diagnostic = error(
+        source,
+        Code::StageLimitExceeded,
+        phase,
+        span.start,
+        span.end,
+        limit.to_string(),
+    );
     diagnostic.limit = Some(limit);
     diagnostic
 }
@@ -642,13 +645,10 @@ impl From<crate::source_map::SourceMapError> for Diagnostic {
 // Code"); they retain no canonical authority and gain no new consumer (R-09),
 // and nothing below converts to or from them.
 //
-// S-5b (QSL-160) part one adds T-4's `LimitKind`, `LimitExceeded`,
-// `Staged` and `StageFailure` in `stage`, with no `Locus` yet. QSL-236
-// raises this build's claimed catalog revision to `1-draft.6` (where
-// `stage_limit_exceeded` is defined) and moves every stage-limit producer
-// this crate owns onto it. `RefusalRecord`, the `Locus` on `LimitExceeded`
-// and O-22's readers still wait on a producer that can supply a `Locus`
-// (Remaining work: QSL-233).
+// S-5b (QSL-160) adds T-4's `LimitKind`, `LimitExceeded`, `Staged` and
+// `StageFailure` in `stage`, and O-17's `RefusalRecord` below, each naming
+// its position by T-5's `Locus`. This build claims catalog revision
+// `1-draft.7`, whose `stage_limit_exceeded` has one cause per `LimitKind`.
 
 /// ADR-013 O-16: the outcome category every evaluation, negotiation and proof
 /// result maps into. Exactly the eight values ADR-013 §3 O-16's category
@@ -885,6 +885,57 @@ pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
     fn catalog_code(&self) -> CatalogCode;
 }
 
+/// ADR-013 O-17 (FR-096): a refusal as a consumer outside its producer
+/// reads it -- the catalog code, the O-16 category (always
+/// [`Category::Refusal`]), the T-5 [`Locus`] where the refusal was raised,
+/// and the structured fields the catalog row requires for that code, other
+/// than a location (a location is the locus). The producer reads the fields
+/// from its typed cause, never from a message.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefusalRecord {
+    code: CatalogCode,
+    locus: Option<Locus>,
+    fields: BTreeMap<&'static str, String>,
+}
+
+impl RefusalRecord {
+    /// A refusal with catalog code `code` and catalog fields `fields`,
+    /// raised at `locus` (`None` where no producer can know a position,
+    /// FR-096).
+    pub fn new(
+        code: CatalogCode,
+        fields: BTreeMap<&'static str, String>,
+        locus: Option<Locus>,
+    ) -> Self {
+        Self {
+            code,
+            locus,
+            fields,
+        }
+    }
+
+    /// The cause's catalog code.
+    pub fn code(&self) -> CatalogCode {
+        self.code
+    }
+
+    /// Always [`Category::Refusal`] (ADR-013 O-17: a `CatalogCoded` cause's
+    /// category is fixed).
+    pub fn category(&self) -> Category {
+        Category::Refusal
+    }
+
+    /// Where the refusal was raised, when known.
+    pub fn locus(&self) -> Option<&Locus> {
+        self.locus.as_ref()
+    }
+
+    /// The cause's catalog fields, keyed by the catalog's payload names.
+    pub fn fields(&self) -> &BTreeMap<&'static str, String> {
+        &self.fields
+    }
+}
+
 /// ADR-013 O-16 (QSL-174): a family-owned evaluation-time undefined cause,
 /// held only through this trait -- the undefined-category counterpart of
 /// [`CatalogCoded`].
@@ -943,6 +994,7 @@ pub struct UndefinedRecord {
 
 #[cfg(test)]
 mod foundation_tests {
+
     use super::{
         category_of, resource_exhausted, CatalogCode, Category, Code, InternalFault, Phase, Source,
         SourceIdentity, Span, SyntaxLimit, CATALOG_CATEGORIES,
@@ -958,9 +1010,9 @@ mod foundation_tests {
         .expect("test source")
     }
 
-    /// QSL-236: every `SyntaxLimit` kind but `Tokens` reports
-    /// `Code::StageLimitExceeded`; `Tokens` keeps `Code::ResourceExhausted`
-    /// (no catalog cause yet, STD-95). The native-v1 `Diagnostic` has no
+    /// Every `SyntaxLimit` kind reports `Code::StageLimitExceeded`, and
+    /// names its catalog `LimitKind` (revision `1-draft.7`): the token
+    /// ceiling is `token-count-exceeded`. The native-v1 `Diagnostic` has no
     /// typed cause field, so the kind is named in the rendered message.
     #[test]
     fn resource_exhausted_reports_the_kind_that_maps_to_the_catalog() {
@@ -977,13 +1029,19 @@ mod foundation_tests {
                 SyntaxLimit::SourceBytes { bound: 4 },
                 Code::StageLimitExceeded,
             ),
-            (SyntaxLimit::Tokens { bound: 4 }, Code::ResourceExhausted),
+            (SyntaxLimit::Tokens { bound: 4 }, Code::StageLimitExceeded),
         ];
         for (limit, code) in cases {
             let diagnostic = resource_exhausted(&source, Phase::Parse, span, limit);
             assert_eq!(diagnostic.code, code, "{limit:?}");
             assert_eq!(diagnostic.limit(), Some(limit));
         }
+        assert_eq!(
+            SyntaxLimit::Tokens { bound: 4 }
+                .stage_kind()
+                .catalog_cause(),
+            "token-count-exceeded"
+        );
     }
 
     /// FR-090-AC-5's map: one row per catalog code, the internal-fault code

@@ -79,6 +79,26 @@ pub enum InvalidJsonPointer {
 }
 
 impl JsonPointer {
+    /// The empty pointer: the whole document.
+    pub fn root() -> Self {
+        Self(String::new())
+    }
+
+    /// This pointer extended by one object member name, escaped per RFC
+    /// 6901 (`~` as `~0`, `/` as `~1`).
+    #[must_use]
+    pub fn key(mut self, key: &str) -> Self {
+        self.0.push('/');
+        for character in key.chars() {
+            match character {
+                '~' => self.0.push_str("~0"),
+                '/' => self.0.push_str("~1"),
+                other => self.0.push(other),
+            }
+        }
+        self
+    }
+
     /// The pointer's text, exactly as parsed.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -193,5 +213,9 @@ mod tests {
             "/a~".parse::<JsonPointer>(),
             Err(InvalidJsonPointer::BadEscape(2))
         );
+        let built = JsonPointer::root().key("lock").key("a/b~c");
+        assert_eq!(built.as_str(), "/lock/a~1b~0c");
+        assert_eq!(built.as_str().parse::<JsonPointer>(), Ok(built.clone()));
+        assert_eq!(JsonPointer::root().as_str(), "");
     }
 }

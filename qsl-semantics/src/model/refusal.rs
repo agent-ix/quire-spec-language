@@ -505,9 +505,10 @@ pub enum ModelRefusalCause {
     /// ADR-011 Limits: a domain package document reached one of intake's
     /// parse limits, so it has no parsed form to digest or read. Names the
     /// limit and its bound. ADR-013 T-4's `LimitExceeded` is the eventual
-    /// shared type for this; no catalog cause yet (STD-95), so this stays
-    /// `resource_exhausted` rather than moving to `stage_limit_exceeded`
-    /// with the other stage-limit producers (QSL-236).
+    /// shared type for this; whether I1 intake is a stage is an open
+    /// catalog question (STD-98), so this stays `resource_exhausted` rather
+    /// than moving to `stage_limit_exceeded` with the other stage-limit
+    /// producers (QSL-236).
     IntakeLimitExceeded {
         /// The limit the document reached.
         limit: IntakeLimit,

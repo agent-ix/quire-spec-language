@@ -23,7 +23,7 @@ use qsl_eval::value::{
 };
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::UndefinedReason;
+use qsl_foundation::diagnostic::{StageFailure, UndefinedReason};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     AdmittedModel, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits,
@@ -1523,11 +1523,13 @@ fn population_refused_as_record_field() {
         ],
     );
     match result {
-        Err(invalid) => assert_eq!(
+        Err(StageFailure::Refused(invalid)) => assert_eq!(
             invalid.cause,
             DeclarationCause::Type(IllTypedCause::OperatorIneligible)
         ),
-        Ok(_) => panic!("expected a refused declaration for a Population record field"),
+        other => {
+            panic!("expected a refused declaration for a Population record field, got {other:?}")
+        }
     }
 }
 
@@ -1553,11 +1555,13 @@ fn population_refused_as_object_attribute() {
         ],
     );
     match result {
-        Err(invalid) => assert_eq!(
+        Err(StageFailure::Refused(invalid)) => assert_eq!(
             invalid.cause,
             DeclarationCause::Type(IllTypedCause::OperatorIneligible)
         ),
-        Ok(_) => panic!("expected a refused declaration for a Population object attribute"),
+        other => panic!(
+            "expected a refused declaration for a Population object attribute, got {other:?}"
+        ),
     }
 }
 

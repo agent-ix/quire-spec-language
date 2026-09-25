@@ -271,8 +271,10 @@ they exist in the delivered code today:
 - FR-062-AC-6: unbacked. `Relation` has no `FamilyContract` implementation
   in #214, and S6a has no family-kind dispatch yet; FR-090-AC-4 (TC-385) is
   the precise form of the `Relation` half. Owner: QSL-152.
-- FR-062-AC-7: **unbacked** (PR #303 review, findings 4/5; reverted from an
-  earlier "backed" claim in this round). That earlier claim rested on
+- FR-062-AC-7: backed by TC-378
+  (`the_typer_depth_stop_is_located_at_the_node_whose_entry_failed`,
+  `qsl-semantics/src/check/family.rs`, QSL-160). History: it was unbacked
+  (PR #303 review, findings 4/5; reverted from an earlier "backed" claim). That earlier claim rested on
   `check::family::charge_recursive_nesting`, a side-walk added purely to
   charge `CheckContext`'s nesting counter once per expression-tree node --
   it re-walked the already-checked form afterward, charging nesting for
@@ -308,7 +310,7 @@ they exist in the delivered code today:
   Resolved by [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
   (QSL-160). AC-7's nesting-depth limit is `Typer`'s `CheckingLimits`
   depth, the bound real recursive descent charges. It is a stage limit
-  (the `quire.native.diagnostics/v1` `stage_limit_exceeded` row, revision `1-draft.6`), so `ValueFunctionFamily::check` returns `Typer`'s depth refusal
+  (the `quire.native.diagnostics/v1` `stage_limit_exceeded` row, revision `1-draft.7`), so `ValueFunctionFamily::check` returns `Typer`'s depth refusal
   as `StageFailure::Limit` with kind nesting depth, carrying the
   `Locus::Region` of the node whose entry failed. No `CheckContext` is
   threaded through `Typer`. The `Locus` keeps the location PR #303

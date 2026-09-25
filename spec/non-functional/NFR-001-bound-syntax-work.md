@@ -17,7 +17,7 @@ relationships:
 
 ## Statement
 
-When the next syntax-processing operation would exceed a selected resource ceiling, the compiler shall return a resource_exhausted diagnostic without performing that operation.
+When the next syntax-processing operation would exceed a selected resource ceiling, the compiler shall return a `stage_limit_exceeded` diagnostic naming the ceiling's kind (`quire.native.diagnostics/v1` revision `1-draft.7`) without performing that operation.
 
 ## Scope
 
@@ -44,7 +44,7 @@ One nesting level is one bracket pair: a delimiter pair `(` … `)`,
 `Option<T>` or `Set<T>[0, 1]`. A token's nesting depth is the number of
 bracket pairs that enclose it. The nesting ceiling bounds that depth: a unit
 whose deepest token sits inside `N` pairs is within a ceiling of `N`. The
-opening bracket of pair `N + 1` returns resource_exhausted naming nesting
+opening bracket of pair `N + 1` returns `stage_limit_exceeded` naming nesting
 depth, the ceiling and that bracket's span, whether the lexer or the parser
 detects it.
 
@@ -56,7 +56,7 @@ ceilings. So `(((((x + x) + x) + x) + x) + x)` has nesting depth 5, and a flat
 chain of any length has nesting depth 0.
 
 Every source within the selected ceilings returns a parse result or a
-resource_exhausted diagnostic. No source within them overflows the thread's
+`stage_limit_exceeded` diagnostic. No source within them overflows the thread's
 stack.
 
 This is a different quantity from S2's expression depth
@@ -80,7 +80,7 @@ default token and syntax-node ceilings admit: a flat `+` chain, a
 right-associative `implies` chain, a prefix `not` chain, a `let … in` chain
 and an `if … else` chain, and through the complete-V1 parser a temporal
 `always` chain. Each has nesting depth 0
-and parses. The same chain one element longer returns resource_exhausted
+and parses. The same chain one element longer returns `stage_limit_exceeded`
 naming the token or syntax-node ceiling. The native parser also completes a
 20000-operator flat chain. Check that a unit nested to exactly the ceiling
 parses, including by `Option<…>` type nesting in the complete-V1

@@ -31,8 +31,10 @@ Tag the tests `#[trace("TC-427", "FR-096-AC-n")]` with the AC each backs.
 ## Expected Results
 
 - Step 1: `stage_limit_exceeded` with `input-bytes-exceeded`,
-  `nesting-depth-exceeded`, `node-count-exceeded` and
-  `work-budget-exceeded`, and each `LimitExceeded` gives its kind's code.
+  `nesting-depth-exceeded`, `token-count-exceeded`, `node-count-exceeded`,
+  `edge-count-exceeded`, `occurrence-count-exceeded`,
+  `diagnostic-count-exceeded` and `work-budget-exceeded` (revision
+  `1-draft.7`), and each `LimitExceeded` gives its kind's code.
 - Step 2: kind nesting depth, bound 8, actual 9, the region of the node at
   depth 9 under the unit's `RawSourceRef`.
 - Step 3: kind input bytes, bound `B`, actual the measured bytes, the
@@ -42,4 +44,12 @@ Tag the tests `#[trace("TC-427", "FR-096-AC-n")]` with the AC each backs.
 
 ## Status
 
-Planned. ADR-013 §7 slice S-5b (QSL-160), after S-4b and FR-091-AC-10.
+Backed (QSL-160). Step 1:
+`limit_exceeded_reports_stage_limit_exceeded_per_kind`
+(`qsl-foundation/src/diagnostic/stage.rs`). Step 2:
+`the_s2_depth_limit_is_located_at_the_first_node_past_the_bound`
+(`qsl-forms/tests/it/value_forms.rs`). Steps 3 and 4:
+`a_declaration_input_bytes_limit_is_located_at_the_declaration` and
+`a_denied_work_charge_is_located_at_the_declaration`
+(`qsl-semantics/src/check/family.rs`, `locus_tests`), over declarations
+read from real source through S1, S2 and the assembler.

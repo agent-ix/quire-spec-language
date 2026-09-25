@@ -95,18 +95,18 @@ const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
 const IDENTITY_PREIMAGE_V2: &str = qsl_semantics::library::PACKAGE_ID_VERSION;
 
 /// The diagnostics catalog the package's (empty) diagnostics are qualified
-/// by: QSpec's `quire.native.diagnostics/v1` at `1-draft.6`.
+/// by: QSpec's `quire.native.diagnostics/v1` at `1-draft.7`.
 fn diagnostics_catalog() -> CheckedArtifactRef {
     CheckedArtifactRef {
         authority: "agent-ix".into(),
         identity: "quire.native.diagnostics/v1".into(),
         revision: CheckedRevision {
             namespace: "quire-draft".into(),
-            value: "1-draft.6".into(),
+            value: "1-draft.7".into(),
         },
         digest_domain: "quire.definition.bytes/v1".into(),
         // Informational; no reader verifies it yet.
-        digest: "9a55506569ff8f1aa4c97d04fe8c8d14aa07ecb40452f5ea9409f38da3a41365".into(),
+        digest: "94580e10014aaf133de121126d8d795b3d86e693835d6bf1026fb45dd291d95d".into(),
         export: None,
     }
 }

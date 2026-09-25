@@ -255,7 +255,9 @@ fn r05_recursion_rule_admits_escaping_and_named_recursion() {
         ],
         [],
     )
-    .unwrap_err();
+    .unwrap_err()
+    .into_refused()
+    .unwrap();
     assert_eq!(
         bad,
         InvalidDeclaration {
@@ -309,7 +311,10 @@ fn r06_recursion_rule_names_each_refused_cycle() {
         ),
     ];
     for (declaration, expected) in cases {
-        let refused = TypeEnvironment::new([declaration], []).unwrap_err();
+        let refused = TypeEnvironment::new([declaration], [])
+            .unwrap_err()
+            .into_refused()
+            .unwrap();
         assert_eq!(refused, expected);
         assert_eq!(refused.code(), "ill_typed");
     }
@@ -702,7 +707,10 @@ fn malformed_declarations_refuse_at_admission() {
         ),
     ];
     for (declarations, expected) in cases {
-        let refused = TypeEnvironment::new(declarations, []).unwrap_err();
+        let refused = TypeEnvironment::new(declarations, [])
+            .unwrap_err()
+            .into_refused()
+            .unwrap();
         assert_eq!(refused.code(), "invalid_semantic_graph");
         assert_eq!(refused, expected);
     }
@@ -722,7 +730,9 @@ fn unknown_supertype_refuses_at_admission() {
                 .with_supertypes(vec![unknown]),
         ],
     )
-    .unwrap_err();
+    .unwrap_err()
+    .into_refused()
+    .unwrap();
     assert_eq!(
         refused,
         InvalidDeclaration {

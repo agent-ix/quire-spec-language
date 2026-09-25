@@ -16,6 +16,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{CatalogCode, CatalogCoded, LimitExceeded, LimitKind};
 use qsl_semantics::check::object_type_supertypes;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::dispatch::GeneralizationClosure;
@@ -35,8 +36,8 @@ use qsl_semantics::model::population::{
     PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
 };
 use qsl_semantics::value::declaration::{
-    Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
-    DeclarationCause, FieldDeclaration, FieldRef, InvalidDeclaration, ObjectTypeDeclaration,
+    Admission, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, DeclarationCause, FieldDeclaration, FieldRef, ObjectTypeDeclaration,
     TypeEnvironment, TypeEnvironmentLimits, DEFAULT_WORK_UNITS,
 };
 use quire_exact::{
@@ -113,10 +114,7 @@ fn type_id(view: &EffectiveView, identity: &str) -> EffectiveId {
 /// The check-time environment a model intake builds from `view`: every
 /// object type under its effective identity, with its supertypes re-keyed
 /// by `object_type_supertypes`, admitted under `ancestor_steps`.
-fn environment_of(
-    view: &EffectiveView,
-    ancestor_steps: u64,
-) -> Result<TypeEnvironment, InvalidDeclaration> {
+fn environment_of(view: &EffectiveView, ancestor_steps: u64) -> Admission<TypeEnvironment> {
     let supertypes = object_type_supertypes(view).unwrap();
     TypeEnvironment::bounded(
         [],
@@ -236,7 +234,9 @@ fn divergence_unknown_supertype_refuses_at_check_and_at_evaluation() {
         [],
         [ObjectTypeDeclaration::new(b, "M::B", vec![]).with_supertypes(vec![missing])],
     )
-    .unwrap_err();
+    .unwrap_err()
+    .into_refused()
+    .unwrap();
     assert_eq!(refusal.cause, DeclarationCause::UnknownObjectType(missing));
     assert_eq!(refusal.code(), "invalid_semantic_graph");
 }
@@ -304,7 +304,9 @@ fn divergence_generalization_cycle_refuses_at_check_and_at_evaluation() {
             ObjectTypeDeclaration::new(n, "M::N", vec![]).with_supertypes(vec![m]),
         ],
     )
-    .unwrap_err();
+    .unwrap_err()
+    .into_refused()
+    .unwrap();
     assert!(matches!(
         refusal.cause,
         DeclarationCause::GeneralizationCycle { .. }
@@ -364,9 +366,9 @@ fn divergence_chain_within_the_ceiling_agrees_at_check_and_at_evaluation() {
 /// Divergence row 3, one past the ceiling: the same chain under a ceiling of
 /// `depth`. The model still normalizes it (its longest path is `depth`
 /// steps) but refuses the walk from `c.0` to `z` with `resource_exhausted`/
-/// `ancestor-steps`; the checker refuses the environment with the same code
-/// and ceiling rather than answering `false` from a closure the model
-/// cannot compute.
+/// `ancestor-steps`. Check time stops at a node-count stage limit naming the
+/// same ceiling (FR-082, ADR-014 B-3) rather than answering `false` from a
+/// closure the model cannot compute.
 #[trace("TC-220", "FR-082-AC-3", "FR-082-AC-6")]
 #[test]
 fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
@@ -380,13 +382,21 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
         CEILING
     ));
 
-    let refusal = environment_of(&view, CEILING).unwrap_err();
+    // Check time: a stage limit (ADR-014 B-3), node count, the ceiling
+    // plus one, and no locus (FR-082).
+    let limit = environment_of(&view, CEILING)
+        .unwrap_err()
+        .into_refused()
+        .unwrap_err();
     assert_eq!(
-        refusal.cause,
-        DeclarationCause::AncestorSteps { limit: CEILING }
+        limit,
+        LimitExceeded::new(LimitKind::NodeCount, CEILING, u128::from(CEILING) + 1)
     );
-    assert_eq!(refusal.code(), "resource_exhausted");
-    assert_eq!(refusal.declaration, type_id(&view, "model.c.0").to_string());
+    assert_eq!(
+        limit.catalog_code(),
+        CatalogCode::new("stage_limit_exceeded", "node-count-exceeded")
+    );
+    assert_eq!(limit.locus(), None);
 }
 
 /// `TypeEnvironment::new` admits under the same default ceiling the model's
@@ -679,7 +689,7 @@ fn conflicting_redefinitions_refuse_until_a_more_derived_one_resolves_them() {
             ],
         )
     };
-    let refusal = diamond(vec![]).unwrap_err();
+    let refusal = diamond(vec![]).unwrap_err().into_refused().unwrap();
     assert_eq!(refusal.declaration, "M::D");
     assert_eq!(
         refusal.cause,
@@ -717,7 +727,9 @@ fn a_same_name_field_that_does_not_redefine_is_refused() {
             object("M::B", vec![integer_field("x")], &["M::A"]),
         ],
     )
-    .unwrap_err();
+    .unwrap_err()
+    .into_refused()
+    .unwrap();
     assert_eq!(refusal.declaration, "M::B");
     assert_eq!(
         refusal.cause,
@@ -746,7 +758,10 @@ fn a_redefinition_of_a_field_not_inherited_is_refused() {
         )
     };
     for target in [field_ref("M::A", "nope"), field_ref("M::Other", "x")] {
-        let refusal = with_b_field(target.clone()).unwrap_err();
+        let refusal = with_b_field(target.clone())
+            .unwrap_err()
+            .into_refused()
+            .unwrap();
         assert_eq!(refusal.declaration, "M::B");
         assert_eq!(refusal.cause, DeclarationCause::RedefinitionTarget(target));
     }
@@ -762,7 +777,9 @@ fn a_redefinition_of_a_field_not_inherited_is_refused() {
             &[],
         )],
     )
-    .unwrap_err();
+    .unwrap_err()
+    .into_refused()
+    .unwrap();
     assert_eq!(
         own.cause,
         DeclarationCause::RedefinitionTarget(field_ref("M::A", "x"))
@@ -778,7 +795,9 @@ fn a_redefinition_of_a_field_not_inherited_is_refused() {
         )],
         [object("M::A", vec![integer_field("x")], &[])],
     )
-    .unwrap_err();
+    .unwrap_err()
+    .into_refused()
+    .unwrap();
     assert_eq!(
         record.cause,
         DeclarationCause::RedefinitionTarget(field_ref("M::A", "x"))
@@ -886,6 +905,8 @@ fn a_widening_redefinition_is_refused() {
             ],
         )
         .unwrap_err()
+        .into_refused()
+        .unwrap()
     };
     for b_field in [
         integer_field("x"),
@@ -932,7 +953,9 @@ fn the_most_derived_redefinition_must_narrow_every_field_it_hides() {
             ),
         ],
     )
-    .unwrap_err();
+    .unwrap_err()
+    .into_refused()
+    .unwrap();
     assert_eq!(refusal.declaration, "M::C");
     assert_eq!(
         refusal.cause,
@@ -970,7 +993,10 @@ fn a_reference_field_is_redefined_only_with_its_own_reference_type() {
             ],
         )
     };
-    let refusal = redefined(reference_field("o", "M::B")).unwrap_err();
+    let refusal = redefined(reference_field("o", "M::B"))
+        .unwrap_err()
+        .into_refused()
+        .unwrap();
     assert_eq!(refusal.declaration, "M::B");
     assert_eq!(
         refusal.cause,
@@ -1011,6 +1037,20 @@ fn chain_slots(depth: u64) -> u64 {
     depth * (depth + 1) / 2
 }
 
+/// The work-budget stage limit an admission stopped at (FR-082, ADR-014
+/// B-3): the refused charge's cumulative total passes the bound, and it
+/// carries no locus.
+fn work_limit(admission: Admission<TypeEnvironment>) -> LimitExceeded {
+    let limit = admission
+        .unwrap_err()
+        .into_refused()
+        .expect_err("a work-budget stage limit, not a refusal");
+    assert_eq!(limit.kind(), LimitKind::WorkBudget);
+    assert!(limit.actual() > u128::from(limit.configured_bound()));
+    assert_eq!(limit.locus(), None);
+    limit
+}
+
 fn work_units(work_units: u64) -> TypeEnvironmentLimits {
     TypeEnvironmentLimits {
         work_units,
@@ -1020,19 +1060,17 @@ fn work_units(work_units: u64) -> TypeEnvironmentLimits {
 
 /// A 5,000-type chain holds 12.5 million flattened slots. Admission charges
 /// its ancestor closure and flattening to the default `work_units` budget
-/// and refuses `resource_exhausted` naming it, instead of running
+/// and stops at a work-budget stage limit naming it, instead of running
 /// unmetered; a 1,000-type chain fits and admits.
 #[trace("TC-220", "FR-082-AC-7")]
 #[test]
 fn a_deep_chain_refuses_the_admission_work_budget() {
-    let refusal = TypeEnvironment::new([], chain(5_000)).unwrap_err();
+    let limit = work_limit(TypeEnvironment::new([], chain(5_000)));
+    assert_eq!(limit.configured_bound(), DEFAULT_WORK_UNITS);
     assert_eq!(
-        refusal.cause,
-        DeclarationCause::WorkUnits {
-            limit: DEFAULT_WORK_UNITS
-        }
+        limit.catalog_code(),
+        CatalogCode::new("stage_limit_exceeded", "work-budget-exceeded")
     );
-    assert_eq!(refusal.code(), "resource_exhausted");
 
     let environment = TypeEnvironment::new([], chain(1_000)).unwrap();
     assert_eq!(
@@ -1056,13 +1094,8 @@ fn a_linear_chain_costs_admission_work_linear_in_its_flattened_slots() {
             TypeEnvironment::bounded([], types(), work_units(4 * slots)).is_ok(),
             "depth {depth} admits within 4 units a slot"
         );
-        assert_eq!(
-            TypeEnvironment::bounded([], types(), work_units(slots))
-                .unwrap_err()
-                .cause,
-            DeclarationCause::WorkUnits { limit: slots },
-            "depth {depth}"
-        );
+        let limit = work_limit(TypeEnvironment::bounded([], types(), work_units(slots)));
+        assert_eq!(limit.configured_bound(), slots, "depth {depth}");
     }
 }
 
@@ -1095,13 +1128,8 @@ fn wide_multiple_inheritance_costs_admission_work_bounded_in_its_slots() {
             environment.attributes(effective("M::W")).unwrap().len(),
             usize::try_from(width + 1).unwrap()
         );
-        assert_eq!(
-            TypeEnvironment::bounded([], types(), work_units(slots))
-                .unwrap_err()
-                .cause,
-            DeclarationCause::WorkUnits { limit: slots },
-            "width {width}"
-        );
+        let limit = work_limit(TypeEnvironment::bounded([], types(), work_units(slots)));
+        assert_eq!(limit.configured_bound(), slots, "width {width}");
     }
 }
 

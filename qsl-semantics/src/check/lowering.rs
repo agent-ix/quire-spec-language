@@ -448,6 +448,7 @@ fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusa
                 kind: CheckingLimitKind::WorkBudget,
                 limit,
                 actual,
+                region: None,
             })),
         ),
         NodeKeyRefusal::InvalidGroup => fault(location, KeyFault::InvalidGroup),
@@ -458,6 +459,7 @@ fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusa
                 kind: CheckingLimitKind::Depth,
                 limit,
                 actual: u128::from(actual),
+                region: None,
             })),
         ),
         refusal => refuse(location, CheckCause::NodePreimage(refusal)),
@@ -856,6 +858,7 @@ impl<'w> LeafWalk<'w> {
                     kind: CheckingLimitKind::Depth,
                     limit: self.depth_limit,
                     actual: u128::from(depth),
+                    region: None,
                 })),
             ));
         }
@@ -1084,6 +1087,7 @@ impl<'w> LeafWalk<'w> {
                     // have been appended; this one would have been the
                     // `self.limit + 1`-th.
                     actual: u128::from(self.limit) + 1,
+                    region: None,
                 })),
             )
         })?;
@@ -1359,6 +1363,7 @@ impl<'a> Lowering<'a> {
                     kind: CheckingLimitKind::Depth,
                     limit: self.depth_limit,
                     actual: u128::from(depth),
+                    region: None,
                 })),
             ));
         }

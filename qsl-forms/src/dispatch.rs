@@ -19,9 +19,9 @@
 //! cannot produce.
 
 use qsl_cst::{CstElement, CstNode, LosslessCst, ParsedSource, Production, Recovery, TokenClass};
-use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
+use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Locus};
 use qsl_foundation::selection::SourceSelections;
-use qsl_foundation::{Code, Span};
+use qsl_foundation::{Code, Source, Span};
 
 use super::syntax::DeclarationForm;
 use super::value;
@@ -259,6 +259,19 @@ impl FormsFailure {
         })
     }
 
+    /// FR-096: a limit reached in `source`'s CST is located at
+    /// `Locus::Region` over the span of the first node past the bound,
+    /// under the source's `RawSourceRef`.
+    fn located(self, source: &Source) -> Self {
+        match self {
+            Self::Limit { limit, span } => Self::Limit {
+                limit: limit.at(source.region(span).map(Locus::Region)),
+                span,
+            },
+            refused @ Self::Refused(_) => refused,
+        }
+    }
+
     pub(crate) fn depth(limits: FormsLimits, span: Span) -> Self {
         Self::Limit {
             limit: LimitExceeded::new(
@@ -303,7 +316,8 @@ pub fn build_unit(parsed: &ParsedSource, limits: FormsLimits) -> Result<ParsedUn
             recoveries: Vec::new(),
         }));
     }
-    let forms = build_forms(parsed.cst(), limits)?;
+    let forms =
+        build_forms(parsed.cst(), limits).map_err(|failure| failure.located(parsed.source()))?;
     Ok(ParsedUnit {
         edition: declared_edition(parsed.cst()),
         selections: parsed.selections().clone(),

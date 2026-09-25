@@ -183,6 +183,12 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::InvalidTypeDeclaration(_) => {
             "the records and tuples are not an admitted declaration set".to_owned()
         }
+        AssemblyCause::TypeLimit(limit) => format!(
+            "{} (bound {}, reached {})",
+            limit.kind().catalog_cause(),
+            limit.configured_bound(),
+            limit.actual()
+        ),
         AssemblyCause::Handle(_) => "a declared type's handle could not be encoded".to_owned(),
     };
     with_more(message, refusal.errors.len())
@@ -231,6 +237,16 @@ pub fn compile(
     path: &str,
     bytes: &[u8],
 ) -> Result<Vec<u8>, Box<CompileRefusal>> {
+    compile_under(source, path, bytes, CheckingLimits::default())
+}
+
+/// [`compile`] with S3 checking under `limits`.
+pub(crate) fn compile_under(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    limits: CheckingLimits,
+) -> Result<Vec<u8>, Box<CompileRefusal>> {
     let parsed = qsl_cst::parse(source, path, bytes, qsl_cst::Limits::default())
         .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
     if let Some(first) = parsed.diagnostics().first() {
@@ -249,24 +265,25 @@ pub fn compile(
     })?;
     let declarations = PackageDeclarations::assemble(raw.clone(), unit).map_err(|refusal| {
         Box::new(CompileRefusal::Assembly {
+            // A type-environment stage limit names no declaration, so it
+            // has no region (FR-082, FR-096).
             region: refusal
                 .errors
                 .first()
+                .filter(|error| !matches!(error.cause, AssemblyCause::TypeLimit(_)))
                 .and_then(|error| region(&raw, error.span)),
             refusal,
         })
     })?;
     let regions = declarations.regions();
-    let graph = declarations
-        .check(CheckingLimits::default())
-        .map_err(|refusals| {
-            Box::new(CompileRefusal::Check {
-                region: refusals
-                    .first()
-                    .and_then(|refusal| regions.region(&refusal.location)),
-                refusals,
-            })
-        })?;
+    let graph = declarations.check(limits).map_err(|refusals| {
+        Box::new(CompileRefusal::Check {
+            region: refusals
+                .first()
+                .and_then(|refusal| regions.refusal_region(refusal)),
+            refusals,
+        })
+    })?;
     let emission = emit_checked(&CheckedPackage::link(graph))
         .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
     if !emission.omitted().is_empty() {
@@ -279,9 +296,36 @@ pub fn compile(
 
 #[cfg(test)]
 mod tests {
-    use super::{CompileRefusal, SpineStage};
+    use super::{compile_under, CompileRefusal, SpineStage};
     use ix_trace_rs::trace;
-    use qsl_foundation::Code;
+    use qsl_foundation::{Code, SourceIdentity};
+    use qsl_semantics::check::CheckingLimits;
+
+    /// FR-096 at the CLI's compile: `Typer`'s depth stop on
+    /// `not not not true` under depth 3 is reported at the region of
+    /// `true`, not the whole body.
+    #[trace("TC-378", "FR-096-AC-11")]
+    #[test]
+    fn a_family_depth_stop_is_reported_at_the_node_that_failed() {
+        const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
+            profile v = \"quire.value.complete/v1\" version \"1\" digest \
+            \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+            function f using v(): Boolean pure { not not not true }\n";
+        let refusal = compile_under(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            UNIT.as_bytes(),
+            CheckingLimits::new(u64::MAX, 3).unwrap(),
+        )
+        .expect_err("depth 3 stops a body four deep");
+        assert_eq!(refusal.stage(), SpineStage::Check);
+        assert_eq!(refusal.code(), Code::StageLimitExceeded);
+        let region = refusal.region().expect("the stop is located");
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        assert_eq!(&UNIT[start..end], "true");
+        assert_eq!(start, UNIT.rfind("true").unwrap());
+    }
 
     /// FR-027-AC-8 (TC-435 step 6): an emission that would omit part of the
     /// checked graph refuses at the emit stage as `unsupported_projection`.

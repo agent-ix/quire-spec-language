@@ -42,5 +42,10 @@ Tag the tests `#[trace("TC-429", "FR-096-AC-n")]` with the AC each backs.
 
 ## Status
 
-Planned. ADR-013 §7 slice S-5b (QSL-160). Steps 1 and 2 need the three IR
-reader changes FR-096 lists.
+Backed (QSL-160), in `qsl-package/src/checked_v2/tests.rs`: steps 1 and 4
+by `an_unknown_contract_version_is_unsupported_wire_at_contract_version`,
+steps 2 and 3 by `each_reader_limit_names_its_kind_bound_actual_and_locus`,
+which also covers IR's depth, edge, occurrence, diagnostic and work limits.
+`a_refusal_at_a_value_is_located_at_its_pointer` locates an IR refusal at a
+value. Every fixture is a real v2 wire mutated at one member; each expected
+locus hashes the bytes in the test.

@@ -46,6 +46,12 @@ by FR-322's `{size, ordinal}` (IR-242), and decodes each closed wire
 vocabulary (selection role, capability disposition, node form) into an enum.
 The bump adds no package to the lock.
 
+QSL-160 bumps it to `dc03aa4ecfbce9958efe6d766497d44c44e1200a` (IR-281),
+whose checked-package reader reports an RFC 6901 pointer on its refusals and
+limits and the contract version it read on an unknown-version refusal. The
+bump adds one package, `serde_path_to_error` 0.1.20 (MIT OR Apache-2.0), a
+dependency of IR's reader.
+
 LC04 adds qualification-only codegen `240fad84a9565ab723ba9844e18faea4e5d96f66`
 and its IR `04eb6f849c03be23177d373549c6c272551f957d`, both MIT OR Apache-2.0.
 The latter has a dev-only alias for the existing consumer's exact wire reader;
@@ -309,6 +315,7 @@ Python, JavaScript or shell qualification helper is introduced.
 | serde_derive_internals | 0.29.1 | `MIT OR Apache-2.0` |
 | serde_json | 1.0.151 | `MIT OR Apache-2.0` |
 | serde_json_canonicalizer | 0.3.2 | `MIT` |
+| serde_path_to_error | 0.1.20 | `MIT OR Apache-2.0` |
 | serde_stacker | 0.1.11 | `MIT OR Apache-2.0` |
 | serde_tokenstream | 0.2.3 | `Apache-2.0` |
 | serde_yaml | 0.9.34+deprecated | `MIT OR Apache-2.0` |

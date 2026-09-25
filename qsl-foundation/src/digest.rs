@@ -312,6 +312,15 @@ impl DigestRecord {
         Self { domain, bytes }
     }
 
+    /// FR-201 `raw-artifact-digest`: the SHA-256 of the complete supplied
+    /// bytes, exactly as supplied.
+    pub fn raw_artifact(bytes: &[u8]) -> Self {
+        Self::mint(
+            DigestDomain::RawArtifactDigest,
+            ByteDigest::of(bytes).as_bytes(),
+        )
+    }
+
     /// The record's domain.
     pub fn domain(&self) -> DigestDomain {
         self.domain
