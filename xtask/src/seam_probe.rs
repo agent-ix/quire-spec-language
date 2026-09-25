@@ -176,7 +176,8 @@ pub struct SeamLocation {
 /// `Value`'s function family has a real cause (`CheckCause`, QSL-148) to
 /// demonstrate the seam over. `CheckCause`'s `#[cfg(seam_probe)]` variant
 /// has an arm only in `CheckCause::cause` (this list's own sibling
-/// function), the same "arm everywhere but the one checked-in seam" shape
+/// function, and a `seam_probe_downstream` arm in `code`), the same
+/// "arm everywhere but the one checked-in seam" shape
 /// `WrongSnapshotCause` and `FamilyKind` already use above. The S4-*shaped*
 /// `WrongSnapshotCause` location above is FR-090's own ad hoc cause, not a
 /// family's `FamilyContract`-associated one, so it never stood in for this
@@ -622,6 +623,18 @@ mod tests {
                 visitor.found
             );
         }
+    }
+
+    /// FR-062-AC-8 (QSL-152): the checked-in list actually names
+    /// `CheckCause::code` as the S4 seam location -- not just a doc claim
+    /// above.
+    #[ix_trace_rs::trace("TC-161", "FR-062-AC-8")]
+    #[test]
+    fn checked_in_locations_contains_check_causes_code() {
+        assert!(checked_in_locations().contains(&SeamLocation {
+            file: "qsl-semantics/src/check/refusal.rs".to_owned(),
+            item: "CheckCause::code".to_owned(),
+        }));
     }
 
     /// F14: the checked-in key is the enclosing item, not a line number --

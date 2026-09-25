@@ -165,21 +165,6 @@ impl CheckedPackage {
     ///     source.into()
     /// }
     /// ```
-    /// Its pair (this file's own doc, above, states why every
-    /// `compile_fail` block here is paired): a real checked node, run
-    /// through `check` and linked, does compile and succeed.
-    /// ```no_run
-    /// use qsl_package::CheckedPackage;
-    /// use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
-    /// fn build(
-    ///     source: qsl_foundation::source::provenance::RawSourceRef,
-    /// ) -> CheckedPackage {
-    ///     let graph = PackageDeclarations::new(source)
-    ///         .check(CheckingLimits::default())
-    ///         .expect("an empty package checks cleanly");
-    ///     CheckedPackage::link(graph)
-    /// }
-    /// ```
     /// The same restriction stated the other way: `link` itself takes no
     /// type but `CheckedGraph`, so calling it directly with a raw CST node
     /// or a raw source string also fails to compile, not only the `.into()`
@@ -190,24 +175,15 @@ impl CheckedPackage {
     ///     CheckedPackage::link(cst)
     /// }
     /// ```
-    /// ```no_run
-    /// use qsl_package::CheckedPackage;
-    /// use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
-    /// fn build(
-    ///     source: qsl_foundation::source::provenance::RawSourceRef,
-    /// ) -> CheckedPackage {
-    ///     let graph = PackageDeclarations::new(source)
-    ///         .check(CheckingLimits::default())
-    ///         .expect("an empty package checks cleanly");
-    ///     CheckedPackage::link(graph)
-    /// }
-    /// ```
     /// ```compile_fail,E0308
     /// use qsl_package::CheckedPackage;
     /// fn forge(source: String) -> CheckedPackage {
     ///     CheckedPackage::link(source)
     /// }
     /// ```
+    /// Their shared pair (this file's own doc, above, states why every
+    /// `compile_fail` block here is paired): a real checked node, run
+    /// through `check` and linked, does compile and succeed.
     /// ```no_run
     /// use qsl_package::CheckedPackage;
     /// use qsl_semantics::check::{CheckingLimits, PackageDeclarations};

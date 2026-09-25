@@ -306,11 +306,13 @@ delivered code today:
 - FR-065-AC-1: backed (`TC-163`, QSL-154). The function packaging/lowering
   public API's sole checked-node entry, `CheckedPackage::link`, accepts
   only a `CheckedGraph` -- built solely through the contract's `check`
-  hook -- and a paired `compile_fail`/`no_run` doctest on `CheckedPackage::
-  link` (`qsl-package/src/checked.rs`) demonstrates a raw CST node
-  (`qsl_cst::ParsedSource`) and a raw source string (`String`) both fail to
-  compile against it (`E0277`, no `Into<CheckedPackage>`), while a real
-  checked node built through `check` and linked compiles and succeeds.
+  hook -- and four `compile_fail` doctests on `CheckedPackage::link`
+  (`qsl-package/src/checked.rs`), sharing one `no_run` pair, demonstrate a
+  raw CST node (`qsl_cst::ParsedSource`) and a raw source string (`String`)
+  both fail to compile against it: once through `.into()` (`E0277`, no
+  `Into<CheckedPackage>`), and again passed directly to `CheckedPackage::
+  link` itself (`E0308`, the wrong argument type), while a real checked
+  node built through `check` and linked compiles and succeeds.
 - FR-065-AC-2: backed (`TC-163`): `identity_survives_v2_round_trip`
   (`qsl-eval/src/value/expression/family.rs`) and
   `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
@@ -331,8 +333,9 @@ delivered code today:
   finding 3).
 - FR-065-AC-3: backed (`TC-163`, QSL-154):
   `emit_checked_places_the_calls_occurrence_at_its_own_source_span`
-  (`qsl-package/src/emit/tests.rs`) checks a real source file whose `f`
-  calls `g`, resolves the call's own region immediately after `check`,
+  (`qsl-package/src/emit/tests.rs`) checks hand-built forms over a real
+  admitted source text whose `f` calls `g`, resolves the call's own region
+  immediately after `check`,
   again after `CheckedPackage::link`, and again from the decoded
   `PackageSourceMap` of a real `emit_checked`/`read_checked_package_v2`
   round trip -- the real `quire.checked-package/v2` source map, which

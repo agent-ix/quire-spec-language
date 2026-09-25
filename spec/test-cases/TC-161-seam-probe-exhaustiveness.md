@@ -39,11 +39,13 @@ Cargo feature to inspect) to a grep-shaped check over the specific files
 that could set the cfg, stated as exactly that, not as an equivalent
 restatement.
 
-**S4 category coverage remains out of scope; S2 and S3 landed under
-QSL-143.** FR-062-AC-8 and FR-063-AC-6's `Cause`-enum category (S4) is still
-unbacked: no family this repository has migrated has a real typed refusal
-cause, so there is no `Cause` enum to demonstrate a probe over (see ADR-012's
-record of this deferral; owned by QSL-152). FR-063-AC-6's S2 category (the
+**S4 category landed under QSL-152; S2 and S3 landed under QSL-143.**
+FR-062-AC-8 and FR-063-AC-6's `Cause`-enum category (S4) is now checked in:
+`Value`'s function family has a real typed refusal cause (`CheckCause`,
+QSL-148), and QSL-152 wires FR-063's S4 seam probe onto its `catalog_code()`
+mapping, `CheckCause::code` (`qsl-semantics/src/check/refusal.rs`), the same
+shape `FamilyKind::catalog_code_prefix`'s S1 probe uses.
+FR-063-AC-6's S2 category (the
 check seam over the parsed form enum, `Typer::infer_form` matching
 `qsl-forms::Expression`) and S3 category (the checked-node-enum's evaluator,
 `Machine::apply` in `qsl-eval`, and its identity-lowering pass,
@@ -57,11 +59,11 @@ otherwise break. The parser's leading-token-kind entry table
 lives in `qsl-forms`, a dependency of every one of the seam probe's four
 fixed build targets but never itself one of them, so giving it a seam's
 no-arm treatment would hide every other seam behind it in every probe
-build (see `xtask::seam_probe::checked_in_locations`'s own doc). This test
-case's checked-in list therefore covers the `FamilyKind`, S6a/S7, S2 and S3
-categories -- 4 of the 5 categories FR-063-AC-6 names -- and step 8 below
-exercises each of those four in turn; S4 stays untested here pending
-QSL-152.
+build (see `xtask::seam_probe::checked_in_locations`'s own doc; owned by
+[QSL-244](https://linear.app/agent-ix/issue/QSL-244)). This test case's
+checked-in list therefore covers the `FamilyKind`, S6a/S7, S2, S3 and S4
+categories -- all 5 categories FR-063-AC-6 names, less the qsl-forms table
+half of S2 -- and step 8 below exercises each of the five in turn.
 
 ## Test Procedure
 
@@ -104,29 +106,29 @@ QSL-152.
    confirm a failed prerequisite fails the aggregate target and a
    succeeding one does not.
 8. Inspect the checked-in seam-function list and confirm it names each of
-   the four categories this ticket's tree delivers -- `FamilyKind`'s prefix
-   arm (S1), the S6a/S7 matches, `Typer::infer_form` (S2) and
-   `Machine::apply`/`Lowering::lower_node` (S3); remove the entry for one
-   category at a time and re-run `xtask seam-probe` against the real build.
-   S4 is not exercised by this step -- see this test case's own "S4
-   category coverage" note.
+   the five categories this ticket's tree delivers -- `FamilyKind`'s prefix
+   arm (S1), the S6a/S7 matches, `Typer::infer_form` (S2),
+   `Machine::apply`/`Lowering::lower_node` (S3), and `CheckCause::code`
+   (S4); remove the entry for one category at a time and re-run
+   `xtask seam-probe` against the real build.
 9. In a fixture seam module, replace one seam's exhaustive `match` with one
    carrying a `_ => unsupported(...)` fallback arm. Build the fixture with
    `RUSTFLAGS=--cfg seam_probe` and collect its `E0004` locations;
    separately run `cargo clippy` over the fixture module.
 10. Inspect the definitions of `FamilyKind`, the parsed form enum
-    (`Expression`), the checked node enum (`NodeKind`) and the one
-    cause-bearing type this repository has today (`WrongSnapshotCause`) for
-    `#[non_exhaustive]`.
+    (`Expression`), the checked node enum (`NodeKind`), `CheckCause` (the
+    S4 cause-bearing type, QSL-152) and `WrongSnapshotCause` (the
+    S4-shaped, not family-`Cause`, type) for `#[non_exhaustive]`.
 
 ## Expected Results
 
 - Step 1: the collected `E0004` location set matches the checked-in list
   -- the `FamilyKind` prefix arm (S1), the S6a/S7 matches, `Typer::
-  infer_form` (S2) and `Machine::apply`/`Lowering::lower_node` (S3). The
-  parser's leading-token-kind entry table (S2's other named location) and
-  each family `Cause` enum's `catalog_code()` (S4) are not in this list;
-  see this test case's "S4 category coverage" note.
+  infer_form` (S2), `Machine::apply`/`Lowering::lower_node` (S3), and
+  `CheckCause::code` (S4). The parser's leading-token-kind entry table
+  (S2's other named location) is not in this list; see this test case's
+  own "S4 category" note (now S4 landed, QSL-244 tracks that remaining
+  gap).
 - Step 2: `xtask seam-probe` exits zero and reports no mismatch when the sets
   are equal.
 - Step 3: `xtask seam-probe` exits non-zero, naming the removed entry's
@@ -142,7 +144,7 @@ QSL-152.
 - Step 7: `ci:` names `seam-probe` as a prerequisite, whose recipe runs
   `cargo xtask seam-probe`; the fixture `Makefile` fails its aggregate
   target exactly when the prerequisite's recipe fails, and not otherwise.
-- Step 8: removing any one of the four delivered categories causes `xtask
+- Step 8: removing any one of the five delivered categories causes `xtask
   seam-probe` to fail, naming that category's location as present in the
   build but absent from the list (unexpected-but-present, the same
   direction step 3 demonstrates).
@@ -151,4 +153,5 @@ QSL-152.
   report the sets as equal and exit 0 against a list that omits it); the
   `cargo clippy` run over the fixture module fails on
   `clippy::wildcard_enum_match_arm` or `clippy::match_wildcard_for_single_variants`.
-- Step 10: none of the four types carries `#[non_exhaustive]`.
+- Step 10: none of the five types (`FamilyKind`, `Expression`, `NodeKind`,
+  `CheckCause`, `WrongSnapshotCause`) carries `#[non_exhaustive]`.

@@ -2066,18 +2066,24 @@ pub(crate) mod checking_tests {
     /// shaped contexts producing the same `Debug` text is a real assertion
     /// a divergent implementation could fail.
     ///
-    /// **Not a self-comparison this time.** Context `b` is seeded with an
-    /// extra, unrelated signature (`signatures_b`, not the plain `helper`-
-    /// only set in `a`) that `f`'s body never calls -- if `check` leaked
-    /// *any* shared state (a global cache keyed by declaration count,
-    /// position, or anything else `b`'s extra signature would perturb),
-    /// the two outputs would diverge; if it does not, they must still
-    /// match exactly, so this is sensitive to real state leakage while
-    /// still asserting genuine equality, not two calls into the same
-    /// closure over the same values. `f` itself takes a parameter and
-    /// calls `helper` with it, rather than a bare literal, so there is a
-    /// real call to check identically in both contexts, not just a
-    /// trivial body neither context can diverge on.
+    /// **Not a self-comparison this time.** Context `b` is seeded with
+    /// `unrelated` ahead of `helper` in `signatures_b` (not the plain
+    /// `helper`-only set in `a`) -- an extra declaration `f`'s body never
+    /// calls, placed so it also shifts `helper`'s own position in `b`'s
+    /// signature table. If `check` leaked *any* shared state (a global
+    /// cache keyed by declaration count or position, rather than reading
+    /// only `cx`), the two outputs would diverge in some way this
+    /// normalization does not account for; if it does not, they match
+    /// exactly once each context's own legitimate, positional `function`/
+    /// `callee` index is normalized to a name (see `normalize`, below) --
+    /// `Signatures::callable`'s own doc records that this index is
+    /// "index-aligned with the package's functions," so an extra
+    /// declaration ahead of `helper` in `b`'s table is expected to change
+    /// it there, without that being the state leak this test looks for.
+    /// `f` itself takes a parameter and calls `helper` with it, rather
+    /// than a bare literal, so there is a real call to check identically
+    /// in both contexts, not just a trivial body neither context can
+    /// diverge on.
     #[trace("TC-160", "FR-062-AC-3")]
     #[test]
     fn two_contexts_from_the_same_declarations_check_identically() {
@@ -2129,8 +2135,8 @@ pub(crate) mod checking_tests {
         // declaration count or position from somewhere other than `cx`)
         // would not be.
         let signatures_b = Signatures::from(vec![
-            boolean_signature("helper", 1),
             boolean_signature("unrelated", 0),
+            boolean_signature("helper", 1),
         ]);
         let declarations_b = declarations_for(
             &scope_b,
@@ -2156,11 +2162,33 @@ pub(crate) mod checking_tests {
             "the fixture must check successfully in context b too: {outcome_b:?}"
         );
 
+        // `helper`'s own index differs between `a` and `b` (0 and 1) purely
+        // because `b`'s table lists `unrelated` first -- a legitimate,
+        // positional property of `Signatures::callable` (its own doc: "index-
+        // aligned with the package's functions"), not a state leak. Replace
+        // each context's own index, wherever a `NodeKind::Call` or
+        // `CallSite` embeds it, with a shared placeholder before comparing,
+        // so this assertion is still sensitive to a real leak (anything else
+        // that diverges) without failing on this expected difference.
+        let index_a = signatures_a
+            .callable("helper")
+            .expect("helper is declared in signatures_a")
+            .0;
+        let index_b = signatures_b
+            .callable("helper")
+            .expect("helper is declared in signatures_b")
+            .0;
+        let normalize = |outcome: &str, index: usize| {
+            outcome
+                .replace(&format!("function: {index}"), "function: HELPER")
+                .replace(&format!("callee: {index}"), "callee: HELPER")
+        };
         assert_eq!(
-            format!("{outcome_a:?}"),
-            format!("{outcome_b:?}"),
+            normalize(&format!("{outcome_a:?}"), index_a),
+            normalize(&format!("{outcome_b:?}"), index_b),
             "two independently constructed typing contexts checking the same \
-             form must produce identical checked output"
+             form must produce identical checked output, once each one's own \
+             legitimate signature-table position is normalized away"
         );
 
         // Each independently constructed sink shows exactly its own one

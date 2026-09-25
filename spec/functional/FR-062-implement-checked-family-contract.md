@@ -254,16 +254,20 @@ tags as they exist in the delivered code today:
   checked output"):
   `two_contexts_from_the_same_declarations_check_identically`
   (`qsl-semantics/src/check/family.rs`, `checking_tests`) compares the two
-  independently constructed contexts' full `Debug`-formatted checked output
+  independently constructed contexts' `Debug`-formatted checked output
   (`CheckedDeclaration` carries no `PartialEq` -- `ir.rs`'s own doc on
   `Node`'s deliberate privacy -- so this repo's own established substitute,
   already used in `qsl-eval`'s collection tests, applies: compare
   `format!("{:?}", ..)`), with context `b` seeded with an extra signature
-  the checked form never calls (`check` ignores an unrelated declaration
-  it was not asked about), so the two constructions are not byte-identical.
+  ahead of the one the checked form calls, so the two constructions are not
+  byte-identical, and with each context's own legitimate, positional
+  `function`/`callee` index (`Signatures::callable`'s own doc: "index-
+  aligned with the package's functions") normalized to a shared name before
+  comparing, so an extra declaration's *position* does not fail this
+  assertion for a reason that is not a state leak.
   The first two clauses -- `check` compiling with no path to global or
   thread-local state, and a test observing meter/diagnostic-sink/scope-stack
-  mutations reflected in the outcome -- remain untested.
+  mutations reflected in the outcome -- remain untested. Owner: QSL-246.
 - FR-062-AC-4: partly backed (`TC-160`, QSL-140; ADR-014 §11 moved it
   from QSL-152). `FamilyContract::requirements` returns
   `Option<Requirements>`. The no-kind clause is backed: `Value`'s function
@@ -288,7 +292,7 @@ tags as they exist in the delivered code today:
   written: `FamilyContract::package` has no implementation in #214 (see
   AC-9's own note on why it was deleted rather than wired up
   speculatively), so there is no `package` outcome to assert anything
-  about. Owner: QSL-152 restores that clause once `package` exists.
+  about. Unbacked. Owner: QSL-242.
 - FR-062-AC-6: partly backed (QSL-152) -- the first sentence only. Stale
   as last written: it said "S6a has no family-kind dispatch yet," which
   QSL-148's `S6aFamilyKind` (`qsl-eval/src/value/expression/s6a.rs`) made no
@@ -309,9 +313,7 @@ tags as they exist in the delivered code today:
   carrying `slot_names: Vec<String>`, both string-shaped, so the hook is not
   in fact foreclosed from reading a display string through `env`, and
   nothing here asserts it does not. The tag is removed; the second sentence
-  stays unbacked until it has a real test (a test double over `env.package`
-  that panics if a display-string-shaped accessor is called, per the
-  criterion's own suggestion, or an equivalent).
+  stays unbacked. Owner: QSL-246.
 - FR-062-AC-7: backed by TC-378
   (`the_typer_depth_stop_is_located_at_the_node_whose_entry_failed`,
   `qsl-semantics/src/check/family.rs`, QSL-160). History: it was unbacked
@@ -365,14 +367,15 @@ tags as they exist in the delivered code today:
   the checked-in location `xtask::seam_probe::checked_in_locations` names
   (`qsl-semantics/src/check/refusal.rs`, `CheckCause::code`), the same
   shape `FamilyKind::catalog_code_prefix` already demonstrates for S1.
-  `CheckCause::cause` and every other match over `CheckCause` carry a
-  `#[cfg(seam_probe_downstream)]`-gated arm instead, so they keep compiling
-  when both cfgs are set together and downstream crates' own seams stay
-  reachable. `code` also carries
+  `CheckCause::cause` carries a `#[cfg(seam_probe)]`-gated arm instead, so
+  it keeps compiling under `--cfg seam_probe` alone. `code` also carries a
+  `#[cfg(seam_probe_downstream)]`-gated arm, so it (and every other match
+  over `CheckCause` outside this crate) keeps compiling when both cfgs are
+  set together and downstream crates' own seams stay reachable, plus
   `#[deny(clippy::wildcard_enum_match_arm)]` and
   `#[deny(clippy::match_wildcard_for_single_variants)]`, so a future
   fallback arm is caught at normal compile time too, not only under the
-  probe. Verified end to end by a real `cargo xtask seam-probe` run.
+  probe. Backed by the `make seam-probe` gate (part of `make ci`).
 - FR-062-AC-9: unbacked. `FamilyContract::package` does not exist -- PR
   #262 review findings F1/F2 deleted it as a hook with one real caller
   (`CheckedPackage::emit_function_package_v2`) that wrote into a scratch
@@ -401,15 +404,12 @@ tags as they exist in the delivered code today:
   here, is ADR-013 §7 slice S-5b's (QSL-160, FR-096).
 
 Five of this requirement's twelve Acceptance Criteria are backed (AC-2,
-AC-5, AC-7, AC-8 and AC-12); three (AC-3, AC-6, AC-11) are partly backed,
-each for the specific clause named in its own row above. AC-5's two tagged
-tests are `stage_limits_restored_kinds_refuse_one_below_the_real_metric`
-(`qsl-semantics/src/check/family.rs`, `checking_tests`) and
-`evaluate_returns_incomplete_when_the_meter_is_exhausted`
-(`qsl-eval/src/value/expression/family.rs`; PR #303 review round 3, finding
-F3). AC-4 is owned by QSL-140 (PR #435), which builds `requirements()` and
-backs it directly. AC-1 (its `requirements` half) is owned the same way;
-its `package` half, and AC-9 entirely, are owned by QSL-242, filed to
-replace the QSL-16/QSL-143 references PR #262 had pointed at. The
-remaining one (AC-10) is unbacked (untagged): its implementation exists,
-but no test carries the criterion's own trace tag. Owner: QSL-5 / #243.
+AC-5, AC-7, AC-8 and AC-12); four (AC-3, AC-4, AC-6, AC-11) are partly
+backed, each for the specific clause named in its own row above -- AC-4's
+by QSL-140 (PR #435): the no-kind clause, backed; the with-kind clause,
+pending QSL-42. AC-1, AC-9 and AC-10 are unbacked. AC-1's `requirements`
+half is owned by QSL-140 the same way; its `package` half, and AC-9
+entirely, are owned by QSL-242, filed to replace the QSL-16/QSL-143
+references PR #262 had pointed at. AC-10 is unbacked (untagged): its
+implementation exists, but no test carries the criterion's own trace tag.
+Owner: QSL-5 / #243.
