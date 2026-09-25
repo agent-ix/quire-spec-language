@@ -1235,7 +1235,7 @@ The owner ruled this on QSL-8.
 
 - CLI `compile` reads the native-compile/1 program source's declared
   edition once, from its header, before either compiler runs. A `1-draft`
-  source compiles through the spine (S1 to S4, `command::spine::compile`)
+  source compiles through the spine (S1 to S4, `qsl_replay::spine::compile`)
   and writes `quire.checked-package/v2` bytes. A `0-draft` source compiles
   through native compile and writes native-linked-package/1 bytes. Each
   source takes exactly one path. A declared edition neither compiler reads

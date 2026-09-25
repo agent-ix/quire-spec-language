@@ -35,7 +35,7 @@ Scope: FR-027-AC-9, FR-056-AC-9.
    with `code` only, and with `same` only.
 2. Compile a native-compile/1 request selecting that program and the document
    as a `semantic-ir/2.0.0` model, and compare stdout with
-   `command::spine::compile` over the same source and package input.
+   `qsl_replay::spine::compile` over the same source and package input.
 3. Assemble the fixture with `Reference<M::Nope>`, and with no admitted
    model; admit its selections with no package input, under a
    `declaration_records` ceiling of one, and against a document whose

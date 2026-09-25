@@ -1450,7 +1450,12 @@ name = "qsl-replay"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "qsl-cst",
+ "qsl-eval",
+ "qsl-forms",
  "qsl-foundation",
+ "qsl-package",
+ "qsl-semantics",
  "quire-exact",
  "thiserror",
 ]
@@ -1600,6 +1605,7 @@ dependencies = [
  "qsl-forms",
  "qsl-foundation",
  "qsl-package",
+ "qsl-replay",
  "qsl-route",
  "qsl-semantics",
  "qsl-source",

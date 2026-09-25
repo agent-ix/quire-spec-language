@@ -27,6 +27,7 @@
 #![forbid(unsafe_code)]
 
 mod bounds;
+pub mod spine;
 mod identity;
 mod proof_result;
 mod request;

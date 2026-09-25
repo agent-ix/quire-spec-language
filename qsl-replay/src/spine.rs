@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-027: spine `compile` (ADR-011 §5, §7.3 M-6a). Complete-V1 source
-//! enters S1 and goes through the stage APIs in DAG order: S1
-//! (`qsl_cst::parse`), S2 (`qsl_forms::build_unit`), I1
+//! FR-027 and FR-098: spine compile (ADR-011 §5, §7.3 M-6a; ADR-013 O-26).
+//! Complete-V1 source enters S1 and goes through the stage APIs in DAG
+//! order: S1 (`qsl_cst::parse`), S2 (`qsl_forms::build_unit`), I1
 //! (`model::intake::admit_unit`, the unit's `model` declarations against
 //! the supplied domain packages, FR-056), the FR-091 assembler, S3
 //! (`PackageDeclarations::check`), S4 (`CheckedPackage::link`) and the v2
 //! emitter (`qsl_package::emit_checked`). This module calls them and makes
 //! no semantic decision.
+//!
+//! It lives in layer 6 `replay` because both of its callers are layer 6:
+//! `command`'s CLI `compile`, which writes the emitted bytes, and this
+//! crate's replay executor ([`crate::replay`]), which recompiles a replay
+//! request's digest-addressed source and keeps the in-process
+//! [`CheckedPackage`] (ADR-011 §2.1 E9). No layer below 6 may depend on
+//! S1 and S2 together (ADR-011 §6.1), and `replay` may not depend on
+//! `command`, so this is the one place the chain can be written once.
 
 use std::collections::BTreeMap;
 
@@ -14,14 +22,14 @@ use qsl_cst::CompleteDiagnostic;
 use qsl_forms::{build_unit, FormsCause, FormsFailure, FormsLimits};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::{Code, SourceIdentity, Span};
-use qsl_package::{emit_checked, CheckedPackage, EmitRefusal, OmittedNode};
+use qsl_package::{emit_checked, CheckedPackage, EmitRefusal, EmittedPackage, OmittedNode};
 use qsl_semantics::check::{
     AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, CheckingLimits, PackageDeclarations,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause, UnitIntakeRefusal};
 
-/// Why spine `compile` wrote no `quire.checked-package/v2` bytes. Each
+/// Why spine [`compile`] produced no checked package. Each
 /// variant is the stage that refused, with its typed cause and, where the
 /// stage records one, the region of the unit it concerns.
 #[derive(Debug, thiserror::Error)]
@@ -284,38 +292,51 @@ fn region(source: &RawSourceRef, span: Span) -> Option<SourceRegion> {
     SourceRegion::new(source.clone(), start, end).ok()
 }
 
+/// The stage limits one spine compile runs under: S1's, S2's, I1's and
+/// S3's own limits types, each defaulting to that stage's published
+/// default. The v2 emitter takes none.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SpineLimits {
+    /// S1: the lexer and parser ceilings.
+    pub source: qsl_cst::Limits,
+    /// S2: the forms depth ceiling.
+    pub forms: FormsLimits,
+    /// I1: domain package normalization ceilings.
+    pub model: ModelNormalizationLimits,
+    /// S3: the checker's ceilings.
+    pub checking: CheckingLimits,
+}
+
+/// One unit compiled through S1 to S4: the in-process checked package and
+/// its emitted `quire.checked-package/v2` bytes with their `package_id`.
+#[derive(Debug)]
+pub struct Compiled {
+    /// The S4 in-process package.
+    pub package: CheckedPackage,
+    /// The S4 wire output.
+    pub emitted: EmittedPackage,
+}
+
 /// Compile complete-V1 `bytes`, labelled `source` and displayed as `path`,
-/// through S1 to S4 into `quire.checked-package/v2` bytes. `packages` is
-/// FR-056's package input, the supplied domain package documents by their
-/// `sha256-jcs` digest (`model::intake::package_input`): I1 admits each
-/// `model` declaration of the unit against it. No lock file or request file
-/// is read (ADR-011 §5). It returns the emitted bytes, not the
-/// `EmittedPackage`: only the stage constructors hand back a stage type
-/// (FR-087-AC-2).
+/// through S1 to S4 under `limits`. `packages` is FR-056's package input,
+/// the supplied domain package documents by their `sha256-jcs` digest
+/// (`model::intake::package_input`): I1 admits each `model` declaration of
+/// the unit against it. No lock file or request file is read (ADR-011 §5),
+/// and `path` is only displayed, never opened.
 pub fn compile(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
-) -> Result<Vec<u8>, Box<CompileRefusal>> {
-    compile_under(source, path, bytes, packages, CheckingLimits::default())
-}
-
-/// [`compile`] with S3 checking under `limits`.
-pub(crate) fn compile_under(
-    source: SourceIdentity,
-    path: &str,
-    bytes: &[u8],
-    packages: &BTreeMap<[u8; 32], Vec<u8>>,
-    limits: CheckingLimits,
-) -> Result<Vec<u8>, Box<CompileRefusal>> {
-    let parsed = qsl_cst::parse(source, path, bytes, qsl_cst::Limits::default())
+    limits: SpineLimits,
+) -> Result<Compiled, Box<CompileRefusal>> {
+    let parsed = qsl_cst::parse(source, path, bytes, limits.source)
         .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
     if let Some(first) = parsed.diagnostics().first() {
         return Err(Box::new(CompileRefusal::Source(Box::new(first.clone()))));
     }
     let raw = parsed.source().reference().clone();
-    let unit = build_unit(&parsed, FormsLimits::default()).map_err(|failure| {
+    let unit = build_unit(&parsed, limits.forms).map_err(|failure| {
         let span = match &failure {
             FormsFailure::Refused(refusal) => refusal.span,
             FormsFailure::Limit { span, .. } => Some(*span),
@@ -325,12 +346,7 @@ pub(crate) fn compile_under(
             failure,
         })
     })?;
-    let models = admit_unit(
-        &unit.selections().models,
-        packages,
-        ModelNormalizationLimits::default(),
-    )
-    .map_err(|refusal| {
+    let models = admit_unit(&unit.selections().models, packages, limits.model).map_err(|refusal| {
         Box::new(CompileRefusal::Intake {
             region: region(&raw, refusal.span),
             refusal,
@@ -350,7 +366,7 @@ pub(crate) fn compile_under(
             })
         })?;
     let regions = declarations.regions();
-    let graph = declarations.check(limits).map_err(|refusals| {
+    let graph = declarations.check(limits.checking).map_err(|refusals| {
         Box::new(CompileRefusal::Check {
             region: refusals
                 .first()
@@ -358,19 +374,21 @@ pub(crate) fn compile_under(
             refusals,
         })
     })?;
-    let emission = emit_checked(&CheckedPackage::link(graph))
-        .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
+    let package = CheckedPackage::link(graph);
+    let emission =
+        emit_checked(&package).map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
     if !emission.omitted().is_empty() {
         return Err(Box::new(CompileRefusal::Omitted(
             emission.omitted().to_vec(),
         )));
     }
-    Ok(emission.package().bytes().to_vec())
+    let emitted = emission.package().clone();
+    Ok(Compiled { package, emitted })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{compile_under, CompileRefusal, SpineStage};
+    use super::{compile, CompileRefusal, SpineLimits, SpineStage};
     use ix_trace_rs::trace;
     use qsl_foundation::{Code, SourceIdentity};
     use qsl_semantics::check::CheckingLimits;
@@ -386,12 +404,15 @@ mod tests {
             profile v = \"quire.value.complete/v1\" version \"1\" digest \
             \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
             function f using v(): Boolean pure { not not not true }\n";
-        let refusal = compile_under(
+        let refusal = compile(
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
             UNIT.as_bytes(),
             &BTreeMap::new(),
-            CheckingLimits::new(u64::MAX, 3).unwrap(),
+            SpineLimits {
+                checking: CheckingLimits::new(u64::MAX, 3).unwrap(),
+                ..SpineLimits::default()
+            },
         )
         .expect_err("depth 3 stops a body four deep");
         assert_eq!(refusal.stage(), SpineStage::Check);
