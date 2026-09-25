@@ -359,8 +359,8 @@ impl BackendDescriptor {
 /// one backend deterministically; it ranks no cause above another.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RegistrationCause {
-    /// The registration repeats an identity the registry already holds
-    /// (ADR-012 §5.2 row 1; FR-075-AC-4).
+    /// A registration of an identity whose admitted registrations are not
+    /// all equal (FR-290-AC-10; FR-075-AC-4).
     DuplicateBackend,
     /// An advertised pair names no kind.
     AbsentKind,
@@ -488,9 +488,9 @@ pub enum CandidateOutcome {
 ///
 /// Two registries built from the same set of descriptors, added in any
 /// order, are equal, and compute identical candidate sets, in identical
-/// order, for every item (FR-075-AC-2, extended by FR-290-AC-9/AC-10 to
-/// identical-repeat and conflicting registrations of one identity). This
-/// holds because `held` is a `BTreeMap` keyed by `BackendId` (whose
+/// order, for every item, including a set with an identical-repeat or a
+/// conflicting registration of one identity (FR-075-AC-2, FR-290-AC-9/AC-10).
+/// This holds because `held` is a `BTreeMap` keyed by `BackendId` (whose
 /// iteration and equality are already order-independent), `conflicts` is a
 /// `BTreeMap` of `BTreeSet`s (a union, so also order-independent), and each
 /// descriptor's `advertises` set is a `HashSet` (also order-independent);
@@ -536,6 +536,12 @@ impl Registry {
     ///   member) has one refusal to report, not two.
     /// - Otherwise the descriptor is newly held.
     ///
+    /// The `Err` vector, when returned, is never empty: it holds at least
+    /// the refusal for `descriptor`'s own arrival. Its entries can repeat a
+    /// key (`identity`, digest) [`Registry::refusals`] already reports from
+    /// an earlier call -- one call's refusals are what that call caused or
+    /// observed, not a diff against the registry's prior state.
+    ///
     /// A capability kind outside the FR-290 vocabulary, or a mode other than
     /// `bounded`/`unbounded`, cannot reach this function at all: a
     /// [`BackendDescriptor`] holds only typed [`Capability`] and [`Mode`]
@@ -556,27 +562,27 @@ impl Registry {
             }]);
         }
 
-        match self.held.remove(&id) {
+        match self.held.get(&id) {
             None => {
                 self.held.insert(id, descriptor);
                 Ok(())
             }
-            Some(existing) if existing == descriptor => {
-                self.held.insert(id, existing);
-                Ok(())
-            }
+            Some(existing) if *existing == descriptor => Ok(()),
             Some(existing) => {
                 let mut digests = BTreeSet::new();
                 digests.insert(existing.candidate().manifest_digest());
                 digests.insert(descriptor.candidate().manifest_digest());
-                let mut refusals: Vec<RegistrationRefusal> = digests
+                // Ascending because `digests` is a `BTreeSet`, so this is
+                // already in `Registry::refusals`' (identity, digest) order
+                // -- no separate sort needed.
+                let refusals: Vec<RegistrationRefusal> = digests
                     .iter()
                     .map(|&digest| RegistrationRefusal {
                         backend: Candidate::new(id.clone(), digest),
                         cause: RegistrationCause::DuplicateBackend,
                     })
                     .collect();
-                refusals.sort();
+                self.held.remove(&id);
                 self.conflicts.insert(id, digests);
                 Err(refusals)
             }
@@ -701,31 +707,41 @@ mod tests {
     /// tool and advertised pairs -- is one registration and is never
     /// refused.
     #[test]
-    #[trace("TC-446", "FR-075-AC-7")]
+    #[trace("TC-448", "FR-075-AC-7")]
     fn identical_repeat_registration_is_idempotent_and_not_refused() {
-        let mut registry = Registry::new();
-        registry
-            .register(descriptor(
-                "A",
-                1,
-                [(Capability::ValueValidity, Mode::Bounded)],
-            ))
-            .expect("first registration succeeds");
-        registry
-            .register(descriptor(
-                "A",
-                1,
-                [(Capability::ValueValidity, Mode::Bounded)],
-            ))
-            .expect("an identical repeat is not refused");
+        let a1 = descriptor("A", 1, [(Capability::ValueValidity, Mode::Bounded)]);
+        let a2 = descriptor("A", 1, [(Capability::ValueValidity, Mode::Bounded)]);
+        let b = descriptor("B", 2, [(Capability::OperationContract, Mode::Bounded)]);
 
-        let CandidateOutcome::Candidates(set) =
-            registry.candidates(Capability::ValueValidity, None)
-        else {
-            panic!("expected a computed candidate set");
-        };
-        assert_eq!(set.candidates().len(), 1);
-        assert_eq!(registry.refusals().count(), 0);
+        // B, the unrelated identity, arrives before both A repeats, between
+        // them, and after both -- the result must not depend on where.
+        for b_position in 0..3 {
+            let mut registrations = vec![a1.clone(), a2.clone()];
+            registrations.insert(b_position, b.clone());
+
+            let mut registry = Registry::new();
+            for (i, r) in registrations.into_iter().enumerate() {
+                registry
+                    .register(r)
+                    .unwrap_or_else(|_| panic!("registration {i} must not be refused"));
+            }
+
+            let CandidateOutcome::Candidates(set) =
+                registry.candidates(Capability::ValueValidity, None)
+            else {
+                panic!("expected a computed candidate set; b_position={b_position}");
+            };
+            assert_eq!(set.candidates().len(), 1, "b_position={b_position}");
+            assert_eq!(
+                registry
+                    .backends()
+                    .map(BackendId::as_str)
+                    .collect::<Vec<_>>(),
+                ["A", "B"],
+                "b_position={b_position}"
+            );
+            assert_eq!(registry.refusals().count(), 0, "b_position={b_position}");
+        }
     }
 
     /// FR-075-AC-4 (quire-specification TC-282 DB-03, FR-290-AC-10): two

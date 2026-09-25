@@ -551,7 +551,7 @@ the table, independent of registration order.
 
 | Case | Behaviour |
 |---|---|
-| Two registrations with the same `BackendId` | the second registration refuses with `invalid_capability`/`duplicate-backend`, naming the identity; the existing registration stands (FR-057:214-218) |
+| Two registrations with the same `BackendId` | equal descriptors are one registration; unequal descriptors refuse every registration of the identity with `invalid_capability`/`duplicate-backend`, one per distinct manifest digest, and the identity is unregistered (FR-075-AC-4, AC-7; QSpec FR-290-AC-9/AC-10) |
 | A registration advertising a capability kind outside the agent-ix/quire-specification#134 vocabulary | handled by the unknown-kind rule of #229's specification, aligned to agent-ix/quire-specification#134; this record adds nothing |
 | A request naming a `BackendId` that is not registered | `negotiate_*` settles `invalid-request`, naming the unknown identity. A CLI argument naming it is refused at the CLI edge with the same identity named (§9), so no request is formed. |
 | A requirement whose capability kind no registrant advertises | empty candidate set; `negotiate_*` settles `unsupported`, warned (§7.3) |

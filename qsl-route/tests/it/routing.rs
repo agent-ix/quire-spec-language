@@ -91,9 +91,9 @@ fn malformed_and_repeated_registrations_refuse_keyed_by_identity() {
     assert_eq!(unknown_mode.catalog_code().cause(), "unknown-mode");
 
     // A second registration under "held" with a different manifest digest
-    // is a conflict (FR-290 "Candidate set and negotiation"), not a simple
-    // refuse-and-keep-the-original: both registrations are refused and the
-    // identity is withdrawn from the registry entirely.
+    // is a conflict (FR-290 "Candidate set and negotiation"): both
+    // registrations are refused and the identity is withdrawn from the
+    // registry entirely.
     let conflicting = admit("held", 5, &[(Some("value-validity"), "unbounded")])
         .expect("the labels themselves are admitted");
     let duplicates = registry

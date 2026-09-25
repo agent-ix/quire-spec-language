@@ -1,5 +1,5 @@
 ---
-id: TC-446
+id: TC-448
 title: "An identical repeat registration is idempotent"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-290
     type: verifies
 ---
-# TC-446: An identical repeat registration is idempotent
+# TC-448: An identical repeat registration is idempotent
 
 ## Description
 

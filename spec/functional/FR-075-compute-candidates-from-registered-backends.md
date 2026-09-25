@@ -128,9 +128,6 @@ SHALL give the same candidate.
 
 ### A repeated identity is idempotent when identical, and conflicts otherwise
 
-This is quire-specification FR-290's "Candidate set and negotiation" rule,
-which supersedes this requirement's earlier same-identity handling.
-
 If a registration names a `BackendId` the registry already holds, the
 registry SHALL compare the new descriptor with the held one:
 
@@ -151,8 +148,7 @@ registrations it has received, independent of the order they arrived in:
 two registries built from the same registrations in different orders SHALL
 be equal, SHALL report the same registration refusals in the same order,
 and SHALL compute identical candidate sets for every item (FR-075-AC-2,
-extended by FR-075-AC-7 and FR-075-AC-4 to multisets containing repeats
-and conflicts).
+FR-075-AC-4, FR-075-AC-7).
 
 ### The registry is an ordinary value, not ambient state
 
@@ -190,7 +186,7 @@ were added.
 | FR-075-AC-4 | Given a registration naming a `BackendId` already held by the registry with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused with `invalid_capability`/`duplicate-backend`, one refusal per distinct manifest digest keyed by `(identity, manifest digest)`; the held registration is withdrawn, the identity is permanently unregistered (a later registration of it, even an identical one, is refused on arrival, and a request naming it receives the unknown-backend marker), and registrations of other identities are unaffected. | Test (TC-196, TC-447) |
 | FR-075-AC-5 | The registry module's public and internal capability-kind matching uses only the canonical `Capability` type; no enum defined inside `#185`'s scope carries variants named for an FR-290 capability-kind label. | Test (TC-193) |
 | FR-075-AC-6 | A `backend` member written from a candidate and read back equals it, and an identity with leading and trailing spaces is kept verbatim. An absent domain, an unknown domain label and `quire.source.bytes/v1` each refuse for the domain, and `quire.source.bytes/v1` still refuses for the domain with a digest string that is not hex; with the right domain, 64 uppercase hex digits and a 2-character string each refuse for the digest. | Test (TC-433) |
-| FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with an equal descriptor (same identity, manifest digest, tool and advertised pairs), the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. | Test (TC-446, TC-447) |
+| FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with an equal descriptor (same identity, manifest digest, tool and advertised pairs), the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. | Test (TC-447, TC-448) |
 
 ## Dependencies
 
@@ -198,8 +194,7 @@ were added.
   and §7.2 fix the registry's shape (an ordinary value, built once, passed as
   an argument) and the candidate-computation algorithm this requirement
   implements; §5.2 lists the explicit registry failure cases FR-075-AC-3 and
-  FR-075-AC-4 verify. ADR-012 predates FR-290's idempotent-repeat rule
-  (FR-075-AC-7), which this requirement now also implements.
+  FR-075-AC-4 verify.
 - [FR-057](FR-057-admit-shared-capability-kinds.md) admits the ten FR-290
   capability-kind labels into QSL and states the same candidate-set rule from
   the composed-linker admission side; this requirement implements it at the
@@ -210,8 +205,7 @@ were added.
   this requirement's Outputs section restates. Its "Candidate set and
   negotiation" section (FR-290-AC-9, FR-290-AC-10) is also the normative
   source for the idempotent-repeat and conflicting-identity rules
-  FR-075-AC-7 and FR-075-AC-4 implement, superseding this requirement's
-  earlier same-identity handling.
+  FR-075-AC-7 and FR-075-AC-4 implement.
 - [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185)'s
   issue body describes "the canonical six-kind `Capability` value type,"
   taking the `protocol` family's six members (FR-290's `Families` table, the
@@ -247,7 +241,7 @@ By Acceptance Criterion:
   (`qsl-route/tests/it/route_registry.rs`).
 - FR-075-AC-2: backed (`TC-194`):
   `every_permutation_of_three_descriptors_gives_an_equal_registry_and_identical_candidates`,
-  `thirty_sampled_orderings_of_five_descriptors_agree` and
+  `all_120_orderings_of_five_descriptors_agree` and
   `permutation_invariance_holds_with_repeats_and_conflicts_in_the_multiset`
   (`qsl-route/tests/it/route_registry.rs`).
 - FR-075-AC-3: backed (`TC-195`):
@@ -255,10 +249,13 @@ By Acceptance Criterion:
   (`qsl-route/tests/it/route_registry.rs`).
 - FR-075-AC-4: backed (`TC-196`, `TC-447`):
   `conflicting_backend_identity_registration_refuses_both_under_either_order`
-  (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`), and
-  `tc_282_duplicate_backend_identity::db_03`..`db_08`
+  (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`),
+  `tc_282_duplicate_backend_identity::db_03`, `db_04`, `db_05`, `db_06` and
+  `db_08`, and `three_way_conflict_reports_one_refusal_per_distinct_digest`
   (`qsl-route/tests/it/route_registry.rs`), mirroring quire-specification
-  TC-282's DB-01..DB-08 vectors under every registration order.
+  TC-282's DB-01..DB-08 vectors under every registration order. `db_07`
+  (a malformed advertised mode, never a `duplicate-backend` conflict) is
+  cited under FR-057-AC-8 instead.
 - FR-075-AC-5: backed for its matching half (`TC-193`):
   `advertises_kind_matches_only_the_exact_capability` (`qsl-route/src/lib.rs`)
   shows candidate matching goes through `Capability` and tells two kinds
@@ -269,7 +266,7 @@ By Acceptance Criterion:
   `backend_member_round_trips_through_its_wire_parts` and
   `backend_member_with_a_wrong_digest_domain_refuses_before_the_bytes`
   (`qsl-route/src/lib.rs`).
-- FR-075-AC-7: backed (`TC-446`, `TC-447`):
+- FR-075-AC-7: backed (`TC-447`, `TC-448`):
   `identical_repeat_registration_is_not_refused`
   (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`), and
   `tc_282_duplicate_backend_identity::db_01_identical_repeat_holds_once_with_no_refusal`/`db_02_identical_repeats_plus_another_identity_hold_both`

@@ -106,7 +106,11 @@ comment), and the #247 editorial alignments.
 - FND-007 and FND-008 are resolved (#212 round-2 rulings): ADR-011 E3 and
   ADR-012 §13.5 key each `capability_report` entry by occurrence key with
   `request_index` as their bytewise order, and a duplicate `BackendId`
-  registration follows FR-057 (the existing registration stands).
+  registration follows FR-057 -- superseded by QSL-226 item 5
+  (quire-specification FR-290-AC-9/AC-10): equal descriptors repeat
+  harmlessly, and unequal ones refuse every registration of the identity
+  and unregister it (FR-075-AC-4, AC-7), not "the existing registration
+  stands".
 - FND-010 and FND-011 stay Remaining work: #185.
 
 Verdict after Round 4: ACCEPT WITH FINDINGS.

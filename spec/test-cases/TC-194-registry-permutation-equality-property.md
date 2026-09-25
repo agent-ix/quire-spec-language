@@ -20,11 +20,11 @@ such registry, and computing candidate sets against each yields identical
 sets in identical order for every item in a fixture item set. Scope:
 FR-075-AC-2, FR-080-AC-1.
 
-Extended to cover FR-075-AC-4 and FR-075-AC-7 (quire-specification
-FR-290-AC-9, FR-290-AC-10): the fixed descriptor set is not required to be
-free of repeats or conflicts. A multiset that includes an identical repeat
-of one identity's descriptor, and a second identity with two conflicting
-descriptors, is built under every sampled order; the resulting registries,
+The fixed descriptor set is not required to be free of repeats or conflicts
+(FR-075-AC-4, FR-075-AC-7; quire-specification FR-290-AC-9, FR-290-AC-10). A
+multiset that includes an identical repeat of one identity's descriptor, and
+a second identity with two conflicting descriptors, is built under every
+sampled order; the resulting registries,
 registration-refusal lists (`Registry::refusals`, in reported order) and
 candidate sets must all agree, exactly as they do for a conflict-free set.
 The registry's own definition (a `BTreeMap` of held descriptors plus a

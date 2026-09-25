@@ -19,19 +19,15 @@ new one are refused with `invalid_capability`/`duplicate-backend`, naming the
 identity, and the held registration is withdrawn -- **not** left standing.
 Scope: FR-075-AC-4.
 
-**This test case is inverted from its earlier form.** It previously verified
-that "the original stands": a repeated `BackendId` refused only the second
-registration and left the first one in effect. FR-075's older rule is
-superseded by quire-specification FR-290, which QSL now implements: two
-unequal descriptors under one identity conflict outright, and neither
+Two unequal descriptors under one identity conflict outright, and neither
 survives. Only a registration identical to the one already held is not
-refused (FR-075-AC-7, [TC-446](TC-446-identical-repeat-registration-is-idempotent.md)).
+refused (FR-075-AC-7, [TC-448](TC-448-identical-repeat-registration-is-idempotent.md)).
 
 Catches an implementation that silently overwrites the first registration
 with the second (losing the original advertisement set), an implementation
 that merges the two registrations' advertised-kind sets instead of refusing
-outright, and an implementation that reverts to the older "original stands"
-behavior this test case used to assert.
+outright, and an implementation that leaves the first registration
+standing.
 
 [TC-155](TC-155-keep-admission-backend-independent.md) (FR-057-AC-8, on
 `main`) step 3 also registers a backend that repeats an already-registered

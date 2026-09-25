@@ -410,7 +410,10 @@ QSL-46 adds registration from advertised labels
 `unknown-kind` and `unknown-mode` keyed by backend identity) and the routing
 step (`qsl_route::routing`), which takes settled dispositions as data and
 gives a target only to a `supported` item. FR-057-AC-6 and FR-057-AC-8 are
-backed by TC-155 steps 3 to 6 (`qsl-route/tests/it/routing.rs`).
+backed by TC-155 steps 3 to 6 (`qsl-route/tests/it/routing.rs`); FR-057-AC-8's
+malformed-mode case is additionally backed by TC-447's
+`tc_282_duplicate_backend_identity::db_07_a_malformed_registration_never_reaches_the_registry`
+(`qsl-route/tests/it/route_registry.rs`).
 
 FR-057-AC-3, FR-057-AC-5, FR-057-AC-7 and FR-057-AC-10 are not yet backed by
 tests traced to them. Remaining work: #213 lands the carrier-version refusal

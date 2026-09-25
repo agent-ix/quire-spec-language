@@ -727,12 +727,11 @@ that identity is refused `invalid_capability`/`duplicate-backend`, one
 refusal per distinct manifest digest keyed by (identity, manifest digest);
 any registration already held is withdrawn, and the identity is permanently
 unregistered, so a later request naming it -- even after a later, otherwise-
-identical registration arrives -- receives the unknown-backend mark. This
-resolves the order tension #185's earlier same-identity handling left open
-(QSL-226 item 5): the registry snapshot, its refusals and every candidate set
-are a function of the set of admitted registrations alone, independent of
-the order they arrived in (FR-075-AC-4, FR-075-AC-7, QSpec FR-290-AC-9,
-FR-290-AC-10, quire-specification TC-282).
+identical registration arrives -- receives the unknown-backend mark. The
+registry snapshot, its refusals and every candidate set are a function of
+the set of admitted registrations alone, independent of the order they
+arrived in (FR-075-AC-4, FR-075-AC-7, QSpec FR-290-AC-9, FR-290-AC-10,
+quire-specification TC-282).
 
 `BackendDescriptor`, the candidate set and `Capability` cross from QSL to CG
 as data, not as shared Rust types (T-7).
@@ -977,7 +976,7 @@ mutant is allow-listed (ADR-012 §5.3).
 | C-30 | Enum member node key → `VariantId`; unit node key → declared-arm `UnitId` | QSL checker for the enum member key; QSL `semantic_value` for the unit key (`value::unit::UnitGraph::declared_unit_id`, which admits only an admitted unit's key), called by the stage that resolves a quantity unit (T-6) | The same `quire.checked-semantic-node/v1` bytes, typed for the kernel. Admitted only for a node key minted over the `quire.enum-member-node/v1` or `quire.unit-node/v1` preimage respectively; any other node key refuses. No reverse conversion | QSL-131 test that an enum-declaration or dimension node key is refused (FR-088-AC-11, AC-12) |
 | C-27 | `BackendId` ↔ `backend` wire member | #185 registry type, each reader | Identity kept verbatim; digest domain checked first | FR-075-AC-6 (TC-433): round trip and adverse tests in `qsl-route/src/lib.rs`. QSL-227: `qsl-replay/src/witness.rs`'s `backend_digest_in_any_other_fr201_domain_refuses` is FR-070-AC-6 (TC-181, digest-domain half); no FR-071 AC names the replay request's `backend` member, so `qsl-replay/src/request.rs`'s `backend_digest_in_any_other_fr201_domain_refuses` is untraced here instead |
 | C-28 | FR-331 provider manifest → QSL `BackendDescriptor` | The driver reads the manifest; QSL `route` (#185) admits what it read | QSL reads no manifest bytes. The driver passes the backend identity, manifest digest, pinned tool identity and advertised (kind, mode) labels to `BackendDescriptor::admit`, which admits the labels under the requested-pair rules and refuses an absent or unknown kind or an unknown mode, keyed by backend identity | FR-057-AC-8 (TC-155 step 3), `qsl-route/tests/it/routing.rs` |
-| C-29 | Candidate set → FR-331 `candidates` (QC-12) | QSL `route` returns the typed value; the FR-331 envelope writer serializes it; CG reads | One value per request item: the candidate list ordered by (identity, manifest digest), or the unknown-backend mark. The registry holds at most one descriptor per identity, and a conflicted identity holds none, so a list never carries two candidates of the same identity. QSL defines no candidate-set wire; the member layout is agent-ix/quire-specification#134's | FR-057-AC-8 and FR-075-AC-1 to AC-3, AC-4a, AC-4b over `CandidateOutcome`; the wire round trip and CG's duplicate-member adverse test follow agent-ix/quire-specification#134 |
+| C-29 | Candidate set → FR-331 `candidates` (QC-12) | QSL `route` returns the typed value; the FR-331 envelope writer serializes it; CG reads | One value per request item: the candidate list ordered by (identity, manifest digest), or the unknown-backend mark. The registry holds at most one descriptor per identity, and a conflicted identity holds none, so a list never carries two candidates of the same identity. QSL defines no candidate-set wire; the member layout is agent-ix/quire-specification#134's | FR-057-AC-8 and FR-075-AC-1 to AC-4 and AC-7 over `CandidateOutcome`; the wire round trip and CG's duplicate-member adverse test follow agent-ix/quire-specification#134 |
 
 Conversions that do not exist: `EffectiveId` ↔ `NodeKey`; any lane-private type
 (§6) ↔ its canonical counterpart; v2 bytes → QSL checked typestate; name →
