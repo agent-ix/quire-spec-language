@@ -39,6 +39,13 @@ including two grant kinds new to this inventory: `MIT-0`
 (`borrow-or-share` 0.2.4) and `Zlib` (`foldhash` 0.2.0). None introduces a
 copyleft term.
 
+QSL-8 bumps the same key to `1d7884c51fad0ee672fef1c8205dd3d40b0b8d66`
+(IR-280), whose v2 reader admits `value`/`parameter` and
+`scalar_type`/`compound_unit` nodes, keys recursion-group application nodes
+by FR-322's `{size, ordinal}` (IR-242), and decodes each closed wire
+vocabulary (selection role, capability disposition, node form) into an enum.
+The bump adds no package to the lock.
+
 LC04 adds qualification-only codegen `240fad84a9565ab723ba9844e18faea4e5d96f66`
 and its IR `04eb6f849c03be23177d373549c6c272551f957d`, both MIT OR Apache-2.0.
 The latter has a dev-only alias for the existing consumer's exact wire reader;

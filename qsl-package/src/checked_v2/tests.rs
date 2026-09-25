@@ -26,7 +26,7 @@ use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::check::CheckCause;
 use qsl_semantics::library::{
     ImportView, LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
-    PreimageDefect, RefusalClass, Selection, StaleCause, StalePin,
+    RefusalClass, Selection, StaleCause, StalePin,
 };
 use quire_exact::{Origin, Role};
 
@@ -670,12 +670,11 @@ fn refuses_package_id_that_does_not_recompute() {
 }
 
 #[test]
-fn refuses_malformed_identity_preimage_structurally() {
-    // Two nodes declaring the same name: IR's own reader never inspects
-    // *what* `identity_projection` declares, only that it exactly mirrors
-    // `semantic_graph.nodes` (finding above) -- so both must carry the
-    // second node too, and the ambiguity is genuinely this layer's own,
-    // caught by `library::project_declarations`, not IR's.
+fn refuses_an_ambiguous_declaration_at_ir_intake() {
+    // Two nodes declaring the same name. IR's v2 reader refuses the
+    // ambiguity itself (`ambiguous_declaration` / `ambiguous-name`, IR #185)
+    // before this reader's `library::project_declarations` sees an admitted
+    // package, so this asserts IR's refusal and its FR-010 code.
     let mut preimage = identity_preimage(vec![]);
     preimage["identity_projection"] = json!([
         projection_node("pkg::R", "R"),
@@ -699,16 +698,16 @@ fn refuses_malformed_identity_preimage_structurally() {
         },
     ]);
     let bytes = jcs(&envelope);
-    match read(&bytes, &pinned_for(&preimage)) {
-        V2ReadOutcome::Refused(V2ReadRefusal::Structural(LibraryRefusal::InvalidPreimage {
-            library,
-            defect: PreimageDefect::AmbiguousDeclaration { name, .. },
-        })) => {
-            assert_eq!(library, identity("pkg"));
-            assert_eq!(name, "R");
-        }
-        other => panic!("expected Refused(Structural(InvalidPreimage)), got {other:?}"),
-    }
+    let outcome = read(&bytes, &pinned_for(&preimage));
+    let V2ReadOutcome::Refused(ref refusal @ V2ReadRefusal::Envelope(ref envelope)) = outcome
+    else {
+        panic!("expected Refused(Envelope(AmbiguousDeclaration)), got {outcome:?}");
+    };
+    assert_eq!(
+        envelope.code,
+        CheckedPackageRefusalCode::AmbiguousDeclaration
+    );
+    assert_eq!(refusal.code(), Code::AmbiguousDeclaration);
 }
 
 #[test]

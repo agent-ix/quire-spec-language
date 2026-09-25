@@ -12,7 +12,7 @@ use qsl_forms::{
     FunctionDeclaration, TypeForm,
 };
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
-use qsl_semantics::check::{CheckingLimits, NodeTag, PackageDeclarations};
+use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
 use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
 use qsl_semantics::value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
@@ -459,8 +459,7 @@ fn recursive_f() -> CheckedPackage {
 }
 
 /// Every node of `package` as the emission arm writes it, in graph order,
-/// including the nodes the pinned IR's vocabulary makes it omit (a
-/// parameter node, and the functions and records that name one).
+/// including any node the emitter would omit.
 fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
     let graph = package.graph();
     let mut recorded = recorded_occurrences(graph).expect("every role is FR-322's");
@@ -676,39 +675,26 @@ fn every_emitted_node_has_its_recorded_occurrences() {
     }
 }
 
-/// IR-280: IR's v2 vocabulary has no `value`/`parameter` form. A package
-/// holding `both(a, b)` and `t` writes `t` and omits `both`: its parameter
-/// nodes by form, and each node naming one after it. The rest is admitted.
+/// IR-280: IR's v2 vocabulary holds `value`/`parameter` (FR-092). A
+/// package holding `both(a, b)` and `t` is written with nothing omitted,
+/// `both`'s two parameter nodes included, and reads back Verified with both
+/// functions exported.
 #[trace("FR-093-AC-7", "TC-416")]
 #[test]
-fn a_form_ir_lacks_is_omitted_and_everything_else_is_written() {
+fn a_function_with_parameters_is_written_whole() {
     let package = package(vec![both(), t()]);
     let both_key = package.graph().function_identity("both").unwrap();
     let emission = emit(&package);
-    let parameters: Vec<&OmittedNode> = emission
-        .omitted
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    let parameters = nodes(&wire)
         .iter()
-        .filter(|omission| {
-            omission.cause
-                == OmissionCause::UnsupportedForm {
-                    node_tag: NodeTag::Value,
-                    semantic_form: "parameter",
-                }
-        })
-        .collect();
-    assert_eq!(parameters.len(), 2, "a and b: {:?}", emission.omitted);
-    let both_node = emission
-        .omitted
-        .iter()
-        .find(|omission| *omission.node.digest == both_key.to_string())
-        .expect("both is omitted");
-    assert!(matches!(
-        both_node.cause,
-        OmissionCause::NamesOmittedNode(_)
-    ));
+        .filter(|node| node["node_tag"] == "value" && node["semantic_form"] == "parameter")
+        .count();
+    assert_eq!(parameters, 2, "a and b");
     let exports = verified_exports(&emission);
+    assert_eq!(exports.get("both"), Some(&both_key.to_string()));
     assert!(exports.contains_key("t"));
-    assert!(!exports.contains_key("both"));
 }
 
 /// `Int[0, 9]`.
@@ -997,9 +983,9 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
 /// (an enum literal) and `keep(s: Status): Status { s }` (an enum-typed
 /// parameter) reads back Verified: IR re-derives each nominal node's key
 /// from its `nominal_identity_preimage`. Each member depends on the
-/// declaration, and no node names an absent one. `keep`'s parameter is
-/// omitted only for its form (IR-280). An enum owned by a definition the
-/// lock does not select is omitted, and the rest is still written.
+/// declaration, and no node names an absent one. `keep` and its parameter
+/// are written (IR-280). An enum owned by a definition the lock does not
+/// select is omitted, and the rest is still written.
 #[trace("TC-416")]
 #[test]
 fn enum_declaration_and_member_nodes_are_written() {
@@ -1053,23 +1039,14 @@ fn enum_declaration_and_member_nodes_are_written() {
             .any(|cause| matches!(cause, OmissionCause::NamesAbsentNode(_))),
         "{omitted:?}"
     );
-    assert_eq!(
-        omitted.get(&parameter.key().to_string()),
-        Some(&&OmissionCause::UnsupportedForm {
-            node_tag: NodeTag::Value,
-            semantic_form: "parameter",
-        })
-    );
-    assert!(matches!(
-        omitted.get(&keep_key.to_string()),
-        Some(OmissionCause::NamesOmittedNode(_))
-    ));
+    assert!(!omitted.contains_key(&parameter.key().to_string()));
     // The foreign enum's two members name its declaration.
-    assert_eq!(omitted.len(), 5, "{omitted:?}");
+    assert_eq!(omitted.len(), 3, "{omitted:?}");
     let exports = verified_exports(&emission);
     for name in ["Point", "Pair", "Status", "ready"] {
         assert!(exports.contains_key(name), "{name}: {exports:?}");
     }
+    assert_eq!(exports.get("keep"), Some(&keep_key.to_string()));
     let wire = wire(&emission);
     let declaration = declared(&wire, "Status");
     assert_eq!(declaration["node_id"]["digest"], json!(status.to_string()));
@@ -1120,14 +1097,14 @@ fn enum_declaration_and_member_nodes_are_written() {
     }
 }
 
-/// The pinned IR reader keys an application node in a recursion group by
-/// the bare group label, not FR-322's `{ordinal, size}`, so it would refuse
-/// the whole package as `stale-node-key`. `g(): Boolean { if true then true
-/// else g() }` puts two application nodes in `g`'s group: they are omitted,
-/// `g` with them, and the rest is admitted.
+/// IR-242: IR keys an application node in a recursion group by FR-322's
+/// `{size, ordinal}` in graph order, as `check` keys it. `g(): Boolean { if
+/// true then true else g() }` puts two application nodes in `g`'s group, and
+/// the recursive `f(x: Int[0, 9])` puts three nodes in its group: each
+/// package is written with nothing omitted and reads back Verified.
 #[trace("FR-093-AC-7", "TC-416")]
 #[test]
-fn a_recursion_group_holding_an_application_is_omitted() {
+fn a_recursion_group_holding_an_application_is_written() {
     let g = function(
         "g",
         &[],
@@ -1140,30 +1117,41 @@ fn a_recursion_group_holding_an_application_is_omitted() {
             }),
         },
     );
-    let package = package(vec![g, t()]);
-    let members: BTreeSet<String> = package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .filter(|node| node.recursion().is_some())
-        .map(|node| node.key().to_string())
-        .collect();
-    let g_key = package.graph().function_identity("g").unwrap().to_string();
-    assert!(members.contains(&g_key), "g is in its own group");
-    let emission = emit(&package);
-    let causes: BTreeMap<String, &OmissionCause> = emission
-        .omitted
-        .iter()
-        .map(|omission| (omission.node.digest.to_string(), &omission.cause))
-        .collect();
-    let omitted: BTreeSet<String> = causes.keys().cloned().collect();
-    assert!(members.is_subset(&omitted), "{causes:?}");
-    assert!(causes
-        .values()
-        .any(|cause| **cause == OmissionCause::RecursiveApplication));
-    let exports = verified_exports(&emission);
-    assert!(exports.contains_key("t"));
-    assert!(!exports.contains_key("g"));
+    for (package, function) in [(package(vec![g, t()]), "g"), (recursive_f(), "f")] {
+        let members: Vec<&SemanticNode> = package
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .filter(|node| node.recursion().is_some())
+            .collect();
+        let key = package.graph().function_identity(function).unwrap();
+        assert!(
+            members.iter().any(|node| node.key() == key),
+            "{function} is in its own group"
+        );
+        assert!(
+            members
+                .iter()
+                .filter(|node| matches!(node.body(), SemanticTerm::Application { .. }))
+                .count()
+                >= 2,
+            "{function}'s group holds application nodes"
+        );
+        let emission = emit(&package);
+        assert_eq!(emission.omitted, [], "{function}");
+        let wire = wire(&emission);
+        let written = nodes(&wire)
+            .iter()
+            .filter(|node| node.get("recursion_group").is_some())
+            .count();
+        assert_eq!(
+            written,
+            members.len(),
+            "{function}'s whole group is written"
+        );
+        let exports = verified_exports(&emission);
+        assert_eq!(exports.get(function), Some(&key.to_string()));
+    }
 }
 
 /// FR-322 admits no empty semantic graph: an empty package refuses with no
@@ -1385,21 +1373,22 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
     }
 }
 
-/// A unit with a declared record and an `Integer` function, the FR-091
-/// round trip's source. The function takes no parameter: IR's v2 reader
-/// has no `parameter` form yet, so a parameter node is omitted from the
-/// emitted package (`a_form_ir_lacks_is_omitted_and_everything_else_is_written`).
+/// A unit with a declared record, an `Integer` function and a function with
+/// parameters, the FR-091 round trip's source.
 const SPINE_TEXT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\" version \"1\" digest \
     \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
     record Point { x: Integer; y: Integer; }\n\
-    function one using v(): Integer pure { 1 + 0 }\n";
+    function one using v(): Integer pure { 1 + 0 }\n\
+    function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }\n";
 
 /// FR-091 end to end: source text goes through S1 (`qsl_cst::parse`), S2
 /// (`qsl_forms::build_unit`), the E3 assembler, S3 `check`, S4 `link` and
-/// `emit_checked`, and I2 reads the bytes back Verified. The record's
-/// `declaration` occurrence is placed at its declared name, and every
-/// occurrence at a region of the unit.
+/// `emit_checked`, and I2 reads the bytes back Verified with nothing
+/// omitted: `both`'s `value`/`parameter` nodes are written (IR-280). The
+/// record's `declaration` occurrence is placed at its declared name, each
+/// parameter's occurrences at regions of `both`, and every occurrence at a
+/// region of the unit.
 #[trace("FR-091-AC-10", "FR-096-AC-1", "TC-426")]
 #[test]
 fn source_text_compiles_through_the_spine_and_reads_back_verified() {
@@ -1425,6 +1414,7 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let exports = verified_exports(&emission);
     assert!(exports.contains_key("Point"), "{exports:?}");
     assert!(exports.contains_key("one"), "{exports:?}");
+    assert!(exports.contains_key("both"), "{exports:?}");
 
     let wire = wire(&emission);
     let point = declared(&wire, "Point");
@@ -1441,10 +1431,242 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
     let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
     assert_eq!(&SPINE_TEXT[start..end], "Point");
+    let both_start = SPINE_TEXT.find("function both").unwrap();
+    let both_end = both_start + SPINE_TEXT[both_start..].find('}').unwrap() + 1;
+    let both = both_start..both_end;
+    let parameters: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["node_tag"] == "value" && node["semantic_form"] == "parameter")
+        .collect();
+    assert_eq!(parameters.len(), 2, "a and b");
+    for parameter in parameters {
+        let mut placed = 0;
+        for entry in wire["source_map"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry["node_id"] == parameter["node_id"])
+        {
+            for region in entry["regions"].as_array().unwrap() {
+                let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
+                let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
+                assert!(
+                    both.start <= start && end <= both.end,
+                    "{entry} lies in both ({both:?})"
+                );
+                placed += 1;
+            }
+        }
+        assert!(placed > 0, "{parameter} has a placed occurrence");
+    }
     for entry in wire["source_map"].as_array().unwrap() {
         for region in entry["regions"].as_array().unwrap() {
             let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
             assert!(end <= SPINE_TEXT.len(), "{entry}");
         }
     }
+}
+
+/// QSpec's `unit-metre` node key (FR-094's vector key).
+const METRE: [u8; 32] = [
+    0x79, 0x63, 0x76, 0x23, 0xa4, 0x6d, 0x29, 0xe8, 0x84, 0xb6, 0x2c, 0x6f, 0xa2, 0x92, 0xae, 0xb2,
+    0x9d, 0x41, 0xe4, 0xec, 0xc4, 0xe8, 0x00, 0xb4, 0xd7, 0xee, 0x91, 0x0a, 0x3e, 0xaf, 0x23, 0xa4,
+];
+
+/// QSpec's `dimension-length` node key (FR-094's vector key).
+const LENGTH: &str = "b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca092266314e22b";
+
+/// The `metre` unit of dimension `Length`, owned by a definition, as the
+/// quantity table `check` types a `Length` quantity against.
+fn metre_units() -> qsl_semantics::value::quantity::UnitTable {
+    use qsl_semantics::value::{
+        DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage,
+    };
+    let owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"});
+    let length = DimensionPreimage::from_json(json!({
+        "version": "quire.dimension-node/v1",
+        "owner": owner,
+        "qualified_declaration": ["Example", "Length"],
+        "terms": [],
+    }))
+    .expect("a base dimension");
+    let metre = UnitPreimage::from_json(json!({
+        "version": "quire.unit-node/v1",
+        "owner": owner,
+        "qualified_declaration": ["Example", "metre"],
+        "dimension_node_id": {"domain": NODE_KEY_DOMAIN, "digest": LENGTH},
+        "target_unit_node_id": null,
+        "scale": {"numerator": "1", "denominator": "1"},
+        "offset": {"numerator": "0", "denominator": "1"},
+    }))
+    .expect("a root unit");
+    let length_key: [u8; 32] = std::array::from_fn(|index| {
+        u8::from_str_radix(&LENGTH[2 * index..2 * index + 2], 16).unwrap()
+    });
+    let graph = UnitGraph::admit(
+        [(length, NodeKey::from_digest(length_key))],
+        [(metre, NodeKey::from_digest(METRE))],
+        &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
+            authority: "agent-ix".into(),
+            identity: "example-model".into(),
+        })]),
+    )
+    .expect("the QSpec unit vectors admit");
+    qsl_semantics::value::quantity::UnitTable::declared(&graph)
+}
+
+/// IR-280: IR's v2 vocabulary holds `scalar_type`/`compound_unit` (FR-094),
+/// so a compound unit node is never omitted for its form. `q(a: Length):
+/// Boolean { a * a == a * a }` forms the `metre^2` compound unit node; it is
+/// omitted only because it names the `metre` unit node, which lowering names
+/// by key but does not build.
+#[trace("TC-416")]
+#[test]
+fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
+    let square = || Expression::Binary {
+        operator: BinaryOperator::Multiply,
+        left: Box::new(name("a")),
+        right: Box::new(name("a")),
+    };
+    let q = FunctionDeclaration::new(
+        "q",
+        vec![("a".to_owned(), TypeForm::name("Length", SPAN))],
+        boolean(),
+        None,
+        Expression::Binary {
+            operator: BinaryOperator::Equal,
+            left: Box::new(square()),
+            right: Box::new(square()),
+        },
+    );
+    let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
+    let package = CheckedPackage::link(
+        PackageDeclarations {
+            types: TypeEnvironment::default().with_units(metre_units()),
+            aliases: vec![("Length".to_owned(), ValueType::Quantity(metre))],
+            functions: vec![q, t()],
+            ..PackageDeclarations::new(source())
+        }
+        .check(CheckingLimits::default())
+        .expect("q checks"),
+    );
+    let compound = package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .find(|node| node.semantic_form() == "compound_unit")
+        .expect("a * a forms a compound unit node");
+    let emission = emit(&package);
+    let cause = emission
+        .omitted
+        .iter()
+        .find(|omission| *omission.node.digest == compound.key().to_string())
+        .map(|omission| &omission.cause);
+    assert_eq!(
+        cause,
+        Some(&OmissionCause::NamesAbsentNode(node_id(
+            NodeKey::from_digest(METRE)
+        )))
+    );
+    assert!(
+        !emission
+            .omitted
+            .iter()
+            .any(|omission| matches!(omission.cause, OmissionCause::UnsupportedForm { .. })),
+        "{:?}",
+        emission.omitted
+    );
+    assert!(verified_exports(&emission).contains_key("t"));
+}
+
+// No `#[trace]` tag: no TC names the I2 reader's own preimage refusals; the
+// test backs `read_checked_package_v2`'s `InvalidPreimage` arm.
+/// An enum declaration node whose `declaration` is dropped (its declaration
+/// occurrence re-roled `expression`, so it keeps one) passes IR's v2 reader:
+/// IR's `validate_declaration_names` checks the nominal join only on a node
+/// carrying both. QSL's I2 read refuses it as
+/// `DeclarationNominalMismatch` with no declared name, through the
+/// `InvalidPreimage` arm, and yields no package.
+#[test]
+fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
+    let local = status_enum(
+        json!({"kind": "source", "authority": "a", "identity": "u"}),
+        "Status",
+    );
+    let status = json!(local.declaration.key().to_string());
+    let emission = emit(&declared_types(vec![local], vec![]));
+    let mut wire = wire(&emission);
+    let strip = |node: &mut Value| {
+        if node["node_id"]["digest"] == status {
+            node.as_object_mut().unwrap().remove("declaration").unwrap();
+            for occurrence in node
+                .get_mut("occurrences")
+                .and_then(Value::as_array_mut)
+                .into_iter()
+                .flatten()
+            {
+                if occurrence["role"] == "declaration" {
+                    occurrence["role"] = json!("expression");
+                }
+            }
+        }
+    };
+    wire["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .for_each(strip);
+    wire["identity_preimage"]["identity_projection"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .for_each(strip);
+    let mut re_roled = 0;
+    for entry in wire["source_map"].as_array_mut().unwrap() {
+        if entry["node_id"]["digest"] == status && entry["role"] == "declaration" {
+            entry["role"] = json!("expression");
+            re_roled += 1;
+        }
+    }
+    assert_eq!(re_roled, 1, "Status had one declaration entry");
+    let package_id = PackageId::of_preimage(&jcs(&wire["identity_preimage"]));
+    wire["package_id"]["digest"] = json!(package_id.hex());
+    let mut evidence = CheckedPackageEvidence::new();
+    locked_artifacts(&wire["lock"], &mut evidence);
+    locked_artifacts(&wire["diagnostics"], &mut evidence);
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
+        library(),
+        Selection {
+            version: "1".to_owned(),
+            package_id,
+        },
+    );
+    let outcome = read_checked_package_v2(
+        &jcs(&wire),
+        library(),
+        "1".to_owned(),
+        V2ReadLimits::default(),
+        &evidence,
+        &pinned,
+    );
+    let V2ReadOutcome::Refused(crate::checked_v2::V2ReadRefusal::Structural(
+        qsl_semantics::library::LibraryRefusal::InvalidPreimage {
+            library: refused,
+            defect:
+                qsl_semantics::library::PreimageDefect::DeclarationNominalMismatch {
+                    node,
+                    declared: None,
+                    nominal,
+                },
+        },
+    )) = outcome
+    else {
+        panic!("expected InvalidPreimage(DeclarationNominalMismatch), got {outcome:?}");
+    };
+    assert_eq!(refused, library());
+    assert_eq!(json!(node.to_string()), status);
+    assert_eq!(nominal, "Status");
 }

@@ -371,6 +371,7 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
         CheckedPackageRefusalCode::UnknownRequiredCapability => Code::UnknownRequiredFeature,
         CheckedPackageRefusalCode::InvalidSourceMap => Code::InvalidSourceMap,
         CheckedPackageRefusalCode::MissingDeclaration => Code::MissingDeclaration,
+        CheckedPackageRefusalCode::AmbiguousDeclaration => Code::AmbiguousDeclaration,
         CheckedPackageRefusalCode::InvalidModelBinding => Code::InvalidModelBinding,
         CheckedPackageRefusalCode::IllTyped => Code::IllTyped,
     }
@@ -512,6 +513,10 @@ pub(crate) fn read_checked_package_v2(
                     },
                 ));
             }
+            // `PreimageDefect::AmbiguousDeclaration` cannot reach here: IR's
+            // `validate_declaration_names` refuses a repeated `qualified_name`
+            // (`ambiguous_declaration`) and its segments are identifiers, so
+            // the `::` join compares the same names.
             let exports = match declared_exports(&preimage_bytes) {
                 Ok(exports) => exports,
                 Err(defect) => {
