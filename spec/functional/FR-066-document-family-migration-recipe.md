@@ -84,10 +84,10 @@ from the ADRs.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-066-AC-1 | The recipe document exists at a checked-in path in this repository and names, for a migrating family, each of the five required-test categories (clause-level unit, builder-ordering, seam-probe, wire-totality, backend-absence corpus) by name, with a one-sentence description of what each verifies; a reviewer checklist that omits any one of the five categories does not satisfy this criterion. | Test (TC-165) |
-| FR-066-AC-2 | The recipe names each of the three required-conversion categories (v2 emitter, evaluator, requirement derivation) and states, for the family whose forms cross into IR, RT or CG, that the wire and IR-side conversions belong to those repositories' own tickets, not to the QSL migration ticket. | Test (TC-165) |
-| FR-066-AC-3 | The recipe states the removal condition in the same terms as ADR-011 §7.3 M-6e (the old composed-checker path is deleted in the PR that lands the S3 family checker and S4 emission) and names, for each of `StateModel`, `SumCase`, `TemporalTrace`, `ProtocolClause` and `Relation`, at least one implementing ticket from ADR-012 §14.1. | Test (TC-165) |
-| FR-066-AC-4 | The recipe's worked example section names at least one actual test file and one actual deleted symbol from the function-application migration ([FR-065](FR-065-migrate-function-application-to-checked-family.md)'s implementation), not a hypothetical placeholder. | Test (TC-165) |
+| FR-066-AC-1 | The recipe document exists at a checked-in path in this repository and names, for a migrating family, each of the five required-test categories (clause-level unit, builder-ordering, seam-probe, wire-totality, backend-absence corpus) by name, with a one-sentence description of what each verifies; a reviewer checklist that omits any one of the five categories does not satisfy this criterion. | Inspection (TC-165) |
+| FR-066-AC-2 | The recipe names each of the three required-conversion categories (v2 emitter, evaluator, requirement derivation) and states, for the family whose forms cross into IR, RT or CG, that the wire and IR-side conversions belong to those repositories' own tickets, not to the QSL migration ticket. | Inspection (TC-165) |
+| FR-066-AC-3 | The recipe states the removal condition in the same terms as ADR-011 §7.3 M-6e (the old composed-checker path is deleted in the PR that lands the S3 family checker and S4 emission) and names, for each of `StateModel`, `SumCase`, `TemporalTrace`, `ProtocolClause` and `Relation`, at least one implementing ticket from ADR-012 §14.1. | Inspection (TC-165) |
+| FR-066-AC-4 | The recipe's worked example section names at least one actual test file and one actual deleted symbol from the function-application migration ([FR-065](FR-065-migrate-function-application-to-checked-family.md)'s implementation), not a hypothetical placeholder. | Inspection (TC-165) |
 
 ## Dependencies
 
@@ -107,14 +107,16 @@ Specified under
 Implemented as [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md),
 citing FR-065's implementation for its worked-example section.
 
-**By Acceptance Criterion (QSL-151):** all four ACs are backed by a tagged
-test in `tests/it/family_migration_recipe.rs` (`TC-165`), which reads the
-checked-in recipe document via `include_str!` and asserts its required
-content programmatically -- a source-inspection test, since this
-requirement's own deliverable is documentation, not runtime code (see this
-FR's "recipe is a procedure, not new code" section). Each test was verified
-to fail when the content it checks is removed from the document:
-AC-1/`recipe_names_all_five_required_test_categories_with_descriptions`,
-AC-2/`recipe_names_all_three_required_conversion_categories_and_ir_ownership`,
-AC-3/`recipe_states_removal_condition_and_names_a_ticket_per_remaining_family`,
-AC-4/`recipe_worked_example_names_a_real_test_file_and_a_real_deleted_symbol`.
+**By Acceptance Criterion (QSL-151):** all four ACs are verified by
+inspection of the checked-in recipe document
+([docs/family-migration-recipe.md](../../docs/family-migration-recipe.md))
+against each AC's own wording, not by an automated test: a programmatic
+`include_str!` check over this prose (attempted and then dropped in this
+same review round) only re-asserts the presence of particular wording, so
+it fails on a rewording and passes over a recipe whose content has gone
+stale in a way no wording check catches -- exactly what happened to this
+document's own seam-probe paragraph (AC-1), which kept naming a seam that
+had since been deleted while every wording-level check of it still passed.
+That staleness is fixed as part of this same review round (QSL-151); the
+verification method for all four ACs is Inspection, done at PR readiness
+against the document's actual, current content.

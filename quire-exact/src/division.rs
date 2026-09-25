@@ -235,14 +235,7 @@ mod tests {
 
     /// TC-324: Euclidean `mod` never returns a negative remainder for a
     /// negative dividend, unlike truncating `rem`.
-    ///
-    /// Also QSpec FR-147-AC-4 (truncating, floor and Euclidean results stay
-    /// distinguished while preserving `a = b*q + r`), verified through
-    /// central `TC-192`: a wrong implementation that gave `mod` the
-    /// truncating law's sign instead of Euclidean's would return a
-    /// negative remainder here, which this test refuses (QSL-163).
     #[trace("TC-324")]
-    #[trace("TC-192", "FR-147-AC-4")]
     #[test]
     fn tc_324_euclidean_modulo_is_nonnegative() {
         let domain = IntegerDomain::Mathematical;

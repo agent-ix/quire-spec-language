@@ -62,15 +62,15 @@
 //! not this repo's `spec/`.** PR #254's review flagged that most of this
 //! crate's own tests trace to no requirement, and named the choice of
 //! home -- QSpec or this repo's `spec/` -- as undecided. It is decided now,
-//! and it was not really open: every FR that this crate's own module docs
-//! already cite for value semantics (`FR-140` decimals, `FR-141` text and
-//! enumerations, `FR-142` quantities and units, `FR-144` collection
-//! algebra, `FR-147` integer division, `FR-148` IEEE profiles) is an
-//! `agent-ix/quire-specification` id, and this repo already treats that
-//! crate as the owner: `Task-048` (`plan/Plan-013-complete-v1-delivery`)
-//! references exactly those QSpec FRs and their QSpec `TC-185` through
-//! `TC-187`/`TC-192`/`TC-193` as the acceptance evidence for this same
-//! scalar/numeric/text/enum/unit/IEEE kernel, and `IT-011` records that
+//! and it was not really open: the FRs this crate's own module docs already
+//! cite for value semantics (`FR-140` decimals, `FR-141` text and
+//! enumerations, `FR-142` quantities and units, `FR-147` integer division,
+//! `FR-148` IEEE profiles) are `agent-ix/quire-specification` ids, and this
+//! repo already treats that crate as the owner: `Task-048`
+//! (`plan/Plan-013-complete-v1-delivery`) references exactly `FR-140`,
+//! `FR-141`, `FR-142`, `FR-147` and `FR-148`, and their QSpec `TC-185`
+//! through `TC-187`/`TC-192`/`TC-193`, as the acceptance evidence for this
+//! same scalar/numeric/text/enum/unit/IEEE kernel, and `IT-011` records that
 //! QSpec, not QSL's `spec/`, owns `FR-131` through `FR-153` outright.
 //! Authoring a parallel FR/TC set in this repo's `spec/` for behavior QSpec
 //! already normatively defines would duplicate that ownership rather than
@@ -79,17 +79,24 @@
 //! What was actually missing is narrower than "no requirement": it is that
 //! most of *this crate's own* tests do not yet carry the two-argument
 //! `#[trace("TC-NNN", "FR-NNN-AC-n")]` form naming the QSpec id they verify,
-//! even where the module doc above them already names the owning FR. The
-//! established exception was FR-089-AC-6 (TC-297): the three kernel
-//! population-pair refusal tests in `value`, `equality` and `key`. This PR
-//! adds a second, real slice, each verified to fail under the behavior its
-//! AC names (not tagged because it already passed): `division`'s two tests
-//! against QSpec `FR-147-AC-2`/`FR-147-AC-4` (via central `TC-192`), and
-//! `text`'s two tests against QSpec `FR-141-AC-4` (via central `TC-186`).
-//! Extending this binding to the rest of this crate's ~50 remaining
-//! untagged tests, one AC at a time, is QSL-133's scope, not invented here
-//! -- this PR's job was the decision and a first honest, verified slice of
-//! it, not the full test-matrix execution.
+//! even where the module doc above them already names the owning FR. This is
+//! not the first binding against these QSpec FRs in this repo:
+//! `qsl-semantics/tests/it/integer_division.rs` (`DIV-01` to `DIV-13`)
+//! already traces `FR-147`'s division/modulus law and accounting ACs in
+//! depth, and `tests/it/text_enum_identity.rs` already traces `FR-141`'s
+//! text-profile and enumeration ACs in depth, both against central
+//! `TC-192`/`TC-186`. What is new here is only this crate's own kernel-level
+//! slice: `division`'s `tc_323_division_by_zero_is_undefined` now also
+//! carries `#[trace("TC-192", "FR-147-AC-2")]`, verified to fail (panic on
+//! an unguarded zero divisor) when the zero-divisor check is removed. No
+//! other test in this crate was given a QSpec AC tag in this PR: a test
+//! only earns one where its own assertions, not merely its module doc's
+//! FR citation, actually distinguish the AC's claim from a wrong
+//! implementation (QSL-163 review, H1/H2) -- `division`'s Euclidean-`mod`
+//! test and `text`'s two bound tests do not (a floor-law `mod` and a
+//! byte-counted length both pass them too), so they keep only their local
+//! `TC-3NN` id. Extending real, distinguishing bindings to this crate's
+//! remaining untagged tests is QSL-133's scope, not invented here.
 //!
 //! This crate's ids run `TC-300` to `TC-356`, but that range names 57 ids
 //! for 56 tests: **`TC-343` is retired, not reused.** It named
