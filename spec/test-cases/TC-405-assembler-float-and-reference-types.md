@@ -33,7 +33,7 @@ alias is `v`.
 4. Spine-compile a unit that declares
    `import "test/units" version "2" digest "sha256:…" as u;` (FR-091-AC-24).
 
-Tag the test `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`.
+Tag the tests `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, and step 4's `#[trace("TC-405", "FR-091-AC-24")]`.
 
 ## Expected Results
 

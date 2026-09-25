@@ -2303,18 +2303,48 @@ fn import(identity: &str, version: &str, package: CheckedPackage) -> crate::Impo
     }
 }
 
+/// `mid`-style package: `t` read from [`TEXT`], linked with `imports`.
+fn linked(imports: Vec<crate::Import>) -> CheckedPackage {
+    CheckedPackage::link_with(graph_of(vec![t_read_from_text()]), imports)
+        .expect("the intermediate package links")
+}
+
+/// The closure of `package` as `(identity, version, package_id, path)`.
+fn closure(package: &CheckedPackage) -> Vec<(String, String, PackageId, Vec<String>)> {
+    package
+        .dependency_selections()
+        .iter()
+        .map(|(identity, resolved)| {
+            (
+                identity.clone(),
+                resolved.selection.version.clone(),
+                resolved.selection.package_id,
+                resolved.path.clone(),
+            )
+        })
+        .collect()
+}
+
+fn path(identities: &[&str]) -> Vec<String> {
+    identities
+        .iter()
+        .map(|identity| (*identity).to_owned())
+        .collect()
+}
+
 /// QSL-255 (FR-322 `dependency_selections`, FR-307, ADR-011 §2.4): the E4
 /// closure is written as one `{identity, version, package_id}` entry per
 /// library identity, in ascending UTF-8 byte order, identically in the lock
 /// and the identity preimage. The package reads back Verified through IR's
-/// reader, and the entries enter its `package_id`. A transitive dependency's
-/// own selections join the closure.
+/// reader, and the entries enter its `package_id`. A dependency's own
+/// selections join the closure, through a chain of any depth, each with the
+/// path that reached it.
 #[trace("FR-093-AC-16", "TC-416")]
 #[test]
 fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
     let d = emitted_id(&dependency());
     let unlinked = emit(&CheckedPackage::link(root_graph()));
-    let linked = CheckedPackage::link_with(
+    let linked_root = CheckedPackage::link_with(
         root_graph(),
         vec![
             import("test/units", "2", dependency()),
@@ -2322,10 +2352,10 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
         ],
     )
     .expect("two imports of one package link");
-    assert_eq!(linked.dependencies().keys().collect::<Vec<_>>(), [&d]);
-    let emission = emit(&linked);
+    assert_eq!(linked_root.dependencies().keys().collect::<Vec<_>>(), [&d]);
+    let emission = emit(&linked_root);
     assert!(matches!(read_back(&emission), Read::Verified { .. }));
-    let wire = wire(&emission);
+    let written = wire(&emission);
     let entry = |identity: &str, version: &str| {
         json!({
             "identity": identity,
@@ -2334,33 +2364,104 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
         })
     };
     let expected = json!([entry("test/geometry", "1"), entry("test/units", "2")]);
-    assert_eq!(wire["lock"]["dependency_selections"], expected);
-    assert_eq!(wire["identity_preimage"]["dependency_selections"], expected);
+    assert_eq!(written["lock"]["dependency_selections"], expected);
+    assert_eq!(
+        written["identity_preimage"]["dependency_selections"],
+        expected
+    );
     assert_ne!(emission.package.package_id(), unlinked.package.package_id());
 
-    // Transitive: `mid` imports `test/units`, and the root imports `mid`.
-    let mid = CheckedPackage::link_with(
-        graph_of(vec![t_read_from_text()]),
-        vec![import("test/units", "2", dependency())],
-    )
-    .expect("mid links");
-    let mid_id = emitted_id(&mid);
-    let root = CheckedPackage::link_with(root_graph(), vec![import("test/mid", "1", mid)])
-        .expect("the root links through mid");
+    // A chain four packages deep: root -> b -> c -> units.
+    let c = linked(vec![import("test/units", "2", dependency())]);
+    let c_id = emitted_id(&c);
+    let b = linked(vec![import("test/c", "1", c)]);
+    let b_id = emitted_id(&b);
+    let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", "1", b)])
+        .expect("the root links through b and c");
     assert_eq!(
-        root.dependency_selections()
-            .iter()
-            .map(|(identity, selection)| (identity.as_str(), selection.package_id))
-            .collect::<Vec<_>>(),
-        [("test/mid", mid_id), ("test/units", d)]
+        closure(&root),
+        [
+            ("test/b".to_owned(), "1".to_owned(), b_id, path(&["test/b"])),
+            (
+                "test/c".to_owned(),
+                "1".to_owned(),
+                c_id,
+                path(&["test/b", "test/c"])
+            ),
+            (
+                "test/units".to_owned(),
+                "2".to_owned(),
+                d,
+                path(&["test/b", "test/c", "test/units"])
+            ),
+        ]
     );
+    let emission = emit(&root);
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+    assert_eq!(
+        wire(&emission)["lock"]["dependency_selections"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+}
+
+/// FR-307's diamond rule, admitted side: `test/units` reached by two paths
+/// (root -> units, root -> mid -> units) with one version and `package_id`
+/// unifies to one selection, which keeps the first path.
+#[trace("FR-087-AC-14", "TC-253")]
+#[test]
+fn a_diamond_selecting_one_package_unifies() {
+    let d = emitted_id(&dependency());
+    let mid = linked(vec![import("test/units", "2", dependency())]);
+    let root = CheckedPackage::link_with(
+        root_graph(),
+        vec![
+            import("test/units", "2", dependency()),
+            import("test/mid", "1", mid),
+        ],
+    )
+    .expect("one selection of test/units by two paths unifies");
+    let units = &root.dependency_selections()["test/units"];
+    assert_eq!(units.selection.package_id, d);
+    assert_eq!(units.path, path(&["test/units"]));
+    assert!(matches!(read_back(&emit(&root)), Read::Verified { .. }));
+}
+
+/// FR-322 orders `dependency_selections` by UTF-8 bytes. `test/\u{FF61}`
+/// (UTF-8 `EF BD A1`) is written before `test/\u{1F600}` (UTF-8 `F0 …`),
+/// the reverse of their UTF-16 order (`FF61` after the surrogate `D83D`),
+/// and IR's reader admits that order.
+#[trace("FR-093-AC-16", "TC-416")]
+#[test]
+fn dependency_selections_are_written_in_utf8_byte_order() {
+    let root = CheckedPackage::link_with(
+        root_graph(),
+        vec![
+            import("test/\u{1F600}", "1", dependency()),
+            import("test/\u{FF61}", "1", dependency()),
+        ],
+    )
+    .expect("two identities link");
+    let emission = emit(&root);
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+    let identities: Vec<String> = wire(&emission)["lock"]["dependency_selections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["identity"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(identities, ["test/\u{FF61}", "test/\u{1F600}"]);
 }
 
 /// ADR-011 §4 dependency binding at E4 (QSL-255): a dependency whose
 /// recomputed `package_id` is not the one its import records refuses
-/// `stale_dependency` naming both, and FR-307's diamond rule refuses two
-/// selections of one identity at different versions as
-/// `invalid_package`/`conflicting-definition`. Neither yields a package.
+/// `stale_dependency` naming both. FR-307's diamond rule refuses two
+/// selections of one identity at different versions, or at one version with
+/// different `package_id`s, as `invalid_package`/`conflicting-definition`
+/// listing both dependency paths. An empty identity or version, and a
+/// dependency that does not emit, refuse too. None yields a package.
 #[trace("FR-087-AC-14", "TC-253")]
 #[test]
 fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
@@ -2385,11 +2486,8 @@ fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
             if expected == other && recompiled == d
     ));
 
-    let mid = CheckedPackage::link_with(
-        graph_of(vec![t_read_from_text()]),
-        vec![import("test/units", "2", dependency())],
-    )
-    .expect("mid links");
+    // Versions differ: root -> units@3 against root -> mid -> units@2.
+    let mid = linked(vec![import("test/units", "2", dependency())]);
     let diamond = CheckedPackage::link_with(
         root_graph(),
         vec![
@@ -2400,9 +2498,77 @@ fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
     .expect_err("units 3 and units 2 do not unify");
     assert_eq!(diamond.code(), Code::InvalidPackage);
     assert_eq!(diamond.cause(), Some("conflicting-definition"));
-    assert!(matches!(
-        &diamond,
-        crate::LinkRefusal::ConflictingDefinition { identity, selections }
-            if identity == "test/units" && selections[0].version == "3" && selections[1].version == "2"
-    ));
+    let crate::LinkRefusal::ConflictingDefinition {
+        identity,
+        selections,
+    } = &diamond
+    else {
+        panic!("expected ConflictingDefinition, got {diamond:?}");
+    };
+    assert_eq!(identity, "test/units");
+    assert_eq!(selections[0].selection.version, "3");
+    assert_eq!(selections[0].path, path(&["test/units"]));
+    assert_eq!(selections[1].selection.version, "2");
+    assert_eq!(selections[1].path, path(&["test/mid", "test/units"]));
+
+    // One version, two `package_id`s: mid's units@2 is `dependency()`, and
+    // mid2's units@2 is another package.
+    let another = linked(vec![import("test/x", "1", dependency())]);
+    let another_id = emitted_id(&another);
+    assert_ne!(another_id, d);
+    let mid = linked(vec![import("test/units", "2", dependency())]);
+    let mid2 = linked(vec![import("test/units", "2", another)]);
+    let split = CheckedPackage::link_with(
+        root_graph(),
+        vec![import("test/mid", "1", mid), import("test/mid2", "1", mid2)],
+    )
+    .expect_err("one version at two package_ids does not unify");
+    let crate::LinkRefusal::ConflictingDefinition {
+        identity,
+        selections,
+    } = &split
+    else {
+        panic!("expected ConflictingDefinition, got {split:?}");
+    };
+    assert_eq!(identity, "test/units");
+    assert_eq!(selections[0].selection.package_id, d);
+    assert_eq!(selections[0].path, path(&["test/mid", "test/units"]));
+    assert_eq!(selections[1].selection.package_id, another_id);
+    assert_eq!(selections[1].path, path(&["test/mid2", "test/units"]));
+
+    // An empty identity or version.
+    for (identity, version) in [("", "1"), ("test/units", "")] {
+        let empty =
+            CheckedPackage::link_with(root_graph(), vec![import(identity, version, dependency())])
+                .expect_err("FR-322 admits no empty identity or version");
+        assert!(
+            matches!(empty, crate::LinkRefusal::EmptySelection { .. }),
+            "{empty:?}"
+        );
+        assert_eq!(empty.code(), Code::InvalidPackage);
+    }
+
+    // A dependency whose occurrences have no source region does not emit,
+    // so its `package_id` cannot be recomputed.
+    let unplaced = CheckedPackage::link_with(
+        root_graph(),
+        vec![crate::Import {
+            identity: "test/units".to_owned(),
+            version: "2".to_owned(),
+            package_id: d,
+            package: package(vec![t()]),
+        }],
+    )
+    .expect_err("an unplaceable dependency does not emit");
+    assert!(
+        matches!(
+            &unplaced,
+            crate::LinkRefusal::DependencyEmission {
+                refusal: Some(EmitRefusal::UnlocatedOccurrence { .. }),
+                ..
+            }
+        ),
+        "{unplaced:?}"
+    );
+    assert_eq!(unplaced.code(), Code::UnsupportedProjection);
 }

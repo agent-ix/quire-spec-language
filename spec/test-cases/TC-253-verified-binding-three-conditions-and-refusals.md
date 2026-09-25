@@ -73,11 +73,6 @@ FR-087-AC-3.
 
 ## Expected Results
 
-- Step 10: the first link refuses `DependencyIdentityMismatch`
-  (`stale_dependency`) naming the recorded and the recomputed `package_id`;
-  the second refuses `invalid_package`/`conflicting-definition` naming both
-  selections of `test/units`. Neither yields a package.
-
 - Step 1: the valid input is admitted as a `VerifiedPackage`.
 - Steps 2-4: each of the three conditions, failed independently, produces a
   named refusal and no `VerifiedPackage`; an admission (partial or full)
@@ -93,3 +88,8 @@ FR-087-AC-3.
   admitted, at least one of them with a non-ascending `identity_projection`;
   each repeated node id refuses as `DuplicateNode`, naming the repeated id
   and the index of its second occurrence.
+- Step 10: the first link refuses `DependencyIdentityMismatch`
+  (`stale_dependency`) naming the recorded and the recomputed `package_id`;
+  the second refuses `invalid_package`/`conflicting-definition` naming both
+  selections of `test/units` and both dependency paths (`test/units` and
+  `test/mid -> test/units`). Neither yields a package.

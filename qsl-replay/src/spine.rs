@@ -460,6 +460,7 @@ mod tests {
         else {
             panic!("expected an assembly refusal, got {refusal:?}");
         };
+        assert_eq!(assembly.errors.len(), 1, "{assembly:?}");
         assert_eq!(
             assembly.errors[0].cause,
             qsl_semantics::check::AssemblyCause::UnsuppliedImport {

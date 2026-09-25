@@ -53,8 +53,9 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-CON-2.
    compare the emitted node with the fixture node on the members FR-093-AC-13
    names.
 8. Link a graph with imports `test/units` `2` and `test/geometry` `1` of one
-   package, emit it and read it back through QSL's I2 read; link a package
-   `mid` importing `test/units` and a root importing `mid`. Under
+   package, emit it and read it back through QSL's I2 read; link a chain
+   root -> `test/b` -> `test/c` -> `test/units`; link imports
+   `test/\u{1F600}` and `test/\u{FF61}`. Under
    `make conformance`, read QSpec's `dependency-selection-vectors.json`
    (FR-093-AC-16).
 
@@ -81,7 +82,9 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 - Step 8: the lock and the identity preimage carry the same two entries,
   `test/geometry` then `test/units`, each with the package's `package_id`;
   the package reads back Verified and its `package_id` differs from the
-  unlinked graph's; the root's closure is `test/mid` then `test/units`. The
+  unlinked graph's; the chain's closure is `test/b`, `test/c`, `test/units`,
+  with paths `[b]`, `[b, c]` and `[b, c, units]`; `test/\u{FF61}` is
+  written before `test/\u{1F600}` and reads back Verified. The
   vectors' `package_id` recomputes, each entry mutation refuses at its entry
   and each order vector gets its recorded outcome and locus.
 

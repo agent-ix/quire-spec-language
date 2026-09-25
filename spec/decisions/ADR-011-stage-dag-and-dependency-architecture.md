@@ -501,7 +501,7 @@ A caller-supplied lock file never enters `package_id`.
 | `model_selections` | The source header's `model` declarations, matched to the domain packages admitted at I1, each by identity, version and `sha256-jcs` digest. Spine `compile` (§5) runs I1 over the unit's `model` declarations (amended 2026-09-25, QSL-249). |
 | `sources` | `RawSourceRef` (`quire.source.bytes/v1`) over the bytes E1 read |
 | `required_features` | §2.2 E4: `["quire.value.complete/v1"]` for a function-only `Value` package |
-| `dependency_selections` | Each dependency's `package_id` |
+| `dependency_selections` | One `{identity, version, package_id}` entry per library identity of the resolved closure: the identity and version each import names, and the dependency's own `package_id` |
 
 **Amended (2026-09-24, QSL-6).** The emitter takes the edition and
 definition selections (identity, revision and digest) from QSL's
@@ -1212,7 +1212,9 @@ To QSpec (wire owner):
   shape go with it (ADR-013 QC-24).
 - The `dependency_selections` item type in
   `proposals/checked-package-v2/schema.json`: the dependency's `package_id`,
-  not a `Selection` (§2.4).
+  not a `Selection` (§2.4). Resolved: QSpec STD-105 types it as
+  `DependencySelection {identity, version, package_id}`, and IR-287 reads it
+  as `CheckedDependencySelection`.
 - An AD-016 amendment: arrow 1 and the Shared-type rows name
   `capability_report` as the carrier of per-item requirements, while FR-322
   defines it as a feature-level report (§2.2 E3, E4). The wire that carries
@@ -1317,10 +1319,13 @@ sections it names.
   tooling with no downstream artifact, the native lane is retiring, and
   native `run` does not need formatted input. The exception covers `format`
   only; native `run` stays until M-6c (OQ-1).
-- **OQ-5: `dependency_selections`.** Each entry holds the dependency's
-  `package_id`; QSpec's schema typing is a QSpec defect. Until QSpec corrects
-  it, `dependency_selections` is `[]` and an `import` is refused (§2.4). It is
-  not a prerequisite of the lock-evidence work.
+- **OQ-5: `dependency_selections`.** Each entry is
+  `{identity, version, package_id}`, one per library identity of the
+  resolved closure, identical in the lock and the identity preimage (QSpec
+  STD-105, IR-287). E4 fills it and the emitter writes it (§2.4). An
+  `import` is refused until spine `compile` and `replay` take a dependency
+  input (§2.4; Remaining work: QSL-255). It is not a prerequisite of the
+  lock-evidence work.
 - **OQ-6: edition and definition digests.** The edition is `ix:native` /
   `1-draft.2` per QSpec's `complete-value-lock.json`; the fixtures'
   `quire-edition` edition is a placeholder. **Amended (2026-09-24, QSL-6):**

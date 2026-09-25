@@ -136,7 +136,19 @@ pub struct CheckedPackage {
     /// one selection per library identity, over the direct imports and every
     /// dependency's own closure, keyed by the identity string an import
     /// names. `String`'s order is UTF-8 byte order, the order FR-322 writes.
-    selections: BTreeMap<String, Selection>,
+    selections: BTreeMap<String, ResolvedDependency>,
+}
+
+/// One library identity's selection in a package's resolved closure, and the
+/// first dependency path that reached it (FR-307).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedDependency {
+    /// The selected version and `package_id`.
+    pub selection: Selection,
+    /// The library identities from the linking package's direct import down
+    /// to this one, this one last. The linking package itself is the
+    /// implicit first step of every path.
+    pub path: Vec<String>,
 }
 
 /// One import the E4 link step binds (ADR-011 §4 dependency binding): the
@@ -185,13 +197,17 @@ pub enum LinkRefusal {
     },
     /// FR-307 diamond rule: two dependency paths select one library
     /// identity with a different version or `package_id`
-    /// (`invalid_package`/`conflicting-definition`).
-    #[error("invalid_package/conflicting-definition: two selections of {identity}")]
+    /// (`invalid_package`/`conflicting-definition`), listing both paths.
+    #[error(
+        "invalid_package/conflicting-definition: {} and {} select {identity} differently",
+        .selections[0].path.join(" -> "),
+        .selections[1].path.join(" -> ")
+    )]
     ConflictingDefinition {
         /// The library identity.
         identity: String,
-        /// The earlier selection, then the conflicting one.
-        selections: Box<[Selection; 2]>,
+        /// The earlier selection and its path, then the conflicting one.
+        selections: Box<[ResolvedDependency; 2]>,
     },
     /// A dependency's `package_id` could not be recomputed: its emission
     /// refused, or would omit nodes (ADR-011 §2.3 partial output).
@@ -306,7 +322,7 @@ impl CheckedPackage {
     /// A refusal yields no package.
     pub fn link_with(graph: CheckedGraph, imports: Vec<Import>) -> Result<Self, LinkRefusal> {
         let mut dependencies = BTreeMap::new();
-        let mut selections: BTreeMap<String, Selection> = BTreeMap::new();
+        let mut selections: BTreeMap<String, ResolvedDependency> = BTreeMap::new();
         for import in imports {
             if import.identity.is_empty() || import.version.is_empty() {
                 return Err(LinkRefusal::EmptySelection {
@@ -322,20 +338,35 @@ impl CheckedPackage {
                     recompiled,
                 });
             }
-            let direct = (
-                import.identity,
-                Selection {
+            let direct = ResolvedDependency {
+                selection: Selection {
                     version: import.version,
                     package_id: recompiled,
                 },
-            );
+                path: vec![import.identity.clone()],
+            };
             let transitive = import
                 .package
                 .selections
                 .iter()
-                .map(|(identity, selection)| (identity.clone(), selection.clone()));
-            for (identity, selection) in std::iter::once(direct).chain(transitive) {
-                unify(&mut selections, identity, selection)?;
+                .map(|(identity, resolved)| {
+                    let mut path = Vec::with_capacity(resolved.path.len().saturating_add(1));
+                    path.push(import.identity.clone());
+                    path.extend(resolved.path.iter().cloned());
+                    (
+                        identity.clone(),
+                        ResolvedDependency {
+                            selection: resolved.selection.clone(),
+                            path,
+                        },
+                    )
+                });
+            let entries: Vec<(String, ResolvedDependency)> =
+                std::iter::once((import.identity.clone(), direct))
+                    .chain(transitive)
+                    .collect();
+            for (identity, resolved) in entries {
+                unify(&mut selections, identity, resolved)?;
             }
             dependencies.insert(recompiled, import.package);
         }
@@ -362,8 +393,8 @@ impl CheckedPackage {
 
     /// The resolved library closure: one selection per library identity, in
     /// ascending UTF-8 byte order of the identity (FR-322
-    /// `dependency_selections`).
-    pub fn dependency_selections(&self) -> &BTreeMap<String, Selection> {
+    /// `dependency_selections`), each with the first path that reached it.
+    pub fn dependency_selections(&self) -> &BTreeMap<String, ResolvedDependency> {
         &self.selections
     }
 }
@@ -384,21 +415,21 @@ fn recomputed_package_id(import: &Import) -> Result<PackageId, LinkRefusal> {
     Ok(emission.package().package_id())
 }
 
-/// Add `selection` of `identity` to `selections`, unifying an equal one
-/// (FR-307 diamond rule).
+/// Add `resolved` of `identity` to `selections`, unifying an equal
+/// selection reached by another path (FR-307 diamond rule).
 fn unify(
-    selections: &mut BTreeMap<String, Selection>,
+    selections: &mut BTreeMap<String, ResolvedDependency>,
     identity: String,
-    selection: Selection,
+    resolved: ResolvedDependency,
 ) -> Result<(), LinkRefusal> {
     match selections.get(&identity) {
-        Some(existing) if *existing == selection => Ok(()),
+        Some(existing) if existing.selection == resolved.selection => Ok(()),
         Some(existing) => Err(LinkRefusal::ConflictingDefinition {
-            selections: Box::new([existing.clone(), selection]),
+            selections: Box::new([existing.clone(), resolved]),
             identity,
         }),
         None => {
-            selections.insert(identity, selection);
+            selections.insert(identity, resolved);
             Ok(())
         }
     }

@@ -699,10 +699,10 @@ fn dependency_selections(package: &CheckedPackage) -> Vec<CheckedDependencySelec
     package
         .dependency_selections()
         .iter()
-        .map(|(identity, selection)| CheckedDependencySelection {
+        .map(|(identity, resolved)| CheckedDependencySelection {
             identity: identity.as_str().into(),
-            version: selection.version.as_str().into(),
-            package_id: semantic_id(selection.package_id),
+            version: resolved.selection.version.as_str().into(),
+            package_id: semantic_id(resolved.selection.package_id),
         })
         .collect()
 }
