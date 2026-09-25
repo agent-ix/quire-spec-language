@@ -12,7 +12,8 @@
 //! here yet.
 
 use crate::composed_domain_models::{
-    admitted_with_bytes, admitted_with_populations, architecture_bundle, hex, record_value_type,
+    admitted_with, admitted_with_bytes, admitted_with_populations, architecture_bundle, hex,
+    record_value_type,
 };
 use crate::support::native_protocol::{Inputs, Unit};
 
@@ -801,4 +802,163 @@ fn a_record_value_type_channel_key_refuses_emission() {
             }
         },
     );
+}
+
+/// `BigPump`, an object type whose only supertype is `Pump`, beside the
+/// populations `populations`, as the inputs of a predicate over a `BigPump`.
+fn big_pump_inputs(populations: &[(&str, &[&str])]) -> Inputs {
+    let bundle = architecture_bundle(|_| {});
+    let (package, bytes) = admitted_with(bundle.path(), &[("BigPump", "Pump")], populations);
+    Inputs::with_domain(
+        &pump_units(
+            "predicate BigPumpUp using S (pump: D::BigPump): Boolean { true }",
+            &["BigPumpUp"],
+        ),
+        package,
+        bytes,
+    )
+}
+
+/// FR-153 coverage through a supertype: `Plant` lists only `Pump`, and
+/// `BigPump` conforms to `Pump`, so `Plant` covers `BigPump`. The model
+/// exports `[BigPump, Plant]`, a declaration over a `BigPump` carries exactly
+/// that pair, and it reads back. When the only population lists `Sys`,
+/// neither `BigPump` nor its supertype is a member, and emission refuses.
+#[trace("TC-121", "FR-042-AC-13")]
+#[test]
+fn a_domain_object_is_covered_through_its_supertype_only() {
+    let inputs = big_pump_inputs(&[("Plant", &["Pump"])]);
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("a subtype of a member type emits");
+            let package = admitted.package();
+            let (_, domain) = domain_model(&package.models);
+            let populations: Vec<_> = domain
+                .exports
+                .iter()
+                .filter(|export| export.kind == w::ExportKind::Population)
+                .map(|export| export.path.clone())
+                .collect();
+            assert_eq!(
+                populations,
+                [path(&["BigPump", "Plant"]), path(&["Pump", "Plant"])]
+            );
+            let pairs = population_pairs(declaration(package, "BigPumpUp"));
+            assert_eq!(pairs.len(), 2, "{pairs:?}");
+            for binding in pairs {
+                assert_eq!(
+                    export(
+                        package,
+                        binding.model.0.as_ref().expect("population export")
+                    ),
+                    (w::ExportKind::Population, path(&["BigPump", "Plant"]))
+                );
+            }
+            let emitted = native::emit(&admitted, Limits::default())
+                .into_result()
+                .expect("emits");
+            let read = inputs.read(proofs, &emitted);
+            assert_eq!(read.result().expect("reads back").package(), package);
+        },
+    );
+    let uncovered = big_pump_inputs(&[("Yard", &["Sys"])]);
+    uncovered.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            match native::admit(proofs, selected, Limits::default()).result() {
+                Ok(_) => panic!("an uncovered subtype emitted"),
+                Err(error) => assert_eq!(error, &Error::Unsupported(Unsupported::Export)),
+            }
+        },
+    );
+}
+
+/// `package` with `declaration`'s population and closure requirements
+/// removed, re-encoded. They are the declaration's last requirements and no
+/// other requirement names them, so no other index moves.
+fn without_population_pairs(package: &w::Package, name: &str) -> artifact::Candidate {
+    let mut mutated = package.clone();
+    let declaration = mutated
+        .declarations
+        .iter_mut()
+        .find(|declaration| declaration.name == name)
+        .expect("declared");
+    let kept = declaration
+        .bindings
+        .iter()
+        .position(|binding| {
+            matches!(
+                binding.kind,
+                w::BindingKind::Population | w::BindingKind::Closure
+            )
+        })
+        .expect("a population pair");
+    assert!(declaration.bindings[kept..].iter().all(|binding| matches!(
+        binding.kind,
+        w::BindingKind::Population | w::BindingKind::Closure
+    )));
+    declaration.bindings.truncate(kept);
+    artifact::encode_candidate(&mutated, Limits::default())
+        .into_result()
+        .expect("the mutated package encodes")
+}
+
+/// Emits `name` over a `Pump` input (`PumpUp`) or a `Fleet` record reaching
+/// `Pump` through a field (`FleetOk`), under `PLANT`, drops its population
+/// pair and requires the reader to refuse as `Invalid::Binding`.
+fn dropped_pair_refuses(name: &'static str) {
+    let bundle = architecture_bundle(|root| {
+        record_value_type(
+            root,
+            "Fleet",
+            &[("ok", "Boolean", "1"), ("pumps", "Pump", "0..*")],
+        );
+    });
+    let (package, bytes) = admitted_with_populations(bundle.path(), PLANT);
+    let inputs = Inputs::with_domain(
+        &pump_units(
+            "predicate PumpUp using S (pump: D::Pump): Boolean { pump.id }\n\
+             predicate FleetOk using S (fleet: D::Fleet): Boolean { fleet.ok }",
+            &["PumpUp", "FleetOk"],
+        ),
+        package,
+        bytes,
+    );
+    inputs.with_proofs(
+        TypeLimits::default(),
+        proofs::ProofLimits::default(),
+        |proofs, selected| {
+            discharged(proofs);
+            let admitted = native::admit(proofs, selected, Limits::default())
+                .into_result()
+                .expect("emits");
+            let candidate = without_population_pairs(admitted.package(), name);
+            refused(
+                &inputs.read_bytes(proofs, candidate.bytes(), candidate.digest()),
+                Error::Invalid(Invalid::Binding),
+            );
+        },
+    );
+}
+
+/// `PumpUp` over a `Pump`, with its population pair dropped, refuses.
+#[trace("TC-121", "FR-042-AC-13")]
+#[test]
+fn a_dropped_domain_object_population_pair_refuses() {
+    dropped_pair_refuses("PumpUp");
+}
+
+/// `FleetOk` over a `Fleet` record reaching `Pump`, with `Pump`'s population
+/// pair dropped, refuses.
+#[trace("TC-121", "FR-042-AC-13")]
+#[test]
+fn a_dropped_reached_object_population_pair_refuses() {
+    dropped_pair_refuses("FleetOk");
 }

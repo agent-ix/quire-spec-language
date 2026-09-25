@@ -170,11 +170,53 @@ pub(crate) fn admitted_with_populations(
     bundle: &Path,
     populations: &[(&str, &[&str])],
 ) -> (AdmittedPackage, Vec<u8>) {
+    admitted_with(bundle, &[], populations)
+}
+
+/// [`admitted_with_populations`], with one object type added per
+/// `(subtype, supertype)` of `subtypes`: a copy of the lifted `Sys` type
+/// node under the subtype's identity and a generated origin, with no field
+/// of its own, the supertype as its only supertype and the supertype's `id`
+/// as its identity field. A `specializes` edge in the bundle would lift to an
+/// inline relationship FCD identifies outside `<owner>/<name>` (PLAT-1064,
+/// see the module docs), so the subtype is added to the lifted document.
+pub(crate) fn admitted_with(
+    bundle: &Path,
+    subtypes: &[(&str, &str)],
+    populations: &[(&str, &[&str])],
+) -> (AdmittedPackage, Vec<u8>) {
     let bytes = lift(bundle);
-    if populations.is_empty() {
+    if populations.is_empty() && subtypes.is_empty() {
         return admit_bytes(bytes);
     }
     let mut document: serde_json::Value = serde_json::from_slice(&bytes).expect("lifted JSON");
+    let types = document["types"].as_array_mut().expect("types array");
+    let template = types
+        .iter()
+        .find(|node| node["identity"] == format!("ix://{PACKAGE}/Sys"))
+        .expect("the lift declares Sys")
+        .clone();
+    for (subtype, supertype) in subtypes {
+        let mut node = template.clone();
+        node["identity"] = format!("ix://{PACKAGE}/{subtype}").into();
+        node["displayName"] = (*subtype).into();
+        node["fields"] = serde_json::json!([]);
+        // Its identity is the one it inherits.
+        node["identityFields"] = serde_json::json!([format!("ix://{PACKAGE}/{supertype}/id")]);
+        node["origin"] = serde_json::json!({"generated": {
+            "generatorIdentity": format!("ix://{PACKAGE}/{subtype}"),
+            "generatorVersion": "1.0.0",
+            "inputIdentities": [format!("ix://{PACKAGE}/{subtype}")],
+        }});
+        node["supertypes"] = serde_json::json!([format!("ix://{PACKAGE}/{supertype}")]);
+        types.push(node);
+    }
+    types.sort_by(|left, right| left["identity"].as_str().cmp(&right["identity"].as_str()));
+    if populations.is_empty() {
+        let limits = quire_canonical::Limits::new(1 << 24, quire_canonical::Limits::MAX_DEPTH)
+            .expect("limits");
+        return admit_bytes(quire_canonical::to_vec(&document, limits).expect("RFC 8785 bytes"));
+    }
     let constructs = document["constructs"]
         .as_array_mut()
         .expect("constructs array");

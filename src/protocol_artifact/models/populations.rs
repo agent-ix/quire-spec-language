@@ -174,7 +174,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                 (w::BindingKind::Population, None) => return Err(Error::Invalid(Invalid::Binding)),
                 (w::BindingKind::Closure, Some(export)) => matches!(
                     target(self.views, export, work)?.1,
-                    Target::Population(_) | Target::Domain(DomainTarget::Population(..))
+                    Target::Population(_) | Target::Domain(DomainTarget::Population(_))
                 )
                 .then_some(export),
                 _ => None,
@@ -183,13 +183,12 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             work.locus = Some(binding.locus.clone());
             let object_name = match target(self.views, export, work)?.1 {
                 Target::Population(role) => Population::Native(role),
-                Target::Domain(DomainTarget::Population(object, declaration)) => {
-                    // FR-153: the input binds the one declaration covering
-                    // the object type.
-                    let covering = crate::protocol_artifact::domain::population(&object, work)?;
-                    if covering.key != declaration.key {
-                        return Err(Error::Invalid(Invalid::Binding));
-                    }
+                // The model's exports hold a population export only for a
+                // declaration covering the object type, so a declared export
+                // already names a covering declaration. FR-153: an object
+                // type more than one declaration covers binds none of them.
+                Target::Domain(DomainTarget::Population(object)) => {
+                    crate::protocol_artifact::domain::population(&object, work)?;
                     Population::Domain(object)
                 }
                 _ => return Err(Error::Invalid(Invalid::Binding)),

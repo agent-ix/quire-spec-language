@@ -295,7 +295,11 @@ observations belong only to the later consumer fixture.
     changed package digest, an undeclared population or operation export, a
     population pair keyed to `Sys` and a precondition context of `Sys` each to
     refuse, and a `Pump` covered by no population declaration, or by two, to
-    refuse emission as `Unsupported::Export`.
+    refuse emission as `Unsupported::Export`. Drop the population pair of a
+    `Pump` input, and of a record reaching `Pump` through a field, and require
+    each to refuse as `Invalid::Binding`. Add `BigPump`, whose only supertype
+    is `Pump`: a population listing `Pump` covers it, and one listing only
+    `Sys` does not, refusing emission.
 
 ## Expected Results
 

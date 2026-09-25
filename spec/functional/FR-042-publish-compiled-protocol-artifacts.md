@@ -295,15 +295,19 @@ the domain object type in place of the object role and the one
 [FR-153](ix://agent-ix/quire-specification/FR-153) population declaration
 covering that type in place of the universe: its `population` export is
 `[object artifact id, population artifact id]` of the domain-package `Model`.
-With no covering declaration, or more than one, emission SHALL refuse as
-`Unsupported::Export`. A domain operation SHALL be exported as a native model
+A declaration covers an object type that is one of its member types or
+conforms to one through its declared supertypes; an Interface-typed input is
+therefore covered only when the Interface or one of its supertypes is a member
+type. With no covering declaration, or more than one, emission SHALL refuse as
+`Unsupported::Export`, and the reader SHALL refuse the same way. A domain operation SHALL be exported as a native model
 operation is, keyed by its [FR-154](ix://agent-ix/quire-specification/FR-154)
 member key, with its owning object type as its context; a pre- or
 postcondition of a domain operation executes at the anchor named by the
 operation's member name. The reader SHALL refuse
-a population pair keyed to another object type or declaration as
-`Invalid::Binding`, and an operation context other than its owner as
-`Invalid::Type`.
+a missing, surplus or mis-keyed population pair as `Invalid::Binding`, a pair
+naming a declaration that does not cover its object type as `Invalid::Model`
+(the `Model` declares no such export), and an operation context other than its
+owner as `Invalid::Type`.
 
 The artifact SHALL preserve effect-before-registration, separate registration
 and activation captures, bounded retries, commit restrictions and the exact

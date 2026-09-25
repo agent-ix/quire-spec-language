@@ -51,9 +51,9 @@ pub(super) enum DomainTarget<'a> {
     Field(DomainType<'a>, &'a str),
     /// An operation of an object type or Interface, by its owning type.
     Operation(DomainType<'a>),
-    /// The population input of an object type: the object type and the
-    /// FR-153 population declaration covering it.
-    Population(DomainType<'a>, Declaration<'a>),
+    /// The population input of an object type, under an FR-153 population
+    /// declaration covering it.
+    Population(DomainType<'a>),
 }
 
 /// One export: its kind, path and target, ascending by `(kind, path)`.
@@ -138,10 +138,7 @@ pub(super) fn exports<'a>(
                                 object.artifact_id(),
                                 name,
                             ),
-                            (
-                                w::ExportKind::Population,
-                                DomainTarget::Population(object, declaration),
-                            ),
+                            (w::ExportKind::Population, DomainTarget::Population(object)),
                         )
                         .is_some()
                     {
@@ -333,6 +330,8 @@ pub(super) fn reached_objects<'a>(
         if ty.is_object() {
             reached.push(ty);
         }
+        // Own fields only, as `DomainType::field` reads them; inherited field
+        // access would make this walk follow the supertypes' fields too.
         for declaration in ty.package.declarations() {
             work.visit()?;
             let DomainPackageRecord::FieldMember(field) = declaration.record else {

@@ -3078,7 +3078,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // `references`. QSL-64's domain-package `Model` paragraphs in that
             // document (the `Model`, then its populations and operations)
             // move `byte_work` by their length.
-            (4_822, 2_581, 1_173_298, 85_376)
+            (4_822, 2_581, 1_173_542, 85_376)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),

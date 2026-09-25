@@ -159,9 +159,12 @@ domain type reaches: the type itself when it is an object type or Interface,
 and every object type reached through its fields' declared value types,
 whatever their multiplicity. The requirement names the one population
 declaration covering the object type; with none, or more than one, emission
-refuses as `Unsupported::Export`. The reader requires exactly that pair set and
-that covering declaration, refusing a missing, surplus or mis-keyed pair as
-`Invalid::Binding`. A domain operation is exported like a native model
+refuses as `Unsupported::Export`. The reader requires exactly that pair set,
+refusing a missing, surplus or mis-keyed pair as `Invalid::Binding`. A
+population export exists only for a covering declaration, so a pair naming any
+other declaration names an undeclared export and refuses as `Invalid::Model`,
+and a pair for an object type more than one declaration covers refuses as
+`Unsupported::Export`, as emission does. A domain operation is exported like a native model
 operation: an attempt, compensation or operation clause names its `operation`
 export, keyed by the FR-154 member key `<owner>/<name>`, and its context is
 the owning object type's `object` export in the same model; the reader refuses
