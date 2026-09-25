@@ -7,6 +7,8 @@ relationships:
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-080
     type: verifies
+  - target: ix://agent-ix/quire-specification/FR-290
+    type: verifies
 ---
 # TC-194: Registry candidate sets are invariant under registration-order permutation
 
@@ -17,6 +19,20 @@ registry built by registering that set in any order is equal to every other
 such registry, and computing candidate sets against each yields identical
 sets in identical order for every item in a fixture item set. Scope:
 FR-075-AC-2, FR-080-AC-1.
+
+Extended to cover FR-075-AC-4 and FR-075-AC-7 (quire-specification
+FR-290-AC-9, FR-290-AC-10): the fixed descriptor set is not required to be
+free of repeats or conflicts. A multiset that includes an identical repeat
+of one identity's descriptor, and a second identity with two conflicting
+descriptors, is built under every sampled order; the resulting registries,
+registration-refusal lists (`Registry::refusals`, in reported order) and
+candidate sets must all agree, exactly as they do for a conflict-free set.
+The registry's own definition (a `BTreeMap` of held descriptors plus a
+`BTreeMap` of conflicted identities' recorded digests) is a function of the
+admitted-registration set alone, so this is the same order-independence
+property FR-075-AC-2 already states, applied to a multiset that exercises
+FR-290's idempotent-repeat and conflict rules as well as its plain
+one-registration-per-identity case.
 
 This is the centerpiece non-vacuous test named by the ticket. Catches an
 implementation that stores registrations in an insertion-ordered `Vec` and
@@ -55,6 +71,11 @@ implementation that happens to pass on a simple forward/reverse check.
    implementation that appends registrations to a `Vec` and returns
    candidates in that `Vec`'s iteration order without sorting by
    `(identity, manifest digest)`.
+7. Construct a second descriptor multiset that repeats one identity's
+   descriptor identically and gives a second identity two conflicting
+   descriptors (distinct manifest digests). Repeat steps 3-5 against it,
+   additionally comparing every sampled ordering's registration-refusal list
+   (in reported order) against the first ordering's.
 
 ## Expected Results
 
@@ -67,3 +88,9 @@ Step 6: the mutant implementation produces at least one item whose candidate
 order differs between two sampled permutations, and the property test
 reports a failure on that permutation, demonstrating the test is sensitive
 to order-dependent candidate computation rather than vacuously passing.
+
+Step 7: the repeat contributes no refusal and its identity is held once; the
+conflicting identity contributes no candidate, is unregistered, and its two
+refusals appear in every sampled ordering's refusal list, identically
+ordered. The registry, its refusals and its candidate sets agree across
+every sampled ordering, exactly as in steps 4-5.

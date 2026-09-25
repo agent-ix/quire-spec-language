@@ -46,7 +46,7 @@
 pub mod request;
 pub mod routing;
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 
 pub use qsl_foundation::digest::{InvalidDigestRecord, ManifestDigest};
@@ -488,53 +488,129 @@ pub enum CandidateOutcome {
 ///
 /// Two registries built from the same set of descriptors, added in any
 /// order, are equal, and compute identical candidate sets, in identical
-/// order, for every item (FR-075-AC-2). This holds because storage is a
-/// `BTreeMap` keyed by `BackendId` (whose iteration and equality are
-/// already order-independent) and each descriptor's `advertises` set is a
-/// `HashSet` (also order-independent); candidate output is explicitly
-/// sorted (see [`Registry::candidates`]).
+/// order, for every item (FR-075-AC-2, extended by FR-290-AC-9/AC-10 to
+/// identical-repeat and conflicting registrations of one identity). This
+/// holds because `held` is a `BTreeMap` keyed by `BackendId` (whose
+/// iteration and equality are already order-independent), `conflicts` is a
+/// `BTreeMap` of `BTreeSet`s (a union, so also order-independent), and each
+/// descriptor's `advertises` set is a `HashSet` (also order-independent);
+/// candidate output is explicitly sorted (see [`Registry::candidates`]).
+///
+/// `conflicts` records, per conflicted `BackendId`, every distinct manifest
+/// digest an admitted registration of it has carried (FR-290 "Candidate set
+/// and negotiation"). Once an identity appears here it is permanently
+/// unregistered: `held` never holds that identity again, so `candidates`
+/// reports it as [`CandidateOutcome::UnknownBackend`] for the rest of the
+/// registry's life, independent of any later registration of it (FR-290:
+/// "A registration of an identity that conflicts is refused whenever it
+/// arrives").
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Registry(BTreeMap<BackendId, BackendDescriptor>);
+pub struct Registry {
+    held: BTreeMap<BackendId, BackendDescriptor>,
+    conflicts: BTreeMap<BackendId, BTreeSet<ManifestDigest>>,
+}
 
 impl Registry {
     /// An empty registry.
     pub fn new() -> Self {
-        Self(BTreeMap::new())
+        Self {
+            held: BTreeMap::new(),
+            conflicts: BTreeMap::new(),
+        }
     }
 
-    /// Register one backend.
+    /// Register one backend (FR-290 "Candidate set and negotiation").
     ///
-    /// Refuses a repeated `BackendId` with
-    /// `invalid_capability`/`duplicate-backend`, naming the identity, and
-    /// leaves the existing registration unchanged and in effect
-    /// (FR-075-AC-4). A capability kind outside the FR-290 vocabulary, or a
-    /// mode other than `bounded`/`unbounded`, cannot reach this function at
-    /// all: a [`BackendDescriptor`] holds only typed [`Capability`] and
-    /// [`Mode`] values, and [`BackendDescriptor::admit`] refuses such labels
-    /// before a descriptor exists.
-    pub fn register(&mut self, descriptor: BackendDescriptor) -> Result<(), RegistrationRefusal> {
-        if self.0.contains_key(descriptor.id()) {
-            return Err(RegistrationRefusal {
-                backend: descriptor.backend,
+    /// - When `descriptor`'s identity is already conflicted, this
+    ///   registration is refused on arrival: its manifest digest is added to
+    ///   the identity's recorded conflict digests, and `held` is left
+    ///   untouched (it already holds nothing for this identity).
+    /// - When the identity is held with an equal descriptor (same identity,
+    ///   manifest digest, tool and advertised pairs), the repeat is one
+    ///   registration and is not refused (FR-290-AC-9).
+    /// - When the identity is held with a descriptor that differs in any
+    ///   member, the two conflict: the held registration is withdrawn, both
+    ///   registrations' manifest digests are recorded, and every refusal
+    ///   this call produces is returned (FR-290-AC-10) -- one per distinct
+    ///   digest, since a same-digest conflict (differing only in some other
+    ///   member) has one refusal to report, not two.
+    /// - Otherwise the descriptor is newly held.
+    ///
+    /// A capability kind outside the FR-290 vocabulary, or a mode other than
+    /// `bounded`/`unbounded`, cannot reach this function at all: a
+    /// [`BackendDescriptor`] holds only typed [`Capability`] and [`Mode`]
+    /// values, and [`BackendDescriptor::admit`] refuses such labels before a
+    /// descriptor exists.
+    pub fn register(
+        &mut self,
+        descriptor: BackendDescriptor,
+    ) -> Result<(), Vec<RegistrationRefusal>> {
+        let id = descriptor.id().clone();
+
+        if let Some(digests) = self.conflicts.get_mut(&id) {
+            let digest = descriptor.candidate().manifest_digest();
+            digests.insert(digest);
+            return Err(vec![RegistrationRefusal {
+                backend: Candidate::new(id, digest),
                 cause: RegistrationCause::DuplicateBackend,
-            });
+            }]);
         }
-        self.0.insert(descriptor.id().clone(), descriptor);
-        Ok(())
+
+        match self.held.remove(&id) {
+            None => {
+                self.held.insert(id, descriptor);
+                Ok(())
+            }
+            Some(existing) if existing == descriptor => {
+                self.held.insert(id, existing);
+                Ok(())
+            }
+            Some(existing) => {
+                let mut digests = BTreeSet::new();
+                digests.insert(existing.candidate().manifest_digest());
+                digests.insert(descriptor.candidate().manifest_digest());
+                let mut refusals: Vec<RegistrationRefusal> = digests
+                    .iter()
+                    .map(|&digest| RegistrationRefusal {
+                        backend: Candidate::new(id.clone(), digest),
+                        cause: RegistrationCause::DuplicateBackend,
+                    })
+                    .collect();
+                refusals.sort();
+                self.conflicts.insert(id, digests);
+                Err(refusals)
+            }
+        }
+    }
+
+    /// Every `duplicate-backend` refusal the registry currently holds, one
+    /// per distinct manifest digest recorded against a conflicted identity,
+    /// ordered bytewise by `(identity, manifest digest)` (FR-290 "Candidate
+    /// set and negotiation", FR-290-AC-10). Stable for as long as the
+    /// conflict stands, independent of registration order or of how many
+    /// further registrations of the identity have since arrived.
+    pub fn refusals(&self) -> impl Iterator<Item = RegistrationRefusal> + '_ {
+        self.conflicts.iter().flat_map(|(id, digests)| {
+            digests.iter().map(move |&digest| RegistrationRefusal {
+                backend: Candidate::new(id.clone(), digest),
+                cause: RegistrationCause::DuplicateBackend,
+            })
+        })
     }
 
     /// Every registered descriptor, in registry (identity-sorted) order:
     /// the registry snapshot the FR-331 `manifest` restates, one descriptor
-    /// per registered backend (FR-057 "Stage ownership").
+    /// per registered backend (FR-057 "Stage ownership"). Never includes a
+    /// conflicted identity (FR-290-AC-10).
     pub fn descriptors(&self) -> impl Iterator<Item = &BackendDescriptor> {
-        self.0.values()
+        self.held.values()
     }
 
     /// Every registered backend's identity, in registry (sorted) order.
     /// Not part of candidate computation's own contract; provided for
-    /// diagnostics and tests.
+    /// diagnostics and tests. Never includes a conflicted identity.
     pub fn backends(&self) -> impl Iterator<Item = &BackendId> {
-        self.0.keys()
+        self.held.keys()
     }
 
     /// Compute `kind`'s candidate set (FR-075), naming `named` when the
@@ -544,11 +620,12 @@ impl Registry {
     ///   advertises `kind`, sorted by `(identity, manifest digest)`.
     /// - `named` present and registered: the set is that one backend when
     ///   it advertises `kind`, and empty otherwise.
-    /// - `named` present and unregistered: [`CandidateOutcome::UnknownBackend`],
-    ///   never reported as an empty set (FR-075-AC-3).
+    /// - `named` present and unregistered, including a conflicted identity:
+    ///   [`CandidateOutcome::UnknownBackend`], never reported as an empty
+    ///   set (FR-075-AC-3, FR-290-AC-10).
     pub fn candidates(&self, kind: Capability, named: Option<&BackendId>) -> CandidateOutcome {
         match named {
-            Some(id) => match self.0.get(id) {
+            Some(id) => match self.held.get(id) {
                 None => CandidateOutcome::UnknownBackend(id.clone()),
                 Some(descriptor) => {
                     let candidates = if descriptor.advertises_kind(kind) {
@@ -565,7 +642,7 @@ impl Registry {
             },
             None => {
                 let mut candidates: Vec<Candidate> = self
-                    .0
+                    .held
                     .values()
                     .filter(|descriptor| descriptor.advertises_kind(kind))
                     .map(|descriptor| descriptor.backend.clone())
@@ -619,9 +696,13 @@ mod tests {
         assert!(!backend.advertises_kind(Capability::OperationContract));
     }
 
-    /// ADR-012 §5.2 row: duplicate `BackendId` (FR-075-AC-4).
+    /// FR-075-AC-7 (quire-specification TC-282 DB-01, FR-290-AC-9):
+    /// repeating an identical registration -- same id, manifest digest,
+    /// tool and advertised pairs -- is one registration and is never
+    /// refused.
     #[test]
-    fn duplicate_backend_id_is_refused_and_the_original_stands() {
+    #[trace("TC-446", "FR-075-AC-7")]
+    fn identical_repeat_registration_is_idempotent_and_not_refused() {
         let mut registry = Registry::new();
         registry
             .register(descriptor(
@@ -630,25 +711,65 @@ mod tests {
                 [(Capability::ValueValidity, Mode::Bounded)],
             ))
             .expect("first registration succeeds");
-        let refusal = registry
+        registry
             .register(descriptor(
                 "A",
-                2,
-                [(Capability::OperationContract, Mode::Bounded)],
+                1,
+                [(Capability::ValueValidity, Mode::Bounded)],
             ))
-            .expect_err("duplicate BackendId must be refused");
-        assert_eq!(refusal.identity().as_str(), "A");
-        assert_eq!(
-            refusal.catalog_code().to_string(),
-            "invalid_capability/duplicate-backend"
-        );
-        // The original registration's advertised kinds are unaffected.
+            .expect("an identical repeat is not refused");
+
         let CandidateOutcome::Candidates(set) =
             registry.candidates(Capability::ValueValidity, None)
         else {
             panic!("expected a computed candidate set");
         };
         assert_eq!(set.candidates().len(), 1);
+        assert_eq!(registry.refusals().count(), 0);
+    }
+
+    /// FR-075-AC-4 (quire-specification TC-282 DB-03, FR-290-AC-10): two
+    /// unequal descriptors under one `BackendId` conflict. Every
+    /// registration of that identity is refused, the held registration is
+    /// withdrawn, and the identity becomes unregistered -- under either
+    /// arrival order.
+    #[test]
+    #[trace("TC-196", "FR-075-AC-4")]
+    fn conflicting_descriptors_refuse_both_and_withdraw_the_held_registration() {
+        for reversed in [false, true] {
+            let mut registry = Registry::new();
+            let a1 = descriptor("A", 1, [(Capability::ValueValidity, Mode::Bounded)]);
+            let a2 = descriptor("A", 2, [(Capability::OperationContract, Mode::Bounded)]);
+            let (first, second) = if reversed { (a2, a1) } else { (a1, a2) };
+
+            registry
+                .register(first)
+                .expect("the first registration of a fresh identity succeeds");
+            let refusals = registry
+                .register(second)
+                .expect_err("a conflicting descriptor under one identity refuses both");
+
+            assert_eq!(refusals.len(), 2, "reversed={reversed}");
+            for refusal in &refusals {
+                assert_eq!(refusal.identity().as_str(), "A", "reversed={reversed}");
+                assert_eq!(
+                    refusal.catalog_code().to_string(),
+                    "invalid_capability/duplicate-backend",
+                    "reversed={reversed}"
+                );
+            }
+
+            assert!(
+                registry.descriptors().next().is_none(),
+                "the held registration is withdrawn; reversed={reversed}"
+            );
+            assert_eq!(
+                registry.candidates(Capability::ValueValidity, Some(&BackendId::new("A"))),
+                CandidateOutcome::UnknownBackend(BackendId::new("A")),
+                "reversed={reversed}"
+            );
+            assert_eq!(registry.refusals().count(), 2, "reversed={reversed}");
+        }
     }
 
     /// ADR-012 §5.2 row: an unregistered named `BackendId`.

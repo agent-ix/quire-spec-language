@@ -64,8 +64,10 @@ operational validation remains outside this audit-only plan.
 | TC-193 | Candidate set matches registered backends advertising the requested kind | Unit | P1 | FR-075-AC-1, FR-075-AC-5 | ✅ Passed locally; QSL-46 (PR #305); AC-5's no-second-enum half by inspection |
 | TC-194 | Registry candidate sets are invariant under registration-order permutation | Property | P1 | FR-075-AC-2, FR-080-AC-1 | ✅ Passed locally; QSL-46 (PR #305) |
 | TC-195 | An unregistered named backend yields a distinct unknown-backend marker | Unit | P1 | FR-075-AC-3 | ✅ Passed locally; QSL-46 (PR #305) |
-| TC-196 | A duplicate backend identity registration is refused and the original stands | Unit | P1 | FR-075-AC-4 | ✅ Passed locally; QSL-46 (PR #305) |
+| TC-196 | A conflicting backend identity registration refuses both and withdraws the held registration | Unit | P1 | FR-075-AC-4 | ✅ Passed locally; QSL-46 (PR #305); inverted, QSL-226 item 5 (quire-specification FR-290-AC-10) |
 | TC-433 | A backend member keeps its identity and checks its digest domain first | Unit | P1 | FR-075-AC-6 | ✅ Passed locally; QSL-46 (PR #395), `qsl-route/src/lib.rs` |
+| TC-446 | An identical repeat registration is idempotent | Unit | P1 | FR-075-AC-7 | ✅ Passed locally; QSL-226 item 5 (quire-specification FR-290-AC-9) |
+| TC-447 | Duplicate backend identity registration matches quire-specification TC-282 under every order | Unit | P1 | FR-075-AC-4, FR-075-AC-7 | ✅ Passed locally; QSL-226 item 5 (quire-specification FR-290-AC-9, FR-290-AC-10) |
 | TC-197 | Empty candidate set carries the data an unsupported warning needs | Unit | P1 | FR-076-AC-1, FR-076-AC-2 | ✅ Passed locally; QSL-46 (PR #305), `qsl-route/tests/it/route_registry.rs` |
 | TC-198 | Backend absence never settles as a refusal or a hold at the registry | Unit | P1 | FR-076-AC-3 | ✅ Passed locally; QSL-46 (PR #305), `qsl-route/tests/it/route_registry.rs` |
 | TC-199 | requests::report takes no Backend parameter and has no capability/family disposition | Unit | P1 | FR-077-AC-1, FR-077-AC-2 | ✅ Passed locally; QSL-46 (PR #305), `compile_fail` doctests traced on `FR077Doctests` (`src/linking/composed/requests.rs`) |
