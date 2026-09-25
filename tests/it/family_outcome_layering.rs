@@ -416,13 +416,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         if crate_name == "qsl-eval" {
             // Layer 5 (QSL-183): "4, 3, F, K". The whole shipped table is
             // fixed: the four layer crates and the one third-party crate the
-            // shipped code calls, `thiserror`, for its error types. QSL-248
-            // (G2) deleted the crate's own second `quire.checked-function-
-            // package/v2` producer, its one caller of `serde`/`serde_json`
-            // (the wire structs' derive and JSON codec) and of `qsl-attrs`
-            // (the FR-064 `#[string_edge]` marker on the deleted codec's
-            // version gate, a proc-macro identity transform) -- both leave
-            // this table; `serde_json` remains a test-only dependency below.
+            // shipped code calls, `thiserror`, for its error types.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(

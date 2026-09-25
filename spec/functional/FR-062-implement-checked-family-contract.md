@@ -378,9 +378,10 @@ tags as they exist in the delivered code today:
   probe. Backed by the `make seam-probe` gate (part of `make ci`).
 - FR-062-AC-9: unbacked. `FamilyContract::package` does not exist -- PR
   #262 review findings F1/F2 deleted it as a hook with one real caller
-  (`CheckedPackage::emit_function_package_v2`) that wrote into a scratch
-  buffer it never read back, building its actual output independently
-  through `family::emit_v2` instead; see `contract.rs`'s own doc on
+  (`CheckedPackage::emit_function_package_v2`, itself deleted under
+  QSL-248/G2) that wrote into a scratch buffer it never read back, building
+  its actual output independently through `family::emit_v2` instead; see
+  `contract.rs`'s own doc on
   `FamilyContract` for the fuller reasoning. There is therefore no
   `package` emission to fault-inject partway through, but that is a reason
   the gap is real, not a reason to stop counting it. Owner: QSL-242 (filed

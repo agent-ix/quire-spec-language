@@ -645,21 +645,9 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
     );
 }
 
-// QSL-248 (G2) deleted this crate's second `quire.checked-function-package/
-// v2` producer -- `CheckedPackageEvaluation::emit_function_package_v2`,
-// `family::emit_v2`/`decode_v2` and `family::link_function_identity` -- so
-// `function_identity_survives_reordering_check_linking_and_a_v2_round_trip`
-// (TC-163, FR-065-AC-2), which round-tripped `target`'s identity through
-// that codec under two declaration orderings, no longer has a codec to call
-// from this crate: `qsl_package::emit_checked`'s I2 reader is `pub(crate)`
-// to `qsl-package`, unreachable from here (ADR-011 §6.1's layer-4/layer-5
-// direction). `qsl-package/src/emit/tests.rs`'s
-// `a_function_identity_survives_emission_and_the_i2_read` is FR-065-AC-2's
-// real `emit_checked`/I2 round trip now, under the same two-orderings
-// reordering property this test used to check by hand; `occurrence`'s own
-// direct callers (`qsl-semantics/src/check/mod.rs`,
-// `qsl-package/src/emit/tests.rs`) already exercise the declaration-
-// occurrence lookup this test's middle section gave a caller to.
+// QSL-248 (G2) deleted this crate's second v2 producer and its round-trip
+// test here; FR-065-AC-2 is now backed by `qsl-package/src/emit/tests.rs`'s
+// `a_function_identity_survives_emission_and_the_i2_read`.
 
 /// PR #262 review, finding F4: `PackageDeclarations::check` used to hardcode
 /// the checked-family contract's own nesting-depth `StageLimits` at

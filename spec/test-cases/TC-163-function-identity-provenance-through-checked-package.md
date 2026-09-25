@@ -63,14 +63,8 @@ Steps 1-5 (FR-065-AC-1 through AC-3) are covered by four `compile_fail`
 doctests on `CheckedPackage::link` (`qsl-package/src/checked.rs`, AC-1),
 `a_function_identity_survives_emission_and_the_i2_read` (AC-2, steps 2-3) and
 `emit_checked_places_the_calls_occurrence_at_its_own_source_span` (AC-3,
-steps 4-5), both in `qsl-package/src/emit/tests.rs`. **QSL-248 (G2)** moved
-AC-2's own round trip here, onto `qsl_package::emit_checked` and its I2
-reader, deleting `qsl-eval`'s second, self-consistent
-`quire.checked-function-package/v2` producer
-(`identity_survives_v2_round_trip` and
-`function_identity_survives_reordering_check_linking_and_a_v2_round_trip`,
-both formerly in `qsl-eval`) that codec's own tests used to back this
-instead. See FR-065's own Status section for the current per-AC accounting.
+steps 4-5), both in `qsl-package/src/emit/tests.rs`. See FR-065's own Status
+section for the current per-AC accounting.
 
 FR-065-AC-4 moved to TC-376 when QSL-148's spec lane made it a
 behavioural criterion; this test case no longer carries a code-shape step.

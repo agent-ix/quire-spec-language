@@ -314,19 +314,10 @@ delivered code today:
   link` itself (`E0308`, the wrong argument type), while a real checked
   node built through `check` and linked compiles and succeeds.
 - FR-065-AC-2: backed (`TC-163`): `a_function_identity_survives_emission_
-  and_the_i2_read` (`qsl-package/src/emit/tests.rs`). Identity/provenance
-  minting is the part this ticket actually delivers. **Rewound onto the
-  single producer (QSL-248/G2).** `qsl-eval` used to carry a second,
-  self-consistent `quire.checked-function-package/v2` codec
-  (`family::emit_v2`/`decode_v2`, minting a `NodeKey` from wire hex outside
-  `check`, T12-B debt) purely to demonstrate this criterion by itself; that
-  codec, `CheckedPackageEvaluation::emit_function_package_v2` and
-  `family::link_function_identity` are all deleted, and AC-2's three
-  checkpoints (after `check`, after S4 linking, after v2 decode) are now the
-  real `qsl_package::emit_checked`/I2 round trip, under the same
-  two-declaration-orderings reordering property the deleted
-  `qsl-eval/tests/it/dispatch_calls.rs` test used to check by hand.
-  `CheckedPackage::occurrence`'s own real test callers are
+  and_the_i2_read` (`qsl-package/src/emit/tests.rs`) checks the identity
+  read after `check`, after S4 linking, and after decoding a real
+  `qsl_package::emit_checked`/I2 round trip, under two declaration
+  orderings. `CheckedPackage::occurrence`'s own real test callers are
   `qsl-semantics/src/check/mod.rs` and `qsl-package/src/emit/tests.rs`.
 - FR-065-AC-3: backed (`TC-163`, QSL-154):
   `emit_checked_places_the_calls_occurrence_at_its_own_source_span`
@@ -336,11 +327,9 @@ delivered code today:
   again after `CheckedPackage::link`, and again from the decoded
   `PackageSourceMap` of a real `emit_checked`/`read_checked_package_v2`
   round trip -- the real `quire.checked-package/v2` source map, which
-  carries a full (identity, role, ordinal) -> region map, a leg `qsl-eval`'s
-  own minimal `emit_function_package_v2` (identity only, no source map at
-  all; deleted, QSL-248/G2) never could exercise.
-  A hand-built alternate package whose `DeclarationSpans` is genuinely one
-  byte wider resolves to a different region.
+  carries a full (identity, role, ordinal) -> region map. A hand-built
+  alternate package whose `DeclarationSpans` is genuinely one byte wider
+  resolves to a different region.
 - FR-065-AC-4: backed (`TC-376`). Amended by QSL-148's spec lane to a
   behavioural criterion; the thin-arm rule it used to test by code shape is
   FR-065-CON-3, verified by inspection, per the

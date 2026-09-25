@@ -60,3 +60,11 @@ The command shall return exit 22 for exhausted budgets, exit 21 for an unsupport
 
 - [FR-009](FR-009-lower-qualified-projections.md): admitted target and strict binding.
 - [FR-027](FR-027-export-compiled-native-package.md): source-only command contract.
+
+## Status
+
+QSL-248 backs FR-029-AC-3's edition-refusal clause with
+`lower_refuses_a_complete_v1_program_as_unknown_edition`
+(`tests/it/compile_command.rs`, `#[trace("TC-107", "FR-029-AC-3")]`), which
+asserts `lower` refuses a `1-draft` program with `unknown_edition` the same
+way `compile` does.

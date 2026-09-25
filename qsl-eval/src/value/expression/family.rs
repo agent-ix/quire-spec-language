@@ -4,14 +4,9 @@
 //!
 //! This module holds `QualifiedName` (the layer-6 `replay`/[`super::
 //! CheckedPackage::call`] lookup key) and [`ValueFunctionFamily`]'s
-//! [`super::s6a::ReferenceEvaluation`] half. QSL-248 (G2) deleted this
-//! crate's own second `quire.checked-function-package/v2` producer --
-//! `emit_v2`/`decode_v2`, `link_function_identity` and the
-//! `FunctionPackageV2` wire they built -- which bypassed
-//! `qsl_package::emit_checked` and minted a `NodeKey` from wire hex outside
-//! `check` (T12-B debt). `qsl_package::emit_checked` plus its I2 reader are
-//! the checked-package producer FR-065-AC-2 now verifies against
-//! (`qsl-package/src/emit/tests.rs`), and S4 linking itself is
+//! [`super::s6a::ReferenceEvaluation`] half. The checked-package producer
+//! FR-065-AC-2 verifies against is `qsl_package::emit_checked` plus its I2
+//! reader (`qsl-package/src/emit/tests.rs`); S4 linking is
 //! `qsl_package::CheckedPackage::link`, not a step this module repeats.
 //! ADR-011 §7.3 M-5 (QSL-139/FR-068) moved this module's checking-only
 //! half -- identity minting, [`qsl_semantics::check::PackageDeclarations::check`]'s
@@ -290,18 +285,12 @@ mod family_contract_tests {
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
     /// implementation, reachable through the trait, not a free-standing
-    /// function with no shared associated-type binding (PR #262 review,
-    /// F1/F2: no longer routed through the deleted `FamilyContract::package`,
-    /// which nothing consumed). QSL-248 deleted this crate's own
-    /// `emit_v2`/`decode_v2` round trip this test used to end on;
-    /// `qsl-package/src/emit/tests.rs`'s `a_function_identity_survives_
-    /// emission_and_the_i2_read` is FR-065-AC-2's own real `emit_checked`/I2
-    /// round trip now, so this test asserts only the checked identity
-    /// itself. Untagged for FR-062-AC-1 (PR #262 review,
-    /// finding F3): AC-1 requires all six contract parts as compile-time
-    /// obligations, and this trait now has only `check` -- see FR-062's own
-    /// amended Acceptance Criteria for why AC-1 is recorded unbacked rather
-    /// than retagged onto a narrower claim.
+    /// function with no shared associated-type binding, and its checked
+    /// identity is FR-092 vector F1. Untagged for FR-062-AC-1 (PR #262
+    /// review, finding F3): AC-1 requires all six contract parts as
+    /// compile-time obligations, and this trait now has only `check` -- see
+    /// FR-062's own amended Acceptance Criteria for why AC-1 is recorded
+    /// unbacked rather than retagged onto a narrower claim.
     #[trace("TC-380", "FR-065-AC-7")]
     #[test]
     fn value_function_family_checks_through_the_contract() {
@@ -689,23 +678,10 @@ mod tests {
     /// ADR-013 O-11/FR-088-AC-6: a [`QualifiedName`] is a declared preimage
     /// component, never an identity in its own right. Two entries that
     /// share an equal qualified name but were declared by different owners
-    /// (FR-092) carry different node ids, so an identity comparison over the
-    /// pair keeps both distinct rather than collapsing them onto their
-    /// shared name.
-    ///
-    /// QSL-248 deleted this crate's own `quire.checked-function-package/v2`
-    /// codec this test used to round-trip both entries through: that wire
-    /// format is gone (`qsl_package::emit_checked`'s real wire never holds
-    /// two declarations under one shared name -- a single `CheckedPackage`
-    /// admits one declaration per name). What FR-088-AC-6 step 4 actually
-    /// asks is that an identity comparison distinguish the pair by node id,
-    /// not by their shared `QualifiedName`; a `BTreeSet` over the full
-    /// `(QualifiedName, NodeKey)` pair demonstrates that directly, with no
-    /// wire codec needed to state it.
+    /// (FR-092) carry different node ids.
     #[trace("TC-258", "FR-088-AC-6")]
     #[test]
     fn equal_qualified_names_do_not_collapse_distinct_declarations() {
-        let name = QualifiedName::unqualified("f").unwrap();
         let first = checked_identity(fixture_source());
         let second = checked_identity(admitted_source(
             qsl_foundation::SourceIdentity::new("a", "w", "git", "1"),
@@ -714,16 +690,6 @@ mod tests {
         assert_ne!(
             first, second,
             "distinct declarations must not share a node id"
-        );
-
-        let entries: std::collections::BTreeSet<(QualifiedName, NodeKey)> =
-            [(name.clone(), first), (name, second)]
-                .into_iter()
-                .collect();
-        assert_eq!(
-            entries.len(),
-            2,
-            "equal qualified names must not collapse distinct declarations"
         );
     }
 }

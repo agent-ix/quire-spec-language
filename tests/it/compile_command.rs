@@ -373,14 +373,20 @@ fn a_complete_v1_program_compiles_through_the_spine() {
     assert_eq!(wire["contract_version"], "quire.checked-package/v2");
 }
 
-/// FR-027-AC-7 (TC-435): `lower` reads no edition of its own -- its native
-/// parser's header check (`src/parser.rs`) is the same "supported edition is
-/// `0-draft`" `unknown_edition` refusal `compile`'s `Edition::of` dispatch
-/// hands the `1-draft` spine fixture to a different compiler for. This
-/// closes the coverage gap TC-435's own steps leave: nothing exercised
-/// `lower`'s side of the same edition contract, only `compile`'s.
+/// FR-029-AC-3 (TC-107): `lower` refuses a `1-draft` program with
+/// `unknown_edition`, naming the file and locating the edition literal by
+/// span, the same existing intake behavior FR-029 says `lower` retains from
+/// `compile`.
+///
+/// `lower`'s refusal comes from the native parser's own header check
+/// (`src/parser.rs`), not `compile`'s `Edition::of` dispatch
+/// (`an_edition_neither_compiler_reads_refuses`, above): its `message` is
+/// the generic "supported edition is 0-draft", naming neither the file nor
+/// the offered edition in prose, so this asserts the file through
+/// `details.path` and the edition through the refusal's own span, over the
+/// message text those two checks take there.
 #[test]
-#[trace("TC-435", "FR-027-AC-7")]
+#[trace("TC-107", "FR-029-AC-3")]
 fn lower_refuses_a_complete_v1_program_as_unknown_edition() {
     let program = std::fs::read(SPINE_FIXTURE).unwrap();
     let directory = tempfile::tempdir().unwrap();
@@ -395,6 +401,16 @@ fn lower_refuses_a_complete_v1_program_as_unknown_edition() {
     assert!(output.stdout.is_empty());
     let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(failure["code"], "unknown_edition", "{failure}");
+    assert_eq!(failure["details"]["path"], "program.native", "{failure}");
+    let text = String::from_utf8(program).expect("the spine fixture is UTF-8");
+    let literal = text
+        .find("\"1-draft\"")
+        .expect("the fixture declares edition \"1-draft\"");
+    assert_eq!(failure["details"]["span"]["start"]["byte"], literal);
+    assert_eq!(
+        failure["details"]["span"]["end"]["byte"],
+        literal + "\"1-draft\"".len()
+    );
 }
 
 /// FR-027-AC-5 (TC-435 step 2): a `1-draft` compile validates the program's

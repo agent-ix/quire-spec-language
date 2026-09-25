@@ -141,10 +141,7 @@ functions rather than counting sites, because a count is met by a broken
 state (one new mint and one fixed mint cancel out) and changes whenever the
 patterns become more accurate.
 
-T12-B's debt list is empty (QSL-248/G2 removed its one entry -- `qsl-eval`'s
-`value::expression::family::decode_v2`, which wrapped the wire-read identity
-hex of that crate's own second `quire.checked-function-package/v2` producer
-into a `NodeKey` -- by deleting the codec that mint belonged to).
+T12-B's debt list is empty.
 
 T12-C's debt list is empty: QSL-131 typed a reference's type component as
 `EffectiveId` (ADR-013 O-05), which removed the OBS-018 transfers in

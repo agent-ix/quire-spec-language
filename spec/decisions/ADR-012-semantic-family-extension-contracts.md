@@ -315,11 +315,13 @@ one PR:
 - `PackageRefusal` is **deleted**; `FamilyContract::package` itself is
   **deleted entirely** (PR #262 review, findings F1/F2, a correction to
   this paragraph's earlier "`package` returns `()`" text). Its one real
-  caller, `CheckedPackage::emit_function_package_v2`, wrote `package`'s
-  output into a scratch buffer it never read back, then built its actual
-  returned bytes independently through `family::emit_v2` -- a hook nothing
-  consumed, the same forward-declared-shape hazard `requirements` already
-  is. The family whose migration first genuinely needs a shared,
+  caller, `CheckedPackage::emit_function_package_v2` (deleted itself under
+  QSL-248/G2, along with the second `quire.checked-function-package/v2`
+  producer it belonged to), wrote `package`'s output into a scratch buffer
+  it never read back, then built its actual returned bytes independently
+  through `family::emit_v2` -- a hook nothing consumed, the same
+  forward-declared-shape hazard `requirements` already is. The family whose
+  migration first genuinely needs a shared,
   trait-level packaging hook (for example because several families' v2
   nodes must compose into one all-or-nothing emission a shared caller
   drives) adds `package` back then, with a real consumer in the same

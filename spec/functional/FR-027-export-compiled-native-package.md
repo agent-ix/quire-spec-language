@@ -100,8 +100,3 @@ typed failure without a successful artifact.
 
 FR-027-AC-4 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-430.
 FR-027-AC-5 to FR-027-AC-8 are implemented under QSL-8 (ADR-011 §7.3 M-6a) and backed by TC-435.
-QSL-248 added `lower_refuses_a_complete_v1_program_as_unknown_edition`
-(`tests/it/compile_command.rs`, tagged `#[trace("TC-435", "FR-027-AC-7")]`):
-the same `unknown_edition` refusal, through the `lower` CLI entry point
-rather than `compile`, since `lower`'s own native parser reads no edition
-`compile`'s `Edition::of` dispatch does not also cover.

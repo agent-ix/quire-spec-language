@@ -718,8 +718,8 @@ the steps its test backs.
   that code, so each block is paired with one that must compile over the
   same names, and a renamed or moved item breaks the build.
 - AC-6: no item in `library`, `qsl-package` or `qsl-replay` mints a
-  `NodeKey`. Every mint is in `check`; T12-B's debt list is empty (QSL-248/
-  G2 removed its one entry). No minting item names `WireNodeId`,
+  `NodeKey`. Every mint is in `check`; T12-B's debt list is empty. No
+  minting item names `WireNodeId`,
   `PackageNodeKey`, `ImportView` or `VerifiedPackage`. A wire value that
   reaches a mint through another function's call is not traced (TC-255
   steps 3 and 6).

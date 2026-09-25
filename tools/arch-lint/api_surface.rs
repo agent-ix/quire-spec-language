@@ -1089,19 +1089,10 @@ mod tests {
     /// scoping check beside them -- need a fixture entry of their own rather
     /// than the production list, which no longer carries one.
     fn t12b_with_debt(debt_list: &'static [DebtEntry]) -> Rule {
-        let base = &RULES[1];
+        assert_eq!(RULES[1].id, "T12-B", "RULES[1] moved; update the index");
         Rule {
-            id: base.id,
-            description: base.description,
-            role: base.role,
-            call_patterns: base.call_patterns,
-            forbidden_patterns: base.forbidden_patterns,
-            allowed_callers: base.allowed_callers,
-            requires_path: base.requires_path,
-            pending_reason: base.pending_reason,
-            scope_note: base.scope_note,
-            shipped_only: base.shipped_only,
             debt_list,
+            ..RULES[1]
         }
     }
 
@@ -1719,8 +1710,8 @@ mod tests {
     /// mechanism against a synthetic entry rather than production data.
     const SYNTHETIC_DEBT_ENTRY: DebtEntry = DebtEntry {
         crate_src: "qsl-eval/src",
-        module: "value::expression::family",
-        function: "decode_v2",
+        module: "value::fixture",
+        function: "synthetic_mint",
     };
 
     /// TC-157 step 6: a shipped mint in a function on the debt list is
@@ -1734,20 +1725,19 @@ mod tests {
         ensure_qsl_roots(dir.path());
         let rule = &t12b_with_debt(&[SYNTHETIC_DEBT_ENTRY]);
         seed_debt_list_baseline(dir.path(), rule, "let _ = NodeKey::from_digest(x);");
-        // Overwrite `value::expression::family`'s seeded baseline with a
+        // Overwrite `value::fixture`'s seeded baseline with a
         // shaped-like-the-real-thing mint -- this fixture rule's debt list
         // has exactly one entry in this module, so nothing else to preserve.
         let mint =
-            "fn decode_v2(bytes: [u8; 32]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n";
-        write(dir.path(), "qsl-eval/src/value/expression/family.rs", mint);
+            "fn synthetic_mint(bytes: [u8; 32]) -> NodeKey {\n    NodeKey::from_digest(bytes)\n}\n";
+        write(dir.path(), "qsl-eval/src/value/fixture.rs", mint);
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
         assert!(
             outcome
                 .debt
                 .iter()
-                .any(|site| site.module == "value::expression::family"
-                    && site.function == "decode_v2"),
+                .any(|site| site.module == "value::fixture" && site.function == "synthetic_mint"),
             "{:?}",
             outcome.debt
         );
@@ -1760,7 +1750,7 @@ mod tests {
 
         // The same module path and function in the root crate is not the
         // listed debt.
-        write(dir.path(), "src/value/expression/family.rs", mint);
+        write(dir.path(), "src/value/fixture.rs", mint);
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
         assert_eq!(
             outcome
@@ -1768,7 +1758,7 @@ mod tests {
                 .iter()
                 .map(|site| (site.module.as_str(), site.function.as_str()))
                 .collect::<Vec<_>>(),
-            [("value::expression::family", "decode_v2")],
+            [("value::fixture", "synthetic_mint")],
             "{:?}",
             outcome.violations
         );
@@ -1790,8 +1780,8 @@ mod tests {
         );
         write(
             dir.path(),
-            "qsl-eval/src/value/expression/family.rs",
-            "fn decode_v2() -> u8 {\n    0\n}\n",
+            "qsl-eval/src/value/fixture.rs",
+            "fn synthetic_mint() -> u8 {\n    0\n}\n",
         );
         let rule = &t12b_with_debt(&[SYNTHETIC_DEBT_ENTRY]);
         let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
