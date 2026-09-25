@@ -346,12 +346,13 @@ pub fn compile(
             failure,
         })
     })?;
-    let models = admit_unit(&unit.selections().models, packages, limits.model).map_err(|refusal| {
-        Box::new(CompileRefusal::Intake {
-            region: region(&raw, refusal.span),
-            refusal,
-        })
-    })?;
+    let models =
+        admit_unit(&unit.selections().models, packages, limits.model).map_err(|refusal| {
+            Box::new(CompileRefusal::Intake {
+                region: region(&raw, refusal.span),
+                refusal,
+            })
+        })?;
     let declarations =
         PackageDeclarations::assemble(raw.clone(), unit, models).map_err(|refusal| {
             Box::new(CompileRefusal::Assembly {

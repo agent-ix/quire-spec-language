@@ -97,7 +97,10 @@ fn name(segments: &[&str]) -> QualifiedName {
 }
 
 fn source_digest(bytes: &[u8]) -> DigestRecord {
-    DigestRecord::mint(DigestDomain::SourceBytesV1, ByteDigest::of(bytes).as_bytes())
+    DigestRecord::mint(
+        DigestDomain::SourceBytesV1,
+        ByteDigest::of(bytes).as_bytes(),
+    )
 }
 
 /// A request replaying `function` against `package_id`, whose package
@@ -198,9 +201,7 @@ fn tc_443_a_witness_decodes_by_parameter_node_id() {
             source.as_bytes(),
             compiled.emitted.package_id(),
             name(&["small"]),
-            ReplaySource::Witness(
-                Witness::parse(format!("<<<assertion|h|c|{values}>>>")).unwrap(),
-            ),
+            ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{values}>>>")).unwrap()),
         )
     };
     let ReplayResult::Witness(result) = replay(witness(format!("{x}=8"))).unwrap() else {
