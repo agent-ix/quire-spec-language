@@ -1303,7 +1303,9 @@ fn call_span() -> qsl_foundation::Span {
 /// unit's end.
 fn f_declaration_span() -> qsl_foundation::Span {
     let text = std::str::from_utf8(CALL_TEXT).unwrap();
-    let start = text.rfind("function f").expect("f's declaration is in the fixture");
+    let start = text
+        .rfind("function f")
+        .expect("f's declaration is in the fixture");
     qsl_foundation::Span {
         start,
         end: text.len(),
@@ -1371,9 +1373,7 @@ fn call_source() -> RawSourceRef {
 }
 
 /// `functions`, checked (not yet linked) against [`call_source`].
-fn checked_call_package(
-    functions: Vec<FunctionDeclaration>,
-) -> qsl_semantics::check::CheckedGraph {
+fn checked_call_package(functions: Vec<FunctionDeclaration>) -> qsl_semantics::check::CheckedGraph {
     PackageDeclarations {
         functions,
         ..PackageDeclarations::new(call_source())
@@ -1441,11 +1441,18 @@ fn emit_checked_places_the_calls_occurrence_at_its_own_source_span() {
     let Read::Verified { source_map, .. } = outcome else {
         panic!("expected Verified, got {outcome:?}");
     };
-    let key = OccurrenceKey::new(WireNodeId::from_digest(*identity.as_bytes()), origin.clone());
+    let key = OccurrenceKey::new(
+        WireNodeId::from_digest(*identity.as_bytes()),
+        origin.clone(),
+    );
     let regions = source_map
         .regions(&key)
         .expect("the decoded source map carries the call's own occurrence");
-    assert_eq!(regions.len(), 1, "the call has exactly one recorded occurrence");
+    assert_eq!(
+        regions.len(),
+        1,
+        "the call has exactly one recorded occurrence"
+    );
     assert_eq!(
         regions[0], pre_link,
         "the call's region must survive a real v2 emit/decode round trip unchanged"
