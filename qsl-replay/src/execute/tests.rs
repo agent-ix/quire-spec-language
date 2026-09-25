@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-098 (TC-443): the replay executor over real complete-V1 source,
+//! FR-098 (TC-444): the replay executor over real complete-V1 source,
 //! recompiled through the spine.
 
 use std::collections::BTreeMap;
@@ -170,7 +170,7 @@ fn small(x: i64) -> ReplayRequestWire {
 /// its parameter node id, and `small(7)` is `false`: the replay agrees
 /// with the refuted property and settles `reproduced-without-witness`,
 /// with the executor's toolchain pin and the call's charges.
-#[trace("TC-443", "FR-098-AC-1", "FR-098-AC-2")]
+#[trace("TC-444", "FR-098-AC-1", "FR-098-AC-2")]
 #[test]
 fn tc_443_an_input_counterexample_replays_and_agrees() {
     let ReplayResult::Input(result) = replay(small(7)).expect("the replay runs") else {
@@ -190,7 +190,7 @@ fn tc_443_an_input_counterexample_replays_and_agrees() {
 /// FR-098-AC-2: a backend witness binds `x` by its parameter node id and
 /// settles `reproduced-with-evaluated-witness` with its FR-351 record; a
 /// transcript binding no parameter refuses with the decode's cause.
-#[trace("TC-443", "FR-098-AC-2")]
+#[trace("TC-444", "FR-098-AC-2")]
 #[test]
 fn tc_443_a_witness_decodes_by_parameter_node_id() {
     let source = proved();
@@ -225,7 +225,7 @@ fn tc_443_a_witness_decodes_by_parameter_node_id() {
 /// `inconclusive` with both verdicts as its typed cause; one whose S6a
 /// outcome completes no value (no accounting budget: `incomplete`) does
 /// too. Neither is repaired into agreement.
-#[trace("TC-443", "FR-098-AC-5")]
+#[trace("TC-444", "FR-098-AC-5")]
 #[test]
 fn tc_443_a_disagreement_settles_inconclusive() {
     let ReplayResult::Input(holds) = replay(small(3)).unwrap() else {
@@ -259,7 +259,7 @@ fn tc_443_a_disagreement_settles_inconclusive() {
 
 /// FR-098-AC-3: a meaning-affecting edit (`x < 6`) recompiles to another
 /// `package_id` and refuses by it, naming both identities.
-#[trace("TC-443", "FR-098-AC-3")]
+#[trace("TC-444", "FR-098-AC-3")]
 #[test]
 fn tc_443_a_meaning_edit_refuses_by_package_id() {
     let source = proved();
@@ -290,7 +290,7 @@ fn tc_443_a_meaning_edit_refuses_by_package_id() {
 /// the replay refuses by that digest: bytes supplied under their own new
 /// digest leave the referenced source absent, and bytes supplied under the
 /// referenced digest do not hash to it.
-#[trace("TC-443", "FR-098-AC-3", "FR-098-AC-4")]
+#[trace("TC-444", "FR-098-AC-3", "FR-098-AC-4")]
 #[test]
 fn tc_443_a_presentation_edit_refuses_by_source_digest() {
     let source = proved();
@@ -340,7 +340,7 @@ fn tc_443_a_presentation_edit_refuses_by_source_digest() {
 /// FR-098-AC-1, FR-098-AC-4: a domain package reaches I1 only from the byte
 /// provision, under its `sha256-jcs` digest. With it the unit that selects
 /// it replays; without it the recompile refuses at I1 (`missing_import`).
-#[trace("TC-443", "FR-098-AC-1", "FR-098-AC-4")]
+#[trace("TC-444", "FR-098-AC-1", "FR-098-AC-4")]
 #[test]
 fn tc_443_a_domain_package_comes_from_the_byte_provision() {
     let document = std::fs::read(concat!(
@@ -389,7 +389,7 @@ fn tc_443_a_domain_package_comes_from_the_byte_provision() {
 
 /// FR-098-AC-4: an unknown contract version refuses before anything is
 /// recompiled.
-#[trace("TC-443", "FR-098-AC-4")]
+#[trace("TC-444", "FR-098-AC-4")]
 #[test]
 fn tc_443_an_unknown_version_refuses() {
     let mut unknown = small(7);
@@ -404,7 +404,7 @@ fn tc_443_an_unknown_version_refuses() {
 
 /// FR-098-AC-4: a selection naming no function node refuses, whether the
 /// name is undeclared or qualified.
-#[trace("TC-443", "FR-098-AC-4")]
+#[trace("TC-444", "FR-098-AC-4")]
 #[test]
 fn tc_443_a_selection_naming_no_function_refuses() {
     for selection in [name(&["large"]), name(&["module", "small"])] {
@@ -429,7 +429,7 @@ fn tc_443_a_selection_naming_no_function_refuses() {
 /// FR-098-AC-4: arity mismatches refuse by parameter node id -- a parameter
 /// with no argument, an argument naming no parameter of the selected
 /// function (here `flag`'s parameter) and a parameter bound twice.
-#[trace("TC-443", "FR-098-AC-4")]
+#[trace("TC-444", "FR-098-AC-4")]
 #[test]
 fn tc_443_an_arity_mismatch_refuses() {
     let source = proved();
@@ -484,7 +484,7 @@ fn tc_443_an_arity_mismatch_refuses() {
 /// FR-098-AC-4: S6a admission refuses a value of the wrong type (an
 /// integer for `flag`'s Boolean) and a value outside the declared domain
 /// (`12` for `Int[0, 9]`), each as `invalid_runtime_input`.
-#[trace("TC-443", "FR-098-AC-4")]
+#[trace("TC-444", "FR-098-AC-4")]
 #[test]
 fn tc_443_a_type_or_domain_mismatch_refuses_at_admission() {
     let source = proved();
@@ -509,7 +509,7 @@ fn tc_443_a_type_or_domain_mismatch_refuses_at_admission() {
 /// FR-098-AC-4: an S1 limit above the reader limit refuses before the
 /// recompile; one below the source's size stops the recompile at S1 with
 /// `stage_limit_exceeded`.
-#[trace("TC-443", "FR-098-AC-4")]
+#[trace("TC-444", "FR-098-AC-4")]
 #[test]
 fn tc_443_stage_limits_bound_the_recompile() {
     let reader = u64::try_from(MAX_ENCODED_BYTES).unwrap();
@@ -538,7 +538,7 @@ fn tc_443_stage_limits_bound_the_recompile() {
 /// FR-098-AC-1: the package reference names exactly one source, and only
 /// sources: a definition document's digest and a second source each
 /// refuse before anything is recompiled.
-#[trace("TC-443", "FR-098-AC-1")]
+#[trace("TC-444", "FR-098-AC-1")]
 #[test]
 fn tc_443_the_package_reference_names_one_source() {
     let definition = b"definition bytes".to_vec();
@@ -587,7 +587,7 @@ fn tc_443_the_package_reference_names_one_source() {
 
 /// FR-098-AC-4: a selected function that completes a non-Boolean value
 /// states no property, so its replay refuses rather than settling.
-#[trace("TC-443", "FR-098-AC-4")]
+#[trace("TC-444", "FR-098-AC-4")]
 #[test]
 fn tc_443_a_non_predicate_refuses() {
     let source = proved();
