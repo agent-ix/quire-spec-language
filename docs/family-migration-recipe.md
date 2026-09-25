@@ -135,14 +135,21 @@ above.
   has no independently meaningful clause sequence (ADR-012 §4.1's test);
   this is recorded rather than silently skipped.
 - Seam-probe: `xtask/src/seam_probe.rs`'s checked-in `checked_in_locations()`
-  names the two real S1 seams this migration adds (`FamilyKind`'s
-  `catalog_code_prefix` prefix arm and `stage_hooks`'s stage-participation
-  table, both in `qsl-semantics/src/family/mod.rs`), demonstrated by a real failing build
-  under `RUSTFLAGS=--cfg seam_probe` (FR-063).
+  names `FamilyKind::catalog_code_prefix` (`qsl-semantics/src/family/mod.rs`)
+  as this migration's surviving S1 seam, demonstrated by a real failing
+  build under `RUSTFLAGS=--cfg seam_probe` (FR-063). This migration's first
+  implementation pass added a second S1 location, a `stage_hooks`
+  stage-participation table in the same file; review found it had no real
+  (non-test) reader -- its only callers were three `assert_eq!` sites
+  passing a literal, compile-time-known pair into the same hand-written
+  `match` and asserting the result equalled the value that arm already
+  returns -- and it was deleted along with those callers (PR #262 review,
+  finding F7; FR-063's own "Correction to merged spec" note), not kept
+  checked-in to pad this list.
 - Wire-totality: `family_contract_tests::value_function_family_checks_through_the_contract`
-  asserts the v2 round trip (`ValueFunctionFamily::package` then
+  asserts the v2 round trip (`family::emit_v2` then
   `decode_v2`) recovers the minted identity, and `qsl-semantics/src/family/mod.rs`'s own
-  `FamilyKind` `match`es (the seam-probe targets above) have no `_` arm.
+  `FamilyKind` `match`es (the seam-probe target above) have no `_` arm.
 - Backend-absence corpus: not applicable -- function declaration and
   application requests no FR-057 capability kind (see this document's
   `requirements()` note above), so there is no backend-absence case to
