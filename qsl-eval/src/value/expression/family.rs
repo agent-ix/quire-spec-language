@@ -612,7 +612,23 @@ mod family_contract_tests {
     /// denied charge runs nothing, so it must not consume them, and the
     /// recorded location and losses are empty (FR-090: `None` when the
     /// evaluation stopped before any node ran).
-    #[trace("TC-160", "FR-062-AC-5")]
+    ///
+    /// Also backs FR-062-AC-6's second sentence (QSL-152): every value this
+    /// call can reach -- `identity` (`NodeKey`, an opaque digest),
+    /// `env` (`EvaluationEnv`: a `&CheckedPackage`, a `&ObjectEnvironment`,
+    /// already-typed `Value` arguments) and `meter` -- is checked-input
+    /// shaped by the hook's own signature; none is a CST, token or display
+    /// string. A "test double that panics if such an input is touched" (the
+    /// criterion's own verification idea) has nothing to attach to here:
+    /// `EvaluationEnv` carries no CST/token-typed field for a double to
+    /// guard, so the type signature forecloses the read this test would
+    /// otherwise have to catch at runtime -- a stronger guarantee than a
+    /// double gives, not a weaker one. `Value`'s function family is the one
+    /// family with an `evaluate` hook today (`Relation` has none:
+    /// `s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms`,
+    /// `value::expression::mod`, backs this criterion's first sentence); the
+    /// same reasoning extends to every family that migrates one.
+    #[trace("TC-160", "FR-062-AC-5", "FR-062-AC-6")]
     #[test]
     fn evaluate_returns_incomplete_when_the_meter_is_exhausted() {
         let graph = PackageDeclarations {

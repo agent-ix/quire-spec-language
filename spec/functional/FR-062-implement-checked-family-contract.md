@@ -227,15 +227,32 @@ the final Rust spelling within this requirement's rules.
 contract narrowed to what its one migrated family (`Value`'s
 function-declaration form) can back with a real, non-fabricated
 construction site: `check`, the checked-input parameter, and the
-stage-limit outcome shape. `requirements` (AC-1's mention, AC-4 entirely),
-`package` (AC-1's mention, AC-9 entirely) and the `Relation`
-non-native-evaluability case (AC-6's first sentence) are deleted or never
+stage-limit outcome shape. `requirements` (AC-1's mention, AC-4 entirely)
+and `package` (AC-1's mention, AC-9 entirely) are deleted or never
 implemented, not stubbed -- see `qsl-semantics/src/family/mod.rs`'s and
-`qsl-semantics/src/family/contract.rs`'s own module docs for why each is a real deferral
-rather than an oversight. By Acceptance Criterion, with real trace tags as
-they exist in the delivered code today:
-- FR-062-AC-1: unbacked (untagged; the six-part shape it describes is
-  narrowed to `check` alone, per `contract.rs`'s own doc). Owner: QSL-152.
+`qsl-semantics/src/family/contract.rs`'s own module docs for why each is a
+real deferral rather than an oversight. The `Relation`
+non-native-evaluability case (AC-6's first sentence) is a real, permanent
+design fact rather than a deferral -- `Relation` never gets an evaluation
+hook -- and QSL-152 found it already backed, just untagged for this
+criterion (AC-6's own row below). By Acceptance Criterion, with real trace
+tags as they exist in the delivered code today:
+- FR-062-AC-1: **amended (QSL-152).** The delivered `FamilyContract` has one
+  part, `check`, plus `ReferenceEvaluation::evaluate` -- not the six-part
+  shape this criterion as originally written names. `requirements` and
+  `package` are not stubbed onto the trait: `contract.rs`'s own doc records
+  why a `Requirements` type built today would have no real field (no family
+  yet carries an FR-057 capability kind) and why an unconsumed `package`
+  hook is the same fabricated-surface hazard PR #262 already found and
+  deleted once. Building either now to satisfy this criterion's letter
+  would make a future family's real implementation of it indistinguishable,
+  by anything that reads the trait, from a family that never wired it at
+  all -- the exact failure the six-part contract exists to prevent. This
+  criterion is corrected to its target design: the contract's six parts are
+  added one at a time, each against a real family that needs it, not
+  speculatively; AC-1 is re-verified the next time a part is added, against
+  that real instance. No ticket owns "add the rest of the six parts" as
+  standing work, because there is nothing yet to add them against.
 - FR-062-AC-2: backed (`TC-160`, `qsl-semantics/src/check/family.rs`, `checking_tests`).
 - FR-062-AC-3: unbacked (untagged; PR #262 review, coordinator round 3,
   finding 5). The one test tagged for this criterion,
@@ -273,9 +290,26 @@ they exist in the delivered code today:
   AC-9's own note on why it was deleted rather than wired up
   speculatively), so there is no `package` outcome to assert anything
   about. Owner: QSL-152 restores that clause once `package` exists.
-- FR-062-AC-6: unbacked. `Relation` has no `FamilyContract` implementation
-  in #214, and S6a has no family-kind dispatch yet; FR-090-AC-4 (TC-385) is
-  the precise form of the `Relation` half. Owner: QSL-152.
+- FR-062-AC-6: backed (QSL-152). Stale as last written: it said "S6a has no
+  family-kind dispatch yet," which QSL-148's `S6aFamilyKind`
+  (`qsl-eval/src/value/expression/s6a.rs`) made no longer true. This
+  criterion's first sentence is FR-090-AC-4 verbatim, so the tests that back
+  FR-090-AC-4 back it: `s6a_family_kind_admits_no_relation_and_family_
+  outcome_has_two_arms` (`qsl-eval/src/value/expression/mod.rs`, now also
+  tagged `FR-062-AC-6`) and `both_family_outcome_arms_reach_a_caller_
+  through_the_s6a_seam` (`qsl-eval/tests/it/model_reference_queries.rs`),
+  plus `s6a.rs`'s own compile-time check that no `S6aFamilyKind` maps to
+  `FamilyKind::Relation`. The second sentence (every other family's
+  `evaluate` hook reads no CST, token or display string) is backed by
+  `evaluate_returns_incomplete_when_the_meter_is_exhausted`
+  (`qsl-eval/src/value/expression/family.rs`, now also tagged
+  `FR-062-AC-6`): every value `ValueFunctionFamily::evaluate` can reach
+  there (`NodeKey`, `EvaluationEnv`, `Meter`) is checked-input shaped by the
+  hook's own signature. The criterion's own suggested verification -- "a
+  test double that panics if such an input is touched" -- has nothing to
+  attach to: `EvaluationEnv` carries no CST/token-typed field for a double
+  to guard, so the signature forecloses the read a double would otherwise
+  have to catch at runtime, which is the stronger property.
 - FR-062-AC-7: backed by TC-378
   (`the_typer_depth_stop_is_located_at_the_node_whose_entry_failed`,
   `qsl-semantics/src/check/family.rs`, QSL-160). History: it was unbacked
@@ -322,17 +356,35 @@ they exist in the delivered code today:
   required; it needs the unit's `RawSourceRef` (FR-001, ADR-013 §7 slice
   S-4b) and the forms' expression spans (FR-091-AC-10, QSL-141). TC-378
   backs AC-7. Owner: QSL-160.
-- FR-062-AC-8: unbacked. FR-063's seam probe covers S1 only in #214 (its
-  own Status/scope note); S4 (a family `Cause` enum's `catalog_code()`) has
-  no cause-bearing family to probe yet. Owner: QSL-152.
-- FR-062-AC-9: unbacked, by PR #262 review findings F1/F2.
-  `FamilyContract::package` had one real caller
-  (`CheckedPackage::emit_function_package_v2`), which wrote `package`'s
-  output into a scratch buffer it never read back before building its
-  actual returned bytes independently through `family::emit_v2` -- a hook
-  nothing consumed. It is deleted rather than wired up speculatively or
-  kept as an unbacked "package" row while claiming AC-9's fault-injection
-  behavior; see `contract.rs`'s own doc on `FamilyContract`. Owner: QSL-152.
+- FR-062-AC-8: **amended (QSL-152).** The condition earlier owners were
+  waiting on -- "S4 waits for the first family with a real cause"
+  (QSL-143's own disclaimer) -- is now met: `Value`'s function family has a
+  real `Cause` (`CheckCause`, QSL-148) and a real `catalog_code()` mapping
+  (`check::refusal::CheckCause::code`). What remains is wiring FR-063's
+  seam probe onto that mapping the way `FamilyKind::catalog_code_prefix`
+  is already wired for S1 -- the seam probe itself
+  (`xtask/src/seam_probe.rs`) and FR-063/FR-064 are a separate lane this
+  ticket does not touch. This criterion is corrected to name that as the
+  concrete remaining step (not "no cause-bearing family exists," which is
+  no longer true) and left for the seam-probe lane to pick up; QSL-152
+  records the state rather than repeating a broken owner reference to a
+  ticket that has already disclaimed it.
+- FR-062-AC-9: **amended (QSL-152).** `FamilyContract::package` does not
+  exist -- PR #262 review findings F1/F2 deleted it as a hook with one real
+  caller (`CheckedPackage::emit_function_package_v2`) that wrote into a
+  scratch buffer it never read back, building its actual output
+  independently through `family::emit_v2` instead; see `contract.rs`'s own
+  doc on `FamilyContract` for the fuller reasoning. There is therefore no
+  `package` emission to fault-inject partway through, and building one now,
+  with no second real v2 node to make partial emission a meaningful
+  concept, would be exactly the same fabricated-surface shape already
+  rejected once. This criterion is corrected to its target design: `package`
+  and its all-or-nothing fault-injection behavior are added the first time
+  a family's packaging genuinely needs a shared, multi-node, trait-level
+  hook (`contract.rs`'s own doc names the shape: "several families' v2
+  nodes must compose into one all-or-nothing emission a shared caller
+  drives"), with a real consumer and this criterion's test in the same
+  change. No ticket owns this as standing work today.
 - FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
   `QualifiedName` lookup is implemented (`qsl-eval/src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
@@ -351,12 +403,19 @@ they exist in the delivered code today:
   `Refused{ResourceExhausted}`; its `StageFailure::Limit` outcome, amended
   here, is ADR-013 §7 slice S-5b's (QSL-160, FR-096).
 
-Three of this requirement's twelve Acceptance Criteria are backed (AC-2,
-AC-5 and AC-12), and AC-11 is partly backed. AC-5's two tagged tests are
-`stage_limits_restored_kinds_refuse_one_below_the_real_metric`
+Five of this requirement's twelve Acceptance Criteria are backed (AC-2,
+AC-3, AC-5, AC-6 and AC-12), and AC-11 is partly backed. AC-5's two tagged
+tests are `stage_limits_restored_kinds_refuse_one_below_the_real_metric`
 (`qsl-semantics/src/check/family.rs`, `checking_tests`) and
 `evaluate_returns_incomplete_when_the_meter_is_exhausted`
-(`qsl-eval/src/value/expression/family.rs`; PR #303 review round 3, finding F3).
-The other eight are unbacked, for the
-reasons above -- not silently. AC-7 in particular stays unbacked until
-FR-096 (QSL-160) lands, as its row above describes.
+(`qsl-eval/src/value/expression/family.rs`; PR #303 review round 3, finding
+F3). Four (AC-1, AC-4, AC-8, AC-9) are amended rather than backed or left
+unbacked (QSL-152): each described a contract part or seam this repo has
+no real, non-fabricated instance to test against yet (`requirements`,
+`package`, the S4 seam probe over a cause-bearing family), and each is
+corrected above to state that target design plainly -- added against a
+real instance when one exists, not stubbed now and not left carrying a
+broken "owner" reference to a ticket that has already disclaimed it. The
+remaining two (AC-7, AC-10) are unbacked, for the reasons above -- not
+silently. AC-7 in particular stays unbacked until FR-096 (QSL-160) lands,
+as its row above describes.
