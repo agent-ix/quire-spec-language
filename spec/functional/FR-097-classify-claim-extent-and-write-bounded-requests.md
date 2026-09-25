@@ -3,6 +3,10 @@ id: FR-097
 title: "S-6: classify claim extent and write bounded requests"
 type: FR
 relationships:
+  - target: ix://agent-ix/quire-spec-language/US-011
+    type: implements
+  - target: ix://agent-ix/quire-spec-language/US-010
+    type: traces_to
   - target: ix://agent-ix/quire-spec-language/ADR-014
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-013
@@ -63,12 +67,12 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-097-AC-1 | `FiniteBound::integer_range` refuses `lower > upper`, `FiniteBound::depth` refuses zero, and each admitted bound reports its kind. `IntervalKey::new` refuses `lower > upper`, and two keys that differ in any of `lower`, `upper`, profile or clock binding are unequal. `DomainKey`s order by node, then path. | Test (TC-436) |
-| FR-097-AC-2 | Over a claim's argument types, each collection with no bound, population with no maximum, `Integer` with no range and recursive record or tuple is exactly one unbounded domain, keyed by its node and child-index path, with its kind. Every other type adds none, and a claim with none is `Bounded`. Classifying the same roots twice gives equal extents. The walk stops with a node-count stage limit at its ceiling, and a composite missing from the environment is an internal fault. | Test (TC-437) |
+| FR-097-AC-2 | Over a claim's argument types, each collection with no bound, population with no maximum, `Integer` with no range, recursive record or tuple, and quantity is exactly one unbounded domain, keyed by its node and child-index path, with its kind; a quantity's domain takes no finite bound. Every other type adds none, and a claim with none is `Bounded`. Classifying the same roots twice gives equal extents. The walk stops with a node-count stage limit at its ceiling, and a composite missing from the environment is an internal fault. | Test (TC-437) |
 | FR-097-AC-3 | The request writer classifies a bounded item `bounded`, and an unbounded item `unbounded` with `finite_bound_available` true exactly when every domain is boundable; a loop or infinite-trace domain makes it false. A bounded request that supplies one bound of the right kind per domain is written as its own item, with its own request index, classified `bounded`, carrying its proof bounds in key order; the unbounded item keeps its own index and classification. Two bounded items with different bounds are different items. | Test (TC-438) |
-| FR-097-AC-4 | The writer refuses a bound whose key names no unbounded domain of the item, a bound on a loop or infinite-trace domain, a bound of the wrong kind, and a set that misses a domain. Each refusal is `invalid_runtime_input`/`invalid-value`, and no item is written. | Test (TC-438) |
+| FR-097-AC-4 | The writer refuses, in this order: a bounded request for an item with no unbounded domain; a bound whose key names no unbounded domain of the item; an item with any domain no finite bound can stand for (loop, infinite trace, quantity), whether or not a bound was supplied for it; then, domain by domain in key order, a missing bound or a bound of the wrong kind. Each refusal is `invalid_runtime_input`/`invalid-value`, and no item is written. | Test (TC-438) |
 | FR-097-AC-5 | `explore::Outcome::category()` maps `Exhaustive` to success and `Bounded` and `Cancelled` to incomplete; the stopped outcomes keep their frontier and, for `Bounded`, the limit reached. | Test (TC-439) |
-| FR-097-AC-6 | For records QSL checks and emits, IR's v2 lowering at the pinned revision with `require_bounds` returns `RequiresBound` exactly when QSL's extent is `Unbounded`, and IR's first unbounded node is a form QSL names as a domain. Where the two disagree at the pinned revision, a test asserts the measured disagreement, so it fails when IR changes. | Test (TC-440) |
-| FR-097-AC-7 | An unbounded collection type admits a collection value of any size with no cardinality refusal; it still charges `collection.bound`, and stops with `Incomplete` at that charge point only when the caller's meter runs out. `K<T>` and `K<T>[0, u64::MAX]` are different types. | Test (TC-441) |
+| FR-097-AC-6 | For records QSL checks and emits, IR's v2 lowering at the pinned revision with `require_bounds` returns `RequiresBound` exactly when QSL's extent is `Unbounded`, and IR's first unbounded node is a form QSL names as a domain. | Test (TC-440) |
+| FR-097-AC-7 | An unbounded collection type admits a collection value of any size with no cardinality refusal; it still charges `collection.bound`, and stops with `Incomplete` at that charge point only when the caller's meter runs out. `K<T>` and `K<T>[0, u64::MAX]` are different types and different v2 nodes. The checker types `map`, `flatMap`, `filter` and `flatten` over an unbounded source, and `allInstances` over a population with no maximum, as unbounded, and proves no size maximum for them. A population parameter admits a binding only when their declared maxima are equal, absence included. A population with no maximum refuses to lower (`UnrepresentableBound`) until it has a node of its own. | Test (TC-441) |
 
 ## Dependencies
 
@@ -85,9 +89,11 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
 
 ## Status
 
-Specified and implemented under QSL-140. TC-436 to TC-441 pass locally.
-AC-6 records two measured disagreements with IR's `requires-bound` at IR
-`1d7884c`: IR reports `requires-bound` for a bounded collection of a
-non-integer element, because the `collection_bounds` literals are typed at the
-`integer` scalar node; and IR lowers a recursive record, which ADR-014 §4
-classifies as unbounded by depth. Both are IR-side predicate differences.
+Specified and implemented under QSL-140. TC-436 to TC-439 and TC-441 pass
+locally. TC-440 is partly passed: its agreeing fixtures pass, and an ignored
+test asserts agreement for three fixtures IR's predicate at `1d7884c` gets
+wrong. IR-283: IR's `requires-bound` does not distinguish positions, so a
+`bounded_domain` over the shared `integer` scalar bounds every integer
+position, and the `collection_bounds` literals typed at that node read as an
+unbounded integer. IR-284: IR has no recursion rule. The ignored test is
+un-ignored when both land.

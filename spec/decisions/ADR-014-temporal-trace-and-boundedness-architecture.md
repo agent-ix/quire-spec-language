@@ -132,7 +132,7 @@ converts into another kind.
 | B-1 | Authored semantic bound | Part of the meaning of a declaration: which values the type admits | Kernel `CollectionType.bound: Option<CardinalityBound>` and `ValueType::Population(Option<u64>)`, where `None` is unbounded; the `BoundedInteger` range of a `bounded_domain`; the TemporalTrace `TemporalInterval` (§3). The S3 checker builds them from forms | the source author | A value outside the bound refuses `cardinality_out_of_bound` or `BoundViolation` (QSpec FR-144). Never a resource outcome |
 | B-2 | Execution resource bound | How much work one evaluation, normalization or admission may spend | A ceiling of an accounting-contract limits type: kernel `ScalarLimits`/`Meter` (`quire.value.accounting/v1`, QSpec FR-323 `limits`), `ModelNormalizationLimitsV1`, `PopulationAdmissionLimitsV1` | the caller, per run | A denied charge yields `Incomplete` with its charge point. A read-only ceiling (FR-082 and NFR-012 `ancestor_steps`, `family_steps`) refuses. Both carry `resource_exhausted` (or `cancelled`) |
 | B-3 | Stage limit | How much input and work a compiler stage or reader may take | A ceiling of a stage's own limits type (`CheckingLimits`, `TypeEnvironmentLimits`, the reader limits), reported as F `diagnostic::LimitExceeded` (ADR-013 T-4, FR-096) | the caller of the stage, or that type's published default | `StageFailure::Limit(LimitExceeded)`, `stage_limit_exceeded`. A stage failure, not an outcome category |
-| B-4 | Proof bound | A finite domain the caller substitutes for one unbounded domain of an item, to ask a bounded-mode backend | F `bound::ProofBound{domain: DomainKey, bound: FiniteBound}` (§4), built by QSL-140. On the wire: QSpec FR-331 request `domains`. In replay: `DeclaredDomain.domain` becomes `FiniteBound` | the caller of the request, explicitly | Not reached. It is part of the obligation identity (O-09), and a result qualifies only over it |
+| B-4 | Proof bound | A finite domain the caller substitutes for one unbounded domain of an item, to ask a bounded-mode backend | F `bound::ProofBound{domain: DomainKey, bound: FiniteBound}` (§4), built by QSL-140. On the wire: QSpec FR-331 request `domains`. In replay: `DeclaredDomain` holds a `ProofBound` | the caller of the request, explicitly | Not reached. It is part of the obligation identity (O-09), and a result qualifies only over it |
 | B-5 | Backend tool budget | How long and how deep a backend tool runs (Kani unwind, solver time) | IR `ResourceBounds` and the AD-016 Kani tool pin. Not a QSL type | the backend provider | QSpec FR-331 `incomplete` with `IncompleteCause::{TimedOut, ResourceExhausted}` |
 | B-6 | Profile ceiling | A maximum a selected profile fixes for every package | None on the spine. The native-v1 ceilings (`MAX_SEQUENCE_ITEMS`, `src/native_model/admission.rs:18`; `checked_handoff::MAX_POPULATION`; the `native_temporal` `MAX_*`; `NativeModelProfile`) are lane-private (ADR-013 §6) and retire with SEAM-1 and M-6c | none | Native-v1 admission keeps refusing until it retires. No spine stage reads a profile ceiling |
 
@@ -156,7 +156,7 @@ ever becomes a B-1 or B-4 value.
 The replay envelope's `proof_bounds: ScalarLimits`
 (`qsl-replay/src/witness.rs:346`) holds the proving run's accounting limits,
 a B-2 value. QSL-140 renames it `run_limits` and types
-`DeclaredDomain.domain` as `FiniteBound`.
+`DeclaredDomain` as a `ProofBound`.
 
 ### 2. Absent bounds (Q222-2, first part)
 
@@ -196,10 +196,12 @@ Three concepts, three types:
 - **Finite** is a property of a concrete value or trace. It is never an
   extent.
 - **Extent** is a property of a requested item: `ClaimExtent{Bounded,
-  Unbounded{domains: Vec<DomainKey>}}`, in the layer-3 family core
+  Unbounded(UnboundedDomains)}`, in the layer-3 family core
   (`qsl-semantics::family`), beside `Requirements`. It is not named `Extent`,
   because `model::Extent{Closed, Open}` is QSpec FR-153 population closure.
-  Wire spelling: QSpec FR-290 `bounded`/`unbounded`.
+  Wire spelling: QSpec FR-290 `bounded`/`unbounded`. `UnboundedDomains`
+  is a non-empty map from each `DomainKey` to its domain kind, so the
+  request writer can refuse a bound of the wrong kind (QSL-140).
 - **Mode** is a property of a backend advertisement: `qsl_route::Mode{Bounded,
   Unbounded}`, which exists.
 
@@ -210,7 +212,8 @@ child-index path into that node's type (element, field, variant payload). A
 loop or a clause has an empty path. It is a
 wire-level key because it crosses to CG and to replay; layer 3 converts its
 `NodeKey`s to `WireNodeId`s when it builds the request (ADR-013 O-04). F
-`bound` is a new foundation module that imports only K and F `digest`, so
+`bound` is a new foundation module that imports only K, F `digest` and F
+`selection` (for `IntervalKey`'s `DefinitionRef`), so
 `qsl-replay`, layer 3 and the request writer can all name it.
 
 **Extent rule.** The owning family computes `ClaimExtent` in
@@ -224,6 +227,7 @@ domain:
 | population with `Population(None)` | yes: `Cardinality{maximum}` |
 | `Integer` with no range | yes: `IntegerRange{lower, upper}` |
 | recursive value type (QSpec FR-143) | yes: `Depth{maximum}` |
+| quantity (its magnitude is an unbounded `Rational`) | no. No `FiniteBound` ranges over a rational magnitude, so a bounded-only candidate never settles it `supported` (ADR-013 C-22) |
 | loop admitted under QSpec FR-228-AC-5 | no |
 | temporal formula under `quire.temporal.infinite-trace/v1` | no. A finite prefix never proves infinite satisfaction (QSpec FR-161) |
 
@@ -444,8 +448,9 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
   to QSL-140);
 - the O-20 request writer: extent classification with
   `finite_bound_available`, `ProofBound` substitution and its refusals (§4);
-- in `qsl-replay`: `DeclaredDomain.domain: FiniteBound` and the rename of
-  `proof_bounds` to `run_limits`;
+- in `qsl-replay`: `DeclaredDomain` holding a `ProofBound` (keyed by the
+  full `DomainKey`, so two bounds on one parameter at different paths stay
+  distinct) and the rename of `proof_bounds` to `run_limits`;
 - `qsl_eval::simulation::explore::Outcome::category()` (§7);
 - the QSL-140 and IR agreement test for the extent classification (§4);
 - O-19 `Capability` and the O-20 request representation, as ADR-013 lists.

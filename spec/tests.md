@@ -44,7 +44,7 @@ operational validation remains outside this audit-only plan.
 | TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ Passed locally for FR-060-AC-1..AC-3; 🚧 FR-060-AC-4's T12-B and T12-C clauses amended to allow-lists plus debt lists (2026-09-22), gate rewrite planned |
 | TC-158 | Report a quire-ecosystem crate resolved to more than one source | Integration | P1 | FR-061-AC-1..FR-061-AC-4 | ✅ Passed locally |
 | TC-159 | Run the current-head integration lane against real and intentionally incompatible heads | Manual | P1 | FR-058-AC-1..FR-058-AC-4 | ✅ Passed locally |
-| TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9 | 🚧 Planned; #214. FR-062-AC-4 passed locally (QSL-140) |
+| TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9 | 🚧 Planned; #214. FR-062-AC-4 partly passed (QSL-140): the no-kind clause passes; the with-kind clause is pending QSL-42 |
 | TC-161 | The seam probe demonstrates exhaustiveness at every S1-S4 seam | Integration | P1 | FR-063-AC-1..FR-063-AC-7, FR-062-AC-8, FR-067-AC-4 | 🚧 Planned; #214 |
 | TC-162 | The string-edge scan reports every unmarked string dispatch | Integration | P1 | FR-064-AC-1..FR-064-AC-6 | 🚧 Planned; #214 |
 | TC-163 | Function identity and provenance survive checking and package conversion | Integration | P1 | FR-065-AC-1..FR-065-AC-3, FR-065-AC-8 | 🚧 Planned; #214, QSL-156 |
@@ -217,7 +217,7 @@ operational validation remains outside this audit-only plan.
 | TC-437 | The extent rule names each unbounded type position once, by node and path, under a node-count ceiling | Unit | P1 | FR-097-AC-2 | ✅ Passed locally (QSL-140) |
 | TC-438 | The request writer computes the available finite bound, writes a bounded request as its own item, and refuses bad bounds before writing | Unit | P1 | FR-097-AC-3, FR-097-AC-4 | ✅ Passed locally (QSL-140) |
 | TC-439 | An exploration outcome maps to its O-16 category and keeps its frontier | Unit | P1 | FR-097-AC-5 | ✅ Passed locally (QSL-140) |
-| TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision, with measured disagreements asserted | Integration | P1 | FR-097-AC-6 | ✅ Passed locally (QSL-140); two measured IR disagreements recorded in FR-097 Status |
+| TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | 🚧 Partly passed (QSL-140): agreeing fixtures pass; the ignored agreement test waits on IR-283 and IR-284 |
 | TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7 | ✅ Passed locally (QSL-140) |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage

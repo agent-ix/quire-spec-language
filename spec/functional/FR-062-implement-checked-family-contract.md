@@ -248,14 +248,14 @@ they exist in the delivered code today:
   output -- and the tag survived that deletion until this round untagged
   it. Nothing currently asserts the identical-checked-output clause itself.
   Owner: QSL-161.
-- FR-062-AC-4: backed (`TC-160`, QSL-140; ADR-014 §11 moved it from
-  QSL-152). `FamilyContract::requirements` returns `Option<Requirements>`:
-  `None` for `Value`'s function declaration
+- FR-062-AC-4: partly backed (`TC-160`, QSL-140; ADR-014 §11 moved it
+  from QSL-152). `FamilyContract::requirements` returns
+  `Option<Requirements>`. The no-kind clause is backed: `Value`'s function
+  declaration returns `None`, twice equal
   (`qsl-eval/src/value/expression/family.rs`,
-  `a_function_declaration_has_no_requirements`), and one value naming its
-  kind for a claim form (`qsl-semantics/src/family/requirements.rs`,
-  `tc_160_a_claim_form_with_a_kind_yields_one_requirements_value`, over a
-  test claim family, since no claim family is migrated yet).
+  `a_function_declaration_has_no_requirements`). The with-kind clause is
+  pending QSL-42's first real claim family: no migrated family carries an
+  FR-057 kind yet, so no test can show one returning its own kind.
 - FR-062-AC-5: backed at the hook level (`TC-160`, `qsl-eval/src/value/expression/
   family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`
   (QSL-166), which QSL-153 uses as `ValueFunctionFamily::check`'s and
