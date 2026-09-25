@@ -1670,3 +1670,37 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
     assert_eq!(json!(node.to_string()), status);
     assert_eq!(nominal, "Status");
 }
+
+/// FR-027-AC-5 (TC-435 step 1): the complete-V1 compile fixture, a record,
+/// an Integer function and a function with parameters, goes S1 to S4 as
+/// spine `compile` runs it, is written with nothing omitted and reads back
+/// Verified, exporting all three declarations.
+#[trace("TC-435", "FR-027-AC-5")]
+#[test]
+fn the_spine_compile_fixture_reads_back_verified_with_nothing_omitted() {
+    const FIXTURE: &[u8] = include_bytes!("../../../tests/fixtures/spine-compile.native");
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
+        "program.native",
+        FIXTURE,
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the fixture");
+    assert_eq!(parsed.diagnostics(), []);
+    let raw = parsed.source().reference().clone();
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .expect("S2 builds the unit");
+    let graph = PackageDeclarations::assemble(raw, unit)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    assert_eq!(emission.omitted, []);
+    let exports = verified_exports(&emission);
+    for name in ["Point", "seven", "px"] {
+        assert!(
+            exports.contains_key(name),
+            "{name} is not exported: {exports:?}"
+        );
+    }
+}

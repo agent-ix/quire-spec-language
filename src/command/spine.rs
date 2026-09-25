@@ -165,3 +165,23 @@ pub fn compile(
     }
     Ok(emission.package().bytes().to_vec())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::CompileRefusal;
+    use ix_trace_rs::trace;
+    use qsl_foundation::Code;
+
+    /// FR-027-AC-8 (TC-435 step 6): an emission that would omit part of the
+    /// checked graph refuses at the emit stage as `unsupported_projection`.
+    /// No complete-V1 source reaches it through the CLI yet, since every
+    /// construct S3 checks today has a v2 form.
+    #[trace("TC-435", "FR-027-AC-8")]
+    #[test]
+    fn an_omitting_emission_refuses_at_the_emit_stage() {
+        let refusal = CompileRefusal::Omitted(Vec::new());
+        assert_eq!(refusal.stage(), "emit");
+        assert_eq!(refusal.code(), Code::UnsupportedProjection);
+        assert!(refusal.region().is_none());
+    }
+}

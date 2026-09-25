@@ -400,7 +400,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-024](functional/FR-024-read-native-runtime-artifacts.md) | FR | Implemented; tested in the native-workflow test matrix; FR-024-AC-6 (four source labels, TC-431) implemented under QSL-233 (ADR-013 §7 S-4b) |
 | [FR-025](functional/FR-025-compile-rule-model-source.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR | Implemented; tested in the native-workflow test matrix; FR-026-AC-6 (four source labels, TC-430) implemented under QSL-233 (ADR-013 §7 S-4b) |
-| [FR-027](functional/FR-027-export-compiled-native-package.md) | FR | Implemented; tested in the native-workflow test matrix; FR-027-AC-4 (four source labels, TC-430) implemented under QSL-233 (ADR-013 §7 S-4b) |
+| [FR-027](functional/FR-027-export-compiled-native-package.md) | FR | Implemented; tested in the native-workflow test matrix; FR-027-AC-4 (four source labels, TC-430) implemented under QSL-233 (ADR-013 §7 S-4b); FR-027-AC-5 to FR-027-AC-8 (edition routing: `1-draft` to the spine, `0-draft` to native, TC-435) implemented under QSL-8 (ADR-011 §7.3 M-6a) |
 | [FR-028](functional/FR-028-run-selected-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-029](functional/FR-029-export-executable-projection.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-030](functional/FR-030-consume-quire-extraction.md) | FR | Implemented; tested in the native-workflow test matrix |
