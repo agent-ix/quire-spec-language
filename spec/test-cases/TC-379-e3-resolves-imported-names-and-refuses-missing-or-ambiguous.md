@@ -40,4 +40,4 @@ missing or ambiguous name with the E3 refusal codes. Scope: FR-087-AC-13.
 
 ## Status
 
-Planned; no test backs this case. E3 refuses a unit that declares an `import` until spine `compile` takes a dependency input (ADR-011 §2.4, QSL-255). See FR-087 Status, AC-13.
+Planned; no test backs this case. Spine `compile`'s dependency input and the E3 typing of imported names are ADR-015 and FR-099, planned under QSL-255 part (b). See FR-087 Status, AC-13.

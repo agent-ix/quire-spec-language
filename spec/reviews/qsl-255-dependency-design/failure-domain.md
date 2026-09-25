@@ -354,18 +354,14 @@ Fixed in the commit that follows this review, except where stated.
   is `CompileRefusal::Dependency { path, refusal }`.
 - FND-006: `ReplayRefusal::Recompile`, `DependencyIdentityMismatch` and
   `DependencySelections` are named.
-- FND-007: deferred to the implementing PR, because the lines exist only in
-  PR #445. After rebasing onto #445, the coder rewrites FR-091's "Unsupplied
-  import" bullet and FR-091-AC-24 (bare-hex digest, no library supplied,
-  stage `intake`), and points ADR-011 §2.4's QSL-255 amendment, OQ-5's last
-  sentence, FR-087's AC-13 status, FR-098's status paragraph and TC-379's
-  status at ADR-015 and FR-099.
+- FND-007: done after the rebase onto PR #445 (see SR-633 FND-006): FR-091,
+  FR-091-AC-24, TC-405 step 4 and the ADR-011, FR-087, FR-098 and TC-379
+  status text now point at ADR-015 and FR-099.
 - FND-008: per-unit limits, the library-count bound, FR-026 file limits and
   the FR-071 reader bound are stated.
 - FND-009: the E4 row and ADR-015's amendments (FR-087-AC-6) are updated.
 - FND-010: `invalid_identifier` in the dependency input, `invalid-request`
   in the CLI, both in TC-446.
-- FND-011: listed in ADR-015's amendments; FR-087-AC-11's text is left to
-  the implementing PR, since #445 edits the adjacent lines.
+- FND-011: FR-087-AC-11 names the ADR-015 D-2 and D-3 exception.
 - FND-012: D-4 step 5 and FR-098 order the checks as suggested.
 - FND-013: FR-071-AC-9 and TC-186 step 7 add the empty version.

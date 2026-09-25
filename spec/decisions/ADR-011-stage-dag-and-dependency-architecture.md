@@ -526,10 +526,9 @@ members, and the I2 reader admits a non-empty `dependency_selections`.
 
 **Amended (2026-09-25, QSL-255).** The QSpec schema defect this section
 recorded is fixed (QSpec STD-105; IR-287 types the entry as
-`CheckedDependencySelection`). E3 still refuses a unit that declares an
-`import` (`missing_import`/`missing-selection`, FR-091), because spine
-`compile` and `replay` take no dependency input yet. Remaining work:
-QSL-255 (the dependency input of spine `compile` and of the replay request).
+`CheckedDependencySelection`). Spine `compile` takes a dependency input and
+resolves each `import` against it, and `replay` builds that input from its
+request (ADR-015, FR-099, FR-098).
 
 ## 3. Forbidden bypasses
 
@@ -1324,10 +1323,9 @@ sections it names.
 - **OQ-5: `dependency_selections`.** Each entry is
   `{identity, version, package_id}`, one per library identity of the
   resolved closure, identical in the lock and the identity preimage (QSpec
-  STD-105, IR-287). E4 fills it and the emitter writes it (§2.4). An
-  `import` is refused until spine `compile` and `replay` take a dependency
-  input (§2.4; Remaining work: QSL-255). It is not a prerequisite of the
-  lock-evidence work.
+  STD-105, IR-287). E4 fills it and the emitter writes it (§2.4). Spine
+  `compile` and `replay` resolve imports against a dependency input
+  (ADR-015). It is not a prerequisite of the lock-evidence work.
 - **OQ-6: edition and definition digests.** The edition is `ix:native` /
   `1-draft.2` per QSpec's `complete-value-lock.json`; the fixtures'
   `quire-edition` edition is a placeholder. **Amended (2026-09-24, QSL-6):**

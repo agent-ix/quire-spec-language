@@ -162,7 +162,7 @@ operational validation remains outside this audit-only plan.
 | TC-376 | Function application checking accepts a well-typed call and refuses wrong arity, an unknown name and a type mismatch | Unit | P1 | FR-065-AC-4 | ✅ Passed locally (QSL-148) |
 | TC-377 | Function declaration checking accepts a well-typed declaration, reports its calls, and refuses an ill-typed body | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC (QSL-148) |
 | TC-378 | A real recursive-descent fixture shows the nesting-depth limit is the proximate cause of a function-declaration refusal | Unit | P1 | FR-062-AC-7, FR-096-AC-11 | ✅ Passed locally; QSL-160 (S-5b) |
-| TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Planned; E3 refuses every `import` until spine `compile` takes a dependency input (ADR-011 §2.4, QSL-255); see FR-087 Status |
+| TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Planned with FR-099 and ADR-015 D-5 (QSL-255 part b); see FR-087 Status |
 | TC-380 | The function-declaration contract check refuses an ill-typed declaration and admits a well-typed one | Unit | P1 | FR-065-AC-7 | ✅ Passed locally (QSL-148, PR #303) |
 | TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | 🚧 Partly passed: the whole-package count passes locally (PR #303 review round 3, finding F1); the `Limit` outcome is pending S-5b (QSL-160) |
 | TC-382 | S6a returns each kernel outcome unchanged in FamilyOutcome::Evaluated | Unit | P1 | FR-090-AC-1 | ✅ Passed locally |
@@ -187,7 +187,7 @@ operational validation remains outside this audit-only plan.
 | TC-402 | The assembler lives in the check core and its non-test code has no edge to qsl-cst | Unit | P1 | FR-091-AC-20 | 🚧 Planned; QSL-141 |
 | TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | 🚧 Planned; QSL-141 |
 | TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | ✅ Passed locally |
-| TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | 🚧 Planned; QSL-141; FR-091-AC-24 passes locally (QSL-255) |
+| TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | 🚧 Planned; QSL-141; FR-091-AC-24's stage-`intake`, bare-hex form is planned with FR-099 (QSL-255 part b) |
 | TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; `stage_limit_exceeded` code needs QSL-160 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | ✅ Passed locally |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | ✅ Passed locally |

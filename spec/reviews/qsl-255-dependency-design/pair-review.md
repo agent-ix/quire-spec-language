@@ -93,3 +93,36 @@ textual rebase conflicts, not id clashes.
 FND-002 to FND-006 are ordering and mapping gaps that an implementer would
 otherwise have to decide. Fix them in this PR. FND-007 to FND-011 are small
 wording and test additions, and can land in the same commit.
+
+## Dispositions
+
+All findings are fixed, FND-006 after rebasing onto `main` with PR #445.
+
+- FND-001: D-5, FR-099 and FR-099-AC-5 require package-independence of
+  every type node reachable from the signature; TC-446 step 5 adds
+  `Set<R>`, a tuple holding `R` and `g::R`.
+- FND-002: D-1 runs the cycle check first and reuses a library only once
+  its compile has completed; FR-099 mirrors both.
+- FND-003: D-1 and FR-099 name the closure-level refusals (dependency
+  input, cycle, diamond), reported unwrapped with their loci; every other
+  library refusal is wrapped. FR-099-AC-3 and TC-446 step 3 add a wrapped
+  transitive `missing_import`; D-4 and FR-098 state the replay case.
+- FND-004 and FND-005: D-4 is a seven-rule order, each rule over all
+  entries before the next, with QSpec FR-323's codes. A non-ascending or
+  repeated entry list refuses `DependencySelections` before the input is
+  built; a same-owner pair refuses `DependencyInput`. FR-098-AC-7 and
+  TC-444 step 7 cover both.
+- FND-006: after the rebase, FR-091's "Unsupplied import" is replaced by a
+  pointer to FR-099, FR-091-AC-24 and TC-405 step 4 use a bare-hex digest
+  at stage `intake`, and ADR-011 §2.4, OQ-5, FR-087's AC-13 and AC-14 status,
+  FR-098's status and TC-379's status point at ADR-015 and FR-099. This
+  also closes SR-631 FND-007 and FND-011; FR-087-AC-11 names the D-2 and D-3
+  exception.
+- FND-007: FR-098's list names the entry mismatch, and the field is
+  `requested`.
+- FND-008: D-5 and ADR-013 QC-18 state the acyclicity.
+- FND-009: D-5 gives such a type node a `generated` occurrence when the
+  unit writes none (FR-093).
+- FND-010: FR-099-AC-2 and TC-446 step 2 add the three spellings; the
+  `missing_import` locus is the import's identity string.
+- FND-011: TC-446 step 3 states the cycle digests are arbitrary.
