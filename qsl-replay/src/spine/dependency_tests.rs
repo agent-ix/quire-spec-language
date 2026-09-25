@@ -140,11 +140,11 @@ fn an_import_binds_the_library_compiled_from_source() {
         [&d]
     );
 
-    // QSL's I2 read admits the package: the emission `compile` wrote, read
-    // back pinned at its own `package_id`.
+    // QSL's I2 read admits the package, with test/geometry's admitted
+    // package supplied, pinned at its own `package_id`.
     let emission = emit_checked(&compiled.package).expect("the package emits");
     assert_eq!(emission.package().bytes(), compiled.emitted.bytes());
-    let view = read_import_view(&emission, lib("u"), "1", &BTreeMap::new())
+    let view = read_import_view(&compiled.package, lib("u"), "1", &BTreeMap::new())
         .expect("the I2 read admits the importing package");
     assert_eq!(view.package(), compiled.emitted.package_id());
 

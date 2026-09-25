@@ -23,7 +23,6 @@ use std::sync::Arc;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{build_unit, FormsCause, FormsFailure, FormsLimits};
-use qsl_foundation::diagnostic::StageFailure;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
@@ -672,10 +671,7 @@ impl ImportRefusal {
             Self::RevisionMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {
                 Code::StaleDependency
             }
-            Self::View { refusal, .. } => match &**refusal {
-                StageFailure::Refused(refusal) => refusal.code(),
-                StageFailure::Limit(_) => Code::StageLimitExceeded,
-            },
+            Self::View { refusal, .. } => refusal.code(),
         }
     }
 
@@ -968,7 +964,7 @@ impl Resolution<'_> {
             ));
         }
         // 6. View.
-        let view = read_import_view(&emission, identity.clone(), &import.version, self.packages)
+        let view = read_import_view(&package, identity.clone(), &import.version, self.packages)
             .map_err(|refusal| {
                 refuse(
                     ImportRefusal::View {

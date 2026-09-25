@@ -68,7 +68,7 @@ sha2 = "=0.10.9"
 serde = { version = "=1.0.228", features = ["derive"] }
 thiserror = "=2.0.20"
 unicode-normalization = "=0.1.25"
-quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "7b1ec7a19f031dcea433293a25af57f0bb6a14f8" }
+quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "bfcba9892273802b67c1d106ee3a7079c87dd136" }
 qsl-attrs = { path = "qsl-attrs" }
 
 [dev-dependencies]
