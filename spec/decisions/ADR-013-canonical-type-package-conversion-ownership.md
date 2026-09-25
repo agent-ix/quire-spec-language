@@ -725,7 +725,7 @@ Equality: lexical on the capability wire string.
 
 | Field | Decision |
 | --- | --- |
-| Owner | Decided in #222 (Q222-3): the mode and extent vocabulary and its rules. Recorded mechanics: CG negotiation settles the disposition (AD-016 arrow 4); it is not a QSL-emitted value; the `requires-bound` predicate is IR's (AD-016), and CG reports it as the FR-331 disposition value. |
+| Owner | Decided in ADR-014 §4 (Q222-3): the mode and extent vocabulary and its rules. Recorded mechanics: CG negotiation settles the disposition (AD-016 arrow 4); it is not a QSL-emitted value; the `requires-bound` predicate is IR's (AD-016), and CG reports it as the FR-331 disposition value. |
 | Implementing ticket | CG (existing negotiation code). #213 S-6 implements only QSL's typed request representation to #222's design. |
 | Public type | CG's disposition plus the declared finite domain per argument. A `proved` result qualifies only over that declared subset, and the subset is part of the obligation identity (AD-016 arrow 5, O-09). |
 | Serialized authority | FR-331 request `domains`, `limits`, `requested claims`; FR-331 `dispositions`. |
@@ -737,7 +737,7 @@ Equality: lexical on the capability wire string.
 
 This record assigns owners to the bound representations that exist. The bound
 taxonomy, derivations between kinds, and the meaning of absent bounds are
-#222's boundedness design (Q222-1, Q222-2). #213 S-6 implements the QSL bound
+#222's boundedness design (Q222-1, Q222-2), decided in ADR-014 §1 and §2. #213 S-6 implements the QSL bound
 types to that design, and #188 and #189 consume them.
 
 | Existing representation | Owner and type | Serialized authority |
@@ -1067,7 +1067,7 @@ direction is S-3's, not a gate on S-2 (Consequences).
 | S-4b | Source references (QSL-233): FR-001's four-label `SourceIdentity` for every source admission, spine and native-v1, and the `RawSourceRef` S0 mints from it; S0's refusal regions (FR-001-AC-8); FR-010's `parse` and `format` grammar; the native-v1 request wire, native-run-result/1, native-linked-package/1 and native-state-input/1 with their schemas and golden vectors, each carrying the four labels (FR-026, FR-027, FR-031, FR-018, FR-024), with `docs/native-runtime-inputs.md`; the consumers of those labels, the verified package reader and its bindings (FR-020, FR-028) and the static package identity, whose hash vectors change because the manifest's source identity gains two labels (FR-021); package declarations and the `CheckedGraph` carrying the unit's `RawSourceRef`, their `SourceOwner` taken from it, for QSL-6 S1b to emit as the lock `sources` entry; O-12's `LocatedSpan` replacement in the canonical S0 to S2 diagnostics; C-21. The replay executor's recompilation under the reference's labels (FR-001) is TK-01's (the replay recompilation, ADR-011 §2 S8), not S-4b's. | S-4 |
 | S-5a | Refusals: O-17 QSL `catalog_code()`, the `CatalogCode` and O-16 category types in F `diagnostic`, T-4's `InternalFault` — no `Locus`. Landed (#258, `0bfa4b9`). | S-1, QC-11 |
 | S-5b | Refusals and readers (FR-096): O-17 `RefusalRecord`, T-4's `LimitExceeded`/`LimitKind` and `Staged<T>`/`StageFailure<C>`, O-22's I2 reader — all carry `Locus` (T-5). The check-stage loci resolve through the unit's `RawSourceRef` (S-4b) and the forms' spans (FR-091-AC-10). The I2 reader's loci need `Locus::Artifact{digest, pointer}`'s O-18 digest record (S-2) and three IR reader changes (FR-096 Dependencies). | S-5a (landed, #258), S-4 (landed, #399), S-4b, FR-091-AC-10 (QSL-141), QC-11 (met: revision `1-draft.6`), QC-28, and QSL's diagnostic catalog claim at `1-draft.6` (a producer claiming `1-draft.5` or earlier emits no `stage_limit_exceeded`; Remaining work: QSL-236) |
-| S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, and the #222 bound types (O-21) | S-1, #222 accepted, agent-ix/quire-specification#134 |
+| S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, and the #222 bound types (O-21) that ADR-014 §11 names | S-1, ADR-014 (#222) accepted, agent-ix/quire-specification#134 |
 
 Work that this record assigns and that no ticket owns is listed in §8
 Tickets to open at #212 (OQ-4 ruling).
@@ -1134,11 +1134,11 @@ Questions for #210, answered in ADR-012 §13.5:
 
 Questions for #222:
 
-| ID | Question |
-| --- | --- |
-| Q222-1 | The bound taxonomy: which kinds exist (authored semantic bound, proof bound, execution resource bound, backend tool budget, profile ceiling), which are distinct types, and which derivations between them exist. O-21 records only the existing representations and their owners. |
-| Q222-2 | The meaning of an absent bound, and the owner and representation of trace position, interval, horizon and the infinite-trace facet. |
-| Q222-3 | The proof-mode and extent vocabulary and its rules, which O-20's owner row defers to #222. |
+| ID | Question | Answer |
+| --- | --- | --- |
+| Q222-1 | The bound taxonomy: which kinds exist (authored semantic bound, proof bound, execution resource bound, backend tool budget, profile ceiling), which are distinct types, and which derivations between them exist. O-21 records only the existing representations and their owners. | ADR-014 §1: six kinds (B-1 to B-6), each its own type, with two derivations. |
+| Q222-2 | The meaning of an absent bound, and the owner and representation of trace position, interval, horizon and the infinite-trace facet. | ADR-014 §2 (absence), §3 (TR-1 to TR-8) and §5 (the facet). |
+| Q222-3 | The proof-mode and extent vocabulary and its rules, which O-20's owner row defers to #222. | ADR-014 §4: `ClaimExtent`, `qsl_route::Mode` and the available finite bound predicate. |
 
 For #229:
 
@@ -1282,7 +1282,7 @@ Tickets and work in progress routed to #211 by ADR-010 §7.2 to §7.4 and §8:
   kernel row further, and QC-23 adds one FR-201 domain; QC-22 and QC-23 have no filed QSpec ticket yet. The owner questions
   OQ-1 to OQ-5 are ruled (2026-09-19), and OQ-A to OQ-F (2026-09-22).
 - ADR-012 §13.2 questions 1 to 4 are answered in OQ-5, O-10, O-17, O-14 and
-  O-19; O-20's owner row is decided in #222. The nine ADR-011 questions to
+  O-19; O-20's owner row is decided in #222 (ADR-014 §4). The nine ADR-011 questions to
   #211 are answered in §3.1 (T-1 to T-9). ADR-011 applies Q209-8, and
   ADR-012 §13.5 answers Q210-1 to Q210-4.
 

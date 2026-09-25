@@ -199,7 +199,9 @@ here, and #212 can check them from this record alone.
   `KaniOutcome` to the FR-331 accounting record and reaches it intact.
 
 #212 scenario 5 needs one input from #222: the "available finite bound"
-predicate. #222 may produce it in parallel with #212.
+predicate. ADR-014 §4 defines it: a finite bound is available exactly when the
+request carries a caller-supplied `ProofBound` for every unbounded domain of
+the item.
 
 ## 2. Shared family contract
 
