@@ -184,8 +184,9 @@ fn intake_message(cause: &UnitIntakeCause) -> String {
         UnitIntakeCause::ArtifactDigest => {
             "a `sha256:` digest selects a compiled-model artifact, not a domain package".to_owned()
         }
-        UnitIntakeCause::Refused(refusals) => match refusals.first() {
-            Some(first) => with_more(
+        UnitIntakeCause::Refused(refusals) => {
+            let first = &refusals[0];
+            with_more(
                 format!(
                     "{} ({}): {}",
                     first.code.as_str(),
@@ -193,9 +194,9 @@ fn intake_message(cause: &UnitIntakeCause) -> String {
                     first.detail
                 ),
                 refusals.len(),
-            ),
-            None => "no refusal recorded".to_owned(),
-        },
+            )
+        }
+        UnitIntakeCause::Invariant => "the record reader refused with no refusal".to_owned(),
         UnitIntakeCause::Limit(incomplete) => format!(
             "model normalization reached its `{}` limit ({})",
             incomplete.limit_kind.as_str(),
@@ -239,6 +240,10 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnadmittedModel { alias } => {
             format!("`model {alias}` names no admitted domain package")
         }
+        AssemblyCause::UnsupportedModelMember { alias, node } => format!(
+            "the domain package of `model {alias}` declares `{node}`, which no type environment \
+             entry represents yet"
+        ),
         AssemblyCause::ModelType { alias, node } => {
             format!("the domain package of `model {alias}` has no effective type for `{node}`")
         }

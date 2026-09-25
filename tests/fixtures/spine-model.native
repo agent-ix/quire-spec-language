@@ -4,6 +4,8 @@
 // The profile digest is a placeholder.
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-model M = "acme/orders" version "1.0.0" digest "sha256-jcs:55f1f8fd068bbd57dc53f97f483be7a98123fd220d47913f63dcc929bef0b26f";
+model M = "acme/orders" version "1.0.0" digest "sha256-jcs:5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd";
 function keep using v(g: M::Gadget): M::Gadget pure { g }
 function held using v(w: Reference<M::Widget>): Boolean pure { true }
+function code using v(g: M::Gadget): Integer pure { deref(g).code }
+function same using v(g: M::Gadget, w: M::Widget): Boolean pure { g = w }

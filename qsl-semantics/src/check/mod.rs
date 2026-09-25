@@ -93,6 +93,7 @@ mod region;
 mod termination;
 mod type_form;
 
+use crate::model::domain_package::DomainPackageRef;
 use std::collections::BTreeMap;
 
 use check::{bind_parameters, Typer};
@@ -331,7 +332,7 @@ pub struct CheckedGraph {
     type_spans: BTreeMap<String, qsl_foundation::Span>,
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
     /// selection, ascending by identity.
-    model_selections: Vec<crate::model::domain_package::DomainPackageRef>,
+    model_selections: Vec<DomainPackageRef>,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -1071,7 +1072,7 @@ impl CheckedGraph {
     /// ADR-011 §2.4: the selection of each domain package this package was
     /// checked against, ascending by identity: the lock's
     /// `model_selections`.
-    pub fn model_selections(&self) -> &[crate::model::domain_package::DomainPackageRef] {
+    pub fn model_selections(&self) -> &[DomainPackageRef] {
         &self.model_selections
     }
 

@@ -2105,3 +2105,94 @@ fn unit_selections(unit: &str) -> Vec<qsl_foundation::selection::ModelSelection>
         .models
         .clone()
 }
+
+/// FR-056-AC-9 (TC-442 step 3): the assembler given no admitted model for
+/// the unit's `model M` refuses `UnadmittedModel` at the declaration, as
+/// `missing_import`.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn a_model_declaration_with_no_admitted_package_refuses_at_the_assembler() {
+    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model", "fixture", "fixture:1"),
+        "program.native",
+        UNIT.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .unwrap();
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default()).unwrap();
+    let refusal =
+        PackageDeclarations::assemble(parsed.source().reference().clone(), unit, Vec::new())
+            .expect_err("no package is admitted for M");
+    let first = &refusal.errors[0];
+    assert_eq!(
+        first.cause,
+        qsl_semantics::check::AssemblyCause::UnadmittedModel {
+            alias: "M".to_owned()
+        }
+    );
+    assert_eq!(first.cause.code(), qsl_foundation::Code::MissingImport);
+    assert!(UNIT[first.span.start..first.span.end].starts_with("model M = "));
+}
+
+/// FR-056-AC-9 (TC-442 step 3): a refusal after admission and a
+/// normalization ceiling each stop I1 at the `model` declaration: a
+/// supertype cycle (`Widget` and `Gadget` generalizing each other) is
+/// refused by the Semantic IR record reader as
+/// `invalid_model_binding`/`malformed-declaration`, and a
+/// `declaration_records` ceiling of one is a limit, `stage_limit_exceeded`.
+#[trace("TC-442", "FR-056-AC-9")]
+#[test]
+fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
+    const UNIT: &str = include_str!("../../../tests/fixtures/spine-model.native");
+    let selections = unit_selections(UNIT);
+    let limited = qsl_semantics::model::intake::admit_unit(
+        &selections,
+        &qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]),
+        qsl_semantics::model::accounting::ModelNormalizationLimits {
+            declaration_records: 1,
+            ..Default::default()
+        },
+    )
+    .expect_err("four records exceed a ceiling of one");
+    assert!(
+        matches!(
+            limited.cause,
+            qsl_semantics::model::intake::UnitIntakeCause::Limit(_)
+        ),
+        "{limited:?}"
+    );
+    assert_eq!(
+        limited.cause.code(),
+        qsl_foundation::Code::StageLimitExceeded
+    );
+    assert!(UNIT[limited.span.start..limited.span.end].starts_with("model M = "));
+
+    let mut cyclic: Value = serde_json::from_slice(SPINE_MODEL_DOCUMENT).unwrap();
+    for node in cyclic["types"].as_array_mut().unwrap() {
+        if node["identity"] == "ix://acme/orders/Widget" {
+            node["supertypes"] = json!(["ix://acme/orders/Gadget"]);
+        }
+    }
+    let cyclic = serde_json::to_vec(&cyclic).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([cyclic.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let text = UNIT.replace(
+        &UNIT[UNIT.find("sha256-jcs:").unwrap()..][..75],
+        &format!("sha256-jcs:{}", qsl_semantics::model::key::hex(digest)),
+    );
+    let refused = qsl_semantics::model::intake::admit_unit(
+        &unit_selections(&text),
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect_err("a supertype cycle does not normalize");
+    let qsl_semantics::model::intake::UnitIntakeCause::Refused(refusals) = &refused.cause else {
+        panic!("expected a refusal, got {refused:?}");
+    };
+    assert_eq!(refusals[0].code, qsl_foundation::Code::InvalidModelBinding);
+    assert_eq!(refusals[0].cause.as_str(), "malformed-declaration");
+    assert!(text[refused.span.start..refused.span.end].starts_with("model M = "));
+}

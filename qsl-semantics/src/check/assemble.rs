@@ -33,7 +33,10 @@ use qsl_forms::{
 use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded, StageFailure};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{Code, Span};
-use quire_exact::{EffectiveId, IeeeWidth, Presence, RoundingMode, ValueType};
+use quire_exact::{
+    CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, Integer,
+    IntegerInterval, Presence, RoundingMode, ValueType,
+};
 
 use super::check::{PackageDeclarations, ResolvedSignature};
 use super::lowering::{strongly_connected, AdmittedModel};
@@ -41,11 +44,14 @@ use super::node_key::{declared_type_handle, NodeKeyRefusal, SourceOwner};
 use super::type_form::{
     parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
-use crate::model::domain_package::DomainPackageRecord;
-use crate::model::intake::{type_identity_segment, SelectedModel};
+use crate::model::domain_package::{
+    DomainPackageRecord, FieldMemberRecord, NativeValueType, ValueTypeRef,
+};
+use crate::model::intake::{member_identity_name, type_identity_segment, SelectedModel};
+use crate::model::key::DeclarationKey;
 use crate::value::declaration::{
-    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, InvalidDeclaration,
-    ObjectTypeDeclaration, TypeEnvironment,
+    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
+    InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
 
 /// Why the assembler refused one part of a unit (FR-091 "The assembler
@@ -122,6 +128,16 @@ pub enum AssemblyCause {
         /// The object type's IR node identity.
         node: String,
     },
+    /// An admitted domain package's record has no type environment form
+    /// yet: an operation, a record value type, a systems part, port or
+    /// allocation, or a field whose value type or multiplicity no kernel
+    /// type represents.
+    UnsupportedModelMember {
+        /// The declaration's alias.
+        alias: String,
+        /// The record's IR node identity.
+        node: String,
+    },
 }
 
 impl AssemblyCause {
@@ -137,22 +153,24 @@ impl AssemblyCause {
                 Code::AmbiguousDeclaration
             }
             Self::IllFormedBounds(_) => Code::IllTyped,
-            Self::FloatingType { .. } => Code::UnknownRequiredFeature,
+            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
+                Code::UnknownRequiredFeature
+            }
             Self::AliasCycle { .. } => Code::InvalidPackage,
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
                 DeclarationCause::DuplicateMember(_) => Code::AmbiguousDeclaration,
                 DeclarationCause::Type(_)
                 | DeclarationCause::Recursion { .. }
-                | DeclarationCause::GeneralizationCycle { .. } => Code::IllTyped,
-                // The assembler admits records and tuples only: an object-type
-                // cause, or a `redefines` it never writes, is a broken
-                // invariant.
-                DeclarationCause::DuplicateKey
-                | DeclarationCause::UnknownDeclaration(_)
-                | DeclarationCause::UnknownObjectType(_)
+                | DeclarationCause::GeneralizationCycle { .. }
                 | DeclarationCause::RedefinitionTarget(_)
                 | DeclarationCause::RedefinitionConflict(_)
-                | DeclarationCause::RedefinitionWidens(_) => Code::RuntimeInvariant,
+                | DeclarationCause::RedefinitionWidens(_) => Code::IllTyped,
+                // Keys and object-type references come from the unit's own
+                // handles and the admitted view's identities: one that does
+                // not resolve is a broken invariant.
+                DeclarationCause::DuplicateKey
+                | DeclarationCause::UnknownDeclaration(_)
+                | DeclarationCause::UnknownObjectType(_) => Code::RuntimeInvariant,
             },
             Self::TypeLimit(_) => Code::StageLimitExceeded,
             Self::Handle(_) => Code::RuntimeInvariant,
@@ -166,7 +184,9 @@ impl AssemblyCause {
             Self::UnresolvedTypeName { .. } => "missing-name",
             Self::AmbiguousTypeName { .. } | Self::DuplicateAlias { .. } => "ambiguous-name",
             Self::IllFormedBounds(_) => "type-mismatch",
-            Self::FloatingType { .. } => "unsupported-feature",
+            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
+                "unsupported-feature"
+            }
             Self::AliasCycle { .. } => "definition-cycle",
             Self::UndeclaredAlias { .. } | Self::UnadmittedModel { .. } => "missing-selection",
             Self::ModelType { .. } => "established-invariant-broken",
@@ -174,13 +194,13 @@ impl AssemblyCause {
                 DeclarationCause::DuplicateMember(_) => "ambiguous-name",
                 DeclarationCause::Type(cause) => cause.tag().unwrap_or("type-mismatch"),
                 DeclarationCause::Recursion { .. }
-                | DeclarationCause::GeneralizationCycle { .. } => "type-mismatch",
-                DeclarationCause::DuplicateKey
-                | DeclarationCause::UnknownDeclaration(_)
-                | DeclarationCause::UnknownObjectType(_)
+                | DeclarationCause::GeneralizationCycle { .. }
                 | DeclarationCause::RedefinitionTarget(_)
                 | DeclarationCause::RedefinitionConflict(_)
-                | DeclarationCause::RedefinitionWidens(_) => "established-invariant-broken",
+                | DeclarationCause::RedefinitionWidens(_) => "type-mismatch",
+                DeclarationCause::DuplicateKey
+                | DeclarationCause::UnknownDeclaration(_)
+                | DeclarationCause::UnknownObjectType(_) => "established-invariant-broken",
             },
             Self::TypeLimit(limit) => limit.kind().catalog_cause(),
             Self::Handle(_) => "established-invariant-broken",
@@ -309,46 +329,193 @@ impl TypeNames for Names {
 }
 
 /// The object types of the domain package admitted for the `model`
-/// declaration `alias`, each named `alias::T` with `T` its artifact id and
-/// declaring its supertypes by their effective identities.
+/// declaration `alias`, each named `alias::T` with `T` its artifact id, and
+/// declaring its supertypes by their effective identities and its fields
+/// with their value types, presences and redefinitions. Every other record
+/// an object type's shape would need and the type environment cannot hold
+/// (an operation, a record value type, a systems part, port or allocation)
+/// refuses as [`AssemblyCause::UnsupportedModelMember`]. Relationship and
+/// population records name no type environment entry; they stay in the
+/// admitted model `check` keys model nodes from.
 fn model_object_types(
     alias: &str,
     model: &SelectedModel,
     span: Span,
-) -> Result<Vec<ObjectTypeDeclaration>, AssemblyError> {
+) -> Result<Vec<ObjectTypeDeclaration>, Vec<AssemblyError>> {
+    let package = model.view.domain_package();
     let identities = model.view.type_identities();
-    let broken = |node: &str| AssemblyError {
-        cause: AssemblyCause::ModelType {
+    let error = |cause| AssemblyError { cause, span };
+    let broken = |node: &str| {
+        error(AssemblyCause::ModelType {
             alias: alias.to_owned(),
             node: node.to_owned(),
-        },
-        span,
+        })
     };
+    let unsupported = |node: &str| {
+        error(AssemblyCause::UnsupportedModelMember {
+            alias: alias.to_owned(),
+            node: node.to_owned(),
+        })
+    };
+    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = package
+        .records
+        .iter()
+        .map(|record| (record.key(), record))
+        .collect();
+    let mut errors = Vec::new();
+    let mut fields: BTreeMap<&DeclarationKey, Vec<FieldDeclaration>> = BTreeMap::new();
+    for record in &package.records {
+        match record {
+            DomainPackageRecord::FieldMember(field) => {
+                match model_field(field, &records, identities) {
+                    Ok(declaration) => fields.entry(&field.owner).or_default().push(declaration),
+                    Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
+                    Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
+                    Err(Unmapped::Float(width)) => {
+                        errors.push(error(AssemblyCause::FloatingType {
+                            width,
+                            rounding: RoundingMode::Exact,
+                            profile: None,
+                        }))
+                    }
+                }
+            }
+            DomainPackageRecord::RecordValueType(_)
+            | DomainPackageRecord::OperationMember(_)
+            | DomainPackageRecord::Component(_)
+            | DomainPackageRecord::Endpoint(_)
+            | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
+            DomainPackageRecord::ObjectType(_)
+            | DomainPackageRecord::ScalarType(_)
+            | DomainPackageRecord::Relationship(_)
+            | DomainPackageRecord::Population(_) => {}
+        }
+    }
     let mut declarations = Vec::new();
-    for record in &model.view.domain_package().records {
+    for record in &package.records {
         let DomainPackageRecord::ObjectType(object) = record else {
             continue;
         };
         let key = &object.key;
-        let artifact =
-            type_identity_segment(&key.package, &key.node).ok_or_else(|| broken(&key.node))?;
-        let identity = identities.get(key).ok_or_else(|| broken(&key.node))?;
-        let supertypes = object
-            .supertypes
-            .iter()
-            .map(|supertype| {
-                identities
-                    .get(supertype)
-                    .copied()
-                    .ok_or_else(|| broken(&supertype.node))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let (Some(artifact), Some(identity)) = (
+            type_identity_segment(&key.package, &key.node),
+            identities.get(key),
+        ) else {
+            errors.push(broken(&key.node));
+            continue;
+        };
+        let mut supertypes = Vec::with_capacity(object.supertypes.len());
+        for supertype in &object.supertypes {
+            match identities.get(supertype) {
+                Some(id) => supertypes.push(*id),
+                None => errors.push(broken(&supertype.node)),
+            }
+        }
         declarations.push(
-            ObjectTypeDeclaration::new(*identity, format!("{alias}::{artifact}"), Vec::new())
-                .with_supertypes(supertypes),
+            ObjectTypeDeclaration::new(
+                *identity,
+                format!("{alias}::{artifact}"),
+                fields.remove(key).unwrap_or_default(),
+            )
+            .with_supertypes(supertypes),
         );
     }
-    Ok(declarations)
+    // A field whose owner is no object type: its owner is a record value
+    // type, already refused above, or a broken record.
+    for (owner, _) in fields {
+        if !matches!(
+            records.get(owner),
+            Some(DomainPackageRecord::RecordValueType(_))
+        ) {
+            errors.push(broken(&owner.node));
+        }
+    }
+    if errors.is_empty() {
+        Ok(declarations)
+    } else {
+        Err(errors)
+    }
+}
+
+/// Why a domain package field has no type environment field.
+enum Unmapped {
+    /// No kernel type or presence represents it.
+    Unsupported,
+    /// A floating type, refused as the assembler refuses every float.
+    Float(IeeeWidth),
+    /// A key the admitted view does not resolve: a broken invariant of I1.
+    Broken,
+}
+
+/// `field` as an object type's field: named by its member name, typed by
+/// its value type, `[1, 1]` required, `[0, 1]` optional and any wider
+/// multiplicity the collection its `ordered`/`unique` flags name, bounded
+/// by it. An unbounded multiplicity with a lower bound has no kernel type.
+fn model_field(
+    field: &FieldMemberRecord,
+    records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
+    identities: &BTreeMap<DeclarationKey, EffectiveId>,
+) -> Result<FieldDeclaration, Unmapped> {
+    let name = member_identity_name(&field.owner.node, &field.key.node).ok_or(Unmapped::Broken)?;
+    let element = match &field.value_type {
+        ValueTypeRef::Native(native) => match native {
+            NativeValueType::Boolean => ValueType::Boolean,
+            NativeValueType::Integer => ValueType::Integer,
+            NativeValueType::Float32 => return Err(Unmapped::Float(IeeeWidth::Binary32)),
+            NativeValueType::Float64 => return Err(Unmapped::Float(IeeeWidth::Binary64)),
+            // Intake refuses these: their domain parameters have no Semantic
+            // IR spelling, so no unparameterized kernel type stands for them.
+            NativeValueType::Rational | NativeValueType::Decimal | NativeValueType::Text => {
+                return Err(Unmapped::Unsupported)
+            }
+        },
+        ValueTypeRef::Package(key) => match records.get(key) {
+            Some(DomainPackageRecord::ObjectType(_)) => {
+                ValueType::Reference(*identities.get(key).ok_or(Unmapped::Broken)?)
+            }
+            Some(DomainPackageRecord::ScalarType(scalar)) => ValueType::Int(
+                IntegerInterval::new(Integer::from(scalar.lower), Integer::from(scalar.upper))
+                    .map_err(|_| Unmapped::Unsupported)?,
+            ),
+            Some(_) => return Err(Unmapped::Unsupported),
+            None => return Err(Unmapped::Broken),
+        },
+    };
+    let multiplicity = field.multiplicity;
+    let (value_type, presence) = match (multiplicity.lower, multiplicity.upper) {
+        (1, Some(1)) => (element, Presence::Required),
+        (0, Some(1)) => (element, Presence::Optional),
+        (lower, upper) => {
+            let kind = match (multiplicity.ordered, multiplicity.unique) {
+                (true, true) => CollectionKind::OrderedSet,
+                (true, false) => CollectionKind::Sequence,
+                (false, true) => CollectionKind::Set,
+                (false, false) => CollectionKind::Bag,
+            };
+            let bound = match upper {
+                Some(upper) => {
+                    Some(CardinalityBound::new(lower, upper).map_err(|_| Unmapped::Unsupported)?)
+                }
+                None if lower == 0 => None,
+                None => return Err(Unmapped::Unsupported),
+            };
+            (
+                ValueType::collection(CollectionType::new(kind, element, bound)),
+                Presence::Required,
+            )
+        }
+    };
+    let declaration = FieldDeclaration::new(name, value_type, presence);
+    let Some(target) = &field.redefines else {
+        return Ok(declaration);
+    };
+    let Some(DomainPackageRecord::FieldMember(redefined)) = records.get(target) else {
+        return Err(Unmapped::Unsupported);
+    };
+    let owner = identities.get(&redefined.owner).ok_or(Unmapped::Broken)?;
+    let redefined_name =
+        member_identity_name(&redefined.owner.node, &redefined.key.node).ok_or(Unmapped::Broken)?;
+    Ok(declaration.with_redefines(FieldRef::new(*owner, redefined_name)))
 }
 
 /// A function signature's type forms: its parameters' and its result's,
@@ -630,6 +797,7 @@ impl PackageDeclarations {
         // object types by name.
         let mut admitted = Vec::with_capacity(selections.models.len());
         let mut object_types = Vec::new();
+        let mut object_spans = BTreeMap::new();
         for selection in &selections.models {
             let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
                 errors.push(AssemblyError {
@@ -641,8 +809,13 @@ impl PackageDeclarations {
                 continue;
             };
             match model_object_types(&selection.alias, model, selection.span) {
-                Ok(declarations) => object_types.extend(declarations),
-                Err(error) => errors.push(error),
+                Ok(declarations) => {
+                    for declaration in &declarations {
+                        object_spans.insert(declaration.name().to_owned(), selection.span);
+                    }
+                    object_types.extend(declarations);
+                }
+                Err(refused) => errors.extend(refused),
             }
             admitted.push(AdmittedModel::from_view(&model.view));
         }
@@ -915,7 +1088,10 @@ impl PackageDeclarations {
         if !errors.is_empty() {
             return refuse(errors);
         }
-        let types = admit_types(declarations, &object_types, &declared_type_spans)?;
+        // A refused object type is located at its `model` declaration.
+        let mut type_spans = object_spans;
+        type_spans.extend(declared_type_spans.clone());
+        let types = admit_types(declarations, &object_types, &type_spans)?;
 
         let mut package = PackageDeclarations::new(source);
         package.types = types;

@@ -131,8 +131,8 @@ impl ModelDigest {
         }
     }
 
-    /// Wrap an already-computed raw-byte digest.
-    pub fn from_digest(digest: ByteDigest) -> Self {
+    /// An already-computed compiled-model artifact's raw-byte digest.
+    pub fn artifact(digest: ByteDigest) -> Self {
         Self::Artifact(digest)
     }
 
@@ -140,6 +140,16 @@ impl ModelDigest {
     pub fn digest(self) -> ByteDigest {
         match self {
             Self::Artifact(digest) | Self::DomainPackage(digest) => digest,
+        }
+    }
+}
+
+impl std::fmt::Display for ModelDigest {
+    /// The source spelling: `sha256:<hex>` or `sha256-jcs:<hex>`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Artifact(digest) => write!(f, "{digest}"),
+            Self::DomainPackage(digest) => write!(f, "sha256-jcs:{digest:x}"),
         }
     }
 }

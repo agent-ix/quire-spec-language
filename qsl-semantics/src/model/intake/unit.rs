@@ -18,7 +18,7 @@ use super::{admit_located, read_records, PackageDocument};
 use crate::model::accounting::{Incomplete, ModelNormalizationLimits};
 use crate::model::domain_package::{DomainPackage, DomainPackageRef};
 use crate::model::key::{raw_bytes_digest, SHA256_JCS_DIGEST_DOMAIN};
-use crate::model::normalize::{normalize, EffectiveView, ModelRefusal, NormalizeOutcome};
+use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome, Refusals};
 
 /// One `model` declaration of a unit, admitted at I1: its alias, the span
 /// of its declaration and its domain package's effective view.
@@ -39,10 +39,13 @@ pub enum UnitIntakeCause {
     /// `sha256:` digest, not a domain package by its `sha256-jcs:` one.
     ArtifactDigest,
     /// FR-154 admission, the record reader or normalization refused, with
-    /// every refusal the refusing step reports: never empty.
-    Refused(Vec<ModelRefusal>),
+    /// every refusal the refusing step reports.
+    Refused(Refusals),
     /// Normalization reached a `ModelNormalizationLimitsV1` ceiling.
     Limit(Incomplete),
+    /// The record reader refused with no refusal: a broken invariant of
+    /// intake, never a property of the package.
+    Invariant,
 }
 
 impl UnitIntakeCause {
@@ -51,10 +54,9 @@ impl UnitIntakeCause {
     pub fn code(&self) -> Code {
         match self {
             Self::ArtifactDigest => Code::InvalidModelBinding,
-            Self::Refused(refusals) => refusals
-                .first()
-                .map_or(Code::RuntimeInvariant, |refusal| refusal.code),
+            Self::Refused(refusals) => refusals[0].code,
             Self::Limit(_) => Code::StageLimitExceeded,
+            Self::Invariant => Code::RuntimeInvariant,
         }
     }
 }
@@ -108,40 +110,39 @@ pub fn admit_unit(
         let ModelDigest::DomainPackage(digest) = selection.model.digest() else {
             return Err(refuse(selection, UnitIntakeCause::ArtifactDigest));
         };
-        offered.push(DomainPackageRef {
-            identity: selection.model.identity().to_owned(),
-            version: selection.model.version().to_owned(),
-            digest: digest.as_bytes(),
-        });
+        offered.push((
+            selection,
+            DomainPackageRef {
+                identity: selection.model.identity().to_owned(),
+                version: selection.model.version().to_owned(),
+                digest: digest.as_bytes(),
+            },
+        ));
     }
-    let admitted = admit_located(&offered, SHA256_JCS_DIGEST_DOMAIN, packages).map_err(
-        |(index, refusal)| {
-            let refused = vec![refusal];
-            match selections.get(index) {
-                Some(selection) => refuse(selection, UnitIntakeCause::Refused(refused)),
-                // `admit_located` reports an index into `offered`, which
-                // holds one entry per selection.
-                None => UnitIntakeRefusal {
-                    alias: String::new(),
-                    span: Span { start: 0, end: 0 },
-                    cause: UnitIntakeCause::Refused(refused),
-                },
-            }
-        },
-    )?;
-    selections
-        .iter()
-        .zip(admitted)
-        .map(|(selection, (package_ref, document))| {
-            let records = read_records(&package_ref.identity, &document)
-                .map_err(|refusals| refuse(selection, UnitIntakeCause::Refused(refusals)))?;
+    let admitted = admit_located(
+        &offered,
+        |(_, offered_ref)| offered_ref,
+        SHA256_JCS_DIGEST_DOMAIN,
+        packages,
+    )
+    .map_err(|((selection, _), refusal)| {
+        refuse(
+            selection,
+            UnitIntakeCause::Refused(Refusals::new(refusal, Vec::new())),
+        )
+    })?;
+    admitted
+        .into_iter()
+        .map(|((selection, _), package_ref, document)| {
+            let records = read_records(&package_ref.identity, &document).map_err(|refusals| {
+                let cause = Refusals::try_from(refusals)
+                    .map_or(UnitIntakeCause::Invariant, UnitIntakeCause::Refused);
+                refuse(selection, cause)
+            })?;
             let view = match normalize(&DomainPackage::new(package_ref, records), limits) {
                 NormalizeOutcome::Completed(view) => view,
                 NormalizeOutcome::Refused(refusals) => {
-                    return Err(refuse(
-                        selection,
-                        UnitIntakeCause::Refused(refusals.into_iter().collect()),
-                    ))
+                    return Err(refuse(selection, UnitIntakeCause::Refused(refusals)))
                 }
                 NormalizeOutcome::Incomplete(incomplete) => {
                     return Err(refuse(selection, UnitIntakeCause::Limit(incomplete)))

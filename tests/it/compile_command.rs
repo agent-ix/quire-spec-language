@@ -669,13 +669,16 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
     assert_eq!(wire["identity_preimage"]["model_selections"], selection);
 }
 
-/// FR-027-AC-9 (TC-442 step 4): the model fixture refuses at the stage
-/// that owns each defect, at its region: `M::Nope`, which the admitted
-/// package does not declare, at `assembly`; the `model` declaration, when
-/// the request supplies no domain package or a document whose digest
-/// differs, at `intake`; and a `sha256:` model digest at `intake`.
+/// FR-027-AC-9, FR-056-AC-9 (TC-442 step 4): the model fixture refuses at
+/// the stage that owns each defect, at its region: `M::Nope`, which the
+/// admitted package does not declare, at `assembly`; `deref(g).nope`, a
+/// field neither `Gadget` nor its supertype declares, and `g = w` over a
+/// `Gadget` and an unrelated `Rock` (FR-082 compares references of one
+/// type only), at `check`; the `model` declaration, when the request
+/// supplies no domain package or a document whose digest differs, at
+/// `intake`; and a `sha256:` model digest at `intake`.
 #[test]
-#[trace("TC-442", "FR-027-AC-9")]
+#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
 fn a_model_bearing_request_refuses_at_the_owning_stage() {
     let program = std::fs::read_to_string(SPINE_MODEL_FIXTURE).unwrap();
     let document = std::fs::read(SPINE_MODEL_DOCUMENT).unwrap();
@@ -690,6 +693,20 @@ fn a_model_bearing_request_refuses_at_the_owning_stage() {
     changed_document["package"]["lockDigest"] = json!(format!("sha256:{}", "1".repeat(64)));
     let changed_document = serde_json::to_vec(&changed_document).unwrap();
     for (text, supplied, stage, code, located) in [
+        (
+            program.replacen("deref(g).code", "deref(g).nope", 1),
+            Some(document.clone()),
+            "check",
+            "ill_typed",
+            "deref(g).nope".to_owned(),
+        ),
+        (
+            program.replacen("w: M::Widget): Boolean", "w: M::Rock): Boolean", 1),
+            Some(document.clone()),
+            "check",
+            "ill_typed",
+            "g = w".to_owned(),
+        ),
         (
             program.replacen("Reference<M::Widget>", "Reference<M::Nope>", 1),
             Some(document.clone()),

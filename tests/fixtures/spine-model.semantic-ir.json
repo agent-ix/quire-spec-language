@@ -54,7 +54,31 @@
       "extensions": [],
       "unknownPolicy": "reject",
       "supertypes": [],
-      "fields": [],
+      "fields": [
+        {
+          "identity": "ix://acme/orders/Widget/code",
+          "name": "code",
+          "typeRef": "ix://quire/native/Integer",
+          "presence": "required",
+          "nullable": false,
+          "defaultKind": "none",
+          "multiplicity": {
+            "lower": 1,
+            "upper": 1,
+            "ordered": false,
+            "unique": false
+          },
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://acme/orders/spec",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://acme/orders/Widget/code"
+              ]
+            }
+          }
+        }
+      ],
       "operations": []
     },
     {
@@ -80,6 +104,30 @@
       "supertypes": [
         "ix://acme/orders/Widget"
       ],
+      "fields": [],
+      "operations": []
+    },
+    {
+      "identity": "ix://acme/orders/Rock",
+      "displayName": "Rock",
+      "kind": {
+        "module": "acme/orders",
+        "name": "entity"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://acme/orders/spec",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://acme/orders/Rock"
+          ]
+        }
+      },
+      "constraints": [],
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "supertypes": [],
       "fields": [],
       "operations": []
     }
