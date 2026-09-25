@@ -90,41 +90,56 @@ sources:
 
 The **S4 source resolution** is the spine step between S2 and E3 that turns
 the unit's imports into what E3 and E4 admit. It runs beside I1 and its own
-refusals report stage `intake`. For each `import` of the unit, in source
-order, and of each library it compiles, depth first:
+refusals report stage `intake`. It visits each `import` of the unit, in
+source order, and of each library it compiles, depth first, and applies
+these steps to each import in this order:
 
-0. When an earlier import in the closure names the same identity with a
-   different version or digest, the compile refuses
+1. **Cycle.** When the import's identity names a library whose compile is
+   in progress, the compile refuses `invalid_package`/`definition-cycle`,
+   naming the identity path. This check runs before any other step, so the
+   digests of a cycle's imports are never compared.
+2. **Diamond.** When an earlier import in the closure names the same
+   identity with a different version or digest, the compile refuses
    `invalid_package`/`conflicting-definition`, naming both dependency paths
    (QSpec FR-307's diamond rule). An import equal to an earlier one reuses
-   its library.
-1. The supplied library of the import's identity is selected. None refuses
-   `missing_import`/`missing-selection` at the import. A version other than
-   the import's refuses `stale_dependency`/`revision-mismatch` at the
-   import.
-2. The library's source compiles through S1 to S4 by this same resolution,
-   against the same dependency input and package input and under the same
-   stage limits. Within one compile, each library compiles at most once and
-   serves every import of its identity. Each library compile is charged the
-   full S1 to S4 limits as its own unit, and the number of library compiles
-   is at most the number of supplied libraries. A library reached again
-   while its own compile is in progress refuses
-   `invalid_package`/`definition-cycle`, naming the identity path. A
-   library whose compile refuses makes the compile refuse with
-   `CompileRefusal::Dependency { path, refusal }`: `path` is the
-   `LibraryName` path from the unit to the library, and `refusal` the
-   library's own refusal, reporting its own stage and located in the
-   library's source.
-3. The library's `package_id` is recomputed by emitting its checked
-   package. When it differs from the import's recorded `d` (D-2), the
-   compile refuses `DependencyIdentityMismatch`
+   that import's library once its compile has completed, and skips steps 3
+   to 6.
+3. **Selection.** The supplied library of the import's identity is
+   selected. None refuses `missing_import`/`missing-selection` at the
+   import's identity string. A version other than the import's refuses
+   `stale_dependency`/`revision-mismatch` at the import.
+4. **Compile.** The library's source compiles through S1 to S4 by this same
+   resolution, against the same dependency input and package input and
+   under the same stage limits. Each library compile is charged the full S1
+   to S4 limits as its own unit, and the number of library compiles is at
+   most the number of supplied libraries.
+5. **Identity.** The library's `package_id` is recomputed by emitting its
+   checked package. When it differs from the import's recorded `d` (D-2),
+   the compile refuses `DependencyIdentityMismatch`
    (`stale_dependency`/`byte-digest-mismatch`) at the import, naming the
    identity, the recorded digest and the recomputed `package_id`
    (ADR-011 §4).
-4. The emitted v2 bytes are read through the I2 reader, with a pinned
-   request holding that one selection (identity, version, recomputed
-   `package_id`), into a `VerifiedPackage` and then its `ImportView`
-   (ADR-011 §4 verified binding).
+6. **View.** The emitted v2 bytes are read through the I2 reader, with a
+   pinned request holding that one selection (identity, version,
+   recomputed `package_id`), into a `VerifiedPackage` and then its
+   `ImportView` (ADR-011 §4 verified binding).
+
+Three kinds of refusal are **closure-level** and are reported unwrapped by
+the top-level compile, wherever in the closure they are found:
+
+- the dependency-input refusals, with no source region, naming both
+  libraries or the empty field;
+- the cycle refusal (step 1), located at the identity string of the import
+  that closes the cycle, in the source that declares it;
+- the diamond refusal (step 2), located at the identity string of the later
+  import, in the source that declares it.
+
+Every other refusal raised while resolving or compiling a library is
+wrapped as `CompileRefusal::Dependency { path, refusal }`: `path` is the
+`LibraryName` path from the unit to that library, and `refusal` the
+library's own refusal, reporting its own stage and located in the
+library's source. A refusal at one of the unit's own imports (steps 3 and
+5) is the unit's own and is not wrapped.
 
 E3 receives, per import, the `ImportView` and the library's `CheckedGraph`
 (D-5). E4 receives, per import, the library's `CheckedPackage` and links
@@ -175,36 +190,45 @@ dependency's own lock `sources`. CG copies them from the proved package
 and the dependency packages the proving run admitted, and invents none
 (ADR-013 C-12).
 
-`replay`:
+`replay` refuses with the first of these rules, each rule applied over all
+entries, in entry order, before the next rule, with the refusal codes QSpec
+FR-323 gives:
 
-1. requires the proved package's `sources`, and each entry's `sources`, to
-   name exactly one `quire.source.bytes/v1` source, with the existing
-   refusals (`NotASource`, `SourceCount`) for a definition document or
-   another count;
-2. builds the dependency input from the entries: identity and version from
-   the entry, the four labels from its source reference, the reference's
-   identity as the path, and the bytes from the byte provision, as FR-001
-   states for the proved source. The FR-071 reader bound bounds the number
-   of entries;
-3. recompiles the proved source through spine `compile` against that
-   dependency input (D-1), and carries its refusal as
+1. The proved package's `sources`, and each entry's `sources`, name exactly
+   one `quire.source.bytes/v1` source, else the existing `NotASource` or
+   `SourceCount`.
+2. The entries are in strictly ascending UTF-8 byte order of `identity`, a
+   repeated identity included, else `ReplayRefusal::DependencySelections`
+   (`invalid_package`/`invalid-value` at `/package/dependencies`). This
+   runs before any dependency input is built or source compiled.
+3. `replay` builds the dependency input from the entries: identity and
+   version from the entry, the four labels from its source reference, the
+   reference's identity as the path, and the bytes from the byte
+   provision, as FR-001 states for the proved source. The FR-071 reader
+   bound bounds the number of entries. A dependency-input refusal, such as
+   two entries whose sources share one authority and identity, refuses
+   `ReplayRefusal::DependencyInput` carrying it
+   (`invalid_package`/`conflicting-definition`).
+4. `replay` recompiles the proved source through spine `compile` against
+   that dependency input (D-1), and carries its refusal as
    `ReplayRefusal::Recompile`. A stale dependency's source refuses there as
    `DependencyIdentityMismatch` at the import that records it, naming the
-   identity. A removed entry refuses there as `missing_import`/
-   `missing-selection` at the import it supplied, and an entry with a
-   changed version as `stale_dependency`/`revision-mismatch`;
-4. requires the recompiled `package_id` to equal the request's
-   (ADR-013 O-26);
-5. checks the entries against the recompiled package's
-   `dependency_selections`, in this order: an entry whose identity the
-   closure does not hold refuses `ReplayRefusal::DependencySelections`
-   (`invalid_package`/`invalid-value` at `/package/dependencies`); an
-   entry whose `package_id` differs from the closure's selection of its
-   identity refuses `ReplayRefusal::DependencyIdentityMismatch { identity,
-   recorded, recompiled }` (`stale_dependency`/`byte-digest-mismatch`),
-   where `recorded` is the entry's `DigestRecord` and `recompiled` the
-   `PackageId`; entries out of the closure's order refuse
-   `ReplayRefusal::DependencySelections`.
+   identity. A removed entry refuses there as
+   `missing_import`/`missing-selection` at the import it supplied, and an
+   entry with a changed version as `stale_dependency`/`revision-mismatch`.
+   When that import is in a library, not in the proved unit, the refusal
+   arrives wrapped in `CompileRefusal::Dependency` with the library's path
+   (D-1).
+5. The recompiled `package_id` equals the request's (ADR-013 O-26), else
+   the existing `PackageIdMismatch`.
+6. Every entry's identity is held by the recompiled package's
+   `dependency_selections`, else `ReplayRefusal::DependencySelections`
+   (`invalid_package`/`invalid-value` at `/package/dependencies`).
+7. Every entry's `package_id` equals the closure's selection of its
+   identity, else `ReplayRefusal::DependencyIdentityMismatch { identity,
+   requested, recompiled }` (`stale_dependency`/`byte-digest-mismatch`),
+   where `requested` is the entry's `DigestRecord` and `recompiled` the
+   `PackageId`, named as `PackageIdMismatch` names its fields.
 
 The entry, not the recompile, says which source was meant to be which
 dependency, so a stale dependency is named by its identity even though
@@ -224,13 +248,19 @@ its result type is the function's checked result type. An `ImportView`
 stays name data only. No type is read from wire bytes (ADR-011 FB-03).
 
 An imported name E3 accepts names a `function` declaration whose parameter
-and result types carry no FR-322 `declaration`: builtin, bounded-domain and
-anonymous structural types. Their node ids are the same in every package
-(ADR-013 O-04, OQ-G), so the importing graph holds each such type under the
-id the dependency gives it, with occurrences of its own. A use of an
-imported name that names any other declaration, or a function whose
-signature names a type carrying a `declaration`, refuses
-`ill_typed`/`operator-ineligible` at the use (QSpec FR-322).
+and result types are package-independent: no type node reachable from them,
+through element, member, component, argument or unit-term references,
+carries an FR-322 `declaration`. Such types (builtin, bounded-domain and
+anonymous structural types over them) have the same node id in every
+package (ADR-013 O-04, OQ-G), so the importing graph holds each under the id
+the dependency gives it. Such a node gets the occurrences FR-093 gives any
+node: a `type` occurrence where the importing unit writes the type, and
+otherwise one `generated` occurrence, as for a type node that no region
+denotes. A use of an imported name that names any other declaration, or a
+function one of whose reachable signature type nodes carries a
+`declaration` (a `Set<R>`, a tuple holding `R` or a quantity over a
+declared unit), refuses `ill_typed`/`operator-ineligible` at the use
+(QSpec FR-322). An imported name stands only as a callee.
 
 A reference to an imported function lowers to QSpec FR-322's
 `dependency_reference` term `{term: "dependency_reference", package, node}`,
@@ -241,7 +271,11 @@ whose `result_type` is `f`'s result type node. The referenced dependency's
 `package_id` and node id enter the referencing node's id; the term is never
 listed in the node's `dependencies` (FR-322-AC-36, FR-322-AC-37). This
 answers ADR-013 QC-27's open question: an application's join does not count
-a `dependency_reference`.
+a `dependency_reference`. A node-identity preimage never holds the id of the
+node's own package (ADR-013 QC-18). A `dependency_reference` holds a
+dependency's `package_id`, fixed before the importing unit compiles, and
+D-1's cycle refusal keeps the dependency graph acyclic, so the preimage
+stays acyclic.
 
 ### Amendments
 
@@ -265,6 +299,8 @@ a `dependency_reference`.
   (D-5).
 - ADR-013 O-26: the request's package reference carries
   `dependencies` (D-4).
+- ADR-013 QC-18: a preimage holds no id of its own package; a
+  `dependency_reference` holds a dependency's, acyclic by D-1 (D-5).
 - ADR-013 QC-27: answered by D-5.
 
 ## Consequences

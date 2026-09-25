@@ -59,7 +59,9 @@ compiled package.
    Replay `q(3)`. Then replace `test/units`'s bytes with `x > 6`, with the
    entry's digest updated to the new bytes; then restore them and change
    only the entry's `package_id`; then add an extra entry no import
-   reaches; then remove the entry; then give the entry a second source.
+   reaches; then swap two entries; then repeat the entry; then add an entry
+   whose source has `test/units`'s authority and identity; then remove the
+   entry; then give the entry a second source.
 
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
@@ -105,6 +107,9 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `package_id`; the changed entry refuses `DependencyIdentityMismatch`
   naming `test/units`; the extra entry refuses `DependencySelections`
   (`invalid_package`/`invalid-value` at `/package/dependencies`); the
+  swapped and the repeated entries refuse `DependencySelections` before any
+  recompile; the same-owner entry refuses `DependencyInput`
+  (`invalid_package`/`conflicting-definition`); the
   removed entry refuses `Recompile` carrying
   `missing_import`/`missing-selection` at the import; the second source
   refuses `SourceCount(2)`. None yields a verdict.
