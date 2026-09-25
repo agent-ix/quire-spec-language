@@ -11,7 +11,7 @@ const SOURCE: &str = concat!(
     "language \"ix:native\" edition \"1-draft\";\r\n",
     "// exact trivia remains authored\r\n",
     "profile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\r\n",
-    "import \"acme/base\" version \"1\" digest \"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" as Base;\r\n",
+    "import \"acme/base\" version \"1\" digest \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" as Base;\r\n",
     "model M = \"acme/model\" version \"1\" digest \"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\";\r\n",
     "dimension Length = M::Length;\r\n",
     "unit meter: M::Length = rational(1, 1) * M::meter;\r\n",

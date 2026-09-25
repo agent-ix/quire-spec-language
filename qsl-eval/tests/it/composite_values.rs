@@ -1216,7 +1216,7 @@ mod library_import {
     }
 
     fn name(library: &str) -> LibraryName {
-        LibraryName::new(vec![library.to_owned()]).unwrap()
+        LibraryName::new(library).unwrap()
     }
 
     fn package(library: &str, imports: &[&str], exports: bool) -> LibraryPackage {
@@ -1231,7 +1231,7 @@ mod library_import {
                 .map(|imported| ImportDeclaration {
                     library: name(imported),
                     version: "1".to_owned(),
-                    package_id: PackageId::of_preimage(&preimage(imported, *imported == "L")),
+                    digest: PackageId::of_preimage(&preimage(imported, *imported == "L")).record(),
                     qualifier: Some(imported.to_lowercase()),
                 })
                 .collect(),

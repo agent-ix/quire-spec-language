@@ -138,7 +138,7 @@ fn corpus() -> Vec<(&'static str, String)> {
             "values",
             source(
                 concat!(
-                    "import \"acme/base\" version \"1\" digest \"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" as Base;\n",
+                    "import \"acme/base\" version \"1\" digest \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" as Base;\n",
                     "model M = \"acme/model\" version \"1\" digest \"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\";\n",
                     "dimension Length = M::Length^2 / M::Time;\n",
                     "unit meter: M::Length = rational(1, 1) * M::meter + decimal(0, 0);\n",

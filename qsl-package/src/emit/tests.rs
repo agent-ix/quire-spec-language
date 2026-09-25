@@ -188,7 +188,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn library() -> LibraryName {
-    LibraryName::new(vec!["pkg".to_owned()]).unwrap()
+    LibraryName::new("pkg").unwrap()
 }
 
 /// Every artifact reference in `value`, recorded as current evidence.

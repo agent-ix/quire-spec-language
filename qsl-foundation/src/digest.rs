@@ -373,10 +373,12 @@ impl DigestRecord {
         Self::from_domain_and_hex(domain, digest_hex)
     }
 
-    /// Shared tail of [`Self::from_wire`] and [`Self::from_wire_expecting`]
-    /// once the domain label itself is settled: validate and parse the hex
-    /// digest.
-    fn from_domain_and_hex(
+    /// Read `digest_hex`, exactly 64 lowercase hexadecimal characters, as a
+    /// digest in `domain`: the shared tail of [`Self::from_wire`] and
+    /// [`Self::from_wire_expecting`] once the domain is settled, and the
+    /// reader of a digest whose domain its position fixes, such as an
+    /// `import`'s `quire.package.semantic/v2` digest (ADR-015 D-2).
+    pub fn from_domain_and_hex(
         domain: DigestDomain,
         digest_hex: &str,
     ) -> Result<Self, InvalidDigestRecord> {

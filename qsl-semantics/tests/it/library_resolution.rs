@@ -123,7 +123,7 @@ fn id(label: &str) -> PackageId {
 }
 
 fn name(library: &str) -> LibraryName {
-    LibraryName::new(vec![library.to_owned()]).unwrap()
+    LibraryName::new(library).unwrap()
 }
 
 fn path(libraries: &[&str]) -> Vec<LibraryName> {
@@ -139,7 +139,7 @@ fn import(
     ImportDeclaration {
         library: name(library),
         version: version.to_owned(),
-        package_id,
+        digest: package_id.record(),
         qualifier: qualifier.map(str::to_owned),
     }
 }

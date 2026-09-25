@@ -221,7 +221,7 @@ fn evidence() -> CheckedPackageEvidence {
 }
 
 fn identity(label: &str) -> LibraryName {
-    LibraryName::new(vec![label.to_owned()]).unwrap()
+    LibraryName::new(label).unwrap()
 }
 
 /// A pinned request selecting `pkg` at `version` and `package_id`.

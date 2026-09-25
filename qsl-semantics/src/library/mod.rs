@@ -60,7 +60,7 @@ use std::collections::BTreeMap;
 
 use crate::value::semantic_node::is_qualified_name;
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 
 #[cfg(test)]
 mod binding_tests;
@@ -86,28 +86,40 @@ pub mod fixtures {
     }
 }
 
-/// A qualified library identity.
+/// A library identity (ADR-015 D-3; QSpec FR-307, FR-322
+/// `DependencySelection.identity`): any non-empty string, with no segment
+/// structure. Two identities are equal only when their UTF-8 bytes are, and
+/// the derived order is UTF-8 byte order, the order FR-322 writes
+/// `dependency_selections` in. The S1 parser's identity bound is a source
+/// limit, not part of the identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct LibraryName(Box<[String]>);
+pub struct LibraryName(Box<str>);
 
-/// A malformed library identity.
+/// An empty library identity, the only one [`LibraryName::new`] refuses.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("a library identity is a non-empty sequence of identifiers")]
+#[error("a library identity is a non-empty string")]
 pub struct InvalidLibraryName;
 
 impl LibraryName {
-    /// A library identity from its qualified segments.
-    pub fn new(segments: Vec<String>) -> Result<Self, InvalidLibraryName> {
-        if is_qualified_name(&segments) {
-            Ok(Self(segments.into_boxed_slice()))
-        } else {
+    /// A library identity from its string. Refuses only the empty string.
+    pub fn new(identity: impl Into<String>) -> Result<Self, InvalidLibraryName> {
+        let identity = identity.into();
+        if identity.is_empty() {
             Err(InvalidLibraryName)
+        } else {
+            Ok(Self(identity.into_boxed_str()))
         }
     }
 
-    /// The qualified segments.
-    pub fn segments(&self) -> &[String] {
+    /// The identity string.
+    pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl std::fmt::Display for LibraryName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
@@ -140,6 +152,21 @@ impl PackageId {
     /// already exists, for reporting or cross-checking.
     pub fn hex(&self) -> String {
         self.0.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    /// This `package_id` as a `quire.package.semantic/v2` digest record, for
+    /// writing it where a record is read. Formats an existing identity; it
+    /// is not a constructor of one.
+    pub fn record(&self) -> DigestRecord {
+        DigestRecord::mint(DigestDomain::PackageSemanticV2, self.0)
+    }
+
+    /// Whether `recorded`, a digest an import or a request records for a
+    /// package, names this recomputed `package_id`: the lexical comparison
+    /// of ADR-013 O-18, domain and bytes alike (ADR-015 D-2). A recorded
+    /// digest is a claim and never becomes a `PackageId` (ADR-013 O-02).
+    pub fn matches(&self, recorded: &DigestRecord) -> bool {
+        self.record() == *recorded
     }
 }
 
@@ -182,8 +209,10 @@ pub struct ImportDeclaration {
     pub library: LibraryName,
     /// Version string `v`.
     pub version: String,
-    /// Digest `d`: the library's `package_id`.
-    pub package_id: PackageId,
+    /// Digest `d`, the `package_id` the import records for the library: a
+    /// `quire.package.semantic/v2` claim, compared with a recomputed
+    /// `PackageId` lexically and never itself one (ADR-015 D-2).
+    pub digest: DigestRecord,
     /// The `as` qualifier, if written.
     pub qualifier: Option<String>,
 }
@@ -844,16 +873,18 @@ pub fn resolve_libraries(
     supplied: &[LibraryPackage],
 ) -> Result<LibraryLock, LibraryRefusal> {
     verify_package(root)?;
-    let mut by_id: BTreeMap<PackageId, &LibraryPackage> = BTreeMap::new();
+    // Keyed by each package's recomputed `package_id` as a digest record,
+    // so an import's recorded digest is looked up lexically (ADR-015 D-2).
+    let mut by_id: BTreeMap<DigestRecord, &LibraryPackage> = BTreeMap::new();
     for package in supplied {
         verify_package(package)?;
-        match by_id.get(&package.package_id) {
+        match by_id.get(&package.package_id.record()) {
             Some(existing) if *existing != package => {
                 return Err(LibraryRefusal::DuplicatePackageId(package.package_id));
             }
             Some(_) => {}
             None => {
-                by_id.insert(package.package_id, package);
+                by_id.insert(package.package_id.record(), package);
             }
         }
     }
@@ -888,7 +919,7 @@ pub fn resolve_libraries(
         }
         if let Some(existing) = selected.get(&import.library) {
             if existing.package.version == import.version
-                && existing.package.package_id == import.package_id
+                && existing.package.package_id.matches(&import.digest)
             {
                 continue;
             }
@@ -897,19 +928,19 @@ pub fn resolve_libraries(
                 paths: [existing.path.clone(), path],
             });
         }
-        let found = by_id.get(&import.package_id).filter(|package| {
+        let found = by_id.get(&import.digest).filter(|package| {
             package.library == import.library && package.version == import.version
         });
         let Some(package) = found else {
             let same_id = by_id
-                .get(&import.package_id)
+                .get(&import.digest)
                 .is_some_and(|package| package.library == import.library);
             let same_identity = supplied
                 .iter()
                 .any(|package| package.library == import.library);
             let cause = if same_id {
                 StaleCause::RevisionMismatch
-            } else if same_identity || by_id.contains_key(&import.package_id) {
+            } else if same_identity || by_id.contains_key(&import.digest) {
                 StaleCause::ByteDigestMismatch
             } else {
                 return Err(LibraryRefusal::MissingImport { path });

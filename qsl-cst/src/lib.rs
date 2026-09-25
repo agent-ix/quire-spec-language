@@ -204,6 +204,7 @@ fn shifted_selections(selections: &SourceSelections, at: usize, added: usize) ->
     }
     for import in &mut selections.imports {
         import.span = shifted(import.span, at, added);
+        import.identity_span = shifted(import.identity_span, at, added);
     }
     for model in &mut selections.models {
         model.span = shifted(model.span, at, added);
