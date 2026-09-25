@@ -262,10 +262,16 @@ fn declared(value_type: &ValueType) -> Interval {
 }
 
 fn cardinality(collection: &CollectionType) -> Interval {
-    let bound = collection.bound();
-    Interval {
-        lower: End::Finite(Integer::from(bound.minimum())),
-        upper: End::Finite(Integer::from(bound.maximum())),
+    match collection.bound() {
+        Some(bound) => Interval {
+            lower: End::Finite(Integer::from(bound.minimum())),
+            upper: End::Finite(Integer::from(bound.maximum())),
+        },
+        // An unbounded collection (ADR-014 §2) holds any finite count.
+        None => Interval {
+            lower: End::Finite(Integer::zero()),
+            upper: End::PositiveInfinity,
+        },
     }
 }
 

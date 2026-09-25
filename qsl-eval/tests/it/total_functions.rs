@@ -98,7 +98,7 @@ fn sequence(minimum: u64, maximum: u64) -> ValueType {
     ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,
         ValueType::Integer,
-        CardinalityBound::new(minimum, maximum).unwrap(),
+        Some(CardinalityBound::new(minimum, maximum).unwrap()),
     ))
 }
 

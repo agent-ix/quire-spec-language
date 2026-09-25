@@ -64,9 +64,7 @@ impl DomainKey {
 impl fmt::Display for DomainKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.node)?;
-        self.path
-            .iter()
-            .try_for_each(|index| write!(f, "/{index}"))
+        self.path.iter().try_for_each(|index| write!(f, "/{index}"))
     }
 }
 

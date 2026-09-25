@@ -142,7 +142,7 @@ fn tree() -> CheckedPackage {
     let kids = ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,
         ValueType::Composite(tree),
-        CardinalityBound::new(0, 3).unwrap(),
+        Some(CardinalityBound::new(0, 3).unwrap()),
     ));
     let types = TypeEnvironment::new(
         [CompositeDeclaration::new(

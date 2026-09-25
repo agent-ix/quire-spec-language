@@ -171,7 +171,7 @@ fn validate(
         {
             let resolved = objects
                 .resolve_population(*population_id)
-                .is_some_and(|binding| binding.declared_maximum() == Some(*maximum));
+                .is_some_and(|binding| binding.declared_maximum() == *maximum);
             if !resolved {
                 return Err(InputRefusal::WrongValueKind { parameter });
             }

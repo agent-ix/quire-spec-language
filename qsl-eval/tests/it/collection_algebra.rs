@@ -60,7 +60,7 @@ fn collection_type(
     CollectionType::new(
         kind,
         element,
-        CardinalityBound::new(minimum, maximum).unwrap(),
+        Some(CardinalityBound::new(minimum, maximum).unwrap()),
     )
 }
 
@@ -122,7 +122,9 @@ fn out_of_bound(
     Refusal::CardinalityOutOfBound {
         violation,
         kind: collection_type.kind(),
-        bound: collection_type.bound(),
+        bound: collection_type
+            .bound()
+            .expect("the fixture collection type is bounded"),
         count,
     }
 }

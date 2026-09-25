@@ -264,11 +264,12 @@ impl<'a> Lowering<'a> {
     }
 
     /// `Population<T>[N]`: `bounded_domain`/`model_population` over the
-    /// `Set<Reference<T>>` node, binding `max` = `N`.
+    /// `Set<Reference<T>>` node, binding `max` = `N`. A population with no
+    /// declared maximum is the `Set<Reference<T>>` node alone (ADR-014 N-3).
     pub(super) fn population_type(
         &mut self,
         target: EffectiveId,
-        maximum: u64,
+        maximum: Option<u64>,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let reference = self.reference_type(target, location)?;
@@ -282,6 +283,9 @@ impl<'a> Lowering<'a> {
                 members: vec![SemanticTerm::reference(reference)],
             },
         )?;
+        let Some(maximum) = maximum else {
+            return Ok(set);
+        };
         let max = self.integer_literal(Integer::from(maximum), location)?;
         self.bounded("model_population", set, vec![("max", max)], location)
     }

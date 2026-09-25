@@ -1876,11 +1876,13 @@ impl<'a> Typer<'a> {
         let ValueType::Population(maximum) = population.value_type else {
             return Err(ineligible(&population.location));
         };
-        let collection_type = CollectionType::new(
-            CollectionKind::Set,
-            target.clone(),
-            bound(0, maximum, location)?,
-        );
+        // A population with no declared maximum is unbounded (QSpec
+        // FR-153-AC-9), so its instance set is too (ADR-014 §2).
+        let result_bound = maximum
+            .map(|maximum| bound(0, maximum, location))
+            .transpose()?;
+        let collection_type =
+            CollectionType::new(CollectionKind::Set, target.clone(), result_bound);
         Ok(node(
             NodeKind::AllInstances {
                 population: Box::new(population),
@@ -1976,17 +1978,21 @@ impl<'a> Typer<'a> {
     ) -> Result<Node, CheckRefusal> {
         let typed = match query {
             BinderQuery::Map | BinderQuery::FlatMap => {
-                let bound = source_type.bound();
-                let minimum = if source_type.kind().is_unique() {
-                    bound.minimum().min(1)
-                } else {
-                    bound.minimum()
-                };
-                let mapped = CollectionType::new(
-                    source_type.kind(),
-                    body.value_type.clone(),
-                    super::check::bound(minimum, bound.maximum(), location)?,
-                );
+                // An unbounded source maps to an unbounded result (ADR-014
+                // §2): no maximum exists to carry over.
+                let mapped_bound = source_type
+                    .bound()
+                    .map(|bound| {
+                        let minimum = if source_type.kind().is_unique() {
+                            bound.minimum().min(1)
+                        } else {
+                            bound.minimum()
+                        };
+                        super::check::bound(minimum, bound.maximum(), location)
+                    })
+                    .transpose()?;
+                let mapped =
+                    CollectionType::new(source_type.kind(), body.value_type.clone(), mapped_bound);
                 let value_type = ValueType::collection(mapped);
                 self.check_declared_type(&value_type, location)?;
                 let map = node(
@@ -2009,7 +2015,10 @@ impl<'a> Typer<'a> {
                 let filtered = CollectionType::new(
                     source_type.kind(),
                     source_type.element().clone(),
-                    super::check::bound(0, source_type.bound().maximum(), location)?,
+                    source_type
+                        .bound()
+                        .map(|bound| super::check::bound(0, bound.maximum(), location))
+                        .transpose()?,
                 );
                 node(
                     NodeKind::Query {
@@ -2054,27 +2063,29 @@ impl<'a> Typer<'a> {
         if outer.kind().is_ordered() && !inner.kind().is_ordered() {
             return Err(mismatch(location));
         }
-        let unrepresentable = || refuse(location, CheckCause::UnrepresentableBound);
-        let minimum = outer
-            .bound()
-            .minimum()
-            .checked_mul(inner.bound().minimum())
-            .ok_or_else(unrepresentable)?;
-        let maximum = outer
-            .bound()
-            .maximum()
-            .checked_mul(inner.bound().maximum())
-            .ok_or_else(unrepresentable)?;
-        let minimum = if outer.kind().is_unique() {
-            minimum.min(1)
-        } else {
-            minimum
+        // Flattening an unbounded outer or inner collection gives an
+        // unbounded result (ADR-014 §2): the product has no maximum.
+        let flattened_bound = match (outer.bound(), inner.bound()) {
+            (Some(outer_bound), Some(inner_bound)) => {
+                let unrepresentable = || refuse(location, CheckCause::UnrepresentableBound);
+                let minimum = outer_bound
+                    .minimum()
+                    .checked_mul(inner_bound.minimum())
+                    .ok_or_else(unrepresentable)?;
+                let maximum = outer_bound
+                    .maximum()
+                    .checked_mul(inner_bound.maximum())
+                    .ok_or_else(unrepresentable)?;
+                let minimum = if outer.kind().is_unique() {
+                    minimum.min(1)
+                } else {
+                    minimum
+                };
+                Some(bound(minimum, maximum, location)?)
+            }
+            (None, _) | (_, None) => None,
         };
-        let flattened = CollectionType::new(
-            outer.kind(),
-            inner.element().clone(),
-            bound(minimum, maximum, location)?,
-        );
+        let flattened = CollectionType::new(outer.kind(), inner.element().clone(), flattened_bound);
         let value_type = ValueType::collection(flattened);
         self.check_declared_type(&value_type, location)?;
         Ok(node(

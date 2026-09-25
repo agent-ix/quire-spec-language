@@ -366,7 +366,7 @@ fn rows() -> Vec<Row> {
                 type_argument(&ValueType::collection(CollectionType::new(
                     CollectionKind::Set,
                     text_type(),
-                    CardinalityBound::new(0, 5).unwrap(),
+                    Some(CardinalityBound::new(0, 5).unwrap()),
                 ))),
                 Json::Null,
                 json!([]),

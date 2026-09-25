@@ -326,8 +326,15 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
             out.write_str("collection");
             out.write_str(collection_kind_tag(collection_type.kind()));
             encode_value_type(out, collection_type.element());
-            out.write_u64(collection_type.bound().minimum());
-            out.write_u64(collection_type.bound().maximum());
+            // Bound presence is part of the type (ADR-014 N-3).
+            match collection_type.bound() {
+                Some(bound) => {
+                    out.write_str("bounded");
+                    out.write_u64(bound.minimum());
+                    out.write_u64(bound.maximum());
+                }
+                None => out.write_str("unbounded"),
+            }
         }
         ValueType::Reference(key) => {
             out.write_str("reference");
@@ -335,7 +342,13 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
         }
         ValueType::Population(maximum) => {
             out.write_str("population");
-            out.write_u64(*maximum);
+            match maximum {
+                Some(maximum) => {
+                    out.write_str("bounded");
+                    out.write_u64(*maximum);
+                }
+                None => out.write_str("unbounded"),
+            }
         }
     }
 }

@@ -77,7 +77,7 @@ fn collection_type(
     CollectionType::new(
         kind,
         element,
-        CardinalityBound::new(minimum, maximum).unwrap(),
+        Some(CardinalityBound::new(minimum, maximum).unwrap()),
     )
 }
 

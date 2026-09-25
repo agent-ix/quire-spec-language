@@ -112,7 +112,7 @@ fn sequence(element: ValueType, bound: Option<(u64, u64)>) -> ValueType {
     ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,
         element,
-        CardinalityBound::new(minimum, maximum).unwrap(),
+        Some(CardinalityBound::new(minimum, maximum).unwrap()),
     ))
 }
 

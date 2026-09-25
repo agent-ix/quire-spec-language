@@ -551,10 +551,12 @@ impl<'a, 'm> Machine<'a, 'm> {
     fn resolve_population(
         &self,
         population_id: PopulationId,
-        maximum: u64,
+        maximum: Option<u64>,
     ) -> Result<&'a PopulationBinding, Halt> {
         match self.objects.resolve_population(population_id) {
-            Some(binding) if binding.declared_maximum() == Some(maximum) => Ok(binding),
+            // The declared maximum matches exactly, absence included: an
+            // unbounded population binds only an unbounded parameter.
+            Some(binding) if binding.declared_maximum() == maximum => Ok(binding),
             Some(_) => Err(Halt::Fault(InternalFault::new(
                 "S6a",
                 "population-argument-maximum-mismatch-past-admission",

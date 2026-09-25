@@ -1663,7 +1663,12 @@ impl<'a> Lowering<'a> {
                 members: vec![SemanticTerm::reference(element)],
             },
         )?;
-        let bound = collection.bound();
+        // An unbounded `K<T>` is its composite node alone: it has no
+        // `collection_bounds` domain (ADR-014 N-3), which is the form IR's
+        // `requires-bound` reads as unbounded.
+        let Some(bound) = collection.bound() else {
+            return Ok(base);
+        };
         let min = self.integer_literal(Integer::from(bound.minimum()), location)?;
         let max = self.integer_literal(Integer::from(bound.maximum()), location)?;
         self.bounded(

@@ -26,7 +26,7 @@
 //! T-6, QC-22) -- never by hashing internally.
 //!
 //! [`Value`]/[`ValueType`]: `ValueType::admits` never pairs
-//! `ValueType::Population(u64)` with `Value::Population(PopulationId)`
+//! `ValueType::Population(Option<u64>)` with `Value::Population(PopulationId)`
 //! (ADR-013 O-13 Population row, QC-21, FR-089). This is not a capability
 //! loss: FR-089-AC-5's declared-maximum comparison is a QSL-layer check --
 //! the model/evaluator resolves a `PopulationId` to its binding and compares

@@ -374,7 +374,7 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
             "F",
             vec![(
                 "p".to_owned(),
-                crate::support::type_form::type_form(&ValueType::Population(maximum))
+                crate::support::type_form::type_form(&ValueType::Population(Some(maximum)))
                     .with_arguments(vec![crate::support::type_form::named_type_form("M::A")]),
             )],
             crate::support::type_form::type_form(&ValueType::Integer),
@@ -763,7 +763,7 @@ fn reference_elements(value: &Value) -> Vec<ObjectReference> {
 fn l12_all_instances_expression_selects_subtype_population_once() {
     let scenario = scenario();
     let package = package(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = all_instances(ValueType::Reference(scenario.a));
     let arguments = vec![population_argument(&scenario)];
 
@@ -772,8 +772,9 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
         ValueType::Collection(collection_type) => collection_type.clone(),
         other => panic!("expected a checked collection result type, got {other:?}"),
     };
-    assert_eq!(collection_type.bound().minimum(), 0);
-    assert_eq!(collection_type.bound().maximum(), 3);
+    let bound = collection_type.bound().expect("a bounded population's set");
+    assert_eq!(bound.minimum(), 0);
+    assert_eq!(bound.maximum(), 3);
     assert_eq!(collection_type.element(), &ValueType::Reference(scenario.a));
 
     let (outcome, meter) = run(
@@ -842,7 +843,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
 fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
     let scenario = scenario();
     let package = package(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = all_instances(ValueType::Reference(scenario.a));
 
     let (outcome, meter) = run(
@@ -895,7 +896,7 @@ fn l14_lookup_expression_undefined_mode() {
     let scenario = scenario();
     let package = package(&scenario);
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = lookup(ValueType::Reference(scenario.a), AbsenceMode::Undefined);
@@ -921,7 +922,7 @@ fn l14_lookup_expression_undefined_mode() {
 
     let absent_reference = object_reference(&scenario.universe, &scenario.a, "c9");
     let parameters_absent = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.a)),
     ];
     let (absent, _) = run_family(
@@ -972,7 +973,7 @@ fn l15_lookup_expression_empty_mode() {
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = lookup(target.clone(), AbsenceMode::Empty);
@@ -1002,7 +1003,7 @@ fn l15_lookup_expression_empty_mode() {
 
     let absent_reference = object_reference(&scenario.universe, &scenario.a, "c9");
     let parameters_absent = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.a)),
     ];
     let (absent, _) = run(
@@ -1040,7 +1041,7 @@ fn l16_lookup_expression_refused_mode() {
     let target = ValueType::Reference(scenario.a);
     let absent_reference = object_reference(&scenario.universe, &scenario.a, "c9");
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.a)),
     ];
     let expression = lookup(target, AbsenceMode::Refused);
@@ -1103,7 +1104,7 @@ fn l08_upcast_lookup_result_equals_the_subtype_reference() {
     let scenario = scenario();
     let package = package(&scenario);
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = equal(
@@ -1131,7 +1132,7 @@ fn l08_upcast_lookup_result_equals_the_subtype_reference() {
     // The reverse operand order checks too, and compares identity: `c9`
     // (an `M::A`) against `b1` through `lookup<M::A>` is `false`.
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
         ("q", ValueType::Reference(scenario.a)),
     ];
@@ -1211,7 +1212,7 @@ fn attribute_world_of(
 fn read_through_a(package: &CheckedPackage, objects: &ObjectEnvironment, field: &str) -> Value {
     let scenario = scenario();
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = Expression::Field {
@@ -1377,7 +1378,7 @@ fn lookup_expression_admits_a_conforming_reference_type_at_check_time() {
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
     ];
     let checked = check(
@@ -1401,7 +1402,7 @@ fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
     let scenario = scenario();
     let package = package_with_unrelated_type(&scenario);
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(fixed_type(0xCC))),
     ];
     let refusal = check_refusal(
@@ -1422,7 +1423,7 @@ fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
     );
 
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.a)),
     ];
     let refusal = check_refusal(
@@ -1445,7 +1446,7 @@ fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
 fn population_refused_as_equality_operand() {
     let scenario = scenario();
     let package = package(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = Expression::Binary {
         operator: BinaryOperator::Equal,
         left: Box::new(population_name()),
@@ -1462,10 +1463,10 @@ fn population_refused_as_equality_operand() {
 fn population_refused_as_option_payload() {
     let scenario = scenario();
     let package = package(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = Expression::Convert {
         target: crate::support::type_form::type_form(&ValueType::Option(Box::new(
-            ValueType::Population(3),
+            ValueType::Population(Some(3)),
         ))),
         operand: Box::new(Expression::Boolean(true)),
     };
@@ -1480,12 +1481,12 @@ fn population_refused_as_option_payload() {
 fn population_refused_as_collection_element() {
     let scenario = scenario();
     let package = package(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = Expression::Convert {
         target: crate::support::type_form::type_form(&ValueType::collection(CollectionType::new(
             CollectionKind::Set,
-            ValueType::Population(3),
-            CardinalityBound::new(0, 3).unwrap(),
+            ValueType::Population(Some(3)),
+            Some(CardinalityBound::new(0, 3).unwrap()),
         ))),
         operand: Box::new(Expression::Boolean(true)),
     };
@@ -1510,7 +1511,7 @@ fn population_refused_as_record_field() {
         "Holder",
         CompositeShape::Record(vec![FieldDeclaration::new(
             "value",
-            ValueType::Population(3),
+            ValueType::Population(Some(3)),
             Presence::Required,
         )]),
     );
@@ -1541,7 +1542,7 @@ fn population_refused_as_object_attribute() {
         "M::Holder",
         vec![FieldDeclaration::new(
             "value",
-            ValueType::Population(3),
+            ValueType::Population(Some(3)),
             Presence::Required,
         )],
     );
@@ -1628,7 +1629,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
     .check(CheckingLimits::default())
     .unwrap();
     let package = CheckedPackage::link(graph);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = all_instances(ValueType::Reference(foreign_key));
 
     let (outcome, _) = run_family(
@@ -1669,7 +1670,7 @@ fn lookup_expression_foreign_universe_is_foreign_universe_after_one_work_unit() 
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = lookup(target, AbsenceMode::Undefined);
@@ -1740,7 +1741,7 @@ fn lookup_expression_absent_identity_in_a_foreign_universe_is_refused_not_absent
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.a)),
     ];
 
@@ -1798,7 +1799,7 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = Expression::Collection {
@@ -1808,7 +1809,7 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
     let expected = ValueType::collection(CollectionType::new(
         CollectionKind::Set,
         target,
-        CardinalityBound::new(1, 1).unwrap(),
+        Some(CardinalityBound::new(1, 1).unwrap()),
     ));
 
     let present_reference = object_reference(&scenario.universe, &scenario.b, "b1");
@@ -1869,7 +1870,7 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
 fn l07_pre_all_instances_reads_the_invocation_pre_population() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
     let target = ValueType::Reference(scenario.a);
 
     let (post_outcome, _) = run(
@@ -1919,7 +1920,7 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.a)),
     ];
     let r2 = object_reference(&scenario.universe, &scenario.a, "a2");
@@ -1981,7 +1982,7 @@ fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let pre_count = size(pre(allInstances(p))) in
     //   size(allInstances(p)) != pre_count
@@ -2039,7 +2040,7 @@ fn pre_refuses_a_let_bound_query_result_capture_drift() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let v = allInstances(p) in pre(v)
     let expression = Expression::Let {
@@ -2080,7 +2081,7 @@ fn pre_refuses_a_let_bound_population_alias_capture_drift() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(size(allInstances(q)))
     let expression = Expression::Let {
@@ -2121,7 +2122,7 @@ fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(let r = q in size(allInstances(r)))
     let expression = Expression::Let {
@@ -2169,7 +2170,7 @@ fn pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(size(allInstances(let s = q in s)))
     let expression = Expression::Let {
@@ -2211,7 +2212,7 @@ fn pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(size(allInstances(if true then q else q)))
     let expression = Expression::Let {
@@ -2257,7 +2258,7 @@ fn pre_refuses_a_let_bound_if_expression_alias_of_a_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(let r = if true then q else q in size(allInstances(r)))
     let expression = Expression::Let {
@@ -2308,7 +2309,7 @@ fn pre_refuses_a_let_bound_nested_let_alias_of_a_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let q = p in pre(let r = (let s = q in s) in size(allInstances(r)))
     let expression = Expression::Let {
@@ -2359,7 +2360,7 @@ fn pre_of_a_captured_post_reference_retains_its_post_observation() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     // let v = size(allInstances(p)) in pre(size(allInstances(p)) != v)
     let expression = Expression::Let {
@@ -2407,7 +2408,7 @@ fn pre_of_a_captured_post_reference_retains_its_post_observation() {
 fn pre_refuses_a_bare_population_parameter() {
     let scenario = l07_scenario();
     let package = package(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     let expression = pre(Expression::Name("p".to_owned()));
     let refusal = check_refusal_as_postcondition(&package, &parameters, &expression);
@@ -2460,7 +2461,7 @@ fn pre_refuses_outside_a_postcondition_context() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     let refusal = check_refusal(&package, &parameters, &pre(all_instances(target)));
     assert_eq!(
@@ -2479,7 +2480,7 @@ fn nested_pre_is_idempotent() {
     let scenario = l07_scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     let (single, _) = run_postcondition(
         &package,
@@ -2527,7 +2528,7 @@ fn nested_pre_is_idempotent() {
 fn pre_of_a_function_call_over_a_bare_parameter_argument_refuses_forbidden_pre_read() {
     let scenario = l07_scenario();
     let package = package_with_function(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     let expression = pre(Expression::Call {
         name: "F".to_owned(),
@@ -2561,7 +2562,7 @@ fn pre_of_a_function_call_over_an_eligible_read_argument_stays_legal() {
     let scenario = l07_scenario();
     let package = package_with_collection_function(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     let expression = pre(Expression::Call {
         name: "F2".to_owned(),
@@ -2603,7 +2604,7 @@ fn pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor() {
     let scenario = scenario();
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
 
     let (outcome, _) = run_postcondition_family(
         &package,
@@ -2693,7 +2694,7 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
         .with_population(b2_binding)
         .unwrap();
     let package = package(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = all_instances(ValueType::Reference(a));
 
     let (outcome1, _) = run(
@@ -2822,7 +2823,7 @@ fn with_population_refuses_a_conflicting_binding_under_a_shared_id() {
 fn tc_294_unresolved_population_id_refuses_typed() {
     let scenario = scenario();
     let package = package(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = all_instances(ValueType::Reference(scenario.a));
     let unresolved_id = scenario.binding.population_id();
 
@@ -2858,7 +2859,7 @@ fn tc_294_unresolved_population_id_refuses_typed() {
 fn tc_294_unresolved_population_id_refuses_even_when_unconsumed() {
     let scenario = scenario();
     let package = package(&scenario);
-    let parameters = [("p", ValueType::Population(3))];
+    let parameters = [("p", ValueType::Population(Some(3)))];
     let expression = Expression::Boolean(true);
     let unresolved_id = scenario.binding.population_id();
 
@@ -2924,7 +2925,7 @@ fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
     let package = package(&scenario);
     let expression = all_instances(ValueType::Reference(a));
 
-    let parameters_5 = [("p", ValueType::Population(5))];
+    let parameters_5 = [("p", ValueType::Population(Some(5)))];
     let (outcome_5, _) = run(
         &package,
         &parameters_5,
@@ -2938,7 +2939,7 @@ fn tc_295_population_type_pairing_checks_the_resolved_maximum() {
         other => panic!("expected admission under a matching Population<5>, got {other:?}"),
     }
 
-    let parameters_6 = [("p", ValueType::Population(6))];
+    let parameters_6 = [("p", ValueType::Population(Some(6)))];
     let checked_6 = check(&package, &parameters_6, &expression);
     let mut meter_6 = Meter::new(SCALAR_UNLIMITED);
     let result_6 = package.evaluate(
@@ -2998,7 +2999,7 @@ fn tc_295_population_maximum_mismatch_refuses_even_when_unconsumed() {
     let package = package(&scenario);
     let expression = Expression::Boolean(true);
 
-    let parameters_6 = [("p", ValueType::Population(6))];
+    let parameters_6 = [("p", ValueType::Population(Some(6)))];
     let checked = check(&package, &parameters_6, &expression);
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let result = package.evaluate(
@@ -3031,7 +3032,7 @@ fn tc_294_lookup_refuses_an_unresolved_population_id() {
     let package = package(&scenario);
     let target = ValueType::Reference(scenario.a);
     let parameters = [
-        ("p", ValueType::Population(3)),
+        ("p", ValueType::Population(Some(3))),
         ("r", ValueType::Reference(scenario.b)),
     ];
     let expression = lookup(target, AbsenceMode::Empty);
@@ -3204,7 +3205,7 @@ fn model_query_refusal_reaches_the_caller_with_its_own_code() {
 
     let (evaluation, _) = run_family(
         &package,
-        &[("p", ValueType::Population(1))],
+        &[("p", ValueType::Population(Some(1)))],
         &all_instances(ValueType::Reference(scenario.a)),
         vec![population_argument(&scenario)],
         SCALAR_UNLIMITED,

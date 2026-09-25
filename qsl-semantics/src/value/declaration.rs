@@ -1002,7 +1002,7 @@ impl TypeEnvironment {
                     ValueType::Option(payload) => pending.push((payload, true)),
                     ValueType::Collection(collection) => pending.push((
                         collection.element(),
-                        escapes || collection.bound().minimum() == 0,
+                        escapes || collection.bound().is_none_or(|bound| bound.minimum() == 0),
                     )),
                     ValueType::Boolean
                     | ValueType::Integer
