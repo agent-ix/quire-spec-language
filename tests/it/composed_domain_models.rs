@@ -129,9 +129,9 @@ pub(crate) fn architecture_bundle(extra: impl FnOnce(&Path)) -> tempfile::TempDi
     dir
 }
 
-/// Lifts `bundle` through FCD's real pipeline and returns its bytes and
-/// their `sha256-jcs` digest (the lift emits RFC 8785 bytes).
-fn lift(bundle: &Path) -> (Vec<u8>, [u8; 32]) {
+/// Lifts `bundle` through FCD's real pipeline and returns its bytes (the
+/// lift emits RFC 8785 bytes).
+fn lift(bundle: &Path) -> Vec<u8> {
     let fixtures = fcd_fixtures_dir();
     let modules = [
         "modules/spec-objects-business",
@@ -139,9 +139,7 @@ fn lift(bundle: &Path) -> (Vec<u8>, [u8; 32]) {
         "modules/spec-objects-architecture",
     ]
     .map(|root| fixtures.join(root));
-    let bytes = lift_document(bundle, &modules).expect("the edited bundle lifts");
-    let digest = Sha256::digest(&bytes).into();
-    (bytes, digest)
+    lift_document(bundle, &modules).expect("the edited bundle lifts")
 }
 
 /// FR-154 admission, `read_records` and FR-152 classification over the
@@ -152,7 +150,123 @@ fn admitted(bundle: &Path) -> AdmittedPackage {
 
 /// [`admitted`], with the lifted document bytes the package was admitted from.
 pub(crate) fn admitted_with_bytes(bundle: &Path) -> (AdmittedPackage, Vec<u8>) {
-    let (bytes, digest) = lift(bundle);
+    admit_bytes(lift(bundle))
+}
+
+/// Lifts `bundle`, adds one FR-153 population declaration per `(name,
+/// member types)` of `populations`, each `closed`, then admits it; returns
+/// the package and its document bytes. With no population the lifted bytes
+/// are admitted as they are.
+///
+/// The FCD frontend at this pin refuses a population `Members` table
+/// (`agent-ix-extraction-frontend` `constructs.rs`, "a population `Members`
+/// table", which no construct lowers), so each population is added to the
+/// real lifted document: a `populations[]` node, under one `constructs[]`
+/// entry for `spec-objects-business`' `population` construct with the
+/// module version and manifest digest the lift recorded for that module.
+/// The document is re-encoded as RFC 8785 bytes, so its raw-byte and
+/// `sha256-jcs` digests agree as the lift's own do.
+pub(crate) fn admitted_with_populations(
+    bundle: &Path,
+    populations: &[(&str, &[&str])],
+) -> (AdmittedPackage, Vec<u8>) {
+    admitted_with(bundle, &[], populations)
+}
+
+/// [`admitted_with_populations`], with one object type added per
+/// `(subtype, supertype)` of `subtypes`: a copy of the lifted `Sys` type
+/// node under the subtype's identity and a generated origin, with no field
+/// of its own, the supertype as its only supertype and the supertype's `id`
+/// as its identity field. A `specializes` edge in the bundle would lift to an
+/// inline relationship FCD identifies outside `<owner>/<name>` (PLAT-1064,
+/// see the module docs), so the subtype is added to the lifted document.
+pub(crate) fn admitted_with(
+    bundle: &Path,
+    subtypes: &[(&str, &str)],
+    populations: &[(&str, &[&str])],
+) -> (AdmittedPackage, Vec<u8>) {
+    let bytes = lift(bundle);
+    if populations.is_empty() && subtypes.is_empty() {
+        return admit_bytes(bytes);
+    }
+    let mut document: serde_json::Value = serde_json::from_slice(&bytes).expect("lifted JSON");
+    let types = document["types"].as_array_mut().expect("types array");
+    let template = types
+        .iter()
+        .find(|node| node["identity"] == format!("ix://{PACKAGE}/Sys"))
+        .expect("the lift declares Sys")
+        .clone();
+    for (subtype, supertype) in subtypes {
+        let mut node = template.clone();
+        node["identity"] = format!("ix://{PACKAGE}/{subtype}").into();
+        node["displayName"] = (*subtype).into();
+        node["fields"] = serde_json::json!([]);
+        // Its identity is the one it inherits.
+        node["identityFields"] = serde_json::json!([format!("ix://{PACKAGE}/{supertype}/id")]);
+        node["origin"] = serde_json::json!({"generated": {
+            "generatorIdentity": format!("ix://{PACKAGE}/{subtype}"),
+            "generatorVersion": "1.0.0",
+            "inputIdentities": [format!("ix://{PACKAGE}/{subtype}")],
+        }});
+        node["supertypes"] = serde_json::json!([format!("ix://{PACKAGE}/{supertype}")]);
+        types.push(node);
+    }
+    types.sort_by(|left, right| left["identity"].as_str().cmp(&right["identity"].as_str()));
+    if populations.is_empty() {
+        let limits = quire_canonical::Limits::new(1 << 24, quire_canonical::Limits::MAX_DEPTH)
+            .expect("limits");
+        return admit_bytes(quire_canonical::to_vec(&document, limits).expect("RFC 8785 bytes"));
+    }
+    let constructs = document["constructs"]
+        .as_array_mut()
+        .expect("constructs array");
+    let business = constructs
+        .iter()
+        .find(|entry| entry["kind"]["module"] == "agent-ix/spec-objects-business")
+        .expect("the lift records spec-objects-business")
+        .clone();
+    constructs.push(serde_json::json!({
+        "kind": {"module": "agent-ix/spec-objects-business", "name": "population"},
+        "moduleVersion": business["moduleVersion"],
+        "manifestDigest": business["manifestDigest"],
+        "construct": {
+            "identity": "none",
+            "shape": "record",
+            "members": {},
+            "meaning": "quire.meaning.model.population/v1",
+        },
+    }));
+    document["populations"] = populations
+        .iter()
+        .map(|(name, members)| {
+            let identity = format!("ix://{PACKAGE}/{name}");
+            serde_json::json!({
+                "identity": identity,
+                "displayName": name,
+                "kind": {"module": "agent-ix/spec-objects-business", "name": "population"},
+                "members": members
+                    .iter()
+                    .map(|member| format!("ix://{PACKAGE}/{member}"))
+                    .collect::<Vec<_>>(),
+                "extent": "closed",
+                "origin": {"generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }},
+            })
+        })
+        .collect();
+    let limits =
+        quire_canonical::Limits::new(1 << 24, quire_canonical::Limits::MAX_DEPTH).expect("limits");
+    admit_bytes(quire_canonical::to_vec(&document, limits).expect("RFC 8785 bytes"))
+}
+
+/// FR-154 admission, `read_records` and FR-152 classification over `bytes`,
+/// RFC 8785 document bytes selected under their own identity, version and
+/// digest.
+fn admit_bytes(bytes: Vec<u8>) -> (AdmittedPackage, Vec<u8>) {
+    let digest = Sha256::digest(&bytes).into();
     let document: serde_json::Value = serde_json::from_slice(&bytes).expect("lifted JSON");
     let offered = DomainPackageRef {
         identity: document["package"]["identity"]

@@ -290,6 +290,25 @@ selected values retain their contributing origins without adding a population
 at the selection site. FR-042-AC-4 and FR-042-AC-7 cover these identity and
 reader-refusal obligations under the wire contract's typed cause catalog.
 
+A domain object type's population input SHALL be derived the same way, with
+the domain object type in place of the object role and the one
+[FR-153](ix://agent-ix/quire-specification/FR-153) population declaration
+covering that type in place of the universe: its `population` export is
+`[object artifact id, population artifact id]` of the domain-package `Model`.
+A declaration covers an object type that is one of its member types or
+conforms to one through its declared supertypes; an Interface-typed input is
+therefore covered only when the Interface or one of its supertypes is a member
+type. With no covering declaration, or more than one, emission SHALL refuse as
+`Unsupported::Export`, and the reader SHALL refuse the same way. A domain operation SHALL be exported as a native model
+operation is, keyed by its [FR-154](ix://agent-ix/quire-specification/FR-154)
+member key, with its owning object type as its context; a pre- or
+postcondition of a domain operation executes at the anchor named by the
+operation's member name. The reader SHALL refuse
+a missing, surplus or mis-keyed population pair as `Invalid::Binding`, a pair
+naming a declaration that does not cover its object type as `Invalid::Model`
+(the `Model` declares no such export), and an operation context other than its
+owner as `Invalid::Type`.
+
 The artifact SHALL preserve effect-before-registration, separate registration
 and activation captures, bounded retries, commit restrictions and the exact
 full/partial recovery predicates with their declared population/relationship
@@ -387,6 +406,7 @@ therefore exhaust one invocation's shared limits; this returns incomplete.
 | FR-042-AC-10 | Actual accepted native source passes the real compiler stages and emits the fixture consumed unchanged by quire-protocol's public Rust admission/linking interface. Every compiler/source/domain-package/profile/dependency selector survives; no shell, stdout parser, alternate formal frontend or manually sealed fixture supplies this positive handoff. | Test (TC-121, quire-protocol IT-001) |
 | FR-042-AC-11 | For a model whose native package imports a domain package, reading `Model`'s domain package identity, version and digest from decoded bytes reproduces exactly the `DomainPackageRef` FR-056 admitted for that model at linking, with no producer or relation object between them. A payload whose `Model` object carries a `correspondence`, `producer` or `interface` member, of any value including `null`, or that carries a `ProducerObject`-shaped or `Correspondence`-shaped value under any key, refuses as an unrecognized field rather than being read into a domain package identity or silently ignored. | Test (TC-121) |
 | FR-042-AC-12 | For a directly admitted native model with no domain-package import, `Model`'s domain-package member decodes as explicit `null`; a payload that omits the member entirely refuses exactly as an omitted `Nullable<T>` member already refuses elsewhere in this contract, and is never read as an implicit `null`. | Test (TC-121) |
+| FR-042-AC-13 | Over an admitted domain package, a declaration over a domain object type's population input and a domain operation (an operation clause, an attempt with a domain event record, and a FIFO channel keyed by a domain object) check, emit exactly one population/closure pair per covering declaration and anchor and the operation's own export, and read back unchanged. A changed package digest, an export the package does not declare, a population pair keyed to another object type and an operation context other than its owner each refuse; an object type with no covering population declaration refuses emission as `Unsupported::Export`. | Test (TC-121) |
 
 ## Dependencies
 

@@ -15,7 +15,7 @@ Planned public Rust controls for the full
 boundary, using the exact [wire contract](../../docs/compiled-protocol-v1.md).
 The positive emitter fixture starts with native Quire source, an admitted domain
 package and actual definition contracts; a hand-built wire fixture exercises only
-reader behavior. The twelve groups below correspond to the twelve acceptance
+reader behavior. The thirteen groups below correspond to the thirteen acceptance
 criteria.
 
 Use source-owned orders O1/O2 sharing payment provider P, split shipments S1/S2,
@@ -284,6 +284,22 @@ observations belong only to the later consumer fixture.
     the reader to refuse it, exactly as an omitted `Nullable<T>` member
     refuses elsewhere in this contract, never reading the omission as an
     implicit `null`.
+13. Admit the architecture bundle with a closed population declaration over
+    `Pump` and `Sys` added to its lifted document. Compile a predicate over a
+    `Pump`, a precondition of `Pump::run`, and a protocol whose role plays
+    `Pump`, attempts `Pump::run` and keys a FIFO channel by the `Pump`.
+    Confirm each `Pump` input carries one population and one closure
+    requirement naming `population` export `[Pump, <population>]`, the
+    operation is named by its `operation` export `[Pump, run]` with `Pump` as
+    context, and the strict reader reads the bytes back unchanged. Require a
+    changed package digest, an undeclared population or operation export, a
+    population pair keyed to `Sys` and a precondition context of `Sys` each to
+    refuse, and a `Pump` covered by no population declaration, or by two, to
+    refuse emission as `Unsupported::Export`. Drop the population pair of a
+    `Pump` input, and of a record reaching `Pump` through a field, and require
+    each to refuse as `Invalid::Binding`. Add `BigPump`, whose only supertype
+    is `Pump`: a population listing `Pump` covers it, and one listing only
+    `Sys` does not, refusing emission.
 
 ## Expected Results
 

@@ -7,7 +7,7 @@
     "namespace": "example-output",
     "value": "1"
   },
-  "digest": "sha256:f079703f77a0faf1df9d7296a34cefe31a2c40129117ec5aa3994ddf7c09dffa",
+  "digest": "sha256:5dc071a58000509b8bf016b6caf2391a9e744bf246369cd4c214d76a74aad001",
   "wire": {
     "identity": "quire.compiled-protocol",
     "version": "1"

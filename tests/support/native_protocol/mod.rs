@@ -463,16 +463,22 @@ impl Inputs {
                 },
             ),
         ] {
-            let clause = self
-                .mappings
-                .iter_mut()
-                .flat_map(|mapping| &mut mapping.clauses)
-                .find(|clause| clause.name == name)
-                .expect("explicit authored contract name");
-            clause.execution_point = execution;
-            *self.executions.get_mut(name).unwrap() = expected;
+            self.execution(name, execution, expected);
         }
         export
+    }
+
+    /// Bind authored clause `name` to `execution`, and expect the emitted
+    /// declaration to carry `expected`.
+    pub fn execution(&mut self, name: &str, execution: ir::ExecutionPoint, expected: w::Execution) {
+        let clause = self
+            .mappings
+            .iter_mut()
+            .flat_map(|mapping| &mut mapping.clauses)
+            .find(|clause| clause.name == name)
+            .expect("explicit authored contract name");
+        clause.execution_point = execution;
+        *self.executions.get_mut(name).unwrap() = expected;
     }
 
     pub fn with_proofs(

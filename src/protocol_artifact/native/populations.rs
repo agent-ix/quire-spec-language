@@ -1,22 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-036/040/042: exact future population inputs over admitted native object roles.
+//! FR-036/040/042: exact future population inputs over admitted native object
+//! roles and domain-package object types (FR-153).
 //! Reuses the binding catalog; no observation or membership is supplied here.
 
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use quire_contract_ir as ir;
 
-use crate::checking::{composed::ObservationOrigin, Catalog, NativeType};
+use crate::checking::{composed::ObservationOrigin, Catalog, DomainType, NativeType};
 use crate::linking::composed::scopes::{Anchor, BinderKind};
 use crate::native_model::{NativeModel, ObjectRole};
-use crate::protocol_artifact::{work::Work, Dimension, Error, Invalid};
+use crate::protocol_artifact::{domain, work::Work, Dimension, Error, Invalid};
 use qsl_foundation::Span;
+use qsl_semantics::model::admitted::Declaration as DomainDeclaration;
 
 use super::context::Declaration;
 
+/// The population one input binds.
+pub(super) enum Population<'a> {
+    /// An admitted native object role, under its universe.
+    Native {
+        model: &'a NativeModel,
+        role: &'a ObjectRole,
+    },
+    /// A domain object type, under the population declaration covering it.
+    Domain {
+        object: DomainType<'a>,
+        population: DomainDeclaration<'a>,
+    },
+}
+
 pub(super) struct Need<'a> {
-    pub model: &'a NativeModel,
-    pub role: &'a ObjectRole,
+    pub population: Population<'a>,
     pub anchor: Anchor,
     pub span: Span,
 }
@@ -25,11 +40,15 @@ pub(super) struct Need<'a> {
 // and duplicate exact selections (AmbiguousSelection), so a selected owner
 // identifies one admitted model here. Distinct model owners remain supported.
 type Key<'a> = (&'a ir::RequirementRef, &'a ir::SymbolName, u32);
+// A domain object type, by its package identity and FR-154 key node, at an
+// anchor. FR-056 admits one version of a package identity per selection.
+type DomainKey<'a> = (&'a str, &'a str, u32);
 
 struct Collector<'s, 'm> {
     context: &'s Declaration<'s, 'm>,
     visited: BTreeSet<Key<'m>>,
     needed: BTreeMap<Key<'m>, Need<'m>>,
+    domain: BTreeMap<DomainKey<'m>, Need<'m>>,
 }
 
 pub(super) fn collect<'m>(
@@ -40,6 +59,7 @@ pub(super) fn collect<'m>(
         context,
         visited: BTreeSet::new(),
         needed: BTreeMap::new(),
+        domain: BTreeMap::new(),
     };
     for &original in &context.layout.binders {
         work.visit()?;
@@ -84,11 +104,46 @@ pub(super) fn collect<'m>(
             ObservationOrigin::Independent | ObservationOrigin::Selected { .. } => {}
         }
     }
-    work.charge(Dimension::Entries, collector.needed.len())?;
-    Ok(collector.needed.into_values().collect())
+    work.charge(
+        Dimension::Entries,
+        collector
+            .needed
+            .len()
+            .saturating_add(collector.domain.len()),
+    )?;
+    Ok(collector
+        .needed
+        .into_values()
+        .chain(collector.domain.into_values())
+        .collect())
 }
 
 impl<'s, 'm> Collector<'s, 'm> {
+    fn domain(
+        &mut self,
+        ty: &DomainType<'m>,
+        anchor: Anchor,
+        span: Span,
+        work: &mut Work,
+    ) -> Result<(), Error> {
+        let anchor_index = self.context.layout.anchor(anchor)?.index;
+        for object in domain::reached_objects(ty, work)? {
+            let identity = object.package.selection().identity.as_str();
+            let node = object.declaration.key.node.as_str();
+            work.bytes(identity.len().saturating_add(node.len()))?;
+            if let Entry::Vacant(entry) = self.domain.entry((identity, node, anchor_index)) {
+                let population = domain::population(&object, work)?;
+                work.charge(Dimension::Entries, 1)?;
+                entry.insert(Need {
+                    population: Population::Domain { object, population },
+                    anchor,
+                    span,
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn catalog(&self, model: &NativeModel, work: &mut Work) -> Result<&'s Catalog<'m>, Error> {
         for (input, selected) in self.context.models.inputs().iter().enumerate() {
             work.visit()?;
@@ -127,11 +182,9 @@ impl<'s, 'm> Collector<'s, 'm> {
                     break (*model, &role.record)
                 }
                 NativeType::Record { model, declaration } => break (*model, declaration.name()),
-                // A domain object type's population input has no export yet;
-                // a record value type needs none unless it reaches one.
-                NativeType::Domain(domain) => {
-                    return crate::protocol_artifact::domain::require_no_population(domain, work)
-                }
+                // Every domain object type the value reaches needs the
+                // population input of the declaration covering it.
+                NativeType::Domain(ty) => return self.domain(ty, anchor, span, work),
                 NativeType::Boolean
                 | NativeType::Scalar { .. }
                 | NativeType::Enumeration { .. } => return Ok(()),
@@ -153,8 +206,7 @@ impl<'s, 'm> Collector<'s, 'm> {
                     if let Entry::Vacant(entry) = self.needed.entry(key) {
                         work.charge(Dimension::Entries, 1)?;
                         entry.insert(Need {
-                            model,
-                            role,
+                            population: Population::Native { model, role },
                             anchor,
                             span,
                         });

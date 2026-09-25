@@ -3,6 +3,7 @@
 use super::super::models::{ModelError, ModelErrorKind};
 use super::*;
 use crate::syntax::{Builtin, ExprKind};
+use qsl_semantics::model::domain_package::DomainPackageRecord;
 
 impl Resolver<'_, '_> {
     fn value_occurrence(
@@ -299,6 +300,35 @@ impl Resolver<'_, '_> {
                 context: context.clone(),
                 name: name.clone(),
             };
+            // A domain operation's inputs and result have no native binder
+            // type yet, so only an operation with neither binds here.
+            match models.resolve_domain_operation(self.output.unit, &operation, self.work) {
+                Ok(Some(bound)) => {
+                    let bindable = matches!(
+                        bound.declaration().record,
+                        DomainPackageRecord::OperationMember(record)
+                            if record.parameters.is_empty()
+                                && (kind != ClauseKind::Postcondition || record.result.is_none())
+                    );
+                    if !bindable {
+                        self.issue(ScopeIssue::ModelOperationUnavailable { span: name.span })?;
+                        return Ok(());
+                    }
+                    return self.expression(body, env);
+                }
+                Ok(None) => {}
+                Err(ModelError {
+                    kind: ModelErrorKind::ResourceExhausted(exhaustion),
+                    ..
+                }) => return Err(exhaustion),
+                Err(_) => {
+                    if let Some(exhaustion) = models.exhaustion() {
+                        return Err(*exhaustion);
+                    }
+                    self.issue(ScopeIssue::ModelOperationUnavailable { span: name.span })?;
+                    return Ok(());
+                }
+            }
             let resolved = match models.resolve_operation(self.output.unit, &operation, self.work) {
                 Ok(operation) => operation,
                 Err(ModelError {

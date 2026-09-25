@@ -16,6 +16,7 @@ use crate::native_model::{NativeModel, OperationRole, ScalarRole, ScalarSite};
 use crate::syntax::composed::{self as c, Operation, ParameterType, QualifiedName};
 use qsl_foundation::{ByteDigest, Span, Spanned};
 use qsl_semantics::model::admitted::{AdmittedPackage, Declaration, DeclarationKind};
+use qsl_semantics::model::domain_package::DomainPackageRecord;
 use qsl_semantics::model::domain_package::DomainPackageRef;
 use qsl_semantics::model::key::DeclarationKey as DomainKey;
 
@@ -243,6 +244,20 @@ impl<'a> BoundDeclaration<'a> {
     /// The record intake read for the declaration.
     pub fn declaration(&self) -> Declaration<'a> {
         self.declaration
+    }
+    /// For an operation member, its owner's key and its name: the segment
+    /// after `<owner identity>/` in its FR-154 member key.
+    pub fn operation(&self) -> Option<(&'a DomainKey, &'a str)> {
+        let DomainPackageRecord::OperationMember(operation) = self.declaration.record else {
+            return None;
+        };
+        let name = self
+            .declaration
+            .key
+            .node
+            .strip_prefix(operation.owner.node.as_str())?
+            .strip_prefix('/')?;
+        Some((&operation.owner, name))
     }
 }
 
@@ -904,6 +919,30 @@ impl<'a> ModelBindings<'a> {
             ParameterType::Model(name) => self
                 .resolve_type(unit, name, work)
                 .map(|bound| bound.native),
+        }
+    }
+
+    /// Resolve an explicit operation of a domain-package object type by its
+    /// FR-154 member key; `Ok(None)` when its context's alias selects no
+    /// domain package.
+    pub fn resolve_domain_operation(
+        &self,
+        unit: UnitId,
+        operation: &Operation,
+        work: &mut Work,
+    ) -> Result<Option<BoundDeclaration<'a>>, ModelError> {
+        if !self.is_domain_alias(unit, &operation.context.model) {
+            return Ok(None);
+        }
+        let bound = self.domain_member(unit, &operation.context, &operation.name, work)?;
+        if bound.kind() == DeclarationKind::Operation {
+            Ok(Some(bound))
+        } else {
+            Err(failure(
+                unit,
+                operation.name.span,
+                ModelErrorKind::WrongExportKind,
+            ))
         }
     }
 

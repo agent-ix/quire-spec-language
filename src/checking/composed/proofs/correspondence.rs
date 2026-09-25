@@ -198,13 +198,23 @@ fn execution(
             if let Some(exports) = types.binding().exports().get(id.index()) {
                 for occurrence in &exports.occurrences {
                     work.charge(D::Types, 1, site)?;
-                    if let ModelTarget::Operation(bound) = &occurrence.target {
-                        work.charge(
-                            D::Bytes,
-                            operation.as_str().len() + bound.role().anchor.as_str().len(),
-                            site,
-                        )?;
-                        return Ok(&bound.role().anchor == operation);
+                    match &occurrence.target {
+                        ModelTarget::Operation(bound) => {
+                            work.charge(
+                                D::Bytes,
+                                operation.as_str().len() + bound.role().anchor.as_str().len(),
+                                site,
+                            )?;
+                            return Ok(&bound.role().anchor == operation);
+                        }
+                        // A domain operation's execution anchor is its name.
+                        ModelTarget::Declaration(bound) => {
+                            if let Some((_, name)) = bound.operation() {
+                                work.charge(D::Bytes, operation.as_str().len() + name.len(), site)?;
+                                return Ok(operation.as_str() == name);
+                            }
+                        }
+                        ModelTarget::Type(_) => {}
                     }
                 }
             }

@@ -8,7 +8,7 @@
       "namespace": "example-output",
       "value": "1"
     },
-    "digest": "sha256:f079703f77a0faf1df9d7296a34cefe31a2c40129117ec5aa3994ddf7c09dffa",
+    "digest": "sha256:5dc071a58000509b8bf016b6caf2391a9e744bf246369cd4c214d76a74aad001",
     "wire": {
       "identity": "quire.compiled-protocol",
       "version": "1"
@@ -23,7 +23,7 @@
       "namespace": "compiled-protocol-contract",
       "value": "1"
     },
-    "digest": "sha256:b13da1ad90c8f90e94cd810c0855e49cb0101aecb6a5e2a53aa1601b0a6b5e46",
+    "digest": "sha256:0f540905c25cc401a32b4b672fc825fe381d1554666a9f6e11f1edee1f41872c",
     "wire": {
       "identity": "text/markdown",
       "version": "1"

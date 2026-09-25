@@ -198,6 +198,23 @@ impl<'a> ValueBuilder<'a> {
         )
     }
 
+    /// The `population` export `[object artifact id, population artifact
+    /// id]` binding domain object type `object` to `population`.
+    pub(super) fn domain_population_export(
+        &self,
+        object: &DomainType<'_>,
+        population: &qsl_semantics::model::admitted::Declaration<'_>,
+        work: &mut Work,
+    ) -> Result<w::ExportRef, Error> {
+        self.domain_export(
+            object.package,
+            w::ExportKind::Population,
+            object.artifact_id(),
+            Some(domain::artifact_id(population.key)),
+            work,
+        )
+    }
+
     fn find(
         &self,
         model_index: usize,
