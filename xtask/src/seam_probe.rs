@@ -813,8 +813,9 @@ mod tests {
         // TOML parse (this criterion's own text), since a feature-table key
         // is spelled `name = [...]` at the start of a line regardless of
         // which `[features]` block it sits under.
-        let feature_definition =
-            |line: &str| -> bool { line.starts_with("seam_probe") || line.starts_with("seam-probe") };
+        let feature_definition = |line: &str| -> bool {
+            line.starts_with("seam_probe") || line.starts_with("seam-probe")
+        };
         for member in MEMBERS {
             let manifest = workspace_root.join(member).join("Cargo.toml");
             let Ok(source) = fs::read_to_string(&manifest) else {
@@ -873,8 +874,13 @@ mod tests {
         let entries = fs::read_dir(&workflows_dir)
             .unwrap_or_else(|error| panic!("{workflows_dir:?}: {error}"));
         for entry in entries {
-            let path = entry.unwrap_or_else(|error| panic!("{workflows_dir:?}: {error}")).path();
-            if path.extension().is_none_or(|extension| extension != "yml" && extension != "yaml") {
+            let path = entry
+                .unwrap_or_else(|error| panic!("{workflows_dir:?}: {error}"))
+                .path();
+            if path
+                .extension()
+                .is_none_or(|extension| extension != "yml" && extension != "yaml")
+            {
                 continue;
             }
             let source =
@@ -1015,7 +1021,9 @@ mod tests {
             .find(|line| line.starts_with("ci:"))
             .expect("Makefile has a ci: target line");
         assert!(
-            ci_line.split_whitespace().any(|prereq| prereq == "seam-probe"),
+            ci_line
+                .split_whitespace()
+                .any(|prereq| prereq == "seam-probe"),
             "ci: does not name seam-probe as a prerequisite: {ci_line}"
         );
         let recipe_runs_xtask = makefile

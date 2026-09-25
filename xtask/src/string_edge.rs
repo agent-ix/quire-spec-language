@@ -1007,7 +1007,9 @@ mod tests {
             let occurrence = occurrences
                 .iter()
                 .find(|occurrence| occurrence.item == item)
-                .unwrap_or_else(|| panic!("{file}::{item} ({label}) is no longer found by the scan"));
+                .unwrap_or_else(|| {
+                    panic!("{file}::{item} ({label}) is no longer found by the scan")
+                });
             assert!(
                 !occurrence.branch_gating,
                 "{file}::{item} ({label}) is now flagged branch-gating -- FR-064-AC-5's \
