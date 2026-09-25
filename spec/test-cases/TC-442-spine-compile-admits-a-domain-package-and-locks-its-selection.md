@@ -45,11 +45,11 @@ Scope: FR-027-AC-9, FR-056-AC-9.
    model; with a document of the same package whose digest differs; and with
    the declaration's digest spelled `sha256:`.
 
-Tag the tests `#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]` (step 1),
+Tag the tests `#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]` (step 1,
+including its two field-access and conforming-equality cases),
 `#[trace("TC-442", "FR-027-AC-9")]` (step 2),
 `#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]` (step 4) and
-`#[trace("TC-442", "FR-056-AC-9")]` (step 3). The two gap tests of step 1
-carry `#[trace("TC-442")]` only.
+`#[trace("TC-442", "FR-056-AC-9")]` (step 3).
 
 ## Expected Results
 
@@ -59,12 +59,12 @@ carry `#[trace("TC-442")]` only.
   `[{"identity": "acme/orders", "version": "1.0.0", "digest_domain":
   "sha256-jcs", "digest": <the document's digest>}]`; a model node is emitted;
   without `code` and `same` the read is Verified and exports `keep` and
-  `held`, and the other digest is refused. With `code` the read refuses
-  `ill_typed`/`operator-ineligible` at the field member's `name`: field
-  access past I2 waits on IR-285 and QSpec STD-100. With `same` it refuses
-  the same way at the equality's second argument: QSpec's v2 operation
-  catalog pins `quire.op.reference.eq` to `same_type`. Each of these two
-  tests fails once its gap is fixed.
+  `held`, and the other digest is refused. With `code` only, the read is
+  Verified and exports `code`: IR-285 and QSpec STD-100 resolve the field
+  member through the lock-selected domain package. With `same` only, the
+  read is Verified and exports `same`: IR-285's QVC checked-operation
+  catalog (STD-101/102) admits conforming operands for
+  `quire.op.reference.eq`.
 - Step 2: exit 0; stdout equals the library bytes, and its `model_selections`
   digest is the one the program's `model` declaration spells.
 - Step 3: one assembler error, `UnresolvedTypeName("M::Nope")`, code
@@ -81,6 +81,4 @@ carry `#[trace("TC-442")]` only.
 
 ## Status
 
-Passed locally (QSL-249). Remaining work: field access past I2 (IR-285, QSpec
-STD-100) and conforming reference equality past I2 (QSpec's v2 operation
-catalog `quire.op.reference.eq` constraint).
+Passed locally (QSL-249, QSL-256).

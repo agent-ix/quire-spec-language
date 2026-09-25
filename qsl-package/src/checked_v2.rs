@@ -530,6 +530,7 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
         CheckedPackageRefusalCode::AmbiguousDeclaration => Code::AmbiguousDeclaration,
         CheckedPackageRefusalCode::InvalidModelBinding => Code::InvalidModelBinding,
         CheckedPackageRefusalCode::IllTyped => Code::IllTyped,
+        CheckedPackageRefusalCode::MissingImport => Code::MissingImport,
     }
 }
 
