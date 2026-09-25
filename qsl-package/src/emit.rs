@@ -1,8 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-#![allow(
-    dead_code,
-    reason = "no production caller yet: the S4 pipeline that calls emit_checked is ADR-011 §4's round trip (QSL-6 slice S3); until then only this crate's tests call it"
-)]
 //! ADR-011 T-8 (M-4, QSL-6), slice S1b: the S4 v2 emitter, [`CheckedPackage`]
 //! -> [`EmittedPackage`] (the `quire.checked-package/v2` bytes with their own
 //! `package_id`, QSpec FR-322).
@@ -118,7 +114,7 @@ fn diagnostics_catalog() -> CheckedArtifactRef {
 /// Why the v2 emitter writes no bytes for `package` at all. A node that
 /// cannot be written is omitted instead ([`OmittedNode`]).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub(crate) enum EmitRefusal {
+pub enum EmitRefusal {
     /// No node of the package can be written, and FR-322 admits no empty
     /// semantic graph.
     #[error("no node of the package can be written to a checked-package/v2 graph")]
@@ -161,7 +157,7 @@ impl From<quire_canonical::Error> for EmitRefusal {
 
 impl EmitRefusal {
     /// The catalog code (FR-010).
-    pub(crate) fn code(&self) -> Code {
+    pub fn code(&self) -> Code {
         match self {
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
@@ -173,16 +169,16 @@ impl EmitRefusal {
 
 /// One node the wire omits, and why.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct OmittedNode {
+pub struct OmittedNode {
     /// The omitted node.
-    pub(crate) node: CheckedNodeId,
+    pub node: CheckedNodeId,
     /// Why it is omitted.
-    pub(crate) cause: OmissionCause,
+    pub cause: OmissionCause,
 }
 
 /// Why a node is omitted from the wire.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum OmissionCause {
+pub enum OmissionCause {
     /// IR's v2 vocabulary has no such form for the tag.
     UnsupportedForm {
         /// The node's tag.
@@ -204,11 +200,23 @@ pub(crate) enum OmissionCause {
 
 /// The emitted package and the nodes it omits.
 #[derive(Clone, Debug)]
-pub(crate) struct Emission {
+pub struct Emission {
     /// The v2 bytes and their `package_id`.
     pub(crate) package: EmittedPackage,
     /// Every node of the checked graph the wire omits, ascending by node id.
     pub(crate) omitted: Vec<OmittedNode>,
+}
+
+impl Emission {
+    /// The v2 bytes and their `package_id`.
+    pub fn package(&self) -> &EmittedPackage {
+        &self.package
+    }
+
+    /// Every node of the checked graph the wire omits, ascending by node id.
+    pub fn omitted(&self) -> &[OmittedNode] {
+        &self.omitted
+    }
 }
 
 /// IR's closed node family for `tag`. Exhaustive: a new QSL node tag does
@@ -688,7 +696,7 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322), placing each
 /// occurrence at the region of the checked unit its location names
 /// (`CheckedGraph::region`, FR-096).
-pub(crate) fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
     emit_package(package, |location| graph.region(location))
 }

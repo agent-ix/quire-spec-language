@@ -7,6 +7,7 @@ pub mod extraction;
 mod output;
 mod projection_error;
 mod source_package;
+pub mod spine;
 mod wire;
 
 pub use output::NativeResult;
