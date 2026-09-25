@@ -24,7 +24,7 @@ Scope: FR-027-AC-5 to FR-027-AC-8.
    and a function with parameters) S1 to S4 through `emit_checked` and QSL's
    I2 reader (`qsl-package`).
 2. Compile a native-compile/1 request selecting that fixture, no models and no
-   clause bindings, and compare stdout with `command::spine::compile` over the
+   clause bindings, and compare stdout with `qsl_replay::spine::compile` over the
    same source and labels. Compile it again with a different `document` and
    `formal_revision`, then with a blank `document`.
 3. Compile the `0-draft` standalone fixtures and compare the bytes with the

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! `qsl-replay`: the ADR-011 §6.1 layer **6** crate (QSL-185, ADR-011 §7.3
 //! X-10) -- the CG-facing replay facade (ADR-011 §6.1, ADR-013 O-24 to
-//! O-27, C-13). It depends only on `quire-exact` (layer K) and
-//! `qsl-foundation` (layer F).
+//! O-27, C-13). It depends on layers 1 to 5, F and K, as §6.1 allows.
 //!
-//! **This crate builds only the four typed envelopes its public API
-//! exposes** -- the proof-result envelope (`proof_result`), the
-//! counterexample/witness envelope (`witness`), the replay request
-//! (`request`) and the replay result (`result`) -- their round trips, and
-//! their redacted rendering (FR-069 through FR-073). It builds no backend
-//! invocation, no Kani harness and no replay execution: the executor entry
-//! (ADR-013 TK-01, `CheckedPackage::call`) stays in the root crate's own
-//! `value::expression`, over `qsl-package`'s `CheckedPackage`, which "lands it first with the
-//! skeleton spine" (ADR-011 §6.1) and widens it per family thereafter. CG
-//! reaches this crate's public API and nothing else in QSL (ADR-011 FB-05).
+//! Its public API is the replay executor entry [`replay`] (ADR-013 TK-01,
+//! C-13; FR-098), which recompiles a request's digest-addressed source
+//! through the spine ([`spine::compile`], S1 to S4) and calls the selected
+//! function through S6a (`CheckedPackageEvaluation::call`), and the four
+//! typed envelopes it reads and settles -- the proof-result envelope
+//! (`proof_result`), the counterexample/witness envelope (`witness`), the
+//! replay request (`request`) and the replay result (`result`) -- with
+//! their round trips and their redacted rendering (FR-069 through FR-073).
+//! It builds no backend invocation and no Kani harness. CG reaches this
+//! crate's public API and nothing else in QSL (ADR-011 FB-05); `command`
+//! uses [`spine::compile`] for the CLI's `compile`.
 //!
 //! # Provisional local types
 //!
@@ -27,13 +27,16 @@
 #![forbid(unsafe_code)]
 
 mod bounds;
+mod execute;
 mod identity;
 mod proof_result;
 mod request;
 mod result;
+pub mod spine;
 mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
+pub use execute::{replay, LimitAboveReader, ReplayRefusal};
 pub use identity::{
     Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
     QualifiedName, RawSourceRef, TracePosition,
@@ -112,6 +115,7 @@ mod redaction_tests {
             source_digests: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
+                "git".to_owned(),
                 "rev-1".to_owned(),
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),
@@ -161,6 +165,7 @@ mod redaction_tests {
             source_digests: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
+                "git".to_owned(),
                 "rev-1".to_owned(),
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),

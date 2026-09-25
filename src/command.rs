@@ -7,7 +7,6 @@ pub mod extraction;
 mod output;
 mod projection_error;
 mod source_package;
-pub mod spine;
 mod wire;
 
 pub use output::NativeResult;
@@ -217,7 +216,7 @@ pub struct SpineFailure {
     /// one.
     pub span: Option<qsl_foundation::LocatedSpan>,
     /// The stage's typed refusal.
-    pub refusal: spine::CompileRefusal,
+    pub refusal: qsl_replay::spine::CompileRefusal,
 }
 
 impl From<ir::Diagnostic> for RunCause {
@@ -448,12 +447,14 @@ fn complete(
             .iter()
             .map(|document| document.source().text().as_bytes()),
     );
-    spine::compile(
+    qsl_replay::spine::compile(
         source.identity().clone(),
         source.path(),
         source.text().as_bytes(),
         &packages,
+        qsl_replay::spine::SpineLimits::default(),
     )
+    .map(|compiled| compiled.emitted.bytes().to_vec())
     .map_err(|refusal| {
         RunCause::Spine(Box::new(SpineFailure {
             source: source.identity().clone(),

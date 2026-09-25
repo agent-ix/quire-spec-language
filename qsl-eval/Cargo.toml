@@ -57,7 +57,7 @@ missing_docs = "warn"
 # FR-063: `seam_probe` is the `RUSTFLAGS`-set `--cfg` `xtask seam-probe`
 # builds this crate under; `seam_probe_downstream` gives `qsl-semantics`' own
 # seams their probe arm, so this crate's probe build reaches its own seams.
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)", "cfg(seam_probe_downstream)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)", "cfg(seam_probe_downstream)", "cfg(seam_probe_eval_downstream)"] }
 
 [lints.clippy]
 all = "deny"

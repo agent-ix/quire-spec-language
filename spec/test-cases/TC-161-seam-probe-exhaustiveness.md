@@ -14,10 +14,11 @@ relationships:
 
 ## Description
 
-Verify that the four probe builds -- `qsl-semantics` under
-`RUSTFLAGS=--cfg seam_probe`, then the root crate, `qsl-route` and
-`qsl-eval` each under `RUSTFLAGS=--cfg seam_probe --cfg
-seam_probe_downstream` -- each fail to compile, together
+Verify that the five probe builds -- `qsl-semantics` under
+`RUSTFLAGS=--cfg seam_probe`, then the root crate, `qsl-route`, `qsl-eval`
+and `qsl-replay` each under `RUSTFLAGS=--cfg seam_probe --cfg
+seam_probe_downstream`, with the layered downstream cfgs FR-063 names for
+the root crate and `qsl-replay` (QSL-5) -- each fail to compile, together
 with exactly the checked-in set of seam-function locations (and with rustc
 error code `E0004` specifically at each), that the three normal builds (the
 root crate, `qsl-route` and `qsl-eval`, no `seam_probe` set) succeed with none, that removing a checked-in entry or removing an

@@ -34,7 +34,7 @@ The request selects the function to replay by a typed `QualifiedName`
 the request type and its round trip only; it does not build the executor
 that consumes it (ADR-013 C-13, TK-01 executor entry, is #243's), and it
 performs no recompilation, no `package_id` recomputation, and no function
-call.
+call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 
 ## Inputs
 
@@ -66,6 +66,18 @@ call.
   path-typed, environment-variable-typed, or search-location-typed member,
   and a byte-provision entry naming a digest domain outside the closed
   FR-201 domain set SHALL refuse at decode.
+- Each package-reference entry SHALL carry FR-001's four source labels
+  (authority, identity, revision namespace, revision) and its digest, so
+  the executor (FR-098) recompiles a source under exactly the labels the
+  proving run used (ADR-013 §7 S-4b). **Amended by QSL-5**: the entry used
+  to carry one revision string and no namespace.
+- A byte-provision entry SHALL be verified under its declared domain: a
+  raw-byte-addressed domain (source and definition documents) against the
+  SHA-256 of its bytes, and `sha256-jcs` (a domain package document)
+  against the SHA-256 of the document's RFC 8785 bytes, the digest I1 keys
+  its package input by. Any other FR-201 domain refuses as ineligible.
+  **Amended by QSL-5**: `sha256-jcs` used to refuse as ineligible, which
+  left no way for a domain package to reach the executor.
 - The byte provision SHALL be complete at construction: every
   `RawSourceRef` digest the package reference names SHALL have a matching
   byte-provision entry; a request whose package reference names a digest

@@ -742,6 +742,14 @@ impl<'a, 'm> Machine<'a, 'm> {
             | NodeKind::If { .. }
             | NodeKind::Connective(..)
             | NodeKind::Pre(_) => return Err(invariant()),
+            // FR-063: no arm for the probe variant under `--cfg seam_probe`
+            // alone (`E0004`, this seam's evidence). The arm below exists
+            // only in the probe's build of the crates above `qsl-eval`
+            // (`--cfg seam_probe_eval_downstream`, QSL-5): `qsl-replay`
+            // depends on this crate, so it must compile there for the root
+            // crate's own seams to be reached at all.
+            #[cfg(seam_probe_eval_downstream)]
+            NodeKind::__SeamProbe => return Err(invariant()),
             NodeKind::Coerce(_, target) => {
                 let value = self.pop_integer()?;
                 if !target.contains(&value) {

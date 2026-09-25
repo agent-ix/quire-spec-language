@@ -5,10 +5,18 @@ publish = false
 edition = "2021"
 rust-version = "1.98"
 license = "AGPL-3.0-or-later"
-description = "ADR-011 §6.1 layer 6: the CG-facing replay facade -- the four #231 typed envelopes (proof result, witness, replay request, replay result), their round trips and their redacted rendering."
+description = "ADR-011 §6.1 layer 6: the CG-facing replay facade -- the TK-01 replay executor, the spine S1-to-S4 compile it recompiles through, and the four #231 typed envelopes (proof result, witness, replay request, replay result)."
 
+# ADR-011 §6.1 layer 6 `replay` depends on "layers 1 to 5, F, K": the spine
+# recompile (S1 `qsl-cst`, S2 `qsl-forms`, I1 and S3 `qsl-semantics`, S4
+# `qsl-package`) and the S6a call (`qsl-eval`) of the TK-01 executor (QSL-5).
 [dependencies]
+qsl-cst = { path = "../qsl-cst" }
+qsl-eval = { path = "../qsl-eval" }
+qsl-forms = { path = "../qsl-forms" }
 qsl-foundation = { path = "../qsl-foundation" }
+qsl-package = { path = "../qsl-package" }
+qsl-semantics = { path = "../qsl-semantics" }
 quire-exact = { path = "../quire-exact" }
 thiserror = "=2.0.20"
 
@@ -18,6 +26,11 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+# FR-063: `xtask seam-probe` builds this crate under `--cfg seam_probe --cfg
+# seam_probe_downstream --cfg seam_probe_eval_downstream`, which reports its
+# own seam, and the root crate adds `--cfg seam_probe_replay_downstream`,
+# which gives that seam its probe arm.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)", "cfg(seam_probe_downstream)", "cfg(seam_probe_eval_downstream)", "cfg(seam_probe_replay_downstream)"] }
 
 [lints.clippy]
 all = "deny"

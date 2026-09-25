@@ -25,7 +25,7 @@ pub(super) enum Stage {
     Lower,
     Input,
     /// The spine stage that refused a `1-draft` program.
-    Spine(crate::command::spine::SpineStage),
+    Spine(qsl_replay::spine::SpineStage),
 }
 
 impl Serialize for Stage {

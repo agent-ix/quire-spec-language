@@ -331,6 +331,13 @@ impl PackageDocument {
     pub fn tree(&self) -> &Value {
         &self.tree
     }
+
+    /// The package's `sha256-jcs` digest: SHA-256 over the document's
+    /// RFC 8785 bytes. The replay byte provision verifies a domain package
+    /// entry against its declared digest with this (ADR-013 QC-1).
+    pub fn jcs_digest(&self) -> [u8; 32] {
+        self.jcs_digest
+    }
 }
 
 /// How many times longer a document's RFC 8785 text can be than the document

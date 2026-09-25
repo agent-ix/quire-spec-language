@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL#214 (FR-063): `cargo xtask seam-probe` demonstrates ADR-012 §5.1's S1
 //! and S7 seams by building the QSL workspace crates that hold seams under
-//! `RUSTFLAGS=--cfg seam_probe` (three normal builds and four probe builds,
+//! `RUSTFLAGS=--cfg seam_probe` (three normal builds and five probe builds,
 //! `PROBE_BUILDS` and `NORMAL_BUILDS`) and comparing the `E0004`
 //! (non-exhaustive match) locations rustc reports against a checked-in
 //! list, exactly as FR-063 requires.
@@ -154,7 +154,7 @@ pub struct SeamLocation {
 /// parser's leading-token-kind entry table" -- `qsl-forms::dispatch::
 /// dispatch`'s `match` over `LeadingTokenKind`. That table lives in
 /// `qsl-forms` (ADR-011 §6.1 layer 2), a dependency of every one of
-/// `PROBE_BUILDS`'s four packages but never itself one of them: giving its
+/// `PROBE_BUILDS`'s five packages but never itself one of them: giving its
 /// `match` the same "no arm under plain `seam_probe`" treatment as
 /// `Typer::infer_form` would make `qsl-forms` -- and therefore every crate
 /// above it -- fail to compile in *every* probe build, permanently hiding
@@ -162,13 +162,17 @@ pub struct SeamLocation {
 /// not just this one; giving it an unconditional arm instead would make the
 /// variant inert (never actually non-exhaustive anywhere), which is not a
 /// seam at all. Probing it needs a build of `qsl-forms` itself, which
-/// `PROBE_BUILDS`'s fixed four-crate list (FR-063's own Behavior text)
+/// `PROBE_BUILDS`'s fixed crate list (FR-063's own Behavior text)
 /// does not include; QSL-244 tracks widening `PROBE_BUILDS` (or otherwise
 /// giving `qsl-forms` its own probe build) to reach this table, not
 /// something this checked-in list can honestly claim today. FR-063-AC-6
 /// requires only
 /// *one* checked-in entry per category, and `Typer::infer_form` already
 /// supplies S2's.
+///
+/// **The replay facade (QSL-5, ADR-013 TK-01):** `qsl-replay`'s `replay`,
+/// the executor's `match` over `FamilyOutcome` that settles a replayed
+/// outcome. Each family whose S6a result is new widens the facade there.
 ///
 /// **S4 proper (FR-062-AC-8, TC-161, QSL-152):**
 /// `qsl-semantics/src/check/refusal.rs`'s `CheckCause::code`, the one family
@@ -229,6 +233,10 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         SeamLocation {
             file: "qsl-semantics/src/check/lowering.rs".to_owned(),
             item: "Lowering::lower_node".to_owned(),
+        },
+        SeamLocation {
+            file: "qsl-replay/src/execute.rs".to_owned(),
+            item: "replay".to_owned(),
         },
     ]
     .into_iter()
@@ -430,18 +438,28 @@ fn offline_registry_unavailable(stderr: &str) -> bool {
 /// crate's `--lib` never compiles it. `qsl-eval` (QSL-183) gets one for
 /// the same reason: the root crate does not depend on it at all, so its
 /// S6a seams (`value::expression`) are reached only by a build of its own.
-/// When a crate above `qsl-eval` comes to depend on it, `qsl-eval`'s seams
-/// need a downstream probe arm of their own, as `qsl-semantics`' have, or
-/// that crate's build stops inside `qsl-eval`. Each build must fail;
-/// together they must report exactly the checked-in list.
-const PROBE_BUILDS: [(&str, &str); 4] = [
+/// **Layered downstream cfgs (QSL-5).** `qsl-replay` depends on `qsl-eval`,
+/// and the root crate on `qsl-replay`, so each of those crates' seams needs a
+/// probe arm in the builds of the crates above it: `seam_probe_eval_downstream`
+/// gives `qsl-eval`'s seams theirs, and `seam_probe_replay_downstream` gives
+/// `qsl-replay`'s its own. `qsl-eval`'s build sets neither, so it still
+/// reports its own seams; `qsl-replay`'s build sets the first, so it
+/// compiles `qsl-eval` and reports its own seam; the root crate's sets both.
+/// Each build must fail; together they must report exactly the checked-in
+/// list.
+const PROBE_BUILDS: [(&str, &str); 5] = [
     ("qsl-semantics", "--cfg seam_probe"),
     (
         "quire-spec-language",
-        "--cfg seam_probe --cfg seam_probe_downstream",
+        "--cfg seam_probe --cfg seam_probe_downstream --cfg seam_probe_eval_downstream \
+         --cfg seam_probe_replay_downstream",
     ),
     ("qsl-route", "--cfg seam_probe --cfg seam_probe_downstream"),
     ("qsl-eval", "--cfg seam_probe --cfg seam_probe_downstream"),
+    (
+        "qsl-replay",
+        "--cfg seam_probe --cfg seam_probe_downstream --cfg seam_probe_eval_downstream",
+    ),
 ];
 
 /// The normal builds, with no probe cfg: the root crate, which builds every
@@ -549,7 +567,7 @@ pub fn run(workspace_root: &Path) -> Result<String> {
         .join(", ");
     Ok(format!(
         "seam-probe: {} checked-in locations confirmed under RUSTFLAGS=--cfg seam_probe \
-         (qsl-semantics, then quire-spec-language, qsl-route and qsl-eval); normal builds have none: \
+         (qsl-semantics, then quire-spec-language, qsl-route, qsl-eval and qsl-replay); normal builds have none: \
          {locations}. The parser's leading-token-kind table (S2, QSL-244) is not covered by this \
          checked-in list -- see `checked_in_locations`'s own doc.\n",
         checked_in.len()

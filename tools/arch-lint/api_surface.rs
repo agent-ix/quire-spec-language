@@ -14,6 +14,18 @@
 //! rule's symbol at all (T12-A's `quire_spec_language::replay::`, dead since
 //! the facade became its own crate, QSL-185).
 //!
+//! A `forbidden_modules` entry (T12-A's `qsl_replay::spine`, QSL-5) is a
+//! violation from any module too, and is found by parsing each file with
+//! `syn`, not by substring: every `use` tree leaf and every path whose first
+//! segment names the crate, or an alias of it (`use qsl_replay as q;`,
+//! `extern crate qsl_replay as q;`), and whose second names the module, is
+//! a violation -- so `use qsl_replay::spine;`, `use qsl_replay::{replay,
+//! spine::compile}` and `use qsl_replay::spine as s` each are, not only a
+//! call spelled `qsl_replay::spine::compile(..)`. A glob import of the
+//! crate (`use qsl_replay::*;`) is a violation as well, since it brings the
+//! module into scope. Macro arguments are not parsed by `syn`; a token-run
+//! match of `crate::module` covers a path written inside one.
+//!
 //! T12-B, T12-C and T12-D (`Rule::shipped_only`) match each pattern against
 //! the file's `proc_macro2` tokens, not its text: `NodeKey::from_digest` is
 //! the token run `NodeKey` `:` `:` `from_digest`. A comment is not a token and
@@ -124,6 +136,14 @@ pub(crate) struct DebtEntry {
     pub(crate) function: &'static str,
 }
 
+/// A module of a crate that no reference may reach: `krate::module`, both
+/// single identifiers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ForbiddenModule {
+    pub(crate) krate: &'static str,
+    pub(crate) module: &'static str,
+}
+
 /// One ADR-011 T-12 API-surface rule (data, per the module doc above).
 pub(crate) struct Rule {
     pub(crate) id: &'static str,
@@ -136,6 +156,10 @@ pub(crate) struct Rule {
     /// Call-site substrings that are a violation from any module, including
     /// an allowed caller: a path that no longer names the rule's symbol.
     pub(crate) forbidden_patterns: &'static [&'static str],
+    /// Modules of the rule's facade crate that are not part of the facade:
+    /// any reference to one, from any module, is a violation (see the
+    /// module doc's scanning method). `&[]` for every rule but T12-A.
+    pub(crate) forbidden_modules: &'static [ForbiddenModule],
     /// The callers allowed to contain a call site: each names its crate and
     /// a module path prefix within it (see [`AllowedCaller`]).
     pub(crate) allowed_callers: &'static [AllowedCaller],
@@ -183,6 +207,14 @@ pub(crate) const RULES: &[Rule] = &[
         // facade; it is a finding, never a pass, from any module including
         // an allowed one.
         forbidden_patterns: &["quire_spec_language::replay::"],
+        // `qsl_replay::spine` is the spine compile `command` shares with the
+        // executor (QSL-5). It is `pub` only because `command` is another
+        // crate; it is not part of the facade CG may call, so any reference
+        // to it is a finding from any module.
+        forbidden_modules: &[ForbiddenModule {
+            krate: "qsl_replay",
+            module: "spine",
+        }],
         // The facade's own internal adapter module has no ticket-assigned
         // name yet (ADR-011 places it in CG, "with RT ops and IR outcome",
         // #217/#219 build it). Left as a placeholder for #213/#217 to set.
@@ -212,6 +244,7 @@ pub(crate) const RULES: &[Rule] = &[
         // reintroduced helper of that name is caught.
         call_patterns: &["NodeKey::from_digest", "node_key_of("],
         forbidden_patterns: &[],
+        forbidden_modules: &[],
         // T12-B's allowed callers are `check` and every module under it
         // (ADR-013 O-04), including `check::node_key`, which mints every
         // checked node key.
@@ -249,6 +282,7 @@ pub(crate) const RULES: &[Rule] = &[
         // passed as a function value (`.map(EffectiveId::from_digest)`).
         call_patterns: &["EffectiveId::from_digest"],
         forbidden_patterns: &[],
+        forbidden_modules: &[],
         allowed_callers: &[AllowedCaller {
             crate_src: "qsl-semantics/src",
             module_prefix: "model",
@@ -281,6 +315,7 @@ pub(crate) const RULES: &[Rule] = &[
         // empty, so any shipped mint outside `model` fails.
         call_patterns: &["PopulationId::from_digest"],
         forbidden_patterns: &[],
+        forbidden_modules: &[],
         allowed_callers: &[AllowedCaller {
             crate_src: "qsl-semantics/src",
             module_prefix: "model",
@@ -315,6 +350,7 @@ pub(crate) const RULES: &[Rule] = &[
         // Its own `fn attest_ir_admitted_v2(` definition is not a call.
         call_patterns: &["attest_ir_admitted_v2"],
         forbidden_patterns: &[],
+        forbidden_modules: &[],
         allowed_callers: &[AllowedCaller {
             crate_src: "qsl-package/src",
             module_prefix: "checked_v2",
@@ -726,9 +762,15 @@ fn scan_file(
     let text = fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
     let contains_any = |line: &str, patterns: &[&str]| patterns.iter().any(|p| line.contains(p));
     let caller_allowed = module_allowed(crate_src, module, rule.allowed_callers);
+    let module_lines = if rule.forbidden_modules.is_empty() {
+        BTreeSet::new()
+    } else {
+        forbidden_module_lines(path, &text, rule.forbidden_modules)?
+    };
     let mut sites = Vec::new();
     for (index, line) in text.lines().enumerate() {
-        let is_forbidden = contains_any(line, rule.forbidden_patterns);
+        let is_forbidden =
+            contains_any(line, rule.forbidden_patterns) || module_lines.contains(&(index + 1));
         let is_call = !caller_allowed && contains_any(line, rule.call_patterns);
         if is_forbidden || is_call {
             sites.push((
@@ -743,6 +785,157 @@ fn scan_file(
         }
     }
     Ok(sites)
+}
+
+/// Every 1-based line of `text` that references one of `forbidden`'s
+/// modules: a `use` tree leaf or a path whose first segment is the crate or
+/// an alias of it and whose second is the module, a glob import of the
+/// crate, or (for macro arguments `syn` does not parse) a `crate::module`
+/// token run.
+fn forbidden_module_lines(
+    path: &Path,
+    text: &str,
+    forbidden: &[ForbiddenModule],
+) -> Result<BTreeSet<usize>> {
+    let parsed = syn::parse_file(text).map_err(|source| Error::source_parse(path, source))?;
+    let stream: proc_macro2::TokenStream = text
+        .parse()
+        .map_err(|source| Error::source_parse(path, source))?;
+    let mut tokens = Vec::new();
+    flatten_tokens(stream, &mut tokens);
+    let mut lines = BTreeSet::new();
+    for module in forbidden {
+        let mut aliases = CrateAliases {
+            krate: module.krate,
+            names: BTreeSet::from([module.krate.to_owned()]),
+        };
+        aliases.visit_file(&parsed);
+        let mut references = ModuleReferences {
+            aliases: &aliases.names,
+            module: module.module,
+            lines: BTreeSet::new(),
+        };
+        references.visit_file(&parsed);
+        lines.extend(references.lines);
+        let pattern = CallPattern::compile(&format!("{}::{}", module.krate, module.module));
+        lines.extend(pattern_match_lines(&tokens, &[pattern]));
+    }
+    Ok(lines)
+}
+
+/// Every leaf of a `use` tree, as its segments (a glob is `*`, a rename
+/// keeps the original name) and the name it binds, with its line.
+fn use_leaves(
+    tree: &syn::UseTree,
+    prefix: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, String, usize)>,
+) {
+    match tree {
+        syn::UseTree::Path(path) => {
+            prefix.push(path.ident.to_string());
+            use_leaves(&path.tree, prefix, out);
+            prefix.pop();
+        }
+        syn::UseTree::Name(name) => {
+            let mut segments = prefix.clone();
+            segments.push(name.ident.to_string());
+            out.push((
+                segments,
+                name.ident.to_string(),
+                name.ident.span().start().line,
+            ));
+        }
+        syn::UseTree::Rename(rename) => {
+            let mut segments = prefix.clone();
+            segments.push(rename.ident.to_string());
+            out.push((
+                segments,
+                rename.rename.to_string(),
+                rename.ident.span().start().line,
+            ));
+        }
+        syn::UseTree::Glob(glob) => {
+            let mut segments = prefix.clone();
+            segments.push("*".to_owned());
+            out.push((segments, "*".to_owned(), glob.star_token.span.start().line));
+        }
+        syn::UseTree::Group(group) => {
+            for item in &group.items {
+                use_leaves(item, prefix, out);
+            }
+        }
+    }
+}
+
+/// The names a file binds its forbidden module's crate to: the crate's own
+/// name, `use krate as alias;` and `extern crate krate as alias;`.
+struct CrateAliases {
+    krate: &'static str,
+    names: BTreeSet<String>,
+}
+
+impl<'ast> Visit<'ast> for CrateAliases {
+    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+        let mut leaves = Vec::new();
+        use_leaves(&node.tree, &mut Vec::new(), &mut leaves);
+        for (segments, bound, _) in leaves {
+            if segments == [self.krate] {
+                self.names.insert(bound);
+            }
+        }
+    }
+
+    fn visit_item_extern_crate(&mut self, node: &'ast syn::ItemExternCrate) {
+        if node.ident == self.krate {
+            if let Some((_, alias)) = &node.rename {
+                self.names.insert(alias.to_string());
+            }
+        }
+    }
+}
+
+/// Every reference to `module` through one of `aliases`: a `use` tree leaf
+/// or a path whose first two segments are an alias and the module, and a
+/// glob import of an alias.
+struct ModuleReferences<'a> {
+    aliases: &'a BTreeSet<String>,
+    module: &'static str,
+    lines: BTreeSet<usize>,
+}
+
+impl ModuleReferences<'_> {
+    fn reaches(&self, segments: &[String]) -> bool {
+        match segments {
+            [first, second, ..] => {
+                self.aliases.contains(first) && (second == self.module || second == "*")
+            }
+            _ => false,
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for ModuleReferences<'_> {
+    fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
+        let mut leaves = Vec::new();
+        use_leaves(&node.tree, &mut Vec::new(), &mut leaves);
+        for (segments, _, line) in leaves {
+            if self.reaches(&segments) {
+                self.lines.insert(line);
+            }
+        }
+    }
+
+    fn visit_path(&mut self, node: &'ast syn::Path) {
+        let segments: Vec<String> = node
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect();
+        if self.reaches(&segments) {
+            self.lines.insert(node.span().start().line);
+        }
+        syn::visit::visit_path(self, node);
+    }
 }
 
 /// The scan for a [`Rule::shipped_only`] rule (T12-B, T12-C, T12-D): matches
@@ -1337,6 +1530,45 @@ mod tests {
         assert_eq!(outcome.violations[0].module, "replay");
         assert_eq!(outcome.violations[0].line, 2);
         assert!(!outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_025 (negative control, QSL-5): every
+    /// spelling that reaches `qsl_replay::spine` is a T12-A violation, even
+    /// from the allowed `replay` module -- a direct path, `use ...::spine;`
+    /// then `spine::compile`, a `spine::compile` leaf inside a use group, a
+    /// renamed import, a crate alias, a glob import and a path inside a
+    /// macro -- while `qsl_replay::replay` passes.
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_025_spine_compile_is_not_the_facade() {
+        let qsl_dir = tempfile::tempdir().unwrap();
+        write(qsl_dir.path(), "qsl-replay/src/lib.rs", "pub fn run() {}\n");
+        let cases: [(&str, usize); 7] = [
+            ("fn f() {\n    qsl_replay::spine::compile(a, b, c, d, e);\n}\n", 2),
+            ("use qsl_replay::spine;\nfn f() {\n    spine::compile(a, b, c, d, e);\n}\n", 1),
+            ("use qsl_replay::{replay, spine::compile};\nfn f() {\n    compile(a, b, c, d, e);\n}\n", 1),
+            ("use qsl_replay::spine as s;\nfn f() {\n    s::compile(a, b, c, d, e);\n}\n", 1),
+            ("use qsl_replay as q;\nfn f() {\n    q::spine::compile(a, b, c, d, e);\n}\n", 3),
+            ("use qsl_replay::*;\nfn f() {\n    spine::compile(a, b, c, d, e);\n}\n", 1),
+            ("fn f() {\n    let _ = format!(\"{:?}\", qsl_replay::spine::compile(a));\n}\n", 2),
+        ];
+        for (source, line) in cases {
+            let cg_dir = tempfile::tempdir().unwrap();
+            write(cg_dir.path(), "src/replay.rs", source);
+            let outcome = evaluate(&RULES[0], qsl_dir.path(), Some(cg_dir.path())).unwrap();
+            assert_eq!(outcome.status, RuleStatus::Live);
+            let lines: Vec<usize> = outcome.violations.iter().map(|site| site.line).collect();
+            assert_eq!(lines, [line], "{source}");
+            assert!(!outcome.passed(), "{source}");
+        }
+        let cg_dir = tempfile::tempdir().unwrap();
+        write(
+            cg_dir.path(),
+            "src/replay.rs",
+            "use qsl_replay::{replay, ReplayRefusal};\nfn f() {\n    qsl_replay::replay(w);\n}\n",
+        );
+        let outcome = evaluate(&RULES[0], qsl_dir.path(), Some(cg_dir.path())).unwrap();
+        assert!(outcome.passed(), "{:?}", outcome.violations);
     }
 
     /// tc_arch_lint_api_surface_010 (negative control, #249 review round 2

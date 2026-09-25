@@ -850,7 +850,7 @@ Module table:
 | `protocol_artifact` | SEAM-3 | |
 | `simulation` | 5 `simulation` | finite exploration engine for S6a, the crate `qsl-eval`'s module `simulation` (X-8, QSL-183); its implementer arrives through #220 |
 | `command`, `cli`, `main` | 6 | §5; the native `command` submodules are SEAM-1 |
-| crate `qsl-replay` | 6 `replay` | the CG-facing replay facade (§6.1), widened per family by each family's implementation ticket |
+| crate `qsl-replay` | 6 `replay` | the CG-facing replay facade (§6.1), widened per family by each family's implementation ticket. Its executor entry is `qsl_replay::replay` (TK-01, QSL-5, FR-098). Its module `spine` holds the one S1-to-S4 compile, which both the executor and `command`'s CLI `compile` call: no layer below 6 may depend on S1 and S2 together, and `replay` may not depend on `command`. `spine` is public only for `command`; T-12 rule (a) refuses any CG reference to it -- a `use` of it, a path through it, a crate alias or glob import that reaches it (FR-060 T12-A). |
 | crate `qsl-route` | R `route` | the #185 registry and router, extracted as X-9 (QSL-184). Its items are at the crate root (`qsl_route::Registry`). Among the workspace crates it depends only on `qsl-semantics` (for `check::Capability`) and `qsl-foundation`; its one other dependency is `thiserror`. No shipped root-crate module calls it, so the root crate names it only as a dev dependency. |
 | `xtask`, `tools/fixture-audit` | build tooling | not on the stage DAG, and they depend on no stage module |
 | none today | 3 `check` (`check::capability`, new) | new: the canonical FR-290 capability-kind value type and its total wire conversion (ADR-013 O-19, C-24), implemented under QSL-173. Placed in `check` core, not F: the per-item requirement records are made at E3, whose producer ADR-011 §2.1's E3 row names as `check`; its other two consumers, layer 4 `package` and layer R `route`, each list "3" in their §6.1 "Depends on" column, so both may import `check` directly. This differs from `AbsenceMode`'s F placement above: `AbsenceMode`'s two consumers (layer-2 `forms`, layer-3 `model`) cannot depend on each other, so neither layer may own it, while `Capability`'s three consumers (`check`, `package`, `route`) form one downward chain that already permits importing `check`. |
@@ -1235,7 +1235,7 @@ The owner ruled this on QSL-8.
 
 - CLI `compile` reads the native-compile/1 program source's declared
   edition once, from its header, before either compiler runs. A `1-draft`
-  source compiles through the spine (S1 to S4, `command::spine::compile`)
+  source compiles through the spine (S1 to S4, `qsl_replay::spine::compile`)
   and writes `quire.checked-package/v2` bytes. A `0-draft` source compiles
   through native compile and writes native-linked-package/1 bytes. Each
   source takes exactly one path. A declared edition neither compiler reads

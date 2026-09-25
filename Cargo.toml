@@ -47,6 +47,10 @@ qsl-semantics = { path = "qsl-semantics" }
 # re-exports none of its items (ADR-011 §7.2); callers name them at
 # `qsl_package::...`.
 qsl-package = { path = "qsl-package" }
+# ADR-011 §6.1 layer 6 `replay` (QSL-185): `command`'s CLI `compile` calls
+# its spine compile (`qsl_replay::spine`), the one S1-to-S4 chain `replay`
+# and `command` share (QSL-5). This crate re-exports none of its items.
+qsl-replay = { path = "qsl-replay" }
 # ADR-011 §7.3 X-4 (QSL-179): layer I3, extracted out of this crate. This
 # crate reaches quire-rs only through it (ADR-011 §6.1 layer-6 row).
 qsl-source = { path = "qsl-source", optional = true }

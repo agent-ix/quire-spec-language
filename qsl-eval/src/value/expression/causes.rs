@@ -56,6 +56,15 @@ impl CatalogCoded for ProtocolClauseSnapshot {
             WrongSnapshotCause::ForbiddenPreRead => {
                 CatalogCode::new("wrong_snapshot", "forbidden-pre-read")
             }
+            // FR-063: no arm for the probe variant under `--cfg seam_probe`
+            // alone (`E0004`, this seam's evidence).
+            //
+            // The arm below exists only in the probe's build of the crates
+            // above `qsl-eval` (`--cfg seam_probe_eval_downstream`, QSL-5):
+            // `qsl-replay` depends on this crate, so it must compile there
+            // for the root crate's own seams to be reached at all.
+            #[cfg(seam_probe_eval_downstream)]
+            WrongSnapshotCause::__SeamProbe => CatalogCode::new("__seam_probe__", "__seam_probe__"),
         }
     }
 }

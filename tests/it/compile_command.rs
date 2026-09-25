@@ -346,7 +346,7 @@ fn spine_request(directory: &Path, program: &[u8]) {
 }
 
 /// FR-027-AC-5 (TC-435 step 2): a `1-draft` program compiles through the
-/// spine; stdout is exactly `command::spine::compile`'s bytes, which
+/// spine; stdout is exactly `qsl_replay::spine::compile`'s bytes, which
 /// qsl-package's TC-435 step 1 reads back Verified with nothing omitted.
 #[test]
 #[trace("TC-435", "FR-027-AC-5")]
@@ -362,14 +362,15 @@ fn a_complete_v1_program_compiles_through_the_spine() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(output.stderr.is_empty());
-    let library = quire_spec_language::command::spine::compile(
+    let library = qsl_replay::spine::compile(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
         "program.native",
         &program,
         &std::collections::BTreeMap::new(),
+        qsl_replay::spine::SpineLimits::default(),
     )
     .unwrap();
-    assert_eq!(output.stdout, library);
+    assert_eq!(output.stdout, library.emitted.bytes());
     let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(wire["contract_version"], "quire.checked-package/v2");
 }
@@ -665,7 +666,7 @@ fn spine_model_request(directory: &Path, program: &[u8], document: &[u8]) {
 
 /// FR-027-AC-9 (TC-442 step 2): a `1-draft` request selecting a domain
 /// package document compiles its program through the spine. Stdout is
-/// exactly `command::spine::compile`'s bytes over the same source and
+/// exactly `qsl_replay::spine::compile`'s bytes over the same source and
 /// package input, and the lock and identity preimage select the domain
 /// package by the `sha256-jcs` digest the program's `model` declaration
 /// names.
@@ -683,14 +684,15 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let library = quire_spec_language::command::spine::compile(
+    let library = qsl_replay::spine::compile(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
         "program.native",
         &program,
         &qsl_semantics::model::intake::package_input([document.as_slice()]),
+        qsl_replay::spine::SpineLimits::default(),
     )
     .unwrap();
-    assert_eq!(output.stdout, library);
+    assert_eq!(output.stdout, library.emitted.bytes());
     let wire: Value = serde_json::from_slice(&output.stdout).unwrap();
     let selected = std::str::from_utf8(&program)
         .unwrap()

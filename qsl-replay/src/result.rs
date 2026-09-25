@@ -44,14 +44,55 @@ impl Verdict {
     }
 }
 
-/// A verdict disagreement's typed cause (FR-072-AC-2): the two verdicts
-/// that disagreed, never a display string.
+/// Why a replay settled `inconclusive` (FR-072-AC-2): typed, never a
+/// display string. Each case carries both verdicts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DisagreementCause {
+pub enum DisagreementCause {
+    /// The replay completed a value, and its verdict differs from the
+    /// proved one.
+    Verdicts {
+        /// The verdict the original proving run reached.
+        proved: Verdict,
+        /// The verdict the replay run reached.
+        replayed: Verdict,
+    },
+    /// The replay completed no value, so nothing decides it, whatever the
+    /// two verdicts are.
+    NoValue {
+        /// The verdict the original proving run reached.
+        proved: Verdict,
+        /// The verdict the replay run reached.
+        replayed: Verdict,
+    },
+}
+
+impl DisagreementCause {
     /// The verdict the original proving run reached.
-    pub proved: Verdict,
+    pub fn proved(self) -> Verdict {
+        match self {
+            Self::Verdicts { proved, .. } | Self::NoValue { proved, .. } => proved,
+        }
+    }
+
     /// The verdict the replay run reached.
-    pub replayed: Verdict,
+    pub fn replayed(self) -> Verdict {
+        match self {
+            Self::Verdicts { replayed, .. } | Self::NoValue { replayed, .. } => replayed,
+        }
+    }
+
+    /// The cause of settling `proved` against `replayed`, where `completed`
+    /// tells whether the replay completed a value: `None` exactly when the
+    /// settlement agrees.
+    fn of(proved: Verdict, replayed: Verdict, completed: bool) -> Option<Self> {
+        if !completed {
+            Some(Self::NoValue { proved, replayed })
+        } else if proved != replayed {
+            Some(Self::Verdicts { proved, replayed })
+        } else {
+            None
+        }
+    }
 }
 
 /// The `Witness`-arm settlement (ADR-013 O-27, AD-016 WP9).
@@ -78,12 +119,16 @@ pub enum InputSettlement {
 }
 
 /// The evaluated value a replay produced. A minimal stand-in for the
-/// kernel `Value` (ADR-013 O-13): none of FR-072's acceptance criteria turn
-/// on this value's own shape, only on arm distinctness, settlement and the
-/// nested FR-351 record's typed fields, so a bounded integer scalar is
-/// sufficient here.
+/// kernel `Value` (ADR-013 O-13), which has no structural equality to derive
+/// this envelope's from: none of FR-072's acceptance criteria turn on this
+/// value's own shape, only on arm distinctness, settlement and the nested
+/// FR-351 record's typed fields. It holds the one scalar kind a replay
+/// reads today: the Boolean a replayed predicate returns (FR-098).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct EvaluatedValue(pub i64);
+pub enum EvaluatedValue {
+    /// A Boolean value.
+    Boolean(bool),
+}
 
 /// The nested FR-351 separating-witness record, decoded when the
 /// settlement basis is decisive: the deciding element, its index, its value
@@ -111,7 +156,7 @@ pub struct WitnessArmResult {
     settlement: WitnessSettlement,
     disagreement: Option<DisagreementCause>,
     category: ProofCategory,
-    value: EvaluatedValue,
+    value: Option<EvaluatedValue>,
     record: Option<SeparatingWitnessRecord>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
@@ -120,49 +165,39 @@ pub struct WitnessArmResult {
 
 impl WitnessArmResult {
     /// The only public constructor (FR-072-AC-2): settles
-    /// `ReproducedWithEvaluatedWitness` with `record` attached when `proved`
-    /// and `replayed` agree, or `Inconclusive` with no record and a typed
-    /// [`DisagreementCause`] otherwise. No other public API on this type
-    /// can turn a disagreement into an agreement result.
-    // The 8 parameters are the O-27 witness-arm members this envelope
-    // carries; `settle` is the type's only constructor (FR-072-AC-2), so
-    // splitting them behind a builder would just relocate the same 8-field
-    // assembly into a second type without removing anything a caller could
-    // get wrong, and would open a window for a half-built result to escape
-    // before the agree/disagree decision below is made.
-    #[allow(clippy::too_many_arguments)]
+    /// `ReproducedWithEvaluatedWitness`, with the record attached, only
+    /// when the replay completed a value (`decisive` is `Some`) and `proved`
+    /// and `replayed` agree; otherwise `Inconclusive` with no record and a
+    /// typed [`DisagreementCause`]. No other public API on this type can
+    /// turn a disagreement, or a replay that completed no value, into an
+    /// agreement result (FR-098).
     pub fn settle(
         proved: Verdict,
         replayed: Verdict,
         category: ProofCategory,
-        value: EvaluatedValue,
-        record: SeparatingWitnessRecord,
+        decisive: Option<(EvaluatedValue, SeparatingWitnessRecord)>,
         resolved_regions: Vec<SourceRegion>,
         charges: ScalarLimits,
         toolchain_pin: ToolPin,
     ) -> Self {
-        if proved == replayed {
-            Self {
-                settlement: WitnessSettlement::ReproducedWithEvaluatedWitness,
-                disagreement: None,
-                category,
-                value,
-                record: Some(record),
-                resolved_regions,
-                charges,
-                toolchain_pin,
-            }
-        } else {
-            Self {
-                settlement: WitnessSettlement::Inconclusive,
-                disagreement: Some(DisagreementCause { proved, replayed }),
-                category,
-                value,
-                record: None,
-                resolved_regions,
-                charges,
-                toolchain_pin,
-            }
+        let disagreement = DisagreementCause::of(proved, replayed, decisive.is_some());
+        let (value, record) = match decisive {
+            Some((value, record)) => (Some(value), Some(record)),
+            None => (None, None),
+        };
+        Self {
+            settlement: if disagreement.is_none() {
+                WitnessSettlement::ReproducedWithEvaluatedWitness
+            } else {
+                WitnessSettlement::Inconclusive
+            },
+            disagreement,
+            category,
+            value,
+            record: record.filter(|_| disagreement.is_none()),
+            resolved_regions,
+            charges,
+            toolchain_pin,
         }
     }
 
@@ -180,8 +215,9 @@ impl WitnessArmResult {
     pub fn category(&self) -> ProofCategory {
         self.category
     }
-    /// The evaluated value this arm produced.
-    pub fn value(&self) -> EvaluatedValue {
+    /// The evaluated value this arm produced, or `None` when the replay
+    /// completed no value.
+    pub fn value(&self) -> Option<EvaluatedValue> {
         self.value
     }
     /// The nested FR-351 record, present only when the settlement basis is
@@ -213,45 +249,39 @@ pub struct InputArmResult {
     settlement: InputSettlement,
     disagreement: Option<DisagreementCause>,
     category: ProofCategory,
-    value: EvaluatedValue,
+    value: Option<EvaluatedValue>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
     toolchain_pin: ToolPin,
 }
 
 impl InputArmResult {
-    /// The only public constructor: settles `ReproducedWithoutWitness` on
-    /// agreement, `Inconclusive` with a typed [`DisagreementCause`]
-    /// otherwise. Agreement here is never backend evidence.
+    /// The only public constructor: settles `ReproducedWithoutWitness` only
+    /// when the replay completed a value and `proved` and `replayed` agree;
+    /// otherwise `Inconclusive` with a typed [`DisagreementCause`].
+    /// Agreement here is never backend evidence.
     pub fn settle(
         proved: Verdict,
         replayed: Verdict,
         category: ProofCategory,
-        value: EvaluatedValue,
+        value: Option<EvaluatedValue>,
         resolved_regions: Vec<SourceRegion>,
         charges: ScalarLimits,
         toolchain_pin: ToolPin,
     ) -> Self {
-        if proved == replayed {
-            Self {
-                settlement: InputSettlement::ReproducedWithoutWitness,
-                disagreement: None,
-                category,
-                value,
-                resolved_regions,
-                charges,
-                toolchain_pin,
-            }
-        } else {
-            Self {
-                settlement: InputSettlement::Inconclusive,
-                disagreement: Some(DisagreementCause { proved, replayed }),
-                category,
-                value,
-                resolved_regions,
-                charges,
-                toolchain_pin,
-            }
+        let disagreement = DisagreementCause::of(proved, replayed, value.is_some());
+        Self {
+            settlement: if disagreement.is_none() {
+                InputSettlement::ReproducedWithoutWitness
+            } else {
+                InputSettlement::Inconclusive
+            },
+            disagreement,
+            category,
+            value,
+            resolved_regions,
+            charges,
+            toolchain_pin,
         }
     }
 
@@ -268,8 +298,9 @@ impl InputArmResult {
     pub fn category(&self) -> ProofCategory {
         self.category
     }
-    /// The evaluated value this arm produced.
-    pub fn value(&self) -> EvaluatedValue {
+    /// The evaluated value this arm produced, or `None` when the replay
+    /// completed no value.
+    pub fn value(&self) -> Option<EvaluatedValue> {
         self.value
     }
     /// The resolved source regions this arm's result cites.
@@ -383,7 +414,7 @@ mod tests {
 
     fn record(value_path: Vec<&str>) -> SeparatingWitnessRecord {
         SeparatingWitnessRecord {
-            deciding_element: EvaluatedValue(7),
+            deciding_element: EvaluatedValue::Boolean(true),
             index: 2,
             value_path: value_path.into_iter().map(str::to_owned).collect(),
             trace_position: Some(TracePosition::new("frame-0".to_owned())),
@@ -416,8 +447,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(1),
-            record(vec!["field"]),
+            Some((EvaluatedValue::Boolean(true), record(vec!["field"]))),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -426,7 +456,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(1),
+            Some(EvaluatedValue::Boolean(true)),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -461,8 +491,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Refusal),
             ProofCategory::Refusal,
-            EvaluatedValue(0),
-            record(vec!["field"]),
+            Some((EvaluatedValue::Boolean(false), record(vec!["field"]))),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -470,7 +499,7 @@ mod tests {
         assert_eq!(disagreeing.settlement(), WitnessSettlement::Inconclusive);
         assert_eq!(
             disagreeing.disagreement(),
-            Some(DisagreementCause {
+            Some(DisagreementCause::Verdicts {
                 proved: Verdict::from_category(ProofCategory::Success),
                 replayed: Verdict::from_category(ProofCategory::Refusal),
             })
@@ -482,7 +511,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Refusal),
             ProofCategory::Refusal,
-            EvaluatedValue(0),
+            Some(EvaluatedValue::Boolean(false)),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -490,6 +519,49 @@ mod tests {
         assert_eq!(
             disagreeing_input.settlement(),
             InputSettlement::Inconclusive
+        );
+    }
+
+    /// FR-072-AC-2, FR-098-AC-5 (TC-190): a replay that completed no value
+    /// settles `Inconclusive` on either arm even when the two verdicts
+    /// agree -- nothing decides it -- with a `NoValue` cause and no record.
+    #[trace("TC-190", "FR-072-AC-2")]
+    #[test]
+    fn tc_190_a_replay_with_no_value_never_agrees() {
+        let violation = Verdict::from_category(ProofCategory::Violation);
+        let witness = WitnessArmResult::settle(
+            violation,
+            violation,
+            ProofCategory::Violation,
+            None,
+            regions(),
+            charges(),
+            ToolPin::new("kani-0.67.0"),
+        );
+        assert_eq!(witness.settlement(), WitnessSettlement::Inconclusive);
+        assert_eq!(
+            witness.disagreement(),
+            Some(DisagreementCause::NoValue {
+                proved: violation,
+                replayed: violation,
+            })
+        );
+        assert!(witness.record().is_none());
+        assert_eq!(witness.value(), None);
+
+        let input = InputArmResult::settle(
+            violation,
+            violation,
+            ProofCategory::Violation,
+            None,
+            regions(),
+            charges(),
+            ToolPin::new("kani-0.67.0"),
+        );
+        assert_eq!(input.settlement(), InputSettlement::Inconclusive);
+        assert_eq!(
+            input.disagreement().map(DisagreementCause::replayed),
+            Some(violation)
         );
     }
 
@@ -511,8 +583,10 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(9),
-            record(vec!["outer", "items", "member"]),
+            Some((
+                EvaluatedValue::Boolean(true),
+                record(vec!["outer", "items", "member"]),
+            )),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -528,8 +602,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(9),
-            read_back_record.clone(),
+            Some((EvaluatedValue::Boolean(true), read_back_record.clone())),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -537,7 +610,7 @@ mod tests {
         assert_eq!(round_tripped.record(), Some(&read_back_record));
         assert_eq!(
             round_tripped.record().unwrap().deciding_element,
-            EvaluatedValue(7)
+            EvaluatedValue::Boolean(true)
         );
         assert_eq!(round_tripped.record().unwrap().index, 2);
         assert_eq!(
@@ -553,8 +626,10 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(9),
-            record(vec!["outer", "items", "other_member"]),
+            Some((
+                EvaluatedValue::Boolean(true),
+                record(vec!["outer", "items", "other_member"]),
+            )),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -576,8 +651,10 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            EvaluatedValue(9),
-            record(vec![huge_segment.as_str()]),
+            Some((
+                EvaluatedValue::Boolean(true),
+                record(vec![huge_segment.as_str()]),
+            )),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),
@@ -689,8 +766,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Violation),
             Verdict::from_category(ProofCategory::Violation),
             ProofCategory::Violation,
-            EvaluatedValue(1),
-            record(vec!["x"]),
+            Some((EvaluatedValue::Boolean(true), record(vec!["x"]))),
             regions(),
             charges(),
             ToolPin::new("kani-0.67.0"),

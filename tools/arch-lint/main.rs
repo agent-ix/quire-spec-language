@@ -188,9 +188,10 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
     summary.push_str(
         "  Note: T12-B, T12-C and T12-D match source tokens in shipped code: comments, \
          string literals and `#[cfg(test)]` items are excluded, and each mint's enclosing \
-         function is resolved against a named, shrinking debt list. T12-A is a textual \
-         scan of the CG tree, so a match inside a comment or string literal is reported. \
-         No rule resolves a `use ... as` rename of the constructor's type -- a stated \
+         function is resolved against a named, shrinking debt list. T12-A's call patterns \
+         are a textual scan of the CG tree, so a match inside a comment or string literal \
+         is reported; its forbidden module `qsl_replay::spine` is found by parsing `use` \
+         trees and paths, through crate aliases and glob imports. No rule resolves a `use ... as` rename of the constructor's type -- a stated \
          limitation of this check, not a silent gap.\n",
     );
     let mut all_passed = true;
