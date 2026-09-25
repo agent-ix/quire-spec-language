@@ -628,7 +628,8 @@ re-walks them against the scenarios.
 #225 owns the lifecycle and CLI orchestration design. #122 and its bounded
 child #232 implement it, and #230 is the conformance slice. The rules below are
 constraints that design must meet. The field list and the exit-code values are
-#225's. The orchestrating driver crate is T-13, implemented by QSL #248.
+#225's. The orchestrating driver crate is T-13, implemented by QSL #248 in
+its own repository, agent-ix/quire-driver.
 
 - `command` calls stage APIs in DAG order and makes no semantic decision. It
   contains no parsing, name resolution, typing, definedness, capability or
@@ -691,7 +692,7 @@ enforces it; before #226, §3's interim rule applies.
 | tool | `complete::editor`, `complete::edit`, `format` | tooling over S1 | 1, F |
 | 6 | `replay` | the CG-facing replay facade: S1 to S4 recompile, then S6a. Its public API includes the #231 envelopes. | layers 1 to 5, F, K; I3 under feature `quire-extraction` |
 | 6 | `command` < `cli` < `main` | orchestration of QSL stages | every layer above, including I3, R, tool and `replay`; quire-rs only through `qsl-source`; never CG |
-| driver | the orchestrating driver crate that calls both QSL and CG (T-13, implemented by #248; #225 accepts its design) | orchestration across repositories | the QSL layer crates and CG; a separate crate downstream of CG, because CG → QSL is a normal edge and Cargo refuses a package cycle |
+| driver | the orchestrating driver crate that calls both QSL and CG (T-13, implemented by #248; #225 accepts its design). It is the crate `quire-driver` in its own repository, agent-ix/quire-driver, downstream of QSL and CG. Nothing depends on it, so the QSL and CG gates never build it. | orchestration across repositories | the QSL layer crates and CG; a separate crate downstream of CG, because CG → QSL is a normal edge and Cargo refuses a package cycle |
 
 Crate map. Layers F, 1, I3, 2, 3, 4, 5, R and the layer-6 `replay` facade are
 each their own workspace crate (§7.2). K is `quire-exact` (X-1). A layer
@@ -1139,7 +1140,8 @@ against the combined Layer 1 architecture.
    on or calls CG (§6.1 layer 6: "never CG"). Only the orchestrating
    driver (T-13) calls both. Because CG → QSL is a normal edge (AD-016
    Owner decision 5), the driver is a separate crate downstream of CG; it
-   cannot be the QSL package's own `main`. QSL #248 implements it, and #225
+   cannot be the QSL package's own `main`. QSL #248 implements it as the
+   crate `quire-driver` in the repository agent-ix/quire-driver, and #225
    accepts its design.
 3. **Families map to modules in their layers' crates.** Every family is a set
    of modules inside the §6.1 layer crates. A crate holds one layer, and a
@@ -1372,7 +1374,7 @@ sections it names.
 | T-10 | CG generated-harness gate under §2.3: claimed-module list, `unreached` failure, SUCCESS-only discharge floor, mutation control, shared-helper list, and a run mutation of each shared helper that fails the proof (#245) | CG |
 | T-11 | Proof-stage acceptance (§2.3) as a proposed QSpec NFR binding RT and CG proof gates | QSpec |
 | T-12 | Proposed #215 scope amendment: backend direction check (FB-05, FB-11); the single API-surface check, which fails any caller outside these rules: (a) CG calls only the layer-6 `replay` facade (FB-05), (b) only QSL `check` calls the kernel `NodeKey` constructor (ADR-013 O-04), (c) only QSL `model` calls the kernel `EffectiveId` constructor (ADR-013 O-05), (d) only QSL `model` calls the kernel `PopulationId` constructor (ADR-013 QC-21); and duplicate-revision check on QSL's lock (§7.1). The API-surface check scans every crate that depends on `quire-exact`, and a `NodeKey`, `EffectiveId` or `PopulationId` constructor call outside QSL `check` and `model` fails it. #215 ships it as one reusable tool; RT runs it in its lint gate under agent-ix/quire-contract-runtime#56, and CG under agent-ix/quire-contract-codegen#89. Until then #216 and #219 check all four by inspection. | QSL #215 (issue text); agent-ix/quire-contract-runtime#56 and agent-ix/quire-contract-codegen#89 run it |
-| T-13 | The orchestrating driver crate (§6.1 driver row; ADR-012 §7): S1 to S4 compile, E4 emit, the `route` candidate step, the pre-negotiation `BackendId` conversion (ADR-012 §7.2), E7 CG `negotiate_*`, the `route` routing step after E7, and CG generation with the returned `BackendId`s. #225 accepts its design. | QSL #248 |
+| T-13 | The orchestrating driver crate (§6.1 driver row; ADR-012 §7): S1 to S4 compile, E4 emit, the `route` candidate step, the pre-negotiation `BackendId` conversion (ADR-012 §7.2), E7 CG `negotiate_*`, the `route` routing step after E7, and CG generation with the returned `BackendId`s. #225 accepts its design. The crate is `quire-driver`, in the repository agent-ix/quire-driver, downstream of QSL and CG. | QSL #248, in agent-ix/quire-driver |
 | T-14 | Repoint CG's normal dependency on QSL from the root crate `quire-spec-language` to `qsl-replay` (§7.1), after X-10 | agent-ix/quire-contract-codegen |
 
 ## Consequences
