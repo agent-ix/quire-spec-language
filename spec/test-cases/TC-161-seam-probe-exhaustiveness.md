@@ -14,7 +14,8 @@ relationships:
 
 ## Description
 
-Verify that the five probe builds -- `qsl-semantics` under
+Verify that the six probe builds -- `qsl-forms` under
+`RUSTFLAGS=--cfg seam_probe_forms`, `qsl-semantics` under
 `RUSTFLAGS=--cfg seam_probe`, then the root crate, `qsl-route`, `qsl-eval`
 and `qsl-replay` each under `RUSTFLAGS=--cfg seam_probe --cfg
 seam_probe_downstream`, with the layered downstream cfgs FR-063 names for
@@ -56,15 +57,12 @@ check seam over the parsed form enum, `Typer::infer_form` matching
 same `#[cfg(seam_probe)]` probe-variant treatment as `FamilyKind`, with a
 protective arm at every other production `match` site the variant would
 otherwise break. The parser's leading-token-kind entry table
-(`qsl-forms::dispatch::dispatch`, S2's other named location) stays out: it
-lives in `qsl-forms`, a dependency of every one of the seam probe's four
-fixed build targets but never itself one of them, so giving it a seam's
-no-arm treatment would hide every other seam behind it in every probe
-build (see `xtask::seam_probe::checked_in_locations`'s own doc; owned by
-[QSL-244](https://linear.app/agent-ix/issue/QSL-244)). This test case's
-checked-in list therefore covers the `FamilyKind`, S6a/S7, S2, S3 and S4
-categories -- all 5 categories FR-063-AC-6 names, less the qsl-forms table
-half of S2 -- and step 8 below exercises each of the five in turn.
+(`qsl-forms::dispatch::dispatch`, S2's other named location) is delivered by
+[QSL-244](https://linear.app/agent-ix/issue/QSL-244): `qsl-forms` has its own
+probe build under `--cfg seam_probe_forms`, so its no-arm treatment does not
+hide any other seam. This test case's checked-in list therefore covers the
+`FamilyKind`, S6a/S7, S2, S3 and S4 categories -- all five categories
+FR-063-AC-6 names -- and step 8 below exercises each of the five in turn.
 
 ## Test Procedure
 
@@ -108,7 +106,8 @@ half of S2 -- and step 8 below exercises each of the five in turn.
    succeeding one does not.
 8. Inspect the checked-in seam-function list and confirm it names each of
    the five categories this ticket's tree delivers -- `FamilyKind`'s prefix
-   arm (S1), the S6a/S7 matches, `Typer::infer_form` (S2),
+   arm (S1), the S6a/S7 matches, `qsl-forms::dispatch::dispatch` and
+   `Typer::infer_form` (S2),
    `Machine::apply`/`Lowering::lower_node` (S3), and `CheckCause::code`
    (S4); remove the entry for one category at a time and re-run
    `xtask seam-probe` against the real build.
@@ -124,12 +123,11 @@ half of S2 -- and step 8 below exercises each of the five in turn.
 ## Expected Results
 
 - Step 1: the collected `E0004` location set matches the checked-in list
-  -- the `FamilyKind` prefix arm (S1), the S6a/S7 matches, `Typer::
+  -- the `FamilyKind` prefix arm (S1), the S6a/S7 matches, `qsl-forms::dispatch::dispatch`, `Typer::
   infer_form` (S2), `Machine::apply`/`Lowering::lower_node` (S3), and
   `CheckCause::code` (S4). The parser's leading-token-kind entry table
-  (S2's other named location) is not in this list; see this test case's
-  own "S4 category" note (now S4 landed, QSL-244 tracks that remaining
-  gap).
+  (`qsl-forms::dispatch::dispatch`, S2's other named location) is in this
+  list, reported by the `qsl-forms` probe build.
 - Step 2: `xtask seam-probe` exits zero and reports no mismatch when the sets
   are equal.
 - Step 3: `xtask seam-probe` exits non-zero, naming the removed entry's
@@ -145,7 +143,7 @@ half of S2 -- and step 8 below exercises each of the five in turn.
 - Step 7: `ci:` names `seam-probe` as a prerequisite, whose recipe runs
   `cargo xtask seam-probe`; the fixture `Makefile` fails its aggregate
   target exactly when the prerequisite's recipe fails, and not otherwise.
-- Step 8: removing any one of the five delivered categories causes `xtask
+- Step 8: removing any one of the five categories causes `xtask
   seam-probe` to fail, naming that category's location as present in the
   build but absent from the list (unexpected-but-present, the same
   direction step 3 demonstrates).

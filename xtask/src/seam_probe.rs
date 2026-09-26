@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL#214 (FR-063): `cargo xtask seam-probe` demonstrates ADR-012 §5.1's S1
 //! and S7 seams by building the QSL workspace crates that hold seams under
-//! `RUSTFLAGS=--cfg seam_probe` (three normal builds and six probe builds,
+//! `RUSTFLAGS=--cfg seam_probe` (or `seam_probe_forms` for `qsl-forms`) (three normal builds and six probe builds,
 //! `PROBE_BUILDS` and `NORMAL_BUILDS`) and comparing the `E0004`
 //! (non-exhaustive match) locations rustc reports against a checked-in
 //! list, exactly as FR-063 requires.
@@ -306,8 +306,8 @@ fn enclosing_item_name(source: &str, line: u32) -> Option<String> {
 /// resolution failing before rustc ever runs).
 ///
 /// **Its own `--target-dir` (PR #262 review, finding F7).** This function
-/// runs `cargo build` seven times with different `RUSTFLAGS` (three plain
-/// builds, then four under `--cfg seam_probe`); without a target dir of its own, it inherited whatever
+/// runs `cargo build` nine times with different `RUSTFLAGS` (three plain
+/// builds, then six probe builds); without a target dir of its own, it inherited whatever
 /// `CARGO_TARGET_DIR` the caller had set -- the same directory `cargo
 /// test`/`cargo clippy` use elsewhere in the same `make ci` run. Each
 /// RUSTFLAGS flip invalidates that whole dependency graph's incremental
@@ -421,7 +421,10 @@ fn offline_registry_unavailable(stderr: &str) -> bool {
 /// moved `check` and `family` into `qsl-semantics`, the S1 seam
 /// (`FamilyKind::catalog_code_prefix`) is in that crate, while the root
 /// crate's seams match over `qsl-semantics`' probe variants. So the probe
-/// builds `qsl-semantics` alone under `--cfg seam_probe`, which reports its
+/// builds `qsl-forms` alone under `--cfg seam_probe_forms` (QSL-244, which
+/// reports the leading-token table, and is separate from `seam_probe` so
+/// that seam hides nothing above it), then `qsl-semantics` alone under
+/// `--cfg seam_probe`, which reports its
 /// own seam, and then the root crate under `--cfg seam_probe --cfg
 /// seam_probe_downstream`, where the downstream cfg gives each lower crate's
 /// own seam its probe arm so that crate compiles and the root crate's seams
@@ -559,7 +562,7 @@ pub fn run(workspace_root: &Path) -> Result<String> {
         .collect::<Vec<_>>()
         .join(", ");
     Ok(format!(
-        "seam-probe: {} checked-in locations confirmed under RUSTFLAGS=--cfg seam_probe \
+        "seam-probe: {} checked-in locations confirmed under RUSTFLAGS=--cfg seam_probe (qsl-forms: seam_probe_forms) \
          (qsl-forms, qsl-semantics, then quire-spec-language, qsl-route, qsl-eval and qsl-replay); normal builds have none: \
          {locations}.\n",
         checked_in.len()
