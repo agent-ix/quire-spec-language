@@ -116,4 +116,4 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
 
 ## Status
 
-Specified under QSL-271. Not run.
+Passed locally under QSL-271.

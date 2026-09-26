@@ -206,6 +206,98 @@ pub enum RunCause {
     /// Spine compile of a `1-draft` program refused at one stage.
     #[error("{}", .0.refusal)]
     Spine(Box<SpineFailure>),
+    /// FR-100: a `1-draft` native-run/1 request carries a member the run
+    /// command does not admit for it, or carries no `call`.
+    #[error("a 1-draft program runs through the spine; the request selects {0}")]
+    CompleteRunSelection(CompleteRunSelection),
+    /// FR-100: a `0-draft` native-run/1 request carries a `1-draft`-only
+    /// member, or is missing a native-only member FR-026 requires.
+    #[error("a 0-draft program runs natively; {0}")]
+    NativeRunSelection(NativeRunSelection),
+    /// FR-100: the spine run entry refused, at its own stage and cause code.
+    #[error("{0}")]
+    SpineRun(Box<qsl_replay::spine::RunRefusal>),
+    /// FR-026: a `0-draft` (or no-edition) program requires `clauses`,
+    /// which a `1-draft` program never reaches this refusal for (`run_complete`/
+    /// `complete` refuse it before native package construction is ever
+    /// attempted).
+    #[error("a 0-draft program requires clause bindings")]
+    MissingClauses,
+}
+
+/// A request selection FR-100 does not admit for a `1-draft` program's
+/// native-run/1 request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum CompleteRunSelection {
+    /// The request selects an execution selection.
+    Selection,
+    /// The request selects a snapshot artifact.
+    Snapshots,
+    /// The request selects an invocation artifact.
+    Invocations,
+    /// The request selects a compiled package artifact.
+    Package,
+    /// The request sets a `validation_work` limit.
+    ValidationWorkLimit,
+    /// The request sets an `expression_steps` limit.
+    ExpressionStepsLimit,
+    /// The program carries clause bindings.
+    Clauses,
+    /// The program carries an extraction selection.
+    #[cfg(feature = "quire-extraction")]
+    Extraction,
+    /// The request selects a model source in a native rule-model format.
+    NativeModel,
+    /// The request carries no `call`.
+    NoCall,
+}
+
+impl std::fmt::Display for CompleteRunSelection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Selection => "an execution selection",
+            Self::Snapshots => "a snapshot artifact",
+            Self::Invocations => "an invocation artifact",
+            Self::Package => "a compiled package artifact",
+            Self::ValidationWorkLimit => "a validation_work limit",
+            Self::ExpressionStepsLimit => "an expression_steps limit",
+            Self::Clauses => "clause bindings",
+            #[cfg(feature = "quire-extraction")]
+            Self::Extraction => "an extraction selection",
+            Self::NativeModel => "a native rule-model source",
+            Self::NoCall => "no call",
+        })
+    }
+}
+
+/// Why a `0-draft` native-run/1 request refuses (FR-100).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum NativeRunSelection {
+    /// The request carries a `call`, which only a `1-draft` program takes.
+    Call,
+    /// The request carries `libraries`, which only a `1-draft` program
+    /// takes.
+    Libraries,
+    /// The request carries no execution selection.
+    MissingSelection,
+    /// The request carries no snapshot selections.
+    MissingSnapshots,
+    /// The request carries no invocation selections.
+    MissingInvocations,
+}
+
+impl std::fmt::Display for NativeRunSelection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Call => "the request selects a call",
+            Self::Libraries => "the request selects libraries",
+            Self::MissingSelection => "the request selects no execution selection",
+            Self::MissingSnapshots => "the request selects no snapshots",
+            Self::MissingInvocations => "the request selects no invocations",
+        })
+    }
 }
 
 /// A spine refusal of a `1-draft` program, with the program it concerns.
@@ -248,8 +340,13 @@ impl RunCause {
             Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
             Self::Input(error) => error.code,
             Self::Lowering { error, .. } => error.code.code(),
-            Self::CompleteSelection(_) | Self::Libraries(_) => Code::InvalidRequest,
+            Self::CompleteSelection(_)
+            | Self::Libraries(_)
+            | Self::CompleteRunSelection(_)
+            | Self::NativeRunSelection(_)
+            | Self::MissingClauses => Code::InvalidRequest,
             Self::Spine(failure) => failure.refusal.code(),
+            Self::SpineRun(refusal) => refusal.code(),
         }
     }
 
@@ -265,6 +362,15 @@ impl RunCause {
     pub fn exit_code(&self) -> u8 {
         match self {
             Self::Output(_) => 30,
+            // FR-100 "Internal failure at S6a": a checked-program invariant
+            // failing is a tool failure, so this path exits 30 directly and
+            // never through `Code::exit_code` (which would give 20 for
+            // `Code::RuntimeInvariant`).
+            Self::SpineRun(refusal)
+                if matches!(**refusal, qsl_replay::spine::RunRefusal::Fault(_)) =>
+            {
+                30
+            }
             _ => self.code().exit_code(),
         }
     }
@@ -442,7 +548,7 @@ fn complete(
     {
         return Err(RunCause::CompleteSelection(CompleteSelection::NativeModels));
     }
-    if !request.program.clauses.is_empty() {
+    if request.program.clauses.is_some() {
         return Err(RunCause::CompleteSelection(CompleteSelection::Clauses));
     }
     let documents = request
@@ -673,21 +779,75 @@ fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
 
 fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunResult> {
     let request: wire::Request = request(bytes)?;
-    let selected = compilation::RunSelection::new(&request)?;
     let mut intake = intake(
         directory,
         FileCounts {
-            programs: 1,
+            // A library source is a program source a `1-draft` program
+            // imports, and counts toward the same file limits (FR-100,
+            // mirroring FR-027).
+            programs: request.libraries.len().saturating_add(1),
             models: request.models.len(),
-            snapshots: request.snapshots.len(),
-            invocations: request.invocations.len(),
+            snapshots: request.snapshots.as_ref().map_or(0, Vec::len),
+            invocations: request.invocations.as_ref().map_or(0, Vec::len),
             packages: usize::from(request.package.is_some()),
         },
     )?;
-    let models = compilation::models(&mut intake, &request.models)?;
-    let package = selected.compile(&mut intake, &models)?;
-    let input = runtime_input(&mut intake, &request)?;
-    let selection = request.selection.bind()?;
+    // The program source is read exactly once, regardless of extraction
+    // (FND-004/FND-011/FND-014): its declared edition decides the runner
+    // before any model or library source is read (FR-100), with the same
+    // reader `compile` uses. Extraction (FR-031) is a `run`-only,
+    // native-only feature with its own source frontend (I3) over these same
+    // bytes; `extraction::select`'s `Selected::compile` now takes this
+    // already-read source rather than reading `program.source` again. A
+    // `1-draft` source carrying `extraction` refuses (`run_complete`'s
+    // `CompleteRunSelection::Extraction`) rather than running natively.
+    let source = intake.source(&request.program.source)?;
+    match Edition::of(source.source())? {
+        Edition::Native => run_native(&digest, &mut intake, &request, source),
+        Edition::Complete => run_complete(&digest, &mut intake, &request, source),
+    }
+}
+
+/// FR-026: run a `0-draft` (or no-edition) program natively, or (with the
+/// `quire-extraction` feature) an extracted binding. `source` is the
+/// program source `run_bytes` already read.
+fn run_native(
+    digest: &ByteDigest,
+    intake: &mut Intake<'_>,
+    request: &wire::Request,
+    source: FormalSource,
+) -> Result<RunResult> {
+    if request.call.is_some() {
+        return Err(RunCause::NativeRunSelection(NativeRunSelection::Call));
+    }
+    if !request.libraries.is_empty() {
+        return Err(RunCause::NativeRunSelection(NativeRunSelection::Libraries));
+    }
+    let Some(selection) = &request.selection else {
+        return Err(RunCause::NativeRunSelection(
+            NativeRunSelection::MissingSelection,
+        ));
+    };
+    let Some(snapshots) = &request.snapshots else {
+        return Err(RunCause::NativeRunSelection(
+            NativeRunSelection::MissingSnapshots,
+        ));
+    };
+    let Some(invocations) = &request.invocations else {
+        return Err(RunCause::NativeRunSelection(
+            NativeRunSelection::MissingInvocations,
+        ));
+    };
+    let selected = compilation::RunSelection::new(request)?;
+    let models = compilation::models(intake, &request.models)?;
+    // `source` (read once, above, for edition detection) is threaded
+    // through to `RunSelection::compile`, so a selected package's own
+    // `selected_package` does not read `program.source` a second time
+    // (FND-011). The extraction arm ignores it: it reads its own source
+    // through the I3 adapter instead.
+    let package = selected.compile(intake, &models, source)?;
+    let input = runtime_input(intake, snapshots, invocations)?;
+    let bound_selection = selection.bind()?;
     let mut limits = ExecutionLimits::default();
     if let Some(value) = request.limits.validation_work {
         limits.validation.work = value;
@@ -695,8 +855,163 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
     if let Some(value) = request.limits.expression_steps {
         limits.evaluation.expression_steps = value;
     }
-    let report = runtime::execute(package.native(), input, selection, limits, || false);
-    output::report(digest, &request.selection, &models, &package, &report)
+    let report = runtime::execute(package.native(), input, bound_selection, limits, || false);
+    output::report(*digest, selection, &models, &package, &report)
+}
+
+/// FR-100: run a `1-draft` program's named function through the spine.
+/// `source` is the program source, already read by `run_bytes`.
+fn run_complete(
+    digest: &ByteDigest,
+    intake: &mut Intake<'_>,
+    request: &wire::Request,
+    source: FormalSource,
+) -> Result<RunResult> {
+    if request.selection.is_some() {
+        return Err(RunCause::CompleteRunSelection(
+            CompleteRunSelection::Selection,
+        ));
+    }
+    if request.snapshots.is_some() {
+        return Err(RunCause::CompleteRunSelection(
+            CompleteRunSelection::Snapshots,
+        ));
+    }
+    if request.invocations.is_some() {
+        return Err(RunCause::CompleteRunSelection(
+            CompleteRunSelection::Invocations,
+        ));
+    }
+    if request.package.is_some() {
+        return Err(RunCause::CompleteRunSelection(
+            CompleteRunSelection::Package,
+        ));
+    }
+    if request.limits.validation_work.is_some() {
+        return Err(RunCause::CompleteRunSelection(
+            CompleteRunSelection::ValidationWorkLimit,
+        ));
+    }
+    if request.limits.expression_steps.is_some() {
+        return Err(RunCause::CompleteRunSelection(
+            CompleteRunSelection::ExpressionStepsLimit,
+        ));
+    }
+    if request.program.clauses.is_some() {
+        return Err(RunCause::CompleteRunSelection(
+            CompleteRunSelection::Clauses,
+        ));
+    }
+    #[cfg(feature = "quire-extraction")]
+    if request.program.extraction.is_some() {
+        return Err(RunCause::CompleteRunSelection(
+            CompleteRunSelection::Extraction,
+        ));
+    }
+    if request
+        .models
+        .iter()
+        .any(|model| model.format != DOMAIN_PACKAGE_PROFILE)
+    {
+        return Err(RunCause::CompleteRunSelection(
+            CompleteRunSelection::NativeModel,
+        ));
+    }
+    let Some(call) = &request.call else {
+        return Err(RunCause::CompleteRunSelection(CompleteRunSelection::NoCall));
+    };
+    let documents = request
+        .models
+        .iter()
+        .map(|model| intake.source(&model.source))
+        .collect::<Result<Vec<_>>>()?;
+    let packages = qsl_semantics::model::intake::package_input(
+        documents
+            .iter()
+            .map(|document| document.source().text().as_bytes()),
+    );
+    let libraries = request
+        .libraries
+        .iter()
+        .map(|library| Ok((library, intake.source(&library.source)?)))
+        .collect::<Result<Vec<(&wire::Library, FormalSource)>>>()?;
+    let dependencies =
+        qsl_replay::spine::DependencyInput::new(libraries.iter().map(|(library, read)| {
+            qsl_replay::spine::SuppliedLibrary {
+                identity: library.identity.clone(),
+                version: library.version.clone(),
+                source: read.source().identity().clone(),
+                path: read.source().path().to_owned(),
+                bytes: read.source().text().as_bytes().to_vec(),
+            }
+        }))
+        .map_err(|refusal| {
+            spine_run_failure(
+                &source,
+                &libraries,
+                qsl_replay::spine::CompileRefusal::DependencyInput(refusal),
+            )
+        })?;
+    let arguments = call
+        .arguments
+        .iter()
+        .map(|argument| qsl_replay::spine::CallArgument {
+            parameter: argument.parameter.clone(),
+            value: argument.value,
+        })
+        .collect();
+    let spine_call = qsl_replay::spine::Call {
+        function: call.function.clone(),
+        arguments,
+        accounting: qsl_replay::spine::default_accounting(
+            call.work_units
+                .unwrap_or(qsl_replay::spine::DEFAULT_WORK_UNITS),
+        ),
+    };
+    let (package_id, outcome) = qsl_replay::spine::run(
+        source.source().identity().clone(),
+        source.source().path(),
+        source.source().text().as_bytes(),
+        &packages,
+        &dependencies,
+        qsl_replay::spine::SpineLimits::default(),
+        &spine_call,
+    )
+    .map_err(|refusal| match *refusal {
+        qsl_replay::spine::RunRefusal::Compile(compile_refusal) => {
+            spine_run_failure(&source, &libraries, *compile_refusal)
+        }
+        other => RunCause::SpineRun(Box::new(other)),
+    })?;
+    output::spine_run_result(*digest, package_id, &source, &call.function, outcome)
+}
+
+/// A spine compile refusal from a `1-draft` `run`, located over the source
+/// its region is in (the program's or one library's), the same rendering
+/// `complete` uses for `compile` (FR-100 mirrors FR-027).
+fn spine_run_failure(
+    source: &FormalSource,
+    libraries: &[(&wire::Library, FormalSource)],
+    refusal: qsl_replay::spine::CompileRefusal,
+) -> RunCause {
+    let located = refusal
+        .region()
+        .and_then(|region| {
+            std::iter::once(source)
+                .chain(libraries.iter().map(|(_, read)| read))
+                .find(|candidate| {
+                    candidate.source().reference().digest() == region.source().digest()
+                })
+        })
+        .unwrap_or(source);
+    RunCause::Spine(Box::new(SpineFailure {
+        source: located.source().identity().clone(),
+        path: located.source().path().to_owned(),
+        span: refusal
+            .region()
+            .and_then(|region| located.source().render(region)),
+        refusal,
+    }))
 }
 
 fn read_artifacts<T, U>(
@@ -714,15 +1029,70 @@ fn read_artifacts<T, U>(
         .collect()
 }
 
-fn runtime_input(intake: &mut Intake<'_>, request: &wire::Request) -> Result<RuntimeInput> {
+fn runtime_input(
+    intake: &mut Intake<'_>,
+    snapshots: &[wire::FileSelection<runtime::SnapshotRef>],
+    invocations: &[wire::FileSelection<runtime::InvocationRef>],
+) -> Result<RuntimeInput> {
     let limits = ArtifactLimits::default();
     Ok(RuntimeInput {
-        snapshots: read_artifacts(intake, &request.snapshots, limits, Snapshot::read_verified)?,
-        invocations: read_artifacts(
-            intake,
-            &request.invocations,
-            limits,
-            Invocation::read_verified,
-        )?,
+        snapshots: read_artifacts(intake, snapshots, limits, Snapshot::read_verified)?,
+        invocations: read_artifacts(intake, invocations, limits, Invocation::read_verified)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::InternalFault;
+
+    fn fault_error(stage: &'static str, invariant: &'static str) -> RunError {
+        RunError {
+            request_digest: Some(ByteDigest::of(b"request")),
+            cause: RunCause::SpineRun(Box::new(qsl_replay::spine::RunRefusal::Fault(
+                InternalFault::new(stage, invariant),
+            ))),
+        }
+    }
+
+    /// FR-100 "Internal failure at S6a" (FND-013): the `CheckedInvariant`
+    /// kernel refusal's own fault envelope -- stage `call`, code
+    /// `runtime_invariant`, `details {stage, invariant}` naming
+    /// `S6a`/`checked-program-invariant`, exit 30 (never through
+    /// `Code::exit_code`, which would give 20 for `Code::RuntimeInvariant`).
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn checked_invariant_fault_envelope_exits_30() {
+        let error = fault_error("S6a", "checked-program-invariant");
+        assert_eq!(error.exit_code(), 30);
+        let value = error.value().unwrap();
+        assert_eq!(value["stage"], "call");
+        assert_eq!(value["code"], "runtime_invariant");
+        assert_eq!(
+            value["details"],
+            serde_json::json!({"stage": "S6a", "invariant": "checked-program-invariant"})
+        );
+    }
+
+    /// FR-100 "Internal failure at S6a" (FND-013): `CallFailure::Fault`'s
+    /// forwarded envelope (`convert_call_failure`) carries whatever
+    /// stage/invariant the S6a caller named, still stage `call`, code
+    /// `runtime_invariant`, exit 30.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn call_failure_fault_envelope_exits_30() {
+        let error = fault_error("call", "spine-run-supplies-admitted-name-and-arity");
+        assert_eq!(error.exit_code(), 30);
+        let value = error.value().unwrap();
+        assert_eq!(value["stage"], "call");
+        assert_eq!(value["code"], "runtime_invariant");
+        assert_eq!(
+            value["details"],
+            serde_json::json!({
+                "stage": "call",
+                "invariant": "spine-run-supplies-admitted-name-and-arity",
+            })
+        );
+    }
 }

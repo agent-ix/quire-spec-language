@@ -26,6 +26,7 @@ use qsl_forms::{build_unit, FormsCause, FormsFailure, FormsLimits};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
+use qsl_foundation::source::Source;
 use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{
     emit_checked, read_import_view, AdmittedPackages, CheckedPackage, Emission, EmitRefusal,
@@ -38,6 +39,12 @@ use qsl_semantics::check::{
 use qsl_semantics::library::{ImportView, LibraryName, PackageId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause, UnitIntakeRefusal};
+
+mod call;
+pub use call::{
+    default_accounting, run, Call, CallArgument, CallLocus, CallOutcome, CallRefusal, CallValue,
+    RunRefusal, DEFAULT_WORK_UNITS,
+};
 
 /// Why spine [`compile`] produced no checked package. Each
 /// variant is the stage that refused, with its typed cause and, where the
@@ -724,6 +731,15 @@ pub struct Compiled {
     pub package: CheckedPackage,
     /// The S4 wire output.
     pub emitted: EmittedPackage,
+    /// The unit's own source, exactly as [`qsl_cst::parse`] read it (FND-016:
+    /// a caller resolving a locus over it, e.g. `spine::run`, reuses this
+    /// rather than reading the same bytes again).
+    pub source: Source,
+    /// Every library this compile actually resolved, transitively, each
+    /// exactly as its own `qsl_cst::parse` read it. Never the full
+    /// `dependencies` input: a supplied library the unit's own imports
+    /// never reached is not compiled and carries no source here.
+    pub libraries: Vec<Source>,
 }
 
 /// Compile complete-V1 `bytes`, labelled `source` and displayed as `path`,
@@ -755,10 +771,16 @@ pub fn compile(
         compiled: BTreeMap::new(),
         admitted: AdmittedPackages::default(),
     };
-    let (package, emission) = resolution.compile_unit(source, path, bytes)?;
+    let (package, emission, unit_source) = resolution.compile_unit(source, path, bytes)?;
     Ok(Compiled {
         package,
         emitted: emission.package().clone(),
+        source: unit_source,
+        libraries: resolution
+            .compiled
+            .into_values()
+            .map(|library| library.source.clone())
+            .collect(),
     })
 }
 
@@ -768,6 +790,9 @@ pub fn compile(
 struct ResolvedLibrary {
     package: Arc<CheckedPackage>,
     view: ImportView,
+    /// This library's own source, exactly as its own `qsl_cst::parse` read
+    /// it (FND-016).
+    source: Source,
 }
 
 /// One compile's S4 source resolution state (ADR-015 D-1).
@@ -795,13 +820,17 @@ impl Resolution<'_> {
         source: SourceIdentity,
         path: &str,
         bytes: &[u8],
-    ) -> Result<(CheckedPackage, Emission), Box<CompileRefusal>> {
+    ) -> Result<(CheckedPackage, Emission, Source), Box<CompileRefusal>> {
         let limits = self.limits;
         let parsed = qsl_cst::parse(source, path, bytes, limits.source)
             .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
         if let Some(first) = parsed.diagnostics().first() {
             return Err(Box::new(CompileRefusal::Source(Box::new(first.clone()))));
         }
+        // FND-016: retained and returned, so a caller resolving a locus
+        // over this unit's source (`spine::run`) reuses it instead of
+        // reading the same bytes again.
+        let unit_source = parsed.source().clone();
         let raw = parsed.source().reference().clone();
         let unit = build_unit(&parsed, limits.forms).map_err(|failure| {
             let span = match &failure {
@@ -868,7 +897,7 @@ impl Resolution<'_> {
                 emission.omitted().to_vec(),
             )));
         }
-        Ok((package, emission))
+        Ok((package, emission, unit_source))
     }
 
     /// ADR-015 D-1's six steps for one `import` of the unit `raw` names:
@@ -948,7 +977,8 @@ impl Resolution<'_> {
         self.active.push(identity.clone());
         let compiled = self.compile_unit(supplied.source.clone(), &supplied.path, &supplied.bytes);
         self.active.pop();
-        let (package, emission) = compiled.map_err(|refusal| wrap(&identity, refusal))?;
+        let (package, emission, library_source) =
+            compiled.map_err(|refusal| wrap(&identity, refusal))?;
         // 5. Identity.
         let recompiled = emission.package().package_id();
         if !recompiled.matches(&import.digest) {
@@ -982,6 +1012,7 @@ impl Resolution<'_> {
         let library = Arc::new(ResolvedLibrary {
             package: Arc::new(package),
             view,
+            source: library_source,
         });
         self.compiled.insert(identity.clone(), Arc::clone(&library));
         Ok((identity, library))
