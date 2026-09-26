@@ -13,6 +13,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-068
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-110
+    type: depends_on
 ---
 # FR-087: S-3a: one nominal typestate per stage output and the cross-package node key
 
@@ -393,11 +395,13 @@ during implementation.**
   half, the `import` selections, is resolved in layer-3 `library` against
   the I2 import views (`VerifiedPackage`, `ImportView`) that the M-4 I2
   reader produces (ADR-011 §6.2, §8; QSL-6). Its header-selection half, the
-  `profile`, definition and `model` selections, is resolved by E3's
-  identity-preimage builder (ADR-011 §2.4; QSL-234 for the QSpec lock
-  accessor it reads). The change that removes the type and its constructors
-  from `qsl-semantics/src/complete/package.rs` leaves no `pub use` alias or
-  wrapper that keeps the old name reachable.
+  `profile`, definition and `model` selections, is resolved at E3 against
+  QSL's `DefinitionLock` catalog and the domain packages I1 admitted
+  ([FR-110](FR-110-resolve-header-profile-selections-at-e3.md), ADR-011
+  §2.4; QSL-234). The change that removes the type deletes the whole
+  `qsl_semantics::complete` module and `command::resolve_parsed_source`,
+  and leaves no `pub use` alias or wrapper that keeps an old name
+  reachable (QSL-269).
 
 ## Behavior
 
@@ -535,22 +539,52 @@ model selection, among others). ADR-011 gives each half its own successor
   `ImportView`) that the M-4 I2 reader produces (ADR-011 §6.2, the
   `complete::package` row; ADR-011 §8, lane C2 → I2 and `library`). Owner:
   QSL-6 (ADR-011 M-4).
-- **Header-selection half.** QSL SHALL resolve a source's `profile`,
-  definition and `model` selections in E3's identity-preimage builder: the
-  profile and definition selections through the QSpec value-lock accessor,
-  and each `model` declaration against the domain packages admitted at I1
-  (ADR-011 §2.4). Gated on QSL-234, the QSpec lock accessor the builder
-  reads. Spine `compile` runs I1 over the unit's `model` declarations, and
-  each resolves only against the domain package I1 admitted for it
-  (ADR-011 §2.4, QSL-249).
+- **Header-selection half.** QSL SHALL resolve a source's `profile`
+  selections at E3 against QSL's `DefinitionLock` catalog, and each `model`
+  declaration against the domain package I1 admitted for it
+  ([FR-110](FR-110-resolve-header-profile-selections-at-e3.md); ADR-011
+  §2.4, amended 2026-09-26; QSL-234). The lock's edition and definition
+  selections come from the same catalog through the emitter (ADR-011 §2.4,
+  amended 2026-09-24).
 
-QSL SHALL remove `ResolvedSourcePackage`, `resolve_source_package` and
-their constructors from `qsl-semantics/src/complete/package.rs` in one
-change, made once both successors exist and every caller has moved to the
-successor for its half. Each capability `resolve_source_package` provides
-today (import resolution, the definition closure, the `ResolutionCause`
-refusals, the `PackageLimits` bounds and model selection) SHALL stay
-reachable until its successor covers it.
+Each `resolve_source_package` capability goes one of two ways:
+
+| Capability | Disposition |
+| --- | --- |
+| `import` resolution | Spine S4 source resolution against I2 import views (FR-099, ADR-015 D-1). |
+| Unknown, stale-revision and stale-digest profile refusals (`unknown_profile`, `stale_dependency`) | FR-110, against the `DefinitionLock` catalog. |
+| Conflicting selections of one profile identity (`ambiguous_declaration`/`conflicting-authority`) | FR-110: every selection but the exact `root` row refuses, so the non-matching one refuses `stale_dependency`. |
+| Duplicate selection alias | FR-091-AC-22 (the assembler). |
+| Model selection | I1 (FR-056) and `CheckedGraph::model_selections`. A `sha256:` compiled-model digest refuses `invalid_model_binding` at I1 (FR-056-CON-4). |
+| An inadmissible parse | Spine `compile` refuses it at S1 (`CompileRefusal::Source`). |
+| Definition closure over a caller-supplied `DefinitionCatalog`: dependency edges, `missing_import`, `definition-cycle` | Retired. |
+| Complete-V1 facet and 176-capability bundle (`CompleteBundle`, `feature-set-mismatch`, `unknown_required_feature`) | Retired. |
+| `PackageLimits` (definitions, dependency edges, depth, artifact bytes, single-artifact bytes) | Retired. |
+| Resolved-graph identity (`quire.complete.resolved-graph/2` `SemanticDigest`) | Retired. |
+| Compiled-model resolution (`ModelCatalog`, `ModelArtifact`) | Retired. |
+
+The retired rows have no consumer. `Definition` and `ModelArtifact` are
+built only with a `ReaderAuthority`, which has no production constructor:
+only its `test-support` fixture makes one
+(`qsl-semantics/src/complete/package.rs:16-38`). So only tests can fill a
+`DefinitionCatalog` or a `ModelCatalog`, and `command::resolve_parsed_source`
+has no shipped caller. The spine's lock is the closed `DefinitionLock`
+catalog, whose rows carry no dependency edges, bytes or facets, so there is
+nothing for a closure, a cycle check, a facet check or a byte limit to
+read. A spine package claims `quire.value.complete/v1` as its one required
+feature (ADR-011 §2.2 E4), not the complete-V1 bundle; its identity is
+`package_id` (FR-322), not a resolved-graph digest. Compiled-model
+artifacts have no admitted form on the spine (FR-056-CON-4). QSL therefore
+stops tagging QSpec FR-131-AC-1 to AC-3 and FR-339-AC-3 (QSpec TC-180):
+those tags lived only on the retired tests.
+
+QSL SHALL remove `ResolvedSourcePackage`, `resolve_source_package`, the
+rest of the `qsl_semantics::complete` module and
+`command::resolve_parsed_source` in one change, made once FR-110 is
+implemented (the dependency half already is: FR-099). The change deletes
+`tests/it/complete_package.rs` and `complete::package_tests`, and each
+scenario they cover is either backed against its successor above or
+retired with the retired capability.
 
 ## Constraints
 
@@ -559,7 +593,7 @@ reachable until its successor covers it.
 | FR-087-CON-1 | This requirement does not implement the v2 emitter itself (`CheckedPackage` → `EmittedPackage` bytes, C-03) or the layer-4 `package` reader's byte-level parsing; those are ADR-011 T-8 (M-4, QSL-6/#242). This requirement's `package`-layer output is limited to the type definitions T-1 names and the private-constructor/public-accessor surface ADR-011 §4 requires, so that M-4 has a typestate to build against. | Design | Inspection |
 | FR-087-CON-2 | This requirement does not implement O-08, O-09, O-10, O-11, O-14 or C-26; those are FR-088 (S-3b). A type this requirement defines (for example the checked type node C-26 converts) SHALL NOT be given clause-kind, qualified-name or type-descriptor behavior by this requirement. | Design | Inspection |
 | FR-087-CON-3 | `PackageNodeKey`'s `node` component is a `WireNodeId`, never a `NodeKey`, at every point this requirement defines or reads it (R-10, O-04). A conversion function that constructs a `NodeKey` from a `PackageNodeKey`'s `node` field — at E4, at E9, or anywhere else — exceeds this requirement's scope and violates R-10; the only conforming behavior at E4 and E9 is a lookup against an already-minted `NodeKey` in a checked package, never a constructor call (ADR-013 O-04, `:173,175`). | Design | Test (TC-255) |
-| FR-087-CON-4 | `ResolvedSourcePackage` is removed in one change, made once both of its successors exist: `library` resolution of `import` selections against I2 import views (the dependency half, QSL-6, ADR-011 M-4) and E3's identity-preimage builder resolving `profile`, definition and `model` selections (the header-selection half, over the QSpec lock accessor, QSL-234). Until that change, `ResolvedSourcePackage` and every capability it provides stay in place. The removing change leaves the old type undefined, with nothing keeping it reachable: no feature flag, deprecation attribute or compatibility wrapper (no migration/fallback layer for prerelease software). | Process | Test (TC-246) |
+| FR-087-CON-4 | `ResolvedSourcePackage` is removed in one change, made once both of its successors exist: the spine's resolution of `import` selections against I2 import views (the dependency half, FR-099, ADR-011 M-4) and E3's resolution of `profile` and `model` selections against the `DefinitionLock` catalog and I1 (the header-selection half, FR-110). The removing change deletes the `qsl_semantics::complete` module and `command::resolve_parsed_source`, and leaves no old name reachable: no feature flag, deprecation attribute or compatibility wrapper (no migration/fallback layer for prerelease software). | Process | Test (TC-246) |
 
 ## Acceptance Criteria
 
@@ -571,7 +605,7 @@ reachable until its successor covers it.
 | FR-087-AC-4 | `library` converts a `VerifiedPackage` to an `ImportView` without resolving any name: `ImportView`'s exported-declaration data is keyed for `PackageNodeKey` lookup by the importing package's own checker, and no function in `library` takes a name (`QualifiedName` or bare string) and returns a declaration or node id after the exporting package's own check stage has run. | Test (TC-254) |
 | FR-087-AC-5 | `PackageNodeKey` is defined exactly as `{package: package_id, node: WireNodeId}`; no second shape (`{package, node: NodeKey}`) exists anywhere in the crate. Two `PackageNodeKey` values compare equal iff both components compare lexically equal; a mutation test that swaps the equality implementation for a structural comparison over the referenced node's content fails this criterion's own adverse test. | Test (TC-245) |
 | FR-087-AC-6 | No `NodeKey` constructor call anywhere in the crate is fed, directly or transitively, by a `PackageNodeKey`'s `WireNodeId` field, an `ImportView` entry, or any other wire-read value: `library`, `package`'s E4 dependency resolution, and `replay`'s E9 lookup each make zero `NodeKey`-constructor calls, resolving a `WireNodeId` to a `NodeKey` only by lookup against an already-minted `NodeKey` in an already-checked package (ADR-013 O-04, `:173,175`). This is scoped to what this requirement (S-3) owns: the crate-wide claim "only `check` calls the `NodeKey` constructor" is FR-060 T12-B's own allow-list, whose named debt list (FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists") holds the real minting sites outside `check` this requirement does not touch or gate on — pre-existing debt this requirement neither fixes nor is blocked by (Remaining work: agent-ix/quire-spec-language#211). This criterion fails only if `library`, `package`'s E4 path, or `replay`'s E9 path gains a `NodeKey`-constructor call, or if any such call anywhere in the crate is fed by a `PackageNodeKey`'s `WireNodeId` field. This is a call-site and data-provenance policy (which module is permitted to mint, and what may feed a mint, not which shape a lookup returns), enforced by the FR-060 T-12 API-surface scan and a call-graph trace rather than by the type system, so it is verified by that scan and trace, not by a `compile_fail` doctest (a mismatched-type attempt at some other call site would fail identically regardless of location, proving nothing about it). | Test (TC-255) |
-| FR-087-AC-7 | Once both successors exist (QSL-6's `library` import resolution against I2 import views, and E3's identity-preimage builder over the QSpec lock accessor, QSL-234), `ResolvedSourcePackage` and `resolve_source_package` are absent from the compiled crate under every feature combination. Every former caller resolves its `import` selections in `library` against `VerifiedPackage`/`ImportView`, and its `profile`, definition and `model` selections in E3's identity-preimage builder, or has been removed. Every scenario the former callers' tests cover has a test against the successor for its half. A whole-crate definition scan confirms the absence. | Test (TC-246) |
+| FR-087-AC-7 | Once FR-110 is implemented (the dependency half is FR-099), `ResolvedSourcePackage`, `resolve_source_package`, every other item of `qsl_semantics::complete` and `command::resolve_parsed_source` are absent from every crate of the workspace under every feature combination. Each scenario of `tests/it/complete_package.rs` and `complete::package_tests` is either backed by a test against its successor, as Behavior's disposition table lists (FR-099, FR-110, FR-091-AC-22, FR-056), or belongs to a row that table marks retired. A whole-workspace definition scan confirms the absence. | Test (TC-246) |
 | FR-087-AC-8 | The canonical `EmittedPackage` (this requirement, layer-4 `package`) and `protocol_artifact::native::EmittedPackage` (SEAM-3, unrelated) remain two distinct types under two distinct module paths, with no `pub use` or re-export that would place both names into one import scope, and with no field, method, or shape shared between them (Description), for as long as the SEAM-3 type exists: ADR-011 §4 records that the two-public-types-named-`CheckedPackage` rule is met by *deleting* the native-v1 type with SEAM-1, not by permanent coexistence, and this requirement's own `CheckedPackage`/`checking::CheckedPackage<'a>` pair follows the same disposition (Description, item 2). The expiry condition for `EmittedPackage`'s two-module coexistence is SEAM-3's own deletion of `protocol_artifact::native::EmittedPackage` (ADR-011 §7.3), not an indefinite steady state this requirement asserts. | Inspection (TC-247) |
 | FR-087-AC-9 | After this requirement's implementation, the `check`/`package` edge runs one way: `package` (layer 4) may import from `check` (layer 3), the layer-4 row's own direction (§6.1: "Depends on: 3, F, K"), and `check` imports nothing from `package` (the crate `qsl-package` since X-7) at either the `use`-line or the inline-path level (Cargo refuses the edge: `qsl-package` depends on `qsl-semantics`; this criterion reconfirms it). `check` defines no type, method, or field named `CheckedPackage`. `package`'s `CheckedPackage` is built by the S4 link step from a `CheckedGraph` and holds that `CheckedGraph` as a field (this package's own checked declarations) plus the S4-only checked dependency closure; it reaches check-owned state (`Node`, `Signature`, and the rest) through that field (`graph()` or named delegating accessors) and never re-declares, copies or re-derives a check-owned type in `package`. This design statement is kept because it is the S3-to-S4 typestate chain ADR-013 T-1 requires: S4's output is made from S3's output and nothing else, and every checked declaration has one owner. `check` imports from `library` only as layer 3's own order permits (`library` before `check` core); `check` reads `LibraryLock` only through its read-only accessors and never constructs or mutates one. `value::expression` (layer 5) imports `CheckedPackage` from `package` (`use qsl_package::CheckedPackage;`), the layer-5 row's own direction (§6.1: "Depends on: 4, 3, F, K"). **Amended by QSL-182 (X-7).** This sentence used to require the single closed re-export `pub use crate::checked_package::CheckedPackage;` in `value::expression`. Once `CheckedPackage` is in `qsl-package`, that line is a root-crate re-export of a moved item, which ADR-011 §7.2 and QSL-182's acceptance criteria forbid; they are the later and more specific rules, as QSL-181 ruled for FR-068-AC-10 (R3). The root crate re-exports no layer-crate item, and a `pub use` of one fails this criterion. This criterion demonstrates that the layering violation FR-068/QSL-167 recorded is closed, not relocated: a build in which `check` names `CheckedPackage`, imports from `package`, or in which `package`'s `CheckedPackage` holds anything other than a `CheckedGraph` for its own checked declarations, fails this criterion. **Amended by the layer-rule ruling (2026-09-22).** The number of `check` items `package` imports, and the number of `library` items `check` imports, are not bounded. A count of `package`'s `check` imports is met by a `package` that copies check-owned data into re-declared types, and fails a `package` that imports `Node` to name an accessor's return type, which is layer 4's permitted direction; the design statement above guards the property instead. Every `library` item is a permitted edge for `check`, because `library` precedes `check` core in §6.1's layer-3 order. That no `NodeKey` is minted from a `PackageNodeKey`'s `WireNodeId` or an `ImportView` entry is data provenance, held by FR-087-AC-6 and FR-060 T12-B. | Test (TC-256) |
 | FR-087-AC-10 | `src/package/features.rs` and `src/package/view.rs` continue to import `CheckedPackage` from `crate::checking` (the lane-private `checking::CheckedPackage<'a>`), unchanged by this requirement's introduction of a canonical `CheckedPackage` elsewhere in `package`'s own module tree, for as long as `checking`'s lane exists. No file in `package` re-exports or glob-imports both the lane-private and the canonical `CheckedPackage` into one scope where a bare `CheckedPackage` reference would be ambiguous; a source scan of `features.rs` and `view.rs` confirms their `crate::checking::CheckedPackage` import is present and unrenamed while that lane exists, and a build with both names in one import scope (an ambiguity error) fails this criterion while the import is present. This two-name coexistence is not asserted as a permanent steady state: ADR-011 §8 (Q209-1) records that `checking`'s lane retires (lane A) or converges into its replacement (lane B/D) — "each other lane is deleted with its replacement" — and the expiry condition for `features.rs`/`view.rs`'s `crate::checking::CheckedPackage` import is that lane's own deletion, per its own convergence PR, not an indefinite state this criterion treats as final. After that deletion, this criterion no longer applies to those two files (there is only one `CheckedPackage` left to import). | Test (TC-247) |
@@ -603,10 +637,10 @@ reachable until its successor covers it.
   and its three checking methods (`qsl-semantics/src/check/mod.rs:601,625,648`) are
   relocated/retargeted as this requirement's Behavior and Outputs state.
 - Linear QSL-6 (ADR-011 M-4: the I2 reader, successor to
-  `ResolvedSourcePackage`'s dependency half) and QSL-234 (the QSpec lock
-  accessor that E3's identity-preimage builder, successor to its
-  header-selection half, reads); FR-087-AC-7 and CON-4 wait on both
-  (ruling on QSL-229).
+  `ResolvedSourcePackage`'s dependency half) and QSL-234
+  ([FR-110](FR-110-resolve-header-profile-selections-at-e3.md), successor
+  to its header-selection half). FR-087-AC-7 and CON-4 wait on FR-110;
+  QSL-269 owns the retirement (ruling on QSL-229).
 - Linear QSL-158 (this requirement's owning ticket, the S-3a/S-3b split and
   the 2026-09-21 `CheckedPackage`-placement ruling) and QSL-167 (the ADR-011
   §4-versus-§6.1 defect, closed for its `CheckedPackage`-placement half by
@@ -745,19 +779,20 @@ AC-7 (TC-246) is not delivered, and AC-13 (TC-379) is partly delivered:
   neither type resolves a definition or a compiled model. They now split
   `complete::resolve_source_package` into its two halves (Behavior,
   "`ResolvedSourcePackage` retires when both successors exist"). The
-  dependency half moves to layer-3 `library` against I2 import views
-  (ADR-011 §6.2, §8), owned by QSL-6 (M-4). The header-selection half moves
-  to E3's identity-preimage builder (ADR-011 §2.4), which depends on the
-  QSpec lock accessor, QSL-189. Neither successor exists today, so neither
-  criterion is backed. QSL-6 (dependency half) is still open. QSL-189 was Canceled (the `DefinitionLock`
-  catalog supplies the selections), so QSL-234 owns the header half (E3
-  identity-preimage builder) and QSL-269 (child of QSL-158) owns the retirement.
-  `ResolvedSourcePackage` stays, reached through `command::resolve_parsed_source`
+  dependency half exists: spine `compile`'s S4 source resolution binds each
+  import against a library compiled from source and read into its
+  `ImportView` (FR-099, ADR-015 D-1). The header-selection half is FR-110
+  (amended 2026-09-26, QSL-234): E3 resolves header profiles against QSL's
+  `DefinitionLock` catalog, which carries each row's digest from QSpec's
+  `complete-value-lock.json`, and model declarations through I1. It needs
+  no QSpec accessor (QSL-189 is Canceled, ADR-011 §2.4 amended
+  2026-09-24). FR-110 is not implemented, so neither criterion is backed.
+  Behavior's disposition table states which capabilities retire with
+  `ResolvedSourcePackage` and why. Until then `ResolvedSourcePackage`
+  stays, reached through `command::resolve_parsed_source`
   (`src/command/source_package.rs`) and tested by
-  `tests/it/complete_package.rs`. `ImportSelection` carries the library
-  identity, version and recorded digest (ADR-015 D-2), and
-  `resolve_source_package` no longer treats an import as a definition
-  root; an I2 import view is keyed by `package_id` (ADR-011 §2.4). Remaining work: QSL-6, QSL-234, QSL-269.
+  `tests/it/complete_package.rs`. Remaining work: QSL-234 (FR-110), then
+  QSL-269 (the retirement).
 - **AC-13.** E3's resolution rule is specified, and the QSpec schema defect
   that blocked it is fixed (QSpec STD-105, IR-287). E4 fills the dependency
   closure (`CheckedPackage::link_with`, AC-14), the emitter writes
