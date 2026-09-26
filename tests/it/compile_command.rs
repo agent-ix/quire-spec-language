@@ -831,7 +831,10 @@ fn spine_library_request(
         &qsl_replay::spine::DependencyInput::default(),
         qsl_replay::spine::SpineLimits::default(),
     )
-    .map_or_else(|_| "e".repeat(64), |compiled| compiled.emitted.package_id().hex());
+    .map_or_else(
+        |_| "e".repeat(64),
+        |compiled| compiled.emitted.package_id().hex(),
+    );
     let program = format!(
         "{SPINE_HEADER}import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n\
          function u using v(x: Int[0, 9]): Boolean pure {{ g::f(x) }}\n"
