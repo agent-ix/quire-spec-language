@@ -20,6 +20,7 @@ use qsl_semantics::value::declaration::{
 };
 use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision};
 use quire_exact::EffectiveId;
+use quire_exact::FloatType;
 use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind,
@@ -930,7 +931,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
                     "f",
                     &[
                         ("x", ValueType::Composite(key("Box"))),
-                        ("f", ValueType::Float(IeeeWidth::Binary64)),
+                        ("f", ValueType::Float(FloatType::exact(IeeeWidth::Binary64))),
                         (
                             "ro",
                             ValueType::option(ValueType::Reference(object_type("M::Obj"))),
@@ -965,7 +966,10 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
     let admitted = package(literal(0)).unwrap();
     let converted = admitted
         .check_expression(
-            vec![("f".to_owned(), ValueType::Float(IeeeWidth::Binary64))],
+            vec![(
+                "f".to_owned(),
+                ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
+            )],
             &Expression::Convert {
                 target: crate::support::type_form::type_form(&quotient_type()),
                 operand: Box::new(name("f")),
@@ -1395,7 +1399,7 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
         functions: vec![
             function(
                 "f",
-                &[("x", ValueType::Float(IeeeWidth::Binary64))],
+                &[("x", ValueType::Float(FloatType::exact(IeeeWidth::Binary64)))],
                 quotient_type(),
                 None,
                 Expression::Convert {

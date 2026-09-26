@@ -41,9 +41,7 @@ use quire_exact::{
     retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
     OrderingOperator, RationalArithmetic,
 };
-use quire_exact::{
-    evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalType, RoundingMode,
-};
+use quire_exact::{evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalType};
 use quire_exact::{
     evaluate_ieee, ieee_to_exact, IeeeExactLoss, IeeeExactTarget, IeeeFlags, IeeeOperation,
 };
@@ -925,7 +923,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 _ => return Err(invariant()),
             },
-            NodeKind::Ieee(operator, _, _) => {
+            NodeKind::Ieee(operator, rounding, _, _) => {
                 let (Value::Float(right), Value::Float(left)) = (self.pop()?, self.pop()?) else {
                     return Err(invariant());
                 };
@@ -939,8 +937,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant());
                 }
                 let result = outcome_into_stop(
-                    evaluate_ieee(operation, RoundingMode::Exact, self.meter)
-                        .map_err(|_| invariant())?,
+                    evaluate_ieee(operation, *rounding, self.meter).map_err(|_| invariant())?,
                 )?;
                 if result.flags() != IeeeFlags::EMPTY {
                     self.record(node, ValueLoss::IeeeFlags(result.flags()));

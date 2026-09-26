@@ -370,13 +370,13 @@ The resolution `match` has one explicit arm per type-form head:
   `Decimal[..]`, `Text[..]`, `Option<..>`, `Sequence`/`Set`/`Bag`/
   `OrderedSet<..>[..]`) resolves to its `ValueType` over the declared bounds
   the type form carries;
-- `Float32` and `Float64`, with or without a written mode, refuse with the
-  floating-type error. A floating type's rounding mode is part of the type
-  (QSpec FR-322, FR-148), and a `ValueType::Float` that holds only an
-  `IeeeWidth` would drop it, which R-07 forbids. The refusal names the
-  floating type (width and rounding mode, `exact` when none is written),
-  the profile selection that the declaration's `using` alias names, and
-  the type form's span;
+- `Float32[mode]` and `Float64[mode]` resolve to `ValueType::Float`, which
+  holds the width and the rounding mode (QSpec FR-322, FR-148); a bare
+  `Float32` or `Float64` is strict `exact`. All six spellings (`exact`,
+  `toward-zero`, `toward-positive`, `toward-negative`, `nearest-even`,
+  `nearest-away`) are admitted. A mode the grammar does not spell is
+  `ill-formed scalar bounds`. A domain package's native `Float32`/`Float64`
+  model field is still refused with the floating-type error (a follow-up);
 - `Reference<Q>` resolves `Q` against the admitted domain packages (I1). With
   no admitted domain package, `Q` is an unresolved name;
 - a qualified name that names exactly one alias form of the unit resolves to
@@ -431,7 +431,7 @@ code or code/cause:
 | unresolved type name | `missing_declaration`/`missing-name` |
 | ambiguous type name | `ambiguous_declaration` |
 | ill-formed scalar bounds | `ill_typed` |
-| floating type | `unknown_required_feature`/`unsupported-feature` |
+| floating type (a domain package model field only) | `unknown_required_feature`/`unsupported-feature` |
 | undeclared `using` alias | `missing_declaration`/`missing-selection` |
 | duplicate alias | `ambiguous_declaration`/`ambiguous-name` |
 | alias cycle | `invalid_package`/`definition-cycle` (catalog extension proposed, Dependencies) |
@@ -481,7 +481,7 @@ for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
 | FR-091-AC-16 | The assembler returns one refusal with three errors for parameters typed `Int[9, 0]`, `Rational[0, 1; 0, 5]` and `Text[5, 1; nfc]`, one per function. Each error carries the owning value type's own rejection cause and its type form's span. It returns no `PackageDeclarations`. | Test (TC-400) |
 | FR-091-AC-17 | The assembler refuses with an alias-cycle error, code `invalid_package`/`definition-cycle`, naming both `A` and `B` for `type A = B;` and `type B = A;`, and returns no `PackageDeclarations`. It refuses `type C = Option<C>;` with the same code, naming `C`. | Test (TC-400) |
 | FR-091-AC-18 | For `record Point { x: Int[0, 9]; y: Int[0, 9]; }`, `tuple Pair(Int[0, 9], Int[0, 9]);` and `function px using v(p: Point): Int[0, 9] pure { p.x }`, assembled under source owner authority `a`, identity `u`, the assembler's `types` holds one record declaration `Point` and one tuple declaration `Pair`, each with a key that `check` minted over that owner. `px`'s resolved parameter type is `ValueType::Composite` of `Point`'s key, and `PackageDeclarations::check` admits the package. Assembling and checking the same source again under (`a`, `u`) gives the same `Point` and `Pair` keys and the same checked node id for `px`. Under (`a`, `w`) it gives a different key for each of the three. No item named `DEFAULT_PACKAGE_IDENTITY` exists under `src/`. | Test (TC-401) |
-| FR-091-AC-19 | The assembler refuses a parameter typed `Float64[nearest-even]` with a floating-type error, code `unknown_required_feature`/`unsupported-feature`, that names width `Float64`, rounding mode `nearest-even`, the declaration's profile selection `v` and the type form's span. It refuses a parameter typed `Float64` with no mode with the same error naming rounding mode `exact`. It refuses a parameter typed `Reference<M::T>`, in a unit with no admitted domain package, with an unresolved-type-name error naming `M::T`. None of the three returns a `PackageDeclarations`. | Test (TC-405) |
+| FR-091-AC-19 | The assembler admits a parameter typed `Float64[nearest-even]`, `Float32[toward-zero]` or `Float64`. Resolving each gives a `ValueType::Float` of the written width and rounding mode `nearest-even`, `toward-zero` and `exact` (the bare spelling). The evaluator rounds a `Float64[mode]` `+` by that mode. It refuses a parameter typed `Reference<M::T>`, in a unit with no admitted domain package, with an unresolved-type-name error naming `M::T`, and returns no `PackageDeclarations`. | Test (TC-405) |
 | FR-091-AC-20 | The assembler module is under the layer-3 `check` core. Its non-test code has no `use` edge or inline path to `qsl_cst`. Its `#[cfg(test)]` code may reach `qsl_cst` only to run S1 and S2. | Test (TC-402) |
 | FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The floating-type cause returns `unknown_required_feature`, the undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, and the alias-cycle cause `invalid_package`. S2's nesting-depth limit refusal reports `stage_limit_exceeded`/`nesting-depth-exceeded`. | Test (TC-406) |
 | FR-091-AC-22 | For a unit with one profile selection, alias `v`, and `function f using v(): Boolean pure { true }`, the assembler records `f`'s `using` alias as resolved to that selection. With `function g using w(): Boolean pure { true }` added, it returns one refusal holding an undeclared-alias error, code `missing_declaration`/`missing-selection`, that names `w` and the span of `g`'s `using` field, and no `PackageDeclarations`. A unit that declares two profile selections with alias `v` refuses with a duplicate-alias error, code `ambiguous_declaration`/`ambiguous-name`, naming `v` and both selection spans. | Test (TC-412) |
@@ -558,8 +558,9 @@ Remaining work:
 - The other families' parsed-form types are not built: the state family's
   under QSL-67, and the others under QSL-45, QSL-44, QSL-43, QSL-42,
   QSL-40, QSL-39 and QSL-36.
-- `ValueType::Float` still holds only an `IeeeWidth`; the assembler refuses
-  every floating type (FR-091-AC-19) rather than resolving one.
+- A domain package's native `Float32`/`Float64` model field is still refused
+  with the floating-type error (`Unmapped::Float`); QSL-280 admits floating
+  types as function parameter, result and body types only.
 
 ## Rulings
 
@@ -572,7 +573,7 @@ decided; the last column names the fact that reopens it.
 | FR-091-OQ-1, declarations | `Value` owns the `enum`, `dimension`, `unit` and `predicate` declaration productions. The `enum`, `dimension` and `unit` entries need their key minting inside `check` (FB-13, QSL-131). | QSpec FR-322 classes enum, dimension and unit as `scalar_type` nodes. `predicate` is a function form with a `Boolean` result. | QSpec makes an enum a `union-decl` case rather than a `scalar_type`. |
 | FR-091-OQ-2 | S2 carries each unit's profile, import and model selections, and each form keeps its `using` alias. E3 resolves every alias to a declared profile selection, or refuses with `missing_declaration`/`missing-selection`. ADR-011 §2.2's E2 Version cell reads "Edition and the unit's profile, import and model selections carried". Resolution against the library lock is the M-4 lock evidence (QSL-6). The forms `FunctionDeclaration` has a `using` field. | ADR-011 OBS-007 makes S2 the only source of check-stage input from source. QSpec requires `using` to name a declared alias, with no default. | QSpec makes the compile request's input inventory, not each unit, the source of selections. S2 still carries each unit's selections for the driver to compare, and only the lock assembly moves. |
 | FR-091-OQ-3 | Record, tuple and function node keys are minted over `SourceOwner{authority, identity}`. ADR-013 O-04 and ADR-012 §2 state the owner reading of QC-18. `check` has no `DEFAULT_PACKAGE_IDENTITY`. | Neither the source grammar nor the v2 wire carries a package name, so replay could not rebuild a `name@version` key. QSpec's `proposals/checked-package-v2/README.md` publishes the owner reading for nominal enum, dimension and unit nodes; for `composite_type` and `function` nodes QSL keys by its proposed `quire.structural-node/v1` preimage, which carries the owner (FR-092). | QSpec adds a package name to source or to the v2 wire, or a declaration must keep its key when it moves between the units of one package. |
-| FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` and in QSL, and the evaluator applies it. The assembler's floating-type refusal (FR-091-AC-19) has code `unknown_required_feature`/`unsupported-feature`: no catalog code names a well-formed type the producer does not represent, and `unsupported_construct` is reserved for profile-prohibited forms. A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
+| FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` (`FloatType`) and in QSL, and the evaluator applies it (QSL-280, done). The floating-type error (now only for a domain package model field) has code `unknown_required_feature`/`unsupported-feature`: no catalog code names a well-formed type the producer does not represent, and `unsupported_construct` is reserved for profile-prohibited forms. A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
 | FR-091-OQ-5 | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. `div`/`rem` depend on the unit's div/rem selection (FR-091-OQ-2), float literals on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
 | FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`qsl-semantics/src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
 

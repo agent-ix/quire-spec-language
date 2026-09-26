@@ -1643,16 +1643,13 @@ impl<'a> Lowering<'a> {
                     location,
                 )
             }
-            ValueType::Float(width) => {
-                let form = match width {
+            ValueType::Float(float) => {
+                let form = match float.width() {
                     quire_exact::IeeeWidth::Binary32 => "float32",
                     quire_exact::IeeeWidth::Binary64 => "float64",
                 };
                 let base = self.scalar(form, location)?;
-                // The checker admits only the omitted, strict `exact`
-                // rounding spelling (`NodeKind::Ieee`'s own doc).
-                let rounding =
-                    self.text_literal(quire_exact::RoundingMode::Exact.as_str(), location)?;
+                let rounding = self.text_literal(float.rounding().as_str(), location)?;
                 self.bounded(
                     "float_rounding",
                     base,
@@ -2806,11 +2803,11 @@ impl<'a> Lowering<'a> {
                     Operands::Two(left, right),
                 )
             }
-            NodeKind::Ieee(operator, left, right) => {
-                let ValueType::Float(width) = &left.value_type else {
+            NodeKind::Ieee(operator, rounding, left, right) => {
+                let ValueType::Float(float) = &left.value_type else {
                     return Err(fault(&node.location, KeyFault::UntypedIeeeOperand));
                 };
-                let width = match width {
+                let width = match float.width() {
                     quire_exact::IeeeWidth::Binary32 => "float32",
                     quire_exact::IeeeWidth::Binary64 => "float64",
                 };
@@ -2821,7 +2818,7 @@ impl<'a> Lowering<'a> {
                         Operator::Binary,
                         Operation {
                             laws: vec![law],
-                            mode: Some(OperationMode::Rounding(quire_exact::RoundingMode::Exact)),
+                            mode: Some(OperationMode::Rounding(*rounding)),
                             ..plain(&identity)
                         },
                     ),

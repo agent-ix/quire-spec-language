@@ -14,6 +14,7 @@ mod composite_values;
 mod dispatch_calls;
 mod equality_matrix;
 mod finite_simulation;
+mod float_rounding;
 mod inherited_attributes;
 mod model_reference_queries;
 mod source_call;
