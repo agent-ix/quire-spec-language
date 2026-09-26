@@ -174,9 +174,9 @@ stderr with stage `call`, code `runtime_invariant` and `details`
 the fault's own. It exits 30, the tool-failure status of QSpec FR-301's exit
 contract (`0` completed without violation, `10` logical violation, `20`
 invalid/refused input, `21` unsupported, `22` incomplete and `30` tool
-failure). This is the one exit status FR-100 does not take from
-`Code::exit_code`: `Code::RuntimeInvariant.exit_code()` is 20 (see
-FR-100-OQ-1).
+failure). A checked-program invariant failing is a tool failure, so this
+path exits 30 directly and does not take its exit status from
+`Code::exit_code`.
 
 ### Refusals before S6a
 
@@ -308,19 +308,6 @@ exit 30.
   the refusal record a refused outcome renders, and `CheckedInvariant` as an
   `InternalFault`.
 - QSpec FR-301: the six exit codes.
-
-## Open Questions
-
-- **FR-100-OQ-1 (open, for the QSL lead):** the internal-failure exit
-  status. FR-100 states 30, QSpec FR-301's tool failure. The CLI's existing
-  convention exits 20 for `runtime_invariant`: `Code::exit_code` maps every
-  code outside `is_unsupported` and `is_incomplete` to 20
-  (`qsl-foundation/src/diagnostic.rs:310-318`), `RunCause::exit_code` sends
-  every cause but `Output` through it (`src/command.rs:265-270`), and native
-  run's own runtime invariant (`src/runtime/evaluation.rs:100`) exits 20
-  through it. The CLI uses 30 only for output and platform failures
-  (`src/main.rs:86`, `src/main.rs:146`, `src/main.rs:203`,
-  `src/command.rs:267`).
 
 ## Status
 
