@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL#214 (FR-063): `cargo xtask seam-probe` demonstrates ADR-012 §5.1's S1
 //! and S7 seams by building the QSL workspace crates that hold seams under
-//! `RUSTFLAGS=--cfg seam_probe` (three normal builds and five probe builds,
+//! `RUSTFLAGS=--cfg seam_probe` (three normal builds and six probe builds,
 //! `PROBE_BUILDS` and `NORMAL_BUILDS`) and comparing the `E0004`
 //! (non-exhaustive match) locations rustc reports against a checked-in
 //! list, exactly as FR-063 requires.
@@ -35,8 +35,8 @@
 //! S2 (`Typer::infer_form`, the check seam) and two for S3 (`Machine::
 //! apply`, the evaluator; `Lowering::lower_node`, the identity-lowering
 //! pass feeding v2 emission) -- see [`checked_in_locations`]'s own doc for
-//! why the parser's leading-token-kind table itself (`qsl-forms::dispatch::
-//! dispatch`) stays out of this list. S4 (each family `Cause` enum's
+//! the parser's leading-token-kind table (`qsl-forms::dispatch::dispatch`,
+//! QSL-244), which has its own `qsl-forms` probe build. S4 (each family `Cause` enum's
 //! `catalog_code()`) now has one demonstration, `CheckCause::code`
 //! (FR-062-AC-8, TC-161, QSL-152) -- see that entry in
 //! [`checked_in_locations`]'s own doc below.
@@ -150,25 +150,13 @@ pub struct SeamLocation {
 ///   identity-lowering pass whose `SemanticNode`/`SemanticTerm` output feeds
 ///   `qsl-package`'s v2 emission (ADR-012 §5.1 row S3's "v2 emitter").
 ///
-/// **What is not covered, and why.** ADR-012 §5.1 row S2 also names "the
-/// parser's leading-token-kind entry table" -- `qsl-forms::dispatch::
-/// dispatch`'s `match` over `LeadingTokenKind`. That table lives in
-/// `qsl-forms` (ADR-011 §6.1 layer 2), a dependency of every one of
-/// `PROBE_BUILDS`'s five packages but never itself one of them: giving its
-/// `match` the same "no arm under plain `seam_probe`" treatment as
-/// `Typer::infer_form` would make `qsl-forms` -- and therefore every crate
-/// above it -- fail to compile in *every* probe build, permanently hiding
-/// `FamilyKind`'s S1 seam, the S6a/S7 seams and the two S2/S3 seams above,
-/// not just this one; giving it an unconditional arm instead would make the
-/// variant inert (never actually non-exhaustive anywhere), which is not a
-/// seam at all. Probing it needs a build of `qsl-forms` itself, which
-/// `PROBE_BUILDS`'s fixed crate list (FR-063's own Behavior text)
-/// does not include; QSL-244 tracks widening `PROBE_BUILDS` (or otherwise
-/// giving `qsl-forms` its own probe build) to reach this table, not
-/// something this checked-in list can honestly claim today. FR-063-AC-6
-/// requires only
-/// *one* checked-in entry per category, and `Typer::infer_form` already
-/// supplies S2's.
+/// **The parser's leading-token-kind table (QSL-244).** ADR-012 §5.1 row
+/// S2's `qsl-forms::dispatch::dispatch` `match` over `LeadingTokenKind`
+/// lives in `qsl-forms`, below `qsl-semantics`. It has its own cfg,
+/// `seam_probe_forms`, which adds `LeadingTokenKind::__SeamProbe` and is set
+/// only by `qsl-forms`' own probe build (`PROBE_BUILDS`' first entry), so
+/// that seam does not stop the crates above it compiling in the other
+/// builds. FR-063-AC-6 has an entry in every category.
 ///
 /// **The replay facade (QSL-5, ADR-013 TK-01):** `qsl-replay`'s `replay`,
 /// the executor's `match` over `FamilyOutcome` that settles a replayed
@@ -233,6 +221,10 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         SeamLocation {
             file: "qsl-semantics/src/check/lowering.rs".to_owned(),
             item: "Lowering::lower_node".to_owned(),
+        },
+        SeamLocation {
+            file: "qsl-forms/src/dispatch.rs".to_owned(),
+            item: "dispatch".to_owned(),
         },
         SeamLocation {
             file: "qsl-replay/src/execute.rs".to_owned(),
@@ -447,7 +439,8 @@ fn offline_registry_unavailable(stderr: &str) -> bool {
 /// compiles `qsl-eval` and reports its own seam; the root crate's sets both.
 /// Each build must fail; together they must report exactly the checked-in
 /// list.
-const PROBE_BUILDS: [(&str, &str); 5] = [
+const PROBE_BUILDS: [(&str, &str); 6] = [
+    ("qsl-forms", "--cfg seam_probe_forms"),
     ("qsl-semantics", "--cfg seam_probe"),
     (
         "quire-spec-language",
@@ -567,9 +560,8 @@ pub fn run(workspace_root: &Path) -> Result<String> {
         .join(", ");
     Ok(format!(
         "seam-probe: {} checked-in locations confirmed under RUSTFLAGS=--cfg seam_probe \
-         (qsl-semantics, then quire-spec-language, qsl-route, qsl-eval and qsl-replay); normal builds have none: \
-         {locations}. The parser's leading-token-kind table (S2, QSL-244) is not covered by this \
-         checked-in list -- see `checked_in_locations`'s own doc.\n",
+         (qsl-forms, qsl-semantics, then quire-spec-language, qsl-route, qsl-eval and qsl-replay); normal builds have none: \
+         {locations}.\n",
         checked_in.len()
     ))
 }
@@ -653,6 +645,56 @@ mod tests {
             file: "qsl-semantics/src/check/refusal.rs".to_owned(),
             item: "CheckCause::code".to_owned(),
         }));
+    }
+
+    /// FR-063-AC-6 (QSL-244): the checked-in list has an entry for each of
+    /// the five named categories, including the parser's leading-token-kind
+    /// table, and `qsl-forms` has its own probe build so that entry is
+    /// reachable (a list entry no build reports would fail `seam-probe`).
+    #[ix_trace_rs::trace("TC-161", "FR-063-AC-6")]
+    #[test]
+    fn checked_in_locations_cover_every_ac6_category() {
+        let locations = checked_in_locations();
+        let has = |file: &str, item: &str| {
+            locations.contains(&SeamLocation {
+                file: file.to_owned(),
+                item: item.to_owned(),
+            })
+        };
+        // S1: `FamilyKind` prefix arm.
+        assert!(has(
+            "qsl-semantics/src/family/mod.rs",
+            "FamilyKind::catalog_code_prefix"
+        ));
+        // S6a: `evaluate_declaration`.
+        assert!(has(
+            "qsl-eval/src/value/expression/mod.rs",
+            "evaluate_declaration"
+        ));
+        // S2: the parser's leading-token-kind table, and the check seam.
+        assert!(has("qsl-forms/src/dispatch.rs", "dispatch"));
+        assert!(has(
+            "qsl-semantics/src/check/check/typing.rs",
+            "Typer::infer_form"
+        ));
+        // S3: evaluator and lowering.
+        assert!(has(
+            "qsl-eval/src/value/expression/evaluate.rs",
+            "Machine::apply"
+        ));
+        assert!(has(
+            "qsl-semantics/src/check/lowering.rs",
+            "Lowering::lower_node"
+        ));
+        // S4: a family `Cause` enum's `catalog_code()`.
+        assert!(has(
+            "qsl-semantics/src/check/refusal.rs",
+            "CheckCause::code"
+        ));
+        // The forms table is reported by `qsl-forms`' own probe build.
+        assert!(PROBE_BUILDS
+            .iter()
+            .any(|(package, flags)| *package == "qsl-forms" && flags.contains("seam_probe_forms")));
     }
 
     /// F14: the checked-in key is the enclosing item, not a line number --

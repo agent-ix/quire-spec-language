@@ -39,6 +39,9 @@ on every build of the full gate, not only by inspection of the source.
   the root crate and `qsl-replay`, gives each seam `match` in `qsl-eval` its
   probe arm; the second, set only by the root crate's probe build, gives
   `qsl-replay`'s seam its probe arm.
+- The `seam_probe_forms` build-configuration flag (QSL-244): set only by
+  `qsl-forms`' own probe build, it adds `LeadingTokenKind::__SeamProbe`, so
+  `dispatch` is non-exhaustive there and in no other build.
 - A checked-in list of the seam functions the probe builds' compiler errors
   are expected to name.
 
@@ -58,7 +61,7 @@ compile check. Every occurrence of "`seam-probe` cargo feature" /
 
 ## Outputs
 
-- Five probe builds, each failing to compile, whose rustc `E0004`
+- Six probe builds, each failing to compile, whose rustc `E0004`
   (non-exhaustive match) locations together are exactly the checked-in set.
 - A non-zero `xtask seam-probe` exit and a diagnostic naming any location
   that appeared and is not in the checked-in list, or any checked-in location
@@ -83,9 +86,13 @@ SHALL construct or match on a probe variant, and the `seam_probe` and `seam_prob
 
 ### `xtask seam-probe`
 
-`xtask seam-probe` SHALL run five probe builds and collect every rustc
+`xtask seam-probe` SHALL run six probe builds and collect every rustc
 `E0004` diagnostic location each reports:
 
+0. `qsl-forms` (QSL-244) with `RUSTFLAGS=--cfg seam_probe_forms`, which
+   reports the parser's leading-token-kind table, `qsl-forms::dispatch::
+   dispatch`. The cfg is separate from `seam_probe` so that seam does not stop
+   the crates above `qsl-forms` compiling in the other builds;
 1. `qsl-semantics` with `RUSTFLAGS=--cfg seam_probe`;
 2. the root crate (`quire-spec-language`) with `RUSTFLAGS=--cfg seam_probe
    --cfg seam_probe_downstream --cfg seam_probe_eval_downstream --cfg
@@ -250,25 +257,15 @@ delivered code today (QSL-149, QSL-143, QSL-155):**
   (untagged) is supporting evidence only: it shows `make`'s prerequisite-
   failure mechanism works in general, on a fixture, not that it fires for
   the real `xtask seam-probe` exit code.
-- FR-063-AC-6: partly backed (PR #262 review, coordinator round 3, finding
-  6; previously misrecorded as backed, then unbacked). It requires at least
-  one checked-in entry for *each of* five categories. QSL-143 landed S2
-  (`Typer::infer_form`, the check seam over `Expression`) and S3
-  (`Machine::apply`, the evaluator; `Lowering::lower_node`, the
-  identity-lowering pass feeding v2 emission), joining S1
-  (`FamilyKind::catalog_code_prefix`) and S6a/S7 (already checked in). S4
-  (each family `Cause` enum's `catalog_code()`) has now landed too:
-  `CheckCause::code` (`qsl-semantics/src/check/refusal.rs`), QSL-152,
-  FR-062-AC-8. Four of the five named categories are checked in;
-  `checked_in_locations`'s own doc in `xtask/src/seam_probe.rs` records
-  exactly which and why the parser's leading-token-kind table (the other
-  half of the S2 category) is not: it lives in `qsl-forms`, a dependency of
-  every one of the seam probe's four fixed build targets but never itself
-  one of them, so giving it the same no-arm-under-plain-`seam_probe`
-  treatment as a real seam would hide every *other* seam behind it in every
-  probe build. A criterion requiring *every* category cannot be backed
-  while one is still missing, so this stays partly backed until QSL-244
-  widens the probe to reach that table.
+- FR-063-AC-6: backed (`TC-161`,
+  `checked_in_locations_cover_every_ac6_category`,
+  `xtask/src/seam_probe.rs`, QSL-244). All five categories have a checked-in
+  entry: S1 `FamilyKind::catalog_code_prefix`, S6a `evaluate_declaration`,
+  S2 `qsl-forms::dispatch::dispatch` and `Typer::infer_form`, S3
+  `Machine::apply` and `Lowering::lower_node`, S4 `CheckCause::code`. The
+  forms table is reported by `qsl-forms`' own probe build under
+  `--cfg seam_probe_forms`; the real `xtask seam-probe` run (part of
+  `make ci`) fails if that build or its entry goes missing.
 - FR-063-AC-7: backed by three tests (`TC-161`, `xtask/src/seam_probe.rs`):
   `checked_in_seam_functions_deny_the_wildcard_lint` (walks every
   `checked_in_locations()` entry in the real tree with `syn` and asserts
@@ -282,7 +279,4 @@ delivered code today (QSL-149, QSL-143, QSL-155):**
   lint's mechanism works, not that it is enabled at the real checked-in
   locations).
 
-Six of this requirement's seven Acceptance Criteria are backed by a
-dedicated, trace-tagged test today; AC-6 is partly backed -- four of its
-five named categories are checked in, and it stays partly backed until
-QSL-244 widens the probe to reach the parser's leading-token-kind table.
+All seven of this requirement's Acceptance Criteria are backed by a dedicated, trace-tagged test.
