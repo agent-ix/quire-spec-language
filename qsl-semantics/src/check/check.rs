@@ -316,7 +316,7 @@ pub struct PackageDeclarations {
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
     /// The `UnitGraph` the assembler admitted over the unit's dimension and
     /// unit declarations (FR-091). Empty when the unit declares none.
-    pub units: crate::value::UnitGraph,
+    pub units: crate::value::unit::UnitGraph,
     /// The span of each dimension's and unit's declared name, by its node
     /// key (FR-096).
     pub nominal_spans: BTreeMap<quire_exact::NodeKey, qsl_foundation::Span>,
@@ -349,7 +349,7 @@ impl PackageDeclarations {
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
-            units: crate::value::UnitGraph::default(),
+            units: crate::value::unit::UnitGraph::default(),
             nominal_spans: BTreeMap::new(),
             imports: BTreeMap::new(),
             function_selections: BTreeMap::new(),

@@ -1190,7 +1190,7 @@ const Q_SOURCES: &str = "dimension Length;\n\
     unit K : Temperature = rational(1, 1);\n\
     unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);";
 
-fn key_of(hex: &str, graph: &crate::value::UnitGraph) -> quire_exact::NodeKey {
+fn key_of(hex: &str, graph: &crate::value::unit::UnitGraph) -> quire_exact::NodeKey {
     graph
         .units()
         .map(|unit| unit.key())
