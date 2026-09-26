@@ -86,7 +86,6 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 `tests/it/family_outcome_layering.rs`, over `xtask::definition_scan::scan_dirs`
 and `xtask::import_graph::resolved_paths`.
 
-Step 4's `qsl-eval` set gains `quire-canonical` and `serde` under QSL-272
-(FR-101). The test asserts the earlier five-crate set until the QSL-272
-implementation adds both dependencies and updates the assertion in the
-same change.
+Step 4's `qsl-eval` set gained `quire-canonical` and `serde` under QSL-272
+(FR-101): `qsl-eval/Cargo.toml` and the assertion in
+`tests/it/family_outcome_layering.rs` were updated in the same change.
