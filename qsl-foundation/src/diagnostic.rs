@@ -303,12 +303,16 @@ impl Code {
         )
     }
 
-    /// FR-301's single-code ladder: unsupported (21) before incomplete (22)
-    /// before invalid or refused input (20). The sole source of this
-    /// mapping; every exit-code site routes through it rather than
-    /// re-deriving it from `is_unsupported`/`is_incomplete`.
+    /// FR-301's single-code ladder: `runtime_invariant` (an internal fault,
+    /// ADR-013 T-4's internal-failure category) is tool failure (30); then
+    /// unsupported (21) before incomplete (22) before invalid or refused
+    /// input (20). The sole source of this mapping; every exit-code site
+    /// routes through it rather than re-deriving it from
+    /// `is_unsupported`/`is_incomplete`.
     pub fn exit_code(self) -> u8 {
-        if self.is_unsupported() {
+        if self == Self::RuntimeInvariant {
+            30
+        } else if self.is_unsupported() {
             21
         } else if self.is_incomplete() {
             22
@@ -459,15 +463,11 @@ impl Diagnostic {
         self.code.is_unsupported()
     }
     /// FR-301's exit code for this diagnostic alone, always one of
-    /// {20, 21, 22} (asserted over `Code::all()` in
-    /// tests/native_boundaries.rs). Within exactly that range, ascending
-    /// exit code happens to be ascending severity (20 invalid, 21
-    /// unsupported, 22 incomplete), so a caller combining several
-    /// diagnostics into one report resolves the group's code by taking the
-    /// numeric minimum over this method — see command/output.rs's `report`.
-    /// This does not generalize past {20, 21, 22}; FR-301's full order
-    /// (tool failure, invalid, unsupported, incomplete, violation, success)
-    /// is not ascending-numeric across 0/10/20/21/22/30.
+    /// {20, 21, 22, 30} (asserted over `Code::all()` in
+    /// tests/native_boundaries.rs). FR-301's severity order (tool failure,
+    /// invalid, unsupported, incomplete) is not ascending-numeric, so a
+    /// caller combining several diagnostics resolves the group's code with
+    /// command/output.rs's `combined_exit_code`, not a bare `min`.
     pub fn exit_code(&self) -> u8 {
         self.code.exit_code()
     }

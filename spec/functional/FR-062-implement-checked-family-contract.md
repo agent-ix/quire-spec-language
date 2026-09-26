@@ -28,10 +28,11 @@ relationships:
 
 QSL semantic families (`Value`, `StateModel`, `SumCase`, `TemporalTrace`,
 `ProtocolClause`, `Relation`) each own their own grammar, checked nodes and
-diagnostics, but check, package, requirement-derivation and evaluation are
-reached through the same shape for every family. QSL SHALL implement one
-shared contract, with the parts below, that every family implements once and
-that no family bypasses.
+diagnostics, but check, requirement-derivation and evaluation are reached
+through the same shape for every family, and every family's checked nodes
+reach the checked package through the same S4 v2 emitter. QSL SHALL
+implement one shared contract, with the parts below, that every family
+implements once and that no family bypasses.
 
 The contract's six parts (ADR-012 §2):
 
@@ -64,19 +65,18 @@ The contract's six parts (ADR-012 §2):
    reaches a limit SHALL return a limit outcome naming the exhausted limit
    kind (input bytes, nesting depth, node count or work budget), distinct
    from a refusal. A family's `evaluate` hook (stage S6a) SHALL be the only
-   hook that returns `Incomplete` (a meter-budget outcome). `check` and
-   `package` SHALL NOT return `Incomplete`. `check` and `package` SHALL
-   instead return a `Limit` outcome when a limit is what they reached.
+   hook that returns `Incomplete` (a meter-budget outcome). `check` SHALL
+   NOT return `Incomplete`; it SHALL instead return a `Limit` outcome when a
+   limit is what it reached. The S4 v2 emitter SHALL NOT return
+   `Incomplete`.
 6. **Stage hooks.** A family SHALL implement one hook for each stage it
-   participates in (check, package, requirements, and, for every family
-   except `Relation`, evaluate); every hook SHALL take only checked input,
-   and none SHALL take a CST, a token stream or a display string. A
-   family's `package` hook SHALL be all-or-nothing for one item.
-   `package` SHALL emit every v2 node an item requires when it returns
-   success for that item.
-   `package` SHALL emit no v2 node for an item when it returns the
-   refusal for that item.
-   `package` SHALL NOT emit a partial set of v2 nodes for one item.
+   participates in: `check` and `requirements` at S3, and, for every family
+   except `Relation`, `evaluate` at S6a. Every hook SHALL take only checked
+   input, and none SHALL take a CST, a token stream or a display string.
+   A family's packaging is its `check` lowering: `check` lowers each
+   checked item to the nodes of the checked semantic graph (FR-093), and
+   the layer-4 v2 emitter writes every family's nodes through one
+   exhaustive arm per node tag (ADR-013 C-03).
    The layer-6 `replay` facade SHALL reach a family's checked node only
    through that family's `evaluate` hook, widened to accept a replay
    request; the facade SHALL select the node to evaluate by a typed
@@ -123,7 +123,7 @@ a family that sits out the stage SHALL have an explicit arm that returns
 The six parts above SHALL be expressed as one static contract (a fixed set of
 associated types and methods; ADR-012 uses the design names `FamilyContract`
 and `ReferenceEvaluation`) that every family implements exactly once. A
-family's own `check`, `package`, `requirements` and `evaluate` code SHALL be
+family's own `check`, `requirements` and `evaluate` code SHALL be
 the only code that constructs that family's checked node or reads its
 internals; the shared layer SHALL define no family-specific logic.
 
@@ -181,13 +181,16 @@ caller work budget, which `resource_exhausted` is.
 
 ### Packaging is all-or-nothing
 
-A family's `package` hook, given one checked item, SHALL either emit every
-v2 node ADR-012 §2 requires for that item and return success, or emit no v2
-node for that item and return the refusal. A partial emission (some but not
-all of an item's required v2 nodes, with no accompanying refusal) SHALL NOT
-occur; a package reader that later finds a declaration node with no body
-because emission stopped partway is evidence of a defect, not an admitted
-outcome.
+The S4 v2 emitter (`qsl_package::emit_checked`) SHALL write a node only
+when it writes every node that node names: its `dependencies` (FR-093
+"Node dependencies"), its `semantic_type` and its body's type annotations.
+When the emitter omits a node, it SHALL omit every node that names it,
+transitively, each with the cause `NamesOmittedNode` naming the omitted
+node it names, and SHALL write every node that names no omitted node. A
+declaration node names the nodes of its body, so the emitted bytes SHALL
+NOT hold a declaration node without a node its body names. An emission
+that fails after it has read some nodes (an occurrence it cannot place, a
+body it cannot encode) SHALL return its `EmitRefusal` and no bytes.
 
 ### Requirement records of a value function
 
@@ -315,15 +318,15 @@ condition.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-062-AC-1 | The contract exposes exactly the six parts (identity, provenance, checked input, requirements, structured outcome, stage hooks) as one set of associated types and methods that a family implements once. A family implementation that omits the checked-input parameter type on `check`, the `requirements` method, the `package` hook, or the `evaluate` hook (for a family other than `Relation`) fails to compile. Identity and provenance are structural properties of the `Checked` node type and the package's source map, not separate trait items a family can individually omit; they are instead enforced behaviorally by FR-062-AC-2. A correct-looking implementation that instead defines its own free-standing `check`/`package`/`requirements`/`evaluate` functions with no shared associated-type binding does not satisfy this criterion. | Test (TC-160) |
+| FR-062-AC-1 | The contract exposes exactly the six parts (identity, provenance, checked input, requirements, structured outcome, stage hooks) as one set of associated types and methods that a family implements once. Its stage hooks are `check` and `requirements` (`FamilyContract`) and `evaluate` (`ReferenceEvaluation`). A family implementation that omits the checked-input parameter type on `check`, the `requirements` method, or the `evaluate` hook (for a family other than `Relation`) fails to compile. Identity and provenance are structural properties of the `Checked` node type and the package's source map, not separate trait items a family can individually omit; they are instead enforced behaviorally by FR-062-AC-2. A correct-looking implementation that instead defines its own free-standing `check`/`requirements`/`evaluate` functions with no shared associated-type binding does not satisfy this criterion. | Test (TC-160) |
 | FR-062-AC-2 | Given two parsed forms with identical structure checked into the same package, the checker mints one identity for both, and given the same node occurring twice in the source, the source map carries two distinct occurrence keys (identity, role, ordinal) for the one identity. Reordering the two source occurrences changes only their ordinal, never the identity. | Test (TC-160) |
 | FR-062-AC-3 | A family's `check` compiles with no path to global or thread-local state, and a test that mutates only the typing context's meter, diagnostic sink and scope stack observes those mutations reflected in the returned outcome; a test that constructs two typing contexts from the same resolved declarations and checks the same form through each produces identical checked output, showing no hidden shared mutable state. | Test (TC-160) |
 | FR-062-AC-4 | A claim form with no FR-057 capability kind yields no `Requirements` value from the pure requirements function, and each claim with a kind yields exactly one `Requirements` value naming that kind at its checked site: a function declaration whose body is `b and c` over Boolean parameters yields none, and one whose body is `x + y` over `Int[0, 9]` parameters yields exactly one, `value-validity`, at the `+` application. Calling the requirements function twice on the same checked item yields equal values. | Test (TC-160) |
-| FR-062-AC-5 | A `check` that reaches a limit (input bytes, nesting depth, node count or work budget) returns a `Limit` outcome naming that limit kind, and a test asserts the returned value is not a refusal, not a checked node and not `Incomplete`; a family's `evaluate` hook that exhausts its meter budget returns `Incomplete`, and a test asserts neither `check` nor `package` ever returns `Incomplete` across the same fixture set. | Test (TC-160) |
+| FR-062-AC-5 | A `check` that reaches a limit (input bytes, nesting depth, node count or work budget) returns a `Limit` outcome naming that limit kind, and a test asserts the returned value is not a refusal, not a checked node and not `Incomplete`; a family's `evaluate` hook that exhausts its meter budget returns `Incomplete`, and a test asserts that neither `check` nor the S4 v2 emitter (`qsl_package::emit_checked`) returns `Incomplete` across the same fixture set. | Test (TC-160) |
 | FR-062-AC-6 | The `Relation` family has no evaluation hook, and S6a's input type admits no `Relation` node, so a `Relation` node never reaches evaluation and yields neither a panic, a silently omitted call, nor a successful evaluated result (FR-090-AC-4). Every other family's evaluation hook, invoked on a checked node built only from checked input, returns without reading any CST, token or display string (verified by a test double that panics if such an input is touched). | Test (TC-160) |
 | FR-062-AC-7 | Given a fixture nested to depth D (for example, function application nested D levels deep), checking it with the nesting-depth limit configured to D-1 returns a `Limit` outcome naming the nesting-depth limit. Checking the identical fixture with the limit configured to D, one greater and nothing else changed, does not return a nesting-depth `Limit` outcome. A test holds the fixture fixed and varies only the configured limit by exactly one, so the limit value, not the fixture's absolute size or the host's available stack, is shown to be the proximate cause of the refusal; this holds regardless of whether `check` walks the form by native recursion or by an explicit-stack iterative loop. | Test (TC-378) |
 | FR-062-AC-8 | A family `Cause` enum's `catalog_code()` mapping contains no fallback arm; this is verified by FR-063's seam probe reporting `E0004` at that mapping under the `seam-probe` feature (S4), never by inspecting the source for the absence of a `_` arm. | Test (TC-161) |
-| FR-062-AC-9 | Given a checked item requiring more than one v2 node, a fault injected partway through `package`'s emission (after the first node, before the last) yields no v2 bytes for that item and a refusal, never a package containing only the emitted-so-far nodes; a test that reads the v2 bytes after such a fault finds either a complete node set for the item or the item absent entirely, never a declaration node with no body. | Test (TC-160) |
+| FR-062-AC-9 | Given a checked package holding two functions, one of whose body names a node the emitter omits and one that names no omitted node: `emit_checked` omits the first function's declaration node and each node on its path to the omitted node, each with cause `NamesOmittedNode`; it writes the second function and its body; and QSL's I2 read of the bytes reads back Verified and exports the second function and not the first. Given the same package with an occurrence the region conversion cannot place, `emit_package` returns `EmitRefusal::UnlocatedOccurrence` and no bytes. | Test (TC-160) |
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
 | FR-062-AC-11 | The package-wide `CheckingLimits` node budget is separate from the per-declaration `StageLimits::node_count` limit of FR-062-AC-5, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4, 128)` admits a package holding `a` alone; with `CheckingLimits::new(100, 128)` it admits a package holding both; with `CheckingLimits::new(4, 128)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
 | FR-062-AC-12 | A family `check` that reaches one of its four stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the depth the refused entry would reach for nesting depth, the measured preimage byte length for input bytes, the measured expression-node count for node count, and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
@@ -333,8 +336,13 @@ condition.
 
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md) §2
   designs the six-part contract this requirement implements (including the
-  `package` all-or-nothing rule and the replay stage's use of `evaluate`,
-  §8), and §1 the closed `FamilyKind` catalogue whose members implement it.
+  S4 emitter's all-or-nothing rule, "Packaging", and the replay stage's use
+  of `evaluate`, §8), and §1 the closed `FamilyKind` catalogue whose members
+  implement it.
+- [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md) is
+  where a family's checked nodes are lowered to the semantic graph the S4
+  emitter writes (FR-093-CON-2: the layer-4 `package` crate builds no body
+  term and mints no key).
 - [FR-063](FR-063-exhaustive-family-extension-seam-probe.md) is this
   requirement's mechanism for demonstrating FR-062-AC-8; this requirement
   does not re-verify exhaustiveness by inspection.
@@ -364,26 +372,31 @@ the final Rust spelling within this requirement's rules.
 contract narrowed to what its one migrated family (`Value`'s
 function-declaration form) can back with a real, non-fabricated
 construction site: `check`, the checked-input parameter, and the
-stage-limit outcome shape. `requirements` (AC-1's mention, AC-4 entirely)
-and `package` (AC-1's mention, AC-9 entirely) are deleted or never
-implemented, not stubbed -- see `qsl-semantics/src/family/mod.rs`'s and
-`qsl-semantics/src/family/contract.rs`'s own module docs for why each is a
-real deferral rather than an oversight. The `Relation`
+stage-limit outcome shape. `requirements` was deferred and later added by
+QSL-140. `package` was deleted as a hook nothing consumed (PR #262 review,
+F1/F2).
+
+**Packaging decision (QSL-242).** `FamilyContract` has no `package` part;
+S4 has no family hook. ADR-012 §2 "Packaging" records the decision and its
+reasons: `check` lowers every family's checked nodes to the semantic graph
+at S3 (FR-093), the layer-4 emitter builds no term and mints no key
+(FR-093-CON-2), and the layer-3 trait cannot name the layer-4 wire types
+(ADR-011 §6.1). The all-or-nothing rule (AC-9) is the emitter's own
+omission closure. AC-1, AC-5 and AC-9 are amended to match; the decision
+leaves no production-code change, only the tests named in their rows
+below. The `Relation`
 non-native-evaluability case (AC-6's first sentence) is a real, permanent
 design fact rather than a deferral -- `Relation` never gets an evaluation
 hook -- and QSL-152 found it already backed, just untagged for this
 criterion (AC-6's own row below). By Acceptance Criterion, with real trace
 tags as they exist in the delivered code today:
-- FR-062-AC-1: unbacked. The delivered `FamilyContract` has one part,
-  `check`, plus `ReferenceEvaluation::evaluate` -- not the six-part shape
-  this criterion names. `requirements` and `package` are not stubbed onto
-  the trait: `contract.rs`'s own doc records why an unconsumed `package`
-  hook is the same fabricated-surface hazard PR #262 already found and
-  deleted once, but that is a reason the gap is real, not a reason to stop
-  counting it. `requirements` half: owned by QSL-140 (PR #435). `package`
-  half: owned by QSL-242 (filed by QSL-152 to replace the QSL-16/QSL-143
-  references PR #262 had pointed at, both of which explicitly disclaim the
-  work).
+- FR-062-AC-1: unbacked. The code has the amended shape: `FamilyContract`
+  (`qsl-semantics/src/family/contract.rs`) requires `check`, taking
+  `&mut CheckContext`, and `requirements` (QSL-140), and
+  `ReferenceEvaluation` (`qsl-eval/src/value/expression/s6a.rs`) requires
+  `evaluate`. No test carries this criterion's tag: TC-160 step 1's
+  compile-fail cases (one omission each of the checked-input parameter,
+  `requirements` and `evaluate`) do not exist. Remaining work: QSL-283.
 - FR-062-AC-2: backed (`TC-160`, `qsl-semantics/src/check/family.rs`, `checking_tests`).
 - FR-062-AC-3: partly backed (`TC-160`, QSL-161) -- the third clause only
   ("a test that constructs two typing contexts from the same resolved
@@ -413,7 +426,7 @@ tags as they exist in the delivered code today:
   (`qsl-semantics/src/check/claims/tests.rs`) and
   `a_function_declaration_has_no_requirements`
   (`qsl-eval/src/value/expression/family.rs`).
-- FR-062-AC-5: backed at the hook level (`TC-160`, `qsl-eval/src/value/expression/
+- FR-062-AC-5: partly backed, at the hook level (`TC-160`, `qsl-eval/src/value/expression/
   family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`
   (QSL-166), which QSL-153 uses as `ValueFunctionFamily::check`'s and
   `::evaluate`'s real call sites to tag the `Limit` half, implement the
@@ -424,12 +437,10 @@ tags as they exist in the delivered code today:
   two clauses -- a `Limit` outcome naming the right kind, and `evaluate`
   returning `Incomplete` on an exhausted meter -- for the one family
   (`ValueFunctionFamily`) with a `check` hook in #214. The criterion's
-  third clause -- a test asserting neither `check` nor `package` ever
-  returns `Incomplete` across the same fixture set -- is untestable as
-  written: `FamilyContract::package` has no implementation in #214 (see
-  AC-9's own note on why it was deleted rather than wired up
-  speculatively), so there is no `package` outcome to assert anything
-  about. Unbacked. Owner: QSL-242.
+  third clause, as amended by QSL-242 (the S4 v2 emitter in place of a
+  `package` hook), is unbacked: no test runs `check` and `emit_checked`
+  across one fixture set and asserts neither returns `Incomplete`.
+  Remaining work: QSL-283.
 - FR-062-AC-6: partly backed (QSL-152) -- the first sentence only. Stale
   as last written: it said "S6a has no family-kind dispatch yet," which
   QSL-148's `S6aFamilyKind` (`qsl-eval/src/value/expression/s6a.rs`) made no
@@ -513,16 +524,17 @@ tags as they exist in the delivered code today:
   `#[deny(clippy::match_wildcard_for_single_variants)]`, so a future
   fallback arm is caught at normal compile time too, not only under the
   probe. Backed by the `make seam-probe` gate (part of `make ci`).
-- FR-062-AC-9: unbacked. `FamilyContract::package` does not exist -- PR
-  #262 review findings F1/F2 deleted it as a hook with one real caller
-  (`CheckedPackage::emit_function_package_v2`, itself deleted under
-  QSL-248/G2) that wrote into a scratch buffer it never read back, building
-  its actual output independently through `family::emit_v2` instead; see
-  `contract.rs`'s own doc on
-  `FamilyContract` for the fuller reasoning. There is therefore no
-  `package` emission to fault-inject partway through, but that is a reason
-  the gap is real, not a reason to stop counting it. Owner: QSL-242 (filed
-  by QSL-152; see AC-1's own row above).
+- FR-062-AC-9: unbacked (amended by QSL-242 to the emitter's omission
+  closure). The behavior is implemented: `omissions`
+  (`qsl-package/src/emit.rs`) omits every node that names an omitted node,
+  with `OmissionCause::NamesOmittedNode`, and `emit_package` returns an
+  `EmitRefusal` with no bytes when an occurrence cannot be placed. No test
+  carries this criterion's tag. `a_compound_unit_is_omitted_only_for_its_absent_unit`
+  (`qsl-package/src/emit/tests.rs`) builds the two-function fixture but
+  asserts only the compound unit's own cause and that `t` is exported, not
+  that `q` and its path are omitted with `NamesOmittedNode` or that `q` is
+  absent from the read-back exports; `an_unplaced_occurrence_refuses`
+  covers the refusal half under FR-093-AC-9. Remaining work: QSL-283.
 - FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
   `QualifiedName` lookup is implemented (`qsl-eval/src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
@@ -548,12 +560,11 @@ tags as they exist in the delivered code today:
   `tests/it/request_builder.rs` reads RR-5's records through
   `CheckedPackage::graph()`.
 
-Seven of this requirement's thirteen Acceptance Criteria are backed (AC-2,
-AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13); three (AC-3, AC-6, AC-11) are
+Six of this requirement's thirteen Acceptance Criteria are backed (AC-2,
+AC-4, AC-7, AC-8, AC-12 and AC-13); four (AC-3, AC-5, AC-6, AC-11) are
 partly backed, each for the specific clause named in its own row above.
-AC-1, AC-9 and AC-10 are unbacked. AC-1's
-`requirements` half is owned by QSL-140 the same way; its `package` half,
-and AC-9 entirely, are owned by QSL-242, filed to replace the
-QSL-16/QSL-143 references PR #262 had pointed at. AC-10 is unbacked
+AC-1, AC-9 and AC-10 are unbacked. AC-1 and AC-9, as amended by QSL-242,
+describe code that exists; each needs its tagged test, and AC-5's third
+clause needs one too. Remaining work: QSL-283. AC-10 is unbacked
 (untagged): its implementation exists, but no test carries the criterion's
 own trace tag. Owner: QSL-5 / #243.

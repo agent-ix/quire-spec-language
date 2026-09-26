@@ -35,6 +35,25 @@ impl std::fmt::Display for NativeResult {
     }
 }
 
+/// FR-301's severity order over a diagnostic's possible exit codes: tool
+/// failure (30), invalid (20), unsupported (21), incomplete (22); the exit
+/// codes themselves are not ascending-numeric. `Code::exit_code` is the only
+/// source of a code; this only orders codes it can return, and a code outside
+/// that set ranks as most severe rather than being hidden.
+fn exit_severity(code: u8) -> u8 {
+    match code {
+        20 => 1,
+        21 => 2,
+        22 => 3,
+        _ => 0,
+    }
+}
+
+/// The highest-severity exit code among `codes`, or `None` when empty.
+fn combined_exit_code(codes: impl Iterator<Item = u8>) -> Option<u8> {
+    codes.min_by_key(|code| exit_severity(*code))
+}
+
 fn source(value: &FormalSource) -> types::Source<'_> {
     types::Source {
         identity: value.source().identity(),
@@ -454,35 +473,25 @@ pub(super) fn report(
     let (exit_code, outcome) = match report.outcome() {
         ExecutionOutcome::ValidationFailed(failure) => {
             // FR-301's exit ladder is the highest-severity code present
-            // across every retained diagnostic (including the terminal one,
-            // when present): invalid (20) outranks unsupported (21)
-            // outranks incomplete (22). `Code::exit_code()`'s range is
-            // exactly {20, 21, 22} (asserted over `Code::all()` in
-            // tests/native_boundaries.rs), and FR-301's ordering over that
-            // three-code range happens to coincide with ascending numeric
-            // order, so the minimum over `Diagnostic::exit_code` is exactly
-            // the highest-severity code present; a single unsupported
-            // diagnostic never promotes a report that also holds an invalid
-            // one. This is not general — FR-301's full order (tool failure,
-            // invalid, unsupported, incomplete, violation, success) is not
-            // ascending-numeric across 0/10/20/21/22/30, only within the
-            // three codes a diagnostic can actually carry here. ValidationStatus
-            // only carries the wire-schema's binary refused/incomplete
-            // distinction and does not drive the exit code.
+            // across every retained diagnostic (including the terminal one):
+            // tool failure (30), invalid (20), unsupported (21), incomplete
+            // (22). ValidationStatus only carries the wire-schema's binary
+            // refused/incomplete distinction and does not drive the code.
             let status = match failure.status {
                 ValidationStatus::Refused => types::FailureStatus::Refused,
                 ValidationStatus::Incomplete => types::FailureStatus::Incomplete,
             };
-            let code = failure
-                .diagnostics
-                .iter()
-                .chain(failure.terminal.as_deref())
-                .map(|diagnostic| diagnostic.diagnostic.exit_code())
-                .min()
-                .unwrap_or(match failure.status {
-                    ValidationStatus::Incomplete => 22,
-                    ValidationStatus::Refused => 20,
-                });
+            let code = combined_exit_code(
+                failure
+                    .diagnostics
+                    .iter()
+                    .chain(failure.terminal.as_deref())
+                    .map(|diagnostic| diagnostic.diagnostic.exit_code()),
+            )
+            .unwrap_or(match failure.status {
+                ValidationStatus::Incomplete => 22,
+                ValidationStatus::Refused => 20,
+            });
             (
                 code,
                 types::Outcome::Validate {
@@ -887,5 +896,22 @@ mod tests {
                 "location": expected_location,
             })
         );
+    }
+
+    #[trace("TC-470", "FR-096-AC-12")]
+    #[test]
+    fn a_report_combines_exit_codes_by_fr_301_severity() {
+        for (pair, expected) in [
+            ([30, 20], 30),
+            ([30, 21], 30),
+            ([30, 22], 30),
+            ([20, 21], 20),
+            ([21, 22], 21),
+            ([20, 22], 20),
+        ] {
+            assert_eq!(combined_exit_code(pair.into_iter()), Some(expected));
+            assert_eq!(combined_exit_code(pair.into_iter().rev()), Some(expected));
+        }
+        assert_eq!(combined_exit_code(std::iter::empty()), None);
     }
 }

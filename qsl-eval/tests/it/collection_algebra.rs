@@ -9,6 +9,7 @@ use qsl_semantics::value::declaration::{
 };
 use qsl_semantics::value::enumeration::EnumMemberIndex;
 use quire_exact::EffectiveId;
+use quire_exact::FloatType;
 use quire_exact::NodeKey;
 use quire_exact::{
     admit_text, BoundViolation, IeeeWidth, IllTyped, IllTypedCause, Presence, TextPayload,
@@ -332,7 +333,7 @@ fn holder_environment() -> TypeEnvironment {
                 "F",
                 CompositeShape::Record(vec![FieldDeclaration::new(
                     "x",
-                    ValueType::Float(IeeeWidth::Binary32),
+                    ValueType::Float(FloatType::exact(IeeeWidth::Binary32)),
                     Presence::Required,
                 )]),
             ),
@@ -386,7 +387,7 @@ fn c06_reference_holders_are_keyed_and_ieee_elements_are_ineligible() {
     });
     let floats = collection_type(
         CollectionKind::Set,
-        ValueType::Float(IeeeWidth::Binary64),
+        ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
         0,
         2,
     );

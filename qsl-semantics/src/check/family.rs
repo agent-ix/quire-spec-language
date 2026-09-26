@@ -296,12 +296,13 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
             out.write_u64(u64::from(decimal.max_scale()));
             out.write_str(rounding_mode_tag(decimal.rounding()));
         }
-        ValueType::Float(width) => {
+        ValueType::Float(float) => {
             out.write_str("float");
-            out.write_str(match width {
+            out.write_str(match float.width() {
                 IeeeWidth::Binary32 => "binary32",
                 IeeeWidth::Binary64 => "binary64",
             });
+            out.write_str(rounding_mode_tag(float.rounding()));
         }
         ValueType::Quantity(unit) => {
             out.write_str("quantity");

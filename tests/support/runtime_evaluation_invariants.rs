@@ -11,7 +11,7 @@ use qsl_foundation::{Code, Phase};
 use setup::*;
 
 #[test]
-#[trace("TC-069", "FR-008-AC-12", "FR-008-AC-19")]
+#[trace("TC-069", "TC-470", "FR-008-AC-12", "FR-008-AC-19", "FR-096-AC-12")]
 fn private_corruption_cannot_turn_failed_checked_arithmetic_into_a_boolean() {
     let models = [native_rule_model::parts().model()];
     for (expression, corrupt) in [
@@ -50,6 +50,7 @@ fn private_corruption_cannot_turn_failed_checked_arithmetic_into_a_boolean() {
         };
         assert_eq!(diagnostic.phase, Phase::Evaluate);
         assert_eq!(diagnostic.code, Code::RuntimeInvariant);
+        assert_eq!(diagnostic.exit_code(), 30);
         assert!(!diagnostic.is_incomplete());
         assert_eq!(
             diagnostic.source,
