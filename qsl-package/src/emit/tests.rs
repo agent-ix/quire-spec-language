@@ -29,6 +29,8 @@ use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 
 use super::*;
+
+mod golden;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 /// The unit the fixture packages are read from; every occurrence's region is

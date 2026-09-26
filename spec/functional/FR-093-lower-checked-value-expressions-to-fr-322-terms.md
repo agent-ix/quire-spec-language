@@ -762,8 +762,20 @@ vocabulary lacks, a node naming a node the checked graph does not hold
 (a declared unit node, so a compound unit over one), a nominal node whose
 owner the lock does not select, and every node that names an omitted one;
 AC-7 and AC-12 are checked on every node the arm writes, omitted or not.
-AC-13 is unbacked: TC-416 step 7's fixture comparison is not implemented. The `dependencies` rule and
-the fixture comparison are specified under QSL-225. Ownership, decided here: QSL-156 A4b builds
+AC-13 is backed, with one member excluded (QSL-6):
+`conformance_emitted_application_nodes_match_qspec_positive_fixtures`
+(`qsl-package/src/emit/tests/golden.rs`, run by `make conformance`) emits a
+function for each fixture operation a row lowers and compares 13 fixture
+application nodes on the AC's members, and IR's v2 reader admits each emitted
+package. The fixtures' two `quire.op.ieee.float64.add` nodes carry `mode`
+`toward-zero` and `nearest-even`, and QSL admits only the omitted `exact`
+spelling of a float's rounding, so for that identity every member is compared
+except `mode`; the AC's `mode` clause is unmet there until a spec ruling
+either lets Float types carry a rounding mode or takes `float64.add`'s `mode`
+out of the comparison. The fixture identities no row lowers in a function
+body (`ieee.numeric_equal`, `integer.div`, `integer.rem`, `collection.sum.decimal`,
+`model.reaches` and the `model.*` rows AC-3 excludes) are skipped by name. The
+`dependencies` rule is specified under QSL-225. Ownership, decided here: QSL-156 A4b builds
 the lowering and the keys in `check`; QSL-6 S1b serializes the lowered nodes
 and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
 postcondition lowering backs it. Remaining work: #218.

@@ -100,9 +100,11 @@ Step 8 implemented under QSL-255 (`emit/tests.rs` and
 `checked_v2::tests::conformance_dependency_selection_vectors`).
 Step 9 implemented under QSL-260
 (`diagnostics_catalog_matches_the_emitted_reference`).
-Step 7 is not. IR's v2 reader now admits `value`/`parameter` and function
-nodes (IR-280): a function with parameters is emitted with nothing omitted
-and reads back Verified (`a_function_with_parameters_is_written_whole`), as
-does the recursive `f` of step 5 (IR-242,
-`a_recursion_group_holding_an_application_is_written`). The fixture
-comparison under `make conformance` remains.
+Step 7 is implemented under QSL-6 in `qsl-package/src/emit/tests/golden.rs`
+(`conformance_emitted_application_nodes_match_qspec_positive_fixtures`, tagged
+`FR-093-AC-13`, run by `make conformance`): 13 fixture application nodes are
+compared, and IR's v2 reader admits each emitted package. It excludes `mode`
+for `quire.op.ieee.float64.add` (the fixtures carry `toward-zero` and
+`nearest-even`; QSL admits only `exact`) and skips, by name, the fixture
+identities no row lowers in a function body. The `float64.add` `mode` clause
+of FR-093-AC-13 awaits a spec ruling.
