@@ -192,6 +192,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-101
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -487,6 +489,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-097](functional/FR-097-classify-claim-extent-and-write-bounded-requests.md) | FR | Specified and implemented under QSL-140 (ADR-013 §7 S-6, ADR-014 §11): F `bound`, `ClaimExtent`, the O-20 request writer, `explore::Outcome::category()` and the optional kernel bounds -- TC-436 to TC-439 and TC-441 pass locally; TC-440 is partly passed, its IR-283/IR-284 fixtures in an ignored agreement test |
 | [FR-098](functional/FR-098-execute-a-replay-request.md) | FR | Implemented under QSL-5 (ADR-013 TK-01, C-13): `qsl_replay::replay` recompiles through the spine, checks `package_id`, selects by `QualifiedName`, joins by parameter node id and calls S6a -- TC-444 passes locally for AC-1 to AC-5; AC-6 and AC-7 (replay against dependencies, ADR-015 D-4) implemented under QSL-255, TC-444 step 7 passes locally |
 | [FR-099](functional/FR-099-compile-against-supplied-libraries.md) | FR | Implemented under QSL-255 (ADR-015 D-1 to D-5): spine `compile` resolves imports against supplied libraries, compiles each from source, types imported names from the library's checked graph and emits `dependency_reference` -- D-1's spine resolution, D-2, D-3 and D-5 implemented, D-1's CLI `libraries` (FR-027-AC-10) and replay (D-4) suppliers implemented; TC-446 steps 1 to 7 pass locally (AC-5's `g::f(3)` clause amended, QSL-262) |
+| [FR-101](functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md) | FR | Specified under QSL-272: `qsl_eval::simulation` implements QSpec FR-181's canonical successor order, typed state key, pinned `quire.simulation.sampler/v1`, `caller-cancelled` cause and pre-exploration `requires-bound` -- TC-453 to TC-455 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented under QSL-214 and QSL-215: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented under QSL-216, QSL-218 and QSL-222: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (QSL-17, #222) |
