@@ -279,19 +279,24 @@ and the new signatures where this requirement changes them.
 
 ## Status
 
-Specified under QSL-272. Not implemented. Today:
-
-- `explore` keeps the authored successor order
-  (`qsl-eval/src/simulation/explore.rs:192`);
-- the state key is caller-owned bytes;
-- `Trace.initial`, `Step.key` and the frontier hold full key bytes, not
-  digests;
-- `CounterSampler` is the only sampler;
-- `Outcome::Cancelled` carries no cause;
-- no `explore_request`, `sample_request` or `NotSimulated` exists, and
-  `explore`, `sample`, `Sampler` and `CounterSampler` are `pub`;
-- `qsl-eval/tests/it/finite_simulation.rs` still carries QSpec's `TC-210`
-  and `FR-181-AC-*` tags.
+Implemented under QSL-272. `qsl-eval::simulation` exposes `explore_request`
+and `sample_request` as its only public entries; `explore`, `sample` and
+`Sampler` are `pub(crate)`. Exploration orders successors by ascending JCS
+transition-identity bytes, tie-broken by ascending post-state key bytes, and
+admits initial states in ascending state-key byte order. The state key is
+the JCS encoding of a `TransitionSystem`-supplied typed view, through
+`quire-canonical`; `Trace.initial`, `Step.key` and every `Frontier` entry
+hold `DigestRecord`s under `quire.simulation.state-key/v1`, and replay
+compares recomputed digests. Sampling runs the pinned
+`quire.simulation.sampler/v1` `1-draft.1` generator; `CounterSampler` is
+deleted. `Outcome::Cancelled` carries `cause: CatalogCode::new("cancelled",
+"caller-cancelled")`. `explore_request` and `sample_request` classify
+`domains` before calling any `TransitionSystem` method, returning
+`NotSimulated::RequiresBound`, `NotSimulated::Extent`,
+`NotSimulated::GeneratorMismatch` or `NotSimulated::EmptyInitial` as this
+requirement specifies. `qsl-eval/tests/it/finite_simulation.rs` traces to
+FR-101, TC-453, TC-454 and TC-455, and carries none of QSpec's `TC-210` or
+`FR-181-AC-*` tags.
 
 The ACs use no EARS keyword. They state behaviour declaratively, as FR-097
 does, and each names its oracle (SR-642 FND-002, no change).
