@@ -390,13 +390,17 @@ design fact rather than a deferral -- `Relation` never gets an evaluation
 hook -- and QSL-152 found it already backed, just untagged for this
 criterion (AC-6's own row below). By Acceptance Criterion, with real trace
 tags as they exist in the delivered code today:
-- FR-062-AC-1: unbacked. The code has the amended shape: `FamilyContract`
+- FR-062-AC-1: partly backed (`TC-160` step 1, QSL-283). `FamilyContract`
   (`qsl-semantics/src/family/contract.rs`) requires `check`, taking
   `&mut CheckContext`, and `requirements` (QSL-140), and
   `ReferenceEvaluation` (`qsl-eval/src/value/expression/s6a.rs`) requires
-  `evaluate`. No test carries this criterion's tag: TC-160 step 1's
-  compile-fail cases (one omission each of the checked-input parameter,
-  `requirements` and `evaluate`) do not exist. Remaining work: QSL-283.
+  `evaluate`. Two of step 1's three compile-fail cases are `compile_fail`
+  doctests on `FamilyContract`, beside a complete implementation that
+  compiles: omitting `requirements` (`E0046`) and omitting the
+  checked-input parameter of `check` (`E0050`). The third, omitting
+  `evaluate`, is not backed: `ReferenceEvaluation` is `pub(crate)` in
+  `qsl-eval`, so no doctest or external test can name it. Remaining work:
+  QSL-283 (a decision on how that case is reached).
 - FR-062-AC-2: backed (`TC-160`, `qsl-semantics/src/check/family.rs`, `checking_tests`).
 - FR-062-AC-3: backed (`TC-160`, QSL-161, QSL-246) for the declarations in
   `qsl-semantics/src/check` and `qsl-semantics/src/family`, all three
@@ -440,7 +444,7 @@ tags as they exist in the delivered code today:
   (`qsl-semantics/src/check/claims/tests.rs`) and
   `a_function_declaration_has_no_requirements`
   (`qsl-eval/src/value/expression/family.rs`).
-- FR-062-AC-5: partly backed, at the hook level (`TC-160`, `qsl-eval/src/value/expression/
+- FR-062-AC-5: backed (`TC-160`, QSL-153, QSL-283; hook level: `qsl-eval/src/value/expression/
   family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`
   (QSL-166), which QSL-153 uses as `ValueFunctionFamily::check`'s and
   `::evaluate`'s real call sites to tag the `Limit` half, implement the
@@ -450,11 +454,17 @@ tags as they exist in the delivered code today:
   field's real producer and consumer). This backs the criterion's first
   two clauses -- a `Limit` outcome naming the right kind, and `evaluate`
   returning `Incomplete` on an exhausted meter -- for the one family
-  (`ValueFunctionFamily`) with a `check` hook in #214. The criterion's
-  third clause, as amended by QSL-242 (the S4 v2 emitter in place of a
-  `package` hook), is unbacked: no test runs `check` and `emit_checked`
-  across one fixture set and asserts neither returns `Incomplete`.
-  Remaining work: QSL-283.
+  (`ValueFunctionFamily`) with a `check` hook in #214. The third
+  clause, as amended by QSL-242 (the S4 v2 emitter in place of a `package`
+  hook), is backed by QSL-283: `check_never_returns_incomplete_across_the_fixture_set`
+  (`qsl-semantics/src/check/family.rs`, `checking_tests`; an admitted, a
+  refused and one limit-reaching declaration per stage-entry limit,
+  including the work-budget denial that makes `evaluate` return
+  `Incomplete`) and `emit_checked_never_returns_incomplete_across_the_fixture_set`
+  (`qsl-package/src/emit/tests.rs`). Each classifies the outcome with an
+  exhaustive `match` over `StageFailure` / `EmitRefusal` (no wildcard arm), so
+  a new `Incomplete` variant stops the test compiling, and asserts the exact
+  classification per fixture.
 - FR-062-AC-6: backed (QSL-152, QSL-246).
   - First sentence (a `Relation` never reaches evaluation) is FR-090-AC-4
     verbatim, so the tests that back FR-090-AC-4 back it:
@@ -549,17 +559,22 @@ tags as they exist in the delivered code today:
   `#[deny(clippy::match_wildcard_for_single_variants)]`, so a future
   fallback arm is caught at normal compile time too, not only under the
   probe. Backed by the `make seam-probe` gate (part of `make ci`).
-- FR-062-AC-9: unbacked (amended by QSL-242 to the emitter's omission
-  closure). The behavior is implemented: `omissions`
-  (`qsl-package/src/emit.rs`) omits every node that names an omitted node,
-  with `OmissionCause::NamesOmittedNode`, and `emit_package` returns an
-  `EmitRefusal` with no bytes when an occurrence cannot be placed. No test
-  carries this criterion's tag. `a_compound_unit_is_omitted_only_for_its_absent_unit`
-  (`qsl-package/src/emit/tests.rs`) builds the two-function fixture but
-  asserts only the compound unit's own cause and that `t` is exported, not
-  that `q` and its path are omitted with `NamesOmittedNode` or that `q` is
-  absent from the read-back exports; `an_unplaced_occurrence_refuses`
-  covers the refusal half under FR-093-AC-9. Remaining work: QSL-283.
+- FR-062-AC-9: backed (`TC-160` step 8, QSL-283; amended by QSL-242 to the
+  emitter's omission closure). `omissions` (`qsl-package/src/emit.rs`) omits
+  every node that names an omitted node, with
+  `OmissionCause::NamesOmittedNode`, and `emit_package` returns an
+  `EmitRefusal` with no bytes when an occurrence cannot be placed.
+  `a_compound_unit_is_omitted_only_for_its_absent_unit`
+  (`qsl-package/src/emit/tests.rs`) asserts the exact omitted set of the
+  `q`/`t` fixture (the compound unit and the parameter for their absent
+  `metre`, `q`'s two applications and `q` itself with `NamesOmittedNode`),
+  that none of `t`'s nodes is omitted, and that the I2 read is Verified and
+  exports `t` and not `q`;
+  `the_q_and_t_package_with_an_unplaced_occurrence_refuses` refuses the same
+  package with `EmitRefusal::UnlocatedOccurrence` when the conversion places
+  nothing; `an_unplaced_occurrence_refuses` covers the refusal half under
+  FR-093-AC-9. The fixture's omission relies on lowering not building the
+  `metre` unit node.
 - FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
   `QualifiedName` lookup is implemented (`qsl-eval/src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
@@ -585,11 +600,8 @@ tags as they exist in the delivered code today:
   `tests/it/request_builder.rs` reads RR-5's records through
   `CheckedPackage::graph()`.
 
-Eight of this requirement's thirteen Acceptance Criteria are backed (AC-2,
-AC-3, AC-4, AC-6, AC-7, AC-8, AC-12 and AC-13); two (AC-5, AC-11) are
-partly backed, each for the specific clause named in its own row above.
-AC-1, AC-9 and AC-10 are unbacked. AC-1 and AC-9, as amended by QSL-242,
-describe code that exists; each needs its tagged test, and AC-5's third
-clause needs one too. Remaining work: QSL-283. AC-10 is unbacked
-(untagged): its implementation exists, but no test carries the criterion's
-own trace tag. Owner: QSL-5 / #243.
+Ten of this requirement's thirteen Acceptance Criteria are backed (AC-2,
+AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-12 and AC-13); two (AC-1, AC-11)
+are partly backed, each for the specific clause named in its own row above.
+AC-10 is unbacked (untagged): its implementation exists, but no test carries
+the criterion's own trace tag. Owner: QSL-5 / #243.
