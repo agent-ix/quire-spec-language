@@ -140,12 +140,13 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
     type Key = NodeKey;
 
     /// Reads only `checked` (a bare identity) and `env`'s
-    /// checked package/object environment; this hook's own body touches no
-    /// CST, token or display string, though `env.package` is a
+    /// checked package/object environment. `env.package` is a
     /// `&CheckedPackage`, which exposes string-shaped accessors this hook
-    /// simply does not call -- so this is a description of what the code
-    /// does today, not a type-level guarantee (FR-062-AC-6's second
-    /// sentence stays unbacked; see FR-062's own Status).
+    /// does not call; that is held by tests, not the type
+    /// (FR-062-AC-6's second sentence: `tests/it/evaluate_reads_no_display_strings.rs`
+    /// scans this hook and the evaluator for rendering and those accessors,
+    /// and `qsl-eval/tests/it/evaluation_ignores_display_strings.rs` renames
+    /// every declared name).
     /// `meter` (the shared kernel meter every family's `evaluate`
     /// takes) is charged one `ChargePoint::FunctionCall` -- "one checked
     /// function call"'s own documented meaning, matching what this hook is

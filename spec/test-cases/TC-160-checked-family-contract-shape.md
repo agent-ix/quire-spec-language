@@ -72,9 +72,14 @@ FR-057-AC-10's value-function row.
    places no occurrence. The fixture's omission relies on lowering not
    building the `metre` unit node; when lowering builds it, this step
    switches to another form the emitter omits.
-9. Instrument every family's evaluation hook with a test double that
-   panics if a CST, token or display string is touched, then invoke each on
-   a checked node.
+9. Check every family's evaluation hook for display-string reads. A
+   "display string" is rendered text (`Display` or `Debug` output,
+   diagnostic text, source spelling); a declared name carried on a checked
+   node is checked input. (a) Scan the shipped dependencies and the
+   evaluator's source for a path to source text or a call that renders text
+   or reads a string-shaped accessor of the checked package. (b) Rename
+   every declared name in one package and evaluate it before and after,
+   completed and meter-stopped.
 10. Check each unit RR-1 to RR-17 of FR-062 "Requirement records of a
     value function" and read `CheckedGraph::requirements`, and for RR-5
     also `CheckedPackage::graph().requirements()`. Check RR-5 a second
@@ -118,8 +123,10 @@ FR-057-AC-10's value-function row.
   omitted with `NamesOmittedNode`; `t` and its body are written; the I2
   read is Verified and exports `t` and not `q`. The second emission returns
   `EmitRefusal::UnlocatedOccurrence` and no bytes.
-- Step 9: every family's evaluation hook completes without the test double
-  panicking, showing no CST, token or display string was read.
+- Step 9: (a) the scan finds no such path or call, and flags each forbidden
+  form in a synthetic violating source; (b) the outcome, loss count and
+  metered work are unchanged by the renaming, showing no display string was
+  read to decide the result.
 - Step 10: each unit's map holds exactly the records FR-062's fixture
   table lists for it and no other. Every record is `value-validity` and
   keyed by its application node's `expression` occurrence at its own site,
