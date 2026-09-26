@@ -4,9 +4,12 @@
 
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::selection::DefinitionRef;
+use qsl_foundation::{CatalogCode, CatalogCoded};
 use qsl_semantics::family::{classify_extent, ClaimExtent, ClassifyFailure, UnboundedDomains};
 use qsl_semantics::value::declaration::TypeEnvironment;
 use quire_exact::ValueType;
+
+use crate::simulation::key::EncodingRefusal;
 
 /// Every unbounded domain a `requires-bound` request named, by key, with its
 /// kind (ADR-014 §4).
@@ -41,6 +44,36 @@ pub enum NotSimulated {
     /// `explore_request` never returns this.
     #[error("the system has no initial state to sample from")]
     EmptyInitial,
+    /// A `TransitionSystem::Key` or `TransitionId` reached during the walk
+    /// has no RFC 8785 encoding (FR-101-AC-11). Unlike the other variants,
+    /// this can happen after some of the walk has already run: the engine
+    /// stops at the first state or successor that fails to encode.
+    #[error(transparent)]
+    KeyEncoding(#[from] EncodingRefusal),
+}
+
+impl CatalogCoded for NotSimulated {
+    /// `GeneratorMismatch` is `invalid_runtime_input`/`invalid-value`
+    /// (FR-101 Behavior). `RequiresBound`, `EmptyInitial` and `KeyEncoding`
+    /// are the same code: each is a defect in the shape of the request or
+    /// the `TransitionSystem` handed to it, the same category TR-2 gives a
+    /// malformed runtime request (ADR-014 TR-2). `Extent` delegates to
+    /// whichever of `classify_extent`'s own two failure types stopped it --
+    /// `LimitExceeded`'s own `stage_limit_exceeded`/`<kind>-exceeded`, or
+    /// `InternalFault`'s own `runtime_invariant`/`established-invariant-
+    /// broken` -- rather than inventing a third code for `Extent` itself.
+    fn catalog_code(&self) -> CatalogCode {
+        match self {
+            Self::RequiresBound(_) | Self::EmptyInitial | Self::KeyEncoding(_) => {
+                CatalogCode::new("invalid_runtime_input", "invalid-value")
+            }
+            Self::Extent(ClassifyFailure::Limit(exceeded)) => exceeded.catalog_code(),
+            Self::Extent(ClassifyFailure::Fault(fault)) => fault.catalog_code(),
+            Self::GeneratorMismatch { .. } => {
+                CatalogCode::new("invalid_runtime_input", "invalid-value")
+            }
+        }
+    }
 }
 
 /// Classify `domains`' extent (ADR-014 §4) before any `TransitionSystem`

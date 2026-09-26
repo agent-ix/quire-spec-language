@@ -11,7 +11,7 @@ use quire_exact::ValueType;
 use serde::Serialize;
 
 use crate::simulation::explore::TransitionSystem;
-use crate::simulation::key::plain_digest;
+use crate::simulation::key::{plain_digest, EncodingRefusal};
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::order::{ordered_successors, sorted_initial};
 use crate::simulation::trace::{SampleProvenance, Step, StopReason, Trace};
@@ -34,7 +34,7 @@ pub(crate) trait Sampler {
 
 /// An unsigned 256-bit integer, big-endian limbs, wide enough to hold one
 /// SHA-256 digest read as a number (FR-101's `v`).
-#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 struct U256([u64; 4]);
 
 impl U256 {
@@ -171,21 +171,27 @@ impl Sampler for PinnedSampler {
 /// start), stopping after `max_steps` transitions or at the first state
 /// with no successors, whichever comes first.
 ///
-/// Returns `None` when `system.initial()` returns no states.
+/// Returns `Ok(None)` when `system.initial()` returns no states.
+///
+/// # Errors
+///
+/// [`EncodingRefusal`] when a state or transition identity reached during
+/// the run has no RFC 8785 encoding.
 pub(crate) fn sample<S: TransitionSystem>(
     system: &S,
     sampler: DefinitionRef,
     seed: u64,
     trace_index: u64,
     max_steps: usize,
-) -> Option<Trace<S::TransitionId>> {
-    let initial = sorted_initial(system);
+) -> Result<Option<Trace<S::TransitionId>>, EncodingRefusal> {
+    let mut initial = sorted_initial(system)?;
     if initial.is_empty() {
-        return None;
+        return Ok(None);
     }
     let m = initial.len() as u64;
     let start = (trace_index % m) as usize;
-    let chosen = initial.into_iter().nth(start)?;
+    // `start < m == initial.len()`, so `swap_remove` never panics.
+    let chosen = initial.swap_remove(start);
     let mut current = chosen.state;
     let initial_digest = chosen.digest;
 
@@ -193,17 +199,16 @@ pub(crate) fn sample<S: TransitionSystem>(
     let mut steps = Vec::new();
     let mut stopped = StopReason::StepLimit;
     for _ in 0..max_steps {
-        let successors = ordered_successors(system, &current);
+        let mut successors = ordered_successors(system, &current)?;
         if successors.is_empty() {
             stopped = StopReason::NoSuccessors;
             break;
         }
         let n = successors.len();
+        // `next_index(n)` always returns an index `< n` (its own contract),
+        // so `swap_remove` never panics: no fallback branch is needed.
         let index = generator.next_index(n);
-        let Some(chosen) = successors.into_iter().nth(index) else {
-            // `index < n`, by `Sampler::next_index`'s own contract.
-            unreachable!("sampler drew an index within 0..n");
-        };
+        let chosen = successors.swap_remove(index);
         current = chosen.state;
         steps.push(Step {
             transition: chosen.transition,
@@ -211,7 +216,7 @@ pub(crate) fn sample<S: TransitionSystem>(
         });
     }
 
-    Some(Trace {
+    Ok(Some(Trace {
         initial: initial_digest,
         steps,
         provenance: Some(SampleProvenance {
@@ -220,7 +225,7 @@ pub(crate) fn sample<S: TransitionSystem>(
             sampler,
             stopped,
         }),
-    })
+    }))
 }
 
 /// Sample `system`, first refusing a `sampler` other than the pinned
@@ -236,7 +241,9 @@ pub(crate) fn sample<S: TransitionSystem>(
 /// [`NotSimulated::GeneratorMismatch`] when `sampler`'s identity or version
 /// is not the pinned generator's; [`NotSimulated::RequiresBound`] or
 /// [`NotSimulated::Extent`] as `explore_request`; [`NotSimulated::EmptyInitial`]
-/// when `system.initial()` returns no states.
+/// when `system.initial()` returns no states; [`NotSimulated::KeyEncoding`]
+/// when a state or transition identity reached during the run has no RFC
+/// 8785 encoding.
 #[allow(
     clippy::too_many_arguments,
     reason = "FR-101 pins this exact signature; the parameters are the request's own fields, not an accretion of unrelated flags"
@@ -257,7 +264,7 @@ pub fn sample_request<S: TransitionSystem>(
         });
     }
     check_requires_bound(domains, types, position_limit)?;
-    sample(system, sampler.clone(), seed, trace, max_steps).ok_or(NotSimulated::EmptyInitial)
+    sample(system, sampler.clone(), seed, trace, max_steps)?.ok_or(NotSimulated::EmptyInitial)
 }
 
 #[cfg(test)]
@@ -308,5 +315,50 @@ mod tests {
         // not merely never incremented.
         sampler.next_index(5);
         assert!(sampler.digests_computed() > 0);
+    }
+
+    /// SR-672 FND-005: `n = 3` and `n = 5` alone cannot tell a big-endian
+    /// reading of the draw digest from a little-endian one, because
+    /// `256 ≡ 1 (mod 3)` and `256 ≡ 1 (mod 5)` make `v mod n` invariant
+    /// under byte reversal for those two moduli specifically. `n = 2` and
+    /// `n = 7` do not share that property, and a little-endian reading
+    /// gives a different sequence at each (recomputed independently in
+    /// Python with `hashlib`): seed 424242, trace 0, `n = 2` is
+    /// `0, 0, 0, 0, 1`, and `n = 7` is `0, 2, 6, 2, 4`.
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn tc_454_n2_and_n7_vectors_distinguish_byte_order() {
+        let mut two = PinnedSampler::new(424_242, 0);
+        let indices: Vec<usize> = (0..5).map(|_| two.next_index(2)).collect();
+        assert_eq!(indices, vec![0, 0, 0, 0, 1]);
+
+        let mut seven = PinnedSampler::new(424_242, 0);
+        let indices: Vec<usize> = (0..5).map(|_| seven.next_index(7)).collect();
+        assert_eq!(indices, vec![0, 2, 6, 2, 4]);
+    }
+
+    /// SR-672 FND-005: `divmod_u64` and `mul_u64` on synthetic values whose
+    /// quotient and remainder are trivial to check by hand: `100 / 7 == 14`
+    /// remainder `2`, and `14 * 7 == 98`. `U256([0, 0, 0, n])` is exactly
+    /// the small value `n`, since limb 0 is most significant
+    /// (`from_be_bytes`'s own convention) and limb 3 least.
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn u256_divmod_and_mul_on_a_synthetic_value() {
+        let v = U256([0, 0, 0, 100]);
+        let (quotient, remainder) = v.divmod_u64(7);
+        assert_eq!(quotient, U256([0, 0, 0, 14]));
+        assert_eq!(remainder, 2);
+        assert_eq!(quotient.mul_u64(7), U256([0, 0, 0, 98]));
+
+        // The acceptance-threshold boundary `next_index` itself tests:
+        // `98` is an exact multiple of 7 (the least value the sampler
+        // would reject at `n = 7`, since `v < quotient * n` is the
+        // acceptance test and `98 == quotient * n`), while `97`, one less,
+        // divides with a nonzero remainder and would be accepted.
+        let (_, boundary_remainder) = U256([0, 0, 0, 98]).divmod_u64(7);
+        assert_eq!(boundary_remainder, 0);
+        let (_, below_boundary_remainder) = U256([0, 0, 0, 97]).divmod_u64(7);
+        assert_eq!(below_boundary_remainder, 6);
     }
 }

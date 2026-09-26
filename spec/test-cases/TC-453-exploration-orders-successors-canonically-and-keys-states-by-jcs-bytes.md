@@ -11,7 +11,8 @@ relationships:
 ## Description
 
 Verify the canonical successor order, the order and coalescing of initial
-states, and the state key. Scope: FR-101-AC-1, FR-101-AC-2 and FR-101-AC-9.
+states, and the state key. Scope: FR-101-AC-1, FR-101-AC-2, FR-101-AC-9 and
+FR-101-AC-11.
 
 Every fixture fixes its post-state keys against the order under test, so a
 rule that sorts by post-state key, or re-sorts a level, gives a different
@@ -47,6 +48,8 @@ public entries; `explore` is `pub(crate)` (FR-101).
 8. Call `explore_request` with an empty `domains` set, `max_states` 2, on a system that lists four distinct initial
    states a < b < c < d (by key) in the order d, b, a, c; then with
    `max_states` 0; then on a system with no initial state.
+9. Call `explore_request` and `sample_request` on a system whose one state's key is a bare `u64` above `2^53`, and
+   call `replay` on that same system with a trace of any shape.
 
 ## Expected Results
 
@@ -71,11 +74,14 @@ public entries; `explore` is `pub(crate)` (FR-101).
   d (admitted a, b; refused c; then d), as digests; with `max_states` 0,
   `Bounded` at `Limit::States` with 0 states and frontier a, b, c, d; with
   no initial state, `Exhaustive` with zero states, transitions and depth.
+- Step 9: `explore_request` and `sample_request` refuse
+  `NotSimulated::KeyEncoding`, and `replay` refuses `ReplayError::KeyEncoding`,
+  instead of aborting the process.
 
 Tag each test `#[trace("TC-453", "FR-101-AC-n")]` with its AC.
 
 ## Status
 
-🚧 Planned (QSL-272). FR-101's "Existing test disposition" table maps each
-existing test to its step here; `canonical_order_is_the_systems_authored_successor_order`
-asserts the opposite of step 1 and is replaced.
+✅ Implemented (QSL-272). FR-101's "Existing test disposition" table maps
+each existing test to its step here. Step 9 (FR-101-AC-11) was added in the
+QSL-272 review round (SR-672 FND-002, SR-673 FND-002).

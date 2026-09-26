@@ -107,6 +107,9 @@ pub enum NotSimulated {
     GeneratorMismatch { supplied: DefinitionRef },
     /// `system.initial()` returned no state to sample from.
     EmptyInitial,
+    /// A state or transition identity reached during the walk has no RFC
+    /// 8785 encoding under `quire-canonical`.
+    KeyEncoding(EncodingRefusal),
 }
 
 pub struct RequiresBound {
@@ -114,6 +117,12 @@ pub struct RequiresBound {
     /// (`qsl_semantics::family::UnboundedDomains`).
     pub domains: UnboundedDomains,
 }
+
+/// A `TransitionSystem::Key` or `TransitionId` has no RFC 8785 encoding: for
+/// example an integer outside the exact-double range (`2^53`), a
+/// non-finite float, a non-string map key, or nesting past
+/// `quire_canonical::Limits::MAX_DEPTH`.
+pub struct EncodingRefusal(String);
 ```
 
 `explore_request` and `sample_request` are the only public entries that
@@ -124,8 +133,21 @@ Integration tests in `qsl-eval/tests/it/` call the two entries with a
 bounded or empty `domains` set; a check that needs draw internals is an
 in-crate unit test.
 
-`explore_request` never returns `GeneratorMismatch` or `EmptyInitial`.
-`GeneratorMismatch` maps to `invalid_runtime_input`/`invalid-value`.
+`explore_request` never returns `GeneratorMismatch` or `EmptyInitial`. Any
+entry, including `replay` (`ReplayError::KeyEncoding`), can refuse a state or
+transition identity reached mid-walk that has no RFC 8785 encoding: a
+`TransitionSystem` is a public trait, and its `Key` and `TransitionId` are
+implementer-supplied, not engine-built, so an encoding failure is a caller
+defect the engine refuses rather than a broken internal invariant.
+
+`NotSimulated` implements `CatalogCoded`. `GeneratorMismatch` maps to
+`invalid_runtime_input`/`invalid-value`; `RequiresBound`, `EmptyInitial` and
+`KeyEncoding` share that code, the same category ADR-014 TR-2 gives a
+malformed runtime request. `Extent` delegates to whichever of
+`classify_extent`'s own two failure types stopped it: `LimitExceeded`'s own
+`stage_limit_exceeded`/`<kind>-exceeded`, or `InternalFault`'s own
+`runtime_invariant`/`established-invariant-broken`. No code is invented for
+`NotSimulated` itself.
 
 **Canonical order.** The engine orders successors itself. It does not keep
 the order a `TransitionSystem` lists them in. Breadth-first exploration
@@ -225,6 +247,7 @@ disposition of each existing test is in the table below.
 | FR-101-AC-8 | `explore_request` or `sample_request` over `domains` that include an unbounded domain under the ADR-014 §4 extent rule returns `NotSimulated::RequiresBound` naming each unbounded domain's key and kind, calls no `TransitionSystem` method, and returns no `Outcome`. A `classify_extent` stage limit returns `NotSimulated::Extent`. The same request with every domain bounded explores. Raising exploration `Limits` does not change a `RequiresBound` result. | Test (TC-455) |
 | FR-101-AC-9 | Initial states are admitted in ascending state-key byte order, and equal keys coalesce into one state. A `max_states` cap reached during admission returns `Bounded` at `Limit::States` with frontier: admitted, then refused, then the rest, in canonical order; `max_states` 0 admits none and puts every initial state in the frontier. Exploring a system with no initial state returns `Exhaustive` with zero stats. | Test (TC-453) |
 | FR-101-AC-10 | `sample_request` refuses before any draw with `NotSimulated::GeneratorMismatch` when the supplied `DefinitionRef`'s identity is not `quire.simulation.sampler/v1` or its version is not `1-draft.1`, and with `NotSimulated::EmptyInitial` when the system has no initial state. A run that reaches `max_steps` stops with `StopReason::StepLimit`, whether or not the current state has successors. | Test (TC-454) |
+| FR-101-AC-11 | A `TransitionSystem::Key` or `TransitionId` with no RFC 8785 encoding -- for example a `u64` above `2^53` -- refuses `NotSimulated::KeyEncoding` from `explore_request` and `sample_request`, and `ReplayError::KeyEncoding` from `replay`, instead of aborting the process. `GeneratorMismatch`'s catalog code is `invalid_runtime_input`/`invalid-value`. | Test (TC-453) |
 
 ## Existing test disposition
 
@@ -290,13 +313,30 @@ hold `DigestRecord`s under `quire.simulation.state-key/v1`, and replay
 compares recomputed digests. Sampling runs the pinned
 `quire.simulation.sampler/v1` `1-draft.1` generator; `CounterSampler` is
 deleted. `Outcome::Cancelled` carries `cause: CatalogCode::new("cancelled",
-"caller-cancelled")`. `explore_request` and `sample_request` classify
-`domains` before calling any `TransitionSystem` method, returning
-`NotSimulated::RequiresBound`, `NotSimulated::Extent`,
-`NotSimulated::GeneratorMismatch` or `NotSimulated::EmptyInitial` as this
-requirement specifies. `qsl-eval/tests/it/finite_simulation.rs` traces to
-FR-101, TC-453, TC-454 and TC-455, and carries none of QSpec's `TC-210` or
-`FR-181-AC-*` tags.
+"caller-cancelled")`, asserted literally by both cancellation tests.
+`explore_request` and `sample_request` classify `domains` before calling any
+`TransitionSystem` method, returning `NotSimulated::RequiresBound`,
+`NotSimulated::Extent`, `NotSimulated::GeneratorMismatch` or
+`NotSimulated::EmptyInitial` as this requirement specifies.
+`NotSimulated::KeyEncoding` and `ReplayError::KeyEncoding` (FR-101-AC-11)
+refuse a `TransitionSystem::Key` or `TransitionId` with no RFC 8785 encoding
+instead of panicking. `NotSimulated` implements `CatalogCoded`.
+`qsl-eval/tests/it/finite_simulation.rs` traces to FR-101, TC-453, TC-454
+and TC-455, and carries none of QSpec's `TC-210` or `FR-181-AC-*` tags.
+
+Review round (SR-672, SR-673): fixed in this PR. `Outcome::Cancelled`
+gained its `cause` field (SR-672/SR-673 FND-001); `NotSimulated` gained
+`CatalogCoded` and `KeyEncoding` (SR-672 FND-002, SR-673 FND-002, this
+requirement's AC-11); the duplicate-transition replay test and TC-453
+step 1's fixture were fixed to discriminate what they claim to test (SR-672
+FND-003, FND-004); the sampler gained `n = 2`/`n = 7` byte-order vectors and
+a `U256` arithmetic unit test (SR-672 FND-005); `state_key` hashes its
+already-produced bytes once (SR-672 FND-006); the sampler's successor draw
+no longer has an `unreachable!` path (SR-672 FND-007); replay reports
+`KeyMismatch.actual` in canonical order (SR-672 FND-008); TC-455 step 4 and
+TC-453 step 4 are now tested as written, and AC-4's provenance is asserted
+literally with a replay (SR-673 FND-003 to FND-005); the FIFO-order test is
+retagged to AC-1 (SR-673 FND-006).
 
 The ACs use no EARS keyword. They state behaviour declaratively, as FR-097
 does, and each names its oracle (SR-642 FND-002, no change).

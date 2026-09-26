@@ -6,12 +6,13 @@ use std::collections::{HashSet, VecDeque};
 
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::CatalogCode;
 use qsl_semantics::value::declaration::TypeEnvironment;
 use quire_exact::ValueType;
 use serde::Serialize;
 
 use crate::simulation::frontier::{Frontier, Limit};
-use crate::simulation::key::StateKey;
+use crate::simulation::key::{EncodingRefusal, StateKey};
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::order::{ordered_successors, sorted_initial};
 
@@ -93,8 +94,14 @@ pub enum Outcome {
         /// The unexpanded state-key digests, in the order the run would
         /// have expanded them next.
         frontier: Frontier,
+        /// Always `CatalogCode::new("cancelled", "caller-cancelled")`
+        /// (FR-101, ADR-014 TR-7).
+        cause: CatalogCode,
     },
 }
+
+/// `Outcome::Cancelled`'s one cause (FR-101).
+const CANCELLED_CAUSE: CatalogCode = CatalogCode::new("cancelled", "caller-cancelled");
 
 impl Outcome {
     /// The ADR-013 O-16 category of this run (ADR-014 §7): `Exhaustive` is
@@ -131,15 +138,20 @@ fn frontier_of<S>(head: DigestRecord, queue: &VecDeque<Queued<S>>) -> Frontier {
 ///
 /// `explore_request` is the public entry that calls this; a caller reaches
 /// `explore` only through it, so the requires-bound check always runs first.
+///
+/// # Errors
+///
+/// [`EncodingRefusal`] when a state or transition identity reached during
+/// the walk has no RFC 8785 encoding.
 pub(crate) fn explore<S: TransitionSystem>(
     system: &S,
     limits: Limits,
     mut poll: impl FnMut() -> bool,
-) -> Outcome {
-    let initial = sorted_initial(system);
+) -> Result<Outcome, EncodingRefusal> {
+    let initial = sorted_initial(system)?;
     if initial.len() > limits.max_states {
         let frontier: Frontier = initial.iter().map(|item| item.digest).collect();
-        return Outcome::Bounded {
+        return Ok(Outcome::Bounded {
             stats: Stats {
                 states: limits.max_states,
                 transitions: 0,
@@ -147,7 +159,7 @@ pub(crate) fn explore<S: TransitionSystem>(
             },
             frontier,
             limit: Limit::States,
-        };
+        });
     }
 
     let mut visited: HashSet<StateKey> = initial.iter().map(|item| item.key.clone()).collect();
@@ -170,17 +182,18 @@ pub(crate) fn explore<S: TransitionSystem>(
     }) = queue.pop_front()
     {
         if poll() {
-            return Outcome::Cancelled {
+            return Ok(Outcome::Cancelled {
                 stats: Stats {
                     states,
                     transitions,
                     depth: depth_reached,
                 },
                 frontier: frontier_of(digest, &queue),
-            };
+                cause: CANCELLED_CAUSE,
+            });
         }
         if depth >= limits.max_depth {
-            return Outcome::Bounded {
+            return Ok(Outcome::Bounded {
                 stats: Stats {
                     states,
                     transitions,
@@ -188,11 +201,11 @@ pub(crate) fn explore<S: TransitionSystem>(
                 },
                 frontier: frontier_of(digest, &queue),
                 limit: Limit::Depth,
-            };
+            });
         }
-        for successor in ordered_successors(system, &state) {
+        for successor in ordered_successors(system, &state)? {
             if transitions >= limits.max_transitions {
-                return Outcome::Bounded {
+                return Ok(Outcome::Bounded {
                     stats: Stats {
                         states,
                         transitions,
@@ -200,7 +213,7 @@ pub(crate) fn explore<S: TransitionSystem>(
                     },
                     frontier: frontier_of(digest, &queue),
                     limit: Limit::Transitions,
-                };
+                });
             }
             transitions += 1;
             if visited.contains(&successor.key) {
@@ -209,7 +222,7 @@ pub(crate) fn explore<S: TransitionSystem>(
             if states >= limits.max_states {
                 let mut frontier = frontier_of(digest, &queue);
                 frontier.push(successor.digest);
-                return Outcome::Bounded {
+                return Ok(Outcome::Bounded {
                     stats: Stats {
                         states,
                         transitions,
@@ -217,7 +230,7 @@ pub(crate) fn explore<S: TransitionSystem>(
                     },
                     frontier,
                     limit: Limit::States,
-                };
+                });
             }
             visited.insert(successor.key);
             states += 1;
@@ -231,11 +244,11 @@ pub(crate) fn explore<S: TransitionSystem>(
         }
     }
 
-    Outcome::Exhaustive(Stats {
+    Ok(Outcome::Exhaustive(Stats {
         states,
         transitions,
         depth: depth_reached,
-    })
+    }))
 }
 
 /// Explore `system`, first refusing an unbounded `domains` request before any
@@ -249,8 +262,10 @@ pub(crate) fn explore<S: TransitionSystem>(
 ///
 /// [`NotSimulated::RequiresBound`] when `domains` has an unbounded domain
 /// under the ADR-014 §4 extent rule; [`NotSimulated::Extent`] when
-/// `classify_extent` itself stops at a stage limit or an internal fault.
-/// Never [`NotSimulated::GeneratorMismatch`] or [`NotSimulated::EmptyInitial`].
+/// `classify_extent` itself stops at a stage limit or an internal fault;
+/// [`NotSimulated::KeyEncoding`] when a state or transition identity reached
+/// during the walk has no RFC 8785 encoding. Never
+/// [`NotSimulated::GeneratorMismatch`] or [`NotSimulated::EmptyInitial`].
 pub fn explore_request<S: TransitionSystem>(
     system: &S,
     domains: &[(WireNodeId, &ValueType)],
@@ -260,5 +275,5 @@ pub fn explore_request<S: TransitionSystem>(
     poll: impl FnMut() -> bool,
 ) -> Result<Outcome, NotSimulated> {
     check_requires_bound(domains, types, position_limit)?;
-    Ok(explore(system, limits, poll))
+    explore(system, limits, poll).map_err(NotSimulated::from)
 }

@@ -9,6 +9,7 @@
 //! typed canonical form, in a real caller).
 
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
+use qsl_foundation::ByteDigest;
 use serde::Serialize;
 
 /// The limits every simulation preimage encodes under: `quire-canonical`'s
@@ -37,39 +38,59 @@ impl StateKey {
     }
 }
 
+/// A `TransitionSystem::Key` or `TransitionId` has no RFC 8785 encoding
+/// under `quire-canonical` (FR-101-AC-11): for example an integer outside
+/// the exact-double range, a non-finite float, a non-string map key, or
+/// nesting past `quire_canonical::Limits::MAX_DEPTH`. `TransitionSystem` is
+/// a public trait any downstream crate implements, so this is a caller
+/// defect the engine refuses, not an internal invariant break: unlike the
+/// sampler's own draw preimage (bounded decimal strings this crate builds
+/// itself), a `Key` or `TransitionId` is implementer-supplied.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("no RFC 8785 encoding: {0}")]
+pub struct EncodingRefusal(String);
+
 /// `value`'s canonical key bytes and its `quire.simulation.state-key/v1`
-/// digest, from one `TransitionSystem::key` result.
+/// digest, from one `TransitionSystem::key` result. The digest hashes the
+/// already-produced canonical bytes directly (`ByteDigest::of`), rather
+/// than re-encoding `value` a second time, exactly as
+/// `qsl_semantics::model::key::sha256_and_len` hashes its own preimage
+/// bytes once.
 ///
-/// `value` is always a bounded, schema-shaped view a `TransitionSystem`
-/// implementer builds fresh for this call, never caller-supplied bytes from
-/// outside the process; an RFC 8785 encoding failure is therefore an
-/// implementer invariant break, not a request to refuse gracefully --
-/// exactly the reasoning `qsl_semantics::model::key::sha256_and_len` already
-/// applies to every other typed identity preimage in this codebase.
-pub(crate) fn state_key(value: &impl Serialize) -> (StateKey, DigestRecord) {
+/// # Errors
+///
+/// [`EncodingRefusal`] when `value` has no RFC 8785 encoding.
+pub(crate) fn state_key(
+    value: &impl Serialize,
+) -> Result<(StateKey, DigestRecord), EncodingRefusal> {
     let bytes = quire_canonical::to_vec(value, LIMITS)
-        .unwrap_or_else(|error| panic!("a simulation state key encodes: {error}"));
-    let digest = quire_canonical::sha256(value, LIMITS)
-        .unwrap_or_else(|error| panic!("a simulation state key encodes: {error}"));
-    (
+        .map_err(|error| EncodingRefusal(error.to_string()))?;
+    let digest = ByteDigest::of(&bytes);
+    Ok((
         StateKey(bytes),
-        DigestRecord::mint(DigestDomain::SimulationStateKeyV1, *digest.as_bytes()),
-    )
+        DigestRecord::mint(DigestDomain::SimulationStateKeyV1, digest.as_bytes()),
+    ))
 }
 
 /// `value`'s RFC 8785 canonical bytes, used to order transition identities
-/// and sampler draw preimages (FR-101). See [`state_key`] on why an encoding
-/// failure panics rather than refuses.
-pub(crate) fn canonical_bytes(value: &impl Serialize) -> Vec<u8> {
-    quire_canonical::to_vec(value, LIMITS)
-        .unwrap_or_else(|error| panic!("a simulation preimage encodes: {error}"))
+/// (FR-101).
+///
+/// # Errors
+///
+/// [`EncodingRefusal`] when `value` has no RFC 8785 encoding.
+pub(crate) fn canonical_bytes(value: &impl Serialize) -> Result<Vec<u8>, EncodingRefusal> {
+    quire_canonical::to_vec(value, LIMITS).map_err(|error| EncodingRefusal(error.to_string()))
 }
 
 /// The SHA-256 digest of `value`'s RFC 8785 bytes, with no domain label in
-/// the preimage (the sampler draw digest, FR-101). See [`state_key`] on why
-/// an encoding failure panics rather than refuses.
+/// the preimage (the sampler draw digest, FR-101). `value` is always a
+/// `DrawPreimage` this crate builds itself from bounded decimal strings, so
+/// -- unlike [`state_key`] and [`canonical_bytes`] -- an encoding failure
+/// here is an internal invariant break, not an implementer defect: exactly
+/// the reasoning `qsl_semantics::model::key::sha256_and_len` applies to
+/// every other engine-built identity preimage in this codebase.
 pub(crate) fn plain_digest(value: &impl Serialize) -> [u8; 32] {
     *quire_canonical::sha256(value, LIMITS)
-        .unwrap_or_else(|error| panic!("a simulation preimage encodes: {error}"))
+        .unwrap_or_else(|error| panic!("a sampler draw preimage encodes: {error}"))
         .as_bytes()
 }

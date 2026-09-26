@@ -6,7 +6,7 @@
 use qsl_foundation::digest::DigestRecord;
 
 use crate::simulation::explore::TransitionSystem;
-use crate::simulation::key::{canonical_bytes, state_key, StateKey};
+use crate::simulation::key::{canonical_bytes, state_key, EncodingRefusal, StateKey};
 
 /// One initial state, keyed and digested, before admission.
 pub(crate) struct InitialState<S> {
@@ -17,18 +17,25 @@ pub(crate) struct InitialState<S> {
 
 /// Every distinct initial state `system` declares, in ascending state-key
 /// byte order, with equal keys coalesced into one state (FR-101).
-pub(crate) fn sorted_initial<S: TransitionSystem>(system: &S) -> Vec<InitialState<S::State>> {
+///
+/// # Errors
+///
+/// [`EncodingRefusal`] when any initial state's `TransitionSystem::Key` has
+/// no RFC 8785 encoding.
+pub(crate) fn sorted_initial<S: TransitionSystem>(
+    system: &S,
+) -> Result<Vec<InitialState<S::State>>, EncodingRefusal> {
     let mut items: Vec<InitialState<S::State>> = system
         .initial()
         .into_iter()
-        .map(|state| {
-            let (key, digest) = state_key(&system.key(&state));
-            InitialState { state, key, digest }
+        .map(|state| -> Result<InitialState<S::State>, EncodingRefusal> {
+            let (key, digest) = state_key(&system.key(&state))?;
+            Ok(InitialState { state, key, digest })
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     items.sort_by(|a, b| a.key.as_bytes().cmp(b.key.as_bytes()));
     items.dedup_by(|a, b| a.key == b.key);
-    items
+    Ok(items)
 }
 
 /// One successor, keyed, digested and with its transition identity's
@@ -44,20 +51,29 @@ pub(crate) struct OrderedSuccessor<T, S> {
 /// pending the sort in [`ordered_successors`].
 type PendingSuccessor<T, S> = (Vec<u8>, OrderedSuccessor<T, S>);
 
+/// [`ordered_successors`]'s result: every successor, in canonical order, or
+/// the first encoding refusal reached.
+type OrderedSuccessors<T, S> = Result<Vec<OrderedSuccessor<T, S>>, EncodingRefusal>;
+
 /// `state`'s successors, in ascending JCS byte order of their transition
 /// identity; successors with equal transition identities are ordered by
 /// ascending post-state key bytes (FR-101-AC-1).
+///
+/// # Errors
+///
+/// [`EncodingRefusal`] when any successor's transition identity or
+/// `TransitionSystem::Key` has no RFC 8785 encoding.
 pub(crate) fn ordered_successors<S: TransitionSystem>(
     system: &S,
     state: &S::State,
-) -> Vec<OrderedSuccessor<S::TransitionId, S::State>> {
+) -> OrderedSuccessors<S::TransitionId, S::State> {
     let mut items: Vec<PendingSuccessor<S::TransitionId, S::State>> = system
         .successors(state)
         .into_iter()
-        .map(|(transition, next)| {
-            let transition_bytes = canonical_bytes(&transition);
-            let (key, digest) = state_key(&system.key(&next));
-            (
+        .map(|(transition, next)| -> Result<_, EncodingRefusal> {
+            let transition_bytes = canonical_bytes(&transition)?;
+            let (key, digest) = state_key(&system.key(&next))?;
+            Ok((
                 transition_bytes,
                 OrderedSuccessor {
                     transition,
@@ -65,13 +81,13 @@ pub(crate) fn ordered_successors<S: TransitionSystem>(
                     key,
                     digest,
                 },
-            )
+            ))
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     items.sort_by(|(a_bytes, a_item), (b_bytes, b_item)| {
         a_bytes
             .cmp(b_bytes)
             .then_with(|| a_item.key.as_bytes().cmp(b_item.key.as_bytes()))
     });
-    items.into_iter().map(|(_, item)| item).collect()
+    Ok(items.into_iter().map(|(_, item)| item).collect())
 }

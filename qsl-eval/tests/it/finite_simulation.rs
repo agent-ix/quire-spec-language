@@ -16,9 +16,11 @@ use qsl_eval::simulation::{
     explore_request, replay, sample_request, Limit, Limits, NotSimulated, Outcome, ReplayError,
     StopReason, Trace, TransitionSystem,
 };
+use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::selection::{DefinitionDigest, DefinitionRef};
-use qsl_foundation::ByteDigest;
+use qsl_foundation::{ByteDigest, CatalogCode, CatalogCoded};
+use qsl_semantics::family::{ClassifyFailure, DomainKind};
 use qsl_semantics::value::declaration::TypeEnvironment;
 use quire_exact::{Integer, IntegerInterval, ValueType};
 use serde::Serialize;
@@ -204,6 +206,31 @@ impl TransitionSystem for RecordingSystem {
     }
 }
 
+/// A `TransitionSystem` whose state key is a bare integer (FR-101-AC-11): a
+/// `u64` above `2^53` has no exact `f64` representation, so `quire-
+/// canonical` refuses to encode it as an RFC 8785 JCS number.
+struct BigIntKeyGraph {
+    key: u64,
+}
+
+impl TransitionSystem for BigIntKeyGraph {
+    type State = ();
+    type TransitionId = Transition;
+    type Key = u64;
+
+    fn initial(&self) -> Vec<()> {
+        vec![()]
+    }
+
+    fn key(&self, _state: &()) -> u64 {
+        self.key
+    }
+
+    fn successors(&self, _state: &()) -> Vec<(Transition, ())> {
+        vec![]
+    }
+}
+
 fn empty_types() -> TypeEnvironment {
     TypeEnvironment::new([], []).expect("an empty type environment admits")
 }
@@ -245,7 +272,11 @@ fn sampler_ref() -> DefinitionRef {
 #[trace("TC-453", "FR-101-AC-1")]
 #[test]
 fn canonical_order_sorts_successors_by_transition_identity_bytes() {
-    let system = EdgeGraph::new(vec!["0"], vec![("0", op("z"), "9"), ("0", op("a"), "3")]);
+    // `a`'s post-state key ("9") sorts greater than `z`'s ("3"): a frontier
+    // of [key("9"), key("3")] can only come from ordering by transition
+    // identity (a before z), never from sorting by post-state key (which
+    // would put z's smaller key first).
+    let system = EdgeGraph::new(vec!["0"], vec![("0", op("z"), "3"), ("0", op("a"), "9")]);
     let outcome = explore_request(
         &system,
         NO_DOMAINS,
@@ -266,7 +297,7 @@ fn canonical_order_sorts_successors_by_transition_identity_bytes() {
                 transitions: 2,
                 depth: 1,
             },
-            frontier: vec![key("3"), key("9")],
+            frontier: vec![key("9"), key("3")],
             limit: Limit::Depth,
         }
     );
@@ -378,11 +409,48 @@ fn duplicate_initial_states_coalesce_to_one_state() {
     );
 }
 
+/// TC-453 step 4, FR-101-AC-9, as written: three distinct initial states
+/// listed in descending state-key order, with one repeated. `max_states` 3
+/// admits all three distinct states; `max_depth` 0 then stops the run
+/// before any of them expands, `Bounded` at `Limit::Depth` (not
+/// `Limit::States`, which `max_states` 3 never reaches), with the frontier
+/// in ascending key order regardless of the system's descending listing.
+#[trace("TC-453", "FR-101-AC-9")]
+#[test]
+fn several_initial_states_in_descending_order_stop_bounded_at_depth_zero() {
+    let system = EdgeGraph::new(vec!["c", "b", "a", "a"], vec![]);
+    let outcome = explore_request(
+        &system,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        Limits {
+            max_states: 3,
+            max_depth: 0,
+            ..generous_limits()
+        },
+        never_cancels,
+    )
+    .expect("bounded domains explore");
+    assert_eq!(
+        outcome,
+        Outcome::Bounded {
+            stats: qsl_eval::simulation::Stats {
+                states: 3,
+                transitions: 0,
+                depth: 0,
+            },
+            frontier: vec![key("a"), key("b"), key("c")],
+            limit: Limit::Depth,
+        }
+    );
+}
+
 /// TC-453 step 5: level-2 parents keep their FIFO discovery order, not a
 /// re-sort by key -- even though `key(1) > key(2)` and `key(3) > key(4)`,
 /// cancellation at the fourth expansion still stops after state 1's own
 /// child (discovered through transition `a`, which sorts before `b`).
-#[trace("TC-453", "FR-101-AC-6")]
+#[trace("TC-453", "FR-101-AC-1")]
 #[test]
 fn cancellation_frontier_keeps_fifo_order_not_key_order() {
     // 0 -a-> "d" -> "b"   (key("d") > key("c"), key("b") > key("a"))
@@ -409,10 +477,14 @@ fn cancellation_frontier_keeps_fifo_order_not_key_order() {
         },
     )
     .expect("bounded domains explore");
-    let Outcome::Cancelled { frontier, .. } = outcome else {
+    let Outcome::Cancelled {
+        frontier, cause, ..
+    } = outcome
+    else {
         panic!("expected Cancelled, got {outcome:?}");
     };
     assert_eq!(frontier, vec![key("b"), key("a")]);
+    assert_eq!(cause, CatalogCode::new("cancelled", "caller-cancelled"));
 }
 
 /// TC-453 step 6, FR-101-AC-2: the pinned digests of the signed-zero and
@@ -486,6 +558,51 @@ fn float64_state_keys_pin_their_digests_and_stay_distinct() {
         };
         assert_eq!(stats.states, 2, "{a} and {b} must remain two states");
     }
+}
+
+/// TC-453 step 9, FR-101-AC-11: a `TransitionSystem::Key` with no RFC 8785
+/// encoding -- a `u64` above the exact-double range, `2^53` -- refuses
+/// `NotSimulated::KeyEncoding` from `explore_request` and `sample_request`,
+/// and `ReplayError::KeyEncoding` from `replay`, instead of aborting the
+/// process. `TransitionSystem` is a public trait; an implementer can hand
+/// the engine a value it cannot canonically encode.
+#[trace("TC-453", "FR-101-AC-11")]
+#[test]
+fn a_key_with_no_rfc_8785_encoding_refuses_instead_of_panicking() {
+    let system = BigIntKeyGraph {
+        key: (1u64 << 53) + 1,
+    };
+    let explore_error = explore_request(
+        &system,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        generous_limits(),
+        never_cancels,
+    )
+    .expect_err("an unencodable key refuses");
+    assert!(matches!(explore_error, NotSimulated::KeyEncoding(_)));
+
+    let sample_error = sample_request(
+        &system,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        &sampler_ref(),
+        0,
+        0,
+        1,
+    )
+    .expect_err("an unencodable key refuses");
+    assert!(matches!(sample_error, NotSimulated::KeyEncoding(_)));
+
+    let trace: Trace<Transition> = Trace {
+        initial: key("anything"),
+        steps: vec![],
+        provenance: None,
+    };
+    let replay_error = replay(&system, &trace).expect_err("an unencodable key refuses");
+    assert!(matches!(replay_error, ReplayError::KeyEncoding(_)));
 }
 
 /// TC-453 step 7, FR-101-AC-2: two distinct paths that reach an equal state
@@ -639,6 +756,7 @@ fn cancellation_stops_the_run_and_returns_the_frontier() {
                 depth: 1,
             },
             frontier: vec![key("1"), key("2")],
+            cause: CatalogCode::new("cancelled", "caller-cancelled"),
         }
     );
     assert_eq!(
@@ -860,13 +978,16 @@ fn requires_bound_refuses_before_any_transition_system_call() {
     let domains = [(node, &unbounded)];
     let types = empty_types();
 
+    // A tight `Limits` first, then a generous one: AC-8's "raising
+    // exploration `Limits` does not change a `RequiresBound` result" is
+    // only exercised if the two values actually differ.
     for limits in [
-        generous_limits(),
         Limits {
-            max_states: usize::MAX,
-            max_depth: usize::MAX,
-            max_transitions: usize::MAX,
+            max_states: 1,
+            max_depth: 1,
+            max_transitions: 1,
         },
+        generous_limits(),
     ] {
         let system = RecordingSystem::new();
         let error = explore_request(&system, &domains, &types, 1000, limits, never_cancels)
@@ -875,6 +996,14 @@ fn requires_bound_refuses_before_any_transition_system_call() {
             panic!("expected RequiresBound, got {error:?}");
         };
         assert_eq!(requires_bound.domains.len(), 1);
+        let (domain_key, domain_kind) = requires_bound
+            .domains
+            .iter()
+            .next()
+            .expect("one unbounded domain");
+        assert_eq!(domain_key.node(), node);
+        assert_eq!(domain_key.path(), &[] as &[u32]);
+        assert_eq!(domain_kind, DomainKind::Integer);
         assert_eq!(system.calls(), 0, "no TransitionSystem method ran");
 
         let sample_system = RecordingSystem::new();
@@ -908,7 +1037,11 @@ fn requires_bound_refuses_before_any_transition_system_call() {
         never_cancels,
     )
     .expect_err("position_limit 0 stops at the first position");
-    assert!(matches!(extent_error, NotSimulated::Extent(_)));
+    let NotSimulated::Extent(ClassifyFailure::Limit(exceeded)) = extent_error else {
+        panic!("expected Extent(ClassifyFailure::Limit(_)), got {extent_error:?}");
+    };
+    assert_eq!(exceeded.kind(), LimitKind::NodeCount);
+    assert_eq!(system.calls(), 0, "no TransitionSystem method ran");
 }
 
 /// TC-455 step 5, FR-101-AC-7: an exhaustive run over a small branching
@@ -1269,6 +1402,11 @@ fn seeded_sampling_reproduces_the_same_trace() {
     )
     .expect("a bounded, generator-matched sample");
     assert_eq!(first, second);
+    let first_provenance = first.provenance.as_ref().expect("sampled trace");
+    assert_eq!(first_provenance.seed, 42);
+    assert_eq!(first_provenance.trace, 0);
+    assert_eq!(first_provenance.sampler, sampler_ref());
+    assert_eq!(replay(&system, &first), Ok(()));
 
     let different_seed = sample_request(
         &system,
@@ -1333,17 +1471,22 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         vec!["0"],
         vec![("0", op("recv"), "1"), ("0", op("recv"), "2")],
     );
+    // Seed 1 draws index 1 (recomputed independently), the second-listed
+    // `recv` edge to "2": this is what makes the test discriminate a
+    // replay that only takes the first matching-identity successor from a
+    // replay that matches by digest, per FR-101-AC-5.
     let sampled = sample_request(
         &duplicate_ids,
         NO_DOMAINS,
         &empty_types(),
         1000,
         &sampler_ref(),
-        0,
+        1,
         0,
         1,
     )
     .expect("a bounded, generator-matched sample");
+    assert_eq!(sampled.steps[0].key, key("2"));
     assert_eq!(replay(&duplicate_ids, &sampled), Ok(()));
 
     let multi_initial = EdgeGraph::new(vec!["a", "b"], vec![("b", op("from_b"), "z")]);
@@ -1408,7 +1551,8 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
 
 /// TC-454 step 8, FR-101-AC-10: `sample_request` refuses a `DefinitionRef`
 /// naming a different identity or a different version, before any
-/// `TransitionSystem` method and any draw.
+/// `TransitionSystem` method and any draw, and the refusal's catalog code
+/// is `invalid_runtime_input`/`invalid-value` (FR-101 Behavior).
 #[trace("TC-454", "FR-101-AC-10")]
 #[test]
 fn sample_request_refuses_a_generator_mismatch_before_any_call() {
@@ -1435,6 +1579,10 @@ fn sample_request_refuses_a_generator_mismatch_before_any_call() {
         NotSimulated::GeneratorMismatch {
             supplied: wrong_identity
         }
+    );
+    assert_eq!(
+        error.catalog_code(),
+        CatalogCode::new("invalid_runtime_input", "invalid-value")
     );
     assert_eq!(system.calls(), 0);
 

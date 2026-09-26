@@ -6,7 +6,8 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 
 use crate::simulation::explore::TransitionSystem;
-use crate::simulation::key::state_key;
+use crate::simulation::key::EncodingRefusal;
+use crate::simulation::order::{ordered_successors, sorted_initial};
 
 /// One executed transition and the state-key digest of the state it
 /// produced.
@@ -89,9 +90,13 @@ pub enum ReplayError<T: std::fmt::Debug> {
         /// The digest the trace recorded.
         expected: DigestRecord,
         /// The digest of the first matching-transition successor the system
-        /// actually produced.
+        /// actually produced, in canonical order.
         actual: DigestRecord,
     },
+    /// A state or transition identity reached during replay has no RFC
+    /// 8785 encoding.
+    #[error(transparent)]
+    KeyEncoding(#[from] EncodingRefusal),
 }
 
 /// Re-run `trace` against `system`, refusing at the first step whose
@@ -105,15 +110,18 @@ pub enum ReplayError<T: std::fmt::Debug> {
 /// A step matches by transition identity *and* recorded digest together:
 /// when several successors of the current state share a transition
 /// identity, replay picks the one whose digest equals the trace's recorded
-/// digest, not simply the first one the system happens to list.
+/// digest, not simply the first one the system happens to list; when none
+/// does, the reported `actual` is the first match in canonical order (the
+/// same order `explore` and `sample` themselves walk), not the
+/// `TransitionSystem`'s own listing order.
 pub fn replay<S: TransitionSystem>(
     system: &S,
     trace: &Trace<S::TransitionId>,
 ) -> Result<(), ReplayError<S::TransitionId>> {
-    let mut current = system
-        .initial()
+    let mut current = sorted_initial(system)?
         .into_iter()
-        .find(|state| state_key(&system.key(state)).1 == trace.initial)
+        .find(|item| item.digest == trace.initial)
+        .map(|item| item.state)
         .ok_or(ReplayError::UnknownInitial {
             expected: trace.initial,
         })?;
@@ -121,16 +129,15 @@ pub fn replay<S: TransitionSystem>(
     for (index, step) in trace.steps.iter().enumerate() {
         let mut first_match_digest: Option<DigestRecord> = None;
         let mut matched_state = None;
-        for (transition, candidate) in system.successors(&current) {
-            if transition != step.transition {
+        for successor in ordered_successors(system, &current)? {
+            if successor.transition != step.transition {
                 continue;
             }
-            let (_, digest) = state_key(&system.key(&candidate));
             if first_match_digest.is_none() {
-                first_match_digest = Some(digest);
+                first_match_digest = Some(successor.digest);
             }
-            if digest == step.key {
-                matched_state = Some(candidate);
+            if successor.digest == step.key {
+                matched_state = Some(successor.state);
                 break;
             }
         }

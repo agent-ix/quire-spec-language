@@ -26,6 +26,7 @@ mod trace;
 
 pub use explore::{explore_request, Limits, Outcome, Stats, TransitionSystem};
 pub use frontier::{Frontier, Limit};
+pub use key::EncodingRefusal;
 pub use not_simulated::{NotSimulated, RequiresBound};
 pub use sample::sample_request;
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};

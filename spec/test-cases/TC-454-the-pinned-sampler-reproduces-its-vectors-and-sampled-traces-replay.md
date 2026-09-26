@@ -79,8 +79,13 @@ Tag each test `#[trace("TC-454", "FR-101-AC-n")]` with its AC.
 
 ## Status
 
-🚧 Planned (QSL-272). FR-101's "Existing test disposition" table maps each
+✅ Implemented (QSL-272). FR-101's "Existing test disposition" table maps each
 existing test to its step here. `multi_initial_sample_picks_the_sampler_selected_start`
-contradicts FR-101-AC-4 and is replaced by step 6;
+contradicted FR-101-AC-4 and is replaced by step 6;
 `counter_sampler_produces_a_pinned_index_sequence` is deleted with
-`CounterSampler`, replaced by steps 1 to 3.
+`CounterSampler`, replaced by steps 1 to 3. The QSL-272 review round added
+`n = 2`/`n = 7` byte-order vectors and a `U256` arithmetic unit test (SR-672
+FND-005), fixed step 5's fixture to draw the second `recv` edge instead of
+the first (SR-672 FND-003), a `CatalogCoded` assertion on step 8's
+`GeneratorMismatch` (SR-673 FND-002), and literal provenance and a replay on
+step 5's traces (SR-673 FND-005).
