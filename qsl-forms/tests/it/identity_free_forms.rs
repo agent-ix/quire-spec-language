@@ -191,3 +191,124 @@ fn no_production_match_in_qsl_forms_has_a_catch_all_arm() {
         "a match over Production has a catch-all arm: {offending:?}"
     );
 }
+
+/// TC-398 step 1 (FR-091-AC-11): the family-module `use` and inline-path
+/// edges of `value.rs`. It may reach `qsl_cst`, `qsl_foundation`,
+/// `quire_exact`, the standard library and the forms core (`dispatch`,
+/// `spans`, `syntax`), and nothing else.
+const ALLOWED_EXTERNAL: [&str; 6] = [
+    "qsl_cst",
+    "qsl_foundation",
+    "quire_exact",
+    "std",
+    "core",
+    "alloc",
+];
+const FORMS_CORE: [&str; 3] = ["dispatch", "spans", "syntax"];
+
+/// The disallowed edges found in shipped code, as `line: path`.
+#[derive(Default)]
+struct ModuleEdges {
+    found: Vec<String>,
+}
+
+impl ModuleEdges {
+    /// Judge a path by its segment names: `[first, second, ...]`.
+    fn judge(&mut self, segments: &[String], line: usize) {
+        let first = segments.first().map(String::as_str).unwrap_or_default();
+        let allowed = match first {
+            "super" => segments
+                .get(1)
+                .is_some_and(|second| FORMS_CORE.contains(&second.as_str())),
+            "self" => true,
+            "crate" => false,
+            other => ALLOWED_EXTERNAL.contains(&other),
+        };
+        if !allowed {
+            self.found.push(format!("{line}: {}", segments.join("::")));
+        }
+    }
+
+    /// Flatten a `use` tree into full paths and judge each.
+    fn use_tree(&mut self, tree: &syn::UseTree, prefix: &mut Vec<String>) {
+        match tree {
+            syn::UseTree::Path(path) => {
+                prefix.push(path.ident.to_string());
+                self.use_tree(&path.tree, prefix);
+                prefix.pop();
+            }
+            syn::UseTree::Name(name) => {
+                let mut full = prefix.clone();
+                full.push(name.ident.to_string());
+                self.judge(&full, name.ident.span().start().line);
+            }
+            syn::UseTree::Rename(rename) => {
+                let mut full = prefix.clone();
+                full.push(rename.ident.to_string());
+                self.judge(&full, rename.ident.span().start().line);
+            }
+            syn::UseTree::Glob(glob) => {
+                self.judge(prefix, glob.star_token.spans[0].start().line);
+            }
+            syn::UseTree::Group(group) => {
+                for item in &group.items {
+                    self.use_tree(item, prefix);
+                }
+            }
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for ModuleEdges {
+    fn visit_item(&mut self, item: &'ast syn::Item) {
+        let attrs: &[syn::Attribute] = match item {
+            syn::Item::Mod(item) => &item.attrs,
+            syn::Item::Use(item) => &item.attrs,
+            syn::Item::Fn(item) => &item.attrs,
+            syn::Item::Impl(item) => &item.attrs,
+            _ => &[],
+        };
+        if is_cfg_test(attrs) {
+            return;
+        }
+        if let syn::Item::Use(item) = item {
+            self.use_tree(&item.tree, &mut Vec::new());
+            return;
+        }
+        syn::visit::visit_item(self, item);
+    }
+
+    /// Inline paths: only a rooted path (`crate::`, `super::`, `self::`, or
+    /// a crate name written out) is an edge; `Type::item` is not.
+    fn visit_path(&mut self, path: &'ast syn::Path) {
+        let segments: Vec<String> = path.segments.iter().map(|s| s.ident.to_string()).collect();
+        let first = segments.first().map(String::as_str).unwrap_or_default();
+        let rooted = path.leading_colon.is_some()
+            || matches!(first, "crate" | "super" | "self")
+            || first.starts_with("qsl_")
+            || first.starts_with("quire_");
+        if rooted && segments.len() > 1 {
+            self.judge(&segments, path.segments[0].ident.span().start().line);
+        }
+        syn::visit::visit_path(self, path);
+    }
+}
+
+#[trace("FR-091-AC-11", "TC-398")]
+#[test]
+fn value_module_has_edges_only_to_the_forms_core_and_the_lower_crates() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/value.rs");
+    let source = std::fs::read_to_string(&path).expect("value.rs reads");
+    let file = syn::parse_file(&source).expect("value.rs parses");
+    let mut edges = ModuleEdges::default();
+    edges.visit_file(&file);
+    assert!(
+        edges.found.is_empty(),
+        "value.rs has an edge outside the forms core, qsl_cst, qsl_foundation and quire_exact: {:#?}",
+        edges.found
+    );
+    assert!(
+        source.contains("use qsl_cst::") && source.contains("use super::syntax::"),
+        "the scan reads value.rs's real imports"
+    );
+}
