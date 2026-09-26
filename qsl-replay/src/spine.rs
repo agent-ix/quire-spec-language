@@ -641,26 +641,13 @@ pub enum ImportRefusal {
     },
     /// Step 6: the I2 read of the library's emitted bytes built no import
     /// view.
-    #[error("the I2 read of {identity} refused: {}", view_message(.refusal))]
+    #[error("the I2 read of {identity} refused: {refusal}")]
     View {
         /// The library identity.
         identity: LibraryName,
         /// The read's refusal or reached ceiling.
         refusal: Box<ImportViewRefusal>,
     },
-}
-
-/// A readable account of an I2 view read's refusal or reached ceiling.
-fn view_message(refusal: &ImportViewRefusal) -> String {
-    match refusal {
-        StageFailure::Refused(refusal) => refusal.to_string(),
-        StageFailure::Limit(limit) => format!(
-            "{} (bound {}, reached {})",
-            limit.kind().catalog_cause(),
-            limit.configured_bound(),
-            limit.actual()
-        ),
-    }
 }
 
 impl ImportRefusal {

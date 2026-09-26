@@ -613,8 +613,8 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
         SpineLimits::default(),
     )
     .unwrap();
-    let emission = emit_checked(&alone.package).unwrap();
-    let view = read_import_view(&emission, lib("test/geometry"), "1", &BTreeMap::new()).unwrap();
+    let view =
+        read_import_view(&alone.package, lib("test/geometry"), "1", &BTreeMap::new()).unwrap();
     let source = unit(&format!(
         "{}{}{H}",
         import("test/geometry", "1", &alone.emitted.package_id().hex(), "g"),
@@ -635,6 +635,7 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
         vec![AdmittedImport {
             identity: lib("test/geometry"),
             view,
+            graph: alone.package.shared_graph(),
         }],
     )
     .expect_err("test/other is not admitted");
