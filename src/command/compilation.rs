@@ -113,8 +113,13 @@ pub(super) fn package_of<'model>(
 }
 
 fn bindings(source: FormalSource, program: &wire::Program) -> Result<CheckBindings> {
-    let clauses = program
-        .clauses
+    // FR-026: a `0-draft` program's `clauses` is required (a `1-draft`
+    // program never reaches native package construction: `run_complete`/
+    // `complete` refuse it before either ever calls this).
+    let Some(clauses) = &program.clauses else {
+        return Err(RunCause::MissingClauses);
+    };
+    let clauses = clauses
         .iter()
         .map(wire::Binding::bind)
         .collect::<std::result::Result<Vec<_>, _>>()?;

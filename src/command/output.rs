@@ -243,15 +243,38 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                 cause: error.cause.as_ref().map(package_cause),
             },
         ),
-        RunCause::CompleteSelection(_) | RunCause::Libraries(_) => {
-            (types::Stage::Request, types::Details::None)
-        }
+        RunCause::CompleteSelection(_)
+        | RunCause::Libraries(_)
+        | RunCause::CompleteRunSelection(_)
+        | RunCause::NativeRunSelection(_)
+        | RunCause::MissingClauses => (types::Stage::Request, types::Details::None),
         RunCause::Spine(failure) => (
             types::Stage::Spine(failure.refusal.stage()),
             types::Details::Spine {
                 source: &failure.source,
                 path: &failure.path,
                 span: failure.span,
+            },
+        ),
+        RunCause::SpineRun(refusal) => (
+            types::Stage::SpineRun(refusal.stage()),
+            match refusal.as_ref() {
+                qsl_replay::spine::RunRefusal::MissingDeclaration { function }
+                | qsl_replay::spine::RunRefusal::UnsupportedResult { function } => {
+                    types::Details::Function { function }
+                }
+                qsl_replay::spine::RunRefusal::UnknownParameter { parameter }
+                | qsl_replay::spine::RunRefusal::DuplicateArgument { parameter }
+                | qsl_replay::spine::RunRefusal::UnboundParameter { parameter } => {
+                    types::Details::Parameter { parameter }
+                }
+                qsl_replay::spine::RunRefusal::WrongValueKind { position } => {
+                    types::Details::Position {
+                        position: *position,
+                    }
+                }
+                qsl_replay::spine::RunRefusal::Compile(_)
+                | qsl_replay::spine::RunRefusal::Fault(_) => types::Details::None,
             },
         ),
         RunCause::Lowering {
@@ -292,6 +315,58 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
         code: error.cause.code().as_str(),
         message: error.to_string(),
         details,
+    })
+}
+
+/// FR-100: render `spine-run-result/1`, the outcome mapping's stdout
+/// document and FR-301 exit status, from `qsl_replay::spine::run`'s result.
+pub(super) fn spine_run_result(
+    digest: ByteDigest,
+    package_id: qsl_semantics::library::PackageId,
+    source: &FormalSource,
+    function: &str,
+    outcome: qsl_replay::spine::CallOutcome,
+) -> super::Result<RunResult> {
+    use qsl_replay::spine::{CallOutcome, CallValue};
+    let (exit_code, outcome) = match outcome {
+        CallOutcome::Completed(CallValue::Boolean(value)) => (
+            0,
+            types::SpineOutcome::Completed {
+                value: types::SpineValue::Boolean { value },
+            },
+        ),
+        CallOutcome::Completed(CallValue::Integer(value)) => (
+            0,
+            types::SpineOutcome::Completed {
+                value: types::SpineValue::Integer {
+                    decimal: value.to_string(),
+                },
+            },
+        ),
+        CallOutcome::Refused { code } => (
+            code.exit_code(),
+            types::SpineOutcome::Refused {
+                code: code.as_str(),
+            },
+        ),
+        CallOutcome::Undefined { reason } => (20, types::SpineOutcome::Undefined { reason }),
+        CallOutcome::Incomplete { limit } => (22, types::SpineOutcome::Incomplete { limit }),
+    };
+    let document = types::SpineRunReport {
+        format: types::Format::SpineRunResult,
+        request_digest: digest.to_string(),
+        package_id: package_id.hex(),
+        source: types::RunSource {
+            identity: source.source().identity(),
+            digest: source.source().digest().to_string(),
+            path: source.source().path(),
+        },
+        function,
+        outcome,
+    };
+    Ok(RunResult {
+        exit_code,
+        value: NativeResult(serde_json::to_value(document).map_err(RunCause::Output)?),
     })
 }
 

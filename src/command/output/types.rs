@@ -26,6 +26,9 @@ pub(super) enum Stage {
     Input,
     /// The spine stage that refused a `1-draft` program.
     Spine(qsl_replay::spine::SpineStage),
+    /// The stage a `1-draft` spine `run` refused at: the wrapped compile
+    /// refusal's own stage, or `call` (FR-100).
+    SpineRun(&'static str),
 }
 
 impl Serialize for Stage {
@@ -45,6 +48,7 @@ impl Serialize for Stage {
             Self::Lower => "lower",
             Self::Input => "input",
             Self::Spine(stage) => stage.as_str(),
+            Self::SpineRun(stage) => stage,
         })
     }
 }
@@ -166,6 +170,64 @@ pub(super) enum Details<'a> {
         path: &'a str,
         span: Option<LocatedSpan>,
     },
+    /// FR-100: a stage-`call` refusal naming the request's `function`
+    /// string (`missing_declaration`, `unsupported_construct`).
+    Function {
+        function: &'a str,
+    },
+    /// FR-100: a stage-`call` refusal naming the argument's `parameter`
+    /// string (`invalid_runtime_input`).
+    Parameter {
+        parameter: &'a str,
+    },
+    /// FR-100: a stage-`call` refusal naming the argument's zero-based
+    /// declared position (`invalid_runtime_input`, `WrongValueKind`).
+    Position {
+        position: usize,
+    },
+}
+
+/// FR-100: the program source as `spine-run-result/1` renders one -- its
+/// four FR-001 labels, `sha256:` source digest and authored path. Narrower
+/// than [`Source`]: no formal document/revision member.
+#[derive(Serialize)]
+pub(super) struct RunSource<'a> {
+    #[serde(flatten)]
+    pub identity: &'a SourceIdentity,
+    pub digest: String,
+    pub path: &'a str,
+}
+
+/// FR-100: a value [`SpineOutcome::Completed`] carries.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(super) enum SpineValue {
+    Boolean { value: bool },
+    Integer { decimal: String },
+}
+
+/// FR-100's `outcome` member: the S6a outcome mapping this build converts
+/// (completed, kernel/family undefined, incomplete, family refused). A
+/// kernel refusal is not converted by this build (see
+/// `qsl_replay::spine::call`'s deferred note); it never reaches this type.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(super) enum SpineOutcome {
+    Completed { value: SpineValue },
+    Refused { code: &'static str },
+    Undefined { reason: &'static str },
+    Incomplete { limit: &'static str },
+}
+
+/// The `spine-run-result/1` outcome document (FR-100).
+#[derive(Serialize)]
+pub(super) struct SpineRunReport<'a> {
+    pub format: Format,
+    pub request_digest: String,
+    pub package_id: String,
+    pub source: RunSource<'a>,
+    pub function: &'a str,
+    pub outcome: SpineOutcome,
 }
 
 #[derive(Serialize)]

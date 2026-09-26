@@ -39,6 +39,9 @@ use qsl_semantics::library::{ImportView, LibraryName, PackageId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause, UnitIntakeRefusal};
 
+mod call;
+pub use call::{default_accounting, run, Call, CallArgument, CallOutcome, CallValue, RunRefusal};
+
 /// Why spine [`compile`] produced no checked package. Each
 /// variant is the stage that refused, with its typed cause and, where the
 /// stage records one, the region of the unit it concerns.

@@ -245,9 +245,10 @@ pub(super) fn select<'a>(
     program: &'a wire::Program,
     extraction: &'a wire::Extraction,
 ) -> Result<Selected<'a>> {
-    let [binding] = program.clauses.as_slice() else {
+    let clauses = program.clauses.as_deref().unwrap_or_default();
+    let [binding] = clauses else {
         return Err(ExtractionMode::WrongClauseCount {
-            actual: program.clauses.len(),
+            actual: clauses.len(),
         }
         .into());
     };

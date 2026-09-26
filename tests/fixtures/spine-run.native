@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// FR-100/TC-451: spine run argument binding and outcome mapping fixture.
+// The profile digest is a placeholder.
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+type Digit = Int[0, 9];
+record Point { x: Digit; y: Digit; }
+function lt using v(a: Digit, b: Digit): Boolean pure { a < b }
+function flag using v(b: Boolean): Boolean pure { b }
+function id using v(x: Digit): Digit pure { x }
+function px using v(p: Point): Digit pure { p.x }
+function corner using v(p: Point): Point pure { p }
+function seven using v(): Digit pure { 7 }
