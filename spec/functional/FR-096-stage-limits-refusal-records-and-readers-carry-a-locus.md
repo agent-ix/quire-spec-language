@@ -184,9 +184,15 @@ catalog payload item beside it (`quire.native.diagnostics/v1` revision
 | `ProtocolClauseSnapshot` | `wrong_snapshot` / `wrong-anchor` | `required`: the required anchor selection; `supplied`: the supplied anchor selection |
 | `ProtocolClauseSnapshot` | `wrong_snapshot` / `forbidden-pre-read` | `read`: the exact prohibited read |
 | `ModelQueryRefusal` | `invalid_runtime_input` / `absent-key` | `binding`: the population binding; `key`: the requested key |
+| `ModelQueryRefusal` | `foreign_reference` / `foreign-universe` | `required`: the required object universe (the binding's), as lowercase hex; `supplied`: the supplied object universe, as lowercase hex |
+| `LimitExceeded` | `stage_limit_exceeded` / the kind's cause | `kind`: the exceeded limit kind's cause tag; `bound`: the configured bound; `actual`: the actual counter |
+| `BoundExceeded` (`replay`) | `stage_limit_exceeded` / `input-bytes-exceeded` | `kind`, `bound`, `actual`, as for `LimitExceeded` |
+| kernel `Refusal::CardinalityOutOfBound` | `cardinality_out_of_bound` / `below-minimum` or `above-maximum` | `collection`: the collection kind; `bound`: the inclusive bound `[minimum, maximum]`; `count`: the formed count |
 
 A cause another family adds to S6a adds its row here, with the key for each
-payload item its catalog row requires.
+payload item its catalog row requires. A cause with no row here has no
+fields to give: `catalog_fields` returns `None` for it, and no record is
+built from it. An empty map is never a stand-in.
 
 `RefusalRecord` SHALL carry the `CatalogCode`, the O-16 category, an
 optional `Locus`, and the catalog fields. It is built from a `CatalogCoded`
@@ -198,8 +204,12 @@ At S6a, a consumer SHALL build a record as follows:
 - From `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))`, it
   builds the record from the family cause.
 - From `FamilyOutcome::Evaluated(Outcome::Refused(refusal))`, it builds the
-  record from the kernel `Refusal`. QSL F implements `CatalogCoded` for the
-  kernel `Refusal` as its map of the kernel cause (O-17).
+  record from the kernel `Refusal` through QSL F's map of the kernel cause
+  (O-17), `kernel_refusal_record`. The map covers the kernel causes the
+  catalog gives a code and fields, and returns no record for the others.
+  A kernel `CheckedInvariant` SHALL become an `InternalFault`
+  (`runtime_invariant`), never a refusal record: a record is always
+  category refusal.
 
 In both cases the locus is `Evaluation.location`, resolved by the checked
 package. It is absent when the location is `None` or resolves to no region.
@@ -297,12 +307,40 @@ Partly implemented under QSL-160.
   locus and catalog fields. The I2 reader builds one for its version
   refusal.
 
-Not implemented: `CatalogCoded::catalog_fields`, and the S6a record built
-from an `Evaluation` (AC-6 to AC-8, TC-428).
-`ModelRefusalCause::AbsentKey` carries the key but not the population
-binding, and `WrongSnapshotCause::WrongAnchor` carries neither anchor
-selection, so both causes still need the payload the key table names. The
-`CheckingLimits` ceilings that `Typer` (other than its depth stop),
-lowering and package checking reach still surface as a
-`CheckRefusal` located by its `check::Location`, not as a
-`LimitExceeded`.
+Implemented under QSL-245:
+
+- `CatalogCoded::catalog_fields` (returning `None` for a cause with no
+  key-table row) and `CatalogCoded::refusal_record` exist.
+  `ProtocolClauseSnapshot` carries `required`/`supplied` for `wrong-anchor`
+  and `read` for `forbidden-pre-read`; `ModelRefusalCause::AbsentKey` carries
+  the `binding` beside its `key`; `ModelRefusalCause::catalog_fields` matches
+  every cause explicitly and gives `absent-key` and `foreign-universe` fields
+  (AC-7).
+- `Evaluation::refusal_record` builds the record of a family refusal, with
+  `Evaluation.location` resolved by the checked package it is given as its
+  locus (AC-6). The caller passes the graph the evaluation ran.
+- `kernel_refusal_record` maps the kernel `CardinalityOutOfBound` to
+  `cardinality_out_of_bound` with its fields.
+- `DeclarationRegions::limit_exceeded` gives a `CheckingLimits` stop
+  (`Typer`'s node count and depth, and a declaration's input bytes and work)
+  as a `LimitExceeded` with its region, tested for each. It has no production
+  caller yet: package checking still returns the `CheckRefusal`.
+
+Not backed:
+
+- AC-8 is only partly backed: the kernel causes `InexactDecimal`,
+  `DecimalOutOfDomain`, `DivisionPairOutOfDomain`, `ModuloOutOfDomain`,
+  `TextLengthOutOfDomain`, `IntegerOutOfDomain`, `RationalOutOfDomain` and
+  `IeeeNotExact` await catalog revision `1-draft.8` (STD-110), which defines
+  their codes. So do the two IEEE causes QSpec FR-148 names,
+  `ieee_nan_payload_not_representable` and `ieee_rational_out_of_domain`,
+  that the catalog omits.
+- A kernel `CheckedInvariant` builds no record, and its conversion to an
+  `InternalFault` is not built: the evaluator still returns it as a
+  refusal.
+  `ForeignReference` carries neither universe in the kernel variant, so it
+  builds no record until the `quire-exact` variant does.
+- The key table has no row for the other `ModelQueryRefusal` causes
+  (including `type-mismatch`) or for `qsl-route`'s `BoundRefusal`; they build
+  no record.
+- The embedded-document mapping of AC-1 (TC-426 step 3).
