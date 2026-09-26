@@ -167,7 +167,8 @@ application in its body is one claim of its own, its value validity
 | Claim form | Kind |
 | --- | --- |
 | Boolean clause over pure expressions, including function application (#217) | `value-validity` |
-| Scalar operation application in a `Value` function body (FR-062): the application is defined and its result lies in its result type, for every assignment of the parameters and bound variables it reads | `value-validity`, one claim per occurrence |
+| Scalar operation application in a `Value` function body (FR-062): the application is defined and its result lies in its result type, or in the target range of an enclosing narrowing conversion, for every assignment of the parameters and bound variables it reads | `value-validity`, one claim per occurrence |
+| Narrowing conversion (`quire.op.numeric.narrow`) in a `Value` function body | none; it is the result bound of the application it wraps |
 | Clause containing a `case` expression over a sum type | `value-validity` |
 | `case` exhaustiveness obligation | none; language admission discharges it (quire-specification FR-146), and an unproved obligation refuses as `undefined_expression`/`unproved-exhaustiveness` |
 | Operation precondition, postcondition or invariant | `operation-contract` |

@@ -71,7 +71,8 @@ FR-057-AC-10's value-function row.
    a checked node.
 10. Check each of these units and read `CheckedGraph::requirements` (and
     `CheckedPackage::graph().requirements()` for one of them); parameters are
-    `Int[0, 9]` unless stated: bodies `-z`; `x + y`; `x = y`;
+    `Int[0, 9]` unless stated: bodies `-z`; `x + 1` with result type
+    `Int[0, 10]`; `x + y`; `x = y`;
     `(x + 1) * (x + 1)`; `n + 1` over `n: Integer`;
     `let t = x + 1 in t * 2`; `1 + 1`; `b and c` over Boolean parameters.
     Check the `(x + 1) * (x + 1)` unit a second time.
@@ -114,7 +115,9 @@ FR-057-AC-10's value-function row.
   panicking, showing no CST, token or display string was read.
 - Step 10: every record is `value-validity` and keyed by an application
   node's `expression` occurrence. `-z`: one record at the
-  `quire.op.integer.negate` node, `Bounded`. `x + y`: one at
+  `quire.op.integer.negate` node, `Bounded`. `x + 1` into `Int[0, 10]`:
+  exactly one record, at the `quire.op.integer.add` node, `Bounded`, and
+  none at the enclosing `quire.op.numeric.narrow` node. `x + y`: one at
   `quire.op.integer.add`, `Bounded`. `x = y`: one at `quire.op.integer.eq`,
   `Bounded`. `(x + 1) * (x + 1)`: three records, two at the one `+` node
   with ordinals 0 and 1 and one at the `*` node, and the second check gives

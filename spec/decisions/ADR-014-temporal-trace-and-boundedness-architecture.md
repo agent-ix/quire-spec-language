@@ -240,8 +240,12 @@ its argument subtrees read, and its bound variables are the query, `count`,
 `sum`, `fold` and `reduce` binders they read. Each is a root keyed by its
 parameter node. A read of a `let` binder contributes the roots its bound
 value reads, and a literal contributes none, because a literal is one value
-and not a domain. So `x + 1` over `x: Int[0, 9]` is `Bounded`, and
-`n + 1` over `n: Integer` is `Unbounded` with one `Integer` domain at `n`.
+and not a domain. An enclosing `quire.op.numeric.narrow` is not a claim of
+its own: its target range is the wrapped application's result bound, which
+the application's claim covers. It is finite, so it adds no domain. So
+`x + 1` over `x: Int[0, 9]`, checked into `Int[0, 10]`, is one `Bounded`
+claim on the `+` node, and `n + 1` over `n: Integer` is `Unbounded` with one
+`Integer` domain at `n`.
 
 **Available finite bound.** For an item with extent `Unbounded`, a finite
 bound is available exactly when every domain in `domains` is boundable (the

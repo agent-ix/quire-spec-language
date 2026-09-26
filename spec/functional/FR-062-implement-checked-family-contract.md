@@ -189,11 +189,17 @@ scalar operation application is an application node that FR-093 lowers from
 the function's checked body whose `operation.identity` is in one of these
 operation families: `quire.op.integer`, `quire.op.rational`,
 `quire.op.decimal`, `quire.op.ieee`, `quire.op.quantity`,
-`quire.op.numeric`, `quire.op.text` and `quire.op.enum`. Every other
-application (`let`, `if`, a Boolean connective, `quire.op.boolean.eq` and
-`.ne`, structural and reference equality, a projection, an option read, a
-call, a dispatch, a collection or model operation) carries no claim of its
-own.
+`quire.op.numeric`, `quire.op.text` and `quire.op.enum`, other than
+`quire.op.numeric.narrow`. Every other application (`let`, `if`, a Boolean
+connective, `quire.op.boolean.eq` and `.ne`, structural and reference
+equality, a projection, an option read, a call, a dispatch, a collection or
+model operation) carries no claim of its own.
+
+A `quire.op.numeric.narrow` application (a checked `Coerce`, FR-093)
+carries no claim of its own: it supplies the result bound of the
+application it wraps. That application's claim covers the narrow's target
+range as its result bound, so `x + 1` checked into `Int[0, 10]` is one
+claim, on the `+` node, whose result bound is `[0, 10]`.
 
 `check` SHALL record one requirement record for each `expression`
 occurrence of each scalar operation application node:
@@ -213,6 +219,8 @@ occurrence of each scalar operation application node:
   checked type, keyed by its parameter node; a read of a `let` binder
   contributes what its bound value reads; a literal contributes nothing.
   An application that reads no parameter or bound variable is `Bounded`.
+  The result bound taken from an enclosing narrow is a finite range and
+  adds no unbounded domain.
 
 Each record is computed from the checked tree of its own occurrence, so two
 occurrences of one node each carry their own extent.
@@ -237,7 +245,7 @@ package does not check.
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
 | FR-062-AC-11 | The package-wide `CheckingLimits` node budget is separate from the per-declaration `StageLimits::node_count` limit of FR-062-AC-5, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4, 128)` admits a package holding `a` alone; with `CheckingLimits::new(100, 128)` it admits a package holding both; with `CheckingLimits::new(4, 128)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
 | FR-062-AC-12 | A family `check` that reaches one of its four stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the depth the refused entry would reach for nesting depth, the measured preimage byte length for input bytes, the measured expression-node count for node count, and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
-| FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site occurrence, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For value functions (this requirement's "Requirement records of a value function"), each over `Int[0, 9]` parameters unless stated: `-z` gives exactly one record, keyed by the `quire.op.integer.negate` node's `expression` occurrence, `value-validity`, `Bounded`; `x + y` gives one at the `quire.op.integer.add` node and `x = y` one at the `quire.op.integer.eq` node, each `Bounded`; `(x + 1) * (x + 1)` gives two records at the one `+` node, ordinals 0 and 1, and one at the `*` node; `n + 1` over `n: Integer` gives one record whose extent is `Unbounded` with one `Integer` domain keyed by `n`'s parameter node and the empty path; `let t = x + 1 in t * 2` gives a `*` record whose extent is `Bounded`, through `t`'s bound value; `1 + 1` gives one `Bounded` record; `b and c` over Boolean parameters gives none. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
+| FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site occurrence, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For value functions (this requirement's "Requirement records of a value function"), each over `Int[0, 9]` parameters unless stated: `-z` gives exactly one record, keyed by the `quire.op.integer.negate` node's `expression` occurrence, `value-validity`, `Bounded`; `x + 1` with result type `Int[0, 10]` gives exactly one record, at the `quire.op.integer.add` node, `Bounded`, and none at the enclosing `quire.op.numeric.narrow` node; `x + y` gives one at the `quire.op.integer.add` node and `x = y` one at the `quire.op.integer.eq` node, each `Bounded`; `(x + 1) * (x + 1)` gives two records at the one `+` node, ordinals 0 and 1, and one at the `*` node; `n + 1` over `n: Integer` gives one record whose extent is `Unbounded` with one `Integer` domain keyed by `n`'s parameter node and the empty path; `let t = x + 1 in t * 2` gives a `*` record whose extent is `Bounded`, through `t`'s bound value; `1 + 1` gives one `Bounded` record; `b and c` over Boolean parameters gives none. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
 
 ## Dependencies
 
