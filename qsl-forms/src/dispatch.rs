@@ -167,6 +167,12 @@ pub enum LeadingTokenKind {
     /// absent from every non-test build.
     #[cfg(test)]
     TestProbe,
+    /// FR-063/S2 (QSL-244): exists only so `--cfg seam_probe_forms` makes
+    /// `dispatch` non-exhaustive. `qsl-forms` is built alone under that cfg
+    /// (a separate cfg from `seam_probe`, so this crate's own seam does not
+    /// hide the seams in the crates above it). Never constructed.
+    #[cfg(seam_probe_forms)]
+    __SeamProbe,
 }
 
 /// Why the forms stage refused to build a parsed unit.
@@ -380,6 +386,7 @@ fn declarations(cst: &LosslessCst) -> impl Iterator<Item = &CstNode> {
 /// makes exactly one call into its family's own production function and
 /// holds no other conditional, lookup or loop (ADR-012 §4.3 thin-dispatch
 /// rule; FR-067-CON-4).
+#[deny(clippy::wildcard_enum_match_arm)]
 fn dispatch(
     kind: LeadingTokenKind,
     construct: Construct<'_>,
