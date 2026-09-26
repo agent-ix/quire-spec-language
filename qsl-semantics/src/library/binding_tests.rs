@@ -25,7 +25,7 @@ use super::{
 use qsl_foundation::digest::WireNodeId;
 
 fn identity(label: &str) -> LibraryName {
-    LibraryName::new(vec![label.to_owned()]).unwrap()
+    LibraryName::new(label).unwrap()
 }
 
 fn preimage() -> Vec<u8> {
@@ -228,7 +228,7 @@ fn a_resolved_library_lock_is_a_pinned_request() {
         imports: vec![ImportDeclaration {
             library: identity("pkg"),
             version: version.to_owned(),
-            package_id: recomputed(),
+            digest: recomputed().record(),
             qualifier: None,
         }],
         exports: vec!["Q".to_owned()],

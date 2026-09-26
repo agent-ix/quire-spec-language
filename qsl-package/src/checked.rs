@@ -37,10 +37,12 @@
 //! computed from the package, never accepted from a caller).
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::Code;
 use qsl_semantics::check::CheckedGraph;
-use qsl_semantics::library::{PackageId, Selection};
+use qsl_semantics::library::{LibraryName, PackageId, Selection};
 use qsl_semantics::value::IDENTITY_LIMITS;
 
 use crate::emit::{emit_checked, EmitRefusal};
@@ -130,13 +132,15 @@ pub struct CheckedPackage {
     graph: CheckedGraph,
     /// E4's checked dependency closure: each directly imported package's
     /// own checked package, compiled from its digest-addressed source, by
-    /// its recomputed `package_id` ([`Self::link_with`]).
-    dependencies: BTreeMap<PackageId, CheckedPackage>,
+    /// its recomputed `package_id` ([`Self::link_with`]). Shared: one
+    /// library compile serves every import that reaches it (ADR-015 D-1).
+    dependencies: BTreeMap<PackageId, Arc<CheckedPackage>>,
     /// The resolved library closure (FR-307, FR-322 `dependency_selections`):
     /// one selection per library identity, over the direct imports and every
-    /// dependency's own closure, keyed by the identity string an import
-    /// names. `String`'s order is UTF-8 byte order, the order FR-322 writes.
-    selections: BTreeMap<String, ResolvedDependency>,
+    /// dependency's own closure, keyed by the library identity an import
+    /// names. [`LibraryName`]'s order is UTF-8 byte order, the order FR-322
+    /// writes (ADR-015 D-3).
+    selections: BTreeMap<LibraryName, ResolvedDependency>,
 }
 
 /// One library identity's selection in a package's resolved closure, and the
@@ -148,35 +152,37 @@ pub struct ResolvedDependency {
     /// The library identities from the linking package's direct import down
     /// to this one, this one last. The linking package itself is the
     /// implicit first step of every path.
-    pub path: Vec<String>,
+    pub path: Vec<LibraryName>,
 }
 
 /// One import the E4 link step binds (ADR-011 §4 dependency binding): the
-/// library identity `L`, version `v` and `package_id` `d` an
+/// library identity `L`, version `v` and recorded digest `d` an
 /// `import "L" version "v" digest "d"` names, and the dependency's checked
-/// package compiled from its digest-addressed source.
-#[derive(Debug)]
+/// package compiled from its source.
+#[derive(Clone, Debug)]
 pub struct Import {
-    /// Library identity `L`, as the import spells it.
-    pub identity: String,
+    /// Library identity `L` (ADR-015 D-3).
+    pub identity: LibraryName,
     /// Version string `v`.
     pub version: String,
-    /// The `package_id` the import, and the verified view E3 resolved
-    /// against, record for the dependency.
-    pub package_id: PackageId,
+    /// The digest `d` the import records for the dependency: a claim,
+    /// compared with the recomputed `package_id` and never itself one
+    /// (ADR-015 D-2).
+    pub digest: DigestRecord,
     /// The dependency's checked package, compiled from source through S1 to
-    /// S4.
-    pub package: CheckedPackage,
+    /// S4 (ADR-015 D-1).
+    pub package: Arc<CheckedPackage>,
 }
 
 /// Why the E4 link step built no package (ADR-011 §2.3: no partial output).
 #[derive(Debug, thiserror::Error)]
 pub enum LinkRefusal {
-    /// An import's identity or version is empty; FR-322 admits neither.
-    #[error("an import names an empty library identity or version")]
+    /// An import's version is empty; FR-322 admits no empty version (an
+    /// empty identity is not a [`LibraryName`]).
+    #[error("an import names an empty library version")]
     EmptySelection {
-        /// The identity as written.
-        identity: String,
+        /// The library identity.
+        identity: LibraryName,
         /// The version as written.
         version: String,
     },
@@ -189,9 +195,9 @@ pub enum LinkRefusal {
     )]
     DependencyIdentityMismatch {
         /// The library identity.
-        identity: String,
-        /// The `package_id` the import records.
-        expected: PackageId,
+        identity: LibraryName,
+        /// The digest the import records (ADR-015 D-2).
+        expected: DigestRecord,
         /// The dependency's recomputed `package_id`.
         recompiled: PackageId,
     },
@@ -200,12 +206,12 @@ pub enum LinkRefusal {
     /// (`invalid_package`/`conflicting-definition`), listing both paths.
     #[error(
         "invalid_package/conflicting-definition: {} and {} select {identity} differently",
-        .selections[0].path.join(" -> "),
-        .selections[1].path.join(" -> ")
+        display_path(&.selections[0].path),
+        display_path(&.selections[1].path)
     )]
     ConflictingDefinition {
         /// The library identity.
-        identity: String,
+        identity: LibraryName,
         /// The earlier selection and its path, then the conflicting one.
         selections: Box<[ResolvedDependency; 2]>,
     },
@@ -214,7 +220,7 @@ pub enum LinkRefusal {
     #[error("the dependency {identity} does not emit a complete package")]
     DependencyEmission {
         /// The library identity.
-        identity: String,
+        identity: LibraryName,
         /// The emitter's refusal, or `None` when the emission omits nodes.
         refusal: Option<EmitRefusal>,
     },
@@ -322,19 +328,19 @@ impl CheckedPackage {
     /// A refusal yields no package.
     pub fn link_with(graph: CheckedGraph, imports: Vec<Import>) -> Result<Self, LinkRefusal> {
         let mut dependencies = BTreeMap::new();
-        let mut selections: BTreeMap<String, ResolvedDependency> = BTreeMap::new();
+        let mut selections: BTreeMap<LibraryName, ResolvedDependency> = BTreeMap::new();
         for import in imports {
-            if import.identity.is_empty() || import.version.is_empty() {
+            if import.version.is_empty() {
                 return Err(LinkRefusal::EmptySelection {
                     identity: import.identity,
                     version: import.version,
                 });
             }
             let recompiled = recomputed_package_id(&import)?;
-            if recompiled != import.package_id {
+            if !recompiled.matches(&import.digest) {
                 return Err(LinkRefusal::DependencyIdentityMismatch {
                     identity: import.identity,
-                    expected: import.package_id,
+                    expected: import.digest,
                     recompiled,
                 });
             }
@@ -361,7 +367,7 @@ impl CheckedPackage {
                         },
                     )
                 });
-            let entries: Vec<(String, ResolvedDependency)> =
+            let entries: Vec<(LibraryName, ResolvedDependency)> =
                 std::iter::once((import.identity.clone(), direct))
                     .chain(transitive)
                     .collect();
@@ -387,14 +393,14 @@ impl CheckedPackage {
 
     /// The checked dependency closure (E4): each imported identity's own
     /// checked package.
-    pub fn dependencies(&self) -> &BTreeMap<PackageId, CheckedPackage> {
+    pub fn dependencies(&self) -> &BTreeMap<PackageId, Arc<CheckedPackage>> {
         &self.dependencies
     }
 
     /// The resolved library closure: one selection per library identity, in
     /// ascending UTF-8 byte order of the identity (FR-322
     /// `dependency_selections`), each with the first path that reached it.
-    pub fn dependency_selections(&self) -> &BTreeMap<String, ResolvedDependency> {
+    pub fn dependency_selections(&self) -> &BTreeMap<LibraryName, ResolvedDependency> {
         &self.selections
     }
 }
@@ -415,11 +421,19 @@ fn recomputed_package_id(import: &Import) -> Result<PackageId, LinkRefusal> {
     Ok(emission.package().package_id())
 }
 
+/// A dependency path written `a -> b -> c`.
+fn display_path(path: &[LibraryName]) -> String {
+    path.iter()
+        .map(LibraryName::as_str)
+        .collect::<Vec<_>>()
+        .join(" -> ")
+}
+
 /// Add `resolved` of `identity` to `selections`, unifying an equal
 /// selection reached by another path (FR-307 diamond rule).
 fn unify(
-    selections: &mut BTreeMap<String, ResolvedDependency>,
-    identity: String,
+    selections: &mut BTreeMap<LibraryName, ResolvedDependency>,
+    identity: LibraryName,
     resolved: ResolvedDependency,
 ) -> Result<(), LinkRefusal> {
     match selections.get(&identity) {

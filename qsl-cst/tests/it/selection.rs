@@ -35,8 +35,12 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
             } else {
                 "1"
             };
+            // An import records a bare 64-hex `package_id` (ADR-015 D-2).
+            let bare_digest = "a".repeat(64);
             let digest = if invalid_component == "digest" {
                 "not-a-digest"
+            } else if declaration_kind == "import" {
+                &bare_digest
             } else {
                 &valid_digest
             };
@@ -130,4 +134,68 @@ fn a_model_digest_keeps_the_slot_its_prefix_names() {
     )
     .unwrap();
     assert_eq!(parsed.diagnostics(), []);
+}
+
+/// FR-099-AC-2 (TC-446 step 2): an import's digest is exactly 64 lowercase
+/// hexadecimal characters, read as a `quire.package.semantic/v2` digest
+/// record. A `sha256:` prefix, uppercase hex, and 63 or 65 characters each
+/// refuse with `invalid-digest` at the digest string.
+#[trace("FR-099-AC-2", "TC-446")]
+#[test]
+fn an_import_digest_is_bare_lowercase_hex() {
+    use qsl_foundation::digest::{DigestDomain, DigestRecord};
+    let hex = "d".repeat(64);
+    let profile_digest = "a".repeat(64);
+    let parse_import = |digest: &str| {
+        let source = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:{profile_digest}\";\n\
+             import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n\
+             record R {{ datum: Integer; }}\n"
+        );
+        let parsed = parse(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            source.as_bytes(),
+            Limits::default(),
+        )
+        .unwrap();
+        (source, parsed)
+    };
+    let (_, parsed) = parse_import(&hex);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let import = &parsed.selections().imports[0];
+    assert_eq!(import.identity, "test/geometry");
+    assert_eq!(import.version, "1");
+    assert_eq!(
+        import.digest,
+        DigestRecord::from_domain_and_hex(DigestDomain::PackageSemanticV2, &hex).unwrap()
+    );
+    for invalid in [
+        format!("sha256:{hex}"),
+        "D".repeat(64),
+        "d".repeat(63),
+        "d".repeat(65),
+    ] {
+        let (source, parsed) = parse_import(&invalid);
+        assert!(parsed.selections().imports.is_empty(), "{invalid}");
+        assert_eq!(parsed.diagnostics().len(), 1, "{invalid}");
+        let diagnostic = &parsed.diagnostics()[0];
+        assert_eq!(diagnostic.code, Code::InvalidDigest, "{invalid}");
+        assert_eq!(diagnostic.cause.as_str(), "invalid-digest", "{invalid}");
+        let literal = format!("\"{invalid}\"");
+        let start = source.find(&literal).unwrap();
+        assert_eq!(
+            diagnostic.byte_span().unwrap(),
+            qsl_foundation::Span {
+                start,
+                end: start + literal.len()
+            },
+            "{invalid}"
+        );
+    }
 }

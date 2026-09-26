@@ -52,4 +52,4 @@ Tag the tests `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, and step 4's
 
 ## Status
 
-Step 4 as written here (stage `intake`, bare-hex digest) is planned under QSL-255 part (b); `qsl-replay` `spine::tests::an_import_no_dependency_input_supplies_refuses` backs the part (a) behaviour, an assembly-stage refusal of a `sha256:` digest, and is rewritten with FR-099. Steps 1 and 3 are backed by `qsl-semantics` `check::assemble` tests: `floating_and_reference_types_are_refused`. Step 2 is not: `qsl-cst` still requires `[mode]` on `Float32` and `Float64` (FR-091-AC-23).
+Step 4 is backed by `qsl-replay` `spine::tests::an_import_no_dependency_input_supplies_refuses` (QSL-255 part b). Steps 1 and 3 are backed by `qsl-semantics` `check::assemble` tests: `floating_and_reference_types_are_refused`. Step 2 is not: `qsl-cst` still requires `[mode]` on `Float32` and `Float64` (FR-091-AC-23).

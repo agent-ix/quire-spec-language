@@ -187,7 +187,7 @@ operational validation remains outside this audit-only plan.
 | TC-402 | The assembler lives in the check core and its non-test code has no edge to qsl-cst | Unit | P1 | FR-091-AC-20 | 🚧 Planned; QSL-141 |
 | TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | 🚧 Planned; QSL-141 |
 | TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | ✅ Passed locally |
-| TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | 🚧 Planned; QSL-141; FR-091-AC-24's stage-`intake`, bare-hex form is planned with FR-099 (QSL-255 part b) |
+| TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | 🚧 Planned; QSL-141; step 4 (FR-091-AC-24) passes locally (QSL-255 part b) |
 | TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; `stage_limit_exceeded` code needs QSL-160 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | ✅ Passed locally |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | ✅ Passed locally |
@@ -225,7 +225,7 @@ operational validation remains outside this audit-only plan.
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally (QSL-249) |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally (QSL-252) |
 | TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ Passed locally (QSL-5) for steps 1 to 6; step 6 (a predicate whose body calls another declared function, the QSL-22 Layer 3 exemplar's shape) added by QSL-257; step 7 (FR-098-AC-6, FR-098-AC-7, replay against dependencies) planned (QSL-255) |
-| TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Planned (QSL-255) |
+| TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Steps 1 to 4 pass locally; steps 5 to 7 planned (QSL-255) |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

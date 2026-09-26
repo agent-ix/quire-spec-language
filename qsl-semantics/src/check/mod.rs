@@ -147,7 +147,7 @@ pub use family::fixtures::{
 };
 pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 
-pub use assemble::{AssemblyCause, AssemblyError, AssemblyRefusal};
+pub use assemble::{AdmittedImport, AssemblyCause, AssemblyError, AssemblyRefusal};
 pub use capability::{Capability, UnknownCapabilityLabel};
 pub use check::{
     CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,

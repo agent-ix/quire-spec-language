@@ -66,3 +66,7 @@ both successors exist"; ruling on QSL-229):
 Planned; no test backs this case. It is gated on QSL-6 and QSL-189 and
 runs once both have landed their successor. Until then
 `ResolvedSourcePackage` stays in place. See FR-087 Status, AC-7 and CON-4.
+Step 4's import half now belongs to the spine: `resolve_source_package` no
+longer resolves `import` selections, and spine `compile`'s S4 source
+resolution binds each import against a library compiled from source and read
+into its `ImportView` (ADR-015 D-1, FR-099).

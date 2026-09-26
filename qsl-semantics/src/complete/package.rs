@@ -844,7 +844,7 @@ pub fn resolve_source_package(
                         selection
                             .alias
                             .as_deref()
-                            .unwrap_or(selection.definition.identity()),
+                            .unwrap_or(selection.identity.as_str()),
                         selection.span,
                     )
                 })
@@ -874,16 +874,13 @@ pub fn resolve_source_package(
             }
         }
     }
+    // Only profiles select catalog definitions. An `import` names a library
+    // that the S4 source resolution compiles from source (ADR-015 D-1), so
+    // it is not a definition root here.
     let roots: Vec<_> = selections
         .profiles
         .iter()
-        .map(|selection| (&selection.definition, selection.identity_span, true))
-        .chain(
-            selections
-                .imports
-                .iter()
-                .map(|selection| (&selection.definition, selection.span, false)),
-        )
+        .map(|selection| (&selection.definition, selection.identity_span))
         .collect();
 
     let mut resolved_models = BTreeMap::new();
@@ -939,7 +936,7 @@ pub fn resolve_source_package(
     }
 
     let mut logical = BTreeMap::<&str, (&DefinitionRef, Span)>::new();
-    for (selected, span, _) in &roots {
+    for (selected, span) in &roots {
         if let Some((previous, previous_span)) =
             logical.insert(selected.identity(), (selected, *span))
         {
@@ -957,7 +954,7 @@ pub fn resolve_source_package(
         }
     }
 
-    for (selected, span, profile) in &roots {
+    for (selected, span) in &roots {
         if catalog.exact(selected).is_none() {
             let (code, cause) = if catalog.contains_identity(selected.identity()) {
                 if catalog.contains_version(selected.identity(), selected.version()) {
@@ -973,14 +970,9 @@ pub fn resolve_source_package(
                     Code::StaleDependency,
                     PackageError::StaleDefinition((*selected).clone()),
                 )
-            } else if *profile {
-                (
-                    Code::UnknownProfile,
-                    PackageError::MissingDefinition((*selected).clone()),
-                )
             } else {
                 (
-                    Code::MissingImport,
+                    Code::UnknownProfile,
                     PackageError::MissingDefinition((*selected).clone()),
                 )
             };
@@ -995,7 +987,7 @@ pub fn resolve_source_package(
     let mut active = Vec::new();
     let mut done = BTreeSet::new();
     let mut traversed_edges = 0_usize;
-    for (root, span, _) in roots {
+    for (root, span) in roots {
         let mut work = vec![(root.clone(), false)];
         while let Some((selected, expanded)) = work.pop() {
             if done.contains(&selected) {

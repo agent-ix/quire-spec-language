@@ -713,8 +713,10 @@ the steps its test backs.
   `PackageDeclarations::check`, `CheckedPackage::link`,
   `CheckedPackage::link_with`,
   `EmittedPackage::new`, `verify_binding` and
-  `VerifiedPackage::into_import_view`, plus the two lane-private
-  producers. `compile_fail` doctests cover TC-244 rows 1 to 5. Rows 3 to 5
+  `VerifiedPackage::into_import_view`, the two composing them
+  (`qsl_package::read_import_view`, the I2 read of a library's own
+  emission, and the spine's per-unit chain `Resolution::compile_unit`,
+  ADR-015 D-1), plus the two lane-private producers. `compile_fail` doctests cover TC-244 rows 1 to 5. Rows 3 to 5
   (`VerifiedPackage`, `ImportView` and `protocol_artifact::AdmittedPackage`
   into checked typestate) fail with E0277. Stable rustdoc does not check
   that code, so each block is paired with one that must compile over the
@@ -758,9 +760,10 @@ AC-7 (TC-246) and AC-13 (TC-379) are not delivered:
   closure (`CheckedPackage::link_with`, AC-14), the emitter writes
   `dependency_selections`, and the I2 reader admits a non-empty one. The
   resolution against an `ImportView` (`check::imports::ImportedNames`)
-  exists. Spine `compile`'s dependency input, the S4 source resolution and
-  the typing of an imported name at E3 are ADR-015 and FR-099; TC-379 is
-  planned with them under QSL-255 part (b).
+  exists. Spine `compile`'s dependency input and the S4 source resolution
+  (ADR-015 D-1, FR-099) are implemented; the typing of an imported name at
+  E3 (ADR-015 D-5) is not, and TC-379 is planned with it under QSL-255
+  part (b).
 
 AC-14 (TC-253) is backed by `qsl-package`'s
 `e4_refuses_a_stale_dependency_and_a_conflicting_diamond`,

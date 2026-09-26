@@ -112,9 +112,12 @@ use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, Revision, SourceRegion,
 };
 use qsl_semantics::library::{
-    declared_exports, verify_binding, LibraryName, LibraryPackage, LibraryRefusal, PackageId,
-    PinnedRequest, SupportedV2Wire, VerifiedPackage,
+    declared_exports, verify_binding, ImportView, LibraryName, LibraryPackage, LibraryRefusal,
+    PackageId, PinnedRequest, Selection, SupportedV2Wire, VerifiedPackage,
 };
+use qsl_semantics::model::key::hex;
+
+use crate::emit::Emission;
 use qsl_semantics::value::IDENTITY_LIMITS;
 use quire_exact::{Origin, Role};
 
@@ -250,9 +253,9 @@ impl V2ReadLimits {
 /// `unknown_wire`/`unsupported-wire`, naming the version IR read and the one
 /// this reader admits.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct UnsupportedWire {
+pub struct UnsupportedWire {
     /// The `contract_version` IR read.
-    pub(crate) actual: Box<str>,
+    pub actual: Box<str>,
 }
 
 impl CatalogCoded for UnsupportedWire {
@@ -276,7 +279,7 @@ impl UnsupportedWire {
 /// from a [`LimitExceeded`]: a refusal names a defect in the input, never a
 /// resource ceiling (FR-322-AC-9).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub(crate) enum V2ReadRefusal {
+pub enum V2ReadRefusal {
     /// IR refused the contract version (ADR-013 O-22), located at the
     /// artifact's `/contract_version`.
     #[error("unsupported contract version {:?}", wire.actual)]
@@ -339,7 +342,7 @@ pub(crate) enum V2ReadRefusal {
 /// Why an admitted wire's `source_map` did not convert into a
 /// [`PackageSourceMap`].
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub(crate) enum SourceMapDefect {
+pub enum SourceMapDefect {
     /// An entry's `node_id` digest is not 64 lowercase hexadecimal digits.
     #[error("source-map node id {0:?} is not a wire node id")]
     NodeId(Box<str>),
@@ -428,11 +431,7 @@ fn package_source_map(
 
 impl V2ReadRefusal {
     /// The FR-010 stable code.
-    #[allow(
-        dead_code,
-        reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) wires this reader in; until then only this module's own tests call it"
-    )]
-    pub(crate) fn code(&self) -> Code {
+    pub fn code(&self) -> Code {
         match self {
             Self::UnsupportedVersion { .. } => Code::UnknownWire,
             Self::Envelope { refusal, .. } => map_refusal_code(refusal.code),
@@ -447,11 +446,7 @@ impl V2ReadRefusal {
     /// IR refusal at no value, and for the refusals this reader raises
     /// against the caller's pins or its own re-encoding, which name no
     /// position in the bytes.
-    #[allow(
-        dead_code,
-        reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) wires this reader in; until then only this module's own tests call it"
-    )]
-    pub(crate) fn locus(&self) -> Option<&Locus> {
+    pub fn locus(&self) -> Option<&Locus> {
         match self {
             Self::UnsupportedVersion { locus, .. } => Some(locus),
             Self::Envelope { locus, .. } => locus.as_deref(),
@@ -496,10 +491,6 @@ impl V2ReadRefusal {
 /// `package_id` mismatch is reported by IR as `StaleDependency`, not a
 /// digest-mismatch code of its own. That is IR's own classification to
 /// fix (raised as an IR ticket), not this reader's to reinterpret.
-#[allow(
-    dead_code,
-    reason = "no production caller yet: only reached through V2ReadRefusal::code, itself uncalled until QSL-6 slice S3"
-)]
 fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     match code {
         CheckedPackageRefusalCode::UnknownContractVersion => Code::UnknownWire,
@@ -629,10 +620,6 @@ fn canonical_preimage(
 /// know which bytes are current). `pinned` is condition 3's own input: the
 /// consumer's library lock (`PinnedRequest::from(&LibraryLock)`) or pinned
 /// request, one selection per library identity.
-#[allow(
-    dead_code,
-    reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) wires this reader in; until then only this module's own tests call it"
-)]
 pub(crate) fn read_checked_package_v2(
     bytes: &[u8],
     identity: LibraryName,
@@ -753,4 +740,50 @@ pub(crate) fn read_checked_package_v2(
             Err(fault) => refused(V2ReadRefusal::Fault(fault)),
         },
     }
+}
+
+/// Why [`read_import_view`] built no import view: the I2 read refused the
+/// bytes, or reached one of its ceilings.
+pub type ImportViewRefusal = StageFailure<V2ReadRefusal>;
+
+/// ADR-015 D-1 step 6: read a library's freshly emitted v2 bytes through the
+/// I2 reader, pinned to the one selection `identity`, `version` and the
+/// emission's recomputed `package_id`, into the [`VerifiedPackage`]'s
+/// [`ImportView`] (ADR-011 §4 verified binding). The lock is checked
+/// against the emission's own evidence of the artifacts it compiled against
+/// and against `domain_packages`, FR-056's package input by `sha256-jcs`
+/// digest, for its `model_selections`. The reader's ceilings are its
+/// defaults.
+///
+/// The artifact evidence is vacuous by construction: it is the emission's
+/// own record of what it compiled against, so it cannot disagree with the
+/// lock. The authority for a library is its source compile (ADR-015 D-1);
+/// this read only turns the emitted bytes into the view E3 resolves
+/// against, through the one verified-binding path (ADR-011 §4).
+pub fn read_import_view(
+    emission: &Emission,
+    identity: LibraryName,
+    version: &str,
+    domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<ImportView, ImportViewRefusal> {
+    let mut evidence = emission.evidence.clone();
+    for (digest, document) in domain_packages {
+        evidence.insert_domain_package_document(hex(digest), document.as_slice());
+    }
+    let pinned = PinnedRequest::single(
+        identity.clone(),
+        Selection {
+            version: version.to_owned(),
+            package_id: emission.package.package_id(),
+        },
+    );
+    read_checked_package_v2(
+        emission.package.bytes(),
+        identity,
+        version.to_owned(),
+        V2ReadLimits::default(),
+        &evidence,
+        &pinned,
+    )
+    .map(|read| read.into_value().package.into_import_view())
 }

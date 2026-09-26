@@ -452,6 +452,9 @@ fn complete(
         source.path(),
         source.text().as_bytes(),
         &packages,
+        // native-compile/1's `libraries` member fills this input (FR-027-AC-10,
+        // QSL-255 part b, PR 3).
+        &qsl_replay::spine::DependencyInput::default(),
         qsl_replay::spine::SpineLimits::default(),
     )
     .map(|compiled| compiled.emitted.bytes().to_vec())

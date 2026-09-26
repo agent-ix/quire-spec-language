@@ -123,7 +123,7 @@ fn id(label: &str) -> PackageId {
 }
 
 fn name(library: &str) -> LibraryName {
-    LibraryName::new(vec![library.to_owned()]).unwrap()
+    LibraryName::new(library).unwrap()
 }
 
 fn path(libraries: &[&str]) -> Vec<LibraryName> {
@@ -139,7 +139,7 @@ fn import(
     ImportDeclaration {
         library: name(library),
         version: version.to_owned(),
-        package_id,
+        digest: package_id.record(),
         qualifier: qualifier.map(str::to_owned),
     }
 }
@@ -230,7 +230,7 @@ fn l01_an_import_binds_the_library_package_id() {
         resolve_libraries(&by_bytes, &[library_l()]),
         &LibraryRefusal::StaleDependency {
             path: path(&["P", "L"]),
-            pin: StalePin::Import(import("L", "1", raw_source, Some("l"))),
+            pin: StalePin::Import(Box::new(import("L", "1", raw_source, Some("l")))),
             cause: StaleCause::ByteDigestMismatch,
         },
         Code::StaleDependency,
@@ -241,7 +241,7 @@ fn l01_an_import_binds_the_library_package_id() {
         resolve_libraries(&over_l("P", "2", id("L@1")), &[library_l()]),
         &LibraryRefusal::StaleDependency {
             path: path(&["P", "L"]),
-            pin: StalePin::Import(import("L", "2", id("L@1"), Some("l"))),
+            pin: StalePin::Import(Box::new(import("L", "2", id("L@1"), Some("l")))),
             cause: StaleCause::RevisionMismatch,
         },
         Code::StaleDependency,
@@ -1221,7 +1221,7 @@ fn stale_dependency_revision_mismatch_classifies_to_4_condition_3() {
         resolve_libraries(&over_l("P", "2", id("L@1")), &[library_l()]),
         &LibraryRefusal::StaleDependency {
             path: path(&["P", "L"]),
-            pin: StalePin::Import(import("L", "2", id("L@1"), Some("l"))),
+            pin: StalePin::Import(Box::new(import("L", "2", id("L@1"), Some("l")))),
             cause: StaleCause::RevisionMismatch,
         },
         Code::StaleDependency,
@@ -1238,7 +1238,7 @@ fn stale_dependency_byte_digest_mismatch_classifies_to_i2_rule_1() {
         resolve_libraries(&over_l("P", "1", raw_source), &[library_l()]),
         &LibraryRefusal::StaleDependency {
             path: path(&["P", "L"]),
-            pin: StalePin::Import(import("L", "1", raw_source, Some("l"))),
+            pin: StalePin::Import(Box::new(import("L", "1", raw_source, Some("l")))),
             cause: StaleCause::ByteDigestMismatch,
         },
         Code::StaleDependency,

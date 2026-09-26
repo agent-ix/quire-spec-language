@@ -12,7 +12,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::digest::InvalidDigest;
+use crate::digest::{DigestRecord, InvalidDigest};
 use crate::{ByteDigest, Span};
 
 /// Exact versioned definition digest in the profile/import domain.
@@ -230,15 +230,25 @@ pub struct ProfileSelection {
     pub identity_span: Span,
 }
 
-/// Source-located import definition selection.
+/// Source-located library import selection (ADR-015 D-2, D-3): the
+/// library identity and version an `import` names, and the
+/// `quire.package.semantic/v2` digest it records for the library. The
+/// digest is a claim, compared with a recomputed `package_id` and never
+/// itself one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportSelection {
     /// Optional local alias.
     pub alias: Option<String>,
-    /// Exact definition triple.
-    pub definition: DefinitionRef,
+    /// Library identity, within the parser's selection bound.
+    pub identity: String,
+    /// Exact selected version.
+    pub version: String,
+    /// The recorded `package_id`, in the `quire.package.semantic/v2` domain.
+    pub digest: DigestRecord,
     /// Full import declaration range.
     pub span: Span,
+    /// Exact identity literal range used for located refusals.
+    pub identity_span: Span,
 }
 
 /// Source-located formal model selection.
