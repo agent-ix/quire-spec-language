@@ -9,8 +9,8 @@
 //! - [`model`]: domain packages, keys, normalization, dispatch, population
 //!   and conformance, with `model::intake`, the only module that names the
 //!   FCD crates;
-//! - [`library`] and [`complete`]: library resolution, package identity and
-//!   complete-V1 package selection;
+//! - [`library`]: library resolution, package identity and the complete-V1
+//!   definition bundle (`library::bundle`);
 //! - [`check`] and [`family`]: the S3 check core, its family checkers and the
 //!   check-core family contract.
 //!
@@ -21,7 +21,6 @@
 //! depend on this crate, never the other way.
 
 pub mod check;
-pub mod complete;
 pub mod family;
 pub mod library;
 pub mod model;

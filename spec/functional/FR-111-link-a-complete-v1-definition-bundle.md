@@ -143,11 +143,13 @@ applies them to the catalog and `link_bundle` to the closure.
 
 ## Status
 
-Specified under QSL-234 (ruling 2026-09-26). The capability is implemented
-today inside `complete::resolve_source_package` and backed there by
-`tests/it/complete_package.rs` and `complete::package_tests`, tagged QSpec
-FR-131-AC-1 to AC-3 and FR-339-AC-3. `library::bundle` does not exist yet,
-so FR-111's criteria are unbacked -- TC-491 planned. The relocation lands
-in the QSL-269 change that retires `ResolvedSourcePackage`: the code and
-its tests move together, keeping their QSpec tags, so the capability is
-backed throughout.
+Specified under QSL-234 (ruling 2026-09-26). Implemented under QSL-269:
+`library::bundle` (`qsl-semantics/src/library/bundle.rs`) holds
+`link_bundle` and the closure, facet, capability, limit and identity code
+moved from the retired `complete::resolve_source_package`. Its tests
+(`library::bundle_tests`, TC-491) carry the tags of the scenarios they took
+over (QSpec FR-131-AC-1 to AC-3, FR-339-AC-3), so those criteria stayed
+backed. FR-111-AC-1 to AC-7 are backed there. A refusal of the whole link
+(the root list's ceiling, the closed definitions' bytes, the capabilities,
+the facets, the identity) carries no root index: `BundleRefusal::root` is
+`None`.

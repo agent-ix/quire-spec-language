@@ -36,7 +36,6 @@ mod compile_command;
 mod compiled_protocol_v2;
 mod complete_cst;
 mod complete_editor;
-mod complete_package;
 mod complete_v1_plan;
 mod composed_admission_stages;
 mod composed_binding;

@@ -64,6 +64,9 @@ use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 
 #[cfg(test)]
 mod binding_tests;
+pub mod bundle;
+#[cfg(test)]
+mod bundle_tests;
 mod package_identity;
 mod witness;
 
