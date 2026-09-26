@@ -40,7 +40,8 @@ QSL implements these parts of FR-181:
 This requirement does not implement the model-level successor relation
 (operation × finite argument domains × frame post-states, QSpec FR-013-AC-1),
 the recording of an invariant-violating successor (FR-181-AC-4's last
-clause) or the refusal of evaluator effects (FR-181-AC-6). A
+clause) or the refusal of evaluator effects (FR-181-AC-6); QSL-274 owns
+those. A
 `TransitionSystem` implementation supplies the successor relation; the
 engine orders, keys, explores and samples it.
 
@@ -76,7 +77,8 @@ RFC 8785 JCS UTF-8 bytes of their transition identity,
 FR-181 does not order two successors with equal transition identities and
 different post-states. QSL orders them by the post-state's state-key bytes,
 ascending. Initial states are admitted in ascending state-key byte order,
-with equal keys coalesced.
+with equal keys coalesced. Both are QSL's choices; STD-109 settles them
+upstream in FR-181.
 
 **State key.** The state key is FR-181's
 `{"type":"simulation-state","semantic":…,"control":…,"queues":…,"roles":…,"observations":…,"bounds":…}`
@@ -98,7 +100,8 @@ increments `d`. `d` restarts at 0 at every step. `n = 1` selects index 0 with
 no digest. `n = 0` ends the trace with no draw. FR-181 names one initial
 state; when a `TransitionSystem` has `m > 1` distinct initial states, QSL
 starts trace `t` from the initial state at index `t mod m` in canonical
-order, with no draw. Provenance records the seed, the trace index and the
+order, with no draw. This is QSL's choice; STD-109 settles it upstream.
+Provenance records the seed, the trace index and the
 lock's `DefinitionRef` (identity, revision and raw-byte digest) in place of
 today's `sampler_version: String` (ADR-014 TR-1).
 
