@@ -196,6 +196,22 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-101
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-102
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-103
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-104
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-105
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-106
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-107
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-108
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-109
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -493,6 +509,14 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-099](functional/FR-099-compile-against-supplied-libraries.md) | FR | Implemented under QSL-255 (ADR-015 D-1 to D-5): spine `compile` resolves imports against supplied libraries, compiles each from source, types imported names from the library's checked graph and emits `dependency_reference` -- D-1's spine resolution, D-2, D-3 and D-5 implemented, D-1's CLI `libraries` (FR-027-AC-10) and replay (D-4) suppliers implemented; TC-446 steps 1 to 7 pass locally (AC-5's `g::f(3)` clause amended, QSL-262) |
 | [FR-100](functional/FR-100-run-a-named-function-through-the-spine.md) | FR | Specified under QSL-271 (A05-1; ADR-011 §5 spine `run`, OQ-1): CLI `run` routes a native-run/1 request by the program's declared edition, and a `1-draft` program's named function runs through `qsl_replay::spine::run` (spine compile, then `CheckedPackage::call`) with name-keyed canonical integer arguments, a `spine-run-result/1` outcome and FR-301 exit codes -- TC-450 to TC-452, not implemented |
 | [FR-101](functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md) | FR | Specified under QSL-272: `qsl_eval::simulation` implements QSpec FR-181's canonical successor order, typed state key, pinned `quire.simulation.sampler/v1`, `caller-cancelled` cause and pre-exploration `requires-bound` -- TC-453 to TC-455 planned |
+| [FR-102](functional/FR-102-build-state-clause-forms.md) | FR | Specified under QSL-273 (A05-3): S2 `invariant`/`pre`/`post` state clause forms and the `self`, `result` and `reaches` expressions (ADR-012 §15); not yet implemented -- TC-456, TC-457 planned |
+| [FR-103](functional/FR-103-admit-model-operations-and-frames-on-the-spine.md) | FR | Specified under QSL-273 (A05-3): I1 and E3 admit a domain package's operations and frames (amends FR-056's operation refusal); not yet implemented -- TC-458 planned |
+| [FR-104](functional/FR-104-check-state-clauses.md) | FR | Specified under QSL-273 (A05-3): S3 `ProtocolClause` state clause check and its `operation-contract` requirement records; not yet implemented -- TC-459 to TC-461 planned |
+| [FR-105](functional/FR-105-emit-state-nodes.md) | FR | Specified under QSL-273 (A05-3): S4 `state`/`state_clause`, `operation_anchor` and `frame` nodes, model members named by object type and member name; AC-1 to AC-4 pending STD-111 (QSpec wire); not yet implemented -- TC-462, TC-463 planned |
+| [FR-106](functional/FR-106-admit-snapshots-and-invocations.md) | FR | Specified under QSL-273 (A05-3): the spine clause-execution input: `quire.state.snapshot/v1` and `quire.state.invocation/v1` documents and their admission; not yet implemented -- TC-464, TC-465 planned |
+| [FR-107](functional/FR-107-evaluate-state-clauses-at-s6a.md) | FR | Specified under QSL-273 (A05-3): S6a `ProtocolClause` clause evaluation over admitted observations; not yet implemented -- TC-466, TC-467 planned |
+| [FR-108](functional/FR-108-run-the-configversion-spine-corpus.md) | FR | Specified under QSL-273 (A05-3): the ConfigVersion spine corpus with native-equal typed dispositions (QSpec FR-180-AC-1, AC-4, AC-5, QSL's share); AC-6 (pinned `package_id`, I04 `read`) pending STD-111; not yet implemented -- TC-469 planned |
+| [FR-109](functional/FR-109-run-a-state-clause-through-the-spine.md) | FR | Specified under QSL-273 (A05-3): layer-6 `qsl_replay::spine::run_clause` beside FR-100's `run`, reusing FR-100's argument binding and outcome mapping: compile, select, admit, evaluate, report; not yet implemented -- TC-468 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented under QSL-214 and QSL-215: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented under QSL-216, QSL-218 and QSL-222: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (QSL-17, #222) |
