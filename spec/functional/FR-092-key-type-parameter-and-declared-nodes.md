@@ -355,7 +355,11 @@ it, and the function's key can depend on it without a cycle.
 `check` SHALL build the node of a function declaration as follows:
 
 - `node_tag` `function`; `semantic_form` `recursive_function` when the node is
-  in a recursion group, else `pure_function`;
+  in a recursion group, else `predicate` for a declaration of kind
+  `Predicate` ([FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md)),
+  else `pure_function`. A predicate has no measure, so `check` refuses any
+  recursion group that holds one (FR-146 `missing-measure`), and a
+  predicate node is never `recursive_function`;
 - `semantic_type`: the node of the declared result type;
 - `declaration`: `{qualified_name}`, the declared name's `::`-separated
   segments (ADR-013 O-11), and `owner`: the unit's `SourceOwner`;
@@ -934,6 +938,7 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 | FR-092-AC-10 | `function m using v(x: Int[0, 9]): Boolean pure decreases(x) { true }` keys `x`'s parameter node to P4 and `m` to F3, whose body binds `decreases` to a `reference` to P4. | Test (TC-414) |
 | FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5, L6 and E11 to E13; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's digest. In `function h using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then h(x - 1) and h(x - 1) else true }`, the two calls are one node, and `h`'s group has `size` 4: `h`, the conditional, the conjunction and the call. | Test (TC-413) |
 | FR-092-AC-12 | `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`), declared once through a `CompositeDeclaration` whose key is 32 bytes of `0x11` and once through one whose key is 32 bytes of `0x22`, keys to D1 both times, and its checked type node's id is D1 both times. No preimage, checked-graph node or checked type node holds either supplied key. | Test (TC-413) |
+| FR-092-AC-13 | Under (`a`, `u`), `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` gives a node with `node_tag` `function`, `semantic_form` `predicate`, `declaration.qualified_name` `["Positive"]` and the unit's `owner`. `function Positive using v(x: Int[0, 9]): Boolean pure { x > 0 }`, alone in another unit under (`a`, `u`), gives a node with `semantic_form` `pure_function` and a key different from the predicate's. For `ordered enum Status { READY, DONE }` from source, the checked graph holds the declaration node with key FR-091 vector N1 (`scalar_type`, `enum`, `declaration.qualified_name` `["Status"]`) and the member node with key N2 (`value`, `enum_value`). | Test (TC-481) |
 
 ## Dependencies
 
@@ -983,6 +988,10 @@ to AC-12 and CON-2 there, and the FR-146 recursive-function tests of
 checking stage's work budget. An option or collection type whose node is a
 member of a recursion group is that member wherever it is named after the
 group is keyed (FR-093's P15 and P16 are typed at G17).
+
+AC-13, the `predicate` function node and a source enum's nodes, is specified
+under QSL-275 and not implemented: lowering writes `pure_function` for every
+function outside a recursion group, and no source enum reaches lowering.
 
 ## Open Questions
 
