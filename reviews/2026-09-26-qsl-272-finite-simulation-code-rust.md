@@ -131,3 +131,9 @@ New findings, round 1:
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | R1-FND-001 | low | `u256_divmod_and_mul_on_a_synthetic_value` never exercises rejection. It checks `100 / 7`, `14 * 7` and `98 % 7` on small values. The acceptance threshold at n=7 is `floor(2^256/7)*7`, not 98, and `next_index`'s `v < quotient.mul_u64(n)` branch is never reached with a rejected `v`. The test comment calls 98 "the least value the sampler would reject at n = 7", which is wrong. Fix: split out `accepts(v, n)` and test it at `v = floor(2^256/7)*7` (rejects) and one less (accepts). Not blocking: the rejection logic is correct by inspection. | qsl-eval/src/simulation/sample.rs:340-365 |
+
+## R1 Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| R1-FND-001 | fixed in ce67367b | `accepts(v, quotient, n64, always_accepts)` split out of `PinnedSampler::next_index`; a new test asserts it at the real `n = 7` threshold `floor(2^256/7)*7` and one below it. The `u256_divmod_and_mul_on_a_synthetic_value` comment no longer calls the synthetic `98` the sampler's rejection bound. |
