@@ -92,3 +92,13 @@ Third disposition pass at `agent-ix/quire-spec-language@394e9c22314ad7500f878a4d
 | FND-010 | fixed 394e9c22 | Both parts are addressed. (1) Where the key enters: `RequestWriter::bounded_item` SHALL take the originating occurrence key as a parameter, with the design-level signature `bounded_item(occurrence: OccurrenceKey, node: WireNodeId, requirements: &Requirements, bounds: BTreeMap<DomainKey, FiniteBound>) -> Result<RequestIndex, BoundRefusal>`, and the written item SHALL carry that key (FR-075:148-153). (2) Multiple follow-ups: the driver writes at most one bounded follow-up per record, so each record has at most one follow-up settlement, joined by occurrence key. Writing several bounded items with different bounds stays a capability of the writer (FR-097-AC-3, unchanged); the driver uses one (FR-075:153-158). FR-075-AC-8 and TC-449 step 2 now pass the key to `bounded_item` and assert that the follow-up request holds exactly one item for it. Per the leader's ruling, the driver-level rule is tested in quire-driver when QSL-1 drops `RequestedItem`. That trace is not written into AC-8; see the new FND-011. |
 
 New in this pass: FND-011 (low), recorded in `## Findings` above. It has no outcome yet.
+
+## Dispositions (fourth pass)
+
+Fourth disposition pass at `agent-ix/quire-spec-language@e85310dd2192a3743341b7f28d36acd981cc8a76` (fix commit `e85310dd`, "QSL-266 spec: move the one-follow-up driver rule out of FR-075-AC-8 (SR-638 FND-011)"). It covers FND-011 only, re-checked against the spec at that head.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-011 | fixed e85310dd | The driver clause is gone from FR-075-AC-8. The AC now asserts only what TC-449 observes: "the follow-up request holds exactly one item for that occurrence key" (FR-075:250). The driver rule now lives in FR-075's driver prose, "the driver uses one and writes no second follow-up for a record. That driver rule is tested in agent-ix/quire-driver (QSL-1)" (FR-075:157-159). QSL-1 is the Linear ticket for the orchestrating driver crate, and it is in the Coding state. AC-8's Verification (TC-449) now matches what TC-449 step 2 asserts. |
+
+No new finding in this pass. With FND-011 fixed, every finding in SR-636 to SR-640 now has an outcome, and none is open.
