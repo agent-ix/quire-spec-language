@@ -61,7 +61,7 @@ FR-057-AC-10's value-function row.
    is a `Limit` outcome, not `Incomplete` and not a refusal. Separately, run
    a family's `evaluate` hook on a checked node under a meter small enough to
    exhaust mid-evaluation and confirm it returns `Incomplete`. Run `check`
-   and `qsl_package::emit_checked` across the same fixture set and confirm
+   and `qsl_package::emit_checked` across each stage's fixture set and confirm
    neither returns `Incomplete`.
 7. Construct a fixture nested to depth D (for example, D levels of nested
    function application). Check it with the nesting-depth limit configured
