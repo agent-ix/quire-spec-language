@@ -2860,7 +2860,7 @@ pub(crate) mod checking_tests {
             }
         };
         let budget = |work_units| {
-            Meter::new(quire_exact::ScalarLimits {
+            Meter::new(ScalarLimits {
                 work_units,
                 ..SCALAR_LIMITS_UNLIMITED
             })
@@ -3409,7 +3409,7 @@ mod locus_tests {
         let unit = unit();
         let charge = measure_resolved(&empty_scope(), &unit.functions[0]).work_budget;
         let bound = charge - 1;
-        let mut meter = Meter::new(quire_exact::ScalarLimits {
+        let mut meter = Meter::new(ScalarLimits {
             work_units: bound,
             ..SCALAR_LIMITS_UNLIMITED
         });
