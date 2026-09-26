@@ -567,8 +567,7 @@ fn claim_at(location: Location) -> ValueClaim {
     ValueClaim {
         site: ClaimSite {
             location,
-            result_bound: ValueType::Integer,
-            narrowed: false,
+            bound: SiteBound::Own(ValueType::Integer),
             path_condition: Vec::new(),
         },
         domains: BTreeMap::new(),
@@ -750,7 +749,7 @@ fn tc_160_the_requirements_function_yields_one_claim_per_scalar_application() {
     };
     assert_eq!(claim.kind(), Capability::ValueValidity);
     assert_eq!(claim.site().location(), &body(0, &[]));
-    assert_eq!(claim.site().result_bound(), &int(0, 18));
+    assert_eq!(claim.site().result_bound(), int(0, 18));
     assert!(claim.is_bounded());
     assert_eq!(claims, again);
 }
@@ -825,5 +824,219 @@ fn tc_160_a_root_of_an_undeclared_composite_is_a_fault() {
     assert_eq!(
         fault.invariant(),
         "checked-composite-type-not-in-environment"
+    );
+}
+
+/// The path-condition fixtures: an `if`'s `otherwise` guard (false), `or`
+/// guarding its right operand false, `implies` guarding its right operand
+/// true, and a nested `if` giving two guards, outermost first.
+fn guard_fixtures() -> Vec<(&'static str, Vec<Expect>)> {
+    let boolean = |function| (ValueType::Boolean, TypeAt::Result(function));
+    let integer = || (ValueType::Integer, TypeAt::Scalar("integer"));
+    vec![
+        (
+            "function nest using v(n: Integer, flag: Boolean): Integer pure { if flag then 0 else if n >= 0 then n + 1 else 0 }",
+            vec![
+                Expect {
+                    operation: "quire.op.integer.ge",
+                    site: ("n >= 0", 0),
+                    ordinal: 0,
+                    roots: &[("nest", 0)],
+                    bound: (ValueType::Boolean, TypeAt::Scalar("boolean")),
+                    guards: &[("flag", 1, false)],
+                },
+                Expect {
+                    operation: ADD,
+                    site: ("n + 1", 0),
+                    ordinal: 0,
+                    roots: &[("nest", 0)],
+                    bound: (ValueType::Integer, TypeAt::Result("nest")),
+                    guards: &[("flag", 1, false), ("n >= 0", 0, true)],
+                },
+            ],
+        ),
+        (
+            "function either using v(n: Integer): Boolean pure { n < 0 or n - 1 >= 0 }",
+            vec![
+                Expect {
+                    operation: "quire.op.integer.lt",
+                    site: ("n < 0", 0),
+                    ordinal: 0,
+                    roots: &[("either", 0)],
+                    bound: boolean("either"),
+                    guards: &[],
+                },
+                Expect {
+                    operation: "quire.op.integer.sub",
+                    site: ("n - 1", 0),
+                    ordinal: 0,
+                    roots: &[("either", 0)],
+                    bound: integer(),
+                    guards: &[("n < 0", 0, false)],
+                },
+                Expect {
+                    operation: "quire.op.integer.ge",
+                    site: ("n - 1 >= 0", 0),
+                    ordinal: 0,
+                    roots: &[("either", 0)],
+                    bound: boolean("either"),
+                    guards: &[("n < 0", 0, false)],
+                },
+            ],
+        ),
+        (
+            "function onlyif using v(n: Integer): Boolean pure { n > 0 implies n - 1 >= 0 }",
+            vec![
+                Expect {
+                    operation: "quire.op.integer.gt",
+                    site: ("n > 0", 0),
+                    ordinal: 0,
+                    roots: &[("onlyif", 0)],
+                    bound: boolean("onlyif"),
+                    guards: &[],
+                },
+                Expect {
+                    operation: "quire.op.integer.sub",
+                    site: ("n - 1", 0),
+                    ordinal: 0,
+                    roots: &[("onlyif", 0)],
+                    bound: integer(),
+                    guards: &[("n > 0", 0, true)],
+                },
+                Expect {
+                    operation: "quire.op.integer.ge",
+                    site: ("n - 1 >= 0", 0),
+                    ordinal: 0,
+                    roots: &[("onlyif", 0)],
+                    bound: boolean("onlyif"),
+                    guards: &[("n > 0", 0, true)],
+                },
+            ],
+        ),
+    ]
+}
+
+/// TC-160 step 10 (FR-062-AC-13): a path condition records an `if`'s
+/// `otherwise` guard as false, `or`'s left operand as false and
+/// `implies`'s as true, and two nested guards outermost first.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_guards_carry_their_outcome_outermost_first() {
+    for (unit, expected) in guard_fixtures() {
+        check(unit).assert_records(unit, &expected);
+    }
+}
+
+impl Checked {
+    /// The record at the one `operation` application at the `nth` `needle`.
+    fn record(&self, needle: &str, nth: usize, operation: &str) -> &RequirementRecord {
+        let key = self.occurrence(needle, nth, Some(operation));
+        self.graph
+            .requirements()
+            .get(&key)
+            .unwrap_or_else(|| panic!("a record at `{needle}` #{nth}"))
+    }
+
+    /// The node the `argument`th operand of the one `operation`
+    /// application at the `nth` `needle` references: a binder's parameter
+    /// node, for a binder read.
+    fn operand(&self, needle: &str, nth: usize, operation: &str, argument: usize) -> WireNodeId {
+        let key = self.occurrence(needle, nth, Some(operation));
+        let node = self
+            .graph
+            .semantic_graph()
+            .node(NodeKey::from_digest(*key.node().as_bytes()))
+            .expect("the application is lowered");
+        let SemanticTerm::Application { arguments, .. } = node.body() else {
+            panic!("an application at `{needle}`");
+        };
+        let Some(SemanticTerm::Reference { target }) = arguments.get(argument) else {
+            panic!("operand {argument} at `{needle}` is a reference: {arguments:?}");
+        };
+        wire(target.0)
+    }
+}
+
+/// `domains` as an extent.
+fn extent(domains: &[(WireNodeId, &[u32], DomainKind)]) -> ClaimExtent {
+    ClaimExtent::from_domains(
+        domains
+            .iter()
+            .map(|(node, path, kind)| (DomainKey::new(*node, path.to_vec()), *kind))
+            .collect(),
+    )
+}
+
+/// TC-160 step 10 (FR-062-AC-13): a binder read is a root only of the
+/// applications inside the binder's scope. In `size(filter(v in s: v > 0))
+/// + 1`, the `>` is unbounded at `v`, and the outer `+` only at `s`'s
+/// element: `v` is bound inside it.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_a_binder_is_a_root_only_inside_its_scope() {
+    let checked = check(
+        "function sz using v(s: Sequence<Integer>[0, 5]): Integer pure { size(filter(v in s: v > 0)) + 1 }",
+    );
+    assert_eq!(checked.graph.requirements().len(), 2);
+    let v = checked.operand("v > 0", 0, "quire.op.integer.gt", 0);
+    assert_eq!(
+        checked
+            .record("v > 0", 0, "quire.op.integer.gt")
+            .requirements()
+            .extent(),
+        &extent(&[(v, &[], DomainKind::Integer)])
+    );
+    let s = wire(checked.parameter("sz", 0));
+    assert_eq!(
+        checked
+            .record("size(filter(v in s: v > 0)) + 1", 0, ADD)
+            .requirements()
+            .extent(),
+        &extent(&[(s, &[0], DomainKind::Integer)])
+    );
+}
+
+/// TC-160 step 10 (FR-062-AC-13): a `fold`'s accumulator and element, a
+/// `reduce`'s, and a `flatMap`'s binder are each an extent root keyed by
+/// its own parameter node.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_fold_reduce_and_flat_map_binders_are_roots() {
+    for (unit, needle, operation) in [
+        (
+            "type I = Integer;\nfunction fo using v(s: Sequence<Integer>[0, 5]): Integer pure { fold<I>(acc, x in s: acc + x, identity: 0) }",
+            "acc + x",
+            ADD,
+        ),
+        (
+            "type I = Integer;\nfunction re using v(s: Sequence<Integer>[1, 5]): Integer pure { reduce<I>(acc, x in s: acc * x) }",
+            "acc * x",
+            MUL,
+        ),
+    ] {
+        let checked = check(unit);
+        let accumulator = checked.operand(needle, 0, operation, 0);
+        let element = checked.operand(needle, 0, operation, 1);
+        assert_ne!(accumulator, element, "{unit}");
+        assert_eq!(
+            checked.record(needle, 0, operation).requirements().extent(),
+            &extent(&[
+                (accumulator, &[], DomainKind::Integer),
+                (element, &[], DomainKind::Integer),
+            ]),
+            "{unit}"
+        );
+    }
+
+    let checked = check(
+        "function fm using v(s: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 9] pure { flatMap(x in s: map(y in s: x + y)) }",
+    );
+    let x = checked.operand("x + y", 0, ADD, 0);
+    let y = checked.operand("x + y", 0, ADD, 1);
+    assert_ne!(x, y);
+    assert_ne!(x, wire(checked.parameter("fm", 0)));
+    assert_eq!(
+        checked.record("x + y", 0, ADD).requirements().extent(),
+        &extent(&[(x, &[], DomainKind::Integer), (y, &[], DomainKind::Integer)])
     );
 }
