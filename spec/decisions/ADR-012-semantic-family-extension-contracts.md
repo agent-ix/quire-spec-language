@@ -30,6 +30,11 @@ This record is the `/specify` output for #210. Its `/spec-review` (all
 analyses, SR-474 to SR-481) is in
 [`spec/reviews/family-extension/`](../reviews/family-extension/base.md).
 
+Amended 2026-09-26 by QSL-273 (A05-3): §15 maps state clauses, frames,
+operation anchors and observations onto this contract. It is the state share
+of the #220 (QSL-19) mapping that §14.1 hands to #120, #121 and #164, and it
+is the design FR-102 to FR-109 implement.
+
 ## Context
 
 #210 requires QSL semantic families to extend the compiler and the proof
@@ -215,7 +220,7 @@ The shared contract is the minimum every family implements. It has six parts.
 | Identity | Every checked node carries a stable identity, minted by QSL at check time. It is content-addressed over the ADR-013 O-04 preimage, whose owner subject is the declaring source's `SourceOwner` or definition's `DefinitionOwner` (`{authority, identity}`), or for a model-owned node the domain package's identity and declared version plus the IR node identity; a builtin or anonymous type node has no owner and shares one id across packages. It is therefore independent of counters, display strings and collection positions. Nodes identical in structure, qualified name and owner share one id. Each source occurrence is keyed by (node id, role, ordinal) (ADR-013 O-07). | ADR-013 O-04 (DA-02) and O-07; package identity O-02 |
 | Provenance | Every checked node occurrence maps to its source span through a source map keyed by its occurrence key. QSL is the only minter (AD-016 arrow 1). | ADR-013 O-12 (DA-13) |
 | Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: the QSL `check` core (ADR-011, #209) |
-| Requirements | A pure function of a checked item returns one `Requirements` per claim the item carries, each at the checked site it covers: a clause, or a scalar operation application in a `Value` function body (FR-062 "Requirement records of a value function"). Each holds the claim's one capability kind (FR-057, FR-290), its declared extent and any authored bound. A claim form whose FR-057 kind is none yields no `Requirements` value and requests no backend (§7.2). S3 keys each claim by its site's occurrence key (§13.5). | kinds from agent-ix/quire-specification#134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
+| Requirements | A pure function of a checked item, `requirements()`, returns one claim per claim site the item carries: a clause, or a scalar operation application in a `Value` function body (FR-062 "Requirement records of a value function"). Each claim holds its site, its one capability kind (FR-057, FR-290) and its extent, classified by `check` with each domain keyed by the binder that carries it. A claim form whose FR-057 kind is none yields no claim and requests no backend (§7.2). After lowering, S3 keys each claim by its site's occurrence key, renames each binder to its parameter node, and derives the record's `Requirements`: the kind, the extent and any authored bound (§13.5). | kinds from agent-ix/quire-specification#134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
 | Structured outcome | A family `check` returns the checked node or a refusal with a family-typed cause. A family `check` that reaches a limit or exhausts the meter returns `StageFailure::Limit(LimitExceeded)` with limit kind work budget (ADR-013 T-4); `Incomplete` is an S6a outcome only. Each cause maps to a stable catalog code through one exhaustive `catalog_code()`. | ADR-013 O-16 (outcomes) and O-17 (refusals): each family has its own `Cause` enum with `catalog_code()`; the shared part is `RefusalRecord` in F `diagnostic` (O-17); the kernel `Refusal` carries kernel causes only |
 | Stage hooks | The family implements a hook for each stage in §8 that it takes part in. Every hook takes checked input; none takes CST, tokens or display strings. | this record |
 
@@ -231,11 +236,16 @@ trait FamilyContract {
         -> CheckOutcome<Self::Checked, Self::Cause>;
         // CheckOutcome<T, C> = Result<Staged<T>, StageFailure<C>> (ADR-013 T-4):
         // checked | refused | limit | fault
-    fn requirements(checked: &Self::Checked) -> Vec<(ClaimSite, Requirements)>;
-        // one per claim; S3 keys each ClaimSite by the occurrence recorded at
-        // its own location (§13.5). ClaimSite: FR-062 "Requirement records
-        // of a value function" (location, result bound, path condition).
-        // Extents are classified in `check`, under its stage limits.
+    type Claim;             // one claim: its ClaimSite, kind and extent
+    fn requirements(checked: &Self::Checked) -> Vec<Self::Claim>;
+        // one per claim. ClaimSite: FR-062 "Requirement records of a value
+        // function" (location, result bound, path condition). Extents are
+        // classified in `check`, under its stage limits, with each domain
+        // keyed by the binder that carries it: parameter node ids exist only
+        // once lowering has keyed the nodes. S3 then keys each claim by the
+        // occurrence recorded at its site's own location and renames each
+        // binder to its parameter node, giving the record's `Requirements`
+        // (§13.5).
     fn package(checked: &Self::Checked, out: &mut PackageEmitter)
         -> Result<(), PackageRefusal>;
 }
@@ -1096,6 +1106,228 @@ Requirements needed before implementation starts:
 - The exit cases of #185, #188 and #189 that need a disposition run in CG
   over the candidate-set wire and the v2 bytes as data (§5.3), so they need
   no #225 edge.
+
+## 15. State clauses on the shared contract (QSL-19 mapping, QSL-273)
+
+This section maps the state behaviour that native-run/1 executes today
+(FR-023, FR-026, FR-028, FR-031 and FR-032) onto the families, stages and
+seams of this record. FR-102 to FR-109 are the requirements. §15.8 fixes
+when the native path is deleted.
+
+### 15.1 Scope
+
+In scope is a `1-draft` unit that imports one domain package with
+`model M = ...` and declares state clauses over it, with the grammar of QSpec
+`shared-grammar.md`:
+
+- `invariant N using p on M::T at current { e }`;
+- `pre N using p on M::T::op { e }`;
+- `post N using p on M::T::op { e }`.
+
+The domain package declares the object types, their fields, their
+populations and their operations with parameters, result and frame
+(`model-complete.md` Frames row). The clauses are evaluated over supplied
+finite observations. An invariant is evaluated over a current snapshot taken
+at a named initialization or handler anchor, which the selection names and
+the snapshot records (QSpec `state-contract.md`: "a bare context type or
+arbitrary current snapshot is not a substitute"). A precondition or
+postcondition is evaluated over an invocation with a pre and a post snapshot.
+
+Out of scope are protocols and protocol transitions (#218), temporal clauses
+(#188, #189), finite exploration (FR-101), and model state values that are
+not object fields. Native-run/1's `values` roots (a State root such as
+ConfigVersion's `other`) have no `1-draft` spelling, so a comparison of two
+selected objects is a function over two references, run through FR-109's
+function arm (FR-108). Sets, bags and ordered sets are outside QSpec's
+selected state extension ("Sets, bags, OrderedSet ... remain outside this
+selected extension"), so a snapshot value, a `reaches` edge and a frame
+comparison never take one (FR-104, FR-106).
+
+### 15.2 Family assignment
+
+The §1 catalogue already names the owners. This is how each state concern
+falls to them.
+
+| Concern | Family | Why |
+| --- | --- | --- |
+| The `invariant`, `pre` and `post` declaration forms, their anchors and their frames | `ProtocolClause` | §1 and §3 give it "operation clauses, frames, scoped anchors" and "v2 `state`/`frame` and clause nodes" |
+| `self`, `result`, `pre(e)` and the observation of every read inside a clause | `ProtocolClause` | they read the clause's observation; §4.3 moves `Pre` here, and ADR-013 T-6 makes `wrong_snapshot` its cause |
+| Admitting operations, frames and populations of the domain package at I1 and E3 | `StateModel` | §3 gives it model declarations, populations and dispatch |
+| Admitting a snapshot's populations and objects, and an invocation's pre/post pair and frame, before S6a | `StateModel` | `model::population::admit_binding` and `admit_invocation` are its code today |
+| Field reads, `deref`, `reaches` and object identity equality | `StateModel` | §4.3 moves `Deref` to `StateModel` |
+| The clause's Boolean body, arithmetic, `let`, `if` and connectives | `Value` | unchanged |
+
+The `StateModel` rows are values `ProtocolClause` reads, which is the §1
+order. No family edge is added. `reaches` is legal only inside a state
+clause, because only a clause has an observation to traverse (FR-104); the
+`Value` evaluator therefore never meets a `reaches` node.
+
+### 15.3 Stage table
+
+| Stage | Change | Module | Seam forced | Requirement |
+| --- | --- | --- | --- | --- |
+| S1 | none. The CST already parses the three clause forms and `self`, `result` and `reaches` | `qsl-cst` | none | none |
+| S2 | three leading-token kinds (`Invariant`, `Pre`, `Post`) with one entry, `protocol_clause::state_clause`; `DeclarationForm::StateClause`; `Expression` variants for `self`, `result` and `reaches` | `forms` core; `forms::protocol_clause` | S2 | FR-102 |
+| I1 and E3 | operation frames become `OperationEffect`; the assembler declares operations of object types instead of refusing them | `model::intake`; `check::assemble` | none | FR-103 (amends FR-056) |
+| S3 | the state clause check: context, anchor, observation-keyed facts, body typing under the clause kind, and one `operation-contract` requirement record per clause and per frame | `check::protocol_clause`; `check` core dispatch arm | S1, S3, S7 | FR-104 |
+| S4 | `state`/`state_clause`, `state`/`operation_anchor` and `state`/`frame` nodes. Model members are named by object-type node plus member name (ADR-013 O-06, FR-094); no `field_declaration` or `operation_declaration` node is emitted | `package` (v2 emitter, `ProtocolClause` arm) | S1, S3, S5 | FR-105 (amends FR-088, ADR-013 O-08 to O-10) |
+| E6 input | the snapshot and invocation documents and their admission into an observation set | `model::observation` (admission); layer-6 reader | none | FR-106 |
+| S6a | the `ProtocolClause` variant of the S6a family kind and its `evaluate` hook; observation-qualified reads; `reaches` | `value::expression::protocol_clause` | S1 | FR-107 |
+| Layer 6 | the clause run entry beside FR-100's `spine::run`: compile, select, admit, evaluate, report | `qsl_replay::spine` | none | FR-109 |
+
+A state clause is one clause with one body. It is not a construct with
+several clauses, so it needs no §4 staged builder. The pre and post clauses of
+one operation are separate declarations in `1-draft`, joined only through the
+operation anchor node they share.
+
+### 15.4 Identity and wire
+
+- **Clause identity.** A state clause's identity is the checked node id of its
+  `state`/`state_clause` node (ADR-013 O-09, as amended). Two declarations
+  with equal kind, anchor and body share one node, which carries one `claim`
+  occurrence per declaration, ordinals in source order (ADR-013 O-07). The
+  clause name is not on the wire, because a `state` node carries no
+  `declaration` (QSpec `DeclarationTagRules`). The in-process
+  `CheckedPackage` keeps the name → (node id, occurrence) table the run entry
+  selects by (FR-109). A clause name equal to another clause's or a
+  function's name refuses at S3 (FR-104).
+- **Clause kind and clause operation.** The layer-3 `CheckedClauseKind`
+  (ADR-013 O-10) gains `Invariant`, `Precondition` and `Postcondition`. All
+  three spell the pair (`state`, `state_clause`) and the clause operation
+  `quire.op.state.clause`, which STD-111 adds to the operation catalog. The
+  application's `member` names the kind, so (operation identity, kind member)
+  is injective over the enum. `StateTransition` moves from (`state`, `frame`)
+  to (`state`, `transition`), its QSpec form as STD-111 item 5 defines it
+  (a `quire.op.state.transition` body root; a frame carries no clause
+  application). The TC-250 fixed table (`qsl-semantics/src/check/
+  identity.rs:619-631`) changes with it. A (`state`, `frame`) node
+  decodes to no clause kind: its body is FR-340's frame term, which carries
+  no clause operation, so a frame under an `operation_anchor` is never read
+  as a transition (FR-088-AC-4, as amended).
+- **Model members.** A field, and an operation, is named by its declaring
+  object type's `model`/`object_type` node plus its member name, as ADR-013
+  O-06, FR-094, QSpec FR-322 "Model-owned members" and QSL's own `deref(r).f`
+  lowering already do. S4 emits no `model`/`field_declaration` or
+  `model`/`operation_declaration` node, so FR-094's "a field member and an
+  operation member has no node of its own" stays true and needs no amendment.
+  A frame's `modifies` entries are therefore (object type node, field name)
+  pairs; `reaches` lowers to `quire.op.model.reaches_field` with the `field`
+  member kind; an `operation_anchor` names its operation by a text literal.
+- **Operation anchor identity.** One anchor per (declaring object type,
+  operation name). An operation inherited by a subtype and named as
+  `M::Sub::op` anchors at its declaring type, so `M::Base::op` and
+  `M::Sub::op` share one anchor and one frame (FR-105).
+- **Frame identity.** ADR-013 O-08, as amended: the checked node id of the
+  `state`/`frame` node, whose subjects are field members as (object type
+  node, name) pairs and object types for `creates` and `deletes`.
+- **Wire changes.** STD-111 carries every QSpec change this needs: the
+  `state_clause`, `operation_anchor` and `frame` body rules, the
+  (object type, member name) frame entry, `quire.op.model.reaches_field`, and
+  `quire.op.state.clause`. Only FR-105's emission criteria and FR-108's
+  reading of the emitted package wait on STD-111; everything else in FR-102
+  to FR-109 reads the in-process `CheckedPackage`. v2 is prerelease and QSpec
+  revises it in place (§12.1).
+- **Not emitted.** QSL emits no `state`/`snapshot` node. A snapshot is an
+  observation supplied at E6, and a package's identity must not depend on its
+  observations (ADR-011 E6). QSL emits no `state`/`transition` node from a
+  state clause. Transitions are protocol controls that carry a
+  `protocol_profile` law, and they belong to `ProtocolClause`'s protocol
+  emission (#218).
+
+### 15.5 Observations
+
+A snapshot is a document with its own FR-001 labels and a `sha256-jcs`
+digest, and an invocation names its pre and post snapshots by that identity
+(FR-106). The run entry receives them by digest, like domain packages, and
+reads no path, environment variable or search location. Admission converts
+them into the `StateModel` types that exist today (`PopulationBinding`,
+`ObjectEnvironment`, `admit_invocation`) and adds what they lack: every field
+value of every object, per observation, so that `pre(self.f)` reads the pre
+snapshot, and so that a frame compares scalar fields as well as reference
+fields.
+
+At S3 every model read carries its observation (current, pre or post), and
+presence and interval facts are keyed by (observation, read path). A fact
+about `pre(self.parent)` therefore never discharges a read of `self.parent`,
+which is QSpec's cross-observation rule (FR-104).
+
+### 15.6 Outcomes
+
+Every result maps to the ADR-013 O-16 categories through the three places
+that produce one. None adds a category.
+
+| Where | Result | O-16 category | Catalog code |
+| --- | --- | --- | --- |
+| compile (S1 to S4, I1) | refusal or limit | refusal, incomplete | the stage's own code, such as `missing_import` |
+| selection (FR-109) | a name that is no clause or function, a function whose result is not `Boolean` | refusal | `missing_declaration`, `ill_typed` |
+| admission (FR-106) | an absent selected document | incomplete | `unavailable_observation` |
+| admission (FR-106) | a document over a reader limit | refusal | `stage_limit_exceeded` |
+| admission (FR-106) | a wrong format | refusal | `unknown_wire` |
+| admission (FR-106) | a digest or label mismatch | refusal | `stale_dependency` |
+| admission (FR-106) | a bad document, selection or value | refusal | `invalid_runtime_input`, `wrong_snapshot`, `invalid_model_binding` |
+| admission (FR-106) | a reference to a key absent from a complete population | refusal | `dangling_reference` |
+| admission (FR-106) | a required population declared incomplete | incomplete | `incomplete_population` |
+| admission (FR-106) | a change outside the frame, or a declared delta that disagrees | refusal | `frame_violation`, `population_delta_mismatch` |
+| S6a (FR-107) | `Completed(true)` or `Completed(false)` | success, violation | none |
+| S6a (FR-107) | every other kernel or family outcome | as FR-100's outcome table | as FR-100's outcome table |
+
+FR-109 fixes the report and the FR-301 exit code of each row by reference to
+FR-100, which already owns the spine run's outcome mapping.
+
+### 15.7 Requirements
+
+Each state clause records one `operation-contract` requirement, and so does
+each frame an anchored operation carries, as FR-057 assigns. Each is keyed by
+its node's own occurrence (§13.5). Its extent follows ADR-014 §4 as FR-097
+classifies it: an invariant ranges over every object of its context's
+population, and `reaches` over the population it walks, so each such
+population whose declaration has no maximum (`Population(None)`) is an
+unbounded domain, boundable by `Cardinality`. ConfigVersion's
+`config_history` declares none, so its clauses are `Unbounded` there.
+
+A population has no node (FR-094), so its domain is keyed as a model member
+is (§15.4): `DomainKey{node, path}` with `node` the `model`/`object_type`
+node of the member type, and `path` one element naming the population, its
+ordinal among the package's population declarations in ascending
+`DeclarationKey` order (`package`, then `node`, as UTF-8 bytes; `path` is a
+`Vec<u32>`, ADR-014 §4). The ordinal is stable within one domain-package
+digest only; domain keys are not compared across digests. The context
+population is the one population with no maximum whose member types include
+the context type. A clause whose context type belongs to two or more such
+populations cannot name exactly one, and refuses at S3 with
+`ambiguous_declaration`/`ambiguous-name` at its `on` (FR-104). When the
+context type belongs to several populations, a run's context object is in
+the population the selection's `self` names (FR-106).
+Recording a requirement grants nothing; no backend proves a state clause
+until IR admits `state` nodes (IR `lower` returns no form for them at the
+pinned revision 48ab5dc).
+
+### 15.8 Replacement and deletion
+
+The native modules have users besides native `run` today: native `compile`
+of `0-draft` sources (FR-027, kept until QSL-5 by the 2026-09-24 ruling),
+`NativePackage` and its native-linked-package/1 reader (FR-028), and the
+`0-draft` route of CLI `run`, which FR-100 sends to native run (FR-026).
+`native_model`, `model_source` and `mapped` are imported by native compile
+(`src/linking.rs`, `src/command/extraction.rs`), by `NativePackage`
+(`src/package/reading.rs`), by SEAM-2 (`src/checking/composed/solver.rs`) and
+by SEAM-3 (`src/protocol_artifact/mod.rs`). So the order is:
+
+1. FR-102 to FR-109 land. Nothing native is deleted. FR-108's parity test
+   runs both paths.
+2. M-6c retires the `0-draft` native path as a whole, with QSL-5: FR-100's
+   `0-draft` route of CLI `run`, native `compile` and `lower`, `NativePackage`
+   and the native-linked-package/1 reader. The same PR deletes native `run`,
+   `state`, `runtime`, `mapped` and `model_source`, the modules only those
+   paths reach (ADR-011 §7.3 M-6c), and FR-108's parity test. FR-108's check
+   against its independent expected dispositions stays.
+3. `native_model` goes last. SEAM-2 (`src/checking/composed/solver.rs`) and
+   SEAM-3 (`src/protocol_artifact/mod.rs`) import `NativeModel`, so it is
+   deleted in the PR that removes the last of those importers (ADR-011 §7.3
+   M-6d and M-6e), not in step 2.
+
+No native module is deleted before step 2, and no module is deleted while a
+remaining path still imports it.
 
 ## Consequences
 

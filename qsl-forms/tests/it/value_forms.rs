@@ -655,3 +655,30 @@ fn record_and_tuple_forms_carry_their_names_and_members() {
         TypeFormHead::Name(name) if name == "M::T"
     ));
 }
+
+#[trace("FR-091-AC-23", "TC-405")]
+#[test]
+fn a_bare_float_type_is_admitted_and_builds_with_no_rounding_mode() {
+    let (_, unit) = build(
+        "function h using v(x: Float64, y: Float32[exact], z: Float32): Boolean pure { true }",
+    );
+    let h = function(unit.forms()[0].form());
+    let [(_, x), (_, y), (_, z)] = h.parameters.as_slice() else {
+        panic!("three parameters");
+    };
+    assert!(matches!(
+        x.head,
+        TypeFormHead::Builtin(BuiltinType::Float64)
+    ));
+    assert!(x.bounds.is_empty());
+    assert!(matches!(
+        y.head,
+        TypeFormHead::Builtin(BuiltinType::Float32)
+    ));
+    assert_eq!(y.bounds, ["exact"]);
+    assert!(matches!(
+        z.head,
+        TypeFormHead::Builtin(BuiltinType::Float32)
+    ));
+    assert!(z.bounds.is_empty());
+}

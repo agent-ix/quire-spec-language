@@ -73,16 +73,17 @@ FR-057-AC-10's value-function row.
     value function" and read `CheckedGraph::requirements`, and for RR-5
     also `CheckedPackage::graph().requirements()`. Check RR-5 a second
     time. For RR-15, also check the unit with its two `let` operands
-    swapped.
-11. Over a hand-built `OccurrenceMap` (this crate has no real clause syntax
-    yet, FR-088-CON-1, so this is exercised the same way `check::identity`'s
-    own clause-identity mechanism test is): key two distinct identities,
-    each with one recorded occurrence and one requested `Requirements`; key
-    one identity with a requested `Requirements` and no recorded occurrence;
-    key an index whose `Requirements` is requested but whose identity is
-    `None`; key one identity shared by two indices, each with its own
-    requested `Requirements`, over two recorded occurrences of that
-    identity.
+    swapped. Also check `if flag then 0 else if n >= 0 then n + 1 else 0`,
+    `n < 0 or n - 1 >= 0` and `n > 0 implies n - 1 >= 0` over
+    `n: Integer, flag: Boolean`; `size(filter(v in s: v > 0)) + 1` over
+    `s: Sequence<Integer>[0, 5]`; and a `fold`, a `reduce` and a `flatMap`
+    whose step reads its binders.
+11. Over RR-8's lowered graph and hand-built occurrence maps, key: a claim
+    site whose location holds its application's `expression` occurrence; a
+    site whose application has only a `generated` occurrence there; a site
+    at a location holding no occurrence; no claim, beside a scalar
+    application occurrence in a function body; and two sites of the one `+`
+    node at two locations, in both claim orders.
 
 ## Expected Results
 
@@ -127,9 +128,16 @@ FR-057-AC-10's value-function row.
   `x + 1` binding and the `Unbounded` one inside the `n + 1` binding, in
   both orders of the operands; in RR-16 `Int[0, 10]` is at ordinal 0 and
   `Int[0, 20]` at ordinal 1. RR-5's second check gives an equal map, and
-  `CheckedPackage::graph().requirements()` equals the S3 map.
-- Step 11: the two distinct identities each key to their own occurrence key;
-  the identity with no recorded occurrence, and the `None` identity, each
+  `CheckedPackage::graph().requirements()` equals the S3 map. In the
+  guard units, `n >= 0` has guard `flag` false and `n + 1` has guards
+  `flag` false then `n >= 0` true; each application right of `or` has
+  guard `n < 0` false, and right of `implies` guard `n > 0` true. The
+  `size` unit's `>` is unbounded at `v`, and its `+` only at `s`'s
+  element. The `fold` and `reduce` steps are unbounded at both the
+  accumulator and the element, and the `flatMap` step at its binders.
+- Step 11: the paired site keys to its occurrence; the `generated`-only
+  site, the site with no occurrence and the unclaimed application each
   return `KeyFault::UnkeyableRequirements` rather than an omission from the
-  map; the one shared identity's two indices key to two distinct occurrence
-  keys, one per recorded occurrence.
+  map; the two sites of one node key to that node's two occurrences by
+  location, differing only in ordinal, whichever order the claims come
+  in.

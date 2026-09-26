@@ -265,16 +265,14 @@ impl CatalogCoded for UnsupportedWire {
     fn catalog_code(&self) -> CatalogCode {
         CatalogCode::new("unknown_wire", "unsupported-wire")
     }
-}
 
-impl UnsupportedWire {
     /// The catalog row's payload: the actual selected wire and the expected
     /// one (FR-096).
-    pub(crate) fn catalog_fields(&self) -> BTreeMap<&'static str, String> {
-        BTreeMap::from([
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([
             ("actual", self.actual.to_string()),
             ("expected", CHECKED_PACKAGE_V2.to_owned()),
-        ])
+        ]))
     }
 }
 
@@ -467,11 +465,9 @@ impl V2ReadRefusal {
     )]
     pub(crate) fn unsupported_wire_record(&self) -> Option<RefusalRecord> {
         match self {
-            Self::UnsupportedVersion { wire, locus } => Some(RefusalRecord::new(
-                wire.catalog_code(),
-                wire.catalog_fields(),
-                Some((**locus).clone()),
-            )),
+            Self::UnsupportedVersion { wire, locus } => {
+                wire.refusal_record(Some((**locus).clone()))
+            }
             _ => None,
         }
     }

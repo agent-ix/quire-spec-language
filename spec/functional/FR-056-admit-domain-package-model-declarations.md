@@ -246,10 +246,13 @@ multiplicity's own value type in `Option`. A `redefines` names the redefined
 field by its owner and name.
 
 If an admitted package declares a record the type environment does not
-represent (an operation, a record value type, a systems part, port or
-allocation, or a field whose value type or multiplicity has no kernel type),
-then the assembler SHALL refuse it with
+represent (a record value type, a systems part, port or allocation, or a
+field whose value type or multiplicity has no kernel type), then the
+assembler SHALL refuse it with
 `unknown_required_feature`/`unsupported-feature` at the `model` declaration.
+The assembler SHALL declare each operation of an object type, with its
+parameters, result and frame effect, as [FR-103](FR-103-admit-model-operations-and-frames-on-the-spine.md)
+states (amended by QSL-273; before it, operations refused here).
 A `Float32` or `Float64` field SHALL refuse as every floating type does.
 
 If a unit's `model` declaration spells a `sha256:` digest, then spine intake

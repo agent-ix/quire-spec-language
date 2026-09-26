@@ -396,9 +396,7 @@ fn source_and_types(g: &mut Grammar) {
             ]),
             s(vec![
                 c(vec![x("Float32"), x("Float64")]),
-                open("["),
-                r(P::RoundingMode),
-                close("]"),
+                opt(s(vec![open("["), r(P::RoundingMode), close("]")])),
             ]),
             s(vec![
                 x("Text"),

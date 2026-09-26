@@ -318,6 +318,10 @@ pub struct PackageDeclarations {
     /// qualifier `a` (ADR-015 D-1, D-5). An import with no `as` binds no
     /// qualifier (FR-087-AC-13).
     pub imports: BTreeMap<String, super::AdmittedImport>,
+    /// FR-091-AC-22: the profile selection each source function's `using`
+    /// alias resolved to, by index into [`Self::functions`]. A function
+    /// with no `using` alias, or built by hand, has no entry.
+    pub function_selections: BTreeMap<usize, qsl_foundation::selection::ProfileSelection>,
 }
 
 impl PackageDeclarations {
@@ -340,6 +344,7 @@ impl PackageDeclarations {
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
             imports: BTreeMap::new(),
+            function_selections: BTreeMap::new(),
         }
     }
 

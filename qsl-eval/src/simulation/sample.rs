@@ -1,132 +1,406 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Seeded sampling over the same successor relation the exploration engine
-//! walks.
+//! walks, with the pinned `quire.simulation.sampler/v1` `1-draft.1`
+//! generator (FR-101; QSpec `proposals/quire-v1/definitions/
+//! simulation-sampler.md`).
+
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::selection::DefinitionRef;
+use qsl_semantics::value::declaration::TypeEnvironment;
+use quire_exact::ValueType;
+use serde::Serialize;
 
 use crate::simulation::explore::TransitionSystem;
+use crate::simulation::key::{plain_digest, EncodingRefusal};
+use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
+use crate::simulation::order::{ordered_successors, sorted_initial};
 use crate::simulation::trace::{SampleProvenance, Step, StopReason, Trace};
+
+/// The one generator `sample_request` runs (FR-101).
+const SAMPLER_IDENTITY: &str = "quire.simulation.sampler/v1";
+/// See [`SAMPLER_IDENTITY`].
+const SAMPLER_REVISION: &str = "1-draft.1";
 
 /// A source of draws for sampled exploration.
 ///
 /// A sampler is deterministic in the sense the engine requires: the same
 /// sampler state, driven the same way, produces the same sequence of
-/// indices. What makes a draw reproducible across processes (a seed, a
-/// counter) is the implementation's concern, not the trait's.
-pub trait Sampler {
+/// indices.
+pub(crate) trait Sampler {
     /// Draw an index in `0..n`. `n` is always at least 1; the caller never
     /// asks a sampler to choose among zero candidates.
     fn next_index(&mut self, n: usize) -> usize;
-
-    /// The seed this sampler draws from, recorded in every trace it
-    /// samples.
-    fn seed(&self) -> u64;
-
-    /// The exact identity of this generator, recorded in every trace it
-    /// samples so the draw can be attributed to the code that produced it.
-    fn version(&self) -> &str;
 }
 
-/// A deterministic counter-based `Sampler`, for tests and as a reference
-/// implementation.
-///
-/// This is not the pinned production sampler (`quire.simulation.sampler/v1`,
-/// QSpec#129 Q2); `CounterSampler` exists so this slice's tests, and any
-/// caller that needs a reproducible draw today, do not have to invent one.
-///
-/// Each draw mixes the seed with a monotonic counter through SplitMix64, a
-/// well-known bijective 64-bit mixer, then reduces the result into `0..n`
-/// with `draw % n`. That reduction is biased toward the low end of `0..n`
-/// whenever `n` does not evenly divide 2^64; a reference/test generator
-/// accepts that bias rather than rejection-sampling it away.
-#[derive(Clone, Debug)]
-pub struct CounterSampler {
+/// An unsigned 256-bit integer, big-endian limbs, wide enough to hold one
+/// SHA-256 digest read as a number (FR-101's `v`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+struct U256([u64; 4]);
+
+impl U256 {
+    const MAX: Self = Self([u64::MAX; 4]);
+
+    fn from_be_bytes(bytes: [u8; 32]) -> Self {
+        let mut limbs = [0u64; 4];
+        for (index, limb) in limbs.iter_mut().enumerate() {
+            let start = index * 8;
+            let mut octet = [0u8; 8];
+            octet.copy_from_slice(&bytes[start..start + 8]);
+            *limb = u64::from_be_bytes(octet);
+        }
+        Self(limbs)
+    }
+
+    /// `(self / n, self % n)`, by schoolbook long division limb by limb,
+    /// most significant first. Each step's partial remainder stays below
+    /// `n`, so `remainder << 64 | limb` always fits `u128` exactly (at most
+    /// `(n - 1) * 2^64 + (2^64 - 1) == u128::MAX`).
+    fn divmod_u64(self, n: u64) -> (Self, u64) {
+        let mut quotient = [0u64; 4];
+        let mut remainder: u64 = 0;
+        for (index, limb) in self.0.iter().enumerate() {
+            let dividend = (u128::from(remainder) << 64) | u128::from(*limb);
+            let n128 = u128::from(n);
+            quotient[index] = (dividend / n128) as u64;
+            remainder = (dividend % n128) as u64;
+        }
+        (Self(quotient), remainder)
+    }
+
+    /// `self * n`, valid only when the true product is representable in 256
+    /// bits (the one call site below establishes this before calling).
+    fn mul_u64(self, n: u64) -> Self {
+        let mut limbs = [0u64; 4];
+        let mut carry: u128 = 0;
+        for index in (0..4).rev() {
+            let product = u128::from(self.0[index]) * u128::from(n) + carry;
+            limbs[index] = product as u64;
+            carry = product >> 64;
+        }
+        Self(limbs)
+    }
+}
+
+/// The pinned `quire.simulation.sampler/v1` `1-draft.1` generator: a
+/// counter-mode SHA-256 rejection sampler over `{seed, trace, step, draw}`.
+pub(crate) struct PinnedSampler {
     seed: u64,
-    counter: u64,
+    trace: u64,
+    step: u64,
+    /// How many draw digests this sampler has computed so far (TC-454
+    /// step 3b): `n = 1` never computes one, so this is the observable
+    /// signal that a call actually drew rather than taking the no-digest
+    /// shortcut. Test-only instrumentation, not part of the pinned
+    /// generator's behaviour.
+    #[cfg(test)]
+    digests_computed: u64,
 }
 
-impl CounterSampler {
-    /// A sampler that draws deterministically from `seed`.
-    pub fn new(seed: u64) -> Self {
-        Self { seed, counter: 0 }
+/// One draw's JCS preimage: `{"draw":"<decimal>","seed":"<decimal>",
+/// "step":"<decimal>","trace":"<decimal>"}`.
+#[derive(Serialize)]
+struct DrawPreimage {
+    draw: String,
+    seed: String,
+    step: String,
+    trace: String,
+}
+
+impl PinnedSampler {
+    pub(crate) fn new(seed: u64, trace: u64) -> Self {
+        Self {
+            seed,
+            trace,
+            step: 0,
+            #[cfg(test)]
+            digests_computed: 0,
+        }
+    }
+
+    /// How many draw digests this sampler has computed so far.
+    #[cfg(test)]
+    pub(crate) fn digests_computed(&self) -> u64 {
+        self.digests_computed
     }
 }
 
-impl Sampler for CounterSampler {
+impl Sampler for PinnedSampler {
     fn next_index(&mut self, n: usize) -> usize {
-        assert!(n > 0, "next_index requires at least one candidate");
-        let draw = split_mix_64(self.seed, self.counter);
-        self.counter = self.counter.wrapping_add(1);
-        (draw % n as u64) as usize
-    }
-
-    fn seed(&self) -> u64 {
-        self.seed
-    }
-
-    fn version(&self) -> &str {
-        "quire.simulation.counter-sampler/1"
+        let step = self.step;
+        self.step = self.step.wrapping_add(1);
+        if n == 1 {
+            return 0;
+        }
+        // `n` is a successor count: a `Vec::len()`, always representable in
+        // `u64` on every target Rust supports.
+        let n64 = n as u64;
+        // `floor(2^256 / n)`: `floor((MAX + 1) / n)`, which is
+        // `floor(MAX / n)` unless `n` divides `MAX + 1` exactly (i.e. `MAX %
+        // n == n - 1`), in which case it is one more and the threshold below
+        // is exactly `2^256` -- unrepresentable in 256 bits, so that case
+        // always accepts instead of multiplying. Fixed for this draw's `n`,
+        // so computed once, not per rejected draw.
+        let (quotient, remainder) = U256::MAX.divmod_u64(n64);
+        let always_accepts = remainder == n64 - 1;
+        let mut draw: u64 = 0;
+        loop {
+            let preimage = DrawPreimage {
+                draw: draw.to_string(),
+                seed: self.seed.to_string(),
+                step: step.to_string(),
+                trace: self.trace.to_string(),
+            };
+            let digest = plain_digest(&preimage);
+            #[cfg(test)]
+            {
+                self.digests_computed += 1;
+            }
+            let v = U256::from_be_bytes(digest);
+            let (_, v_remainder) = v.divmod_u64(n64);
+            if accepts(v, quotient, n64, always_accepts) {
+                // `v_remainder < n64 == n as u64`, so it fits `usize`.
+                return v_remainder as usize;
+            }
+            draw += 1;
+        }
     }
 }
 
-/// SplitMix64: a fast, deterministic bijective mix of a seed and a counter
-/// into a 64-bit draw.
-fn split_mix_64(seed: u64, counter: u64) -> u64 {
-    let mut z = seed.wrapping_add(counter.wrapping_mul(0x9E37_79B9_7F4A_7C15));
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    z ^ (z >> 31)
+/// FR-101's rejection-sampling acceptance test: draw digest `v`, read as a
+/// big-endian `u256`, is accepted when `v < n * floor(2^256 / n)`
+/// (`quotient * n64`), or unconditionally when `always_accepts` (`n64`
+/// divides `2^256` exactly, so the threshold itself is `2^256` and
+/// unrepresentable in 256 bits). Split out from [`PinnedSampler::
+/// next_index`] so the real threshold, not a synthetic one, can be
+/// exercised directly (R1-FND-001, PR #467 review).
+fn accepts(v: U256, quotient: U256, n64: u64, always_accepts: bool) -> bool {
+    always_accepts || v < quotient.mul_u64(n64)
 }
 
-/// `TransitionSystem::initial` returned no states; there is nothing to
-/// sample from.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("TransitionSystem::initial returned no states to sample from")]
-pub struct EmptyInitial;
-
-/// Draw one sampled run from `system`, stopping after `max_steps`
-/// transitions or at the first state with no successors, whichever comes
-/// first.
+/// Draw one sampled run from `system`, starting at trace `trace_index mod m`
+/// among `system`'s `m` distinct initial states (no draw selects the
+/// start), stopping after `max_steps` transitions or at the first state
+/// with no successors, whichever comes first.
 ///
-/// The returned trace's `provenance` records `sampler`'s `seed()` and
-/// `version()`, and which of the two stopping conditions ended the run.
+/// Returns `Ok(None)` when `system.initial()` returns no states.
 ///
 /// # Errors
 ///
-/// Returns `EmptyInitial` if `system.initial()` returns no states.
-pub fn sample<S: TransitionSystem>(
+/// [`EncodingRefusal`] when a state or transition identity reached during
+/// the run has no RFC 8785 encoding.
+pub(crate) fn sample<S: TransitionSystem>(
     system: &S,
+    sampler: DefinitionRef,
+    seed: u64,
+    trace_index: u64,
     max_steps: usize,
-    sampler: &mut impl Sampler,
-) -> Result<Trace<S::TransitionId>, EmptyInitial> {
-    let mut initials = system.initial();
-    if initials.is_empty() {
-        return Err(EmptyInitial);
+) -> Result<Option<Trace<S::TransitionId>>, EncodingRefusal> {
+    let mut initial = sorted_initial(system)?;
+    if initial.is_empty() {
+        return Ok(None);
     }
-    let index = sampler.next_index(initials.len());
-    let mut current = initials.swap_remove(index);
-    let initial_key = system.key(&current);
+    let m = initial.len() as u64;
+    let start = (trace_index % m) as usize;
+    // `start < m == initial.len()`, so `swap_remove` never panics.
+    let chosen = initial.swap_remove(start);
+    let mut current = chosen.state;
+    let initial_digest = chosen.digest;
 
+    let mut generator = PinnedSampler::new(seed, trace_index);
     let mut steps = Vec::new();
     let mut stopped = StopReason::StepLimit;
     for _ in 0..max_steps {
-        let mut successors = system.successors(&current);
+        let mut successors = ordered_successors(system, &current)?;
         if successors.is_empty() {
             stopped = StopReason::NoSuccessors;
             break;
         }
-        let index = sampler.next_index(successors.len());
-        let (transition, next) = successors.swap_remove(index);
-        let key = system.key(&next);
-        steps.push(Step { transition, key });
-        current = next;
+        let n = successors.len();
+        // `next_index(n)` always returns an index `< n` (its own contract),
+        // so `swap_remove` never panics: no fallback branch is needed.
+        let index = generator.next_index(n);
+        let chosen = successors.swap_remove(index);
+        current = chosen.state;
+        steps.push(Step {
+            transition: chosen.transition,
+            key: chosen.digest,
+        });
     }
 
-    Ok(Trace {
-        initial: initial_key,
+    Ok(Some(Trace {
+        initial: initial_digest,
         steps,
         provenance: Some(SampleProvenance {
-            seed: sampler.seed(),
-            sampler_version: sampler.version().to_owned(),
+            seed,
+            trace: trace_index,
+            sampler,
             stopped,
         }),
-    })
+    }))
+}
+
+/// Sample `system`, first refusing a `sampler` other than the pinned
+/// `quire.simulation.sampler/v1` `1-draft.1` generator and an unbounded
+/// `domains` request, before any `TransitionSystem` method is called or any
+/// draw runs (FR-101).
+///
+/// `sample` and `Sampler` stay `pub(crate)`; this and `explore_request` are
+/// the only entries that explore or sample.
+///
+/// # Errors
+///
+/// [`NotSimulated::GeneratorMismatch`] when `sampler`'s identity or version
+/// is not the pinned generator's; [`NotSimulated::RequiresBound`] or
+/// [`NotSimulated::Extent`] as `explore_request`; [`NotSimulated::EmptyInitial`]
+/// when `system.initial()` returns no states; [`NotSimulated::KeyEncoding`]
+/// when a state or transition identity reached during the run has no RFC
+/// 8785 encoding.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "FR-101 pins this exact signature; the parameters are the request's own fields, not an accretion of unrelated flags"
+)]
+pub fn sample_request<S: TransitionSystem>(
+    system: &S,
+    domains: &[(WireNodeId, &ValueType)],
+    types: &TypeEnvironment,
+    position_limit: u64,
+    sampler: &DefinitionRef,
+    seed: u64,
+    trace: u64,
+    max_steps: usize,
+) -> Result<Trace<S::TransitionId>, NotSimulated> {
+    if sampler.identity() != SAMPLER_IDENTITY || sampler.version() != SAMPLER_REVISION {
+        return Err(NotSimulated::GeneratorMismatch {
+            supplied: sampler.clone(),
+        });
+    }
+    check_requires_bound(domains, types, position_limit)?;
+    sample(system, sampler.clone(), seed, trace, max_steps)?.ok_or(NotSimulated::EmptyInitial)
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::*;
+
+    /// TC-454 step 1b: the pinned sampler's step-0 preimage bytes and digest
+    /// at seed 424242, trace 0, `n = 5` -- QSpec TC-210's own vector.
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn tc_454_step_0_preimage_and_digest_match_the_pinned_vector() {
+        let preimage = DrawPreimage {
+            draw: "0".to_owned(),
+            seed: "424242".to_owned(),
+            step: "0".to_owned(),
+            trace: "0".to_owned(),
+        };
+        let limits =
+            quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH).unwrap();
+        let bytes = quire_canonical::to_vec(&preimage, limits).expect("a draw preimage encodes");
+        assert_eq!(
+            bytes,
+            br#"{"draw":"0","seed":"424242","step":"0","trace":"0"}"#
+        );
+        let digest = plain_digest(&preimage);
+        let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+        assert_eq!(
+            hex,
+            "cb7d4b3b8b8491d8310ccc1e07c3ee236d3fe86cf713d1851533a85ef6682622"
+        );
+    }
+
+    /// TC-454 step 3b: the sampler computes no digest at all over a chain
+    /// where every state has exactly one successor (`n = 1` throughout).
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn tc_454_one_successor_chain_computes_no_digest() {
+        let mut sampler = PinnedSampler::new(424_242, 0);
+        for _ in 0..5 {
+            assert_eq!(sampler.next_index(1), 0);
+        }
+        assert_eq!(sampler.digests_computed(), 0);
+
+        // A draw with more than one candidate does compute at least one
+        // digest, confirming the counter is wired to the real draw path,
+        // not merely never incremented.
+        sampler.next_index(5);
+        assert!(sampler.digests_computed() > 0);
+    }
+
+    /// SR-672 FND-005: `n = 3` and `n = 5` alone cannot tell a big-endian
+    /// reading of the draw digest from a little-endian one, because
+    /// `256 ≡ 1 (mod 3)` and `256 ≡ 1 (mod 5)` make `v mod n` invariant
+    /// under byte reversal for those two moduli specifically. `n = 2` and
+    /// `n = 7` do not share that property, and a little-endian reading
+    /// gives a different sequence at each (recomputed independently in
+    /// Python with `hashlib`): seed 424242, trace 0, `n = 2` is
+    /// `0, 0, 0, 0, 1`, and `n = 7` is `0, 2, 6, 2, 4`.
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn tc_454_n2_and_n7_vectors_distinguish_byte_order() {
+        let mut two = PinnedSampler::new(424_242, 0);
+        let indices: Vec<usize> = (0..5).map(|_| two.next_index(2)).collect();
+        assert_eq!(indices, vec![0, 0, 0, 0, 1]);
+
+        let mut seven = PinnedSampler::new(424_242, 0);
+        let indices: Vec<usize> = (0..5).map(|_| seven.next_index(7)).collect();
+        assert_eq!(indices, vec![0, 2, 6, 2, 4]);
+    }
+
+    /// SR-672 FND-005: `divmod_u64` and `mul_u64` on synthetic values whose
+    /// quotient and remainder are trivial to check by hand: `100 / 7 == 14`
+    /// remainder `2`, and `14 * 7 == 98`. `U256([0, 0, 0, n])` is exactly
+    /// the small value `n`, since limb 0 is most significant
+    /// (`from_be_bytes`'s own convention) and limb 3 least.
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn u256_divmod_and_mul_on_a_synthetic_value() {
+        let v = U256([0, 0, 0, 100]);
+        let (quotient, remainder) = v.divmod_u64(7);
+        assert_eq!(quotient, U256([0, 0, 0, 14]));
+        assert_eq!(remainder, 2);
+        assert_eq!(quotient.mul_u64(7), U256([0, 0, 0, 98]));
+
+        // `98` and `97` are values chosen purely to make `divmod_u64` easy
+        // to check by hand (98 divides 7 exactly, 97 does not); they are
+        // not the sampler's real `n = 7` rejection threshold, which is
+        // `floor(2^256 / 7) * 7` -- see
+        // `accepts_at_the_real_n7_threshold_and_one_below` below for that.
+        let (_, boundary_remainder) = U256([0, 0, 0, 98]).divmod_u64(7);
+        assert_eq!(boundary_remainder, 0);
+        let (_, below_boundary_remainder) = U256([0, 0, 0, 97]).divmod_u64(7);
+        assert_eq!(below_boundary_remainder, 6);
+    }
+
+    /// R1-FND-001: `accepts` at the sampler's real `n = 7` threshold,
+    /// `floor(2^256 / 7) * 7`, and at one below it -- not a synthetic
+    /// stand-in. `n = 7` does not divide `2^256` exactly, so
+    /// `always_accepts` is `false` and the threshold is representable.
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn accepts_at_the_real_n7_threshold_and_one_below() {
+        let n64 = 7u64;
+        let (quotient, remainder) = U256::MAX.divmod_u64(n64);
+        let always_accepts = remainder == n64 - 1;
+        assert!(!always_accepts, "n = 7 does not divide 2^256 exactly");
+        let threshold = quotient.mul_u64(n64);
+        assert!(accepts(sub_one(threshold), quotient, n64, always_accepts));
+        assert!(!accepts(threshold, quotient, n64, always_accepts));
+    }
+
+    /// `v - 1` over the 256-bit limbs, borrowing across limb boundaries.
+    /// Test-only: production code never needs to decrement a draw value.
+    fn sub_one(v: U256) -> U256 {
+        let mut limbs = v.0;
+        for limb in limbs.iter_mut().rev() {
+            if *limb == 0 {
+                *limb = u64::MAX;
+            } else {
+                *limb -= 1;
+                break;
+            }
+        }
+        U256(limbs)
+    }
 }

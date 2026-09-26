@@ -327,6 +327,42 @@ mod tests {
 
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
+    /// FR-091-AC-11 (TC-398 step 3): the assembler's resolution `match` has
+    /// no catch-all arm, neither `_` nor a bare binding.
+    #[ix_trace_rs::trace("FR-091-AC-11", "TC-398")]
+    #[test]
+    fn resolve_form_has_no_catch_all_arm() {
+        use syn::visit::Visit;
+        struct Finder(Vec<usize>);
+        impl<'ast> Visit<'ast> for Finder {
+            fn visit_expr_match(&mut self, expression: &'ast syn::ExprMatch) {
+                for arm in &expression.arms {
+                    if matches!(arm.pat, syn::Pat::Wild(_) | syn::Pat::Ident(_)) {
+                        self.0
+                            .push(syn::spanned::Spanned::span(&arm.pat).start().line);
+                    }
+                }
+                syn::visit::visit_expr_match(self, expression);
+            }
+        }
+        let file = syn::parse_file(include_str!("type_form.rs")).expect("type_form.rs parses");
+        let function = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(function) if function.sig.ident == "resolve_form" => Some(function),
+                _ => None,
+            })
+            .expect("fn resolve_form exists");
+        let mut finder = Finder(Vec::new());
+        finder.visit_item_fn(function);
+        assert!(
+            finder.0.is_empty(),
+            "resolve_form has a catch-all arm at lines {:?}",
+            finder.0
+        );
+    }
+
     fn builtin(builtin: BuiltinType, bounds: &[&str]) -> TypeForm {
         TypeForm::builtin(builtin, SPAN)
             .with_bounds(bounds.iter().map(|bound| (*bound).to_owned()).collect())

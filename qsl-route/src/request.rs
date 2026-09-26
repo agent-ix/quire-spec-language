@@ -22,6 +22,13 @@
 //! index and classification, so a bounded result never settles it and
 //! there is no `requires-bound` loop.
 //!
+//! **Requested items from a package's requirement records** (FR-075).
+//! [`items_from_requirements`] writes one [`RequirementItem`] per record of
+//! a checked package, in the records' occurrence-key order, each with its
+//! candidate outcome. The driver writes a `requires-bound` item's bounded
+//! follow-up as a new request of one item, carrying the original item's
+//! occurrence key.
+//!
 //! **Refusals.** Before any item is written, the writer refuses a bound for
 //! a key that names no unbounded domain of the item, a bound on a domain no
 //! finite bound can stand for, a bound of the wrong kind, and a set that
@@ -34,9 +41,12 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, FiniteBoundKind, ProofBound};
 use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{CatalogCode, CatalogCoded};
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, RequirementRecord};
 use qsl_semantics::family::{ClaimExtent, DomainKind, Requirements};
+
+use crate::{BackendId, CandidateOutcome, Registry};
 
 /// An item's position in one request (QSpec FR-331 `request_index`). Each
 /// item, bounded or not, has its own.
@@ -83,14 +93,15 @@ impl ExtentClassification {
     }
 }
 
-/// One requested item (ADR-013 O-20): the checked node, its capability
-/// kind, its extent classification and the proof bounds it was requested
-/// over. Two items are equal only when every member is, so an item with
-/// proof bounds is never equal to the unbounded item it answers.
+/// One requested item (ADR-013 O-20): the occurrence it requests a claim
+/// at, the checked node, its capability kind, its extent classification
+/// and the proof bounds it was requested over. Two items are equal only
+/// when every member is, so an item with proof bounds is never equal to
+/// the unbounded item it answers.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestItem {
     index: RequestIndex,
-    node: WireNodeId,
+    occurrence: OccurrenceKey,
     kind: Capability,
     extent: ExtentClassification,
     domains: Vec<ProofBound>,
@@ -102,9 +113,15 @@ impl RequestItem {
         self.index
     }
 
-    /// The checked node the item requests a claim over.
+    /// The occurrence of the claim site the item requests a claim at.
+    pub fn occurrence(&self) -> &OccurrenceKey {
+        &self.occurrence
+    }
+
+    /// The checked node the item requests a claim over: its occurrence's
+    /// node.
     pub fn node(&self) -> WireNodeId {
-        self.node
+        self.occurrence.node()
     }
 
     /// The requested capability kind.
@@ -174,6 +191,11 @@ impl CatalogCoded for BoundRefusal {
             | Self::NoUnboundedDomain => CatalogCode::new("invalid_runtime_input", "invalid-value"),
         }
     }
+
+    /// FR-096's key table has no row for `invalid-value`.
+    fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        None
+    }
 }
 
 /// Writes the items of one request, giving each its own [`RequestIndex`] in
@@ -189,15 +211,19 @@ impl RequestWriter {
         Self::default()
     }
 
-    /// Write the item for `node` with `requirements` and no proof bounds.
-    /// Its classification comes from the checked extent alone.
-    pub fn item(&mut self, node: WireNodeId, requirements: &Requirements) -> RequestIndex {
+    /// Write the item for the claim at `occurrence` with
+    /// `requirements` and no proof bounds. Its classification comes from
+    /// the checked extent alone.
+    pub fn item(&mut self, occurrence: OccurrenceKey, requirements: &Requirements) -> RequestIndex {
         let extent = ExtentClassification::of(requirements.extent());
-        self.push(node, requirements.kind(), extent, Vec::new())
+        self.push(occurrence, requirements.kind(), extent, Vec::new())
     }
 
-    /// Write the bounded item for `node` with `requirements`, substituting
-    /// `bounds` for its unbounded domains (ADR-014 §4 "Bounded request").
+    /// Write the bounded item for the claim at `occurrence` with
+    /// `requirements`, substituting `bounds` for its unbounded domains
+    /// (ADR-014 §4 "Bounded request"). The item carries `occurrence`, the
+    /// originating item's, so a follow-up request's settlement joins the
+    /// requirement record it answers.
     /// Refuses, writing nothing, unless the item is unbounded, every one of
     /// its domains is boundable, and `bounds` names exactly those domains,
     /// each with a bound of its kind. Refusals are checked in that order:
@@ -205,7 +231,7 @@ impl RequestWriter {
     /// domain's missing or mismatched bound.
     pub fn bounded_item(
         &mut self,
-        node: WireNodeId,
+        occurrence: OccurrenceKey,
         requirements: &Requirements,
         bounds: BTreeMap<DomainKey, FiniteBound>,
     ) -> Result<RequestIndex, BoundRefusal> {
@@ -253,7 +279,7 @@ impl RequestWriter {
             .map(|(domain, bound)| ProofBound { domain, bound })
             .collect();
         Ok(self.push(
-            node,
+            occurrence,
             requirements.kind(),
             ExtentClassification::Bounded,
             domains,
@@ -272,7 +298,7 @@ impl RequestWriter {
 
     fn push(
         &mut self,
-        node: WireNodeId,
+        occurrence: OccurrenceKey,
         kind: Capability,
         extent: ExtentClassification,
         domains: Vec<ProofBound>,
@@ -280,13 +306,111 @@ impl RequestWriter {
         let index = RequestIndex(self.items.len());
         self.items.push(RequestItem {
             index,
-            node,
+            occurrence,
             kind,
             extent,
             domains,
         });
         index
     }
+}
+
+/// One requested item written from one requirement record (FR-075
+/// "Requested items from a package's requirement records"): everything the
+/// orchestrating driver reads about the item from QSL.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RequirementItem {
+    index: RequestIndex,
+    occurrence: OccurrenceKey,
+    kind: Capability,
+    extent: ExtentClassification,
+    unbounded: Vec<(DomainKey, DomainKind)>,
+    result_bound: WireNodeId,
+    candidates: CandidateOutcome,
+}
+
+impl RequirementItem {
+    /// The item's request index: its position in record key order.
+    pub fn index(&self) -> RequestIndex {
+        self.index
+    }
+
+    /// The record's occurrence key.
+    pub fn occurrence(&self) -> &OccurrenceKey {
+        &self.occurrence
+    }
+
+    /// The occurrence key's node: the application the claim is over.
+    pub fn node(&self) -> WireNodeId {
+        self.occurrence.node()
+    }
+
+    /// The record's capability kind.
+    pub fn kind(&self) -> Capability {
+        self.kind
+    }
+
+    /// The extent classification [`RequestWriter::item`] computes from the
+    /// record's extent.
+    pub fn extent(&self) -> ExtentClassification {
+        self.extent
+    }
+
+    /// Each unbounded domain of the record's extent with its kind, in key
+    /// order: the keys a bounded follow-up supplies a bound for. Empty for
+    /// a bounded extent.
+    pub fn unbounded(&self) -> &[(DomainKey, DomainKind)] {
+        &self.unbounded
+    }
+
+    /// The record's result bound, as its type node.
+    pub fn result_bound(&self) -> WireNodeId {
+        self.result_bound
+    }
+
+    /// The item's candidate outcome under the registry and the named
+    /// backend it was built with.
+    pub fn candidates(&self) -> &CandidateOutcome {
+        &self.candidates
+    }
+}
+
+/// The requested items of a checked package's requirement `records`
+/// (`CheckedPackage::graph().requirements()`), one per record in the
+/// records' occurrence-key order, each with its candidate outcome from
+/// `registry` for the backend `named`, when the request names one. An item
+/// whose candidate set is empty or whose extent is unbounded is written
+/// like any other; negotiation settles it.
+pub fn items_from_requirements(
+    records: &BTreeMap<OccurrenceKey, RequirementRecord>,
+    registry: &Registry,
+    named: Option<&BackendId>,
+) -> Vec<RequirementItem> {
+    records
+        .iter()
+        .enumerate()
+        .map(|(position, (occurrence, record))| {
+            let requirements = record.requirements();
+            let index = RequestIndex(position);
+            let extent = ExtentClassification::of(requirements.extent());
+            let unbounded = match requirements.extent() {
+                ClaimExtent::Bounded => Vec::new(),
+                ClaimExtent::Unbounded(domains) => domains
+                    .iter()
+                    .map(|(key, kind)| (key.clone(), kind))
+                    .collect(),
+            };
+            RequirementItem {
+                index,
+                occurrence: occurrence.clone(),
+                kind: requirements.kind(),
+                extent,
+                unbounded,
+                result_bound: record.result_bound().node(),
+                candidates: registry.candidates(requirements.kind(), named),
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -296,6 +420,14 @@ mod tests {
 
     fn node(fill: u8) -> WireNodeId {
         WireNodeId::from_digest([fill; 32])
+    }
+
+    /// The first `expression` occurrence of node 9.
+    fn occurrence() -> OccurrenceKey {
+        OccurrenceKey::new(
+            node(9),
+            quire_exact::Origin::new(quire_exact::Role::new("expression"), 0),
+        )
     }
 
     fn key(fill: u8, path: &[u32]) -> DomainKey {
@@ -326,17 +458,17 @@ mod tests {
     #[test]
     fn tc_438_finite_bound_available_exactly_when_every_domain_is_boundable() {
         let mut writer = RequestWriter::new();
-        let bounded = writer.item(node(9), &claim(&[]));
-        let set = writer.item(node(9), &set_claim());
+        let bounded = writer.item(occurrence(), &claim(&[]));
+        let set = writer.item(occurrence(), &set_claim());
         let set_and_loop = writer.item(
-            node(9),
+            occurrence(),
             &claim(&[
                 (key(1, &[]), DomainKind::Collection),
                 (key(2, &[]), DomainKind::Loop),
             ]),
         );
         let formula = writer.item(
-            node(9),
+            occurrence(),
             &Requirements::new(
                 Capability::TemporalSatisfaction,
                 ClaimExtent::from_domains(BTreeMap::from([(
@@ -382,10 +514,10 @@ mod tests {
             (key(1, &[]), DomainKind::Collection),
             (key(1, &[0]), DomainKind::Recursive),
         ]);
-        let unbounded = writer.item(node(9), &requirements);
+        let unbounded = writer.item(occurrence(), &requirements);
         let eight = writer
             .bounded_item(
-                node(9),
+                occurrence(),
                 &requirements,
                 BTreeMap::from([
                     (key(1, &[]), FiniteBound::cardinality(8)),
@@ -395,7 +527,7 @@ mod tests {
             .expect("one bound per domain, each of its kind");
         let four = writer
             .bounded_item(
-                node(9),
+                occurrence(),
                 &requirements,
                 BTreeMap::from([
                     (key(1, &[]), FiniteBound::cardinality(4)),
@@ -539,7 +671,7 @@ mod tests {
         for (requirements, bounds, expected) in cases {
             let mut writer = RequestWriter::new();
             let refusal = writer
-                .bounded_item(node(9), &requirements, bounds)
+                .bounded_item(occurrence(), &requirements, bounds)
                 .expect_err("the bounds refuse");
             assert_eq!(refusal, expected);
             assert_eq!(

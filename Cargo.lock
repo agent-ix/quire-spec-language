@@ -1398,7 +1398,9 @@ dependencies = [
  "qsl-foundation",
  "qsl-package",
  "qsl-semantics",
+ "quire-canonical",
  "quire-exact",
+ "serde",
  "serde_json",
  "sha2",
  "thiserror",
@@ -1468,6 +1470,7 @@ dependencies = [
  "ix-trace-rs",
  "qsl-foundation",
  "qsl-semantics",
+ "quire-exact",
  "tempfile",
  "thiserror",
 ]

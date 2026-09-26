@@ -6,6 +6,7 @@
 
 pub(crate) mod support;
 
+mod call_verdicts;
 mod checked_package_call;
 mod collection_algebra;
 mod collection_queries;

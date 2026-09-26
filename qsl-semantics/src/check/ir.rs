@@ -509,6 +509,25 @@ pub enum NodeKind {
     __SeamProbe,
 }
 
+/// Whether FR-093 lowers a [`NodeKind::Coerce`] of an `operand`-typed node
+/// into `interval` to a `quire.op.numeric.narrow` node: an integer whose
+/// type the target range contains is admitted with no node.
+pub(crate) fn coerce_builds_narrow(operand: &ValueType, interval: &IntegerInterval) -> bool {
+    !matches!(operand, ValueType::Int(source)
+        if interval.contains(source.lower()) && interval.contains(source.upper()))
+}
+
+/// The type a [`NodeKind::ConvertScalar`] of an `operand`-typed node
+/// converts to, when FR-093 lowers it to a node: a conversion to the
+/// operand's own type builds none.
+pub(crate) fn scalar_conversion_target<'t>(
+    target: &'t EqualityOperand,
+    operand: &'t ValueType,
+) -> Option<&'t ValueType> {
+    let target = target.target().unwrap_or(operand);
+    (target != operand).then_some(target)
+}
+
 impl Node {
     /// Direct children in evaluation order.
     pub fn children(&self) -> Vec<&Node> {
