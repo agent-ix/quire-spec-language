@@ -665,7 +665,12 @@ its own repository, agent-ix/quire-driver.
   operand form lands with QSL-5 (Ruling 2026-09-24).
 - Spine `run` calls a named checked function: a `QualifiedName` resolved by
   name lookup in the compiled package, then `CheckedPackage::call` (E6, and
-  the same shape E9 uses). Native-run/1 clause execution over snapshots and
+  the same shape E9 uses). Its entry is `qsl_replay::spine::run`. CLI `run`
+  reaches it through a native-run/1 request whose program source declares
+  `1-draft`, routed by edition as compile is, carrying a `call` member
+  (function name, name-keyed canonical integer arguments) and writing a
+  `spine-run-result/1` outcome ([FR-100](../functional/FR-100-run-a-named-function-through-the-spine.md),
+  amended 2026-09-26, QSL-271). Native-run/1 clause execution over snapshots and
   invocations (FR-023, FR-026, FR-028, FR-031, FR-032) has no spine
   equivalent before M-6c and stays until M-6c lands one (§7.3).
 
