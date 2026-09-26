@@ -91,6 +91,15 @@ mod tests {
             CatalogCode::new("stage_limit_exceeded", "input-bytes-exceeded")
         );
         assert_eq!(err.actual, MAX_ENCODED_BYTES + 5);
+        let fields = err.catalog_fields().expect("a key-table row");
+        assert_eq!(
+            fields.into_iter().collect::<Vec<_>>(),
+            [
+                ("actual", (MAX_ENCODED_BYTES + 5).to_string()),
+                ("bound", MAX_ENCODED_BYTES.to_string()),
+                ("kind", "input-bytes-exceeded".to_owned()),
+            ]
+        );
         assert_eq!(
             err.to_string(),
             format!(

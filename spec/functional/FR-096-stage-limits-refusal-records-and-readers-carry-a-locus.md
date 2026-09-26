@@ -331,8 +331,13 @@ Not backed:
 - AC-8 is only partly backed: the kernel causes `InexactDecimal`,
   `DecimalOutOfDomain`, `DivisionPairOutOfDomain`, `ModuloOutOfDomain`,
   `TextLengthOutOfDomain`, `IntegerOutOfDomain`, `RationalOutOfDomain` and
-  `IeeeNotExact` (and the two IEEE causes the kernel spells but the catalog
-  does not list) await a catalog revision that defines their codes.
+  `IeeeNotExact` await catalog revision `1-draft.8` (STD-110), which defines
+  their codes. So do the two IEEE causes QSpec FR-148 names,
+  `ieee_nan_payload_not_representable` and `ieee_rational_out_of_domain`,
+  that the catalog omits.
+- A kernel `CheckedInvariant` builds no record, and its conversion to an
+  `InternalFault` is not built: the evaluator still returns it as a
+  refusal.
   `ForeignReference` carries neither universe in the kernel variant, so it
   builds no record until the `quire-exact` variant does.
 - The key table has no row for the other `ModelQueryRefusal` causes
