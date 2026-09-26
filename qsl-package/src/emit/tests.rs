@@ -1747,14 +1747,10 @@ pub(super) fn metre_units() -> qsl_semantics::value::quantity::UnitTable {
     qsl_semantics::value::quantity::UnitTable::declared(&graph)
 }
 
-/// IR-280: IR's v2 vocabulary holds `scalar_type`/`compound_unit` (FR-094),
-/// so a compound unit node is never omitted for its form. `q(a: Length):
-/// Boolean { a * a == a * a }` forms the `metre^2` compound unit node; it is
-/// omitted only because it names the `metre` unit node, which lowering names
-/// by key but does not build.
-#[trace("TC-416")]
-#[test]
-fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
+/// TC-160 step 8's package: `q(a: Length): Boolean { a * a == a * a }`,
+/// whose `metre^2` compound unit node names the `metre` unit node lowering
+/// names by key but does not build, beside `t`, which names no omitted node.
+fn q_and_t_package() -> CheckedPackage {
     let square = || Expression::Binary {
         operator: BinaryOperator::Multiply,
         left: Box::new(name("a")),
@@ -1772,7 +1768,7 @@ fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
         },
     );
     let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
-    let package = CheckedPackage::link(
+    CheckedPackage::link(
         PackageDeclarations {
             types: TypeEnvironment::default().with_units(metre_units()),
             aliases: vec![("Length".to_owned(), ValueType::Quantity(metre))],
@@ -1781,24 +1777,62 @@ fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
         }
         .check(CheckingLimits::default())
         .expect("q checks"),
-    );
-    let compound = package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .find(|node| node.semantic_form() == "compound_unit")
-        .expect("a * a forms a compound unit node");
+    )
+}
+
+/// IR-280: IR's v2 vocabulary holds `scalar_type`/`compound_unit` (FR-094),
+/// so a compound unit node is never omitted for its form. `q(a: Length):
+/// Boolean { a * a == a * a }` forms the `metre^2` compound unit node; it is
+/// omitted only because it names the `metre` unit node, which lowering names
+/// by key but does not build.
+///
+/// FR-062-AC-9 (TC-160 step 8, as amended by QSL-242): the emitter is
+/// all-or-nothing over the nodes a node names. `q`'s declaration node and
+/// each node on its path to the omitted unit are omitted with
+/// `NamesOmittedNode`; `t` and its body are written; QSL's I2 read is
+/// Verified and exports `t` and not `q`. Were the omission not to close over
+/// dependents, `q` and its `==`/`*` nodes would be written naming an absent
+/// node and the omitted set below would shrink to the two direct namers.
+#[trace("TC-416", "TC-160", "FR-062-AC-9")]
+#[test]
+fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
+    let package = q_and_t_package();
+    let graph = package.graph().semantic_graph();
+    let key_of = |form: &str| -> Vec<CheckedNodeId> {
+        graph
+            .nodes()
+            .filter(|node| node.semantic_form() == form)
+            .map(|node| node_id(node.key()))
+            .collect()
+    };
+    let compound = key_of("compound_unit");
+    assert_eq!(compound.len(), 1, "a * a forms one compound unit node");
     let emission = emit(&package);
-    let cause = emission
-        .omitted
-        .iter()
-        .find(|omission| *omission.node.digest == compound.key().to_string())
-        .map(|omission| &omission.cause);
+    let exports = verified_exports(&emission);
     assert_eq!(
-        cause,
-        Some(&OmissionCause::NamesAbsentNode(node_id(
-            NodeKey::from_digest(METRE)
-        )))
+        exports.keys().collect::<Vec<_>>(),
+        ["t"],
+        "the I2 read exports t and not q"
+    );
+    let t_key = exports["t"].clone();
+    let q_key = graph
+        .nodes()
+        .filter(|node| node.semantic_form() == "pure_function")
+        .find(|node| node.key().to_string() != t_key)
+        .map(|node| node_id(node.key()))
+        .expect("q's declaration node");
+    let metre_id = node_id(NodeKey::from_digest(METRE));
+    let cause_of = |id: &CheckedNodeId| {
+        emission
+            .omitted
+            .iter()
+            .find(|omission| omission.node == *id)
+            .map(|omission| &omission.cause)
+    };
+    // The compound unit is omitted only for its absent unit.
+    assert_eq!(
+        cause_of(&compound[0]),
+        Some(&OmissionCause::NamesAbsentNode(metre_id.clone()))
     );
     assert!(
         !emission
@@ -1808,7 +1842,53 @@ fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
         "{:?}",
         emission.omitted
     );
-    assert!(verified_exports(&emission).contains_key("t"));
+    // Everything that names an omitted node is omitted with
+    // `NamesOmittedNode`: `q`'s `==` and `*` applications and `q` itself.
+    let binaries = key_of("binary");
+    assert_eq!(binaries.len(), 2, "q's `==` and `*` applications");
+    for id in binaries.iter().chain([&q_key]) {
+        assert!(
+            matches!(cause_of(id), Some(OmissionCause::NamesOmittedNode(_))),
+            "{id:?}: {:?}",
+            emission.omitted
+        );
+    }
+    // The omitted set is exactly the unit, the parameter (typed by the
+    // absent `metre`), and the nodes that reach them: `t`'s nodes are not in
+    // it.
+    let expected: BTreeSet<CheckedNodeId> = compound
+        .into_iter()
+        .chain(key_of("parameter"))
+        .chain(binaries)
+        .chain([q_key.clone()])
+        .collect();
+    let omitted: BTreeSet<CheckedNodeId> = emission
+        .omitted
+        .iter()
+        .map(|omission| omission.node.clone())
+        .collect();
+    assert_eq!(omitted, expected);
+    assert!(omitted.iter().all(|id| id.digest.to_string() != t_key));
+    // `q` is absent from the wire's exports, `t` is present.
+    assert!(!exports.values().any(|key| *key == q_key.digest.to_string()));
+}
+
+/// FR-062-AC-9 (TC-160 step 8, second half): the same package with an
+/// occurrence the region conversion cannot place refuses with
+/// `EmitRefusal::UnlocatedOccurrence` and no bytes (the `Err` carries no
+/// package). Placing every occurrence emits it, so the refusal is the
+/// conversion's doing.
+#[trace("TC-160", "FR-062-AC-9")]
+#[test]
+fn the_q_and_t_package_with_an_unplaced_occurrence_refuses() {
+    let package = q_and_t_package();
+    assert!(emit_package(&package, whole_unit).is_ok());
+    let refusal = emit_package(&package, |_| None).unwrap_err();
+    assert!(
+        matches!(refusal, EmitRefusal::UnlocatedOccurrence { .. }),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), Code::UnsupportedProjection);
 }
 
 // No `#[trace]` tag: no TC names the I2 reader's own preimage refusals; the
