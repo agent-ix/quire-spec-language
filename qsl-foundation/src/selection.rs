@@ -5,8 +5,7 @@
 //! profile inventory authoring tools check a selection against.
 //!
 //! These are plain values. Layer 1 (`qsl-cst`) produces them from source,
-//! layer 3 (`complete::package`) resolves them against definition and model
-//! catalogs, and the tool modules check profiles against a
+//! the spine resolves them (E3, I1), and the tool modules check profiles against a
 //! [`ProfileCatalog`]; none of those layers owns them, so they sit in F
 //! (ADR-011 §6.1, QSL-181).
 
@@ -274,7 +273,7 @@ pub struct SourceSelections {
 }
 
 /// The most exact references one catalog or resolved package graph admits.
-/// `complete::package`'s `PackageLimits` hard ceiling and [`ProfileCatalog`]
+/// `library::bundle`'s `PackageLimits` default ceiling and [`ProfileCatalog`]
 /// share it.
 pub const MAX_SELECTED_DEFINITIONS: usize = 4_096;
 

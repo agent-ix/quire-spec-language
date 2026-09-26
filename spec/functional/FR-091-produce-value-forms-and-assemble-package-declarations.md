@@ -704,7 +704,7 @@ The alias-cycle row uses `definition-cycle`, whose payload is dependency
 edges: the alias chain is those edges. The check stage uses the same code
 for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
 `CheckCause::DefinitionCycle`). The duplicate-alias row follows
-`complete::package`, which refuses a duplicate selection alias as
+the retired `complete::package` resolver, which refused a duplicate selection alias as
 `ambiguous-name`. The duplicate-enum-member row follows the record rule,
 where a duplicate field name is `ambiguous-name`
 (`DeclarationCause::DuplicateMember`): the catalog's `ambiguous-name`
