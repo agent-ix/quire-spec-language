@@ -258,7 +258,8 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// `[dev-dependencies]` may also name the lower layers `qsl-forms` and
 /// `qsl-cst` (the FR-091 S1-to-S4 round trip). `qsl-route` (layer R,
 /// QSL-184) names exactly `qsl-foundation`, `qsl-semantics` and `thiserror`
-/// in `[dependencies]`, and has no `[build-dependencies]`. `qsl-eval` (layer
+/// in `[dependencies]`, has no `[build-dependencies]`, and its
+/// `[dev-dependencies]` may also name layer K's `quire-exact`. `qsl-eval` (layer
 /// 5, QSL-183) names exactly `qsl-foundation`, `qsl-package`,
 /// `qsl-semantics`, `quire-exact` and `thiserror` in
 /// `[dependencies]`, has no `[build-dependencies]`, and its `[dev-dependencies]` may also name the lower layers
@@ -322,7 +323,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         (
             "qsl-route",
             &["qsl-foundation", "qsl-semantics"][..],
-            &[][..],
+            &["quire-exact"][..],
         ),
         (
             "qsl-eval",

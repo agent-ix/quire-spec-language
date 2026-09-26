@@ -112,6 +112,7 @@ mod parser;
 mod parser_differential;
 mod protocol_artifact;
 mod protocol_number;
+mod request_builder;
 mod runtime_evaluation;
 mod runtime_execution;
 mod runtime_inputs;
