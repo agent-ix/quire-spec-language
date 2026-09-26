@@ -448,7 +448,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         Refusal::ForeignReference,
     ];
     for refusal in kernel_no_record {
-        match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal.clone()))).unwrap() {
+        match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal))).unwrap() {
             CallOutcome::Refused(CallRefusal::Kernel { location: got }) => {
                 assert_location(&got);
             }
