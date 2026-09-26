@@ -591,3 +591,100 @@ pub(super) fn report(
         value: NativeResult(serde_json::to_value(document).map_err(RunCause::Output)?),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::formal_source::FormalSource;
+    use ix_trace_rs::trace;
+    use qsl_foundation::SourceIdentity;
+    use qsl_replay::spine::CallOutcome;
+    use qsl_semantics::library::PackageId;
+
+    fn formal_source() -> FormalSource {
+        let source = qsl_foundation::Source::read(
+            SourceIdentity {
+                authority: "agent-ix".into(),
+                identity: "test:spine-run".into(),
+                revision_namespace: "fixture".into(),
+                revision: "fixture:1".into(),
+            },
+            "program.native",
+            b"",
+            1,
+        )
+        .unwrap();
+        let identity = ir::SourceIdentity::new(
+            ir::SourceDocumentId::new("SpineRun").unwrap(),
+            ir::SourceRevision::new(1).unwrap(),
+        );
+        FormalSource::new(source, identity)
+    }
+
+    /// Assert `spine_run_result`'s whole stdout document and exit code for
+    /// an `Undefined` outcome carrying `reason`, isolated from any specific
+    /// kernel or family origin (FR-100-AC-9, FND-006). The renderer
+    /// (`src/command/output.rs`) does not distinguish where a `reason`
+    /// string came from; `qsl_replay::spine::call::convert_outcome`'s own
+    /// tests cover that distinction.
+    fn assert_undefined_renders(reason: &'static str) {
+        let source = formal_source();
+        let digest = ByteDigest::of(b"request");
+        let package_id = PackageId::of_preimage(b"package");
+        let result = spine_run_result(
+            digest,
+            package_id,
+            &source,
+            "seven",
+            CallOutcome::Undefined { reason },
+        )
+        .unwrap();
+        assert_eq!(result.exit_code, 20, "{reason}");
+        assert_eq!(
+            result.value.as_value(),
+            &serde_json::json!({
+                "format": "spine-run-result/1",
+                "request_digest": digest.to_string(),
+                "package_id": package_id.hex(),
+                "source": {
+                    "authority": "agent-ix",
+                    "identity": "test:spine-run",
+                    "revision_namespace": "fixture",
+                    "revision": "fixture:1",
+                    "digest": source.source().digest().to_string(),
+                    "path": "program.native",
+                },
+                "function": "seven",
+                "outcome": {"kind": "undefined", "reason": reason},
+            }),
+            "{reason}"
+        );
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4): each kernel `Undefined` reason
+    /// (`qsl_replay::spine::call::kernel_undefined_reason`) renders
+    /// `{"kind":"undefined","reason":...}` and exits 20 (FND-006).
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn undefined_kernel_reasons_render_and_exit_20() {
+        for reason in [
+            "division-by-zero",
+            "ieee-not-finite",
+            "empty-reduction",
+            "none-value",
+        ] {
+            assert_undefined_renders(reason);
+        }
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4): each family `Undefined` reason
+    /// (`qsl_foundation::diagnostic::UndefinedReason::as_str`) renders
+    /// `{"kind":"undefined","reason":...}` and exits 20 (FND-006).
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn undefined_family_reasons_render_and_exit_20() {
+        for reason in ["precondition-false", "absent-key"] {
+            assert_undefined_renders(reason);
+        }
+    }
+}
