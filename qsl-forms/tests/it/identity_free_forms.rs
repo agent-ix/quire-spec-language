@@ -221,7 +221,9 @@ impl ModuleEdges {
                 .get(1)
                 .is_some_and(|second| FORMS_CORE.contains(&second.as_str())),
             "self" => true,
-            "crate" => false,
+            "crate" => segments
+                .get(1)
+                .is_some_and(|second| FORMS_CORE.contains(&second.as_str())),
             other => ALLOWED_EXTERNAL.contains(&other),
         };
         if !allowed {
@@ -276,6 +278,50 @@ impl<'ast> Visit<'ast> for ModuleEdges {
             return;
         }
         syn::visit::visit_item(self, item);
+    }
+
+    /// Macro bodies (`matches!`, `format!`, ...) are token streams the parser
+    /// does not read as paths, so scan their tokens for `root::name` runs.
+    fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+        use proc_macro2::TokenTree;
+        fn walk(edges: &mut ModuleEdges, stream: proc_macro2::TokenStream) {
+            let tokens: Vec<TokenTree> = stream.into_iter().collect();
+            let mut i = 0;
+            while i < tokens.len() {
+                if let TokenTree::Group(group) = &tokens[i] {
+                    walk(edges, group.stream());
+                }
+                if let TokenTree::Ident(root) = &tokens[i] {
+                    let name = root.to_string();
+                    let rooted = matches!(name.as_str(), "crate" | "super" | "self")
+                        || name.starts_with("qsl_")
+                        || name.starts_with("quire_");
+                    let mut segments = vec![name];
+                    let mut j = i + 1;
+                    while let (
+                        Some(TokenTree::Punct(a)),
+                        Some(TokenTree::Punct(b)),
+                        Some(TokenTree::Ident(next)),
+                    ) = (tokens.get(j), tokens.get(j + 1), tokens.get(j + 2))
+                    {
+                        if a.as_char() == ':' && b.as_char() == ':' {
+                            segments.push(next.to_string());
+                            j += 3;
+                        } else {
+                            break;
+                        }
+                    }
+                    if rooted && segments.len() > 1 {
+                        edges.judge(&segments, root.span().start().line);
+                    }
+                    i = j.max(i + 1);
+                    continue;
+                }
+                i += 1;
+            }
+        }
+        walk(self, mac.tokens.clone());
+        syn::visit::visit_macro(self, mac);
     }
 
     /// Inline paths: only a rooted path (`crate::`, `super::`, `self::`, or
