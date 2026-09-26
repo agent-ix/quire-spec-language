@@ -348,9 +348,10 @@ mod family_contract_tests {
         );
     }
 
-    /// TC-160 (FR-062-AC-4): a function declaration carries no FR-057
-    /// capability kind, so `requirements` on its checked node is `None`,
-    /// and a second call on the same node is equal.
+    /// TC-160 (FR-062-AC-4): a function declaration whose body holds no
+    /// scalar operation application carries no claim, so `requirements` on
+    /// its checked node is empty, and a second call on the same node is
+    /// equal.
     #[trace("TC-160", "FR-062-AC-4")]
     #[test]
     fn a_function_declaration_has_no_requirements() {
@@ -380,7 +381,7 @@ mod family_contract_tests {
         let checked = ValueFunctionFamily::check(&form, &mut cx)
             .expect("f checks")
             .into_value();
-        assert_eq!(ValueFunctionFamily::requirements(&checked), None);
+        assert!(ValueFunctionFamily::requirements(&checked).is_empty());
         assert_eq!(
             ValueFunctionFamily::requirements(&checked),
             ValueFunctionFamily::requirements(&checked)

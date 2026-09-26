@@ -680,3 +680,6 @@ fn outermost(here: &[(NodeKey, Origin)], graph: &SemanticGraph) -> Option<(NodeK
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests;
