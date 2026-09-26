@@ -73,9 +73,9 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
   no workspace crate outside `qsl-semantics`, `qsl-foundation` and
   `quire-exact`, and `quire-contract-model` as their one ecosystem crate
   outside the workspace; its `[dev-dependencies]` may also name
-  `qsl-forms`. `qsl-eval`'s `[dependencies]` are exactly `qsl-attrs`,
-  `qsl-foundation`, `qsl-package`, `qsl-semantics`, `quire-exact`, `serde`,
-  `serde_json` and `thiserror`, it has no `[build-dependencies]`, and its
+  `qsl-forms`. `qsl-eval`'s `[dependencies]` are exactly
+  `qsl-foundation`, `qsl-package`, `qsl-semantics`, `quire-canonical`,
+  `quire-exact`, `serde` and `thiserror` (ADR-011 X-8, FR-101), it has no `[build-dependencies]`, and its
   `[dev-dependencies]` may also name `qsl-forms`, and no other workspace
   crate. The root crate names
   `qsl-eval` in none of its tables: no root-crate code calls layer 5 yet.
@@ -85,3 +85,8 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 `✅ Passed locally`. Backed by the four tests in
 `tests/it/family_outcome_layering.rs`, over `xtask::definition_scan::scan_dirs`
 and `xtask::import_graph::resolved_paths`.
+
+Step 4's `qsl-eval` set gains `quire-canonical` and `serde` under QSL-272
+(FR-101). The test asserts the earlier five-crate set until the QSL-272
+implementation adds both dependencies and updates the assertion in the
+same change.
