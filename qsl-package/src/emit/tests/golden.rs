@@ -27,7 +27,7 @@ fn fixture_applications(path: &std::path::Path) -> Vec<Value> {
 /// `mode`, and each argument's term kind and binding name. Every other
 /// member (ids, keys, `semantic_type`, dependencies, law definitions) is
 /// placeholder in the fixtures and stays outside the comparison.
-fn compared(node: &Value, with_mode: bool) -> Value {
+fn compared(node: &Value) -> Value {
     fn lowered(term: &Value) -> Value {
         match term["term"].as_str() {
             Some("binding") => json!(["binding", term["name"], lowered(&term["value"])]),
@@ -65,7 +65,7 @@ fn compared(node: &Value, with_mode: bool) -> Value {
         "operator": body["operator"],
         "identity": operation["identity"],
         "laws": roles,
-        "mode": if with_mode { operation["mode"].clone() } else { Value::Null },
+        "mode": operation["mode"],
         "member": member,
         "leaves": leaves,
         "arguments": arguments,
@@ -77,9 +77,6 @@ fn compared(node: &Value, with_mode: bool) -> Value {
 struct Case {
     identity: &'static str,
     mode: Option<&'static str>,
-    /// Whether `mode` is compared. `false` only where QSL cannot write the
-    /// fixture's mode (`float64.add`, see the test's comment).
-    with_mode: bool,
     package: CheckedPackage,
 }
 
@@ -200,13 +197,23 @@ fn with_record(functions: Vec<FunctionDeclaration>) -> CheckedPackage {
     linked(record_types(), functions)
 }
 
+/// `fadd(f, g) = f + g` over `Float64[mode]`.
+fn float_add(mode: &str) -> CheckedPackage {
+    let float = || form(BuiltinType::Float64, &[mode]);
+    package(vec![typed(
+        "fadd",
+        &[("f", float()), ("g", float())],
+        float(),
+        binary(BinaryOperator::Add, "f", "g"),
+    )])
+}
+
 fn cases() -> Vec<Case> {
     let integer = || TypeForm::builtin(BuiltinType::Integer, SPAN);
     let small = || form(BuiltinType::Int, &["1", "9"]);
     let case = |identity, mode, package| Case {
         identity,
         mode,
-        with_mode: true,
         package,
     };
     let record = || TypeForm::name("R", SPAN);
@@ -323,22 +330,18 @@ fn cases() -> Vec<Case> {
             ]),
         ),
         // The fixtures' two `float64.add` nodes carry `toward-zero` and
-        // `nearest-even`; QSL admits only the omitted `exact` spelling of a
-        // float's rounding (`NodeKind::Ieee`), so `mode` cannot be compared.
-        Case {
-            identity: "quire.op.ieee.float64.add",
-            mode: None,
-            with_mode: false,
-            package: package(vec![typed(
-                "fadd",
-                &[
-                    ("f", TypeForm::builtin(BuiltinType::Float64, SPAN)),
-                    ("g", TypeForm::builtin(BuiltinType::Float64, SPAN)),
-                ],
-                TypeForm::builtin(BuiltinType::Float64, SPAN),
-                binary(BinaryOperator::Add, "f", "g"),
-            )]),
-        },
+        // `nearest-even`: the mode is part of the `Float64[mode]` type
+        // (FR-091-OQ-4), so one case per mode compares `mode` too.
+        case(
+            "quire.op.ieee.float64.add",
+            Some("toward-zero"),
+            float_add("toward-zero"),
+        ),
+        case(
+            "quire.op.ieee.float64.add",
+            Some("nearest-even"),
+            float_add("nearest-even"),
+        ),
     ]
 }
 
@@ -405,7 +408,7 @@ fn conformance_emitted_application_nodes_match_qspec_positive_fixtures() {
             if NOT_LOWERED.contains(&identity) {
                 continue;
             }
-            let (index, case) = cases
+            let (index, _) = cases
                 .iter()
                 .enumerate()
                 .find(|(_, case)| {
@@ -421,8 +424,8 @@ fn conformance_emitted_application_nodes_match_qspec_positive_fixtures() {
                 panic!("{identity}: expected one emitted node, got {}", ours.len());
             };
             assert_eq!(
-                compared(ours, case.with_mode),
-                compared(&fixture, case.with_mode),
+                compared(ours),
+                compared(&fixture),
                 "{file}: {identity} (mode {mode:?})"
             );
             compared_nodes += 1;

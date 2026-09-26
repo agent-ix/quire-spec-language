@@ -97,13 +97,14 @@ pub fn type_form(value_type: &ValueType) -> TypeForm {
                 ],
             )
         }
-        ValueType::Float(width) => TypeForm::builtin(
-            match width {
+        ValueType::Float(float) => TypeForm::builtin(
+            match float.width() {
                 IeeeWidth::Binary32 => qsl_forms::BuiltinType::Float32,
                 IeeeWidth::Binary64 => qsl_forms::BuiltinType::Float64,
             },
             SPAN,
-        ),
+        )
+        .with_bounds(vec![rounding_mode_text(float.rounding()).to_owned()]),
         ValueType::Text(text) => {
             TypeForm::builtin(qsl_forms::BuiltinType::Text, SPAN).with_bounds(
                 vec![

@@ -79,9 +79,9 @@ pub enum AssemblyCause {
     /// A built-in constructor's declared bounds are rejected by its value
     /// type, with that value type's own cause.
     IllFormedBounds(TypeFormFault),
-    /// A floating type, which the producer does not represent: its rounding
-    /// mode is part of the type, and `ValueType::Float` would drop it
-    /// (ADR-013 R-07).
+    /// A domain package's native `Float32`/`Float64` model field, which the
+    /// assembler still refuses (QSL-285 owns admitting it). Function
+    /// parameter, result and body floating types are admitted (FR-091-OQ-4).
     FloatingType {
         /// The width.
         width: IeeeWidth,
@@ -628,45 +628,29 @@ fn body_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
 /// The declared-name check of one type form tree (FR-091 "The assembler
 /// refuses"): every name must bind exactly one declaration of the unit or
 /// one object type of an admitted domain package, a `Reference<Q>` target
-/// must name such an object type, and a floating type is refused.
+/// must name such an object type, and a floating type's rounding mode must
+/// be spellable (FR-091-OQ-4: floating types are admitted).
 fn check_names(
     unit: &Unit,
     object_types: &BTreeMap<String, EffectiveId>,
     imports: &BTreeMap<String, AdmittedImport>,
     form: &TypeForm,
-    profile: Option<&str>,
     errors: &mut Vec<AssemblyError>,
 ) {
     let mut stack = vec![form];
     while let Some(form) = stack.pop() {
         match &form.head {
+            // FR-091-OQ-4: a floating type carries its rounding mode and is
+            // admitted; only an unspellable mode is refused.
             TypeFormHead::Builtin(BuiltinType::Float32 | BuiltinType::Float64) => {
-                let width = if matches!(form.head, TypeFormHead::Builtin(BuiltinType::Float32)) {
-                    IeeeWidth::Binary32
-                } else {
-                    IeeeWidth::Binary64
-                };
-                let rounding = match form.bounds.first() {
-                    Some(spelled) => match parse_rounding_mode(spelled) {
-                        Some(rounding) => rounding,
-                        None => {
-                            errors.push(AssemblyError {
-                                cause: AssemblyCause::IllFormedBounds(TypeFormFault::Malformed),
-                                span: form.span,
-                            });
-                            continue;
-                        }
-                    },
-                    None => RoundingMode::Exact,
-                };
-                errors.push(AssemblyError {
-                    cause: AssemblyCause::FloatingType {
-                        width,
-                        rounding,
-                        profile: profile.map(str::to_owned),
-                    },
-                    span: form.span,
-                });
+                if let Some(spelled) = form.bounds.first() {
+                    if parse_rounding_mode(spelled).is_none() {
+                        errors.push(AssemblyError {
+                            cause: AssemblyCause::IllFormedBounds(TypeFormFault::Malformed),
+                            span: form.span,
+                        });
+                    }
+                }
             }
             TypeFormHead::Builtin(BuiltinType::Reference) => {
                 for target in &form.arguments {
@@ -977,14 +961,7 @@ impl PackageDeclarations {
         // Every type form names declarations of the unit or admitted model
         // object types.
         for alias in &unit.aliases {
-            check_names(
-                &unit,
-                &object_names,
-                &qualified,
-                &alias.target,
-                None,
-                &mut errors,
-            );
+            check_names(&unit, &object_names, &qualified, &alias.target, &mut errors);
         }
         for composite in &unit.composites {
             match &composite.members {
@@ -995,32 +972,23 @@ impl PackageDeclarations {
                             &object_names,
                             &qualified,
                             &field.type_form,
-                            None,
                             &mut errors,
                         );
                     }
                 }
                 Members::Tuple(elements) => {
                     for element in elements {
-                        check_names(&unit, &object_names, &qualified, element, None, &mut errors);
+                        check_names(&unit, &object_names, &qualified, element, &mut errors);
                     }
                 }
             }
         }
         for function in &unit.functions {
-            let profile = function.using().map(|using| using.alias.as_str());
             for form in signature_type_forms(function) {
-                check_names(&unit, &object_names, &qualified, form, profile, &mut errors);
+                check_names(&unit, &object_names, &qualified, form, &mut errors);
             }
             for form in body_type_forms(function) {
-                check_names(
-                    &unit,
-                    &object_names,
-                    &qualified,
-                    &form,
-                    profile,
-                    &mut errors,
-                );
+                check_names(&unit, &object_names, &qualified, &form, &mut errors);
             }
         }
         if !errors.is_empty() {

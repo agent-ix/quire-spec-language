@@ -277,36 +277,18 @@ fn records_and_tuples_are_keyed_over_the_units_owner() {
 
 #[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]
 #[test]
-fn floating_and_reference_types_are_refused() {
-    let (text, found) =
-        errors("function f using v(x: Float64[nearest-even]): Boolean pure { true }");
-    assert_eq!(
-        found,
-        [AssemblyError {
-            cause: AssemblyCause::FloatingType {
-                width: IeeeWidth::Binary64,
-                rounding: RoundingMode::NearestEven,
-                profile: Some("v".into()),
-            },
-            span: last(&text, "Float64[nearest-even]"),
-        }]
-    );
-    assert_eq!(
-        found[0].cause.catalog_code().to_string(),
-        "unknown_required_feature/unsupported-feature"
-    );
-    let (text, found) = errors("function h using v(x: Float64): Boolean pure { true }");
-    assert_eq!(
-        found,
-        [AssemblyError {
-            cause: AssemblyCause::FloatingType {
-                width: IeeeWidth::Binary64,
-                rounding: RoundingMode::Exact,
-                profile: Some("v".into()),
-            },
-            span: last(&text, "Float64"),
-        }]
-    );
+fn floating_types_are_admitted_and_reference_types_are_refused() {
+    let admitted = |parameter: &str| {
+        let (_, assembled) = assemble(&format!(
+            "function f using v(x: {parameter}): Boolean pure {{ true }}"
+        ));
+        assembled.expect("a floating type is admitted")
+    };
+    // Resolution to `ValueType::Float` is TC-405's type_form test; here the
+    // assembler admits every spelling without a floating-type refusal.
+    admitted("Float64[nearest-even]");
+    admitted("Float32[toward-zero]");
+    admitted("Float64");
     let (text, found) = errors("function g using v(r: Reference<M::T>): Boolean pure { true }");
     assert_eq!(
         found,

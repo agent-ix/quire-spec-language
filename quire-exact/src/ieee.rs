@@ -38,6 +38,38 @@ use crate::rational::{Rational, RationalDomain};
 /// The IEEE profile definition identity.
 pub const IEEE_DEFINITION: &str = "quire.value.ieee754-2019-default/v1";
 
+/// A declared `Float32[mode]`/`Float64[mode]` type: the interchange width and
+/// the rounding spelling that is part of the type (QSpec FR-322 pins
+/// `rounding` for `float32`/`float64` by operand type; FR-091-OQ-4). A bare
+/// `Float32`/`Float64` is strict [`RoundingMode::Exact`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct FloatType {
+    width: IeeeWidth,
+    rounding: RoundingMode,
+}
+
+impl FloatType {
+    /// `width` under `rounding`.
+    pub fn new(width: IeeeWidth, rounding: RoundingMode) -> Self {
+        Self { width, rounding }
+    }
+
+    /// The bare `Float32`/`Float64` spelling: strict `exact`.
+    pub fn exact(width: IeeeWidth) -> Self {
+        Self::new(width, RoundingMode::Exact)
+    }
+
+    /// The interchange width.
+    pub fn width(self) -> IeeeWidth {
+        self.width
+    }
+
+    /// The rounding mode operations on this type use.
+    pub fn rounding(self) -> RoundingMode {
+        self.rounding
+    }
+}
+
 /// An IEEE 754-2019 binary interchange width.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IeeeWidth {

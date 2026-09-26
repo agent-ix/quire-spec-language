@@ -57,7 +57,7 @@ use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::collection::{CollectionType, CollectionValue};
 use crate::decimal::{Decimal, DecimalType};
 use crate::identity::{EffectiveId, MemberId, PopulationId, UnitId, VariantId};
-use crate::ieee::{IeeeValue, IeeeWidth};
+use crate::ieee::{FloatType, IeeeValue};
 use crate::integer::{Integer, IntegerInterval};
 use crate::node::NodeKey;
 use crate::outcome::{Outcome, Refusal, Stop};
@@ -183,8 +183,8 @@ pub enum ValueType {
     Rational(RationalDomain),
     /// A `Decimal[lo, hi; smin, smax; mode]`.
     Decimal(DecimalType),
-    /// A `Float32` or `Float64`.
-    Float(IeeeWidth),
+    /// A `Float32[mode]` or `Float64[mode]`.
+    Float(FloatType),
     /// A quantity in exactly this unit.
     Quantity(UnitId),
     /// A `Text[min, max; profile]`.
@@ -230,7 +230,7 @@ impl ValueType {
             (Self::Int(interval), Value::Integer(integer)) => interval.contains(integer),
             (Self::Rational(domain), Value::Rational(rational)) => domain.contains(rational),
             (Self::Decimal(declared), Value::Decimal(decimal)) => declared.contains(decimal),
-            (Self::Float(width), Value::Float(float)) => float.width() == *width,
+            (Self::Float(declared), Value::Float(float)) => float.width() == declared.width(),
             (Self::Quantity(unit), Value::Quantity(quantity)) => quantity.unit() == *unit,
             (Self::Text(declared), Value::Text(text)) => text.text_type() == declared,
             (Self::Enum(shape), Value::Enum(member)) => {
