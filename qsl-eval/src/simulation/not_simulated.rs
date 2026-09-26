@@ -74,6 +74,23 @@ impl CatalogCoded for NotSimulated {
             }
         }
     }
+
+    /// `Extent(ClassifyFailure::Limit(_))` delegates to `LimitExceeded`'s own
+    /// fields (`kind`, `bound`, `actual`, FR-096). `InternalFault` carries no
+    /// catalog fields, and FR-096's key table has no row for
+    /// `invalid-value`, so every other case is `None` (the same shape
+    /// `BoundRefusal::catalog_fields` uses at `qsl-route/src/
+    /// request.rs:179`).
+    fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        match self {
+            Self::Extent(ClassifyFailure::Limit(exceeded)) => exceeded.catalog_fields(),
+            Self::RequiresBound(_)
+            | Self::EmptyInitial
+            | Self::KeyEncoding(_)
+            | Self::Extent(ClassifyFailure::Fault(_))
+            | Self::GeneratorMismatch { .. } => None,
+        }
+    }
 }
 
 /// Classify `domains`' extent (ADR-014 §4) before any `TransitionSystem`
