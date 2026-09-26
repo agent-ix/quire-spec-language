@@ -95,8 +95,7 @@ fn a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measu
         match &expected {
             None => {
                 body.unwrap_or_else(|r| panic!("{label}: body refused {r:?}"));
-                let checked =
-                    clause.unwrap_or_else(|r| panic!("{label}: clause refused {r:?}"));
+                let checked = clause.unwrap_or_else(|r| panic!("{label}: clause refused {r:?}"));
                 assert_eq!(checked.value_type(), &ValueType::Boolean, "{label}");
                 assert!(
                     matches!(checked.root().kind(), NodeKind::Call { function: 0, .. }),
@@ -105,12 +104,10 @@ fn a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measu
                 );
             }
             Some(cause) => {
-                let refusals =
-                    body.expect_err(&format!("{label}: the body must be refused"));
+                let refusals = body.expect_err(&format!("{label}: the body must be refused"));
                 assert_eq!(refusals.len(), 1, "{label}: {refusals:?}");
                 assert_eq!(&refusals[0].cause, cause, "{label}: body");
-                let refusal =
-                    clause.expect_err(&format!("{label}: the clause must be refused"));
+                let refusal = clause.expect_err(&format!("{label}: the clause must be refused"));
                 assert_eq!(&refusal.cause, cause, "{label}: clause");
 
                 // Step 4: as the `decreases` measure of a body-`true` declaration.
@@ -127,9 +124,7 @@ fn a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measu
                 .check(CheckingLimits::default())
                 .expect_err(&format!("{label}: the measure must be refused"));
                 assert!(
-                    measure
-                        .iter()
-                        .any(|r: &CheckRefusal| &r.cause == cause),
+                    measure.iter().any(|r: &CheckRefusal| &r.cause == cause),
                     "{label}: measure refusals {measure:?} lack {cause:?}"
                 );
             }
