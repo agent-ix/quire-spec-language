@@ -57,3 +57,18 @@ incomplete, `30` tool failure).
 
 Changes requested: FND-001 breaks FR-109's reuse of FR-100's mapping, and
 FND-002 contradicts itself on the exit status.
+
+## Dispositions
+
+Disposition pass at `agent-ix/quire-spec-language@bec5791c` (fix commits `e71e60cc` and `bec5791c`, on main 9425dd82). I checked each outcome against the spec at that head and the code on main 9425dd82, not against the commit message. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed e71e60cc | FR-109 adds category `internal-failure` (stage `evaluate`, the fault's stage and invariant, no `outcome` member), an If statement, and an `exit_code()` arm, and FR-109-AC-5 covers it. TC-468 step 5 constructs `CheckedInvariant` and `CallFailure::Fault` with that oracle. |
+| FND-002 | fixed bec5791c | The row moved to a new "Internal failure at S6a" section (e71e60cc) with `details` `{"stage", "invariant"}` and exit 30. bec5791c states that the path exits 30 directly and not through `Code::exit_code`. That `Code::RuntimeInvariant.exit_code()` is 20 elsewhere is ruled out of scope by the team leader and routed to the core lane. |
+| FND-003 | fixed e71e60cc | FR-100 now says each category is O-16's except `CheckedInvariant`, which is internal failure by FR-096 (T-4 `InternalFault`). |
+| FND-004 | fixed e71e60cc | Status separates the eight causes STD-110 names from the two IEEE causes, which it cites "pending confirmation that it covers them". |
+| FND-005 | fixed e71e60cc | Status cites QSL-281 (verified in Linear, Backlog: "Refusal::ForeignReference carries its universes so FR-096 builds a foreign_reference record"). |
+| FND-006 | fixed e71e60cc | The exit is `Code::exit_code` of `Code::from_code(code)`, which exists on main (`qsl-foundation/src/diagnostic.rs:277`, `Code::all()` matched by `as_str`). An unmapped code exits 20. |
+
+New finding (low, non-blocking): FR-109:118-121 still maps "every other S6a outcome" to "category `refusal`, `undefined` or `incomplete` by its ADR-013 O-16 category". `CheckedInvariant` is an O-16 refusal, so this overlaps the new internal-failure If statement at :124. Add "other than FR-100's internal failures".

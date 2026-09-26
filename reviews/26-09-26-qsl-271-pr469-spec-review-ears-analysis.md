@@ -30,3 +30,11 @@ amended `spine::run` statement (lines 231-235) keeps its single actor.
 ## Verdict
 
 Approve with a nit: no statement changes meaning.
+
+## Dispositions
+
+Disposition pass at `agent-ix/quire-spec-language@bec5791c` (fix commits `e71e60cc` and `bec5791c`, on main 9425dd82). I checked each outcome against the spec at that head and the code on main 9425dd82, not against the commit message. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed e71e60cc | The kernel table's "until" cells are gone. The normative text states the rule at `1-draft.7`, and the STD-110, QSL-281 and "later record" notes are in Status. |

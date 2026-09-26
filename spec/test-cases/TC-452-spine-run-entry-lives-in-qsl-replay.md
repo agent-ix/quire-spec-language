@@ -31,9 +31,19 @@ Scope: FR-100-AC-7 to FR-100-AC-9.
    public item of `qsl_replay::spine`, and every `qsl_replay` re-export, is
    scanned for a `qsl_eval` path. Then run it over a probe that adds
    `pub use qsl_eval::value::Evaluation;` to `qsl_replay`.
-4. Construct each S6a outcome below, with an `Evaluation.location` of
-   `Body{function: "f", index: 0}`, path `[1]`, resolving to a region, and
-   convert it with the outcome mapping (the `qsl_replay` conversion
+4. Compile the fixture unit `F` below through `qsl_replay::spine::compile`
+   as the program source (its bytes are exactly these three lines, each
+   ended by one LF, 229 bytes in all):
+
+   ```text
+   language "ix:native" edition "1-draft";
+   profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+   function f using v(x: Int[0, 9]): Integer pure { x + 5 }
+   ```
+
+   Construct each S6a outcome below with an `Evaluation.location` of
+   `Body{function: "f", index: 0}`, path `[1]` (the literal `5` in `f`'s
+   body), and convert it with the outcome mapping (the `qsl_replay` conversion
    `spine::run` applies, then the root crate's renderer and exit mapping):
    - `Outcome::Completed` of `true`, `false`, `0`, `-17` and `2^70`;
    - `Outcome::Refused(CardinalityOutOfBound)` with kind `Set`, bound
@@ -74,8 +84,11 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
     exit 0.
   - `CardinalityOutOfBound`: `code` `cardinality_out_of_bound`, `cause`
     `above-maximum`, `fields` exactly
-    `{"collection": "set", "bound": "[1, 3]", "count": "4"}`, and a `locus`
-    whose `span` is the region's; then `cause` `below-minimum`, `count`
+    `{"collection": "set", "bound": "[1, 3]", "count": "4"}`, and `locus`
+    exactly `{"source_digest":
+    "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26",
+    "span": {"start": {"byte": 225, "line": 3, "column": 54}, "end":
+    {"byte": 226, "line": 3, "column": 55}}}`; then `cause` `below-minimum`, `count`
     `"0"`; exit 20.
   - Each other kernel refusal but `CheckedInvariant`: exactly
     `{"kind": "refused", "location": ...}`, no `code`, `cause` or `fields`;

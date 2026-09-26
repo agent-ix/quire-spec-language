@@ -117,8 +117,9 @@ selection, admission or evaluation result is a report.
   snapshot's `ObjectEnvironment`.
 - The entry SHALL map `Completed(true)` to `success` (exit 0) and
   `Completed(false)` to `violation` (exit 10), as QSpec FR-301 does for a
-  claim, with `truth` set. The entry SHALL map every other S6a outcome, kernel
-  or family, by FR-100's outcome mapping, to FR-100's `outcome` member and
+  claim, with `truth` set. The entry SHALL map every other S6a outcome other
+  than FR-100's internal failures, kernel or family, by FR-100's outcome
+  mapping, to FR-100's `outcome` member and
   FR-100's exit status, category `refusal`, `undefined` or `incomplete` by
   its ADR-013 O-16 category. It restates none of FR-100's rows.
 - If the S6a outcome is one FR-100 handles as an internal failure (the

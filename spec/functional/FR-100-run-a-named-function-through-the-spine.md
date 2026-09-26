@@ -135,7 +135,11 @@ The refused outcome's members:
   FR-096): `{"source_digest": "<sha256: source digest of the region's
   source>", "span": S}`, where `S` is the region's span in the
   native-run-result/1 span form (`start` and `end`, each `byte`, `line` and
-  `column`).
+  `column`). The byte offsets are the region's. The line and column are
+  computed over the bytes of the `Source` whose reference equals the
+  region's reference: the program's source or one supplied library's,
+  whichever the refusal arose in. A locus naming no supplied source is an
+  internal failure (below).
 - `location` renders `Evaluation.location`, the `check::Location` the
   outcome arose at: `{"origin": O, "path": [<child index>, ...]}`, where `O`
   is `{"kind": "body", "function": "<name>", "index": <declaration index>}`,
@@ -164,14 +168,17 @@ kernel undefined reason, so FR-100 spells them in kebab case:
 
 ### Internal failure at S6a
 
-A call whose outcome is the kernel `Refusal::CheckedInvariant`, or for which
-`CheckedPackage::call` returns `CallFailure::Fault(fault)`, writes nothing
+A call whose outcome is the kernel `Refusal::CheckedInvariant`, for which
+`CheckedPackage::call` returns `CallFailure::Fault(fault)`, or whose
+record's locus names a region no supplied source's reference equals, writes
+nothing
 to stdout. It writes FR-026's native-run-result/1 command-error envelope to
 stderr with stage `call`, code `runtime_invariant` and `details`
 `{"stage": "<fault stage>", "invariant": "<fault invariant>"}`, the
 `InternalFault`'s stable identifiers. For `CheckedInvariant` they are stage
 `S6a` and invariant `checked-program-invariant`; for `CallFailure::Fault`,
-the fault's own. It exits 30, the tool-failure status of QSpec FR-301's exit
+the fault's own; for a locus naming no supplied source, stage `spine-run`
+and invariant `locus-source-supplied`. It exits 30, the tool-failure status of QSpec FR-301's exit
 contract (`0` completed without violation, `10` logical violation, `20`
 invalid/refused input, `21` unsupported, `22` incomplete and `30` tool
 failure). A checked-program invariant failing is a tool failure, so this
@@ -269,6 +276,9 @@ exit 30.
   `S6a` and invariant `checked-program-invariant`.
 - If `CheckedPackage::call` returns `CallFailure::Fault`, then
   `qsl_replay::spine::run` shall return that `InternalFault`.
+- If a record's locus names a region whose reference equals no supplied
+  source's, then `qsl_replay::spine::run` shall return an `InternalFault`
+  with stage `spine-run` and invariant `locus-source-supplied`.
 - The `qsl_replay` crate shall name no `qsl_eval` path in a public item of
   `qsl_replay::spine` or in a re-export. The types `qsl_replay::spine::run`
   takes and returns are `qsl_replay`, `qsl_foundation`, `qsl_semantics` or
