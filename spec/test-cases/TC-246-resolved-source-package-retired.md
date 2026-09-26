@@ -41,7 +41,7 @@ both successors exist"; ruling on QSL-229):
 4. For each test of the former `tests/it/complete_package.rs` and
    `complete::package_tests`, find its row in FR-087 Behavior's disposition
    table. For a row with a successor, name the test that backs the scenario
-   against it (TC-446 for imports, TC-470 for profiles, TC-412 for aliases,
+   against it (TC-446 for imports, TC-490 for profiles, TC-412 for aliases,
    TC-145/TC-147 for models, the spine's S1 refusal for an inadmissible
    parse). For a retired row, confirm FR-087 names it retired.
 

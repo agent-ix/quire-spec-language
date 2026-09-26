@@ -1,12 +1,12 @@
 ---
-id: TC-470
+id: TC-490
 title: "E3 resolves header profile selections against the DefinitionLock catalog"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-110
     type: verifies
 ---
-# TC-470: E3 resolves header profile selections against the DefinitionLock catalog
+# TC-490: E3 resolves header profile selections against the DefinitionLock catalog
 
 ## Description
 
@@ -38,7 +38,7 @@ identity, revision value and digest from the catalog, never from literals.
    version `"1"`) and `x` (`test:unknown-profile`). Then compile a unit
    with profiles `v` and `u`, both exact `R`.
 
-Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-6", "TC-470")]` over the
+Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-6", "TC-490")]` over the
 criteria each step backs.
 
 ## Expected Results

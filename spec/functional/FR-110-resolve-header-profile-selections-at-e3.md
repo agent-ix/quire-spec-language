@@ -130,12 +130,12 @@ unchanged.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-110-AC-1 | A unit whose one header profile is `profile v = "quire.value.complete/v1" version "<root revision value>" digest "sha256:<root digest>"`, with the `root` row's catalog values, compiles through spine `compile`. Its emitted lock has empty `profile_selections` and exactly one `definition_selections` entry for `quire.value.complete/v1`, equal to the `root` row. | Test (TC-470) |
-| FR-110-AC-2 | The same unit with the profile identity `test:unknown-profile` refuses `unknown_profile`/`unsupported-selection` at the span of the identity literal, naming alias `v` and the selection, with no catalog row, and produces no package. | Test (TC-470) |
-| FR-110-AC-3 | The same unit with the header profile set to the `ieee_profile` row's identity, revision value and digest refuses `unknown_profile`/`wrong-selection-role`, retaining the selection and role `ieee_profile`. The `edition` row's identity (`ix:native`) refuses the same way, retaining role `edition`. | Test (TC-470) |
-| FR-110-AC-4 | The same unit with the `root` identity and version `"1"` refuses `stale_dependency`/`revision-mismatch`, retaining the selected triple and the `root` row's identity, revision and digest. | Test (TC-470) |
-| FR-110-AC-5 | The same unit with the `root` identity and revision value and a digest of 64 `a`s refuses `stale_dependency`/`byte-digest-mismatch`, retaining the selected triple and the `root` row's digest. | Test (TC-470) |
-| FR-110-AC-6 | A unit with three header profiles, the exact `root` selection under alias `v`, a `revision-mismatch` selection under `w` and an `unsupported-selection` selection under `x`, refuses with exactly two refusals, `w`'s then `x`'s, and no package. A unit with the exact `root` selection under two aliases compiles. | Test (TC-470) |
+| FR-110-AC-1 | A unit whose one header profile is `profile v = "quire.value.complete/v1" version "<root revision value>" digest "sha256:<root digest>"`, with the `root` row's catalog values, compiles through spine `compile`. Its emitted lock has empty `profile_selections` and exactly one `definition_selections` entry for `quire.value.complete/v1`, equal to the `root` row. | Test (TC-490) |
+| FR-110-AC-2 | The same unit with the profile identity `test:unknown-profile` refuses `unknown_profile`/`unsupported-selection` at the span of the identity literal, naming alias `v` and the selection, with no catalog row, and produces no package. | Test (TC-490) |
+| FR-110-AC-3 | The same unit with the header profile set to the `ieee_profile` row's identity, revision value and digest refuses `unknown_profile`/`wrong-selection-role`, retaining the selection and role `ieee_profile`. The `edition` row's identity (`ix:native`) refuses the same way, retaining role `edition`. | Test (TC-490) |
+| FR-110-AC-4 | The same unit with the `root` identity and version `"1"` refuses `stale_dependency`/`revision-mismatch`, retaining the selected triple and the `root` row's identity, revision and digest. | Test (TC-490) |
+| FR-110-AC-5 | The same unit with the `root` identity and revision value and a digest of 64 `a`s refuses `stale_dependency`/`byte-digest-mismatch`, retaining the selected triple and the `root` row's digest. | Test (TC-490) |
+| FR-110-AC-6 | A unit with three header profiles, the exact `root` selection under alias `v`, a `revision-mismatch` selection under `w` and an `unsupported-selection` selection under `x`, refuses with exactly two refusals, `w`'s then `x`'s, and no package. A unit with the exact `root` selection under two aliases compiles. | Test (TC-490) |
 
 ## Dependencies
 
@@ -157,7 +157,7 @@ unchanged.
 
 ## Status
 
-Specified under QSL-234; not yet implemented -- TC-470 planned. Spine
+Specified under QSL-234; not yet implemented -- TC-490 planned. Spine
 fixtures and tests declare the placeholder header
 `profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaa…"`;
 the implementing change updates each to the `root` row's revision value
