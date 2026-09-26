@@ -261,6 +261,78 @@ impl<'a, D> CheckContext<'a, D> {
 /// `family::emit_v2` -- gut `package`'s body and
 /// `emit_function_package_v2`'s output was byte-identical, so PR #262
 /// review deleted it as a hook nothing consumed (findings F1/F2).
+///
+/// **FR-062-AC-1 (TC-160 step 1).** A family implements the whole set once;
+/// the control below, with `check` taking the checked-input parameter and
+/// `requirements`, compiles.
+///
+/// ```
+/// use qsl_foundation::diagnostic::Staged;
+/// use qsl_semantics::family::{CheckContext, CheckOutcome, FamilyContract};
+///
+/// struct Complete;
+/// impl FamilyContract for Complete {
+///     type Form = ();
+///     type Checked = ();
+///     type Cause = ();
+///     type Declarations<'a> = ();
+///     type Claim = ();
+///     fn check<'a>(
+///         _form: &(),
+///         _cx: &mut CheckContext<'a, ()>,
+///     ) -> CheckOutcome<(), ()> {
+///         Ok(Staged::new(()))
+///     }
+///     fn requirements(_checked: &()) -> Vec<()> {
+///         Vec::new()
+///     }
+/// }
+/// ```
+///
+/// Omitting the `requirements` method does not compile:
+///
+/// ```compile_fail,E0046
+/// use qsl_foundation::diagnostic::Staged;
+/// use qsl_semantics::family::{CheckContext, CheckOutcome, FamilyContract};
+///
+/// struct NoRequirements;
+/// impl FamilyContract for NoRequirements {
+///     type Form = ();
+///     type Checked = ();
+///     type Cause = ();
+///     type Declarations<'a> = ();
+///     type Claim = ();
+///     fn check<'a>(
+///         _form: &(),
+///         _cx: &mut CheckContext<'a, ()>,
+///     ) -> CheckOutcome<(), ()> {
+///         Ok(Staged::new(()))
+///     }
+/// }
+/// ```
+///
+/// Nor does a `check` that omits the checked-input parameter (the typing
+/// context):
+///
+/// ```compile_fail,E0050
+/// use qsl_foundation::diagnostic::Staged;
+/// use qsl_semantics::family::{CheckOutcome, FamilyContract};
+///
+/// struct NoTypingContext;
+/// impl FamilyContract for NoTypingContext {
+///     type Form = ();
+///     type Checked = ();
+///     type Cause = ();
+///     type Declarations<'a> = ();
+///     type Claim = ();
+///     fn check<'a>(_form: &()) -> CheckOutcome<(), ()> {
+///         Ok(Staged::new(()))
+///     }
+///     fn requirements(_checked: &()) -> Vec<()> {
+///         Vec::new()
+///     }
+/// }
+/// ```
 pub trait FamilyContract {
     /// This family's parsed semantic form (typed subnodes; ADR-012 §4).
     type Form;
