@@ -455,20 +455,41 @@ fn complete(
             .iter()
             .map(|document| document.source().text().as_bytes()),
     );
+    let libraries = library_sources(request, intake)?;
+    // A refusal is rendered over the source it is located in: a library's
+    // own refusal, wrapped as `Dependency`, over that library's source.
     let spine_failure = |refusal: qsl_replay::spine::CompileRefusal| {
+        let located = match &refusal {
+            qsl_replay::spine::CompileRefusal::Dependency { path, .. } => path
+                .last()
+                .and_then(|identity| {
+                    libraries
+                        .iter()
+                        .find(|(library, _)| library.identity == identity.as_str())
+                })
+                .map_or(source, |(_, read)| read.source()),
+            _ => source,
+        };
         RunCause::Spine(Box::new(SpineFailure {
-            source: source.identity().clone(),
-            path: source.path().to_owned(),
-            span: refusal.region().and_then(|region| source.render(region)),
+            source: located.identity().clone(),
+            path: located.path().to_owned(),
+            span: refusal.region().and_then(|region| located.render(region)),
             refusal,
         }))
     };
-    let dependencies = dependency_input(request, intake).map_err(|cause| match cause {
-        LibraryInput::Run(cause) => cause,
-        LibraryInput::Refused(refusal) => {
+    let dependencies =
+        qsl_replay::spine::DependencyInput::new(libraries.iter().map(|(library, read)| {
+            qsl_replay::spine::SuppliedLibrary {
+                identity: library.identity.clone(),
+                version: library.version.clone(),
+                source: read.source().identity().clone(),
+                path: read.source().path().to_owned(),
+                bytes: read.source().text().as_bytes().to_vec(),
+            }
+        }))
+        .map_err(|refusal| {
             spine_failure(qsl_replay::spine::CompileRefusal::DependencyInput(refusal))
-        }
-    })?;
+        })?;
     qsl_replay::spine::compile(
         source.identity().clone(),
         source.path(),
@@ -481,50 +502,26 @@ fn complete(
     .map_err(|refusal| spine_failure(*refusal))
 }
 
-/// Why the request's `libraries` built no dependency input.
-enum LibraryInput {
-    /// A request or intake refusal.
-    Run(RunCause),
-    /// The dependency input refused two libraries (ADR-015 D-1).
-    Refused(qsl_replay::spine::DependencyInputRefusal),
-}
-
-/// The spine's dependency input from the request's `libraries` (FR-027,
-/// ADR-015 D-1): an empty identity or version refuses as `invalid-request`
-/// before any library file is read; each library source is read under its
-/// source digest.
-fn dependency_input(
-    request: &wire::CompileRequest,
+/// The request's `libraries`, each with its source read under its source
+/// digest (FR-027, ADR-015 D-1). An empty identity or version refuses as
+/// `invalid-request` before any library file is read.
+fn library_sources<'r>(
+    request: &'r wire::CompileRequest,
     intake: &mut Intake<'_>,
-) -> std::result::Result<qsl_replay::spine::DependencyInput, LibraryInput> {
+) -> Result<Vec<(&'r wire::Library, FormalSource)>> {
     for library in &request.libraries {
         if library.identity.is_empty() {
-            return Err(LibraryInput::Run(RunCause::Libraries(
-                LibrarySelection::EmptyIdentity,
-            )));
+            return Err(RunCause::Libraries(LibrarySelection::EmptyIdentity));
         }
         if library.version.is_empty() {
-            return Err(LibraryInput::Run(RunCause::Libraries(
-                LibrarySelection::EmptyVersion,
-            )));
+            return Err(RunCause::Libraries(LibrarySelection::EmptyVersion));
         }
     }
-    let libraries = request
+    request
         .libraries
         .iter()
-        .map(|library| {
-            let read = intake.source(&library.source).map_err(LibraryInput::Run)?;
-            let source = read.source();
-            Ok(qsl_replay::spine::SuppliedLibrary {
-                identity: library.identity.clone(),
-                version: library.version.clone(),
-                source: source.identity().clone(),
-                path: source.path().to_owned(),
-                bytes: source.text().as_bytes().to_vec(),
-            })
-        })
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    qsl_replay::spine::DependencyInput::new(libraries).map_err(LibraryInput::Refused)
+        .map(|library| Ok((library, intake.source(&library.source)?)))
+        .collect()
 }
 
 /// A request selection a complete-V1 (`1-draft`) program does not take.
