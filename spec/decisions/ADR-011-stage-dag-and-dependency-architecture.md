@@ -649,20 +649,17 @@ its own repository, agent-ix/quire-driver.
   same stage APIs and never bypass §3.
 - #29 (CLI parse and dispatch) and #133 (parsing `quire` fences, input I3)
   land inside these rules.
-- Spine `compile` takes complete-V1 source: `compile <identity> <revision>
-  <path>`, the operand shape of `parse` and `format`. It writes the
-  `quire.checked-package/v2` bytes to stdout. The lock evidence comes from the
-  source header and QSL's `DefinitionLock` catalog (§2.4), and no lock file or
-  request file is read. It takes FR-056's package input (domain package
-  documents by `sha256-jcs` digest) and runs I1 over the unit's `model`
-  declarations between S2 and E3 (amended 2026-09-25, QSL-249). It takes the
-  dependency input, the supplied libraries, and runs the S4 source
-  resolution over the unit's imports between S2 and E3 (ADR-015 D-1). No native-compile/1
-  request or `native-rule-model/1` model has a spine equivalent. Until
-  M-6c/QSL-5, CLI `compile` reaches spine `compile` through a
-  native-compile/1 request whose program source declares `1-draft`, with no
-  clause bindings and only `semantic-ir/2.0.0` domain package models; the
-  operand form lands with QSL-5 (Ruling 2026-09-24).
+- Spine `compile` takes complete-V1 source. CLI `compile` reaches it through
+  a native-compile/1 request whose program source declares `1-draft`, with
+  no clause bindings and only `semantic-ir/2.0.0` domain package models
+  (FR-027), and writes the `quire.checked-package/v2` bytes to stdout. The
+  lock evidence comes from the source header and QSL's `DefinitionLock`
+  catalog (§2.4), and no lock file is read. It takes FR-056's package input
+  (domain package documents by `sha256-jcs` digest) and runs I1 over the
+  unit's `model` declarations between S2 and E3 (amended 2026-09-25,
+  QSL-249). It takes the dependency input, the supplied libraries, and runs
+  the S4 source resolution over the unit's imports between S2 and E3
+  (ADR-015 D-1). No `native-rule-model/1` model has a spine equivalent.
 - Spine `run` calls a named checked function: a `QualifiedName` resolved by
   name lookup in the compiled package, then `CheckedPackage::call` (E6, and
   the same shape E9 uses). Its entry is `qsl_replay::spine::run`. CLI `run`
@@ -1298,9 +1295,10 @@ sections it names.
   regression. It is existing function with no successor yet. Reopen if the
   owner lifts that ruling for this lane.
 - **OQ-2: spine `compile` input.** Complete-V1 source, as §8, §2.1 E1 and I1,
-  and US-014 already state. The request format is `compile <identity>
-  <revision> <path>`, returning v2 bytes, with the source header as the lock
-  (§5, §2.4). Amended by the 2026-09-24 ruling.
+  and US-014 already state. The request is a native-compile/1 request
+  routed by the program's declared edition (FR-027), returning v2 bytes,
+  with the source header as the lock (§5, §2.4). Amended 2026-09-26
+  (QSL-271).
 - **OQ-3: `NativePackage`, `lowering`, `runtime` and IT-010.** `lowering`
   and IT-010 are deleted in the last M-6a change, which runs only once the
   skeleton spine is green: QSL #243 (QSL-5) with

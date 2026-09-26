@@ -232,7 +232,7 @@ operational validation remains outside this audit-only plan.
 | TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Steps 1 to 7 pass locally (step 5's `g::f(3)` result amended, QSL-262) |
 | TC-450 | CLI run routes a program by its declared edition and calls a 1-draft function | Integration | P1 | FR-100-AC-1, FR-100-AC-2, FR-100-AC-3 | 🚧 Specified, not run (QSL-271) |
 | TC-451 | Spine run binds arguments by name and maps each outcome and refusal to its exit code | Integration | P1 | FR-100-AC-4, FR-100-AC-5, FR-100-AC-6 | 🚧 Specified, not run (QSL-271) |
-| TC-452 | The spine run entry is qsl_replay::spine::run and agrees with the CLI | Unit | P1 | FR-100-AC-7 | 🚧 Specified, not run (QSL-271) |
+| TC-452 | The spine run entry is qsl_replay::spine::run, agrees with the CLI, and maps every outcome | Unit | P1 | FR-100-AC-7, FR-100-AC-8, FR-100-AC-9 | 🚧 Specified, not run (QSL-271) |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
