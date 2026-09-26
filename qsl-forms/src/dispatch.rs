@@ -6,8 +6,8 @@
 //! S2 visits a unit's `Declaration` nodes in source order, and each
 //! declaration's first significant token selects its dispatch entry
 //! (FR-091, refining FR-067's "root construct's leading token"). The `Value`
-//! family owns the `function`, `type`, `record`, `tuple`, `enum`, `ordered`
-//! and `predicate` entries; every
+//! family owns the `function`, `type`, `record`, `tuple`, `enum`, `ordered`,
+//! `predicate`, `dimension` and `unit` entries; every
 //! other leading token has none and refuses the whole unit with
 //! [`FormsCause::NoDispatchEntry`]. The families' own productions are in
 //! their own modules (`value` for `Value`); this module holds no grammar.
@@ -170,6 +170,10 @@ pub enum LeadingTokenKind {
     Ordered,
     /// `predicate`: the `forms` `FunctionDeclaration` of kind `Predicate`.
     Predicate,
+    /// `dimension`: the `Value` dimension form.
+    Dimension,
+    /// `unit`: the `Value` unit form.
+    Unit,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -405,6 +409,8 @@ fn dispatch(
         LeadingTokenKind::Tuple => value::tuple(construct),
         LeadingTokenKind::Enum | LeadingTokenKind::Ordered => value::enumeration(construct),
         LeadingTokenKind::Predicate => value::predicate(construct),
+        LeadingTokenKind::Dimension => value::dimension(construct),
+        LeadingTokenKind::Unit => value::unit(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -440,6 +446,8 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"enum" => Some(LeadingTokenKind::Enum),
         b"ordered" => Some(LeadingTokenKind::Ordered),
         b"predicate" => Some(LeadingTokenKind::Predicate),
+        b"dimension" => Some(LeadingTokenKind::Dimension),
+        b"unit" => Some(LeadingTokenKind::Unit),
         _ => None,
     }
 }

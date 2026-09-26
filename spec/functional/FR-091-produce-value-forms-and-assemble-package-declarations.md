@@ -689,7 +689,7 @@ code or code/cause:
 | dimension or unit cycle | `invalid_package`/`definition-cycle` |
 | zero denominator | `undefined_expression`/`unproved-nonzero` |
 | decimal-scale limit | `stage_limit_exceeded`/`work-budget-exceeded` |
-| unit-graph topology | the STD-112 cause, once published (FR-091-OQ-12) |
+| unit-graph topology | `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12) |
 | S2 nesting-depth limit | `stage_limit_exceeded`/`nesting-depth-exceeded` |
 
 The floating-type row: no catalog code names a well-formed type that the
@@ -717,8 +717,9 @@ zero-denominator row follows the check stage's own refusal of
 `rational(n, 0)` in an expression (`Obligation::Nonzero`). The unit-graph
 topology row has no catalog cause yet: `ill_typed` retains an operator
 locus and expected and actual types, and `invalid_package`/`invalid-value`
-a field path in a package document. STD-112 asks QSpec for the causes
-(FR-091-OQ-12).
+a field path in a package document, so neither fits. The interim value is
+`invalid_package`/`unit-graph-topology`, and no other spelling, until
+STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 
 ## Constraints
 
@@ -751,7 +752,7 @@ a field path in a package document. STD-112 asks QSpec for the causes
 | FR-091-AC-18 | For `record Point { x: Int[0, 9]; y: Int[0, 9]; }`, `tuple Pair(Int[0, 9], Int[0, 9]);` and `function px using v(p: Point): Int[0, 9] pure { p.x }`, assembled under source owner authority `a`, identity `u`, the assembler's `types` holds one record declaration `Point` and one tuple declaration `Pair`, each with a key that `check` minted over that owner. `px`'s resolved parameter type is `ValueType::Composite` of `Point`'s key, and `PackageDeclarations::check` admits the package. Assembling and checking the same source again under (`a`, `u`) gives the same `Point` and `Pair` keys and the same checked node id for `px`. Under (`a`, `w`) it gives a different key for each of the three. No item named `DEFAULT_PACKAGE_IDENTITY` exists under `src/`. | Test (TC-401) |
 | FR-091-AC-19 | The assembler admits a parameter typed `Float64[nearest-even]`, `Float32[toward-zero]` or `Float64`. Resolving each gives a `ValueType::Float` of the written width and rounding mode `nearest-even`, `toward-zero` and `exact` (the bare spelling). The evaluator rounds a `Float64[mode]` `+` by that mode. It refuses a parameter typed `Reference<M::T>`, in a unit with no admitted domain package, with an unresolved-type-name error naming `M::T`, and returns no `PackageDeclarations`. | Test (TC-405) |
 | FR-091-AC-20 | The assembler module is under the layer-3 `check` core. Its non-test code has no `use` edge or inline path to `qsl_cst`. Its `#[cfg(test)]` code may reach `qsl_cst` only to run S1 and S2. | Test (TC-402) |
-| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The floating-type cause returns `unknown_required_feature`, the undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, the alias-cycle cause `invalid_package`, the duplicate-enum-member cause `ambiguous_declaration`/`ambiguous-name`, the nominal-admission-fault cause `runtime_invariant`/`established-invariant-broken`, the duplicate dimension or unit name cause `ambiguous_declaration`/`ambiguous-name`, the unresolved dimension or unit name cause `missing_declaration`/`missing-name`, the dimension or unit cycle cause `invalid_package`/`definition-cycle`, the zero-denominator cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale limit `stage_limit_exceeded`/`work-budget-exceeded`. The unit-graph topology cause returns the STD-112 cause once QSpec publishes it (FR-091-OQ-12). S2's nesting-depth limit refusal reports `stage_limit_exceeded`/`nesting-depth-exceeded`. | Test (TC-406) |
+| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The floating-type cause returns `unknown_required_feature`, the undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, the alias-cycle cause `invalid_package`, the duplicate-enum-member cause `ambiguous_declaration`/`ambiguous-name`, the nominal-admission-fault cause `runtime_invariant`/`established-invariant-broken`, the duplicate dimension or unit name cause `ambiguous_declaration`/`ambiguous-name`, the unresolved dimension or unit name cause `missing_declaration`/`missing-name`, the dimension or unit cycle cause `invalid_package`/`definition-cycle`, the zero-denominator cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale limit `stage_limit_exceeded`/`work-budget-exceeded`. The unit-graph topology cause returns `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12). S2's nesting-depth limit refusal reports `stage_limit_exceeded`/`nesting-depth-exceeded`. | Test (TC-406) |
 | FR-091-AC-22 | For a unit with one profile selection, alias `v`, and `function f using v(): Boolean pure { true }`, the assembler records `f`'s `using` alias as resolved to that selection. With `function g using w(): Boolean pure { true }` added, it returns one refusal holding an undeclared-alias error, code `missing_declaration`/`missing-selection`, that names `w` and the span of `g`'s `using` field, and no `PackageDeclarations`. A unit that declares two profile selections with alias `v` refuses with a duplicate-alias error, code `ambiguous_declaration`/`ambiguous-name`, naming `v` and both selection spans. | Test (TC-412) |
 | FR-091-AC-23 | S1 admits a unit whose function parameter is typed `Float32` or `Float64` with no `[mode]`, and S2 builds that parameter's type form with head `Float32` or `Float64` and no rounding mode. | Test (TC-405) |
 | FR-091-AC-24 | Spine `compile` of a unit that declares `import "test/units" version "2" digest "<64 lowercase hex>" as u;`, with no library supplied as `test/units`, refuses at stage `intake`, before assembly, with `missing_import`/`missing-selection` naming `test/units` at the import's identity string (FR-099, ADR-015 D-1), and emits no package. | Test (TC-405) |
@@ -765,7 +766,7 @@ a field path in a package document. STD-112 asks QSpec for the causes
 | FR-091-AC-32 | The assembler returns, for vectors Q1 to Q10's sources in one unit under source owner (`a`, `u`), `units` holding dimensions keyed Q1 to Q5 and units keyed Q6 to Q10. Q3's and Q4's terms are the base terms the vectors list, so `Accel = Speed / Time` normalizes to `Length^1 Time^-2`. `km`'s edge has scale `1000` (from `rational(2000, 2)`), `cm`'s scale `1/100` (from `decimal(1, 2)`), and `C`'s offset `5463/20`; `C` is affine and `km` is not. `nominal_spans` holds the span of each declared name by its key. A unit with no dimension or unit form has the empty `units`. With the decimal-scale bound set to `4`, `unit c : Length = decimal(1, 5) * m;` gives a limit refusal, `stage_limit_exceeded`/`work-budget-exceeded`, naming bound `4`, actual `5` and the span of `decimal(1, 5)`, and `decimal(1, 4)` assembles. | Test (TC-483) |
 | FR-091-AC-33 | A parameter typed `m`, in a unit that declares `dimension Length;` and `unit m : Length = rational(1, 1);`, refuses with an unresolved-type-name error naming `m`. | Test (TC-483) |
 | FR-091-AC-34 | The assembler returns one refusal, and no `PackageDeclarations`, for a unit with `dimension Length;`, `dimension Mass;`, `dimension Mass;`, `dimension Area = Width^2;`, `dimension P = Q; dimension Q = P;`, `unit a : Length = rational(1, 0);`, `unit b : Length = rational(2, 1) * c;` and `unit c : Length = rational(1, 2) * b;`. It holds exactly these errors: a duplicate-name error naming `Mass` and both spans (`ambiguous_declaration`/`ambiguous-name`); an unresolved-name error naming `Width` (`missing_declaration`/`missing-name`); a cycle error with edges `P`→`Q` and `Q`→`P`, and a cycle error with edges `b`→`c` and `c`→`b` (`invalid_package`/`definition-cycle`); and a zero-denominator error at `rational(1, 0)` (`undefined_expression`/`unproved-nonzero`). | Test (TC-483) |
-| FR-091-AC-35 | The assembler refuses each of these units with one unit-graph topology error naming the declarations it concerns, and returns no `PackageDeclarations`: `dimension L; dimension N = L / L;` (empty normalized terms); `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * r;` (zero scale); `dimension L; unit r : L = rational(2, 1);` (non-identity root); `dimension L; dimension T; unit r : L = rational(1, 1); unit s : T = rational(1, 1) * r;` (cross-dimension target); and `dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1);` (two roots). Each error's catalog code is the STD-112 cause (FR-091-OQ-12). | Test (TC-483) |
+| FR-091-AC-35 | The assembler refuses each of these units with one unit-graph topology error naming the declarations it concerns, and returns no `PackageDeclarations`: `dimension L; dimension N = L / L;` (empty normalized terms); `dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * r;` (zero scale); `dimension L; unit r : L = rational(2, 1);` (non-identity root); `dimension L; dimension T; unit r : L = rational(1, 1); unit s : T = rational(1, 1) * r;` (cross-dimension target); and `dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1);` (two roots). Each error's catalog code is `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12). | Test (TC-483) |
 
 ## Dependencies
 
@@ -821,7 +822,13 @@ a field path in a package document. STD-112 asks QSpec for the causes
 
 ## Status
 
-The `Value` slice is implemented (QSL-141), with the `enum`, `ordered enum`
+The `Value` slice is implemented (QSL-141), with the `dimension` and `unit`
+declarations (QSL-275: FR-091-AC-31 to AC-34, AC-6's other half): S2 builds
+the dimension and unit forms as written, and the assembler normalizes
+terms, reduces exact numbers, mints keys with `nominal_key` and admits a
+`UnitGraph` (`PackageDeclarations::units`, `nominal_spans`;
+`assemble_with_limits` takes the decimal-scale bound). AC-35's errors are
+raised with their declarations; only their catalog code is open. It also has the `enum`, `ordered enum`
 and `predicate` declarations (QSL-275: FR-091-AC-25 to AC-30; the enum and
 predicate half of AC-6). `enum` and `ordered` build the enum form, and
 `predicate` builds the `forms` `FunctionDeclaration` of kind `Predicate`.
@@ -846,12 +853,11 @@ of each declared type's name for FR-096, and reports every error it finds.
 
 Remaining work:
 
-- FB-13, QSL-275: the `dimension` and `unit` entries and forms and the
-  assembler's `UnitGraph` admission (FR-091-AC-31 to AC-35) are specified
-  and not implemented (the dimension and unit half of FR-091-AC-6 with
-  them); today both refuse `NoDispatchEntry`, and the only
-  callers of `UnitGraph::admit` are tests. AC-35's catalog code waits on
-  STD-112 (FR-091-OQ-12). The hand-off to QSL-238 and QSL-247 is under
+- AC-35's catalog code waits on STD-112 (FR-091-OQ-12). Until QSpec
+  publishes the topology causes the topology cause reports
+  `invalid_package` with the informational cause `unit-graph-topology`.
+  The hand-off to QSL-238 (retaining preimages through `Unit` and
+  `UnitGraph`, lowering) and QSL-247 (quantity type nodes) is under
   Dependencies.
 - The other families' parsed-form types are not built: the state family's
   under QSL-67, and the others under QSL-45, QSL-44, QSL-43, QSL-42,
@@ -898,5 +904,5 @@ decided; the last column names the fact that reopens it.
   has a different dimension, a dimension with two roots, a zero scale and a
   non-identity root. A derived dimension whose normalized terms are empty
   needs one as well, and STD-112 does not list it yet. Until QSpec answers,
-  FR-091-AC-35's code is unbacked. A missing root cannot arise from source
+  FR-091-AC-35's code is the interim `invalid_package`/`unit-graph-topology`. A missing root cannot arise from source
   that passes the other checks.

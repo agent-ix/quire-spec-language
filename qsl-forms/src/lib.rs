@@ -39,7 +39,8 @@ pub use dispatch::{
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
     Accumulation, AliasForm, BinaryOperator, BinderQuery, BuiltinType, ClauseKind, DeclarationForm,
-    DeclarationKind, DeclaredClauseKind, DeclaredName, EnumForm, EnumMemberForm, Expression,
-    FieldInitializer, FunctionDeclaration, RecordFieldForm, RecordForm, TupleForm, TypeForm,
-    TypeFormHead, UsingAlias,
+    DeclarationKind, DeclaredClauseKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm,
+    EnumMemberForm, ExactNumberForm, ExactNumberKind, Expression, FieldInitializer,
+    FunctionDeclaration, NameForm, RecordFieldForm, RecordForm, TermOperator, TupleForm, TypeForm,
+    TypeFormHead, UnitForm, UsingAlias,
 };

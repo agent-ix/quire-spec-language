@@ -30,8 +30,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
-    AliasForm, BuiltinType, DeclarationForm, DeclaredName, EnumForm, Expression,
-    FunctionDeclaration, ParsedUnit, RecordFieldForm, TypeForm, TypeFormHead,
+    AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, Expression,
+    FunctionDeclaration, ParsedUnit, RecordFieldForm, TypeForm, TypeFormHead, UnitForm,
 };
 use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded, StageFailure};
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -50,6 +50,8 @@ use super::type_form::{
 use crate::library::{ImportView, LibraryName};
 use std::sync::Arc;
 
+mod units;
+
 use super::CheckedGraph;
 use crate::model::domain_package::{
     DomainPackageRecord, FieldMemberRecord, NativeValueType, ValueTypeRef,
@@ -62,6 +64,43 @@ use crate::value::declaration::{
 };
 use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
 use crate::value::semantic_node::{InvalidSemanticGraph, OwnerSelection};
+
+/// The explicit limits the assembler takes (ADR-011 §2.3 Limits).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AssemblyLimits {
+    /// The largest scale `s` of a `decimal(c, s)` exact number the
+    /// assembler forms `10^s` for (FR-091 "Dimension and unit
+    /// declarations").
+    pub decimal_scale: u64,
+}
+
+/// The default decimal-scale bound (FR-091).
+pub const DEFAULT_DECIMAL_SCALE: u64 = 4096;
+
+impl Default for AssemblyLimits {
+    fn default() -> Self {
+        Self {
+            decimal_scale: DEFAULT_DECIMAL_SCALE,
+        }
+    }
+}
+
+/// Which unit-graph topology check refused (FR-091 "Dimension and unit
+/// declarations").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TopologyFault {
+    /// A derived dimension whose normalized terms are empty.
+    EmptyDerivedDimension,
+    /// A unit whose scale is zero.
+    ZeroScale,
+    /// A targetless unit whose scale is not one or whose offset is not
+    /// zero.
+    NonIdentityRoot,
+    /// A unit whose target has a different dimension.
+    CrossDimensionTarget,
+    /// A dimension whose units have two targetless roots.
+    TwoRoots,
+}
 
 /// Why the assembler refused one part of a unit (FR-091 "The assembler
 /// refuses in these cases").
@@ -123,6 +162,38 @@ pub enum AssemblyCause {
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
     Handle(NodeKeyRefusal),
+    /// A name is declared by more than one dimension form, or by more than
+    /// one unit form.
+    DuplicateQuantityName {
+        /// The name.
+        name: String,
+        /// The span of each declaration.
+        spans: Vec<Span>,
+    },
+    /// A dimension term or a unit's `:` name names no dimension form, or a
+    /// unit's target names no unit form.
+    UnresolvedQuantityName {
+        /// The name as written.
+        name: String,
+    },
+    /// A dimension reaches itself through derived dimensions, or a unit's
+    /// target chain reaches that unit again.
+    QuantityCycle {
+        /// The cycle's dependency edges, `(declaration, declaration it
+        /// names)`.
+        edges: Vec<(String, String)>,
+    },
+    /// An exact number `rational(n, 0)`.
+    ZeroDenominator,
+    /// A `decimal(c, s)` whose scale `s` is above the assembler's bound.
+    DecimalScaleLimit(LimitExceeded),
+    /// A unit-graph topology error, naming the declarations it concerns.
+    UnitGraphTopology {
+        /// Which check refused.
+        fault: TopologyFault,
+        /// The declarations concerned.
+        declarations: Vec<String>,
+    },
     /// An enum names one case more than once.
     DuplicateEnumMember {
         /// The enum's declared name.
@@ -188,7 +259,14 @@ impl AssemblyCause {
             Self::ModelType { .. } => Code::RuntimeInvariant,
             Self::AmbiguousTypeName { .. }
             | Self::DuplicateAlias { .. }
-            | Self::DuplicateEnumMember { .. } => Code::AmbiguousDeclaration,
+            | Self::DuplicateEnumMember { .. }
+            | Self::DuplicateQuantityName { .. } => Code::AmbiguousDeclaration,
+            Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
+            Self::QuantityCycle { .. } => Code::InvalidPackage,
+            Self::ZeroDenominator => Code::UndefinedExpression,
+            Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
+            // FR-091-OQ-12: STD-112 has not published the topology causes.
+            Self::UnitGraphTopology { .. } => Code::InvalidPackage,
             Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 Code::UnknownRequiredFeature
@@ -221,7 +299,15 @@ impl AssemblyCause {
             Self::UnresolvedTypeName { .. } => "missing-name",
             Self::AmbiguousTypeName { .. }
             | Self::DuplicateAlias { .. }
-            | Self::DuplicateEnumMember { .. } => "ambiguous-name",
+            | Self::DuplicateEnumMember { .. }
+            | Self::DuplicateQuantityName { .. } => "ambiguous-name",
+            Self::UnresolvedQuantityName { .. } => "missing-name",
+            Self::QuantityCycle { .. } => "definition-cycle",
+            Self::ZeroDenominator => "unproved-nonzero",
+            Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
+            // Informational (FR-091-OQ-12): STD-112 replaces this cause
+            // once QSpec publishes the topology causes; nothing reads it.
+            Self::UnitGraphTopology { .. } => "unit-graph-topology",
             Self::IllFormedBounds(_) => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
@@ -294,6 +380,8 @@ enum Declared {
 /// The unit's declarations, split by kind, and the names they bind.
 struct Unit {
     aliases: Vec<AliasForm>,
+    dimensions: Vec<DimensionForm>,
+    units: Vec<UnitForm>,
     composites: Vec<Composite>,
     enums: Vec<EnumForm>,
     functions: Vec<FunctionDeclaration>,
@@ -305,6 +393,8 @@ impl Unit {
     fn new(forms: Vec<qsl_forms::ParsedForm>) -> Self {
         let mut unit = Self {
             aliases: Vec::new(),
+            dimensions: Vec::new(),
+            units: Vec::new(),
             composites: Vec::new(),
             enums: Vec::new(),
             functions: Vec::new(),
@@ -331,6 +421,8 @@ impl Unit {
                         members: Members::Tuple(tuple.elements),
                     });
                 }
+                DeclarationForm::Dimension(dimension) => unit.dimensions.push(dimension),
+                DeclarationForm::Unit(quantity) => unit.units.push(quantity),
                 DeclarationForm::Enum(enumeration) => {
                     unit.declare(&enumeration.name, Declared::Enum);
                     unit.enums.push(enumeration);
@@ -897,6 +989,17 @@ impl PackageDeclarations {
         models: Vec<SelectedModel>,
         imports: Vec<AdmittedImport>,
     ) -> Result<Self, AssemblyRefusal> {
+        Self::assemble_with_limits(source, unit, models, imports, AssemblyLimits::default())
+    }
+
+    /// [`Self::assemble`] under explicit `limits` (ADR-011 §2.3).
+    pub fn assemble_with_limits(
+        source: RawSourceRef,
+        unit: ParsedUnit,
+        models: Vec<SelectedModel>,
+        imports: Vec<AdmittedImport>,
+        limits: AssemblyLimits,
+    ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
@@ -1046,6 +1149,18 @@ impl PackageDeclarations {
             }
         }
 
+        // The unit's dimensions and units, admitted under its owner.
+        let owner = SourceOwner::from(&source);
+        let owners = OwnerSelection::new([owner.node_owner()]);
+        let quantities =
+            match units::assemble(&unit.dimensions, &unit.units, &owner, &owners, limits) {
+                Ok(quantities) => Some(quantities),
+                Err(found) => {
+                    errors.extend(found);
+                    None
+                }
+            };
+
         // Every type form names declarations of the unit or admitted model
         // object types.
         for alias in &unit.aliases {
@@ -1084,8 +1199,6 @@ impl PackageDeclarations {
         }
 
         // Each declared record and tuple's handle, over the unit's owner.
-        let owner = SourceOwner::from(&source);
-        let owners = OwnerSelection::new([owner.node_owner()]);
         let mut names = Names {
             object_types: object_names.clone(),
             ..Names::default()
@@ -1289,6 +1402,10 @@ impl PackageDeclarations {
             package.resolved_signatures.insert(index, signature);
         }
         package.enums = enums;
+        if let Some(quantities) = quantities {
+            package.units = quantities.graph;
+            package.nominal_spans = quantities.spans;
+        }
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.declared_type_spans = declared_type_spans;
