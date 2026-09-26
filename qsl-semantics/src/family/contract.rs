@@ -28,7 +28,7 @@ pub struct DiagnosticSink {
 impl DiagnosticSink {
     pub(crate) fn record(&mut self, scope: &ScopeStack, message: impl Into<String>) {
         self.entries.push(Diagnostic {
-            scope: scope.current().to_owned(),
+            scope: scope.path(),
             message: message.into(),
         });
     }
@@ -65,8 +65,14 @@ impl ScopeStack {
         self.frames.pop();
     }
 
-    pub(crate) fn current(&self) -> &str {
-        self.frames.last().map(String::as_str).unwrap_or("<root>")
+    /// Every frame from the outermost, joined with `/` (`<root>` when
+    /// empty), so a diagnostic names the whole stack it was raised under.
+    pub(crate) fn path(&self) -> String {
+        if self.frames.is_empty() {
+            "<root>".to_owned()
+        } else {
+            self.frames.join("/")
+        }
     }
 }
 

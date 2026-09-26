@@ -385,15 +385,22 @@ tags as they exist in the delivered code today:
   references PR #262 had pointed at, both of which explicitly disclaim the
   work).
 - FR-062-AC-2: backed (`TC-160`, `qsl-semantics/src/check/family.rs`, `checking_tests`).
-- FR-062-AC-3: backed (`TC-160`, QSL-161, QSL-246), all three clauses, in
-  `qsl-semantics/src/check/family.rs`, `checking_tests`:
+- FR-062-AC-3: backed (`TC-160`, QSL-161, QSL-246) for the declarations in
+  `qsl-semantics/src/check` and `qsl-semantics/src/family`, all three
+  clauses, in `qsl-semantics/src/check/family.rs`, `checking_tests`:
   - Clause 1 (no path to global or thread-local state):
     `check_stage_sources_have_no_global_or_thread_local_state` parses the
     non-test sources of `src/check` and `src/family` and fails on
     `static mut`, `thread_local!`, `lazy_static!`, and any once-cell, lazy,
-    lock, atomic or `UnsafeCell` type. Immutable statics of plain types
-    (`BOOLEAN`, `NO_GROUP`) are constants and pass. The scope is this
-    crate's check stage; dependencies are not scanned.
+    lock, atomic, `Once` or `UnsafeCell` type, in a path or in a `use`
+    name or rename (`use std::sync::Mutex as Guard;`). Immutable statics of
+    plain types (`BOOLEAN`, `NO_GROUP`) are constants and pass. Exactly
+    what is scanned: the non-test items of every `.rs` file under those two
+    directories (files with `tests` in the name and `#[cfg(test)]` items are
+    skipped). Callees outside them (`quire-exact`, `qsl-forms`,
+    `qsl-foundation` and the rest of `qsl-semantics`) are not scanned;
+    nothing is flagged there today, and the one `thread_local!` in the crate
+    is `#[cfg(test)]` (`model/normalize.rs`).
   - Clause 2 (meter, sink, scope in the outcome):
     `a_mutated_meter_is_reflected_in_the_check_outcome` (pre-admitted
     charges show in the recorded admission count; a work bound one short
@@ -401,8 +408,9 @@ tags as they exist in the delivered code today:
     `a_mutated_diagnostic_sink_is_reflected_in_the_check_outcome` (seeded
     entry kept, the check's own appended) and
     `a_mutated_scope_stack_is_reflected_in_the_check_outcome` (the diagnostic
-    is scoped to the check's frame over the caller's, and the caller's frame
-    is restored on success and refusal).
+    is `DiagnosticSink`'s full scope path, `caller-frame/value.function-declaration:f`
+    with a caller frame and `value.function-declaration:f` without one, and
+    the caller's frame is restored on success and refusal).
   - Clause 3: `two_contexts_from_the_same_declarations_check_identically`
     compares the two independently constructed contexts' `Debug`-formatted
     checked output (`CheckedDeclaration` carries no `PartialEq`, so this
@@ -436,27 +444,37 @@ tags as they exist in the delivered code today:
   AC-9's own note on why it was deleted rather than wired up
   speculatively), so there is no `package` outcome to assert anything
   about. Unbacked. Owner: QSL-242.
-- FR-062-AC-6: partly backed (QSL-152) -- the first sentence only. Stale
-  as last written: it said "S6a has no family-kind dispatch yet," which
-  QSL-148's `S6aFamilyKind` (`qsl-eval/src/value/expression/s6a.rs`) made no
-  longer true. This criterion's first sentence is FR-090-AC-4 verbatim, so
-  the tests that back FR-090-AC-4 back it: `s6a_family_kind_admits_no_
-  relation_and_family_outcome_has_two_arms`
-  (`qsl-eval/src/value/expression/mod.rs`, now also tagged `FR-062-AC-6`)
-  and `both_family_outcome_arms_reach_a_caller_through_the_s6a_seam`
-  (`qsl-eval/tests/it/model_reference_queries.rs`), plus `s6a.rs`'s own
-  compile-time check that no `S6aFamilyKind` maps to `FamilyKind::Relation`.
-  The second sentence (every other family's `evaluate` hook reads no CST,
-  token or display string) is not backed: an earlier round of this fix
-  tagged `evaluate_returns_incomplete_when_the_meter_is_exhausted`
-  (`qsl-eval/src/value/expression/family.rs`) on the theory that
-  `EvaluationEnv`'s own fields are checked-input shaped, but that test
-  passes whatever the hook actually does with `env.package` --
-  `CheckedPackage` exposes `function_identity(&str)` and function state
-  carrying `slot_names: Vec<String>`, both string-shaped, so the hook is not
-  in fact foreclosed from reading a display string through `env`, and
-  nothing here asserts it does not. The tag is removed; the second sentence
-  stays unbacked. Owner: QSL-246.
+- FR-062-AC-6: backed (QSL-152, QSL-246).
+  - First sentence (a `Relation` never reaches evaluation) is FR-090-AC-4
+    verbatim, so the tests that back FR-090-AC-4 back it:
+    `s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms`
+    (`qsl-eval/src/value/expression/mod.rs`, tagged `FR-062-AC-6`),
+    `both_family_outcome_arms_reach_a_caller_through_the_s6a_seam`
+    (`qsl-eval/tests/it/model_reference_queries.rs`), plus `s6a.rs`'s own
+    compile-time check that no `S6aFamilyKind` maps to `FamilyKind::Relation`.
+  - Second sentence. Ruling (QSL team lead, on QSL-246): declared names
+    carried on checked nodes are checked input. Copying a declared name into
+    `PreconditionFailure.selected`, and using field names as record keys, are
+    allowed. A "display string" is rendered text (`Display` or `Debug`
+    output, diagnostic text, source spelling); ADR-011 FB-01 forbids reading
+    one "to recover semantics". `CheckedPackage` is a concrete type, so the
+    criterion's panicking test double is not buildable; two tests replace
+    it, each tagged `TC-160`, `FR-062-AC-6`:
+    - API surface: `the_evaluator_has_no_path_to_source_text_or_rendering`
+      (`tests/it/evaluate_reads_no_display_strings.rs`). `qsl-eval`'s
+      shipped `[dependencies]` name neither `qsl-cst` nor `qsl-forms`, and a
+      syn scan of `evaluate.rs` and the `evaluate` hook in `family.rs`
+      finds no rendering macro (`format!`, `write!`, `dbg!` and the like) and
+      no call to `to_string` (except the one population-name copy),
+      `parse`, `function_identity`, `slot_names`, `measure_slot_names` or
+      `spans`. A synthetic violating source proves each form is flagged.
+    - Behaviour: `renaming_declared_names_leaves_evaluation_unchanged`
+      (`qsl-eval/tests/it/evaluation_ignores_display_strings.rs`). Renaming
+      every function, parameter and alias in a package leaves the outcome,
+      loss count and metered work unchanged, for a completed run and for a
+      run the meter stops. A mutant that branches on a function name fails it.
+    The scan reads the evaluator's own source, not the code it calls in other
+    crates.
 - FR-062-AC-7: backed by TC-378
   (`the_typer_depth_stop_is_located_at_the_node_whose_entry_failed`,
   `qsl-semantics/src/check/family.rs`, QSL-160). History: it was unbacked
@@ -555,7 +573,7 @@ tags as they exist in the delivered code today:
   `CheckedPackage::graph()`.
 
 Eight of this requirement's thirteen Acceptance Criteria are backed (AC-2,
-AC-3, AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13); two (AC-6, AC-11) are
+AC-3, AC-4, AC-6, AC-7, AC-8, AC-12 and AC-13); two (AC-5, AC-11) are
 partly backed, each for the specific clause named in its own row above.
 AC-1, AC-9 and AC-10 are unbacked. AC-1's
 `requirements` half is owned by QSL-140 the same way; its `package` half,

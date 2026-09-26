@@ -1450,7 +1450,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         //
         // PR #303 review round 3, finding F2: recorded here, before
         // `cx.scopes.leave()` below, not after -- `DiagnosticSink::record`
-        // reads `cx.scopes.current()` at the moment it is called, so
+        // reads `cx.scopes.path()` at the moment it is called, so
         // recording it after the scope this check ran in has already been
         // popped reports `<root>` instead of
         // `value.function-declaration:<name>`, silently defeating
@@ -2458,11 +2458,11 @@ pub(crate) mod checking_tests {
         assert!(outcome.is_ok(), "{outcome:?}");
         assert_eq!(
             diagnostics.entries()[0].scope,
-            "value.function-declaration:f",
-            "the diagnostic is scoped to the check's own frame on top of the caller's"
+            "caller-frame/value.function-declaration:f",
+            "the diagnostic's scope path is the caller's frame, then the check's own"
         );
         assert_eq!(
-            scopes.current(),
+            scopes.path(),
             "caller-frame",
             "the caller's frame is restored"
         );
@@ -2474,7 +2474,7 @@ pub(crate) mod checking_tests {
             matches!(refused, Err(StageFailure::Refused(_))),
             "{refused:?}"
         );
-        assert_eq!(scopes.current(), "caller-frame");
+        assert_eq!(scopes.path(), "caller-frame");
         assert_eq!(diagnostics.entries().len(), 1, "a refusal records nothing");
 
         // With no caller frame the same check is scoped identically: the
@@ -2483,7 +2483,12 @@ pub(crate) mod checking_tests {
         let mut sink = DiagnosticSink::default();
         let again = check_f_with(&good, &mut meter, &mut sink, &mut bare);
         assert!(again.is_ok());
-        assert_eq!(bare.current(), "<root>");
+        assert_eq!(bare.path(), "<root>");
+        assert_eq!(
+            sink.entries()[0].scope,
+            "value.function-declaration:f",
+            "without a caller frame the path is the check's own frame alone"
+        );
     }
 
     /// FR-062-AC-3 clause 1: the family-contract and check-stage sources
@@ -2514,6 +2519,8 @@ pub(crate) mod checking_tests {
         let violating = "static mut RAW: u8 = 0;\n\
              static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);\n\
              thread_local! { static SEEN: std::cell::Cell<u8> = std::cell::Cell::new(0); }\n\
+             use std::sync::Mutex as Guard;\n\
+             use std::sync::Once;\n\
              fn f() { let _c: std::sync::OnceLock<u8>; let _m: std::sync::Mutex<u8>; }";
         let found = global_state_findings(violating);
         for needle in [
@@ -2522,6 +2529,8 @@ pub(crate) mod checking_tests {
             "OnceLock",
             "Mutex",
             "AtomicU64",
+            "use Mutex as Guard",
+            "use Once",
         ] {
             assert!(
                 found.iter().any(|finding| finding.contains(needle)),
@@ -2561,7 +2570,34 @@ pub(crate) mod checking_tests {
                         .is_ok_and(|ident| ident == "test")
             })
         }
+        fn banned_name(name: &str) -> bool {
+            matches!(
+                name,
+                "OnceLock"
+                    | "OnceCell"
+                    | "Once"
+                    | "LazyLock"
+                    | "LazyCell"
+                    | "Lazy"
+                    | "Mutex"
+                    | "RwLock"
+                    | "UnsafeCell"
+            ) || (name.starts_with("Atomic") && name.len() > "Atomic".len())
+        }
         impl<'ast> Visit<'ast> for Scan {
+            // `use std::sync::Mutex as Guard;` names the type only here, so
+            // a later `Guard<u8>` would pass the path-segment check.
+            fn visit_use_name(&mut self, name: &'ast syn::UseName) {
+                if banned_name(&name.ident.to_string()) {
+                    self.0.push(format!("use {}", name.ident));
+                }
+            }
+            fn visit_use_rename(&mut self, rename: &'ast syn::UseRename) {
+                if banned_name(&rename.ident.to_string()) {
+                    self.0
+                        .push(format!("use {} as {}", rename.ident, rename.rename));
+                }
+            }
             fn visit_item_mod(&mut self, item: &'ast syn::ItemMod) {
                 if !is_cfg_test(&item.attrs) {
                     syn::visit::visit_item_mod(self, item);
@@ -2591,17 +2627,7 @@ pub(crate) mod checking_tests {
             }
             fn visit_path_segment(&mut self, segment: &'ast syn::PathSegment) {
                 let name = segment.ident.to_string();
-                let banned = matches!(
-                    name.as_str(),
-                    "OnceLock"
-                        | "OnceCell"
-                        | "LazyLock"
-                        | "LazyCell"
-                        | "Lazy"
-                        | "Mutex"
-                        | "RwLock"
-                        | "UnsafeCell"
-                ) || (name.starts_with("Atomic") && name.len() > "Atomic".len());
+                let banned = banned_name(&name);
                 if banned {
                     self.0.push(format!("type {name}"));
                 }
