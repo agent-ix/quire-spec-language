@@ -739,8 +739,11 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        let mut drafts: Vec<(Signature, family::CheckedDeclarationBody)> =
-            Vec::with_capacity(self.functions.len());
+        let mut drafts: Vec<(
+            Signature,
+            family::CheckedDeclarationBody,
+            qsl_forms::DeclarationKind,
+        )> = Vec::with_capacity(self.functions.len());
         // ADR-012 §13.5, ADR-011 E7: every admitted declaration's claims,
         // read from the contract's `Checked` value before it is unpacked
         // into `drafts` below, and keyed by occurrence once lowering has
@@ -856,13 +859,10 @@ impl PackageDeclarations {
         // bound (see `check::family::check_declaration_body`'s own doc for
         // why this, not a `Cell` or a second call, is the mechanism).
         let mut nodes_used = 0_u64;
-        // FR-092 "Function nodes": a `predicate` declaration's node form.
-        let predicates: Vec<bool> = self
-            .functions
-            .iter()
-            .map(|function| function.kind() == qsl_forms::DeclarationKind::Predicate)
-            .collect();
         for (index, function) in self.functions.into_iter().enumerate() {
+            // FR-092 "Function nodes": the kind travels with the draft to
+            // lowering, which keys a predicate's node `predicate`.
+            let kind = function.kind();
             let location = body_location(index, &function.name);
             let measure_location = root(Origin::Measure {
                 function: function.name.clone(),
@@ -904,7 +904,7 @@ impl PackageDeclarations {
                     // declaration's `Typer` picks up where this one left
                     // off instead of restarting at zero.
                     nodes_used = checked.body.nodes_used;
-                    drafts.push((signatures.as_slice()[index].clone(), checked.body));
+                    drafts.push((signatures.as_slice()[index].clone(), checked.body, kind));
                 }
                 Err(StageFailure::Limit(limit)) => {
                     // QSL-236 (L6): `CheckingLimitKind::try_from(LimitKind)`
@@ -953,7 +953,7 @@ impl PackageDeclarations {
         // own doc for why it cannot move alongside typing/definedness).
         let members: Vec<termination::Member<'_>> = drafts
             .iter()
-            .map(|(signature, body)| termination::Member {
+            .map(|(signature, body, _)| termination::Member {
                 name: &signature.name,
                 parameters: &signature.parameters,
                 measure: body.measure.as_ref(),
@@ -972,11 +972,11 @@ impl PackageDeclarations {
         let locations: Vec<Location> = drafts
             .iter()
             .enumerate()
-            .map(|(index, (signature, _))| body_location(index, &signature.name))
+            .map(|(index, (signature, _, _))| body_location(index, &signature.name))
             .collect();
         let callees: Vec<Vec<usize>> = drafts
             .iter()
-            .map(|(_, body)| {
+            .map(|(_, body, _)| {
                 let mut callees = body.body.callees();
                 if let Some(measure) = &body.measure {
                     callees.extend(measure.callees());
@@ -989,7 +989,7 @@ impl PackageDeclarations {
         // FR-094: the package's units and every compound unit typing formed,
         // kept until lowering has keyed each one's type node.
         let mut units = scope.types().units().clone();
-        for (_, body) in &mut drafts {
+        for (_, body, _) in &mut drafts {
             units.extend(std::mem::take(&mut body.formed_units));
         }
         let mut lowering = lowering::Lowering::new(
@@ -1009,10 +1009,10 @@ impl PackageDeclarations {
                 .members
                 .iter()
                 .filter_map(|&index| {
-                    let (signature, body) = drafts.get(index)?;
+                    let (signature, body, kind) = drafts.get(index)?;
                     Some(lowering::FunctionInput {
                         name: &signature.name,
-                        predicate: predicates.get(index).copied().unwrap_or(false),
+                        kind: *kind,
                         location: &locations[index],
                         parameters: &signature.parameters,
                         result: &signature.result,
@@ -1076,7 +1076,7 @@ impl PackageDeclarations {
             drafts
                 .into_iter()
                 .zip(identities)
-                .filter_map(|((signature, body), identity)| {
+                .filter_map(|((signature, body, _), identity)| {
                     Some((
                         signature,
                         CheckedFunction {

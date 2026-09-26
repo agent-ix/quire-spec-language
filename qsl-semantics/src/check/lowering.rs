@@ -292,11 +292,11 @@ impl SemanticGraph {
 pub(crate) struct FunctionInput<'a> {
     /// The declared name, `::`-separated.
     pub(crate) name: &'a str,
-    /// Whether the declaration is a `predicate`: its node's `semantic_form`
-    /// is `predicate` rather than `pure_function` (FR-092 "Function
-    /// nodes"). A recursion group's members are `recursive_function`
-    /// whatever their kind.
-    pub(crate) predicate: bool,
+    /// The declaration kind: a `Predicate`'s node `semantic_form` is
+    /// `predicate` rather than `pure_function` (FR-092 "Function nodes"). A
+    /// recursion group's members are `recursive_function` whatever their
+    /// kind.
+    pub(crate) kind: qsl_forms::DeclarationKind,
     /// The declaration's region.
     pub(crate) location: &'a Location,
     /// The parameters in order.
@@ -2465,10 +2465,9 @@ impl<'a> Lowering<'a> {
             let measure = self.expression(measure, &mut binders)?;
             members.push(SemanticTerm::binding("decreases", measure));
         }
-        let semantic_form = if function.predicate {
-            "predicate"
-        } else {
-            "pure_function"
+        let semantic_form = match function.kind {
+            qsl_forms::DeclarationKind::Predicate => "predicate",
+            qsl_forms::DeclarationKind::Function => "pure_function",
         };
         let key = match function.clause {
             // FR-094: a clause function carries its declaration's
