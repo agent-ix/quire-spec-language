@@ -358,6 +358,31 @@ fn the_lock_selects_the_catalog_definitions() {
     );
 }
 
+/// The public `diagnostics_catalog` accessor equals the `diagnostics.catalog`
+/// reference the v2 emitter writes: a caller builds evidence for it from
+/// QSL's own API instead of reading it back out of the emitted bytes.
+#[trace("FR-093-AC-17", "TC-416")]
+#[test]
+fn diagnostics_catalog_matches_the_emitted_reference() {
+    let emission = emit(&package(vec![t()]));
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+    let wire = wire(&emission);
+    let catalog = crate::diagnostics_catalog();
+    assert_eq!(
+        wire["diagnostics"]["catalog"],
+        json!({
+            "authority": catalog.authority,
+            "identity": catalog.identity,
+            "revision": {
+                "namespace": catalog.revision.namespace,
+                "value": catalog.revision.value,
+            },
+            "digest_domain": catalog.digest_domain,
+            "digest": catalog.digest,
+        })
+    );
+}
+
 /// FR-322's `application_node_preimage` of a wire node, or FR-092's
 /// structural preimage under owner (`a`, `u`), rebuilt by the test from the
 /// wire alone. `group` is the node's recursion group in graph order.

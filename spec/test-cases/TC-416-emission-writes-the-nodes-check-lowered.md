@@ -24,7 +24,7 @@ the members those fixtures pin. This catches a type annotation listed as a
 dependency, a missing `bounded_domain` base or group member, and an operator
 or operation spelling that differs from QSpec's.
 
-Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-CON-2.
+Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-093-CON-2.
 
 ## Test Procedure
 
@@ -87,6 +87,14 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
   written before `test/\u{1F600}` and reads back Verified. The
   vectors' `package_id` recomputes, each entry mutation refuses at its entry
   and each order vector gets its recorded outcome and locus.
+- Step 9: `qsl_package::diagnostics_catalog()` equals the emitted
+  `diagnostics.catalog` reference, member for member (FR-093-AC-17).
+
+## Test Procedure (continued)
+
+9. Check and emit a package holding `t` (step 1). Compare
+   `qsl_package::diagnostics_catalog()` against the wire's
+   `diagnostics.catalog` member.
 
 ## Status
 
