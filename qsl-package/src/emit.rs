@@ -29,6 +29,9 @@
 //!   entry per library identity in ascending UTF-8 byte order of `identity`
 //!   (FR-322, FR-307). The same entries are the identity preimage's, so each
 //!   dependency's `package_id` enters this package's.
+//! - `diagnostics.catalog` is [`diagnostics_catalog`] (FR-093-AC-17), public
+//!   so a caller builds evidence for it from QSL's own API instead of
+//!   reading it back out of the emitted bytes.
 //!
 //! # Source regions
 //!
@@ -102,8 +105,12 @@ const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
 const IDENTITY_PREIMAGE_V2: &str = qsl_semantics::library::PACKAGE_ID_VERSION;
 
 /// The diagnostics catalog the package's (empty) diagnostics are qualified
-/// by: QSpec's `quire.native.diagnostics/v1` at `1-draft.7`.
-fn diagnostics_catalog() -> CheckedArtifactRef {
+/// by: QSpec's `quire.native.diagnostics/v1` at `1-draft.7`. This is the
+/// same reference the v2 emitter writes at `diagnostics.catalog`
+/// (FR-093-AC-17); a caller that needs it as evidence (IR's checked-package
+/// v2 reader refuses it as a stale dependency without one) reads it here
+/// instead of parsing it back out of the emitted bytes.
+pub fn diagnostics_catalog() -> CheckedArtifactRef {
     CheckedArtifactRef {
         authority: "agent-ix".into(),
         identity: "quire.native.diagnostics/v1".into(),
