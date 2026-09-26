@@ -244,6 +244,7 @@ name.
 | FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. A refusal IR reports at a value, such as a `package_id` digest domain, is located at `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer of that value. | Test (TC-429) |
 | FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. The same holds for IR's depth, edge, occurrence, diagnostic and work limits, each with its own kind. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test (TC-429) |
 | FR-096-AC-11 | A function whose body is the source text `not not not true` (four nodes deep), parsed under a unit reference so its forms carry spans and checked through `ValueFunctionFamily::check` with `CheckingLimits` depth 3, returns `StageFailure::Limit` with kind nesting depth, bound 3, actual 4, and `Locus::Region` over the span of `true`, reported as `stage_limit_exceeded`/`nesting-depth-exceeded`. With depth 4 and nothing else changed, it returns no nesting-depth limit. The same depth stop inside an FR-151 synthesized function carries no locus. | Test (TC-378) |
+| FR-096-AC-12 | `Code::RuntimeInvariant`, the code of `InternalFault` (T-4, O-16 internal-failure category), resolves to FR-301 exit status 30 (tool failure) through `Code::exit_code`, and every other `Code` resolves to 20, 21 or 22. A native `run` whose evaluation refuses with `runtime_invariant` exits 30. A report holding a `runtime_invariant` diagnostic beside invalid, unsupported or incomplete ones exits 30. | Test (TC-470) |
 
 ## Dependencies
 
@@ -325,6 +326,10 @@ Implemented under QSL-245:
   (`Typer`'s node count and depth, and a declaration's input bytes and work)
   as a `LimitExceeded` with its region, tested for each. It has no production
   caller yet: package checking still returns the `CheckRefusal`.
+
+Implemented under QSL-282:
+
+- `Code::exit_code` maps `runtime_invariant` to 30 (QSpec FR-301 tool failure; ADR-013 T-4 internal failure), and a report combining diagnostics ranks 30 first (AC-12). The kernel `CheckedInvariant` to `InternalFault` conversion remains unbuilt.
 
 Not backed:
 
