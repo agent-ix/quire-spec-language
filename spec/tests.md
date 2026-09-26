@@ -532,8 +532,8 @@ the ruling on FR-090-OQ-2.
 carries ADR-011 §2.1 to §2.3 (E2, E3, E9), §3 and §6.1, ADR-012 §1, §3 and
 §4.3, and ADR-013 O-11, O-17, R-07, T-4 and T-5 for the `Value` family's S2
 production and the forms-to-`PackageDeclarations` assembler in the layer-3
-`check` core. TC-392 to TC-403, TC-405, TC-406 and TC-412 are `🚧 Planned`
-under QSL-141, except TC-398's crate edges and its step 2 over the existing
+`check` core. TC-392 to TC-403 and TC-406 are `🚧 Planned`
+under QSL-141 (TC-405 and TC-412 pass locally), except TC-398's crate edges and its step 2 over the existing
 forms types, which pass locally (`🚧 Partial`). TC-398 and TC-402 use the resolved-import and definition-scan
 approach of TC-256, TC-170 and TC-390. TC-399 is the end-to-end case from
 source to `CheckedPackage::call`. TC-404 backs FR-003-AC-7
