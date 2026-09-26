@@ -303,8 +303,12 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
     }
     for (crate_name, allowed, dev_only) in [
         ("quire-exact", &[][..], &[][..]),
-        ("qsl-foundation", &["quire-exact"][..], &[][..]),
-        ("qsl-cst", &["qsl-foundation", "quire-exact"][..], &[][..]),
+        ("qsl-foundation", &["qsl-attrs", "quire-exact"][..], &[][..]),
+        (
+            "qsl-cst",
+            &["qsl-attrs", "qsl-foundation", "quire-exact"][..],
+            &[][..],
+        ),
         (
             "qsl-forms",
             &["qsl-cst", "qsl-foundation", "quire-exact"][..],
@@ -312,7 +316,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         ),
         (
             "qsl-semantics",
-            &["qsl-forms", "qsl-foundation", "quire-exact"][..],
+            &["qsl-attrs", "qsl-forms", "qsl-foundation", "quire-exact"][..],
             &["qsl-cst"][..],
         ),
         (
