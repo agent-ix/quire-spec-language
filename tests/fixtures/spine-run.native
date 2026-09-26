@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // FR-100/TC-451: spine run argument binding and outcome mapping fixture.
-// The profile digest is a placeholder.
+// The profile is the `root` row of the DefinitionLock catalog (FR-110).
 language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+profile v = "quire.value.complete/v1" version "1-draft.2" digest "sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16";
 type Digit = Int[0, 9];
 record Point { x: Digit; y: Digit; }
 function lt using v(a: Digit, b: Digit): Boolean pure { a < b }
