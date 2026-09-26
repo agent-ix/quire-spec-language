@@ -84,15 +84,15 @@ tracks rather than repeating a separate fix.
 | SR-674 | FND-003 | medium | 630728ba (`CheckedInvariant`/`CallFailure::Fault`/locus faults now exit 30 directly, never through `Code::exit_code`) |
 | SR-674 | FND-004 | medium | 3f49b580 |
 | SR-674 | FND-005 | medium | 8eda2b73 (this fix round: isolated native-model/no-call/extraction fixtures, TC-450 step 4) |
-| SR-674 | FND-006 | medium | 630728ba (kernel-side rows, `convert_outcome`); 8eda2b73 (remaining half: root-crate renderer/exit-mapping unit tests for `Undefined`, TC-452 step 4) |
-| SR-674 | FND-007 | low | 630728ba (TC-450 step 6 CLI test for `libraries` plus `models`) |
+| SR-674 | FND-006 | medium | 630728ba (kernel-side rows, `convert_outcome`); 8eda2b73 (`Undefined`, TC-452 step 4); e3c20e65 (remainder: refused/family/kernel rows, `location.origin` kinds and the fault envelope, FND-013) |
+| SR-674 | FND-007 | medium | 630728ba (TC-450 step 6 CLI test for `libraries` plus `models`) |
 | SR-674 | FND-008 | low | 630728ba (whole-document assertions, `flag`/`id` CLI coverage, stronger TC-450 step 2 oracle) |
 | SR-674 | FND-009 | low | 3f49b580 |
 | SR-674 | FND-010 | low | 630728ba (`bind_arguments` binds every parameter before converting any value) |
 | SR-674 | FND-011 | low | 630728ba (`source` threaded through so `selected_package` does not re-read it) |
 | SR-674 | FND-012 | low | 630728ba (the `#[allow]` and named-constant nits); 7ce0d104 (the fixture's `corner`-not-`origin` note) |
 | SR-675 | FND-001 | medium | tracks SR-674 FND-005 (8eda2b73) and FND-007 (630728ba) |
-| SR-675 | FND-002 | medium | tracks SR-674 FND-006 (8eda2b73) |
+| SR-675 | FND-002 | medium | tracks SR-674 FND-006 (8eda2b73, e3c20e65) |
 | SR-675 | FND-003 | medium | tracks SR-674 FND-002 (3f49b580) |
 | SR-675 | FND-004 | low | 630728ba |
 | SR-675 | FND-005 | low | tracks SR-674 FND-003 (630728ba) |
@@ -153,3 +153,16 @@ Checked clean at efa42552:
 Gate: `make ci` at efa42552 exit 0 (`make-ci-r1.log`).
 
 **Re-review verdict: not mergeable yet.** One medium (FND-013) remains, and it is a tests-only fix.
+
+## Coder dispositions (round 3, e3c20e65)
+
+The re-review's own findings (FND-013 to FND-018), fixed in this round.
+
+| ID | Severity | Fixed in |
+| --- | --- | --- |
+| FND-013 | medium | e3c20e65. Unit tests for a record refusal (exits by its catalog code -- `resource_exhausted`/`ancestor-steps` gives 22), a family refusal with no record, a bare kernel refusal (exit 20), every `location.origin` kind including `type-declaration`, the `CheckedInvariant` and `CallFailure::Fault` fault envelopes (stage `call`, code `runtime_invariant`, `details {stage, invariant}`, exit 30), and a direct `convert_call_failure` test. Four mutants killed: `refusal_exit_code` forced to 20, the exit-30 special case disabled, `SpineOrigin`'s `rename_all` flipped to `snake_case`, and the fault `details.stage` filled from `invariant()`. |
+| FND-014 | low | e3c20e65. `Selected::compile` takes the already-read `FormalSource`; `program.source` is read exactly once even under `quire-extraction`. |
+| FND-015 | low | e3c20e65. `qsl_eval_aliases` now also resolves a private `type` alias naming `qsl_eval`, fixed point over the file's own `type` items. New probe `tc_452_spine_surface_check_resolves_a_private_type_alias`. |
+| FND-016 | low | e3c20e65, per Peter's ruling: `compile`/`Compiled` retain and return the `Source` objects `qsl_cst::parse` already built (the unit's and every resolved library's); `spine::run` reuses them instead of re-reading, so `supplied_sources` and its defensive fault are gone. |
+| FND-017 | low | e3c20e65. FR-027's Outputs section now states a `1-draft` `program` carries no `clauses` key at all, any presence (including `[]`) refusing, consistent with FR-100. The flipped test stays, tagged `FR-027-AC-7`. |
+| FND-018 | low | e3c20e65. The stale FND-004 comment is fixed; FND-007's severity is corrected to medium above; `tc_450_step_4_malformed_work_units_refuses` now includes a `null` case. |
