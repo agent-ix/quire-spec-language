@@ -200,6 +200,9 @@ pub enum RunCause {
     /// take.
     #[error("a complete-V1 program compiles alone; the request selects {0}")]
     CompleteSelection(CompleteSelection),
+    /// The request's `libraries` are refused before any library is read.
+    #[error("the request's libraries are refused: {0}")]
+    Libraries(LibrarySelection),
     /// Spine compile of a `1-draft` program refused at one stage.
     #[error("{}", .0.refusal)]
     Spine(Box<SpineFailure>),
@@ -245,7 +248,7 @@ impl RunCause {
             Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
             Self::Input(error) => error.code,
             Self::Lowering { error, .. } => error.code.code(),
-            Self::CompleteSelection(_) => Code::InvalidRequest,
+            Self::CompleteSelection(_) | Self::Libraries(_) => Code::InvalidRequest,
             Self::Spine(failure) => failure.refusal.code(),
         }
     }
@@ -354,7 +357,9 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
         let mut intake = intake(
             directory,
             FileCounts {
-                programs: 1,
+                // A library source is a program source a `1-draft` program
+                // imports, and counts toward the same file limits (FR-027).
+                programs: request.libraries.len().saturating_add(1),
                 models: request.models.len(),
                 snapshots: 0,
                 invocations: 0,
@@ -368,6 +373,9 @@ pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
         let source = intake.source(&request.program.source)?;
         match Edition::of(source.source())? {
             Edition::Complete => complete(&request, &mut intake, source.source()),
+            Edition::Native if !request.libraries.is_empty() => {
+                Err(RunCause::Libraries(LibrarySelection::NativeProgram))
+            }
             Edition::Native => {
                 let models = compilation::models(&mut intake, &request.models)?;
                 Ok(compilation::package_of(source, &request.program, &models)?
@@ -447,25 +455,76 @@ fn complete(
             .iter()
             .map(|document| document.source().text().as_bytes()),
     );
+    let spine_failure = |refusal: qsl_replay::spine::CompileRefusal| {
+        RunCause::Spine(Box::new(SpineFailure {
+            source: source.identity().clone(),
+            path: source.path().to_owned(),
+            span: refusal.region().and_then(|region| source.render(region)),
+            refusal,
+        }))
+    };
+    let dependencies = dependency_input(request, intake).map_err(|cause| match cause {
+        LibraryInput::Run(cause) => cause,
+        LibraryInput::Refused(refusal) => {
+            spine_failure(qsl_replay::spine::CompileRefusal::DependencyInput(refusal))
+        }
+    })?;
     qsl_replay::spine::compile(
         source.identity().clone(),
         source.path(),
         source.text().as_bytes(),
         &packages,
-        // native-compile/1's `libraries` member fills this input (FR-027-AC-10,
-        // QSL-255 part b, PR 3).
-        &qsl_replay::spine::DependencyInput::default(),
+        &dependencies,
         qsl_replay::spine::SpineLimits::default(),
     )
     .map(|compiled| compiled.emitted.bytes().to_vec())
-    .map_err(|refusal| {
-        RunCause::Spine(Box::new(SpineFailure {
-            source: source.identity().clone(),
-            path: source.path().to_owned(),
-            span: refusal.region().and_then(|region| source.render(region)),
-            refusal: *refusal,
-        }))
-    })
+    .map_err(|refusal| spine_failure(*refusal))
+}
+
+/// Why the request's `libraries` built no dependency input.
+enum LibraryInput {
+    /// A request or intake refusal.
+    Run(RunCause),
+    /// The dependency input refused two libraries (ADR-015 D-1).
+    Refused(qsl_replay::spine::DependencyInputRefusal),
+}
+
+/// The spine's dependency input from the request's `libraries` (FR-027,
+/// ADR-015 D-1): an empty identity or version refuses as `invalid-request`
+/// before any library file is read; each library source is read under its
+/// source digest.
+fn dependency_input(
+    request: &wire::CompileRequest,
+    intake: &mut Intake<'_>,
+) -> std::result::Result<qsl_replay::spine::DependencyInput, LibraryInput> {
+    for library in &request.libraries {
+        if library.identity.is_empty() {
+            return Err(LibraryInput::Run(RunCause::Libraries(
+                LibrarySelection::EmptyIdentity,
+            )));
+        }
+        if library.version.is_empty() {
+            return Err(LibraryInput::Run(RunCause::Libraries(
+                LibrarySelection::EmptyVersion,
+            )));
+        }
+    }
+    let libraries = request
+        .libraries
+        .iter()
+        .map(|library| {
+            let read = intake.source(&library.source).map_err(LibraryInput::Run)?;
+            let source = read.source();
+            Ok(qsl_replay::spine::SuppliedLibrary {
+                identity: library.identity.clone(),
+                version: library.version.clone(),
+                source: source.identity().clone(),
+                path: source.path().to_owned(),
+                bytes: source.text().as_bytes().to_vec(),
+            })
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    qsl_replay::spine::DependencyInput::new(libraries).map_err(LibraryInput::Refused)
 }
 
 /// A request selection a complete-V1 (`1-draft`) program does not take.
@@ -483,6 +542,28 @@ impl std::fmt::Display for CompleteSelection {
         f.write_str(match self {
             Self::NativeModels => "native rule-model sources",
             Self::Clauses => "clause bindings",
+        })
+    }
+}
+
+/// Why a native-compile/1 request's `libraries` refuse (FR-027).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum LibrarySelection {
+    /// A `0-draft` program takes no library.
+    NativeProgram,
+    /// A library has an empty identity.
+    EmptyIdentity,
+    /// A library has an empty version.
+    EmptyVersion,
+}
+
+impl std::fmt::Display for LibrarySelection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::NativeProgram => "a 0-draft program takes no library",
+            Self::EmptyIdentity => "a library has an empty identity",
+            Self::EmptyVersion => "a library has an empty version",
         })
     }
 }
