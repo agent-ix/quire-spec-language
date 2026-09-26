@@ -335,8 +335,9 @@ Implemented under QSL-282:
 Implemented under QSL-281:
 
 - The key table has a kernel `Refusal::ForeignReference` row: `required` the
-  universe already in force, `supplied` the value tested against it, both
-  lowercase hex, agreeing with the family `ModelQueryRefusal` row's shape.
+  universe already in force, `supplied` the universe of the value tested
+  against it, both lowercase hex, agreeing with the family `ModelQueryRefusal`
+  row's shape.
   The kernel `Refusal::ForeignReference` variant now carries both universes
   (`quire-exact` fields `required`/`supplied`), and `kernel_refusal_record`
   builds the record from them.

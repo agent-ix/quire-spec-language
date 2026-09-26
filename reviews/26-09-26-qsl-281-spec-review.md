@@ -59,3 +59,9 @@ FND-005 wording.
 | FND-002 | fixed | 7f4bd626: the Status sentence moved into its own "Implemented under QSL-281" group |
 | FND-003 | fixed | 7f4bd626: TC-428 Status names `ForeignReference` as backed for step 4 |
 | FND-004 | fixed | 7f4bd626: FR-100 states required = universe in force and supplied = the tested one, for both raise sites |
+
+Round 2, re-checked at 9045639a. Against main, FR-096 still changes only in the kernel row and the QSL-281 Status group.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | 9045639a: the row reads "`supplied`: the universe of the value tested against it, as lowercase hex", agreeing with FR-100 |

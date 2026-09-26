@@ -77,3 +77,5 @@ Round 1, re-checked at 6c213eb2 (fix round 7f4bd626; rebased on main at 87f54643
 | FND-001 | fixed | 7f4bd626: `member_equal_stop` calls `plan_pairs(member, candidate)`; c10 expects required=u1 supplied=u2; c06b covers `Contains` |
 | FND-002 | fixed | 7f4bd626: `tc_322_foreign_reference_universes_are_not_swapped` deleted |
 | FND-003 | fixed | 7f4bd626: qsl-replay asserts literal `"01"`/`"02"` x32; the CLI test builds its record through `kernel_refusal_record` and asserts literals |
+
+Round 2, re-checked at 9045639a (spec-only; no code change since 6c213eb2). Every round-1 outcome stands; nothing is open.

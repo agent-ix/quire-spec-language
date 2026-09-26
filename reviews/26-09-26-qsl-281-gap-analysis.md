@@ -46,3 +46,5 @@ Round 1, re-checked at 6c213eb2.
 | --- | --- | --- |
 | FND-001 | fixed | 6c213eb2: FR-096's key table gains a kernel `Refusal::ForeignReference` row owning the operand rule (code order corrected in 7f4bd626; FR-100 states it too) |
 | FND-002 | fixed | 7f4bd626: `c06b_contains_a_foreign_universe_probe_refuses_required_is_the_member` drives a checked `Contains` through `evaluate`; killed the membership-swap mutant |
+
+Round 2, re-checked at 9045639a (spec-only; no code change since 6c213eb2). Every round-1 outcome stands; nothing is open.
