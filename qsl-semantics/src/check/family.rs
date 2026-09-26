@@ -2860,7 +2860,7 @@ pub(crate) mod checking_tests {
             }
         };
         let budget = |work_units| {
-            Meter::new(ScalarLimits {
+            Meter::new(quire_exact::ScalarLimits {
                 work_units,
                 ..SCALAR_LIMITS_UNLIMITED
             })
