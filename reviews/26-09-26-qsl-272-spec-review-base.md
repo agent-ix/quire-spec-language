@@ -67,6 +67,7 @@ Disposition pass at `agent-ix/quire-spec-language@be1851894b7dbe9f47a606186f1819
 | --- | --- | --- |
 | FND-001 | fixed be185189 | FR-101 has a new "Existing test disposition" table (FR-101:221-252). It covers all 23 `#[test]` functions in finite_simulation.rs, and I counted 23. Each has a retag, replace or delete target at a TC step and an AC. `multi_initial_sample_picks_the_sampler_selected_start` is replaced by TC-454 step 6. New AC-9 covers initial admission, coalescing, `max_states` 0 and exploring with no initial state. New AC-10 covers `GeneratorMismatch`, `EmptyInitial` and `StepLimit`. |
 | FND-002 | fixed be185189 | TC-453 step 1 now makes `a`'s post-state key greater than `z`'s. Step 2 makes `step(10)`'s greater than `step(9)`'s. Step 5 requires key(1) > key(2) and key(3) > key(4). Only FIFO order and transition-identity order give the stated frontiers. Step 4 adds a duplicate initial state under `max_states` 3, which also catches an engine that does not coalesce. |
+| FND-003 | fixed 561abc41 | FR-101 makes `explore`, `sample` and the `Sampler` trait `pub(crate)`, so `explore_request` and `sample_request` are the only public entries (Behavior and Status). Every step in TC-453, TC-454 and TC-455 names its entry, with a bounded or empty `domains` set; TC-454 steps 1b and 3b are named in-crate unit tests. |
 
 ## New findings (disposition pass)
 
