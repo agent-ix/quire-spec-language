@@ -19,6 +19,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-038
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-096
+    type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-301"
     type: depends_on
 ---
@@ -97,67 +99,91 @@ document, newline-terminated, and nothing else. Its members are:
     exactly, with a leading `-` when negative and no other sign, leading
     zero or exponent ([FR-038](FR-038-encode-exact-protocol-numbers.md)'s
     integer spelling, at any magnitude);
-  - `{"kind": "refused", "code": "<catalog code>", "cause": "<cause>"}` for
-    a kernel refusal, with a `details` member
-    `{"violation": "below-minimum"|"above-maximum"}` for
-    `Refusal::CardinalityOutOfBound` only, and
-    `{"kind": "refused", "code": "<catalog code>"}` for a family refusal;
+  - `{"kind": "refused", ...}`, with the members the refusal table below
+    states;
   - `{"kind": "undefined", "reason": "<reason>"}`;
   - `{"kind": "incomplete", "limit": "<accounting counter>"}`, the
     exhausted counter's `quire.value.accounting/v1` member name.
 
-The command renders every S6a outcome through one total mapping from its
-ADR-013 O-16 category to this document and an FR-301 exit status:
+The command renders every S6a outcome through one total mapping to this
+document and an FR-301 exit status. Each outcome's category is its
+ADR-013 O-16 category, except the kernel `Refusal::CheckedInvariant`, which
+O-16 lists as a refusal and which is an internal failure by
+[FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
+(ADR-013 T-4 `InternalFault`).
 
 | S6a outcome | `outcome` | Exit |
 |-------------|-----------|------|
 | `Outcome::Completed(v)` | `completed`, `value` from `v` | 0, whatever value it completes |
-| `Outcome::Refused(r)`, kernel refusal `r` other than `ForeignReference`, `CardinalityOutOfBound` or `CheckedInvariant` | `refused`, `code` `invalid_runtime_input`, `cause` from the table below | 20 |
-| `Outcome::Refused(Refusal::ForeignReference)` | `refused`, `code` `foreign_reference`, `cause` `foreign_reference` | 20 |
-| `Outcome::Refused(Refusal::CardinalityOutOfBound)` | `refused`, `code` `cardinality_out_of_bound`, `cause` `cardinality_out_of_bound`, `details.violation` | 20 |
-| `Outcome::Refused(Refusal::CheckedInvariant)` | `refused`, `code` `runtime_invariant`, `cause` `checked_invariant` | 30 |
-| `FamilyResult::Refused(c)` | `refused`, `code` `c`'s catalog code, no `cause` | that code's FR-301 exit status (`Code::exit_code`) |
-| `Outcome::Undefined(u)`, kernel reason `u` | `undefined`, `reason` from the table below | 20 |
+| `FamilyResult::Refused(c)` or `Outcome::Refused(r)`, for which FR-096 builds a record | `refused`, as the refusal table's record row | the record code's exit status (below) |
+| `FamilyResult::Refused(c)`, for which FR-096 builds no record | `refused`, as the refusal table's family row | `c`'s code's exit status (below) |
+| `Outcome::Refused(r)` other than `CheckedInvariant`, for which FR-096 builds no record | `refused`, as the refusal table's kernel row | 20 |
+| `Outcome::Refused(Refusal::CheckedInvariant)`, or `CheckedPackage::call` returning `CallFailure::Fault` | none: an internal failure (below) | the internal-failure exit status (below) |
+| `Outcome::Undefined(u)`, kernel reason `u` | `undefined`, `reason` from the undefined table below | 20 |
 | `FamilyResult::Undefined(u)` | `undefined`, `reason` the catalog's `UndefinedReason` spelling (`precondition-false`, `absent-key`) | 20 |
 | `Outcome::Incomplete(i)` | `incomplete`, `limit` `i`'s counter | 22 |
 
-Each kernel refusal's `cause` is the kernel's own `Refusal::code()`
-spelling (`quire-exact`, snake case), the one spelling source for kernel
-refusals. Each kernel undefined reason is spelled in kebab case; the kernel
-defines no spelling method for `Undefined`.
+The refused outcome's members:
 
-| Kernel value | Spelling |
-|--------------|----------|
-| `Refusal::InexactDecimal` | `inexact_decimal` |
-| `Refusal::DecimalOutOfDomain` | `decimal_out_of_domain` |
-| `Refusal::DivisionPairOutOfDomain` | `division_pair_out_of_domain` |
-| `Refusal::ModuloOutOfDomain` | `modulo_out_of_domain` |
-| `Refusal::TextLengthOutOfDomain` | `text_length_out_of_domain` |
-| `Refusal::IntegerOutOfDomain` | `integer_out_of_domain` |
-| `Refusal::RationalOutOfDomain` | `rational_out_of_domain` |
-| `Refusal::IeeeNotExact` | `ieee_not_exact` |
-| `Refusal::IeeeNanPayloadNotRepresentable` | `ieee_nan_payload_not_representable` |
-| `Refusal::IeeeRationalOutOfDomain` | `ieee_rational_out_of_domain` |
-| `Refusal::ForeignReference` | `foreign_reference` |
-| `Refusal::CardinalityOutOfBound` | `cardinality_out_of_bound`, with `details.violation` its `BoundViolation::as_str` tag (`below-minimum` or `above-maximum`) |
-| `Refusal::CheckedInvariant` | `checked_invariant` |
+| Refusal | Members |
+|---------|---------|
+| Record: FR-096 builds a `RefusalRecord` for the call's `Evaluation` (`Evaluation::refusal_record`: the family cause's `refusal_record`, or `kernel_refusal_record`) | `code` and `cause`, the record's `CatalogCode`; `fields`, an object holding each of the record's catalog fields as a JSON string, the field's FR-096 rendering; `locus`, when the record carries one; `location`, when `Evaluation.location` is present |
+| Family, no record: a family cause for which FR-096 builds no record (it has no FR-096 key-table row) | `code` and `cause`, the cause's `catalog_code()`; no `fields` member; `location`, when `Evaluation.location` is present |
+| Kernel, no record: a kernel refusal other than `CheckedInvariant` for which FR-096 builds no record | no `code`, `cause` or `fields` member; `location`, when `Evaluation.location` is present |
+
+- `locus` renders the record's `Locus::Region` (the only locus S6a builds,
+  FR-096): `{"source_digest": "<sha256: source digest of the region's
+  source>", "span": S}`, where `S` is the region's span in the
+  native-run-result/1 span form (`start` and `end`, each `byte`, `line` and
+  `column`). The byte offsets are the region's. The line and column are
+  computed over the bytes of the `Source` whose reference equals the
+  region's reference: the program's source or one supplied library's,
+  whichever the refusal arose in. A locus naming no supplied source is an
+  internal failure (below).
+- `location` renders `Evaluation.location`, the `check::Location` the
+  outcome arose at: `{"origin": O, "path": [<child index>, ...]}`, where `O`
+  is `{"kind": "body", "function": "<name>", "index": <declaration index>}`,
+  `{"kind": "measure", "function": "<name>", "index": <declaration
+  index>}`, `{"kind": "expression"}` or `{"kind": "type-declaration",
+  "name": "<name>"}`.
+- A record's or cause's exit status is `Code::exit_code` of the `Code` its
+  code string names, found by `Code::from_code` (the `Code::all()` entry
+  whose `as_str` equals it). A code string no `Code` names exits 20.
+
+At catalog revision `1-draft.7`, `kernel_refusal_record` builds a record for
+`CardinalityOutOfBound` only, `cardinality_out_of_bound` with cause
+`below-minimum` or `above-maximum` and fields `collection`, `bound` and
+`count` (FR-096 key table), exit 20. Every other kernel refusal but
+`CheckedInvariant` renders by the kernel, no-record row, exit 20.
+
+The kernel defines no spelling method for `Undefined`, and FR-096 spells no
+kernel undefined reason, so FR-100 spells them in kebab case:
+
+| Kernel reason | Spelling |
+|---------------|----------|
 | `Undefined::DivisionByZero` | `division-by-zero` |
 | `Undefined::IeeeNotFinite` | `ieee-not-finite` |
 | `Undefined::EmptyReduction` | `empty-reduction` |
 | `Undefined::NoneValue` | `none-value` |
 
-`ForeignReference` and `CardinalityOutOfBound` take their own catalog
-codes, `foreign_reference` and `cardinality_out_of_bound` (exit 20). Every
-other kernel refusal except `CheckedInvariant` is a defined result the
-call's value domain does not admit, so it is refused runtime input
-(`invalid_runtime_input`, 20). `CheckedInvariant` is a checked-program
-invariant failing during evaluation, which is unreachable for an admitted
-program (`quire-exact` `Refusal::CheckedInvariant`). It is an internal
-failure (ADR-013 O-16's internal-failure row,
-`runtime_invariant`/`established-invariant-broken`), and exits 30, the tool
-failure status of QSpec FR-301's exit contract (`0` completed without
-violation, `10` logical violation, `20` invalid/refused input, `21`
-unsupported, `22` incomplete and `30` tool failure).
+### Internal failure at S6a
+
+A call whose outcome is the kernel `Refusal::CheckedInvariant`, for which
+`CheckedPackage::call` returns `CallFailure::Fault(fault)`, or whose
+record's locus names a region no supplied source's reference equals, writes
+nothing
+to stdout. It writes FR-026's native-run-result/1 command-error envelope to
+stderr with stage `call`, code `runtime_invariant` and `details`
+`{"stage": "<fault stage>", "invariant": "<fault invariant>"}`, the
+`InternalFault`'s stable identifiers. For `CheckedInvariant` they are stage
+`S6a` and invariant `checked-program-invariant`; for `CallFailure::Fault`,
+the fault's own; for a locus naming no supplied source, stage `spine-run`
+and invariant `locus-source-supplied`. It exits 30, the tool-failure status of QSpec FR-301's exit
+contract (`0` completed without violation, `10` logical violation, `20`
+invalid/refused input, `21` unsupported, `22` incomplete and `30` tool
+failure). A checked-program invariant failing is a tool failure, so this
+path exits 30 directly and does not take its exit status from
+`Code::exit_code`.
 
 ### Refusals before S6a
 
@@ -242,8 +268,17 @@ exit 30.
 - `qsl_replay::spine::run` shall call the function through
   `CheckedPackage::call` under the given accounting limits and return the
   compiled package's `package_id` with the call's outcome, converted to the
-  `outcome` member's category, code, cause, reason and counter by the
-  mapping and spellings above.
+  `outcome` member by the mapping above, a refusal carrying the FR-096
+  record the call's `Evaluation` builds, if any, the family cause's
+  `catalog_code()` otherwise, and `Evaluation.location`.
+- If the call's outcome is the kernel `Refusal::CheckedInvariant`, then
+  `qsl_replay::spine::run` shall return an FR-096 `InternalFault` with stage
+  `S6a` and invariant `checked-program-invariant`.
+- If `CheckedPackage::call` returns `CallFailure::Fault`, then
+  `qsl_replay::spine::run` shall return that `InternalFault`.
+- If a record's locus names a region whose reference equals no supplied
+  source's, then `qsl_replay::spine::run` shall return an `InternalFault`
+  with stage `spine-run` and invariant `locus-source-supplied`.
 - The `qsl_replay` crate shall name no `qsl_eval` path in a public item of
   `qsl_replay::spine` or in a re-export. The types `qsl_replay::spine::run`
   takes and returns are `qsl_replay`, `qsl_foundation`, `qsl_semantics` or
@@ -261,7 +296,7 @@ exit 30.
 | FR-100-AC-6 | `seven` with `work_units` 0 writes outcome `{"kind": "incomplete", "limit": "work_units"}`, exit 22. | Test (TC-451) |
 | FR-100-AC-7 | `qsl_replay::spine::run` called directly over each AC-1, AC-4, AC-5 and AC-6 input returns the same `package_id`, outcome category, value, code, reason, counter, and parameter name or position the CLI renders. The root crate names `qsl-eval` in no dependency table (TC-390). | Test (TC-452) |
 | FR-100-AC-8 | No public item of `qsl_replay::spine`, and no `qsl_replay` re-export, names a `qsl_eval` path; a `pub use` of a `qsl_eval` item from `qsl_replay`, or a `qsl_eval` type in `spine::run`'s signature, fails the check. | Test (TC-452) |
-| FR-100-AC-9 | The outcome mapping converts a constructed `Outcome::Completed` of each value kind, `Outcome::Refused` of each of the thirteen kernel refusals, `Outcome::Undefined` of each of the four kernel reasons, `Outcome::Incomplete`, `FamilyResult::Refused` and `FamilyResult::Undefined` of each family reason into the `outcome` member and exit status the mapping tables state, with each spelling as tabled. | Test (TC-452) |
+| FR-100-AC-9 | The outcome mapping converts a constructed `Outcome::Completed` of each value kind, `Outcome::Refused` of each of the thirteen kernel refusals, `Outcome::Undefined` of each of the four kernel reasons, `Outcome::Incomplete`, `FamilyResult::Refused` with and without an FR-096 key-table row, `FamilyResult::Undefined` of each family reason, and a `CallFailure::Fault` into the `outcome` member and exit status the mapping tables state: a record renders its code, cause, fields (JSON strings) and locus; a family cause without a record renders its `catalog_code()` with no `fields`, exiting by that code (`AncestorSteps`, `resource_exhausted`, exits 22); a kernel refusal without a record renders `{"kind": "refused"}` plus `location` (exit 20); and `CheckedInvariant` and `CallFailure::Fault` are `runtime_invariant` command errors with their stage and invariant in `details`, at the internal-failure exit status. | Test (TC-452) |
 
 ## Dependencies
 
@@ -279,13 +314,35 @@ exit 30.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §5 and OQ-1: spine `run` calls a named checked function.
 - ADR-013 O-16: the outcome categories.
+- [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md):
+  the refusal record a refused outcome renders, and `CheckedInvariant` as an
+  `InternalFault`.
 - QSpec FR-301: the six exit codes.
 
 ## Status
 
-Specified under QSL-271 (A05-1). Not implemented. `quire-exact`'s
-`Refusal::code()` gains arms for the nine variants it returns `None` for
-today (`InexactDecimal`, `DecimalOutOfDomain`, `DivisionPairOutOfDomain`,
+Specified under QSL-271 (A05-1). Not implemented.
+
+The refused outcome renders FR-096's `RefusalRecord`, so its kernel rows
+follow FR-096's status. At catalog revision `1-draft.7` only
+`CardinalityOutOfBound` has a record. Eight kernel causes
+(`InexactDecimal`, `DecimalOutOfDomain`, `DivisionPairOutOfDomain`,
 `ModuloOutOfDomain`, `TextLengthOutOfDomain`, `IntegerOutOfDomain`,
-`RationalOutOfDomain`, `IeeeNotExact`, `CheckedInvariant`), with the
-spellings tabled above, so that it is total and the one spelling source.
+`RationalOutOfDomain`, `IeeeNotExact`) render the kernel no-record form
+until catalog revision `1-draft.8` (STD-110) gives them codes and FR-096's
+map gives them records. The two IEEE causes
+(`IeeeNanPayloadNotRepresentable`, `IeeeRationalOutOfDomain`) do the same,
+citing STD-110, pending confirmation that it covers them.
+`ForeignReference` does the same until the `quire-exact` variant carries the
+universes FR-096's `foreign_reference` row requires (QSL-281). A later
+record renders by the record row with no change to FR-100.
+
+Until then the kernel no-record form loses information the kernel holds:
+the eleven causes are indistinguishable in `spine-run-result/1`, and the
+kernel payloads (`DivisionPairOutOfDomain`'s admitted flags,
+`IeeeNotExact`'s would-be flags) and `Refusal::code()`'s own spellings are
+not rendered. `location` is the only position they carry.
+
+The conversion of `CheckedInvariant` to an `InternalFault` is
+`qsl_replay::spine::run`'s, since the evaluator still returns it as a
+refusal (FR-096 Status).
