@@ -244,10 +244,13 @@ impl<'a, D> CheckContext<'a, D> {
 /// each required by the trait's own associated-function signature, so a
 /// family that omits either fails to compile. `requirements` (the
 /// contract's sixth part, FR-062-AC-4) moved to QSL-140 with ADR-014 §11;
-/// see [`crate::family::requirements`]'s module doc. The `package` and
-/// `evaluate` parts and FR-062-AC-1/AC-6/AC-8/AC-9 remain QSL-152's.
+/// see [`crate::family::requirements`]'s module doc.
 ///
-/// **`package` is deleted (PR #262 review, findings F1/F2).** An earlier
+/// **No `package` part (QSL-242, ADR-012 §2 "Packaging").** A family's
+/// packaging is its `check` lowering to the checked semantic graph
+/// (FR-093); `qsl_package::emit_checked` writes every family's nodes, one
+/// arm per node tag, and is all-or-nothing over the nodes a node names
+/// (FR-062-AC-9). History: an earlier
 /// version of this trait also required `package(checked: &Self::Checked,
 /// out: &mut Vec<u8>)`. `ValueFunctionFamily`'s implementation emitted v2
 /// bytes into `out`, but `CheckedPackage::emit_function_package_v2` (the
@@ -256,18 +259,8 @@ impl<'a, D> CheckContext<'a, D> {
 /// `decode_v2` made up) passed it a scratch `Vec` that it never read back,
 /// then built its actual returned bytes independently through
 /// `family::emit_v2` -- gut `package`'s body and
-/// `emit_function_package_v2`'s output was byte-identical. A hook nothing
-/// consumes is the same fabricated-surface shape as the deleted
-/// `requirements`, so it is deleted rather than wired up speculatively.
-/// `qsl_package::emit_checked` is this family's real v2 emitter now,
-/// called directly, not through this trait. FR-062's packaging-related
-/// rows (the `package` mention in AC-1, and AC-9's fault-injection
-/// criterion) are recorded unbacked rather than backed by an unconsumed
-/// hook; QSL-152 owns both. A family whose packaging genuinely needs a
-/// shared, trait-level hook (for example because several families' v2
-/// nodes must compose into one all-or-nothing emission a shared caller
-/// drives) adds `package` back as part of that work, with a real consumer
-/// in the same change.
+/// `emit_function_package_v2`'s output was byte-identical, so PR #262
+/// review deleted it as a hook nothing consumed (findings F1/F2).
 pub trait FamilyContract {
     /// This family's parsed semantic form (typed subnodes; ADR-012 §4).
     type Form;

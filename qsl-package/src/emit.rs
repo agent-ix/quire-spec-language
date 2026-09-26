@@ -50,9 +50,9 @@
 //! not hold (a declared unit node, which lowering names by key but does not
 //! build, so a `scalar_type`/`compound_unit` node over one), a nominal node
 //! whose owner the lock does not select, and every node that names an
-//! omitted one. Every other node is written (FR-062-AC-9: a refusal is per
-//! item), `value`/`parameter` nodes and recursion-group application nodes
-//! included (IR-280, IR-242).
+//! omitted one. Every other node is written (FR-062-AC-9: all-or-nothing
+//! over the nodes a node names), `value`/`parameter` nodes and
+//! recursion-group application nodes included (IR-280, IR-242).
 //! [`Emission::omitted`] lists each omitted node and its cause.
 //!
 //! # Nominal nodes

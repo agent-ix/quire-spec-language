@@ -222,7 +222,7 @@ The shared contract is the minimum every family implements. It has six parts.
 | Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: the QSL `check` core (ADR-011, #209) |
 | Requirements | A pure function of a checked item, `requirements()`, returns one claim per claim site the item carries: a clause, or a scalar operation application in a `Value` function body (FR-062 "Requirement records of a value function"). Each claim holds its site, its one capability kind (FR-057, FR-290) and its extent, classified by `check` with each domain keyed by the binder that carries it. A claim form whose FR-057 kind is none yields no claim and requests no backend (§7.2). After lowering, S3 keys each claim by its site's occurrence key, renames each binder to its parameter node, and derives the record's `Requirements`: the kind, the extent and any authored bound (§13.5). | kinds from agent-ix/quire-specification#134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
 | Structured outcome | A family `check` returns the checked node or a refusal with a family-typed cause. A family `check` that reaches a limit or exhausts the meter returns `StageFailure::Limit(LimitExceeded)` with limit kind work budget (ADR-013 T-4); `Incomplete` is an S6a outcome only. Each cause maps to a stable catalog code through one exhaustive `catalog_code()`. | ADR-013 O-16 (outcomes) and O-17 (refusals): each family has its own `Cause` enum with `catalog_code()`; the shared part is `RefusalRecord` in F `diagnostic` (O-17); the kernel `Refusal` carries kernel causes only |
-| Stage hooks | The family implements a hook for each stage in §8 that it takes part in. Every hook takes checked input; none takes CST, tokens or display strings. | this record |
+| Stage hooks | The family implements a hook for each stage in §8 that it takes part in: `check` and `requirements` at S3, and `evaluate` at S6a for every family except `Relation`. Every hook takes checked input; none takes CST, tokens or display strings. S4 has no family hook ("Packaging" below). | this record |
 
 Design-level shape of the contract:
 
@@ -246,8 +246,6 @@ trait FamilyContract {
         // occurrence recorded at its site's own location and renames each
         // binder to its parameter node, giving the record's `Requirements`
         // (§13.5).
-    fn package(checked: &Self::Checked, out: &mut PackageEmitter)
-        -> Result<(), PackageRefusal>;
 }
 
 trait ReferenceEvaluation: FamilyContract {
@@ -292,8 +290,43 @@ claims reach S6a as clause expressions, not as a `Relation` declaration
 (owner ruling on FR-090-OQ-2, ADR-013 O-16). At a lowering or proof stage, the family has an explicit arm that
 returns `unsupported` with a catalog code (§5.1).
 
-`package` is all-or-nothing. A family either emits every v2 node for the item
-or emits none and returns the refusal.
+**Packaging.** A family's packaging is its `check` lowering. `check` lowers
+each checked item to the nodes of the checked semantic graph and mints their
+keys at E3 (FR-093, ADR-011 FB-13). The layer-4 v2 emitter
+(`qsl_package::emit_checked`) writes every family's nodes: it matches the
+node tag with one arm per tag and no `_` arm, so a new node tag with no v2
+arm fails to compile (ADR-013 C-03), and a node whose (tag, form) IR's v2
+vocabulary does not decode is omitted with `UnsupportedForm`, its
+dependents with it. It builds no body term and mints no key
+(FR-093-CON-2). `FamilyContract` has no `package` part.
+
+The emitter is all-or-nothing over the nodes a node names. It writes a node
+only when it writes every node that node names: its `dependencies`, its
+`semantic_type` and its body's type annotations. When it omits a node, it
+omits every node that names it, transitively, so the bytes never hold a
+declaration node without a node its body names. An emission that fails
+after it has read some nodes returns its refusal and no bytes (FR-062
+"Packaging is all-or-nothing").
+
+Decided under QSL-242, for these reasons:
+
+- Nothing family-specific is left at S4. What a family's checked item
+  becomes in the package is fixed by its S3 lowering, and FR-093-CON-2
+  forbids the `package` crate from building a term or a key. A per-family
+  S4 hook would have no decision of its own to make.
+- `FamilyContract` is in the layer-3 `check` core. A method that writes v2
+  nodes would name layer-4 and `quire-contract-model` types from layer 3,
+  which ADR-011 §6.1 forbids ("`check` never imports
+  `quire-contract-model`"). `ReferenceEvaluation` sits in layer 5 as a
+  subtrait because evaluation is family-specific behaviour; packaging is
+  not, so the same placement has nothing to hold.
+- The closed-seam guarantee the hook was meant to give already holds at the
+  emitter: its node-tag `match` and IR's (tag, form) decode are
+  exhaustive, so a new family's nodes fail to compile, or are omitted with
+  `UnsupportedForm` and their dependents with them, until they have an arm.
+- The one `package` hook ever implemented (#214, deleted in PR #262 review,
+  F1/F2) had no consumer: its caller discarded its output and built the
+  bytes another way.
 
 **#214's implementation record.** #214 (FR-062/FR-065) implements this
 contract for real, migrating `Value`'s function-declaration and
@@ -333,13 +366,8 @@ one PR:
   QSL-248/G2, along with the second `quire.checked-function-package/v2`
   producer it belonged to), wrote `package`'s output into a scratch buffer
   it never read back, then built its actual returned bytes independently
-  through `family::emit_v2` -- a hook nothing consumed, the same
-  forward-declared-shape hazard `requirements` already is. The family whose
-  migration first genuinely needs a shared,
-  trait-level packaging hook (for example because several families' v2
-  nodes must compose into one all-or-nothing emission a shared caller
-  drives) adds `package` back then, with a real consumer in the same
-  change.
+  through `family::emit_v2` -- a hook nothing consumed. QSL-242 settled
+  that the contract has no `package` part ("Packaging" above).
 - `StageFailure` carries only `Limit`, not `Fault` (this paragraph's
   earlier text) and not a family-typed `Refused`. `Fault(InternalFault)`'s
   one construction site compared `mint_declaration_identity`'s output
@@ -526,7 +554,7 @@ listed seam.
 
 | # | Closed enum | Seams that must fail to compile | Owner |
 |---|---|---|---|
-| S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage. The ADR-011 S6a seam dispatches over the S6a family kind, a closed enum beside `ReferenceEvaluation` in layer-5 `value::expression` (ADR-011 §6.2 `family` row) with one variant per family that implements `ReferenceEvaluation`, matched with one arm per variant and no `_` arm, so `Relation` has no evaluation arm (§2, FR-090-AC-4). The calls into a family's `check`, `package`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
+| S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage. The ADR-011 S6a seam dispatches over the S6a family kind, a closed enum beside `ReferenceEvaluation` in layer-5 `value::expression` (ADR-011 §6.2 `family` row) with one variant per family that implements `ReferenceEvaluation`, matched with one arm per variant and no `_` arm, so `Relation` has no evaluation arm (§2, FR-090-AC-4). The calls into a family's `check`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
 | S2 | parsed form enum (for expressions, the one `Expression` enum) and the leading-token kind enum | parser entry table; check seam | QSL, owning family |
 | S3 | checked node enum (today `NodeKind`) | evaluator, v2 emitter, requirement derivation | QSL, owning family |
 | S4 | family `Cause` enums | `catalog_code()` | owning family |
@@ -769,7 +797,7 @@ The contract spans six stages. The arrow numbers are AD-016's.
 | Stage | AD-016 arrow | Family hook | Owner | Closed seams | Backend absence or unsupported form |
 |---|---|---|---|---|---|
 | Check | 1 | `check`, `requirements` | QSL family | S1–S4, S7 | not consulted; requirements recorded as data |
-| Package | 2 | `package` (checked-package/v2 emission arm, all-or-nothing) | QSL family; wire in QSpec | S1, S3 | per-item requirement records carried in the in-process `CheckedPackage`, not dropped; the v2 `capability_report` is FR-322's feature-level report |
+| Package | 2 | none: the family's `check` lowering (FR-093) is what the v2 emitter writes, through one arm per node tag, all-or-nothing over the nodes a node names (§2 "Packaging") | QSL layer-4 `package`; wire in QSpec | S3 | per-item requirement records carried in the in-process `CheckedPackage`, not dropped; the v2 `capability_report` is FR-322's feature-level report |
 | Lower | 2, 3 | IR `lower` arm per (tag, form); RT op selection | IR, RT | S5, S6 | explicit `unsupported` arm with catalog code |
 | Execute or prove | 4, 5 | candidates and routing (#185, §7.2); CG `negotiate_*` and harness arm per IR form and backend kind; `evaluate` for native execution | #185, CG, QSL | S6, S7, S9 | every disposition from `negotiate_*` (§7.2, §7.3); solver absence after routing (§7.4) |
 | Witness | 6 | the family's witness binding schema, derived from the obligation identity's arguments; the payload is the FR-351 record unchanged | IR (packet, witness and the `WitnessBinding` type); CG builds the family's bindings (AD-016) | S8 | no packet without a counterexample; no placeholder witness |
@@ -1025,9 +1053,9 @@ item settles `invalid-request` with no preference order
 
 | Question | Answer |
 |---|---|
-| ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` and `requirements`, ADR-011 S4 `package`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). A missing hook is a compile error: the S2 and S3 matches that call a family's hooks have one arm per family and no `_` arm, and the S1 stage-participation table has one entry per family (§5.1). At ADR-011 S6a a family that sits out evaluation is absent from the input type (for `Relation`, the S6a family kind has no `Relation` variant), so it has no arm and no refusal (§2). At lowering and proof stages a family that sits out the stage has an explicit, hand-written arm that returns `unsupported` with a catalog code. |
+| ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` (which lowers the family's checked nodes, FR-093) and `requirements`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). ADR-011 S4 has no family hook: the v2 emitter writes every family's lowered nodes (§2 "Packaging"). A missing hook is a compile error: the S2 and S3 matches that call a family's hooks have one arm per family and no `_` arm, and the S1 stage-participation table has one entry per family (§5.1). At ADR-011 S6a a family that sits out evaluation is absent from the input type (for `Relation`, the S6a family kind has no `Relation` variant), so it has no arm and no refusal (§2). At lowering and proof stages a family that sits out the stage has an explicit, hand-written arm that returns `unsupported` with a catalog code. |
 | ADR-011: what ADR-011 S3 records as per-item requirement records | exactly one record per occurrence of a claim site that has `Requirements`: a clause, or a scalar operation application in a `Value` function body (FR-062). The record is keyed by that site's occurrence key (ADR-013 O-07): for an operation application, the application node's `expression` occurrence recorded at the site's own location, so the key names the node CG generates an obligation for and tells two occurrences of it apart. An operation-application record also holds the application's result bound and path condition (FR-062). `request_index` is the bytewise order of those keys, so two identical claims stay distinct. Each entry holds exactly the item's one capability kind (FR-057; vocabulary per agent-ix/quire-specification#134, FR-290), the declared extent and the authored bound (#222), because ADR-011 S3 negotiates nothing (§2, §6). The v2 `capability_report` member is FR-322's feature-level report, not these records. |
-| ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes emitted by the `Value` `package` hook; temporal admission reads the v2 temporal nodes emitted by the `TemporalTrace` `package` hook. QSpec owns their spelling. IR decodes them at v2 intake (agent-ix/quire-contract-ir#141) and admits them there (#218 and #223 with agent-ix/quire-contract-ir#109). |
+| ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes `Value`'s `check` lowers; temporal admission reads the v2 temporal nodes `TemporalTrace`'s `check` lowers. The S4 v2 emitter writes both (§2 "Packaging"). QSpec owns their spelling. IR decodes them at v2 intake (agent-ix/quire-contract-ir#141) and admits them there (#218 and #223 with agent-ix/quire-contract-ir#109). |
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
 | ADR-013: how RT obtains `NodeKey`s | RT holds no `NodeKey`. It sees only `WireNodeId`s from the wire (ADR-013 O-04), in the CG-generated harnesses built from IR wire data. Only QSL converts a `WireNodeId` to a `NodeKey`: ADR-011 E4 and the `replay` facade. |
@@ -1059,7 +1087,8 @@ item settles `invalid-request` with no preference order
 | Marking or converting the QSL crate's remaining string-dispatch sites (outside `qsl-semantics/src/family/*`/`qsl-eval/src/value/expression/*`) so `xtask string-edge` can join the lint gate (FR-064) | [QSL-145](https://linear.app/agent-ix/issue/QSL-145) |
 | `FamilyContract::requirements()` and the `Requirements` type (ADR-012 §2's fourth contract part), moved here from QSL-152 by ADR-014 §11 (FR-062-AC-1's `requirements` half, AC-4) | [QSL-140](https://linear.app/agent-ix/issue/QSL-140) (PR #435) |
 | `Relation`'s absence from S6a's input type (FR-090-AC-4, backed); FR-062-AC-8's S4 cause-bearing-family seam-probe coverage (backed, `CheckCause::code`) | [QSL-152](https://linear.app/agent-ix/issue/QSL-152) |
-| `FamilyContract::package`, a stage hook (§2's sixth part), and AC-9's fault-injection behavior over it (FR-062-AC-1's `package` half, AC-9) | [QSL-242](https://linear.app/agent-ix/issue/QSL-242) |
+| Decision: `FamilyContract` has no `package` part, and S4's all-or-nothing rule is the emitter's omission closure (§2 "Packaging"); FR-062-AC-1, AC-5's third clause and AC-9 amended to match | [QSL-242](https://linear.app/agent-ix/issue/QSL-242) |
+| Tagged tests for the amended FR-062-AC-1 (TC-160 step 1's three compile-fail cases), AC-5's third clause (`check` and `emit_checked` never return `Incomplete`) and AC-9 (TC-160 step 8) | Remaining work: [QSL-283](https://linear.app/agent-ix/issue/QSL-283) |
 | `StageLimits`'/`LimitKind`'s (then `StageLimitKind`) input-bytes, node-count and work-budget limit kinds, with a real producer and consumer for each, and the `evaluate`-hook `Incomplete` outcome once `quire-exact`'s meter-charge API is exported (FR-062-AC-5) | [QSL-153](https://linear.app/agent-ix/issue/QSL-153) |
 | FR-063's S1-S4 seam-probe coverage of the mechanism itself (`xtask seam-probe`'s own end-to-end behavior, dedicated trace-tagged tests), and the checked-in list's coverage across all five of AC-6's named categories (tracked here, though AC-6 stays unbacked until QSL-143/QSL-152/`stage_hooks`'s replacement each land their own share) (FR-063-AC-1, AC-2, AC-3, AC-4, AC-6, AC-7) | [QSL-149](https://linear.app/agent-ix/issue/QSL-149) |
 | Spec defects: FR-063-AC-5's gate-stubbing test, and FR-064-AC-6's second half (the production gate actually invoking `xtask string-edge`'s lint denial) | [QSL-155](https://linear.app/agent-ix/issue/QSL-155) (spec defect) |

@@ -122,6 +122,7 @@ mod runtime_validation;
 mod runtime_workflow;
 mod seam5_retired;
 mod source_map;
+mod spine_run;
 mod standalone;
 mod state_scalar_lowering;
 mod text_enum_identity;
