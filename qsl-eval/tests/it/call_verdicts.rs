@@ -7,9 +7,7 @@
 use ix_trace_rs::trace;
 
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
-use qsl_semantics::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckingLimits, NodeKind, PackageDeclarations,
-};
+use qsl_semantics::check::{CheckCause, CheckMode, CheckingLimits, NodeKind, PackageDeclarations};
 use quire_exact::{IllTypedCause, Integer, ValueType};
 
 use crate::support::type_form::type_form;
@@ -94,7 +92,15 @@ fn a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measu
 
         match &expected {
             None => {
-                body.unwrap_or_else(|r| panic!("{label}: body refused {r:?}"));
+                let graph = body.unwrap_or_else(|r| panic!("{label}: body refused {r:?}"));
+                let g = graph.function_state(1).expect("g is function 1");
+                assert_eq!(g.name, "g", "{label}");
+                assert_eq!(g.body.value_type(), &ValueType::Boolean, "{label}: body");
+                assert!(
+                    matches!(g.body.kind(), NodeKind::Call { function: 0, .. }),
+                    "{label}: body: expected a call to f (function 0), got {:?}",
+                    g.body.kind()
+                );
                 let checked = clause.unwrap_or_else(|r| panic!("{label}: clause refused {r:?}"));
                 assert_eq!(checked.value_type(), &ValueType::Boolean, "{label}");
                 assert!(
@@ -124,7 +130,7 @@ fn a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measu
                 .check(CheckingLimits::default())
                 .expect_err(&format!("{label}: the measure must be refused"));
                 assert!(
-                    measure.iter().any(|r: &CheckRefusal| &r.cause == cause),
+                    measure.iter().any(|r| &r.cause == cause),
                     "{label}: measure refusals {measure:?} lack {cause:?}"
                 );
             }
