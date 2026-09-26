@@ -109,3 +109,25 @@ retagged tests also lost the property they exist to discriminate
   change release behaviour.
 - Error types derive `thiserror::Error`. `NotSimulated` does not implement
   `CatalogCoded`, which the gap analysis (SR-673) covers.
+
+## Dispositions
+
+Disposition pass at 54732520 (rebased; fixes in e8c5f6c7 and 54732520),
+checked against the code and re-run with `rv467/recompute.py`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e8c5f6c7: `Outcome::Cancelled` gains `cause: CatalogCode` and is set to `CANCELLED_CAUSE` = `cancelled`/`caller-cancelled` (explore.rs). Both cancellation tests assert it literally. |
+| FND-002 | fixed | e8c5f6c7: `state_key` and `canonical_bytes` return `Result<_, EncodingRefusal>`, surfaced as `NotSimulated::KeyEncoding` and `ReplayError::KeyEncoding`. FR-101-AC-11 and TC-453 step 9 were added, with a test using the key `2^53 + 1`. `plain_digest` still panics, but it encodes only the engine-built `DrawPreimage`, which is acceptable. |
+| FND-003 | fixed | e8c5f6c7: the test now uses seed 1 and asserts `steps[0].key == key("2")`. Recomputed: seed 1, trace 0, step 0, n=2 selects index 1. The replay has to skip the first-listed `"1"`. |
+| FND-004 | fixed | e8c5f6c7: the fixture is now `z` → `"3"` and `a` → `"9"`, and the test expects `[key("9"), key("3")]`. Sorting by post-state key would give `[3, 9]`, so the test now discriminates. |
+| FND-005 | fixed | e8c5f6c7: byte order is now pinned by an n=2 vector `0,0,0,0,1` and an n=7 vector `0,2,6,2,4`, which match my recompute. The little-endian reading differs. The rejection half is not fixed: see R1-FND-001. |
+| FND-006 | fixed | e8c5f6c7: `state_key` encodes once and hashes the bytes with `ByteDigest::of`. |
+| FND-007 | fixed | e8c5f6c7: `unreachable!` is replaced by `swap_remove(index)`, which cannot panic because `index < n`. The initial-state pick uses the same pattern. |
+| FND-008 | fixed | e8c5f6c7: replay walks `sorted_initial` and `ordered_successors`, so `KeyMismatch.actual` is the first match in canonical order. |
+
+New findings, round 1:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| R1-FND-001 | low | `u256_divmod_and_mul_on_a_synthetic_value` never exercises rejection. It checks `100 / 7`, `14 * 7` and `98 % 7` on small values. The acceptance threshold at n=7 is `floor(2^256/7)*7`, not 98, and `next_index`'s `v < quotient.mul_u64(n)` branch is never reached with a rejected `v`. The test comment calls 98 "the least value the sampler would reject at n = 7", which is wrong. Fix: split out `accepts(v, n)` and test it at `v = floor(2^256/7)*7` (rejects) and one less (accepts). Not blocking: the rejection logic is correct by inspection. | qsl-eval/src/simulation/sample.rs:340-365 |
