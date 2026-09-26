@@ -75,8 +75,21 @@ low status-text defects.
 
 ## Dispositions
 
+Disposition pass at `agent-ix/quire-spec-language@27fa6f87c744677df61c0cfacfe0549425ec4800`
+(renumbered from SR-642).
+
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 0872c86a: TC-160 step 11 and its expected result describe location-based pairing: a paired site, a `generated`-only site, a site with no occurrence, an unclaimed scalar application, and two sites of one node in both claim orders. The `None`-identity clause is removed, so each clause maps to `tc_160_an_unpaired_site_or_application_faults_instead_of_dropping` or `tc_160_two_sites_of_one_node_pair_by_location_not_order`. |
-| FND-002 | fixed | 0872c86a: FR-062's status reads "Seven … are backed (AC-2, AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13)", and the TC-160 row in `spec/tests.md` lists each criterion with its separator. |
-| FND-003 | fixed | 0872c86a: RR-14 is `function all_positive using v(…)` in FR-062, and `tc_160_rr_14_query_binder_roots` backs it. The "does not parse" status text is gone from FR-062 and `spec/tests.md`, and FR-062-AC-13 is backed. |
+| FND-001 | fixed 0872c86a | TC-160 step 11 and its expected result now describe location-based pairing: a paired site, a `generated`-only site, a site with no occurrence, an unclaimed application, and two sites of one node in both orders. Each clause maps to `tc_160_an_unpaired_site_or_application_faults_instead_of_dropping` or `tc_160_two_sites_of_one_node_pair_by_location_not_order`. The `None`-identity clause is gone. Step 10 adds the guard, scope and `fold`/`reduce`/`flatMap` units, each matching a test. |
+| FND-002 | fixed 0872c86a | FR-062 now reads "Seven … are backed (AC-2, AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13); three … partly". The TC-160 row in `spec/tests.md` is separated correctly. |
+| FND-003 | fixed 0872c86a | RR-14 is `all_positive`, and `tc_160_rr_14_query_binder_roots` backs it with extents keyed by the binder `v` (not `s`), result bounds `Integer`/`Boolean` and no guard. The "does not parse" text is gone from FR-062 and `spec/tests.md`. FR-062-AC-13 is backed. |
+
+Extra edits checked:
+
+- ADR-014 §4 states the scoped roots and `fold`'s accumulator and element.
+- FR-075's `bounded_item` signature matches `qsl-route/src/request.rs`.
+- TC-160 step 10 matches the new tests.
+- FR-062's ordinal wording (body before the `decreases` measure) matches
+  RR-17's test.
+
+The new ADR-012 row inconsistency is recorded as FND-007 in SR-670.

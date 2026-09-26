@@ -119,11 +119,36 @@ issues.
 
 ## Dispositions
 
+Disposition pass at `agent-ix/quire-spec-language@27fa6f87c744677df61c0cfacfe0549425ec4800`
+(renumbered from SR-641: main already held SR-641 and SR-642). Each
+outcome was checked against the code at that head, not against the
+coder's claims.
+
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 44750e77: `tc_160_guards_carry_their_outcome_outermost_first` covers an `if`'s `otherwise` guard (false), `or` (false), `implies` (true) and two nested guards outermost first. Each of these mutants fails it: swapping `then`/`otherwise`, treating `or` as true, deleting `path_condition.reverse()`. |
-| FND-002 | fixed | e0d67230, 44750e77, 0872c86a: per the leader's ruling, binder reads are scoped. A node's roots exclude binders bound inside it (`bound_by`), so the outer `+` of `size(filter(v in s: v > 0)) + 1` is rooted at `s` only (`tc_160_a_binder_is_a_root_only_inside_its_scope`, which fails without the scoping). FR-062 and ADR-014 §4 state the rule. |
-| FND-003 | fixed | 29ecb52a: `RequestWriter::item(occurrence, requirements)` and `bounded_item(occurrence, requirements, bounds)`. `RequestItem::node` is `occurrence.node()`. FR-075's design-level signature matches (0872c86a). |
-| FND-004 | fixed | e0d67230: a missing guard index is an `InternalFault` (`guard-in-arena`); `ClaimSite` holds `SiteBound::{Narrowed(IntegerInterval), Own(ValueType)}`; the walk state is grouped in `Classify`, and the `too_many_arguments` allow is gone. |
-| FND-005 | fixed | 44750e77: `tc_160_fold_reduce_and_flat_map_binders_are_roots` asserts that `fold` and `reduce` steps are unbounded at the accumulator and at the element, and that a `flatMap` step is unbounded at its binders. It fails when the accumulator is not a root. |
-| FND-006 | fixed | 0872c86a: `docs/family-migration-recipe.md` describes `requirements()` as one `Self::Claim` per claim site, and its `requirements()` note and migration entry are rewritten. |
+| FND-001 | fixed 44750e77 | `tc_160_guards_carry_their_outcome_outermost_first` covers an `if`'s `otherwise` guard (false), `or` (false), `implies` (true) and a nested `if` with two guards. The reviewer re-ran three mutants of `claims.rs` at 27fa6f87. Each fails that test: `index == 1` changed to `index == 2` (also fails the fixture test), `or`'s guard set to hold true, and `path_condition.reverse()` removed. |
+| FND-002 | fixed e0d67230 | `bound_by` removes a query's slot and a fold's accumulator and element from `reads` when the walk leaves the binding node. That is the `Flatten` location for `flat_map`, which matches `Lowering::bind`. `tc_160_a_binder_is_a_root_only_inside_its_scope` (44750e77) fails when `reads.remove(&bound)` is removed; the reviewer re-ran that mutant. FR-062 and ADR-014 §4 state the rule (0872c86a). IR at the pinned revision 48ab5dc: `requires_bound` is a reachable-closure predicate with no notion of scope (`checked_package/v2/lower.rs`), and IR-283 makes any bounded integer domain satisfy every integer type. So the scoped rule and IR agree on the verdict for the shapes tested, `size(filter(v in s: v > 0)) + 1` and `fold`, where the dropped binder's type is the source's element type. A finer comparison waits on IR-283. |
+| FND-003 | fixed 29ecb52a | `item(occurrence, requirements)` and `bounded_item(occurrence, requirements, bounds)`. `RequestItem` has no `node` field, and `node()` is `occurrence.node()`. FR-075's design signature matches (0872c86a). |
+| FND-004 | fixed e0d67230 | A missing guard index is `InternalFault` `guard-in-arena`. `SiteBound::{Narrowed(IntegerInterval), Own(ValueType)}` replaces the boolean. The `Classify` struct replaces the `too_many_arguments` allow. |
+| FND-005 | fixed 44750e77 | `tc_160_fold_reduce_and_flat_map_binders_are_roots` asserts exact two-domain extents for the `fold` step (`acc + x`), the `reduce` step (`acc * x`) and the `flatMap` step (`x + y`). It keys them by the parameter nodes the lowered application's own operands reference, which is independent of the binder table. |
+| FND-006 | fixed 0872c86a | `docs/family-migration-recipe.md` now says "one `Self::Claim` per claim site", and the stale `None` note is rewritten. |
+
+New finding in this pass:
+
+- **FND-007 (medium, spec consistency).** ADR-012 §2's Requirements row
+  (`spec/decisions/ADR-012-semantic-family-extension-contracts.md:218`)
+  still says "A pure function of a checked item returns one
+  `Requirements` per claim the item carries". The trait block below it
+  (lines 234-243) now returns `Vec<Self::Claim>`: a site plus a
+  binder-keyed extent, which becomes a `Requirements` only when S3
+  renames the binders. The two statements in the same section
+  contradict. The row should say `requirements()` returns one claim per
+  site, and that S3 derives each record's `Requirements`.
+
+Gate: the first `make ci` at 27fa6f87 used the shared
+`CARGO_TARGET_DIR=/home/peter/.cargo-target`. It failed in `ci-docs`
+with `E0432 no RequirementRecord in check`. `cargo doc -p qsl-route`
+alone passed at the same head, which points to another session's build
+racing in the shared target dir, not to this code. That log is kept as
+`make-ci-r1-shared-target.log`. The gate was re-run with a
+worktree-local target dir: `make-ci-r1.log`, exit 0.
