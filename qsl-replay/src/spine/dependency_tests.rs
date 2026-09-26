@@ -1016,3 +1016,81 @@ fn e3_resolves_an_imported_name_only_through_its_qualifier() {
         assert_eq!(refusals[0].cause.cause(), Some("missing-name"), "{call}");
     }
 }
+
+/// ADR-015 D-5: a halt raised inside an imported function's body is
+/// located at the `ImportedCall` node in the caller's graph, never at a
+/// library node, whose declaration index names another package. Every
+/// work budget from zero until `p` completes stops `p` located at its own
+/// root call `g::f(y)`; the budgets past the call's own charge stop inside
+/// the library body.
+#[trace("FR-099-AC-5", "TC-446")]
+#[test]
+fn a_halt_inside_an_imported_body_is_located_at_the_callers_call() {
+    use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+    use qsl_semantics::check::{Location, Origin};
+    use qsl_semantics::family::FamilyOutcome;
+    use qsl_semantics::model::object_environment::ObjectEnvironment;
+    use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
+
+    let geometry = library(
+        "test/geometry",
+        "1",
+        "geometry",
+        "function f using v(x: Int[0, 9]): Boolean pure \
+         { x < 5 and x < 6 and x < 7 and x < 8 and x < 9 and x < 10 }\n",
+    );
+    let d = package_id(&geometry, &DependencyInput::default());
+    let source = unit(&format!(
+        "{}function p using v(y: Int[0, 9]): Boolean pure {{ g::f(y) }}\n",
+        import("test/geometry", "1", &d.hex(), "g")
+    ));
+    let compiled = compile_as("u", &source, &input(vec![geometry]))
+        .unwrap_or_else(|refusal| panic!("p checks: {refusal}"));
+    let p = QualifiedName::unqualified("p").unwrap();
+    let mut stops = 0;
+    for work_units in 0.. {
+        let limits = ScalarLimits {
+            integer_bits: u64::MAX,
+            decimal_digits: u64::MAX,
+            scale_expansion: u64::MAX,
+            text_input_bytes: u64::MAX,
+            text_scalars: u64::MAX,
+            normalized_scalars: u64::MAX,
+            unit_edges: u64::MAX,
+            value_occurrences: u64::MAX,
+            work_units,
+            result_units: u64::MAX,
+        };
+        let evaluation = compiled
+            .package
+            .call(
+                &p,
+                vec![Value::Integer(Integer::from(3_i64))],
+                &ObjectEnvironment::default(),
+                &mut Meter::new(limits),
+            )
+            .expect("the call runs");
+        if let FamilyOutcome::Evaluated(Outcome::Completed(_)) = evaluation.outcome {
+            break;
+        }
+        // The top-level call's own charge is denied before the machine
+        // runs, with no location.
+        let Some(location) = evaluation.location else {
+            assert_eq!(stops, 0, "work_units {work_units}: an unlocated stop");
+            continue;
+        };
+        stops += 1;
+        assert!(
+            matches!(
+                &location,
+                Location { origin: Origin::Body { function, .. }, path } if function == "p" && path.is_empty()
+            ),
+            "work_units {work_units}: {location:?}"
+        );
+        assert!(work_units < 1_000, "p never completes");
+    }
+    assert!(
+        stops > 3,
+        "the budgets reach into the library body: {stops}"
+    );
+}

@@ -324,6 +324,11 @@ pub(crate) struct Machine<'a, 'm> {
     /// `Value::Enum` (O-14/OQ-D) carries no declaration, ordered flag or
     /// case name of its own.
     enum_members: &'a EnumMemberIndex,
+    /// The `ImportedCall` nodes whose library bodies are running, outermost
+    /// first. A halt inside a library body is located at the outermost one,
+    /// the call in the caller's own graph: the library's node locations
+    /// name another package's source (ADR-015 D-5).
+    imported: Vec<&'a Node>,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -348,6 +353,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             anchor: Anchor::Post,
             units: UnitScope::new(scope.types().units()),
             enum_members,
+            imported: Vec::new(),
         }
     }
 
@@ -412,6 +418,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
             };
             if let Err(halt) = self.step(task) {
+                let located = self.imported.first().copied().unwrap_or(located);
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
                     // FR-090-OQ-3 ruling: a family-owned result is located
@@ -683,6 +690,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             Task::RestorePackage(previous) => {
                 self.enter(*previous);
+                self.imported.pop();
                 Ok(())
             }
         }
@@ -1027,6 +1035,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     units: UnitScope::new(library.scope().types().units()),
                     enum_members: library.scope().enum_member_index(),
                 });
+                self.imported.push(node);
                 self.tasks.push(Task::RestorePackage(Box::new(previous)));
                 self.tasks.push(Task::RestoreAnchor(self.anchor));
                 self.anchor = Anchor::Post;
