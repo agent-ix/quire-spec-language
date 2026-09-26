@@ -79,9 +79,9 @@ pub enum AssemblyCause {
     /// A built-in constructor's declared bounds are rejected by its value
     /// type, with that value type's own cause.
     IllFormedBounds(TypeFormFault),
-    /// A floating type, which the producer does not represent: its rounding
-    /// mode is part of the type, and `ValueType::Float` would drop it
-    /// (ADR-013 R-07).
+    /// A domain package's native `Float32`/`Float64` model field, which the
+    /// assembler still refuses (QSL-285 owns admitting it). Function
+    /// parameter, result and body floating types are admitted (FR-091-OQ-4).
     FloatingType {
         /// The width.
         width: IeeeWidth,

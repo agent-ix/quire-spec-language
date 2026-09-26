@@ -9,7 +9,7 @@ use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision};
-use quire_exact::{IeeeValue, Meter, Outcome, ScalarLimits, Value};
+use quire_exact::{IeeeFlag, IeeeValue, Meter, Outcome, Refusal, ScalarLimits, Value};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -24,13 +24,17 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-/// binary64 `1.0` and `1.5 * 2^-53` (three quarters of an ulp of `1.0`).
+/// binary64 `1.0`, `1.5 * 2^-53` (three quarters of an ulp of `1.0`) and
+/// `2^-53` (exactly half an ulp: a tie).
 const ONE: u64 = 0x3ff0_0000_0000_0000;
 const THREE_QUARTER_ULP: u64 = 0x3ca8_0000_0000_0000;
+const HALF_ULP: u64 = 0x3ca0_0000_0000_0000;
+const NEG_ONE: u64 = 0xbff0_0000_0000_0000;
+const NEG_THREE_QUARTER_ULP: u64 = 0xbca8_0000_0000_0000;
 
 /// Compiles `function add using v(f: T, g: T): T pure { f + g }` for the
-/// float type spelling `float`, and returns the outcome of `1.0 + 0.75 ulp`.
-fn add(float: &str) -> Outcome<Value> {
+/// float type spelling `float`, and returns the outcome of `left + right`.
+fn add(float: &str, left: u64, right: u64) -> Outcome<Value> {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\" version \"1\" digest \
@@ -65,8 +69,8 @@ fn add(float: &str) -> Outcome<Value> {
         .call(
             &QualifiedName::unqualified("add").expect("add is an identifier"),
             vec![
-                Value::Float(IeeeValue::binary64(ONE)),
-                Value::Float(IeeeValue::binary64(THREE_QUARTER_ULP)),
+                Value::Float(IeeeValue::binary64(left)),
+                Value::Float(IeeeValue::binary64(right)),
             ],
             &ObjectEnvironment::default(),
             &mut meter,
@@ -85,19 +89,78 @@ fn bits(outcome: Outcome<Value>) -> u64 {
     }
 }
 
-#[trace("FR-091-OQ-4", "FR-091-AC-19", "FR-148-AC-8", "TC-405")]
+#[trace("FR-091-AC-19", "FR-148-AC-8", "TC-405")]
 #[test]
 fn the_evaluator_applies_the_rounding_mode_the_float_type_carries() {
-    // The exact sum lies three quarters of the way to the next binary64.
-    assert_eq!(bits(add("Float64[nearest-even]")), ONE + 1);
-    assert_eq!(bits(add("Float64[toward-zero]")), ONE);
-    assert_eq!(bits(add("Float64[toward-positive]")), ONE + 1);
-    assert_eq!(bits(add("Float64[toward-negative]")), ONE);
-    assert_eq!(bits(add("Float64[nearest-away]")), ONE + 1);
-    // A bare `Float64` is strict `exact`: an inexact sum has no bits.
+    let sum = |mode: &str, left, right| bits(add(&format!("Float64[{mode}]"), left, right));
+    // 0.75 ulp above one: nearest and toward-positive round up.
+    for (mode, expected) in [
+        ("nearest-even", ONE + 1),
+        ("nearest-away", ONE + 1),
+        ("toward-positive", ONE + 1),
+        ("toward-zero", ONE),
+        ("toward-negative", ONE),
+    ] {
+        assert_eq!(sum(mode, ONE, THREE_QUARTER_ULP), expected, "{mode} 0.75");
+    }
+    // A tie: even keeps one, away goes up.
+    assert_eq!(sum("nearest-even", ONE, HALF_ULP), ONE);
+    assert_eq!(sum("nearest-away", ONE, HALF_ULP), ONE + 1);
+    // Negative: toward-negative grows the magnitude, toward-positive and
+    // toward-zero shrink it.
+    for (mode, expected) in [
+        ("toward-zero", NEG_ONE),
+        ("toward-positive", NEG_ONE),
+        ("toward-negative", NEG_ONE + 1),
+    ] {
+        assert_eq!(
+            sum(mode, NEG_ONE, NEG_THREE_QUARTER_ULP),
+            expected,
+            "{mode} negative"
+        );
+    }
+    // A bare `Float64` is strict `exact`: an inexact sum is refused.
+    match add("Float64", ONE, THREE_QUARTER_ULP) {
+        Outcome::Refused(Refusal::IeeeNotExact { would_be }) => {
+            assert!(would_be.contains(IeeeFlag::Inexact));
+        }
+        other => panic!("strict exact refuses an inexact sum, not {other:?}"),
+    }
+}
+
+/// QSpec FR-322:564 pins the rounding mode by operand type: operands of the
+/// same width under different modes are a type mismatch.
+#[trace("FR-091-AC-19", "TC-405")]
+#[test]
+fn operands_of_different_rounding_modes_are_a_type_mismatch() {
+    let text = "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\" version \"1\" digest \
+         \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+         function add using v(f: Float64[toward-zero], g: Float64[nearest-even]): \
+         Float64[toward-zero] pure { f + g }\n";
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .expect("S2 builds the unit");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler admits both types");
+    declarations.ieee_profile = Some(ieee_profile());
+    let refusal = declarations
+        .check(CheckingLimits::default())
+        .expect_err("mixed-mode operands refuse");
     assert!(
-        !matches!(add("Float64"), Outcome::Completed(_)),
-        "strict exact must not round"
+        format!("{refusal:?}").to_lowercase().contains("mismatch"),
+        "a type mismatch, not {refusal:?}"
     );
 }
 
