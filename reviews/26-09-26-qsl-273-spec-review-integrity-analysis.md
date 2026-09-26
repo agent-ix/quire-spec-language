@@ -126,6 +126,13 @@ Disposition pass at `agent-ix/quire-spec-language@c35a6a49` (fix commit `c35a6a4
 | FND-006 | fixed c35a6a49 | §15.8 has a three-step order: nothing native is deleted with FR-102 to FR-109; M-6c removes the 0-draft path with QSL-5; `native_model` goes with its last SEAM-2 or SEAM-3 importer. |
 | FND-007 | fixed c35a6a49 | §15.6 lists every admission and selection code. `invalid_source_identity` is replaced by `invalid_runtime_input`/`invalid-value`, which leaves a cross-path code difference: new FND-011. |
 | FND-008 | fixed c35a6a49 | FR-108-AC-6 pins the `package_id` and the I04 `read`, pending STD-111. |
-| FND-009 | fixed f83ca481 | STD-111 was rewritten by the team leader. FR-105, FR-088 and ADR-012 §15.4 now cite STD-111 item 5 for the (`state`, `transition`) spelling, FR-105's STD-111 dependency lists the operator class, the `state_clause` member kind and the node-form rule, and FR-105 and FR-088 name the TC-250 fixed table (`qsl-semantics/src/check/identity.rs:619-631`) to update at implementation. |
-| FND-010 | fixed f83ca481 | FR-105-AC-4 is marked pending STD-111, and FR-105's Status, TC-463's Status (steps 1 to 3) and the spec.md and tests.md rows say so. |
-| FND-011 | fixed f83ca481 | `invalid_source_identity` is not in the pinned catalog (`native-diagnostics.md` 1-draft.7). Check 1.7 keeps `invalid_runtime_input`/`invalid-value` and states the divergence from FR-001, FR-018-AC-8 and FR-026-AC-6; the catalog gap is recorded on STD-110. |
+
+### Round 2
+
+Disposition pass at `agent-ix/quire-spec-language@39647e7c` (fix commit `f83ca481`, "QSL-273 spec: fix disposition-pass findings (SR-660, SR-662, SR-664)"). Each outcome was re-checked against the spec and code at that head. `quire validate` over the changed spec files and the reviews exits 0.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-009 | fixed f83ca481 | STD-111 is rewritten: item 1 is the `quire.op.state.clause` application, and item 5 adds the operator class, the `state_clause` member kind and the node-form rule. FR-105, FR-088 and ADR-012 §15.4 cite STD-111 item 5 for (`state`, `transition`) and name the TC-250 table update. |
+| FND-010 | fixed f83ca481 | FR-105-AC-4 and TC-463 steps 2 and 3 are marked pending STD-111, with the reason stated in FR-105 Status, tests.md and spec.md. |
+| FND-011 | fixed f83ca481 | FR-106 check 1.7 states the divergence from FR-001, FR-018-AC-8 and FR-026-AC-6, and STD-110 records the request for `invalid_source_identity` in catalog 1-draft.8 (verified in Linear). |

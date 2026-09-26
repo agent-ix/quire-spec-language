@@ -66,8 +66,9 @@ mutated document except where the row says otherwise.
 | 38 | 10 | probe invocation with `result` `{"boolean": true}` | `invalid_runtime_input`/`unknown-member` at `result` |
 | 39 | 11.1 over 11.2 | a package variant where `Sub` specializes `ConfigVersion` and is a member type of `config_history`; post changes `child`'s type to `Sub`, sets `child.parent` absent and deletes `root` | `frame_violation`/`unauthorized-change` naming `child`'s type change |
 | 40 | 11, population order | pre and post list `archive` (complete, object `a1` with `parent` absent) before `config_history`; post sets `a1.parent` to `{archive, a1}` and `child.parent` absent | `frame_violation`/`unauthorized-change` naming `a1` and `parent` in `archive` |
+| 41 | 11, one-sided population | post adds a population `archive` absent from pre, holding object `a1` (`parent` absent), with `created` unchanged | `frame_violation`/`unauthorized-change` naming the creation of `a1` in `archive` (pre side admitted as empty) |
 
-Rows 25 and 40 need the fixture package to declare a second population
+Rows 25, 40 and 41 need the fixture package to declare a second population
 `archive` over `ConfigVersion` with a maximum of 10. With no maximum, every
 clause over `ConfigVersion` would refuse at S3, because its extent could not
 name exactly one population (FR-104-AC-5, TC-461 step 5). Rows 35 to 38 use

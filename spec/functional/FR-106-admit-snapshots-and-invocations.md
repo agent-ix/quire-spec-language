@@ -241,7 +241,10 @@ required population, in the observations the clause reads.
     population document order and then any population only in the post
     snapshot, in its document order. `admit_invocation` admits one
     population per call, so admission calls it per population and reports
-    the first population's first violation. The check SHALL compare every
+    the first population's first violation. For a population present in
+    only one of the two snapshots, admission SHALL pass an empty document
+    (no objects) for the missing side, so its objects are creations or
+    deletions. The check SHALL compare every
     declared field of every surviving object, scalar and reference alike.
     Within one population it SHALL report the first violation in this
     order, which is `enforce_frame`'s:
@@ -254,8 +257,9 @@ required population, in the observations the clause reads.
        frame's `deletes` does not grant, in ascending key order:
        `frame_violation`/`unauthorized-change`;
     3. a changed field of a surviving object outside `modifies`, objects in
-       pre document order and fields in declared order:
-       `frame_violation`/`unauthorized-change`;
+       pre document order and fields in ascending `DeclarationKey` order
+       (`enforce_frame`'s `BTreeSet`, `qsl-semantics/src/model/
+       population.rs:1488-1490`): `frame_violation`/`unauthorized-change`;
     4. over that population's entries of `created` and `deleted`: a repeated
        identity in either, an identity in both, then a list that differs
        from the computed one: `population_delta_mismatch`/
@@ -279,7 +283,7 @@ required population, in the observations the clause reads.
 | FR-106-AC-2 | The changed-version invocation (pre: `child` at 2; post: `child` at 3; result `true`; no parameters, created or deleted) selected for `VersionUnchanged` admits, with the pre and post observations distinct and `result` true. | Test (TC-464) |
 | FR-106-AC-3 | Each condition of checks 1 to 6, 9 and 10 has one case that fails only it and returns exactly its code and cause, as TC-465 lists: among them an absent document, a 1 MiB + 1 byte document, a value nested 65 deep, bytes edited under their original digest, `format` `native-state-input/1` (`unknown_wire`/`unsupported-wire`), a missing `populations`, an extra member, a blank `authority`, another `revision`, `Current` selecting `VersionUnchanged`, a `pre` document selected as current, anchor `handler other`, another model digest, operation `other`, an unknown population, a duplicate `root` key, a set-typed field, `versionNumber` `{"boolean": true}`, `"01"`, `"-1"` and `"1001"`, `self` = `ghost`, a `result` of `null` for `attemptUpdate`, an object of a type that is not a member type of its population, a missing declared field, an undeclared field, and, for an operation `probe(target: ConfigVersion)` with no result, a missing, an unknown and an ill-typed parameter and a result value. | Test (TC-465) |
 | FR-106-AC-4 | The incomplete-population snapshot (`complete: false`, `child.parent` naming `missing`) gives `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling refusal; the same snapshot with `complete: true` gives `Refused` with `dangling_reference`, naming `missing` and `config_history`. A second, incomplete population that no reference value names does not make a healthy case incomplete. | Test (TC-465) |
-| FR-106-AC-5 | The forbidden-parent-change invocation (post sets `child.parent` absent) refuses `frame_violation`/`unauthorized-change` naming `child` and `parent`. A package whose `attemptUpdate` frame modifies only `parent`, with an invocation that changes only `versionNumber`, refuses `frame_violation`/`unauthorized-change` naming `versionNumber` (a scalar field). An invocation declaring `created: [child]` refuses `population_delta_mismatch`/`delta-disagreement`. | Test (TC-465) |
+| FR-106-AC-5 | The forbidden-parent-change invocation (post sets `child.parent` absent) refuses `frame_violation`/`unauthorized-change` naming `child` and `parent`. A package whose `attemptUpdate` frame modifies only `parent`, with an invocation that changes only `versionNumber`, refuses `frame_violation`/`unauthorized-change` naming `versionNumber` (a scalar field). An invocation declaring `created: [child]` refuses `population_delta_mismatch`/`delta-disagreement`. A post snapshot that adds a population `archive` absent from the pre snapshot, holding `a1`, refuses `frame_violation`/`unauthorized-change` naming the creation of `a1` (the pre side is an empty document). | Test (TC-465) |
 | FR-106-AC-6 | Running admission twice over the same inputs gives equal results, and admission builds its result without reading the filesystem (the provisions are in-memory maps; a test with no files on disk passes). | Test (TC-464) |
 | FR-106-AC-7 | Multi-defect documents report the first defect by the order above: bytes edited under their original digest that also add an unknown member refuse `byte-digest-mismatch`; a snapshot with `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` refuses `invalid-value` at `root`; an invocation whose post both deletes `root` and changes `child.parent` refuses the deletion; over a package where `Sub` specializes `ConfigVersion`, an invocation whose post changes `child`'s type to `Sub` and deletes `root` refuses the type change, naming `child`; an invocation whose pre and post list `archive` before `config_history`, with a change outside the frame in each, refuses naming the `archive` object. | Test (TC-465) |
 

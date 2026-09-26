@@ -34,10 +34,12 @@ FR-108's unit.
    d. `let s = self in pre(s.versionNumber) = 1`;
    e. `let s = pre(self) in s.versionNumber = 1`.
 5. Against TC-466 step 3's `probe` package variant (`probe(target:
-   ConfigVersion)`, no result, empty frame), check these postconditions of
+   ConfigVersion)`, no result, empty frame), check these clauses on
    `probe`, one unit each:
-   a. `deref(target).versionNumber = 1`;
-   b. `pre(deref(target).versionNumber) = 1`.
+   a. the postcondition `deref(target).versionNumber = 1`;
+   b. the precondition `deref(target).versionNumber = 1`;
+   c. the postcondition `pre(deref(target).versionNumber) = 1`;
+   d. the postcondition `pre(target) = target`.
 
 Tag the tests `#[trace("TC-459", "FR-104-AC-n")]`.
 
@@ -58,10 +60,10 @@ Tag the tests `#[trace("TC-459", "FR-104-AC-n")]`.
   `value(self.parent)`; (b) checks, every read `pre`; (c) and (d)
   `wrong_snapshot`/`forbidden-pre-read` at the `pre`; (e) checks, its read
   `pre`.
-- Step 5: (a) checks, its read through `target` `pre` (a parameter
-  reference carries the invocation's pre observation); (b)
-  `wrong_snapshot`/`forbidden-pre-read` at the `pre` (QSpec: "A pre selector
-  cannot retag a post-qualified parameter reference").
+- Step 5: (a) checks, its read through `target` `post`; (b) checks, its read
+  `pre`; (c) checks, its read `pre`; (d) `wrong_snapshot`/
+  `forbidden-pre-read` at the `pre` (QSpec: "A pre selector cannot retag a
+  post-qualified parameter reference").
 
 ## Status
 

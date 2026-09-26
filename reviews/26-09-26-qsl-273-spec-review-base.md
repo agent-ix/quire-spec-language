@@ -86,4 +86,11 @@ Disposition pass at `agent-ix/quire-spec-language@c35a6a49` (fix commit `c35a6a4
 | FND-006 | fixed c35a6a49 | FR-103 cites the match arm at assemble.rs:405-409. |
 | FND-007 | fixed c35a6a49 | The three invocation rows state `self child`. |
 | FND-008 | rejected: the example already uses AGPL-3.0-only | FR-032:20 authors model.json as AGPL-3.0-only, and the fixtures generator writes the native unit and its Markdown as AGPL-3.0-only (examples/config-version/fixtures.rs:213, 329). FR-108 now states the reason. |
-| FND-009 | fixed f83ca481 | TC-465 rows 32 to 38: an object whose type is not a member type of its population (6.1), a missing and an undeclared field (6.4), and, over the `probe` variant, a missing, an unknown and an ill-typed parameter and a result value (10). FR-106-AC-3 lists them. |
+
+### Round 2
+
+Disposition pass at `agent-ix/quire-spec-language@39647e7c` (fix commit `f83ca481`, "QSL-273 spec: fix disposition-pass findings (SR-660, SR-662, SR-664)"). Each outcome was re-checked against the spec and code at that head. `quire validate` over the changed spec files and the reviews exits 0.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-009 | fixed f83ca481 | TC-465 rows 32 to 38 add the object-type half of 6.1, both halves of 6.4 and the four check 10 conditions, over the `probe` variant. |

@@ -1284,7 +1284,9 @@ A population has no node (FR-094), so its domain is keyed as a model member
 is (§15.4): `DomainKey{node, path}` with `node` the `model`/`object_type`
 node of the member type, and `path` one element naming the population, its
 ordinal among the package's population declarations in ascending
-declaration-identity order (`path` is a `Vec<u32>`, ADR-014 §4). The context
+`DeclarationKey` order (`package`, then `node`, as UTF-8 bytes; `path` is a
+`Vec<u32>`, ADR-014 §4). The ordinal is stable within one domain-package
+digest only; domain keys are not compared across digests. The context
 population is the one population with no maximum whose member types include
 the context type. A clause whose context type belongs to two or more such
 populations cannot name exactly one, and refuses at S3 with
