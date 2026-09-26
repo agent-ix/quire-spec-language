@@ -58,9 +58,12 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
 - Step 4: `completed` with `{"kind": "boolean", "value": true}`,
   `{"kind": "boolean", "value": false}`, and `{"kind": "integer",
   "decimal": ...}` of `"0"`, `"-17"` and `"1180591620717411303424"`, exit 0;
-  `refused` with `code` `invalid_runtime_input` and each of the twelve
-  kernel refusals' tabled `cause` other than `checked_invariant`, exit 20,
-  `CardinalityOutOfBound` carrying `details` `{"violation":
+  `refused` with `code` `invalid_runtime_input` and the tabled `cause` for
+  each of the ten kernel refusals other than `ForeignReference`,
+  `CardinalityOutOfBound` and `CheckedInvariant`, exit 20; `refused` with
+  `code` `foreign_reference` and `cause` `foreign_reference`, exit 20;
+  `refused` with `code` `cardinality_out_of_bound` and `cause`
+  `cardinality_out_of_bound`, exit 20, carrying `details` `{"violation":
   "below-minimum"}` and `{"violation": "above-maximum"}`; `refused` with
   `code` `runtime_invariant` and `cause` `checked_invariant`, exit 30; `undefined` with each kernel reason's tabled
   spelling, exit 20; `incomplete` with `limit` `work_units`, exit 22;

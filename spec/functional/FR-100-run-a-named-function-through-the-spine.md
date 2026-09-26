@@ -112,7 +112,9 @@ ADR-013 O-16 category to this document and an FR-301 exit status:
 | S6a outcome | `outcome` | Exit |
 |-------------|-----------|------|
 | `Outcome::Completed(v)` | `completed`, `value` from `v` | 0, whatever value it completes |
-| `Outcome::Refused(r)`, kernel refusal `r` other than `CheckedInvariant` | `refused`, `code` `invalid_runtime_input`, `cause` from the table below | 20 |
+| `Outcome::Refused(r)`, kernel refusal `r` other than `ForeignReference`, `CardinalityOutOfBound` or `CheckedInvariant` | `refused`, `code` `invalid_runtime_input`, `cause` from the table below | 20 |
+| `Outcome::Refused(Refusal::ForeignReference)` | `refused`, `code` `foreign_reference`, `cause` `foreign_reference` | 20 |
+| `Outcome::Refused(Refusal::CardinalityOutOfBound)` | `refused`, `code` `cardinality_out_of_bound`, `cause` `cardinality_out_of_bound`, `details.violation` | 20 |
 | `Outcome::Refused(Refusal::CheckedInvariant)` | `refused`, `code` `runtime_invariant`, `cause` `checked_invariant` | 30 |
 | `FamilyResult::Refused(c)` | `refused`, `code` `c`'s catalog code, no `cause` | that code's FR-301 exit status (`Code::exit_code`) |
 | `Outcome::Undefined(u)`, kernel reason `u` | `undefined`, `reason` from the table below | 20 |
@@ -144,7 +146,9 @@ defines no spelling method for `Undefined`.
 | `Undefined::EmptyReduction` | `empty-reduction` |
 | `Undefined::NoneValue` | `none-value` |
 
-A kernel refusal other than `CheckedInvariant` is a defined result the
+`ForeignReference` and `CardinalityOutOfBound` take their own catalog
+codes, `foreign_reference` and `cardinality_out_of_bound` (exit 20). Every
+other kernel refusal except `CheckedInvariant` is a defined result the
 call's value domain does not admit, so it is refused runtime input
 (`invalid_runtime_input`, 20). `CheckedInvariant` is a checked-program
 invariant failing during evaluation, which is unreachable for an admitted
