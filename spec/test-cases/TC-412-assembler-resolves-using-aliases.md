@@ -49,4 +49,4 @@ Tag the test `#[trace("FR-091-AC-22", "TC-412")]`.
 
 ## Status
 
-Steps 2 and 3 are backed by `qsl-semantics` `check::assemble` tests: `using_aliases_resolve_to_the_units_profile_selections`. Step 1 is partial: the assembler admits `f` because its alias names a profile selection, but records no resolved selection, since nothing reads one yet.
+Steps 1, 2 and 3 are backed by `qsl-semantics` `check::assemble` test `using_aliases_resolve_to_the_units_profile_selections`. Step 1 asserts the recorded selection in `PackageDeclarations::function_selections`: its alias, definition identity and version, and the spans of the selection and of its identity literal.

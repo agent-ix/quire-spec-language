@@ -68,9 +68,10 @@ requires `[dependencies]` to be exactly `qsl-cst`, `qsl-foundation` and
 Partial: step 1's crate edges
 (`tests/it/family_outcome_layering.rs::no_crate_below_layer_three_depends_on_the_check_core`)
 and step 2 over every type `qsl-forms` defines
-(`qsl-forms/tests/it/identity_free_forms.rs`) pass locally. Step 1's
-family-module edges and step 3 are not written. The `Value` builder's
-production match (`qsl-forms/src/value.rs`, `Mapping::map`) has a `_` arm
-over `qsl_cst::Production`, which refuses any production that is not an
-expression level with `UnexpectedShape`; the dispatch match and the
-assembler's resolution match (`check::type_form::resolve_form`) have none.
+(`qsl-forms/tests/it/identity_free_forms.rs`) pass locally. Step 3 passes
+locally: `no_production_match_in_qsl_forms_has_a_catch_all_arm` (same file)
+refuses a `_` or bare-binding arm in any `match` over `Production` in
+`qsl-forms`, and `check::type_form::tests::resolve_form_has_no_catch_all_arm`
+does the same for the assembler's `resolve_form`; the dispatch match is
+scanned by `dispatch_entry_is_a_single_thin_call`. Step 1's family-module
+edges are not written.

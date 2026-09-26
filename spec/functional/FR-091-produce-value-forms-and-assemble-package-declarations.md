@@ -550,11 +550,14 @@ of each declared type's name for FR-096, and reports every error it finds.
 
 Remaining work:
 
-- FB-13 (QSL-141): `enum`, `ordered enum`, `predicate`, `dimension` and
-  `unit` declarations still refuse `NoDispatchEntry` (FR-091-AC-6). Their
+- FB-13: `enum`, `ordered enum`, `predicate`, `dimension` and `unit`
+  declarations still refuse `NoDispatchEntry` (FR-091-AC-6). Their
   parsed-form types, the assembler wiring of `EnumDeclaration::admit` and
-  `UnitGraph::admit`, and the retained unit and dimension preimages
-  (QSL-238, QSL-64) land with the post-G2 M-6 lanes.
+  `UnitGraph::admit`, and the retained unit and dimension preimages are
+  QSL-275 (see also QSL-238).
+- The other families' parsed-form types are not built: the state family's
+  under QSL-67, and the others under QSL-45, QSL-44, QSL-43, QSL-42,
+  QSL-40, QSL-39 and QSL-36.
 - `ValueType::Float` still holds only an `IeeeWidth`; the assembler refuses
   every floating type (FR-091-AC-19) rather than resolving one.
 

@@ -416,7 +416,7 @@ fn each_assembler_cause_has_its_catalog_code() {
 #[trace("FR-091-AC-22", "TC-412")]
 #[test]
 fn using_aliases_resolve_to_the_units_profile_selections() {
-    let (_, assembled) = assemble("function f using v(): Boolean pure { true }");
+    let (unit_text, assembled) = assemble("function f using v(): Boolean pure { true }");
     let package = assembled.expect("f's alias names the profile selection v");
     assert_eq!(
         package.functions[0]
@@ -429,6 +429,16 @@ fn using_aliases_resolve_to_the_units_profile_selections() {
         .get(&0)
         .expect("f's alias resolved to a recorded selection");
     assert_eq!(selection.alias, "v");
+    assert_eq!(selection.definition.identity(), "quire.value.complete/v1");
+    assert_eq!(selection.definition.version(), "1");
+    assert_eq!(
+        &unit_text[selection.span.start..selection.span.end],
+        PROFILE_V.trim_end()
+    );
+    assert_eq!(
+        &unit_text[selection.identity_span.start..selection.identity_span.end],
+        "\"quire.value.complete/v1\""
+    );
     let (text, found) = errors(
         "function f using v(): Boolean pure { true }\n\
          function g using w(): Boolean pure { true }",

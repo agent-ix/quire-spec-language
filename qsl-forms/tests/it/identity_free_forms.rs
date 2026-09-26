@@ -114,7 +114,7 @@ fn no_shipped_item_in_qsl_forms_names_value_type_or_node_key() {
 }
 
 /// Every `match` in shipped code with an arm that names a `Production`
-/// variant and a catch-all `_` arm, as `line`.
+/// variant and a catch-all arm (`_` or a bare binding), as `line`.
 #[derive(Default)]
 struct ProductionCatchAlls {
     found: Vec<usize>,
@@ -151,7 +151,7 @@ impl<'ast> Visit<'ast> for ProductionCatchAlls {
     fn visit_expr_match(&mut self, expression: &'ast syn::ExprMatch) {
         if expression.arms.iter().any(|arm| names_production(&arm.pat)) {
             for arm in &expression.arms {
-                if matches!(arm.pat, syn::Pat::Wild(_)) {
+                if matches!(arm.pat, syn::Pat::Wild(_) | syn::Pat::Ident(_)) {
                     self.found.push(arm.pat.span_start_line());
                 }
             }
@@ -188,6 +188,6 @@ fn no_production_match_in_qsl_forms_has_a_catch_all_arm() {
     assert!(matches_seen > 0, "the scan reads matches over Production");
     assert!(
         offending.is_empty(),
-        "a match over Production has a `_` arm: {offending:?}"
+        "a match over Production has a catch-all arm: {offending:?}"
     );
 }
