@@ -145,6 +145,10 @@ New finding in this pass:
   contradict. The row should say `requirements()` returns one claim per
   site, and that S3 derives each record's `Requirements`.
 
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed 99391861 | ADR-012 §2's Requirements row says `requirements()` returns one claim per claim site, with its extent keyed by binder, and that S3, after lowering, keys each claim by occurrence, renames each binder to its parameter node and derives the record's `Requirements`. |
+
 Gate: the first `make ci` at 27fa6f87 used the shared
 `CARGO_TARGET_DIR=/home/peter/.cargo-target`. It failed in `ci-docs`
 with `E0432 no RequirementRecord in check`. `cargo doc -p qsl-route`
