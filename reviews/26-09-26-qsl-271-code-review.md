@@ -97,3 +97,59 @@ tracks rather than repeating a separate fix.
 | SR-675 | FND-004 | low | 630728ba |
 | SR-675 | FND-005 | low | tracks SR-674 FND-003 (630728ba) |
 | SR-675 | FND-006 | low | 630728ba |
+
+## Reviewer dispositions (efa42552)
+
+I verified these myself at efa42552, which is based on a643665a (#469). That
+included a fresh `make ci`, the FND-001 arch-lint probes and mutants in the
+worktree, all reverted afterwards. I did not rely on the table above. SHAs are
+the commits named by the table above, confirmed against the code on the branch.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 630728ba. Probes re-run with `arch-lint api-surface`: a `pub` field typed through `use qsl_eval::value::QualifiedName;` now FAILs (`struct Call`), and so does a `pub fn` in `impl RunRefusal` (`impl fn probe`). The clean tree passes. See FND-015 for a residual bypass. |
+| FND-002 | fixed | 3f49b580. `clauses: Option<Vec<Binding>>`; a 1-draft request with no `clauses` runs (CLI, exit 0), and `"clauses": []` refuses (`clauses (empty array)` case). |
+| FND-003 | fixed | 630728ba. `RunCause::exit_code` returns 30 for `SpineRun(Fault)`. The stage is `call`, and `details` is `{stage, invariant}`. The exit status is untested (FND-013). |
+| FND-004 | fixed | 630728ba. The edition is read before extraction routing, a 1-draft request with `extraction` hits `CompleteRunSelection::Extraction`, and `tc_450_step_4_extraction_refuses_alone` passes under all-features. |
+| FND-005 | fixed | 8eda2b73. `no_call_refuses_alone`, `native_model_refuses_alone` and `extraction_refuses_alone` pin the message. A mutant that turns NoCall into Clauses is killed by `tc_450_step_4_no_call_refuses_alone`. |
+| FND-006 | deferred | partly fixed: 8eda2b73 covers `Undefined`, and a mutant 20→21 is killed. The refused and fault rows of the root renderer are still untested; this is carried as FND-013. |
+| FND-007 | fixed | 630728ba. `tc_450_step_6_libraries_and_models_both_present_runs` (CLI and unit). |
+| FND-008 | fixed | 630728ba. The TC-450 step 1 whole-document assertion, `flag`/`id` at the CLI, and a stronger step 2. |
+| FND-009 | fixed | 3f49b580. `"work_units": null` gives `invalid-request` "invalid type: null, expected u64", exit 20 (CLI probe). No test pins it. |
+| FND-010 | fixed | 630728ba. `bind_arguments` binds every parameter before converting any, pinned by `fnd_010_unbound_parameter_is_reported_before_an_earlier_wrong_kind`. |
+| FND-011 | fixed | 630728ba. `selected_package` takes the already-read `source`. See FND-014 for the extraction path. |
+| FND-012 | fixed | 630728ba and 7ce0d104. The allow is removed, `DEFAULT_WORK_UNITS` is added, and TC-451 Status records that `origin` is reserved. |
+
+## Re-review findings (efa42552)
+
+These are new or carried findings on the fix round, including the kernel-row
+code (`CallRefusal::{Record, Family, Kernel}`, locus resolution, the
+internal-failure path). They were checked against the amended FR-100 (#469)
+and FR-096. I recomputed the fixture-`F` values independently: 229 bytes,
+`sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26`,
+and the literal `5` at byte 225..226, line 3, column 54..55. The spec and the
+unit test agree with these.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | medium | The root crate's rendering of refused outcomes and internal faults has no test, and TC-452's ✅ overclaims. Four mutants all left `cargo test --lib --test it` green (43 lib + 905 it): `refusal_exit_code` → always 20, so AncestorSteps exits 20 instead of 22; `RunCause::exit_code`'s Fault→30 arm disabled, so faults exit 20; `SpineOrigin` spelled `type_declaration`; the fault `details.stage` rendered from `invariant()`. TC-452 step 4 names "the root crate's renderer and exit mapping" and its `CallFailure::Fault` case, but `call/tests.rs` covers neither: `convert_call_failure` has no test. | src/command/output.rs:361-364; src/command/output.rs:391-425; src/command.rs:366-373; src/command/output.rs:277-280; src/command/output/types.rs:234; qsl-replay/src/spine/call/tests.rs:323-588 |
+| FND-014 | low | A `0-draft` extraction request now reads `program.source` twice: once in `run_bytes` for the edition, and again in `extraction::Selected::compile`. It is charged twice against `TOTAL_BYTES`, so the extraction path has the same double-charge FND-011 fixed for `package`. | src/command.rs:805; src/command/extraction.rs:274 |
+| FND-015 | low | The AC-8 alias scan collects `use` bindings only. A private `type Q = qsl_eval::value::QualifiedName;` used as `pub fn probe(&self) -> Option<Q>` in `impl RunRefusal` still passes (probe: `FR-100-AC-8 ...: PASS`). Only glob imports are documented as a limitation. | tools/arch-lint/api_surface.rs:1276-1311 |
+| FND-016 | low | `run` rebuilds `supplied_sources`, re-reading the program and every library, after every call, including completed ones that never render a locus. A read failure there turns a completed call into a `locus-source-supplied` fault. It should be built lazily, only for a record that carries a locus. | qsl-replay/src/spine/call.rs:281-282 |
+| FND-017 | low | Behaviour outside FR-100 has changed: `compile` (FR-027) now refuses a 1-draft request carrying `"clauses": []`, and the old compile test that admitted it was flipped. That matches FR-027-AC-7 read strictly, but FR-027's text ("selects no clause bindings") was not amended to say the key must be absent. | src/command.rs:551; tests/it/compile_command.rs:534-548 |
+| FND-018 | low | Nits. The doc comment on `tc_450_step_4_extraction_refuses_alone` still calls FND-004 an "already-reported ordering defect", but it is fixed. The coder's Dispositions table labels FND-007 low; it was raised medium. No test pins `"work_units": null` (FND-009). | tests/it/spine_run.rs:315-322; reviews/26-09-26-qsl-271-code-review.md:73-99 |
+
+Checked clean at efa42552:
+
+- The internal-failure path: stage `call`, `runtime_invariant`, `details` `{stage, invariant}` with `S6a`/`checked-program-invariant` and `spine-run`/`locus-source-supplied`, and exit 30 via the special case, not `Code::exit_code`.
+- The three refused rows follow the member table.
+- Kernel no-record is fixed at exit 20.
+- Record and family exits use `Code::from_code`, or 20.
+- `location` uses the four `origin` kinds in kebab case.
+- `locus` is `{source_digest, span}`, resolved by reference equality over the program and library `Source`s.
+- `spine`'s public surface (`CallLocus`, `CallRefusal`, `DEFAULT_WORK_UNITS` and the rest) names no `qsl_eval` type.
+- No `unwrap`/`expect`/`panic!` outside tests; the one `unreachable!` is under `cfg(seam_probe_replay_downstream)`.
+
+Gate: `make ci` at efa42552 exit 0 (`make-ci-r1.log`).
+
+**Re-review verdict: not mergeable yet.** One medium (FND-013) remains, and it is a tests-only fix.

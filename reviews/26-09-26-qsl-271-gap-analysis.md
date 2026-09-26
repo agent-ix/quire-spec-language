@@ -67,3 +67,16 @@ TC-450, and AC-3 and AC-9 are only partly backed.
 Every FR-100 AC has at least one tagged test (`#[trace("TC-45x", "FR-100-AC-n")]`).
 
 No underspecified code was found. `NativeRunSelection::Missing{Selection,Snapshots,Invocations}` moves FR-026's required-member refusals from decode to after the edition read. It keeps the same code (`invalid-request`) and stage (`request`), and FR-026 owns it.
+
+## Dispositions
+
+Reviewer disposition pass at efa42552 (based on a643665a, #469).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8eda2b73 and 630728ba. TC-450 step 6 is tested, and step 4's no-call and extraction items are isolated (mutant killed). |
+| FND-002 | deferred | partly fixed: 8eda2b73 renders `Undefined`. The refused and fault rows' renderer and exit mapping are still untested, so TC-452 ✅ overclaims (SR-674 FND-013). |
+| FND-003 | fixed | 3f49b580. The decoder makes `clauses` optional, and FR-100 Inputs is unchanged and now satisfied. |
+| FND-004 | fixed | 630728ba. The TC-450/451/452 Status sections say "Passed locally". |
+| FND-005 | fixed | 630728ba. FR-100 Status is rewritten for the full mapping (kernel rows are live, exits 30 direct). |
+| FND-006 | accepted-no-change | The AC-8 CLI arm stays outside `make ci`; the workspace unit tests gate it. |
