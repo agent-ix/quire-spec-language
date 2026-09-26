@@ -48,7 +48,10 @@ Scope: FR-100-AC-7 to FR-100-AC-9.
    - `Outcome::Completed` of `true`, `false`, `0`, `-17` and `2^70`;
    - `Outcome::Refused(CardinalityOutOfBound)` with kind `Set`, bound
      `[1, 3]` and count 4 (`above-maximum`), then count 0 (`below-minimum`);
-   - `Outcome::Refused` of each of the other twelve kernel refusals;
+   - `Outcome::Refused(ForeignReference)` with `required` the universe of 32
+     bytes of `0x01` and `supplied` the universe of 32 bytes of `0x02`
+     (QSL-281);
+   - `Outcome::Refused` of each of the other eleven kernel refusals;
    - `Outcome::Undefined` of each of the four kernel reasons;
    - `Outcome::Incomplete` at `work_units`;
    - `FamilyResult::Refused` of `ModelRefusalCause::AbsentKey` with
@@ -90,9 +93,13 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
     "span": {"start": {"byte": 233, "line": 3, "column": 54}, "end":
     {"byte": 234, "line": 3, "column": 55}}}`; then `cause` `below-minimum`, `count`
     `"0"`; exit 20.
-  - Each other kernel refusal but `CheckedInvariant`: exactly
-    `{"kind": "refused", "location": ...}`, no `code`, `cause` or `fields`;
-    exit 20.
+  - `ForeignReference`: `code` `foreign_reference`, `cause`
+    `foreign-universe`, `fields` exactly `{"required": R, "supplied": S}`,
+    where `R` is `"01"` repeated 32 times and `S` is `"02"` repeated 32 times
+    (`"0101…01"` and `"0202…02"`, 64 characters each, QSL-281); exit 20.
+  - Each other kernel refusal but `CheckedInvariant` and `ForeignReference`:
+    exactly `{"kind": "refused", "location": ...}`, no `code`, `cause` or
+    `fields`; exit 20.
   - `CheckedInvariant`: no `spine-run-result/1` document; a
     `runtime_invariant` command error at stage `call` with `details`
     `{"stage": "S6a", "invariant": "checked-program-invariant"}`, at
@@ -116,4 +123,5 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
 
 ## Status
 
-Passed locally under QSL-271.
+Passed locally under QSL-271. Step 4's `ForeignReference` row updated under
+QSL-281, now that the kernel variant carries both universes.

@@ -4,9 +4,9 @@
 //! The recovering concrete syntax tree itself -- token vocabulary, lexer,
 //! parser, declarative grammar and located diagnostics -- lives in the
 //! `qsl-cst` crate (ADR-011 §6.1 layer 1, QSL-178). This module holds
-//! `editor`/`edit`, the tooling built on that layer. Package selection
-//! (ADR-011 §6.2 layer 3) is `qsl_semantics::complete` (QSL-181). This
-//! module re-exports no item of either crate (ADR-011 §7.2).
+//! `editor`/`edit`, the tooling built on that layer. The complete-V1
+//! definition bundle (ADR-011 §6.2 layer 3) is `qsl_semantics::library::bundle`
+//! (FR-111). This module re-exports no item of either crate (ADR-011 §7.2).
 
 mod edit;
 mod editor;

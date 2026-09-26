@@ -446,7 +446,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         },
         Refusal::IeeeNanPayloadNotRepresentable,
         Refusal::IeeeRationalOutOfDomain,
-        Refusal::ForeignReference,
     ];
     for refusal in kernel_no_record {
         match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal))).unwrap() {
@@ -454,6 +453,41 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 assert_location(&got);
             }
             other => panic!("{refusal:?}: {other:?}"),
+        }
+    }
+
+    // ForeignReference (QSL-281): a record, with `required`/`supplied` fields
+    // and a locus -- no longer bare, now that the kernel variant carries both
+    // universes.
+    {
+        let required = UniverseId::from_digest([0x01; 32]);
+        let supplied = UniverseId::from_digest([0x02; 32]);
+        let refusal = Refusal::ForeignReference { required, supplied };
+        match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal))).unwrap() {
+            CallOutcome::Refused(CallRefusal::Record {
+                code,
+                fields,
+                locus,
+                location: got_location,
+            }) => {
+                assert_eq!(
+                    code,
+                    CatalogCode::new("foreign_reference", "foreign-universe")
+                );
+                assert_eq!(
+                    fields,
+                    BTreeMap::from([("required", "01".repeat(32)), ("supplied", "02".repeat(32)),])
+                );
+                let locus = locus.expect("a record locus");
+                assert_eq!(
+                    locus.source_digest,
+                    "sha256:3cb8ab70e4d3187dae8621768491c4d2eb0c8c0b82d330d4f2fba72883f6e77c"
+                );
+                assert_eq!(locus.span.start.byte, 233);
+                assert_eq!(locus.span.end.byte, 234);
+                assert_location(&got_location);
+            }
+            other => panic!("{other:?}"),
         }
     }
 

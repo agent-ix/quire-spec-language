@@ -299,8 +299,8 @@ during implementation.**
   the verified-binding and dependency-binding rules, and the private-
   constructor/public-accessor mechanism), §6.1 (the layer table: layer 3
   `library`, with `VerifiedPackage` and `ImportView`; layer 4 `package`).
-- The current tree: `qsl-semantics/src/complete/package.rs:618-1268` defines
-  `ResolvedSourcePackage` (complete-V1 lane C2); no *top-level* `library`
+- The current tree: `ResolvedSourcePackage` (complete-V1 lane C2, formerly
+  `qsl-semantics/src/complete/package.rs`) is retired (QSL-269); no *top-level* `library`
   module exists yet (`src/lib.rs` has no `mod library;`), but
   `src/value/library.rs` (FR-307, re-exported at `value::*`,
   `src/value/mod.rs:154`) and `src/value/package_identity.rs` already exist
@@ -391,7 +391,7 @@ during implementation.**
 - `EmittedPackage` (S4 wire output: the v2 bytes with their `package_id`),
   new, defined in layer-4 `package`, distinct from
   `protocol_artifact::native::EmittedPackage` (Description).
-- Retirement of `ResolvedSourcePackage` (`qsl-semantics/src/complete/package.rs`)
+- Retirement of `ResolvedSourcePackage` (formerly `qsl-semantics/src/complete/package.rs`)
   once both of its successors exist (Behavior, "`ResolvedSourcePackage`
   retires when both successors exist"; ruling on QSL-229). Its dependency
   half, the `import` selections, is resolved in layer-3 `library` against
@@ -767,7 +767,7 @@ the steps its test backs.
   `ExportIdentity` exists, and `library` defines no `resolve_name` and no
   field or variant holding a `NodeKey`.
 
-AC-7 (TC-246) is not delivered, and AC-13 (TC-379) is partly delivered:
+AC-7 (TC-246) is delivered under QSL-269, and AC-13 (TC-379) is partly delivered:
 
 - **AC-7 and CON-4.** Amended by the ruling on QSL-229 (2026-09-24) to
   follow ADR-011. They used to require every caller of
@@ -782,14 +782,25 @@ AC-7 (TC-246) is not delivered, and AC-13 (TC-379) is partly delivered:
   `DefinitionLock` catalog, which carries each row's digest from QSpec's
   `complete-value-lock.json`, and model declarations through I1. It needs
   no QSpec accessor (QSL-189 is Canceled, ADR-011 §2.4 amended
-  2026-09-24). FR-110 is not implemented, so neither criterion is backed.
-  Behavior's disposition table names each capability's successor; its
-  closure and bundle, which back QSpec FR-131, move to `library::bundle`
-  (FR-111). Until then `ResolvedSourcePackage`
-  stays, reached through `command::resolve_parsed_source`
-  (`src/command/source_package.rs`) and tested by
-  `tests/it/complete_package.rs`. Remaining work: QSL-284 (FR-110), then
-  QSL-269 (the retirement and the FR-111 move).
+  2026-09-24). FR-110 is implemented (QSL-284, PR #478, TC-490).
+  QSL-269 retired `ResolvedSourcePackage`, `resolve_source_package`,
+  `SourceAuthority`, `ModelCatalog`, `ModelArtifact`, the complete-package `ModelConflict` and
+  `command::resolve_parsed_source` in one change, and moved the closure,
+  bundle, limits and identity to `library::bundle` (FR-111), with no old name
+  reachable: `qsl_semantics::complete`, `src/command/source_package.rs` and
+  `tests/it/complete_package.rs` no longer exist. Each former scenario now
+  has a test against its row's successor: the unknown, stale-revision,
+  stale-digest and conflicting profile selections against TC-490
+  (`a_header_profile_resolves_only_against_the_root_row`); the duplicate
+  alias against FR-091-AC-22's assembler test; an inadmissible parse against
+  the spine's S1 refusal (`tests/it/spine_run.rs`, `tests/it/compile_command.rs`);
+  model selection against I1 (TC-442 step 4); the parse-time stale profile
+  against `tests/it/complete_editor.rs`; and the closure, bundle, limits and
+  identity against TC-491 (`library::bundle_tests`), keeping their QSpec
+  FR-131/FR-339 tags. The source-authority and span refusal checks are
+  deleted with `SourceAuthority` (Behavior's disposition table). The
+  absence scan of TC-246 is a search, not an automated test.
+
 - **AC-13.** E3's resolution rule is specified, and the QSpec schema defect
   that blocked it is fixed (QSpec STD-105, IR-287). E4 fills the dependency
   closure (`CheckedPackage::link_with`, AC-14), the emitter writes
