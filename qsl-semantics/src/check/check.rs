@@ -314,6 +314,12 @@ pub struct PackageDeclarations {
     /// assembler fills it). A type declared by hand has none, and its
     /// `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// The `UnitGraph` the assembler admitted over the unit's dimension and
+    /// unit declarations (FR-091). Empty when the unit declares none.
+    pub units: crate::value::UnitGraph,
+    /// The span of each dimension's and unit's declared name, by its node
+    /// key (FR-096).
+    pub nominal_spans: BTreeMap<NodeKey, qsl_foundation::Span>,
     /// Each `import ... as a` the S4 source resolution admitted, by its
     /// qualifier `a` (ADR-015 D-1, D-5). An import with no `as` binds no
     /// qualifier (FR-087-AC-13).
@@ -343,6 +349,8 @@ impl PackageDeclarations {
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
+            units: crate::value::UnitGraph::default(),
+            nominal_spans: BTreeMap::new(),
             imports: BTreeMap::new(),
             function_selections: BTreeMap::new(),
         }
