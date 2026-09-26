@@ -1,12 +1,12 @@
 ---
-id: TC-470
+id: TC-480
 title: "S2 builds enum and predicate forms"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-091
     type: verifies
 ---
-# TC-470: S2 builds enum and predicate forms
+# TC-480: S2 builds enum and predicate forms
 
 ## Description
 
@@ -36,8 +36,8 @@ alias is `v`.
 4. Run S1 and S2 on a unit declaring
    `function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }`.
 
-Tag the tests `#[trace("FR-091-AC-25", "TC-470")]` and
-`#[trace("FR-091-AC-26", "TC-470")]`.
+Tag the tests `#[trace("FR-091-AC-25", "TC-480")]` and
+`#[trace("FR-091-AC-26", "TC-480")]`.
 
 ## Expected Results
 

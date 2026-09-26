@@ -1,5 +1,5 @@
 ---
-id: TC-471
+id: TC-481
 title: "The assembler admits source enums and predicates, which check and lowering then use"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-092
     type: verifies
 ---
-# TC-471: The assembler admits source enums and predicates, which check and lowering then use
+# TC-481: The assembler admits source enums and predicates, which check and lowering then use
 
 ## Description
 
@@ -63,7 +63,7 @@ alias is `v`. The owner is authority `a`, identity `u` unless stated.
     in another unit and read its node.
 11. Lower step 3's checked package and read the nodes keyed N1 and N2.
 
-Tag the tests with the AC ids they back and `TC-471`.
+Tag the tests with the AC ids they back and `TC-481`.
 
 ## Expected Results
 

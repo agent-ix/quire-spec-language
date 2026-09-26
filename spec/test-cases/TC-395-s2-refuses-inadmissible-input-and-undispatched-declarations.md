@@ -33,14 +33,12 @@ alias is `v`.
 3. Parse an admissible unit holding
    `function t using v(): Boolean pure { true }` followed by
    `invariant Positive using v on M::T at current { true }`. Run S2.
-4. Parse an admissible unit whose only declaration is
-   `dimension Length;`, and one whose only declaration is
-   `unit m : Length = rational(1, 1);`. Run S2 on each.
-5. Parse an admissible unit whose only declaration is `enum Color { RED }`,
-   one whose only declaration is `ordered enum Level { LOW }`, and one whose
-   only declaration is `predicate P using v(x: Boolean): Boolean { x }`. Run
-   S2 on each.
-6. With `syn`, scan every module under `forms` for the names
+4. Parse admissible units whose only declarations are, in turn,
+   `enum Color { RED }`, `ordered enum Level { LOW }`,
+   `predicate P using v(x: Boolean): Boolean { x }`, `dimension Length;`,
+   and `dimension Length;` followed by `unit m : Length = rational(1, 1);`.
+   Run S2 on each.
+5. With `syn`, scan every module under `forms` for the names
    `EnumDeclaration`, `EnumMember`, `Predicate`, `DimensionDeclaration` and
    `UnitDeclaration`.
 
@@ -53,19 +51,16 @@ Tag the test `#[trace("FR-091-AC-4", "FR-091-AC-5", "FR-091-AC-6", "TC-395")]`.
   `RecoveringCst` and holds the prepended diagnostic's code.
 - Step 3 refuses with cause `NoDispatchEntry`, the spelling `invariant` and
   the `invariant` declaration's span. No form is returned for `t`.
-- Step 4 refuses each unit with `NoDispatchEntry`, naming the leading
-  token (`dimension`, `unit`) and the declaration's span, and returns no
-  parsed unit.
-- Step 5 returns a parsed unit with one form for each unit.
-- Step 6 finds those names only in the `Value` family form builder.
-- No step from 1 to 4 returns a parsed unit.
+- Step 4 returns a parsed unit for each, with one form per declaration,
+  and no `NoDispatchEntry` refusal.
+- Step 5 finds those names only in the `Value` family form builder.
+- No step from 1 to 3 returns a parsed unit.
 
 ## Status
 
 Steps 1 to 3 are backed by `qsl-forms/tests/it/value_forms.rs`:
 `s2_refuses_inadmissible_input_and_undispatched_declarations`. That test
-also asserts `NoDispatchEntry` for `dimension` and `unit` (step 4), and for
-`enum`, `ordered enum` and `predicate`, which the amended FR-091-AC-6
-(QSL-275) replaces with step 5. Step 5 and step 6's `syn` scan are not
-written; they land with QSL-275, which also removes the three retired
-`NoDispatchEntry` cases.
+also asserts `NoDispatchEntry` for `enum`, `ordered enum`, `predicate`,
+`dimension` and `unit`, which the amended FR-091-AC-6 (QSL-275) retires:
+QSL-275 replaces those cases with step 4. Step 4 and step 5's `syn` scan
+are not written.

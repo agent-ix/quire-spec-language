@@ -43,12 +43,18 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
   duplicate-alias cause `ambiguous_declaration`, and the alias-cycle cause
   `invalid_package`.
 - The duplicate-enum-member cause returns
-  `ambiguous_declaration`/`ambiguous-name`, and the enum-admission-fault
+  `ambiguous_declaration`/`ambiguous-name`, and the nominal-admission-fault
   cause `runtime_invariant`/`established-invariant-broken`.
+- The duplicate dimension or unit name cause returns
+  `ambiguous_declaration`/`ambiguous-name`, the unresolved dimension or unit
+  name cause `missing_declaration`/`missing-name`, the dimension or unit
+  cycle cause `invalid_package`/`definition-cycle`, and the zero-denominator
+  cause `undefined_expression`/`unproved-nonzero`. The unit-graph topology
+  cause returns the STD-112 cause once QSpec publishes it.
 - Step 2 returns `unknown_profile`.
 - Step 3 finds no `_` arm.
 - Step 4 reports `stage_limit_exceeded`/`nesting-depth-exceeded`.
 
 ## Status
 
-Steps 1, 2 and 4 are backed by `qsl-forms/tests/it/value_forms.rs` (the S2 causes and the depth limit) and `qsl-semantics` `check::assemble` tests (`each_assembler_cause_has_its_catalog_code`). Step 3's `syn` inspection is not written; both `catalog_code` matches have no `_` arm. The duplicate-enum-member and enum-admission-fault causes do not exist yet; they land with QSL-275.
+Steps 1, 2 and 4 are backed by `qsl-forms/tests/it/value_forms.rs` (the S2 causes and the depth limit) and `qsl-semantics` `check::assemble` tests (`each_assembler_cause_has_its_catalog_code`). Step 3's `syn` inspection is not written; both `catalog_code` matches have no `_` arm. The enum, dimension and unit causes do not exist yet; they land with QSL-275, and the unit-graph topology row waits on STD-112.
