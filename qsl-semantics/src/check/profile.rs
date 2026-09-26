@@ -10,7 +10,7 @@
 use qsl_foundation::selection::{DefinitionRef, ProfileSelection};
 use qsl_foundation::{Code, Span};
 
-use crate::value::{CatalogEntry, CatalogRole, DefinitionLock};
+use crate::value::definition::{CatalogEntry, CatalogRole, DefinitionLock};
 
 /// Why a header profile does not resolve (FR-110's table).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
