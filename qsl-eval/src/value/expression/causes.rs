@@ -15,7 +15,6 @@ use qsl_foundation::diagnostic::{
 use quire_exact::ObjectReference;
 
 use qsl_semantics::check::WrongSnapshotCause;
-use qsl_semantics::model::key::hex;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 
 /// The `precondition-false` payload (`native-diagnostics.md`): the called
@@ -103,14 +102,14 @@ impl CatalogCoded for ProtocolClauseSnapshot {
 
     /// FR-096's key table: `wrong-anchor` has `required` and `supplied`,
     /// `forbidden-pre-read` has `read`.
-    fn catalog_fields(&self) -> BTreeMap<&'static str, String> {
-        match self {
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(match self {
             Self::WrongAnchor { required, supplied } => BTreeMap::from([
                 ("required", (*required).to_owned()),
                 ("supplied", (*supplied).to_owned()),
             ]),
             Self::ForbiddenPreRead { read } => BTreeMap::from([("read", read.clone())]),
-        }
+        })
     }
 }
 
@@ -142,16 +141,10 @@ impl CatalogCoded for ModelQueryRefusal {
         self.cause.catalog_code()
     }
 
-    /// FR-096's key table row for this cause: `absent-key` has `binding`
-    /// and `key`. The table has no row for the model refusal's other
-    /// causes, which return no fields until it does.
-    fn catalog_fields(&self) -> BTreeMap<&'static str, String> {
-        match &self.cause {
-            ModelRefusalCause::AbsentKey { binding, key } => {
-                BTreeMap::from([("binding", binding.clone()), ("key", identity_string(key))])
-            }
-            _ => BTreeMap::new(),
-        }
+    /// FR-096's key table rows for this cause (`absent-key` and
+    /// `foreign-universe`); `None` for every cause with no row.
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        self.cause.catalog_fields()
     }
 }
 
@@ -163,10 +156,7 @@ impl CatalogCoded for ModelQueryRefusal {
 /// render alike, and a malformed identity never renders as a lossy decoding
 /// that could equal a real member's.
 pub(crate) fn identity_string(identity: &[u8]) -> String {
-    match std::str::from_utf8(identity) {
-        Ok(identity) => identity.to_owned(),
-        Err(_) => format!("identity bytes 0x{} (not UTF-8)", hex(identity)),
-    }
+    qsl_semantics::model::refusal::render_identity(identity)
 }
 
 /// ADR-013 O-16: the `StateModel` family's evaluation-time undefined cause
@@ -237,7 +227,11 @@ mod tests {
     #[test]
     fn catalog_fields_hold_exactly_the_keys_of_the_key_table() {
         fn keys(cause: &dyn CatalogCoded) -> Vec<(&'static str, String)> {
-            cause.catalog_fields().into_iter().collect()
+            cause
+                .catalog_fields()
+                .expect("a key-table row")
+                .into_iter()
+                .collect()
         }
         assert_eq!(
             keys(&wrong_anchor()),
@@ -258,6 +252,28 @@ mod tests {
             keys(&absent),
             [("binding", "pop-1".to_owned()), ("key", "c9".to_owned())]
         );
+        let foreign = ModelQueryRefusal {
+            cause: ModelRefusalCause::ForeignUniverse {
+                actual: vec![0xAB, 0xCD],
+                expected: quire_exact::UniverseId::from_digest([0x11; 32]),
+            },
+            detail: String::new(),
+        };
+        assert_eq!(
+            keys(&foreign),
+            [
+                ("required", "11".repeat(32)),
+                ("supplied", "abcd".to_owned())
+            ]
+        );
+        // A cause with no key-table row has no fields, not an empty map,
+        // and builds no record.
+        let mismatch = ModelQueryRefusal {
+            cause: ModelRefusalCause::TypeMismatch,
+            detail: String::new(),
+        };
+        assert_eq!(mismatch.catalog_fields(), None);
+        assert_eq!(mismatch.refusal_record(None), None);
     }
 
     /// TC-387 (FR-090-AC-6): each `WrongSnapshotCause` maps to

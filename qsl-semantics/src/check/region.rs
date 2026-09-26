@@ -174,7 +174,7 @@ mod tests {
     use qsl_foundation::source::provenance::SourceRegion;
     use qsl_foundation::{SourceIdentity, Span};
 
-    use super::super::family::fixtures::admitted_source;
+    use super::super::family::fixtures::{admitted_source, empty_scope, measure_resolved};
     use super::super::{CheckingLimits, Location, Origin, PackageDeclarations};
 
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -425,14 +425,29 @@ mod tests {
     }
 
     /// FR-096, QSL-245: each `CheckingLimits` ceiling `Typer` reaches
-    /// (package-wide node count, nesting depth) surfaces as a T-4
+    /// (package-wide node count, nesting depth) and each declaration-level
+    /// ceiling (input bytes, work budget) surfaces as a T-4
     /// `LimitExceeded` with its kind, bound and counter, located by the
     /// `Locus::Region` of the node whose entry failed. A refusal that is
-    /// no limit stop is none.
-    #[trace("TC-427", "FR-096-AC-3", "FR-096-AC-11")]
+    /// no limit stop is none. The declaration-level input-bytes and work
+    /// stops are located at the declaration.
+    #[trace("TC-427", "FR-096-AC-4", "FR-096-AC-5", "FR-096-AC-11")]
     #[test]
     fn a_checking_limit_stop_is_a_limit_exceeded_located_at_its_node() {
+        let metrics = measure_resolved(&empty_scope(), &unit().functions[0]);
         for (limits, kind, bound, actual) in [
+            (
+                CheckingLimits::default().with_input_bytes(metrics.input_bytes - 1),
+                LimitKind::InputBytes,
+                metrics.input_bytes - 1,
+                u128::from(metrics.input_bytes),
+            ),
+            (
+                CheckingLimits::default().with_work_budget(metrics.work_budget - 1),
+                LimitKind::WorkBudget,
+                metrics.work_budget - 1,
+                u128::from(metrics.work_budget),
+            ),
             (
                 CheckingLimits::new(2, 64).unwrap(),
                 LimitKind::NodeCount,
@@ -448,6 +463,7 @@ mod tests {
         ] {
             let unit = unit();
             let regions = unit.regions();
+            let declaration = regions.declaration_region(0);
             let refusals = unit.check(limits).expect_err("the limit stops checking");
             let [refusal] = refusals.as_slice() else {
                 panic!("one refusal, got {refusals:?}");
@@ -462,6 +478,10 @@ mod tests {
                 .refusal_region(refusal)
                 .expect("the position was read from the unit");
             assert!(!text(&expected).is_empty());
+            if matches!(kind, LimitKind::InputBytes | LimitKind::WorkBudget) {
+                // FR-096: a declaration-level limit is at the declaration.
+                assert_eq!(Some(expected.clone()), declaration);
+            }
             assert_eq!(exceeded.locus(), Some(&Locus::Region(expected)));
         }
     }

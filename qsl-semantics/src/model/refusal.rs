@@ -668,6 +668,92 @@ impl IntakeLimit {
 }
 
 impl ModelRefusalCause {
+    /// FR-096: the catalog payload of this cause, for a cause with a row in
+    /// FR-096's key table, else `None`: a cause with no row has no fields to
+    /// give, and an empty map would pass for a record with none required.
+    /// Read from the variant, never from `detail`. Matched exhaustively, so
+    /// a new cause forces a decision here.
+    #[deny(clippy::wildcard_enum_match_arm)]
+    pub fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        match self {
+            Self::AbsentKey { binding, key } => Some(std::collections::BTreeMap::from([
+                ("binding", binding.clone()),
+                ("key", render_identity(key)),
+            ])),
+            Self::ForeignUniverse { actual, expected } => Some(std::collections::BTreeMap::from([
+                ("required", crate::model::key::hex(expected.as_bytes())),
+                ("supplied", crate::model::key::hex(actual)),
+            ])),
+            Self::FamilySteps { .. }
+            | Self::UnclosedMethodSet { .. }
+            | Self::UnknownOriginal { .. }
+            | Self::UnknownCandidate { .. }
+            | Self::NoApplicable { .. }
+            | Self::MultipleUndominated { .. }
+            | Self::UnsortedView { .. }
+            | Self::SpecializationCycle { .. }
+            | Self::UnknownOwner { .. }
+            | Self::UnknownGeneral { .. }
+            | Self::UnknownValueType { .. }
+            | Self::UnknownFieldWrite { .. }
+            | Self::UnknownEffectType { .. }
+            | Self::UnknownMember { .. }
+            | Self::DerivationConflict { .. }
+            | Self::UnsuppliedProducerRecord { .. }
+            | Self::AncestorSteps { .. }
+            | Self::VarianceResult { .. }
+            | Self::MultiplicityNarrowing { .. }
+            | Self::SubsettingType { .. }
+            | Self::TypeMismatch { .. }
+            | Self::VarianceParameter { .. }
+            | Self::EffectEscape { .. }
+            | Self::UnprovedRefinement { .. }
+            | Self::RedefinitionTarget { .. }
+            | Self::ForeignModelSelection { .. }
+            | Self::IncompleteScope { .. }
+            | Self::UnclosedSubtypes { .. }
+            | Self::ForeignType { .. }
+            | Self::AbstractInstance { .. }
+            | Self::UnknownPopulationMemberType { .. }
+            | Self::ConflictingIdentity { .. }
+            | Self::OperatorIneligible { .. }
+            | Self::AboveMaximum { .. }
+            | Self::WrongExport { .. }
+            | Self::ConflictingBinding { .. }
+            | Self::UnknownRelationship { .. }
+            | Self::UnknownSourcePort { .. }
+            | Self::UnknownTargetPort { .. }
+            | Self::PortDirection { .. }
+            | Self::UnknownRedefining { .. }
+            | Self::UnknownRedefined { .. }
+            | Self::UnknownSubsetting { .. }
+            | Self::UnknownSubsetted { .. }
+            | Self::UnknownComponent { .. }
+            | Self::UnknownEndpoint { .. }
+            | Self::UnsortedDerivation { .. }
+            | Self::DuplicatePath { .. }
+            | Self::MalformedDeclaration { .. }
+            | Self::IntakeMalformedDeclaration { .. }
+            | Self::UnsupportedDeclarationForm { .. }
+            | Self::DigestDomainMismatch { .. }
+            | Self::MissingSelection { .. }
+            | Self::ByteDigestMismatch { .. }
+            | Self::IntakeLimitExceeded { .. }
+            | Self::WrongModelSelection { .. }
+            | Self::ReservedPackageIdentity { .. }
+            | Self::DuplicateSelection { .. }
+            | Self::DuplicateMember { .. }
+            | Self::SubsettingViolation { .. }
+            | Self::FrameCreateOutsideGrant { .. }
+            | Self::FrameTypeChanged { .. }
+            | Self::FrameDeleteOutsideGrant { .. }
+            | Self::FrameFieldWriteOutsideGrant { .. }
+            | Self::DuplicateDeclaredIdentity { .. }
+            | Self::DeclaredCreateDeleteOverlap { .. }
+            | Self::DeclaredDeltaMismatch { .. } => None,
+        }
+    }
+
     /// The cause tag (the exact spelling every FR-150/151/152/153/272 test
     /// tracing and every prior wire-visible string used before #141).
     pub fn as_str(&self) -> &'static str {
@@ -1130,6 +1216,22 @@ pub mod fixtures {
             computed_deleted: std::collections::BTreeSet::new(),
         },
         ]
+    }
+}
+
+/// The payload rendering of a member identity. A population member's
+/// identity is a JSON string, so a well-formed identity is valid UTF-8 and
+/// renders as itself. Bytes that are not UTF-8 render as
+/// `identity bytes 0x<lowercase hex> (not UTF-8)`: two distinct malformed
+/// identities never render alike, and a malformed identity never renders as
+/// a lossy decoding that could equal a real member's.
+pub fn render_identity(identity: &[u8]) -> String {
+    match std::str::from_utf8(identity) {
+        Ok(identity) => identity.to_owned(),
+        Err(_) => format!(
+            "identity bytes 0x{} (not UTF-8)",
+            crate::model::key::hex(identity)
+        ),
     }
 }
 

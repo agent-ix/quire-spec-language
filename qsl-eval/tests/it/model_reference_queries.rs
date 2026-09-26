@@ -3491,3 +3491,104 @@ fn a_refused_lookup_builds_a_record_at_the_lookup_expression() {
         .expect("a family refusal builds a record");
     assert_eq!(record.locus(), None);
 }
+
+/// TC-428 (FR-096-AC-6, AC-7): a `lookup` with a reference of another
+/// universe raises `foreign_reference`/`foreign-universe`, and its record
+/// carries the required (the binding's) and supplied (the reference's)
+/// universes. The lookup is a standalone expression, so it has no locus.
+#[test]
+#[trace("TC-428", "FR-096-AC-6", "FR-096-AC-7")]
+fn a_foreign_universe_lookup_builds_a_record_with_both_universes() {
+    let scenario = scenario();
+    let package = package(&scenario);
+    let parameters = [
+        ("p", ValueType::Population(Some(3))),
+        ("r", ValueType::Reference(scenario.b)),
+    ];
+    let foreign_reference = ObjectReference::new(
+        foreign_universe_id(),
+        scenario.b,
+        ObjectId::new("b1").unwrap(),
+    );
+    let object_world =
+        ObjectEnvironment::new(&types(&scenario), [(foreign_reference.clone(), vec![])])
+            .unwrap()
+            .with_population(scenario.binding.clone())
+            .unwrap();
+    let (evaluation, _) = run_family(
+        &package,
+        &parameters,
+        &lookup(ValueType::Reference(scenario.a), AbsenceMode::Undefined),
+        vec![
+            population_argument(&scenario),
+            Value::Reference(foreign_reference),
+        ],
+        SCALAR_UNLIMITED,
+        &object_world,
+    );
+    let record = evaluation
+        .refusal_record(package.graph())
+        .expect("foreign-universe has a key-table row");
+    assert_eq!(
+        record.code(),
+        qsl_foundation::diagnostic::CatalogCode::new("foreign_reference", "foreign-universe")
+    );
+    let hex = |bytes: &[u8]| -> String { bytes.iter().map(|b| format!("{b:02x}")).collect() };
+    assert_eq!(
+        record
+            .fields()
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect::<Vec<_>>(),
+        [
+            ("required", hex(scenario.universe.as_bytes())),
+            ("supplied", hex(foreign_universe_id().as_bytes())),
+        ]
+    );
+    assert_eq!(record.locus(), None);
+}
+
+/// TC-428 (FR-096-AC-8): a kernel `Refused` builds the record its catalog
+/// code gives when it has one (`CardinalityOutOfBound`), and none for a
+/// cause with no catalog code, or for `CheckedInvariant`, which is an
+/// internal fault and never a refusal record.
+#[test]
+#[trace("TC-428", "FR-096-AC-8")]
+fn a_kernel_refusal_builds_a_record_only_where_the_catalog_has_a_code() {
+    use quire_exact::{BoundViolation, Refusal};
+    let scenario = scenario();
+    let package = package(&scenario);
+    let evaluation = |refusal| Evaluation {
+        outcome: FamilyOutcome::Evaluated(Outcome::Refused(refusal)),
+        location: None,
+        losses: Vec::new(),
+    };
+    let record = evaluation(Refusal::CardinalityOutOfBound {
+        violation: BoundViolation::AboveMaximum,
+        kind: CollectionKind::Set,
+        bound: CardinalityBound::new(1, 2).unwrap(),
+        count: 3,
+    })
+    .refusal_record(package.graph())
+    .expect("cardinality_out_of_bound has a code");
+    assert_eq!(
+        record.code(),
+        qsl_foundation::diagnostic::CatalogCode::new("cardinality_out_of_bound", "above-maximum")
+    );
+    assert_eq!(
+        record
+            .fields()
+            .iter()
+            .map(|(k, v)| (*k, v.as_str()))
+            .collect::<Vec<_>>(),
+        [("bound", "[1, 2]"), ("collection", "set"), ("count", "3")]
+    );
+    for refusal in [
+        Refusal::InexactDecimal,
+        Refusal::IntegerOutOfDomain,
+        Refusal::ForeignReference,
+        Refusal::CheckedInvariant,
+    ] {
+        assert_eq!(evaluation(refusal).refusal_record(package.graph()), None);
+    }
+}

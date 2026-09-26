@@ -35,10 +35,14 @@ impl qsl_foundation::diagnostic::CatalogCoded for BoundExceeded {
         qsl_foundation::diagnostic::CatalogCode::new("stage_limit_exceeded", "input-bytes-exceeded")
     }
 
-    /// FR-096's key table has no row for this cause; `actual` is its own
-    /// field.
-    fn catalog_fields(&self) -> std::collections::BTreeMap<&'static str, String> {
-        std::collections::BTreeMap::new()
+    /// The `stage_limit_exceeded` row's payload (FR-096): the kind, the
+    /// reader's bound and the encoding's actual size.
+    fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        Some(std::collections::BTreeMap::from([
+            ("kind", "input-bytes-exceeded".to_owned()),
+            ("bound", MAX_ENCODED_BYTES.to_string()),
+            ("actual", self.actual.to_string()),
+        ]))
     }
 }
 

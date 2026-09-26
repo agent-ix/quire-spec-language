@@ -14,7 +14,7 @@ use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
     StateModelUndefined,
 };
-use qsl_foundation::diagnostic::{InternalFault, Locus, RefusalRecord};
+use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
     Arithmetic, CheckedGraph, Connective, DispatchTable, Location, Node, NodeKind, OrderedKind,
     RecordSlot, Scope, Slot, Visit,
@@ -76,19 +76,28 @@ impl Evaluation {
     /// package the evaluation ran. The locus is absent when the location is
     /// `None` or names a tree not read from a source unit.
     ///
-    /// `None` when the outcome is not a family refusal. A kernel
-    /// `Outcome::Refused` also gives `None`: F holds no map of the kernel
-    /// cause to a catalog code yet (FR-096-AC-8).
+    /// `graph` must be the checked package this evaluation ran: a location
+    /// is a position in that package's declarations, and another graph
+    /// resolves it to another package's region.
+    ///
+    /// `None` when no record exists: the outcome is no refusal, a family
+    /// cause has no FR-096 key-table row, or a kernel refusal has no
+    /// catalog code (FR-096-AC-8, [`kernel_refusal_record`]).
     pub fn refusal_record(&self, graph: &CheckedGraph) -> Option<RefusalRecord> {
-        let FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) = &self.outcome else {
-            return None;
-        };
         let locus = self
             .location
             .as_ref()
             .and_then(|location| graph.region(location))
             .map(Locus::Region);
-        Some(cause.refusal_record(locus))
+        match &self.outcome {
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
+                cause.refusal_record(locus)
+            }
+            FamilyOutcome::Evaluated(Outcome::Refused(refusal)) => {
+                kernel_refusal_record(refusal, locus)
+            }
+            _ => None,
+        }
     }
 }
 

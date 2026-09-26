@@ -147,11 +147,15 @@ impl CatalogCoded for LimitExceeded {
         CatalogCode::new("stage_limit_exceeded", self.kind.catalog_cause())
     }
 
-    /// FR-096's key table has no row for a stage limit: its kind, bound and
-    /// actual counter are this value's own accessors, and its position is
-    /// its locus, so no field is repeated here.
-    fn catalog_fields(&self) -> std::collections::BTreeMap<&'static str, String> {
-        std::collections::BTreeMap::new()
+    /// The catalog row's payload: the exceeded limit kind (its cause tag),
+    /// the configured bound and the actual counter (FR-096). Its position is
+    /// its locus.
+    fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        Some(std::collections::BTreeMap::from([
+            ("kind", self.kind.catalog_cause().to_owned()),
+            ("bound", self.configured_bound.to_string()),
+            ("actual", self.actual.to_string()),
+        ]))
     }
 }
 
@@ -187,6 +191,10 @@ mod tests {
             assert_eq!(exceeded.configured_bound(), 10);
             assert_eq!(exceeded.actual(), 11);
             assert_eq!(exceeded.locus(), None);
+            let fields = exceeded.catalog_fields().expect("a key-table row");
+            assert_eq!(fields["kind"], cause);
+            assert_eq!(fields["bound"], "10");
+            assert_eq!(fields["actual"], "11");
         }
     }
 }

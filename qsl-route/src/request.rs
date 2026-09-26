@@ -175,10 +175,9 @@ impl CatalogCoded for BoundRefusal {
         }
     }
 
-    /// FR-096's key table has no row for `invalid-value`; each variant
-    /// carries its own typed fields.
-    fn catalog_fields(&self) -> std::collections::BTreeMap<&'static str, String> {
-        std::collections::BTreeMap::new()
+    /// FR-096's key table has no row for `invalid-value`.
+    fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        None
     }
 }
 
