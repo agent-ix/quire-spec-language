@@ -137,8 +137,8 @@ impl ClaimSite {
 
 /// One `value-validity` claim of a `Value` function declaration: its site
 /// and its extent, classified by `check`, each unbounded domain keyed by
-/// the binder that carries it until [`key_claims`] names the binder's
-/// parameter node.
+/// the binder that carries it until `check` names the binder's parameter
+/// node, once lowering has keyed it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValueClaim {
     site: ClaimSite,

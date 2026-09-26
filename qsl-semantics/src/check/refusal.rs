@@ -408,11 +408,11 @@ pub enum KeyFault {
     /// A family `check` reported a stage limit of a kind no checking limit
     /// names (a token, edge, occurrence or diagnostic count).
     UncheckedLimitKind(LimitKind),
-    /// A checked item's `Requirements` (ADR-012 §13.5) could not be keyed
-    /// by occurrence: either its identity never got minted, or its
-    /// identity was minted but has fewer recorded occurrences than the
-    /// number of items sharing it. `Requirements` are never silently
-    /// dropped.
+    /// A claim (ADR-012 §13.5) could not be keyed by occurrence: its site
+    /// has no one scalar application `expression` occurrence at its
+    /// location, a guard, root or result bound names no lowered node, or a
+    /// scalar application occurrence in a function body is no claim's.
+    /// Claims are never silently dropped.
     UnkeyableRequirements,
     /// A claim's extent could not be classified: a checked type names a
     /// composite the type environment does not hold, or the body reads a
