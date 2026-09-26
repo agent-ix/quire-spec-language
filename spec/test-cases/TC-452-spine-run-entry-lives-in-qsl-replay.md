@@ -33,11 +33,11 @@ Scope: FR-100-AC-7 to FR-100-AC-9.
    `pub use qsl_eval::value::Evaluation;` to `qsl_replay`.
 4. Compile the fixture unit `F` below through `qsl_replay::spine::compile`
    as the program source (its bytes are exactly these three lines, each
-   ended by one LF, 229 bytes in all):
+   ended by one LF, 237 bytes in all):
 
    ```text
    language "ix:native" edition "1-draft";
-   profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+   profile v = "quire.value.complete/v1" version "1-draft.2" digest "sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16";
    function f using v(x: Int[0, 9]): Integer pure { x + 5 }
    ```
 
@@ -86,9 +86,9 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
     `above-maximum`, `fields` exactly
     `{"collection": "set", "bound": "[1, 3]", "count": "4"}`, and `locus`
     exactly `{"source_digest":
-    "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26",
-    "span": {"start": {"byte": 225, "line": 3, "column": 54}, "end":
-    {"byte": 226, "line": 3, "column": 55}}}`; then `cause` `below-minimum`, `count`
+    "sha256:3cb8ab70e4d3187dae8621768491c4d2eb0c8c0b82d330d4f2fba72883f6e77c",
+    "span": {"start": {"byte": 233, "line": 3, "column": 54}, "end":
+    {"byte": 234, "line": 3, "column": 55}}}`; then `cause` `below-minimum`, `count`
     `"0"`; exit 20.
   - Each other kernel refusal but `CheckedInvariant`: exactly
     `{"kind": "refused", "location": ...}`, no `code`, `cause` or `fields`;
