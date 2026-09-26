@@ -223,8 +223,8 @@ operational validation remains outside this audit-only plan.
 | TC-439 | An exploration outcome maps to its O-16 category and keeps its frontier | Unit | P1 | FR-097-AC-5 | ✅ Passed locally (QSL-140) |
 | TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | 🚧 Partly passed (QSL-140): agreeing fixtures pass; the ignored agreement test waits on IR-283 and IR-284; step 4 (per application node) is QSL-266's |
 | TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally (QSL-140); step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
-| TC-453 | Exploration orders successors canonically and keys states by their JCS bytes | Unit | P1 | FR-101-AC-1, FR-101-AC-2 | 🚧 Planned; QSL-272 |
-| TC-454 | The pinned sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5 | 🚧 Planned; QSL-272 |
+| TC-453 | Exploration orders successors canonically and keys states by their JCS bytes | Unit | P1 | FR-101-AC-1, FR-101-AC-2, FR-101-AC-9 | 🚧 Planned; QSL-272 |
+| TC-454 | The pinned sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5, FR-101-AC-10 | 🚧 Planned; QSL-272 |
 | TC-455 | Stopped explorations stay incomplete, and unbounded requests require a bound | Unit | P1 | FR-101-AC-6, FR-101-AC-7, FR-101-AC-8 | 🚧 Planned; QSL-272 |
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally (QSL-249) |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally (QSL-252) |
@@ -576,7 +576,7 @@ is QSL's implementation of QSpec FR-181: canonical successor order, the
 typed state key and its `quire.simulation.state-key/v1` digest, the pinned
 `quire.simulation.sampler/v1`, replay, the `cancelled`/`caller-cancelled`
 cause, limit exhaustion and the pre-exploration `requires-bound`. TC-453
-backs AC-1 and AC-2, TC-454 AC-3 to AC-5 and TC-455 AC-6 to AC-8, all
+backs AC-1, AC-2 and AC-9, TC-454 AC-3 to AC-5 and AC-10, and TC-455 AC-6 to AC-8, all
 planned under QSL-272. The simulation tests in
 `qsl-eval/tests/it/finite_simulation.rs` trace to these ids, not to QSpec's
 TC-210 and FR-181-AC-* ids; this repository's TC-210 is a different case.
