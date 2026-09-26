@@ -9,6 +9,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-057
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-062
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-097
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-290
     type: depends_on
 ---
@@ -64,10 +68,16 @@ whose members are the ten labels FR-290 fixes and FR-057 admits into QSL.
   exactly the pair FR-290's refusal keys by: (identity, manifest digest).
 - A requested item's capability kind (the `Capability` value FR-057's
   admission recorded for it) and, optionally, a named `BackendId`.
+- For the request builder: a checked package's requirement records
+  (FR-062-AC-13) and, optionally, one named `BackendId` for the request.
 - The registry's current contents at the moment candidates are computed.
 
 ## Outputs
 
+- From the request builder: one `RequirementItem` per requirement record,
+  in record key order, each with its request index, occurrence key, node,
+  kind, extent classification, unbounded domains, result bound and
+  candidate outcome.
 - A candidate set per item: zero, one or more `(BackendId, manifest digest)`
   pairs, ordered bytewise by identity and then by manifest digest
   (FR-290 "Candidate set and negotiation").
@@ -101,6 +111,56 @@ Mode (`bounded`/`unbounded`) SHALL NOT affect which backends are candidates;
 comparing a candidate's advertised mode against the item's extent is
 `negotiate_*`'s work, after candidates are computed (ADR-012 §1.1, §7.2 step
 3), and this requirement's registry SHALL NOT perform it.
+
+### Requested items from a package's requirement records
+
+`route`'s request builder (design name
+`qsl_route::request::items_from_requirements`; the implementing ticket
+chooses the Rust spelling) SHALL take a checked package's requirement
+records (`CheckedPackage::graph().requirements()`, FR-062-AC-13), the
+registry, and at most one `BackendId` the request names. It SHALL return
+one `RequirementItem` (design name) per record, in the records' bytewise
+occurrence-key order. Each `RequirementItem` SHALL carry:
+
+- its request index, its position in that order (ADR-012 §13.5);
+- the record's occurrence key, and that key's node (`WireNodeId`);
+- the record's capability kind;
+- its extent classification, as `RequestWriter::item` computes it from the
+  record's `ClaimExtent` (FR-097);
+- its unbounded domains: the `DomainKey` and kind of each domain of an
+  `Unbounded` extent, in key order, and none for a `Bounded` one;
+- the record's result bound, as the `WireNodeId` of its FR-092 type node;
+- its candidate outcome, `Registry::candidates(kind, named backend)` by this
+  requirement's candidate rules.
+
+An item whose candidate set is empty or whose extent is unbounded is
+written like any other and settles at negotiation (`unsupported` or
+`requires-bound`). Two records at one node (two occurrences of one
+application) are two items with their own request indices and occurrence
+keys.
+
+The orchestrating driver (T-13) reads nothing else about items from QSL. It
+writes each item's kind, extent classification, named backend and
+candidates into the FR-331 request, and joins CG's settlements to items by
+request index. For a `requires-bound` item, it answers with a bounded
+follow-up, a new FR-331 request (ADR-014 §4 "Bounded request"): it
+supplies one `FiniteBound` for each of the item's unbounded `DomainKey`s,
+and a fresh `RequestWriter` writes the follow-up as that request's single
+item, index 0. `RequestWriter::bounded_item` SHALL take the originating
+occurrence key as a parameter (design-level signature
+`bounded_item(occurrence: OccurrenceKey, node: WireNodeId, requirements:
+&Requirements, bounds: BTreeMap<DomainKey, FiniteBound>) ->
+Result<RequestIndex, BoundRefusal>`), and the item it writes SHALL carry
+that occurrence key. The driver writes at most one bounded follow-up per
+record, so each record has at most one follow-up settlement, and joins it
+to the record by occurrence key. Writing several bounded items for one
+domain set with different bounds (FR-097-AC-3) stays a capability of the
+writer; the driver uses one and writes no second follow-up for a record.
+That driver rule is tested in agent-ix/quire-driver (QSL-1). It
+passes the `supported` items to `routing::route`, and hands CG generation
+each routed item's request index, occurrence key, node and result bound,
+with the package's requirement records keyed by occurrence key (ADR-011
+E7), resolving the node in the admitted v2 package.
 
 ### One capability type, no local duplicate
 
@@ -187,6 +247,7 @@ were added.
 | FR-075-AC-5 | The registry module's public and internal capability-kind matching uses only the canonical `Capability` type; no enum defined inside `#185`'s scope carries variants named for an FR-290 capability-kind label. | Test (TC-193) |
 | FR-075-AC-6 | A `backend` member written from a candidate and read back equals it, and an identity with leading and trailing spaces is kept verbatim. An absent domain, an unknown domain label and `quire.source.bytes/v1` each refuse for the domain, and `quire.source.bytes/v1` still refuses for the domain with a digest string that is not hex; with the right domain, 64 uppercase hex digits and a 2-character string each refuse for the digest. | Test (TC-433) |
 | FR-075-AC-7 | Given a registration naming a `BackendId` already held by the registry with an equal descriptor (same identity, manifest digest, tool and advertised pairs), the repeat is one registration and is not refused; the registry and its candidate sets are unchanged. | Test (TC-447, TC-448) |
+| FR-075-AC-8 | Given the checked package of FR-062's RR-5 (`function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }`) and a registry holding one backend advertising `value-validity` in `bounded` mode, and no named backend, the request builder returns exactly one `RequirementItem` per requirement record, in bytewise occurrence-key order with request indices 0, 1, 2: the two `+` records are two items with the same node and distinct occurrence keys, and every item is `value-validity`, classified `bounded`, with no unbounded domain, its record's result bound, and that one backend as its candidate set. With RR-6 (`n + 1` over `n: Integer`), the one item is classified `unbounded` with `finite_bound_available` true and carries one unbounded domain, `Integer` at `n`'s parameter node, and a bounded follow-up that supplies an `IntegerRange` for that key is a new request whose single item has request index 0, is classified `bounded` and carries the occurrence key passed to `bounded_item`, the original item's, and the follow-up request holds exactly one item for that occurrence key. With RR-16, the two `+` items carry result bounds `Int[0, 10]` and `Int[0, 20]`. With a registry advertising no `value-validity`, every item is still returned, each with an empty candidate set. With a named unregistered backend, every item carries the unknown-backend marker. A package with no records gives no items. | Test (TC-449) |
 
 ## Dependencies
 
@@ -271,3 +332,4 @@ By Acceptance Criterion:
   (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`), and
   `tc_282_duplicate_backend_identity::db_01_identical_repeat_holds_once_with_no_refusal`/`db_02_identical_repeats_plus_another_identity_hold_both`
   (`qsl-route/tests/it/route_registry.rs`).
+- FR-075-AC-8: not implemented. Owner: QSL-266.

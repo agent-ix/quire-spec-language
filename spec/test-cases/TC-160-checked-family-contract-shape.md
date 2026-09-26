@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-062
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-057
+    type: verifies
 ---
 # TC-160: Every family implements the six-part checked contract with no bypass
 
@@ -23,7 +25,8 @@ absolute size or the host's available stack), that `package` is
 all-or-nothing, and that every evaluation hook reads only checked input.
 The `Relation` half of FR-062-AC-6 (no `Relation` hook and no `Relation`
 S6a input) is verified by TC-385.
-Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9 and FR-062-AC-13.
+Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9 and FR-062-AC-13, and
+FR-057-AC-10's value-function row.
 
 ## Test Procedure
 
@@ -45,9 +48,10 @@ Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9 and FR-062-AC-13.
    form; check the same form through the other, unmutated, context.
    Compare the two checked outputs and the mutated context's own observable
    state.
-5. Call the pure requirements function on a checked node from a claim form
-   with no FR-057 kind, and on one from a claim form with a kind. Call it
-   twice on the same checked node.
+5. Call the pure requirements function on the checked function
+   declaration `b and c` over Boolean parameters, and on the one whose body
+   is `x + y` over `Int[0, 9]` parameters. Call it twice on the same checked
+   declaration.
 6. Configure a work budget small enough that checking a form reaches it;
    check the form and inspect the returned outcome's variant, confirming it
    is a `Limit` outcome, not `Incomplete` and not a refusal. Separately, run
@@ -65,8 +69,11 @@ Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9 and FR-062-AC-13.
 9. Instrument every family's evaluation hook with a test double that
    panics if a CST, token or display string is touched, then invoke each on
    a checked node.
-10. Check a package holding only function declarations and read
-    `CheckedGraph::requirements`.
+10. Check each unit RR-1 to RR-17 of FR-062 "Requirement records of a
+    value function" and read `CheckedGraph::requirements`, and for RR-5
+    also `CheckedPackage::graph().requirements()`. Check RR-5 a second
+    time. For RR-15, also check the unit with its two `let` operands
+    swapped.
 11. Over a hand-built `OccurrenceMap` (this crate has no real clause syntax
     yet, FR-088-CON-1, so this is exercised the same way `check::identity`'s
     own clause-identity mechanism test is): key two distinct identities,
@@ -88,8 +95,8 @@ Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9 and FR-062-AC-13.
 - Step 4: the two checked outputs are identical; only the meter, diagnostic
   sink and scope stack mutations are observable, and the unmutated context
   shows none of them.
-- Step 5: the no-kind claim form yields no `Requirements` value; the
-  kind-bearing claim form yields exactly one, equal across both calls.
+- Step 5: `b and c` yields no `Requirements` value; `x + y` yields exactly
+  one, `value-validity`, at its `+` application, equal across both calls.
 - Step 6: the reached-limit check returns a `Limit` outcome naming the
   work-budget kind, distinct in type from a checked node, a refusal and
   `Incomplete`; the exhausted `evaluate` call returns `Incomplete`; `check`
@@ -104,8 +111,23 @@ Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9 and FR-062-AC-13.
   example, a declaration node with no body).
 - Step 9: every family's evaluation hook completes without the test double
   panicking, showing no CST, token or display string was read.
-- Step 10: the returned map is empty, since a function declaration requests
-  no FR-057 capability kind (FR-062-AC-4).
+- Step 10: each unit's map holds exactly the records FR-062's fixture
+  table lists for it and no other. Every record is `value-validity` and
+  keyed by its application node's `expression` occurrence at its own site,
+  with the listed extent, result bound (as its type node) and path
+  condition (each guard as its node's occurrence key and required
+  outcome). In particular: RR-2 has no record at the narrow; RR-10 has no
+  record; RR-12's `+` is `Unbounded` at `n` with guard `n >= 0 and n < 10`
+  true; RR-13's `/` has guard `y != 0` true; RR-14's roots are keyed by
+  the binder `v`, not by `s`; RR-17's one record is at the body's
+  occurrence, not the measure's. Where one node has two records (RR-5,
+  RR-15, RR-16), the keys differ only in ordinal in source order, and each
+  record carries its own occurrence's extent, result bound and guards: in
+  RR-15 the `Bounded` extent is at the `t * 2` occurrence inside the
+  `x + 1` binding and the `Unbounded` one inside the `n + 1` binding, in
+  both orders of the operands; in RR-16 `Int[0, 10]` is at ordinal 0 and
+  `Int[0, 20]` at ordinal 1. RR-5's second check gives an equal map, and
+  `CheckedPackage::graph().requirements()` equals the S3 map.
 - Step 11: the two distinct identities each key to their own occurrence key;
   the identity with no recorded occurrence, and the `None` identity, each
   return `KeyFault::UnkeyableRequirements` rather than an omission from the

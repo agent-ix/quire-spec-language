@@ -215,7 +215,7 @@ The shared contract is the minimum every family implements. It has six parts.
 | Identity | Every checked node carries a stable identity, minted by QSL at check time. It is content-addressed over the ADR-013 O-04 preimage, whose owner subject is the declaring source's `SourceOwner` or definition's `DefinitionOwner` (`{authority, identity}`), or for a model-owned node the domain package's identity and declared version plus the IR node identity; a builtin or anonymous type node has no owner and shares one id across packages. It is therefore independent of counters, display strings and collection positions. Nodes identical in structure, qualified name and owner share one id. Each source occurrence is keyed by (node id, role, ordinal) (ADR-013 O-07). | ADR-013 O-04 (DA-02) and O-07; package identity O-02 |
 | Provenance | Every checked node occurrence maps to its source span through a source map keyed by its occurrence key. QSL is the only minter (AD-016 arrow 1). | ADR-013 O-12 (DA-13) |
 | Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: the QSL `check` core (ADR-011, #209) |
-| Requirements | A pure function of a checked node returns `Requirements`. It holds the item's one capability kind (FR-057, FR-290), its declared extent and any authored bound. A claim form whose FR-057 kind is none yields no `Requirements` value and requests no backend (§7.2). | kinds from agent-ix/quire-specification#134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
+| Requirements | A pure function of a checked item returns one `Requirements` per claim the item carries, each at the checked site it covers: a clause, or a scalar operation application in a `Value` function body (FR-062 "Requirement records of a value function"). Each holds the claim's one capability kind (FR-057, FR-290), its declared extent and any authored bound. A claim form whose FR-057 kind is none yields no `Requirements` value and requests no backend (§7.2). S3 keys each claim by its site's occurrence key (§13.5). | kinds from agent-ix/quire-specification#134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
 | Structured outcome | A family `check` returns the checked node or a refusal with a family-typed cause. A family `check` that reaches a limit or exhausts the meter returns `StageFailure::Limit(LimitExceeded)` with limit kind work budget (ADR-013 T-4); `Incomplete` is an S6a outcome only. Each cause maps to a stable catalog code through one exhaustive `catalog_code()`. | ADR-013 O-16 (outcomes) and O-17 (refusals): each family has its own `Cause` enum with `catalog_code()`; the shared part is `RefusalRecord` in F `diagnostic` (O-17); the kernel `Refusal` carries kernel causes only |
 | Stage hooks | The family implements a hook for each stage in §8 that it takes part in. Every hook takes checked input; none takes CST, tokens or display strings. | this record |
 
@@ -231,7 +231,11 @@ trait FamilyContract {
         -> CheckOutcome<Self::Checked, Self::Cause>;
         // CheckOutcome<T, C> = Result<Staged<T>, StageFailure<C>> (ADR-013 T-4):
         // checked | refused | limit | fault
-    fn requirements(checked: &Self::Checked) -> Option<Requirements>;
+    fn requirements(checked: &Self::Checked) -> Vec<(ClaimSite, Requirements)>;
+        // one per claim; S3 keys each ClaimSite by the occurrence recorded at
+        // its own location (§13.5). ClaimSite: FR-062 "Requirement records
+        // of a value function" (location, result bound, path condition).
+        // Extents are classified in `check`, under its stage limits.
     fn package(checked: &Self::Checked, out: &mut PackageEmitter)
         -> Result<(), PackageRefusal>;
 }
@@ -652,8 +656,11 @@ settles every disposition. No QSL library module depends on or calls CG
 For each requested item the steps run once, in this order, before any backend
 runs:
 
-1. **Candidates.** QSL `route` computes the candidate set from the
-   item's `Requirements`, matching on capability kind alone. A backend
+1. **Candidates.** QSL `route` writes one requested item per requirement
+   record of the checked package (§13.5), in record key order, and computes
+   each item's candidate set from its `Requirements`, matching on capability
+   kind alone (FR-075 "Requested items from a package's requirement
+   records"). A backend
    matches when it advertises the item's one kind (FR-057). The mode is
    compared in step 3:
    - If the request names a registered `BackendId`, the set is that backend
@@ -1009,7 +1016,7 @@ item settles `invalid-request` with no preference order
 | Question | Answer |
 |---|---|
 | ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` and `requirements`, ADR-011 S4 `package`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). A missing hook is a compile error: the S2 and S3 matches that call a family's hooks have one arm per family and no `_` arm, and the S1 stage-participation table has one entry per family (§5.1). At ADR-011 S6a a family that sits out evaluation is absent from the input type (for `Relation`, the S6a family kind has no `Relation` variant), so it has no arm and no refusal (§2). At lowering and proof stages a family that sits out the stage has an explicit, hand-written arm that returns `unsupported` with a catalog code. |
-| ADR-011: what ADR-011 S3 records as per-item requirement records | exactly one record per checked item that has `Requirements`, keyed by the item's occurrence key (ADR-013 O-07); `request_index` is the bytewise order of those keys, so two identical claims stay distinct. Each entry holds exactly the item's one capability kind (FR-057; vocabulary per agent-ix/quire-specification#134, FR-290), the declared extent and the authored bound (#222), because ADR-011 S3 negotiates nothing (§2, §6). The v2 `capability_report` member is FR-322's feature-level report, not these records. |
+| ADR-011: what ADR-011 S3 records as per-item requirement records | exactly one record per occurrence of a claim site that has `Requirements`: a clause, or a scalar operation application in a `Value` function body (FR-062). The record is keyed by that site's occurrence key (ADR-013 O-07): for an operation application, the application node's `expression` occurrence recorded at the site's own location, so the key names the node CG generates an obligation for and tells two occurrences of it apart. An operation-application record also holds the application's result bound and path condition (FR-062). `request_index` is the bytewise order of those keys, so two identical claims stay distinct. Each entry holds exactly the item's one capability kind (FR-057; vocabulary per agent-ix/quire-specification#134, FR-290), the declared extent and the authored bound (#222), because ADR-011 S3 negotiates nothing (§2, §6). The v2 `capability_report` member is FR-322's feature-level report, not these records. |
 | ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes emitted by the `Value` `package` hook; temporal admission reads the v2 temporal nodes emitted by the `TemporalTrace` `package` hook. QSpec owns their spelling. IR decodes them at v2 intake (agent-ix/quire-contract-ir#141) and admits them there (#218 and #223 with agent-ix/quire-contract-ir#109). |
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
@@ -1054,6 +1061,7 @@ item settles `invalid-request` with no preference order
 | The family-migration recipe document's programmatic content check (FR-066-AC-1 through AC-4; `TC-165` has zero tests) | [QSL-151](https://linear.app/agent-ix/issue/QSL-151) |
 | The real `PreimageTerm`-conformant identity preimage (external `quire.checked-package-id/v2` `ApplicationNode`/`PreimageTerm` schema), replacing this migration's `Debug`-rendered (`{:?}`) pragmatic stopgap | [QSL-156](https://linear.app/agent-ix/issue/QSL-156) |
 | The layer-6 `replay` facade's typed `QualifiedName` call against a family's widened `evaluate` hook (`TC-166` has zero tests) (FR-062-AC-10, FR-065-AC-6) -- a real owner that already existed before this table was written but was not recorded against either criterion until now | [QSL-5](https://linear.app/agent-ix/issue/QSL-5) / #243 |
+| `Value` function `requirements()` at operation-application granularity: one `value-validity` record per scalar operation application occurrence, with ADR-014 §4's operation-application extent (FR-062-AC-4, AC-13; FR-057-AC-10), and the `route` request builder over a package's records (FR-075-AC-8) | [QSL-266](https://linear.app/agent-ix/issue/QSL-266) |
 
 Requirements needed before implementation starts:
 
