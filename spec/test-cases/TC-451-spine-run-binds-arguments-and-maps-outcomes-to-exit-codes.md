@@ -60,8 +60,8 @@ Tag the tests `#[trace("TC-451", "FR-100-AC-4")]` (steps 1 to 4),
   `unsupported_construct` at stage `call`, exit 21, empty stdout,
   `details` `{"function": "origin"}`, before any call.
 - Step 6: the syntax error refuses `invalid_syntax` at stage `source`; `inv`
-  refuses at stage `check` with the check stage's cause code; each exits 20
-  with empty stdout.
+  refuses `ill_typed` at stage `check` (integer `/` with no `Rational`
+  expected type); each exits 20 with empty stdout.
 - Step 7: outcome `{"kind": "incomplete", "limit": "work_units"}`, exit 22.
 
 ## Status

@@ -34,8 +34,9 @@ Scope: FR-100-AC-7 to FR-100-AC-9.
 4. Construct each S6a outcome below and convert it with the outcome mapping
    (the `qsl_replay` conversion `spine::run` applies, then the root crate's
    renderer and exit mapping): `Outcome::Completed` of `true`, `false`, `0`,
-   `-17` and `2^70`; `Outcome::Refused` of each of the nine kernel
-   refusals; `Outcome::Undefined` of each of the four kernel reasons;
+   `-17` and `2^70`; `Outcome::Refused` of each of the thirteen kernel
+   refusals, `CardinalityOutOfBound` once `below-minimum` and once
+   `above-maximum`; `Outcome::Undefined` of each of the four kernel reasons;
    `Outcome::Incomplete` at `work_units`; `FamilyResult::Refused` of an
    `invalid_runtime_input` cause and an `unsupported_construct` cause; and
    `FamilyResult::Undefined` with reason `precondition-false` and
@@ -57,8 +58,11 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
 - Step 4: `completed` with `{"kind": "boolean", "value": true}`,
   `{"kind": "boolean", "value": false}`, and `{"kind": "integer",
   "decimal": ...}` of `"0"`, `"-17"` and `"1180591620717411303424"`, exit 0;
-  `refused` with `code` `invalid_runtime_input` and each kernel refusal's
-  tabled `cause`, exit 20; `undefined` with each kernel reason's tabled
+  `refused` with `code` `invalid_runtime_input` and each of the twelve
+  kernel refusals' tabled `cause` other than `checked_invariant`, exit 20,
+  `CardinalityOutOfBound` carrying `details` `{"violation":
+  "below-minimum"}` and `{"violation": "above-maximum"}`; `refused` with
+  `code` `runtime_invariant` and `cause` `checked_invariant`, exit 30; `undefined` with each kernel reason's tabled
   spelling, exit 20; `incomplete` with `limit` `work_units`, exit 22;
   `refused` with `code` `invalid_runtime_input` and no `cause`, exit 20, and
   with `code` `unsupported_construct`, exit 21; `undefined` with `reason`
