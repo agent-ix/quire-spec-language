@@ -856,6 +856,12 @@ impl PackageDeclarations {
         // bound (see `check::family::check_declaration_body`'s own doc for
         // why this, not a `Cell` or a second call, is the mechanism).
         let mut nodes_used = 0_u64;
+        // FR-092 "Function nodes": a `predicate` declaration's node form.
+        let predicates: Vec<bool> = self
+            .functions
+            .iter()
+            .map(|function| function.kind() == qsl_forms::DeclarationKind::Predicate)
+            .collect();
         for (index, function) in self.functions.into_iter().enumerate() {
             let location = body_location(index, &function.name);
             let measure_location = root(Origin::Measure {
@@ -1006,6 +1012,7 @@ impl PackageDeclarations {
                     let (signature, body) = drafts.get(index)?;
                     Some(lowering::FunctionInput {
                         name: &signature.name,
+                        predicate: predicates.get(index).copied().unwrap_or(false),
                         location: &locations[index],
                         parameters: &signature.parameters,
                         result: &signature.result,

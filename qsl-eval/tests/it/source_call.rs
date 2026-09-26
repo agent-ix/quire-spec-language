@@ -84,3 +84,75 @@ fn a_function_compiled_from_source_is_called_by_name() {
         )
     );
 }
+
+/// The unit's package, checked and linked, over source `declarations`.
+fn package_of(declarations: &str) -> CheckedPackage {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\" version \"1\" digest \
+         \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+         {declarations}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .expect("S2 builds the unit");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler builds the package declarations");
+    CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the package checks"),
+    )
+}
+
+/// Whether calling `name` with no arguments completes with `true`.
+fn completes_true(package: &CheckedPackage, name: &str) -> bool {
+    let mut meter = Meter::new(UNLIMITED);
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified(name).expect("an identifier"),
+            Vec::new(),
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .expect("the call runs");
+    let FamilyOutcome::Evaluated(outcome) = evaluation.outcome else {
+        panic!("a kernel outcome, not {:?}", evaluation.outcome);
+    };
+    format!("{outcome:?}") == format!("{:?}", Outcome::Completed(Value::Boolean(true)))
+}
+
+#[trace("FR-091-AC-28", "TC-481")]
+#[test]
+fn a_source_enum_is_called_through_the_checked_package() {
+    let package = package_of(
+        "ordered enum Status { READY, DONE }\n\
+         function isReady using v(s: Status): Boolean pure { s = Status::READY }\n\
+         function ok using v(): Boolean pure { isReady(Status::READY) }\n\
+         function later using v(): Boolean pure { Status::READY < Status::DONE }",
+    );
+    assert!(completes_true(&package, "ok"));
+    assert!(completes_true(&package, "later"));
+}
+
+#[trace("FR-091-AC-30", "TC-481")]
+#[test]
+fn a_source_predicate_is_called_through_the_checked_package() {
+    let package = package_of(
+        "predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }\n\
+         function three using v(): Boolean pure { Positive(3) }",
+    );
+    assert!(completes_true(&package, "three"));
+}

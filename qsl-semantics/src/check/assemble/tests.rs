@@ -815,3 +815,348 @@ fn unordered_and_not_unique_selects_bag() {
         &bounded(CollectionKind::Bag, 2, 4)
     );
 }
+
+// ----------------------------------------------------------------------
+// QSL-275: enums and predicates (TC-481)
+// ----------------------------------------------------------------------
+
+/// FR-091 vectors N1 to N4, the SHA-256 of the RFC 8785 preimage bytes.
+const N1: &str = "e5e7c1d5b51c76e84c928b616d266d45a570e8211404c302b47dbec62ae00d27";
+const N2: &str = "499f4989da1b6790fcda8c1e6e64ed04041d8cd304f336133c48f58c424d65ec";
+const N3: &str = "0757650a7514f2f86e2101a0d02e5055d1152c36fc7e01ea2dfc8eabc21dae62";
+const N4: &str = "239e86987c45808a71cb0d23e7b25f8f70d6adb426288280c7eaf566f0f145e9";
+
+const STATUS: &str = "ordered enum Status { READY, DONE }\n";
+
+fn binding<'a>(package: &'a PackageDeclarations, name: &str) -> &'a crate::check::EnumBinding {
+    package
+        .enums
+        .iter()
+        .find(|binding| binding.name == name)
+        .unwrap_or_else(|| panic!("{name} is declared"))
+}
+
+fn cases(binding: &crate::check::EnumBinding) -> Vec<&str> {
+    binding.members.iter().map(|member| member.case()).collect()
+}
+
+#[trace("FR-091-AC-27", "TC-481")]
+#[test]
+fn enums_are_admitted_with_nominal_keys_over_the_units_owner() {
+    let (text, assembled) =
+        assemble("ordered enum Status { READY, DONE }\nenum Color { RED, BLUE = \"Blue\" }");
+    let package = assembled.expect("the unit assembles");
+    let names: Vec<&str> = package.enums.iter().map(|b| b.name.as_str()).collect();
+    assert_eq!(names, ["Status", "Color"]);
+    let status = binding(&package, "Status");
+    assert_eq!(status.declaration.key().to_string(), N1);
+    assert_eq!(cases(status), ["READY", "DONE"]);
+    assert_eq!(status.members[0].member().to_string(), N2);
+    let color = binding(&package, "Color");
+    assert_eq!(color.declaration.key().to_string(), N3);
+    assert_eq!(cases(color), ["BLUE", "RED"]);
+    assert_eq!(
+        package.declared_type_spans.get("Status"),
+        Some(&last(&text, "Status"))
+    );
+    assert_eq!(
+        package.declared_type_spans.get("Color"),
+        Some(&last(&text, "Color"))
+    );
+
+    // Neither a display string nor the order of an unordered enum's cases
+    // enters its key.
+    let (_, other) = assemble("enum Color { RED, BLUE }");
+    let other = other.expect("the unit assembles");
+    assert_eq!(binding(&other, "Color").declaration.key().to_string(), N3);
+
+    // The owner enters the key.
+    let moved =
+        assemble_as("a", "w", &text_with(&[PROFILE_V], STATUS)).expect("the unit assembles");
+    assert_eq!(binding(&moved, "Status").declaration.key().to_string(), N4);
+}
+
+#[trace("FR-091-AC-28", "TC-481")]
+#[test]
+fn enum_types_and_members_check_and_a_case_the_enum_lacks_refuses() {
+    let checked = |declarations: &str| {
+        let (_, assembled) = assemble(declarations);
+        assembled
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+    };
+    let package = assemble(&format!(
+        "{STATUS}\
+         function isReady using v(s: Status): Boolean pure {{ s = Status::READY }}\n\
+         function ok using v(): Boolean pure {{ isReady(Status::READY) }}\n\
+         function later using v(): Boolean pure {{ Status::READY < Status::DONE }}"
+    ))
+    .1
+    .expect("the unit assembles");
+    let shape = binding(&package, "Status").shape();
+    let (parameters, _) = package
+        .resolved_signatures
+        .get(0)
+        .expect("isReady's resolved signature");
+    assert_eq!(parameters, &[("s".to_owned(), ValueType::Enum(shape))]);
+    package
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+
+    let refusals = checked(
+        "enum Color { RED, BLUE }\n\
+         function bad using v(): Boolean pure { Color::RED < Color::BLUE }",
+    )
+    .expect_err("an unordered enum has no order");
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| refusal.cause.code() == qsl_foundation::Code::IllTyped),
+        "{refusals:?}"
+    );
+
+    let refusals = checked(&format!(
+        "{STATUS}function gone using v(): Boolean pure {{ Status::GONE = Status::READY }}"
+    ))
+    .expect_err("Status has no GONE");
+    assert!(
+        refusals.iter().any(|refusal| {
+            refusal.cause.code() == qsl_foundation::Code::MissingDeclaration
+                && refusal.cause.cause() == Some("missing-name")
+                && matches!(&refusal.cause, CheckCause::MissingName(name) if name == "Status::GONE")
+        }),
+        "{refusals:?}"
+    );
+}
+
+#[trace("FR-091-AC-29", "TC-481")]
+#[test]
+fn enum_and_type_name_errors_are_all_reported() {
+    let (text, found) = errors(
+        "enum E { A, B, A }\n\
+         enum F { X }\n\
+         record F { y: Boolean; }\n\
+         function f using v(p: F): Boolean pure { true }\n\
+         function g using v(p: Shade): Boolean pure { true }",
+    );
+    let first_a = after(&text, "enum E", "A");
+    let second_a = last(&text, "A }");
+    let second_a = Span {
+        start: second_a.start,
+        end: second_a.start + 1,
+    };
+    let duplicate = found
+        .iter()
+        .find(|error| matches!(error.cause, AssemblyCause::DuplicateEnumMember { .. }))
+        .expect("a duplicate-enum-member error");
+    assert_eq!(
+        duplicate.cause,
+        AssemblyCause::DuplicateEnumMember {
+            enumeration: "E".to_owned(),
+            case: "A".to_owned(),
+            spans: vec![first_a, second_a],
+        }
+    );
+    assert_eq!(
+        duplicate.cause.catalog_code().to_string(),
+        "ambiguous_declaration/ambiguous-name"
+    );
+    let enum_f = after(&text, "enum F", "F");
+    let record_f = after(&text, "record F", "F");
+    let type_form = after(&text, "function f", "F)");
+    let type_form = Span {
+        start: type_form.start,
+        end: type_form.start + 1,
+    };
+    assert!(
+        found.iter().any(|error| error.span == type_form
+            && error.cause
+                == AssemblyCause::AmbiguousTypeName {
+                    name: "F".to_owned(),
+                    candidates: vec![enum_f, record_f],
+                }),
+        "{found:?}"
+    );
+    assert!(
+        found.iter().any(|error| matches!(
+            &error.cause,
+            AssemblyCause::UnresolvedTypeName { name } if name == "Shade"
+        )),
+        "{found:?}"
+    );
+}
+
+#[trace("FR-091-AC-21", "TC-406")]
+#[test]
+fn the_enum_causes_have_their_catalog_codes() {
+    let span = Span { start: 0, end: 0 };
+    assert_eq!(
+        AssemblyCause::DuplicateEnumMember {
+            enumeration: "E".into(),
+            case: "A".into(),
+            spans: vec![span],
+        }
+        .catalog_code()
+        .to_string(),
+        "ambiguous_declaration/ambiguous-name"
+    );
+    let fault = crate::value::semantic_node::InvalidSemanticGraph {
+        cause: crate::value::semantic_node::SemanticGraphCause::StaleKey,
+    };
+    assert_eq!(
+        AssemblyCause::NominalAdmission(fault)
+            .catalog_code()
+            .to_string(),
+        "runtime_invariant/established-invariant-broken"
+    );
+}
+
+#[trace("FR-091-AC-30", "TC-481")]
+#[test]
+fn a_predicate_assembles_as_a_function_of_kind_predicate() {
+    let package = assemble(
+        "predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }\n\
+         function three using v(): Boolean pure { Positive(3) }",
+    )
+    .1
+    .expect("the unit assembles");
+    let kinds: Vec<(&str, qsl_forms::DeclarationKind)> = package
+        .functions
+        .iter()
+        .map(|function| (function.name.as_str(), function.kind()))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            ("Positive", qsl_forms::DeclarationKind::Predicate),
+            ("three", qsl_forms::DeclarationKind::Function)
+        ]
+    );
+    let (parameters, result) = package
+        .resolved_signatures
+        .get(0)
+        .expect("Positive's resolved signature");
+    assert_eq!(parameters, &[("x".to_owned(), int(0, 9))]);
+    assert_eq!(result, &ValueType::Boolean);
+    assert_eq!(package.function_selections[&0].alias, "v");
+    package
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+
+    let (text, found) = errors("predicate Q using w(x: Boolean): Boolean { x }");
+    assert!(matches!(
+        found.as_slice(),
+        [AssemblyError {
+            cause: AssemblyCause::UndeclaredAlias { alias },
+            span,
+        }] if alias == "w" && *span == after(&text, "predicate Q", "w")
+    ));
+
+    let refusals = assemble("predicate R using v(x: Boolean): Boolean { R(x) }")
+        .1
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("a recursive predicate has no measure");
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            refusal.cause,
+            CheckCause::UnprovedDecrease {
+                obligation: crate::check::MeasureObligation::MissingMeasure,
+                ..
+            }
+        )),
+        "{refusals:?}"
+    );
+}
+
+#[trace("FR-092-AC-13", "TC-481")]
+#[test]
+fn predicate_and_enum_nodes_lower_to_their_fr_092_forms() {
+    use crate::check::{NodeTag, Owner, SourceOwner};
+
+    let predicate = assemble("predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }")
+        .1
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let function = assemble("function Positive using v(x: Int[0, 9]): Boolean pure { x > 0 }")
+        .1
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let node_of = |graph: &crate::check::CheckedGraph| {
+        let key = graph
+            .function_identity("Positive")
+            .expect("Positive is checked");
+        graph
+            .semantic_graph()
+            .node(key)
+            .expect("the node is lowered")
+            .clone()
+    };
+    let (predicate, function) = (node_of(&predicate), node_of(&function));
+    assert_eq!(predicate.node_tag(), NodeTag::Function);
+    assert_eq!(predicate.semantic_form(), "predicate");
+    let names: Vec<&str> = predicate
+        .declaration()
+        .expect("a declaration")
+        .iter()
+        .map(|segment| segment.as_str())
+        .collect();
+    assert_eq!(names, ["Positive"]);
+    assert_eq!(
+        predicate.owner(),
+        Some(&Owner::Source(
+            SourceOwner::new("a", "u").expect("an owner")
+        ))
+    );
+    assert_eq!(function.semantic_form(), "pure_function");
+    assert_ne!(predicate.key(), function.key());
+
+    let graph = assemble(STATUS)
+        .1
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let by_key = |key: &str| {
+        graph
+            .semantic_graph()
+            .nodes()
+            .find(|node| node.key().to_string() == key)
+            .unwrap_or_else(|| panic!("the checked graph holds {key}"))
+    };
+    let declaration = by_key(N1);
+    assert_eq!(declaration.node_tag(), NodeTag::ScalarType);
+    assert_eq!(declaration.semantic_form(), "enum");
+    let member = by_key(N2);
+    assert_eq!(member.node_tag(), NodeTag::Value);
+    assert_eq!(member.semantic_form(), "enum_value");
+}
+
+#[trace("FR-091-AC-27", "TC-481")]
+#[test]
+fn the_preimage_constructors_apply_the_reader_checks() {
+    use crate::value::enumeration::{EnumDeclarationPreimage, EnumMemberPreimage};
+    use crate::value::semantic_node::{NodeOwner, OwnerSubject};
+
+    let owner = || {
+        NodeOwner::Source(OwnerSubject {
+            authority: "a".to_owned(),
+            identity: "u".to_owned(),
+        })
+    };
+    let name = || vec!["E".to_owned()];
+    let cases = |cases: &[&str]| cases.iter().map(|case| (*case).to_owned()).collect();
+    assert!(EnumDeclarationPreimage::new(owner(), name(), false, cases(&["A", "B"])).is_ok());
+    for refused in [
+        EnumDeclarationPreimage::new(owner(), name(), false, cases(&[])),
+        EnumDeclarationPreimage::new(owner(), name(), false, cases(&["A", "A"])),
+        EnumDeclarationPreimage::new(owner(), name(), false, cases(&["1x"])),
+        EnumDeclarationPreimage::new(owner(), Vec::new(), false, cases(&["A"])),
+    ] {
+        assert!(refused.is_err());
+    }
+    let key = quire_exact::NodeKey::from_digest([7; 32]);
+    assert!(EnumMemberPreimage::new(key, "A").is_ok());
+    assert!(EnumMemberPreimage::new(key, "not an identifier").is_err());
+}

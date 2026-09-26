@@ -21,14 +21,17 @@
 //! carries each admitted domain package for `check` to key model nodes
 //! against (FR-094).
 //!
-//! Enum, dimension, unit and predicate declarations have no S2 production
-//! yet (FR-091-AC-6), so no enum or unit reaches here.
+//! An enum declaration is admitted here as an [`EnumBinding`]: `check` mints
+//! its declaration key and each member's key over the unit's `SourceOwner`
+//! (`node_key::nominal_key`, FB-13) and admits them with
+//! `EnumDeclaration::admit` and `admit_member` (FR-091 "Enum declarations").
+//! A predicate is a function of kind `Predicate` and assembles as a function.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
-    AliasForm, BuiltinType, DeclarationForm, DeclaredName, Expression, FunctionDeclaration,
-    ParsedUnit, RecordFieldForm, TypeForm, TypeFormHead,
+    AliasForm, BuiltinType, DeclarationForm, DeclaredName, EnumForm, Expression,
+    FunctionDeclaration, ParsedUnit, RecordFieldForm, TypeForm, TypeFormHead,
 };
 use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded, StageFailure};
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -38,9 +41,9 @@ use quire_exact::{
     IntegerInterval, Presence, RoundingMode, ValueType,
 };
 
-use super::check::{PackageDeclarations, ResolvedSignature};
+use super::check::{EnumBinding, PackageDeclarations, ResolvedSignature};
 use super::lowering::{strongly_connected, AdmittedModel};
-use super::node_key::{declared_type_handle, NodeKeyRefusal, SourceOwner};
+use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::type_form::{
     parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
@@ -57,6 +60,8 @@ use crate::value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
     InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
+use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
+use crate::value::semantic_node::{InvalidSemanticGraph, OwnerSelection};
 
 /// Why the assembler refused one part of a unit (FR-091 "The assembler
 /// refuses in these cases").
@@ -118,6 +123,19 @@ pub enum AssemblyCause {
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
     Handle(NodeKeyRefusal),
+    /// An enum names one case more than once.
+    DuplicateEnumMember {
+        /// The enum's declared name.
+        enumeration: String,
+        /// The case.
+        case: String,
+        /// The span of each member declaring the case.
+        spans: Vec<Span>,
+    },
+    /// A preimage constructor, `EnumDeclaration::admit` or `admit_member`
+    /// refused a form the checks above admitted: a broken invariant of
+    /// `check`, never a property of the source.
+    NominalAdmission(InvalidSemanticGraph),
     /// A type position names a declaration of an imported library
     /// (`a::R` for an import qualifier `a`): an imported name stands only
     /// as a callee (ADR-015 D-5; `ill_typed`/`operator-ineligible`).
@@ -168,9 +186,9 @@ impl AssemblyCause {
             }
             Self::UnadmittedModel { .. } | Self::UnsuppliedImport { .. } => Code::MissingImport,
             Self::ModelType { .. } => Code::RuntimeInvariant,
-            Self::AmbiguousTypeName { .. } | Self::DuplicateAlias { .. } => {
-                Code::AmbiguousDeclaration
-            }
+            Self::AmbiguousTypeName { .. }
+            | Self::DuplicateAlias { .. }
+            | Self::DuplicateEnumMember { .. } => Code::AmbiguousDeclaration,
             Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 Code::UnknownRequiredFeature
@@ -192,7 +210,7 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownObjectType(_) => Code::RuntimeInvariant,
             },
             Self::TypeLimit(_) => Code::StageLimitExceeded,
-            Self::Handle(_) => Code::RuntimeInvariant,
+            Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
         }
     }
 
@@ -201,7 +219,9 @@ impl AssemblyCause {
     pub fn catalog_code(&self) -> CatalogCode {
         let cause = match self {
             Self::UnresolvedTypeName { .. } => "missing-name",
-            Self::AmbiguousTypeName { .. } | Self::DuplicateAlias { .. } => "ambiguous-name",
+            Self::AmbiguousTypeName { .. }
+            | Self::DuplicateAlias { .. }
+            | Self::DuplicateEnumMember { .. } => "ambiguous-name",
             Self::IllFormedBounds(_) => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
@@ -225,7 +245,7 @@ impl AssemblyCause {
                 | DeclarationCause::UnknownObjectType(_) => "established-invariant-broken",
             },
             Self::TypeLimit(limit) => limit.kind().catalog_cause(),
-            Self::Handle(_) => "established-invariant-broken",
+            Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
         };
         CatalogCode::new(self.code().as_str(), cause)
     }
@@ -268,12 +288,14 @@ struct Composite {
 enum Declared {
     Alias(usize),
     Composite,
+    Enum,
 }
 
 /// The unit's declarations, split by kind, and the names they bind.
 struct Unit {
     aliases: Vec<AliasForm>,
     composites: Vec<Composite>,
+    enums: Vec<EnumForm>,
     functions: Vec<FunctionDeclaration>,
     /// Each declared type name's declarations, with the span of each name.
     declared: BTreeMap<String, Vec<(Declared, Span)>>,
@@ -284,6 +306,7 @@ impl Unit {
         let mut unit = Self {
             aliases: Vec::new(),
             composites: Vec::new(),
+            enums: Vec::new(),
             functions: Vec::new(),
             declared: BTreeMap::new(),
         };
@@ -307,6 +330,10 @@ impl Unit {
                         name: tuple.name,
                         members: Members::Tuple(tuple.elements),
                     });
+                }
+                DeclarationForm::Enum(enumeration) => {
+                    unit.declare(&enumeration.name, Declared::Enum);
+                    unit.enums.push(enumeration);
                 }
             }
         }
@@ -745,6 +772,44 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
     }
 }
 
+/// The admitted enum of `form` under `owners` (FR-091 "Enum declarations"
+/// steps 2 to 5). The cases are sorted by byte order unless the form is
+/// `ordered`. A refusal here is a nominal-admission fault: the caller has
+/// already refused a repeated case.
+fn admit_enum(
+    form: &EnumForm,
+    owner: &SourceOwner,
+    owners: &OwnerSelection,
+) -> Result<EnumBinding, InvalidSemanticGraph> {
+    let mut cases: Vec<String> = form
+        .members
+        .iter()
+        .map(|member| member.case.name.clone())
+        .collect();
+    if !form.ordered {
+        cases.sort();
+    }
+    let preimage = EnumDeclarationPreimage::new(
+        owner.node_owner(),
+        vec![form.name.name.clone()],
+        form.ordered,
+        cases.clone(),
+    )?;
+    let key = nominal_key(&preimage)?;
+    let declaration = EnumDeclaration::admit(preimage, key, owners)?;
+    let mut members = Vec::with_capacity(cases.len());
+    for case in cases {
+        let member = EnumMemberPreimage::new(declaration.key(), case)?;
+        let member_key = nominal_key(&member)?;
+        members.push(declaration.admit_member(&member, member_key)?);
+    }
+    Ok(EnumBinding {
+        name: form.name.name.clone(),
+        declaration,
+        members,
+    })
+}
+
 fn refuse<T>(errors: Vec<AssemblyError>) -> Result<T, AssemblyRefusal> {
     Err(AssemblyRefusal { errors })
 }
@@ -958,6 +1023,29 @@ impl PackageDeclarations {
             }
         }
 
+        // An enum names each case once.
+        for enumeration in &unit.enums {
+            let mut spans: BTreeMap<&str, Vec<Span>> = BTreeMap::new();
+            for member in &enumeration.members {
+                spans
+                    .entry(member.case.name.as_str())
+                    .or_default()
+                    .push(member.case.span);
+            }
+            for (case, spans) in spans {
+                if let [_, second, ..] = spans.as_slice() {
+                    errors.push(AssemblyError {
+                        cause: AssemblyCause::DuplicateEnumMember {
+                            enumeration: enumeration.name.name.clone(),
+                            case: case.to_owned(),
+                            spans: spans.clone(),
+                        },
+                        span: *second,
+                    });
+                }
+            }
+        }
+
         // Every type form names declarations of the unit or admitted model
         // object types.
         for alias in &unit.aliases {
@@ -997,6 +1085,7 @@ impl PackageDeclarations {
 
         // Each declared record and tuple's handle, over the unit's owner.
         let owner = SourceOwner::from(&source);
+        let owners = OwnerSelection::new([owner.node_owner()]);
         let mut names = Names {
             object_types: object_names.clone(),
             ..Names::default()
@@ -1007,6 +1096,25 @@ impl PackageDeclarations {
                 .entry(name.clone())
                 .or_default()
                 .push(ValueType::Reference(*identity));
+        }
+        // Each enum, admitted under the unit's owner: its declaration key
+        // and its members' keys are minted here (FB-13).
+        let mut enums = Vec::with_capacity(unit.enums.len());
+        for enumeration in &unit.enums {
+            match admit_enum(enumeration, &owner, &owners) {
+                Ok(binding) => {
+                    names
+                        .types
+                        .entry(enumeration.name.name.clone())
+                        .or_default()
+                        .push(ValueType::Enum(binding.shape()));
+                    enums.push(binding);
+                }
+                Err(refusal) => errors.push(AssemblyError {
+                    cause: AssemblyCause::NominalAdmission(refusal),
+                    span: enumeration.name.span,
+                }),
+            }
         }
         let mut handles = Vec::with_capacity(unit.composites.len());
         for composite in &unit.composites {
@@ -1093,7 +1201,11 @@ impl PackageDeclarations {
 
         // Records and tuples.
         let mut declarations = Vec::with_capacity(unit.composites.len());
-        let mut declared_type_spans = BTreeMap::new();
+        let mut declared_type_spans: BTreeMap<String, Span> = unit
+            .enums
+            .iter()
+            .map(|enumeration| (enumeration.name.name.clone(), enumeration.name.span))
+            .collect();
         for (composite, handle) in unit.composites.iter().zip(&handles) {
             let shape = match &composite.members {
                 Members::Record(fields) => {
@@ -1176,6 +1288,7 @@ impl PackageDeclarations {
         for (index, signature) in signatures.into_iter().enumerate() {
             package.resolved_signatures.insert(index, signature);
         }
+        package.enums = enums;
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.declared_type_spans = declared_type_spans;

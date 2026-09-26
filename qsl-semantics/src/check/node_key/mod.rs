@@ -67,6 +67,9 @@ use qsl_foundation::ByteDigest;
 use serde::Serialize;
 
 use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
+use crate::value::semantic_node::{
+    InvalidSemanticGraph, NodeIdentityPreimage, NodeOwner, OwnerSubject,
+};
 
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile};
@@ -144,6 +147,15 @@ impl SourceOwner {
             authority,
             identity,
             kind: SourceOwnerKind::Source,
+        })
+    }
+
+    /// This owner as the nominal preimages' `{kind: "source", authority,
+    /// identity}` owner subject (FR-091 "Enum declarations").
+    pub(crate) fn node_owner(&self) -> NodeOwner {
+        NodeOwner::Source(OwnerSubject {
+            authority: self.authority.clone(),
+            identity: self.identity.clone(),
         })
     }
 
@@ -1171,6 +1183,19 @@ pub(crate) fn declared_type_handle(
         name,
     })
     .map(NodeKey::from_digest)
+}
+
+/// The key of a nominal node (an enum declaration or member, a dimension
+/// or a unit): the SHA-256 of its owner-bearing preimage's RFC 8785 bytes
+/// (FR-091 "Enum declarations"; ADR-013 O-04). It is the one function that
+/// mints a nominal node's key, and only `check` calls it (FB-13).
+/// [`node_key`] keys structural and application nodes and never a nominal
+/// preimage. Encoding a preimage can refuse, and the refusal is the
+/// caller's nominal-admission fault.
+pub(crate) fn nominal_key(
+    preimage: &impl NodeIdentityPreimage,
+) -> Result<NodeKey, InvalidSemanticGraph> {
+    preimage.digest().map(NodeKey::from_digest)
 }
 
 /// `preimage`'s RFC 8785 bytes and the node key they hash to.
