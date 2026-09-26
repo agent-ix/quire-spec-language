@@ -531,8 +531,9 @@ fn a_complete_v1_request_selecting_native_inputs_refuses() {
             "{failure}"
         );
     }
-    // FND-002: any `clauses` key at all -- including an empty array --
-    // refuses a `1-draft` program; only its outright absence admits one.
+    // FND-002/FND-017 (FR-027-AC-7): any `clauses` key at all -- including
+    // an empty array -- refuses a `1-draft` program; only its outright
+    // absence admits one.
     job["request"]["program"]["clauses"] = json!([]);
     std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
     let output = compile(directory.path());

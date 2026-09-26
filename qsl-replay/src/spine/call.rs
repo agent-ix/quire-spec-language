@@ -262,7 +262,7 @@ pub fn run(
     limits: SpineLimits,
     call: &Call,
 ) -> Result<(PackageId, CallOutcome), Box<RunRefusal>> {
-    let compiled = compile(source.clone(), path, bytes, packages, dependencies, limits)
+    let compiled = compile(source, path, bytes, packages, dependencies, limits)
         .map_err(|refusal| Box::new(RunRefusal::Compile(refusal)))?;
     let package_id = compiled.emitted.package_id();
     let package = &compiled.package;
@@ -278,46 +278,16 @@ pub fn run(
             &mut meter,
         )
         .map_err(convert_call_failure)?;
-    let sources = supplied_sources(source, path, bytes, dependencies, limits)?;
+    // FND-016: the unit's and every resolved library's source, reused
+    // exactly as `compile` already read them (FR-100: a locus is resolved
+    // over "the `Source` whose reference equals the region's reference").
+    // Never re-read: a completed call must never turn into a fault because
+    // of I/O that a second read of already-admitted bytes could raise.
+    let mut sources = Vec::with_capacity(1 + compiled.libraries.len());
+    sources.push(compiled.source.clone());
+    sources.extend(compiled.libraries.iter().cloned());
     let outcome = convert_outcome(evaluation, package.graph(), &sources)?;
     Ok((package_id, outcome))
-}
-
-/// The program's source and every supplied library's source, each read
-/// exactly as [`compile`] read it (FR-100: a locus is resolved over "the
-/// `Source` whose reference equals the region's reference"). Never fails in
-/// practice, since `compile` already admitted these same bytes under the
-/// same limits; a read failure here is defensive and reported the same way
-/// as an unresolvable locus (FR-100 "Internal failure at S6a").
-fn supplied_sources(
-    source: SourceIdentity,
-    path: &str,
-    bytes: &[u8],
-    dependencies: &DependencyInput,
-    limits: SpineLimits,
-) -> Result<Vec<Source>, Box<RunRefusal>> {
-    let byte_limit = limits.source.source_bytes;
-    let unresolved = || {
-        Box::new(RunRefusal::Fault(InternalFault::new(
-            "spine-run",
-            "locus-source-supplied",
-        )))
-    };
-    let mut sources = Vec::with_capacity(1 + dependencies.libraries.len());
-    sources
-        .push(Source::read(source, path.to_owned(), bytes, byte_limit).map_err(|_| unresolved())?);
-    for library in dependencies.libraries.values() {
-        sources.push(
-            Source::read(
-                library.source.clone(),
-                library.path.clone(),
-                &library.bytes,
-                byte_limit,
-            )
-            .map_err(|_| unresolved())?,
-        );
-    }
-    Ok(sources)
 }
 
 /// The selected function: its S6a name and declared parameters.

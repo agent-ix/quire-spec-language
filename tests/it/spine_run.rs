@@ -316,10 +316,9 @@ fn tc_450_step_4_no_call_refuses_alone() {
 /// feature, a `1-draft` request whose `program` carries `extraction`, with
 /// every other named member absent and a valid `call` present, refuses
 /// `invalid-request` "... selects an extraction selection" at stage
-/// `request`, exit 20, empty stdout -- `CompleteRunSelection::Extraction` is
-/// otherwise unreachable (FND-004 is a separate, already-reported ordering
-/// defect: this case only shows the refusal fires when nothing else
-/// pre-empts it).
+/// `request`, exit 20, empty stdout. FND-004 fixed the edition-read
+/// ordering that once made `CompleteRunSelection::Extraction` unreachable;
+/// this case shows the refusal fires now that nothing else pre-empts it.
 #[cfg(feature = "quire-extraction")]
 #[test]
 #[trace("TC-450", "FR-100-AC-3")]
@@ -604,8 +603,9 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
 }
 
 /// FR-100-AC-3 (TC-450 step 4): a `work_units` of `18446744073709551616`
-/// (above `u64::MAX`), `-1` or `1.5` refuses `invalid-request` at stage
-/// `request`, exit 20.
+/// (above `u64::MAX`), `-1`, `1.5` or `null` refuses `invalid-request` at
+/// stage `request`, exit 20 (FND-009/FND-018: `null` is a present key, not
+/// an absent one, and admits no `u64`).
 #[test]
 #[trace("TC-450", "FR-100-AC-3")]
 fn tc_450_step_4_malformed_work_units_refuses() {
@@ -613,7 +613,7 @@ fn tc_450_step_4_malformed_work_units_refuses() {
     // `18446744073709551616` (2^64) does not fit `serde_json::Value`'s own
     // `u64`/`i64`/`f64` number representation, so it is spliced into the
     // request text directly rather than built through `json!`.
-    for work_units in ["18446744073709551616", "-1", "1.5"] {
+    for work_units in ["18446744073709551616", "-1", "1.5", "null"] {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("program.native"), &program).unwrap();
         let mut placeholder_call = call("seven", json!([]));

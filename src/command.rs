@@ -793,14 +793,14 @@ fn run_bytes(directory: &Path, bytes: &[u8], digest: ByteDigest) -> Result<RunRe
         },
     )?;
     // The program source is read exactly once, regardless of extraction
-    // (FND-004/FND-011): its declared edition decides the runner before any
-    // model or library source is read (FR-100), with the same reader
-    // `compile` uses. Extraction (FR-031) is a `run`-only, native-only
-    // feature with its own source frontend (I3) over these same bytes
-    // (`extraction::select`'s `Selected::compile` reads `program.source`
-    // again itself); a `1-draft` source carrying `extraction` refuses
-    // (`run_complete`'s `CompleteRunSelection::Extraction`) rather than
-    // running natively.
+    // (FND-004/FND-011/FND-014): its declared edition decides the runner
+    // before any model or library source is read (FR-100), with the same
+    // reader `compile` uses. Extraction (FR-031) is a `run`-only,
+    // native-only feature with its own source frontend (I3) over these same
+    // bytes; `extraction::select`'s `Selected::compile` now takes this
+    // already-read source rather than reading `program.source` again. A
+    // `1-draft` source carrying `extraction` refuses (`run_complete`'s
+    // `CompleteRunSelection::Extraction`) rather than running natively.
     let source = intake.source(&request.program.source)?;
     match Edition::of(source.source())? {
         Edition::Native => run_native(&digest, &mut intake, &request, source),
@@ -1039,4 +1039,60 @@ fn runtime_input(
         snapshots: read_artifacts(intake, snapshots, limits, Snapshot::read_verified)?,
         invocations: read_artifacts(intake, invocations, limits, Invocation::read_verified)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use qsl_foundation::diagnostic::InternalFault;
+
+    fn fault_error(stage: &'static str, invariant: &'static str) -> RunError {
+        RunError {
+            request_digest: Some(ByteDigest::of(b"request")),
+            cause: RunCause::SpineRun(Box::new(qsl_replay::spine::RunRefusal::Fault(
+                InternalFault::new(stage, invariant),
+            ))),
+        }
+    }
+
+    /// FR-100 "Internal failure at S6a" (FND-013): the `CheckedInvariant`
+    /// kernel refusal's own fault envelope -- stage `call`, code
+    /// `runtime_invariant`, `details {stage, invariant}` naming
+    /// `S6a`/`checked-program-invariant`, exit 30 (never through
+    /// `Code::exit_code`, which would give 20 for `Code::RuntimeInvariant`).
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn checked_invariant_fault_envelope_exits_30() {
+        let error = fault_error("S6a", "checked-program-invariant");
+        assert_eq!(error.exit_code(), 30);
+        let value = error.value().unwrap();
+        assert_eq!(value["stage"], "call");
+        assert_eq!(value["code"], "runtime_invariant");
+        assert_eq!(
+            value["details"],
+            serde_json::json!({"stage": "S6a", "invariant": "checked-program-invariant"})
+        );
+    }
+
+    /// FR-100 "Internal failure at S6a" (FND-013): `CallFailure::Fault`'s
+    /// forwarded envelope (`convert_call_failure`) carries whatever
+    /// stage/invariant the S6a caller named, still stage `call`, code
+    /// `runtime_invariant`, exit 30.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn call_failure_fault_envelope_exits_30() {
+        let error = fault_error("call", "spine-run-supplies-admitted-name-and-arity");
+        assert_eq!(error.exit_code(), 30);
+        let value = error.value().unwrap();
+        assert_eq!(value["stage"], "call");
+        assert_eq!(value["code"], "runtime_invariant");
+        assert_eq!(
+            value["details"],
+            serde_json::json!({
+                "stage": "call",
+                "invariant": "spine-run-supplies-admitted-name-and-arity",
+            })
+        );
+    }
 }

@@ -1307,6 +1307,31 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
                 walk(&use_item.tree, false, &mut aliases);
             }
         }
+        // FND-015: a `type` alias (private or public) whose own definition
+        // names `qsl_eval` -- directly, or through another such alias -- is
+        // itself an alias: a public item spelling only the alias's own name
+        // (`type Q = qsl_eval::value::QualifiedName;` then `pub fn f() ->
+        // Option<Q>`) still names `qsl_eval` through it. Fixed point over
+        // the file's own `type` items, since one alias may be defined in
+        // terms of another declared later in the same file.
+        loop {
+            let mut changed = false;
+            for item in &file.items {
+                if let syn::Item::Type(type_item) = item {
+                    let name = type_item.ident.to_string();
+                    if aliases.contains(&name) {
+                        continue;
+                    }
+                    if names_qsl_eval(&aliases, |finder| finder.visit_type(&type_item.ty)) {
+                        aliases.insert(name);
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
         aliases
     }
 
@@ -2663,5 +2688,25 @@ mod tests {
         let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert!(findings[0].contains("impl fn evaluation"), "{findings:?}");
+    }
+
+    /// FND-015: a private `type` alias whose definition names `qsl_eval`
+    /// is itself an alias -- a `pub fn` spelling only the alias's own name
+    /// still names `qsl_eval` through it.
+    #[trace("TC-452", "FR-100-AC-8")]
+    #[test]
+    fn tc_452_spine_surface_check_resolves_a_private_type_alias() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "spine.rs",
+            "type Q = qsl_eval::value::QualifiedName;\n\
+             pub struct Selected;\n\
+             impl Selected {\n    pub fn probe(&self) -> Option<Q> { None }\n}\n",
+        );
+        write(dir.path(), "lib.rs", "pub mod spine;\n");
+        let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].contains("impl fn probe"), "{findings:?}");
     }
 }

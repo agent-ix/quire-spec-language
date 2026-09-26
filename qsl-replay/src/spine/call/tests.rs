@@ -586,3 +586,44 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         }
     }
 }
+
+/// FR-100 "Internal failure at S6a" (SR-674 FND-013): `convert_call_failure`
+/// maps `CallFailure::Input(WrongValueKind)` to its own typed refusal, every
+/// other `InputRefusal` (already admitted before S6a, so never actually
+/// reachable) to an internal fault naming that invariant, and
+/// `CallFailure::Fault` straight through, unchanged.
+#[test]
+fn convert_call_failure_maps_wrong_value_kind_and_forwards_faults() {
+    use qsl_eval::value::{CallFailure, InputRefusal};
+
+    match *convert_call_failure(CallFailure::Input(InputRefusal::WrongValueKind {
+        parameter: 2,
+    })) {
+        RunRefusal::WrongValueKind { position } => assert_eq!(position, 2),
+        other => panic!("{other:?}"),
+    }
+
+    match *convert_call_failure(CallFailure::Input(InputRefusal::UnknownFunction(
+        "ghost".to_owned(),
+    ))) {
+        RunRefusal::Fault(fault) => {
+            assert_eq!(fault.stage(), "call");
+            assert_eq!(
+                fault.invariant(),
+                "spine-run-supplies-admitted-name-and-arity"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+
+    match *convert_call_failure(CallFailure::Fault(InternalFault::new(
+        "S6a",
+        "checked-program-invariant",
+    ))) {
+        RunRefusal::Fault(fault) => {
+            assert_eq!(fault.stage(), "S6a");
+            assert_eq!(fault.invariant(), "checked-program-invariant");
+        }
+        other => panic!("{other:?}"),
+    }
+}

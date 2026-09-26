@@ -3,7 +3,7 @@
 //! actual native compiler. The native compile join lives here (the SEAM-1 native arm),
 //! not in the `qsl-source` crate (ADR-011 §2.1 I3 row; §6.2 `qsl-source` row).
 
-use super::{wire, Intake, Result, RunCause};
+use super::{wire, Result, RunCause};
 use crate::checking::ClauseBinding;
 use crate::formal_source::{FormalSource, SourceIdentities};
 use crate::mapped::{self, CompileError, CompileLimits, MappedPackage};
@@ -236,7 +236,6 @@ fn extract_and_compile<'model>(
 
 /// The one selected binding is retained here after preflight; no second count guard.
 pub(super) struct Selected<'a> {
-    source: &'a wire::SourceFile,
     binding: &'a wire::Binding,
     body: &'a wire::Identity,
 }
@@ -253,7 +252,6 @@ pub(super) fn select<'a>(
         .into());
     };
     Ok(Selected {
-        source: &program.source,
         binding,
         body: &extraction.body,
     })
@@ -265,14 +263,16 @@ pub(super) struct ExtractedRun<'model> {
 }
 
 impl Selected<'_> {
+    /// `original` is the program source, already read by the caller
+    /// (FND-014: this no longer re-reads `program.source` a second time
+    /// through `intake`, mirroring FND-011's fix for a selected package).
     pub(super) fn compile<'model>(
         self,
-        intake: &mut Intake<'_>,
         models: &'model [NativeModel],
+        original: FormalSource,
     ) -> Result<ExtractedRun<'model>> {
         let binding = self.binding.bind()?;
         let body = self.body.bind()?;
-        let original = intake.source(self.source)?;
         let context =
             qsl_source::clause_context(binding.requirement.package().as_str(), original.source())
                 .map_err(|failures| {

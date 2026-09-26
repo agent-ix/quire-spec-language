@@ -43,8 +43,9 @@ impl<'a> RunSelection<'a> {
 
     /// `source` is the program source, already read by the caller (FND-011:
     /// a selected package's own construction does not read `program.source`
-    /// a second time). The extraction arm ignores it: it reads its own
-    /// source through the I3 adapter instead.
+    /// a second time). The extraction arm threads it through the same way
+    /// (FND-014): `Selected::compile` no longer re-reads `program.source`
+    /// itself.
     pub fn compile<'model>(
         self,
         intake: &mut Intake<'_>,
@@ -60,7 +61,7 @@ impl<'a> RunSelection<'a> {
             }))),
             #[cfg(feature = "quire-extraction")]
             Self::Extracted(selected) => Ok(RunPackage::Extracted(Box::new(
-                selected.compile(intake, models)?,
+                selected.compile(models, source)?,
             ))),
         }
     }

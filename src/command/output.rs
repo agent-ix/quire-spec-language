@@ -687,4 +687,127 @@ mod tests {
             assert_undefined_renders(reason);
         }
     }
+
+    fn render(outcome: CallOutcome) -> RunResult {
+        spine_run_result(
+            ByteDigest::of(b"request"),
+            PackageId::of_preimage(b"package"),
+            &formal_source(),
+            "seven",
+            outcome,
+        )
+        .unwrap()
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4, FND-013): a record refusal renders every
+    /// FR-096 member and exits by its catalog code's mapping -- `resource_exhausted`
+    /// (`ancestor-steps`'s own code) is incomplete, so it exits 22, not the
+    /// kernel-refusal row's hardcoded 20.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn refused_record_renders_and_exits_by_its_code() {
+        use qsl_replay::spine::CallRefusal;
+        let fields = std::collections::BTreeMap::from([
+            ("from", "test/orders".to_owned()),
+            ("limit", "5".to_owned()),
+        ]);
+        let result = render(CallOutcome::Refused(CallRefusal::Record {
+            code: qsl_foundation::diagnostic::CatalogCode::new(
+                "resource_exhausted",
+                "ancestor-steps",
+            ),
+            fields: fields.clone(),
+            locus: None,
+            location: None,
+        }));
+        assert_eq!(result.exit_code, 22);
+        assert_eq!(
+            result.value.as_value()["outcome"],
+            serde_json::json!({
+                "kind": "refused",
+                "code": "resource_exhausted",
+                "cause": "ancestor-steps",
+                "fields": fields,
+            })
+        );
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4, FND-013): a family refusal with no FR-096
+    /// record carries its code and cause but no `fields`/`locus`.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn refused_family_with_no_record_renders_code_and_cause_only() {
+        use qsl_replay::spine::CallRefusal;
+        let result = render(CallOutcome::Refused(CallRefusal::Family {
+            code: qsl_foundation::diagnostic::CatalogCode::new("ill_typed", "type-mismatch"),
+            location: None,
+        }));
+        assert_eq!(result.exit_code, 20);
+        assert_eq!(
+            result.value.as_value()["outcome"],
+            serde_json::json!({"kind": "refused", "code": "ill_typed", "cause": "type-mismatch"})
+        );
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4, FND-013): a bare kernel refusal with no
+    /// code, cause, fields or locus exits 20.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn refused_kernel_with_no_record_exits_20() {
+        use qsl_replay::spine::CallRefusal;
+        let result = render(CallOutcome::Refused(CallRefusal::Kernel { location: None }));
+        assert_eq!(result.exit_code, 20);
+        assert_eq!(
+            result.value.as_value()["outcome"],
+            serde_json::json!({"kind": "refused"})
+        );
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4, FND-013): every `location.origin` kind
+    /// renders its kebab-case tag, including `type-declaration`.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn location_origin_kinds_render_kebab_case() {
+        use qsl_replay::spine::CallRefusal;
+        use qsl_semantics::check::{Location, Origin};
+        let cases = [
+            (
+                Origin::Body {
+                    function: "seven".to_owned(),
+                    index: 0,
+                },
+                serde_json::json!({"kind": "body", "function": "seven", "index": 0}),
+            ),
+            (
+                Origin::Measure {
+                    function: "seven".to_owned(),
+                    index: 1,
+                },
+                serde_json::json!({"kind": "measure", "function": "seven", "index": 1}),
+            ),
+            (
+                Origin::Expression,
+                serde_json::json!({"kind": "expression"}),
+            ),
+            (
+                Origin::TypeDeclaration {
+                    name: "Point".to_owned(),
+                },
+                serde_json::json!({"kind": "type-declaration", "name": "Point"}),
+            ),
+        ];
+        for (origin, expected) in cases {
+            let result = render(CallOutcome::Refused(CallRefusal::Kernel {
+                location: Some(Location {
+                    origin,
+                    path: vec![2, 0],
+                }),
+            }));
+            assert_eq!(
+                result.value.as_value()["outcome"]["location"],
+                serde_json::json!({"origin": expected, "path": [2, 0]}),
+                "{expected}"
+            );
+        }
+    }
 }
