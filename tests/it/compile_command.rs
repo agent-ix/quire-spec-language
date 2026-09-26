@@ -803,3 +803,140 @@ fn a_model_bearing_request_refuses_at_the_owning_stage() {
         assert_eq!(span["end"]["byte"], start + located.len(), "{failure}");
     }
 }
+
+/// `test/geometry`'s source, a library `f` the importing program calls.
+const GEOMETRY: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
+
+/// The source identity `geometry.native` is selected under.
+fn geometry_identity() -> qsl_foundation::SourceIdentity {
+    qsl_foundation::SourceIdentity::new("agent-ix", "test:geometry", "fixture", "fixture:1")
+}
+
+/// [`spine_request`] for a program importing `test/geometry` version `1`,
+/// with `library` written as `geometry.native` and selected as that
+/// library under `identity` and `version`. The import's digest is the
+/// `package_id` `library` compiles to from source when it compiles, and an
+/// arbitrary digest otherwise.
+fn spine_library_request(
+    directory: &Path,
+    library: &[u8],
+    identity: &str,
+    version: &str,
+) -> Vec<u8> {
+    let digest = qsl_replay::spine::compile(
+        geometry_identity(),
+        "geometry.native",
+        library,
+        &std::collections::BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+        qsl_replay::spine::SpineLimits::default(),
+    )
+    .map_or_else(|_| "e".repeat(64), |compiled| compiled.emitted.package_id().hex());
+    let program = format!(
+        "{SPINE_HEADER}import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n\
+         function u using v(x: Int[0, 9]): Boolean pure {{ g::f(x) }}\n"
+    )
+    .into_bytes();
+    spine_request(directory, &program);
+    std::fs::write(directory.join("geometry.native"), library).unwrap();
+    let path = directory.join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    job["request"]["libraries"] = json!([{"identity":identity,"version":version,"source":{
+        "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
+        "revision_namespace":"fixture","revision":"fixture:1",
+        "digest":ByteDigest::of(library).to_string(),"document":"Geometry","formal_revision":1}}]);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    program
+}
+
+/// FR-027-AC-10 (TC-446 step 7): a `1-draft` request's `libraries` supply
+/// the program's import. Stdout is exactly `qsl_replay::spine::compile`'s
+/// bytes over the same program and dependency input.
+#[test]
+#[trace("TC-446", "FR-027-AC-10")]
+fn a_complete_v1_request_supplies_its_libraries_to_the_spine() {
+    let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
+    let directory = tempfile::tempdir().unwrap();
+    let program = spine_library_request(directory.path(), &library, "test/geometry", "1");
+    let output = compile(directory.path());
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let dependencies =
+        qsl_replay::spine::DependencyInput::new([qsl_replay::spine::SuppliedLibrary {
+            identity: "test/geometry".to_owned(),
+            version: "1".to_owned(),
+            source: geometry_identity(),
+            path: "geometry.native".to_owned(),
+            bytes: library,
+        }])
+        .unwrap();
+    let compiled = qsl_replay::spine::compile(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
+        "program.native",
+        &program,
+        &std::collections::BTreeMap::new(),
+        &dependencies,
+        qsl_replay::spine::SpineLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(output.stdout, compiled.emitted.bytes());
+}
+
+/// FR-027-AC-10 (TC-446 step 7): a library with an empty identity or
+/// version, and any library beside a `0-draft` program, refuse
+/// `invalid-request` with nothing written.
+#[test]
+#[trace("TC-446", "FR-027-AC-10")]
+fn malformed_libraries_refuse_as_invalid_request() {
+    let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
+    for (identity, version) in [("", "1"), ("test/geometry", "")] {
+        let directory = tempfile::tempdir().unwrap();
+        spine_library_request(directory.path(), &library, identity, version);
+        let output = compile(directory.path());
+        assert_eq!(output.status.code(), Some(20), "{identity:?} {version:?}");
+        assert!(output.stdout.is_empty());
+        let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(failure["code"], "invalid-request", "{failure}");
+    }
+    let generated = tempfile::tempdir().unwrap();
+    fixtures::write(generated.path(), fixtures::Case::Aggregate(2)).unwrap();
+    let path = generated.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    job["request"]["libraries"] = json!([{"identity":"test/geometry","version":"1","source":
+        job["request"]["program"]["source"].clone()}]);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(generated.path());
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "invalid-request", "{failure}");
+}
+
+/// FR-027-AC-10: a library's own refusal is reported through the program's
+/// import and rendered over the library's source, not the program's.
+#[test]
+#[trace("TC-446", "FR-027-AC-10")]
+fn a_library_refusal_renders_over_the_library_source() {
+    let body = "function f using v(x: Int[0, 9]): Boolean pure { x < true }\n";
+    let library = format!("{SPINE_HEADER}{body}").into_bytes();
+    let directory = tempfile::tempdir().unwrap();
+    spine_library_request(directory.path(), &library, "test/geometry", "1");
+    let output = compile(directory.path());
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["details"]["path"], "geometry.native", "{failure}");
+    let start = SPINE_HEADER.len() + body.find("x < true").unwrap();
+    let end = (start + "x < true".len()) as u64;
+    let span = &failure["details"]["span"];
+    let (from, to) = (
+        span["start"]["byte"].as_u64().unwrap(),
+        span["end"]["byte"].as_u64().unwrap(),
+    );
+    assert!(from >= start as u64 && to <= end, "{failure}");
+}

@@ -1080,4 +1080,31 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
         matches!(refused, ReplayRefusal::SourceCount(2)),
         "{refused:?}"
     );
+
+    // The entry naming a definition document in place of its source.
+    let definition = b"definition bytes".to_vec();
+    let digest = DigestRecord::mint(
+        DigestDomain::DefinitionBytesV1,
+        ByteDigest::of(&definition).as_bytes(),
+    );
+    let mut document = units.clone();
+    document.sources = vec![(
+        AUTHORITY.to_owned(),
+        UNITS_IDENTITY.to_owned(),
+        NAMESPACE.to_owned(),
+        REVISION.to_owned(),
+        Some(DigestDomain::DefinitionBytesV1.as_str().to_owned()),
+        digest.hex(),
+    )];
+    let mut wire = importing.request(vec![document], &[]);
+    wire.byte_provision.push((
+        Some(DigestDomain::DefinitionBytesV1.as_str().to_owned()),
+        digest.hex(),
+        definition,
+    ));
+    let refused = replay(wire).expect_err("a definition document");
+    assert!(
+        matches!(&refused, ReplayRefusal::NotASource(reference) if reference.digest() == digest),
+        "{refused:?}"
+    );
 }
