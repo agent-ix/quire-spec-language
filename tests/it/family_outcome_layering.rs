@@ -416,8 +416,10 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         }
         if crate_name == "qsl-eval" {
             // Layer 5 (QSL-183): "4, 3, F, K". The whole shipped table is
-            // fixed: the four layer crates and the one third-party crate the
-            // shipped code calls, `thiserror`, for its error types.
+            // fixed: the four layer crates, `thiserror` for its error types,
+            // and `quire-canonical`/`serde` for the FR-101 simulation state
+            // key and the pinned sampler's draw preimage (ADR-011 X-8,
+            // QSL-272).
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(
@@ -426,7 +428,9 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "qsl-foundation",
                     "qsl-package",
                     "qsl-semantics",
+                    "quire-canonical",
                     "quire-exact",
+                    "serde",
                     "thiserror"
                 ],
                 "{crate_name}'s [dependencies]"
