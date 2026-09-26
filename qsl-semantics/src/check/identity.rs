@@ -60,7 +60,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{
-    DecimalType, EnumShape, Identifier, IeeeWidth, IntegerInterval, NodeKey, RationalDomain,
+    DecimalType, EnumShape, FloatType, Identifier, IntegerInterval, NodeKey, RationalDomain,
     TextType, UnitId, ValueType,
 };
 
@@ -348,7 +348,7 @@ pub enum ScalarShape {
     /// A `Decimal[..]` domain.
     Decimal(DecimalType),
     /// `Float32`/`Float64`.
-    Float(IeeeWidth),
+    Float(FloatType),
     /// A quantity in exactly this unit.
     Quantity(UnitId),
     /// A `Text[..]` domain.
@@ -531,7 +531,7 @@ pub fn to_kernel_value_type(type_node: &CheckedTypeNode) -> ValueType {
             ScalarShape::Integer => ValueType::Integer,
             ScalarShape::Rational(domain) => ValueType::Rational(domain.clone()),
             ScalarShape::Decimal(decimal) => ValueType::Decimal(decimal.clone()),
-            ScalarShape::Float(width) => ValueType::Float(*width),
+            ScalarShape::Float(float) => ValueType::Float(*float),
             ScalarShape::Quantity(unit) => ValueType::Quantity(*unit),
             ScalarShape::Text(text) => ValueType::Text(*text),
         },

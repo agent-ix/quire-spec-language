@@ -36,6 +36,7 @@ use qsl_semantics::value::{
 };
 use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
+use quire_exact::FloatType;
 use quire_exact::NodeKey;
 use quire_exact::{
     admit_text, compare_ieee, convert_ieee_width, Decimal, DecimalType, IeeeComparison,
@@ -1758,7 +1759,7 @@ fn e28_equality_on_ieee_bearing_types_is_operator_ineligible() {
             "F",
             CompositeShape::Record(vec![FieldDeclaration::new(
                 "x",
-                ValueType::Float(IeeeWidth::Binary32),
+                ValueType::Float(FloatType::exact(IeeeWidth::Binary32)),
                 Presence::Required,
             )]),
         )],
@@ -1769,7 +1770,7 @@ fn e28_equality_on_ieee_bearing_types_is_operator_ineligible() {
         cause: IllTypedCause::OperatorIneligible,
     };
     for value_type in [
-        ValueType::Float(IeeeWidth::Binary32),
+        ValueType::Float(FloatType::exact(IeeeWidth::Binary32)),
         ValueType::Composite(key("F")),
     ] {
         assert_eq!(check(&env, &value_type, &value_type), Err(ineligible));
@@ -1777,7 +1778,7 @@ fn e28_equality_on_ieee_bearing_types_is_operator_ineligible() {
     assert_eq!(ineligible.cause.tag(), Some("operator-ineligible"));
     let set = ValueType::collection(collection_type(
         CollectionKind::Set,
-        ValueType::Float(IeeeWidth::Binary64),
+        ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
         2,
     ));
     assert_eq!(env.check_type(&set), Err(ineligible));
@@ -2324,11 +2325,11 @@ fn x04_an_unresolved_unit_past_admission_is_an_internal_fault() {
 #[test]
 fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
     let package = expression_package(TypeEnvironment::default(), true);
-    let double = ValueType::Float(IeeeWidth::Binary64);
+    let double = ValueType::Float(FloatType::exact(IeeeWidth::Binary64));
     let parameters = [
         ("f", double.clone()),
         ("g", double.clone()),
-        ("h", ValueType::Float(IeeeWidth::Binary32)),
+        ("h", ValueType::Float(FloatType::exact(IeeeWidth::Binary32))),
         ("i", ValueType::Integer),
     ];
     let one = IeeeValue::binary64(0x3ff0_0000_0000_0000);

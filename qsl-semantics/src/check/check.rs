@@ -1475,7 +1475,7 @@ impl<'a> Typer<'a> {
                     return Err(refuse(location, CheckCause::IeeeProfileNotAdmitted));
                 }
                 (
-                    NodeKind::Ieee(operator, left_box, right_box),
+                    NodeKind::Ieee(operator, l.rounding(), left_box, right_box),
                     ValueType::Float(*l),
                 )
             }

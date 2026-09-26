@@ -23,8 +23,9 @@ use super::refusal::{CheckCause, CheckRefusal, Location};
 use qsl_forms::{BuiltinType, TypeForm, TypeFormHead};
 use qsl_foundation::Span;
 use quire_exact::{
-    CardinalityBound, CollectionType, DecimalType, EffectiveId, IeeeWidth, IllTypedCause, Integer,
-    IntegerInterval, RationalDomain, RoundingMode, TextProfile, TextType, ValueType,
+    CardinalityBound, CollectionType, DecimalType, EffectiveId, FloatType, IeeeWidth,
+    IllTypedCause, Integer, IntegerInterval, RationalDomain, RoundingMode, TextProfile, TextType,
+    ValueType,
 };
 
 /// What a qualified type name resolves against.
@@ -203,6 +204,16 @@ fn interval(form: &TypeForm, lower: usize) -> Result<IntegerInterval, TypeFormEr
         .map_err(|_| fault(form, TypeFormFault::EmptyInterval))
 }
 
+/// `Float32[mode]`/`Float64[mode]`; the bare spelling is strict `exact`
+/// (FR-091-OQ-4).
+fn float_type(form: &TypeForm, width: IeeeWidth) -> Result<ValueType, TypeFormError> {
+    let rounding = match form.bounds.first() {
+        Some(text) => parse_rounding_mode(text).ok_or_else(|| malformed(form))?,
+        None => RoundingMode::Exact,
+    };
+    Ok(ValueType::Float(FloatType::new(width, rounding)))
+}
+
 fn resolve_builtin(
     names: &impl TypeNames,
     builtin: BuiltinType,
@@ -228,8 +239,8 @@ fn resolve_builtin(
                 .map(ValueType::Decimal)
                 .map_err(|_| fault(form, TypeFormFault::MalformedDecimal))
         }
-        BuiltinType::Float32 => Ok(ValueType::Float(IeeeWidth::Binary32)),
-        BuiltinType::Float64 => Ok(ValueType::Float(IeeeWidth::Binary64)),
+        BuiltinType::Float32 => float_type(form, IeeeWidth::Binary32),
+        BuiltinType::Float64 => float_type(form, IeeeWidth::Binary64),
         BuiltinType::Text => {
             let min = bound_u64(form, 0)?;
             let max = bound_u64(form, 1)?;
@@ -398,6 +409,30 @@ mod tests {
             )],
         )
         .expect("one object type admits")
+    }
+
+    /// FR-091-OQ-4 (TC-405): `Float32[mode]`/`Float64[mode]` resolve to a
+    /// float type carrying the mode; a bare float is strict `exact`.
+    #[ix_trace_rs::trace("FR-091-AC-19", "TC-405")]
+    #[test]
+    fn float_types_carry_their_rounding_mode() {
+        let float = |form: &TypeForm| match resolve(form).expect("a float type resolves") {
+            ValueType::Float(float) => (float.width(), float.rounding()),
+            other => panic!("a float type, not {other:?}"),
+        };
+        assert_eq!(
+            float(&builtin(BuiltinType::Float64, &["nearest-even"])),
+            (IeeeWidth::Binary64, RoundingMode::NearestEven)
+        );
+        assert_eq!(
+            float(&builtin(BuiltinType::Float32, &["toward-zero"])),
+            (IeeeWidth::Binary32, RoundingMode::TowardZero)
+        );
+        assert_eq!(
+            float(&builtin(BuiltinType::Float64, &[])),
+            (IeeeWidth::Binary64, RoundingMode::Exact)
+        );
+        assert_mismatch(&builtin(BuiltinType::Float64, &["NearestEven"]));
     }
 
     /// Bound literals use the grammar's own spellings (`qsl-cst`

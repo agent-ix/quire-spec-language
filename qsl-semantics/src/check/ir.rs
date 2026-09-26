@@ -8,6 +8,7 @@ use qsl_foundation::absence::AbsenceMode;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
+use quire_exact::RoundingMode;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CollectionKind, CollectionType, IntegerInterval, RationalDomain};
 use quire_exact::{Value, ValueType};
@@ -340,9 +341,9 @@ pub enum NodeKind {
     },
     /// Unary `-` of a decimal into `target`.
     DecimalNegate(Box<Node>, DecimalType),
-    /// FR-148 IEEE arithmetic of one width under the omitted, strict `exact`
-    /// rounding spelling.
-    Ieee(ArithmeticOperator, Box<Node>, Box<Node>),
+    /// FR-148 IEEE arithmetic of one width under the rounding mode the
+    /// operand types carry (FR-091-OQ-4).
+    Ieee(ArithmeticOperator, RoundingMode, Box<Node>, Box<Node>),
     /// FR-142 quantity arithmetic; the result unit is the node type's.
     Quantity(ArithmeticOperator, Box<Node>, Box<Node>),
     /// An ordinary FR-140 conversion of a rational or decimal into `target`,
@@ -561,7 +562,7 @@ impl Node {
             | NodeKind::Divide { left, right, .. }
             | NodeKind::Rational { left, right, .. }
             | NodeKind::Decimal { left, right, .. }
-            | NodeKind::Ieee(_, left, right)
+            | NodeKind::Ieee(_, _, left, right)
             | NodeKind::Quantity(_, left, right)
             | NodeKind::Order(_, _, left, right)
             | NodeKind::Equality(_, _, left, right)
