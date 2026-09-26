@@ -131,7 +131,10 @@ clause operation `quire.op.state.clause` (STD-111); their application's kind
 member tells them apart, so for these three the injective spelling is the
 triple (pair, operation identity, kind member), and a decoder reads the kind
 member after the operation identity. `StateTransition` spells
-(`state`, `transition`), its QSpec form, not (`state`, `frame`). The pair
+(`state`, `transition`), its QSpec form as STD-111 item 5 defines it (a
+`quire.op.state.transition` body root), not (`state`, `frame`). The TC-250
+fixed table (`qsl-semantics/src/check/identity.rs:619-631`), which pins
+(`state`, `frame`) today, is updated with this change. The pair
 (`state`, `frame`) decodes to no clause kind: a frame node's body is QSpec
 FR-340's frame term, which holds no clause application, so a frame is never
 read as a clause. Frame identity (O-08) is unchanged by this: a frame is

@@ -101,7 +101,13 @@ source map (FR-095).
   (`state`, `state_clause`), the clause operation `quire.op.state.clause` and
   its own kind member, so the three spellings differ only in the kind member.
 - The checker SHALL spell `StateTransition` with the node pair
-  (`state`, `transition`).
+  (`state`, `transition`), its QSpec form as STD-111 item 5 defines it (the
+  `state`/`transition` body root is a `quire.op.state.transition`
+  application). The fixed table in the TC-250 test
+  `node_tag_and_semantic_form_mapping_matches_a_fixed_table_and_is_total_and_injective`
+  (`qsl-semantics/src/check/identity.rs:619-631`), which pins
+  (`state`, `frame`) today, changes with this: the implementer SHALL update
+  it to (`state`, `transition`) in the same change.
 - The decoder of `CheckedClauseKind` SHALL map (`state`, `frame`) to no clause
   kind: a frame node's body is FR-340's frame term, which holds no clause
   application, so a frame under an `operation_anchor` never decodes as
@@ -123,7 +129,7 @@ source map (FR-095).
 | FR-105-AC-1 | The ConfigVersion unit of FR-104-AC-1 emits exactly three `state_clause` nodes (kinds `invariant`, `invariant`, `postcondition`), one `operation_anchor` (context `ConfigVersion`, operation `"attemptUpdate"`) and one `frame`, whose `modifies` is exactly (`ConfigVersion` node, `versionNumber`) and whose `creates` and `deletes` are empty. The package holds no `model`/`field_declaration`, `model`/`operation_declaration`, `state`/`snapshot` or `state`/`transition` node. | Test (TC-462); emission pending STD-111 |
 | FR-105-AC-2 | Each emitted node's body, `semantic_type`, `dependencies` and occurrences match the Outputs table; `VersionUnchanged`'s condition holds a `quire.op.state.pre` application over the field read of `versionNumber`; `NoCycle`'s holds a `quire.op.model.reaches_field` application whose member is `{kind: "field", declaration: <ConfigVersion node>, name: "parent"}`, the same member shape `ParentOrder`'s `self.parent` read carries. | Test (TC-462); emission pending STD-111 |
 | FR-105-AC-3 | The emitted package passes QSL's I2 read (`qsl-package` `checked_v2` reader), including its frame step, and its recomputed `package_id` equals the emitted one. | Test (TC-463); pending STD-111 |
-| FR-105-AC-4 | Compiling the unit twice gives identical bytes. Renaming `ParentOrder` changes no node id; changing its `<` to `<=` changes its `state_clause` node id and the `package_id`; adding `ParentOrder2` with `ParentOrder`'s body adds no node and a second `claim` occurrence (ordinal 1) to `ParentOrder`'s node; adding a second `post` clause on `attemptUpdate` adds one `state_clause` node and no second anchor or frame. Over a package where `Sub` specializes `ConfigVersion`, `pre A ... on Config::ConfigVersion::attemptUpdate` and `pre B ... on Config::Sub::attemptUpdate` share one anchor whose context is `ConfigVersion`. | Test (TC-463) |
+| FR-105-AC-4 | Compiling the unit twice gives identical bytes. Renaming `ParentOrder` changes no node id; changing its `<` to `<=` changes its `state_clause` node id and the `package_id`; adding `ParentOrder2` with `ParentOrder`'s body adds no node and a second `claim` occurrence (ordinal 1) to `ParentOrder`'s node; adding a second `post` clause on `attemptUpdate` adds one `state_clause` node and no second anchor or frame. Over a package where `Sub` specializes `ConfigVersion`, `pre A ... on Config::ConfigVersion::attemptUpdate` and `pre B ... on Config::Sub::attemptUpdate` share one anchor whose context is `ConfigVersion`. | Test (TC-463); pending STD-111: the node ids and `package_id` it compares have STD-111 spellings in their preimages |
 | FR-105-AC-5 | `CheckedClauseKind`'s mapping is total over all seven variants: forward, each variant gives one (node pair, clause operation, kind member) triple and no two variants give the same triple; backward, each triple decodes to its variant; (`state`, `frame`) decodes to no variant; `StateTransition` gives (`state`, `transition`). A mutant that swaps two kind members, or deletes an arm, fails the test. | Test (TC-462) |
 | FR-105-AC-6 | When the emitter cannot emit one of a clause's nodes (fault injected at the `frame` node), the compile refuses and emits no `state` node and no package bytes. | Test (TC-463) |
 
@@ -136,7 +142,10 @@ source map (FR-095).
 - STD-111 (QSpec): the `state_clause`, `operation_anchor` and `frame` body
   rules, the (object type, member name) frame entry,
   `quire.op.model.reaches_field` with the `field` member kind and its
-  reference-edge constraint, and `quire.op.state.clause`. Only this FR's
+  reference-edge constraint, `quire.op.state.clause` with its operator class
+  and catalog entry, the `state_clause` `OperationMember` kind, and the node
+  form rule (a `state`/`transition` body root is a `quire.op.state.transition`
+  application; a frame carries no clause application). Only this FR's
   emission criteria and FR-108's reading of the emitted package wait on it;
   FR-102 to FR-104 and FR-106 to FR-109 read the in-process `CheckedPackage`.
 - IR `lower` returns no form for any `state` node at 48ab5dc, so these nodes
@@ -144,5 +153,6 @@ source map (FR-095).
 
 ## Status
 
-Specified under QSL-273. AC-1 to AC-3 are pending STD-111 (QSpec wire).
-AC-4 to AC-6 do not wait on it.
+Specified under QSL-273. AC-1 to AC-4 are pending STD-111 (QSpec wire):
+AC-1 to AC-3 assert the emitted spellings, and AC-4 asserts node ids and a
+`package_id` whose preimages hold them. AC-5 and AC-6 do not wait on it.

@@ -48,3 +48,13 @@ Verdict: changes requested (two medium).
 
 Changes requested: FND-001 and FND-002 change what an implementation must
 report.
+
+## Dispositions
+
+Disposition pass at `agent-ix/quire-spec-language@c35a6a49` (fix commit `c35a6a49`, "QSL-273 spec: fix SR-660 to SR-664 review findings", rebased onto main 5e7a2615). Each outcome was re-checked against the spec and code at that head, not taken from the commit message. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed c35a6a49 | Checks 1 and 6 are split into ordered If/then sub-conditions (1.1 to 1.8, 6.1 to 6.5). |
+| FND-002 | fixed c35a6a49 | Check 7 is an If/then statement, and "required population" is defined by the references read from `self`'s population, with TC-465 row 25 as its adverse case. |
+| FND-003 | fixed c35a6a49 | Each statement names its actor, and FR-106's Description is event-driven. `quire validate` reports no EARS warnings on FR-102 to FR-109. |

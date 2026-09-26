@@ -1192,7 +1192,10 @@ operation anchor node they share.
   `quire.op.state.clause`, which STD-111 adds to the operation catalog. The
   application's `member` names the kind, so (operation identity, kind member)
   is injective over the enum. `StateTransition` moves from (`state`, `frame`)
-  to (`state`, `transition`), its QSpec form. A (`state`, `frame`) node
+  to (`state`, `transition`), its QSpec form as STD-111 item 5 defines it
+  (a `quire.op.state.transition` body root; a frame carries no clause
+  application). The TC-250 fixed table (`qsl-semantics/src/check/
+  identity.rs:619-631`) changes with it. A (`state`, `frame`) node
   decodes to no clause kind: its body is FR-340's frame term, which carries
   no clause operation, so a frame under an `operation_anchor` is never read
   as a transition (FR-088-AC-4, as amended).
@@ -1276,6 +1279,18 @@ population, and `reaches` over the population it walks, so each such
 population whose declaration has no maximum (`Population(None)`) is an
 unbounded domain, boundable by `Cardinality`. ConfigVersion's
 `config_history` declares none, so its clauses are `Unbounded` there.
+
+A population has no node (FR-094), so its domain is keyed as a model member
+is (§15.4): `DomainKey{node, path}` with `node` the `model`/`object_type`
+node of the member type, and `path` one element naming the population, its
+ordinal among the package's population declarations in ascending
+declaration-identity order (`path` is a `Vec<u32>`, ADR-014 §4). The context
+population is the one population with no maximum whose member types include
+the context type. A clause whose context type belongs to two or more such
+populations cannot name exactly one, and refuses at S3 with
+`ambiguous_declaration`/`ambiguous-name` at its `on` (FR-104). When the
+context type belongs to several populations, a run's context object is in
+the population the selection's `self` names (FR-106).
 Recording a requirement grants nothing; no backend proves a state clause
 until IR admits `state` nodes (IR `lower` returns no form for them at the
 pinned revision 48ab5dc).

@@ -172,7 +172,13 @@ required population, in the observations the clause reads.
       `invalid_runtime_input`/`unknown-member`, naming the first in document
       order.
    7. If a label is empty or only whitespace, then admission SHALL refuse
-      `invalid_runtime_input`/`invalid-value` at that label.
+      `invalid_runtime_input`/`invalid-value` at that label. This diverges
+      on purpose from FR-001, FR-018-AC-8 and FR-026-AC-6, which refuse a
+      blank FR-001 label `invalid_source_identity`: that code is not in the
+      pinned catalog, QSpec `native-diagnostics.md` `1-draft.7`, and every
+      code this FR returns is. The gap is recorded under STD-110 (catalog
+      `1-draft.8`); when the catalog adds the code, this condition moves to
+      it.
    8. If the four labels differ from the selection's, then admission SHALL
       refuse `stale_dependency`/`revision-mismatch`, naming both.
 2. Selection form check. If `Current` selects a precondition or postcondition,
@@ -230,21 +236,30 @@ required population, in the observations the clause reads.
     then admission SHALL refuse `invalid_runtime_input`/`missing-member` or
     `unknown-member`.
 11. Frame and delta check. For an invocation, admission SHALL run the frame
-    check (`admit_invocation` with the operation's `OperationEffect`,
-    FR-103), which SHALL compare every declared field of every surviving object, scalar and
-    reference alike, and SHALL report the first violation in this order:
-    1. an object of the pre snapshot absent from the post snapshot that the
-       frame's `deletes` does not grant, in pre document order:
+    check (`enforce_frame` through `admit_invocation`, with the operation's
+    `OperationEffect`, FR-103) once per population, in the pre snapshot's
+    population document order and then any population only in the post
+    snapshot, in its document order. `admit_invocation` admits one
+    population per call, so admission calls it per population and reports
+    the first population's first violation. The check SHALL compare every
+    declared field of every surviving object, scalar and reference alike.
+    Within one population it SHALL report the first violation in this
+    order, which is `enforce_frame`'s:
+    1. walking the post snapshot's objects in ascending key order: an object
+       absent from the pre snapshot that `creates` does not grant, or a
+       surviving object whose most-specific type differs between pre and
+       post (`FrameTypeChanged`; no frame authorizes a retype):
        `frame_violation`/`unauthorized-change`;
-    2. an object of the post snapshot absent from the pre snapshot that
-       `creates` does not grant, in post document order:
+    2. an object of the pre snapshot absent from the post snapshot that the
+       frame's `deletes` does not grant, in ascending key order:
        `frame_violation`/`unauthorized-change`;
     3. a changed field of a surviving object outside `modifies`, objects in
        pre document order and fields in declared order:
        `frame_violation`/`unauthorized-change`;
-    4. a repeated identity in `created` or `deleted`, an identity in both,
-       then a declared `created` or `deleted` list that differs from the
-       computed one: `population_delta_mismatch`/`delta-disagreement`.
+    4. over that population's entries of `created` and `deleted`: a repeated
+       identity in either, an identity in both, then a list that differs
+       from the computed one: `population_delta_mismatch`/
+       `delta-disagreement`.
 
 - Admission SHALL read no path, environment variable, clock or search
   location. The same package, provisions, selection and limits SHALL give
@@ -253,7 +268,8 @@ required population, in the observations the clause reads.
   `observation`, `anchor.kind`, member names and value tags are converted
   once, at read, to closed enums or typed identities.
 - Every code and cause above is in QSpec `native-diagnostics.md` revision
-  `1-draft.7`.
+  `1-draft.7`. Check 1.7 therefore uses `invalid_runtime_input`, not
+  `invalid_source_identity` (STD-110).
 
 ## Acceptance Criteria
 
@@ -261,11 +277,11 @@ required population, in the observations the clause reads.
 |----|----------|--------------|
 | FR-106-AC-1 | The healthy-parent current snapshot above, selected with anchor `handler validate` and `self` = `child` for `ParentOrder`, admits: one observation with population `config_history` complete, objects `root` and `child` with `versionNumber` 1 and 2, `child.parent` present and naming `root`, and the snapshot's identity and digest retained. Re-serializing the document with other whitespace and member order gives the same digest and the same admitted value. | Test (TC-464) |
 | FR-106-AC-2 | The changed-version invocation (pre: `child` at 2; post: `child` at 3; result `true`; no parameters, created or deleted) selected for `VersionUnchanged` admits, with the pre and post observations distinct and `result` true. | Test (TC-464) |
-| FR-106-AC-3 | Each condition of checks 1 to 6, 9 and 10 has one case that fails only it and returns exactly its code and cause, as TC-465 lists: among them an absent document, a 1 MiB + 1 byte document, a value nested 65 deep, bytes edited under their original digest, `format` `native-state-input/1` (`unknown_wire`/`unsupported-wire`), a missing `populations`, an extra member, a blank `authority`, another `revision`, `Current` selecting `VersionUnchanged`, a `pre` document selected as current, anchor `handler other`, another model digest, operation `other`, an unknown population, a duplicate `root` key, a set-typed field, `versionNumber` `{"boolean": true}`, `"01"`, `"-1"` and `"1001"`, `self` = `ghost`, and a `result` of `null` for `attemptUpdate`. | Test (TC-465) |
+| FR-106-AC-3 | Each condition of checks 1 to 6, 9 and 10 has one case that fails only it and returns exactly its code and cause, as TC-465 lists: among them an absent document, a 1 MiB + 1 byte document, a value nested 65 deep, bytes edited under their original digest, `format` `native-state-input/1` (`unknown_wire`/`unsupported-wire`), a missing `populations`, an extra member, a blank `authority`, another `revision`, `Current` selecting `VersionUnchanged`, a `pre` document selected as current, anchor `handler other`, another model digest, operation `other`, an unknown population, a duplicate `root` key, a set-typed field, `versionNumber` `{"boolean": true}`, `"01"`, `"-1"` and `"1001"`, `self` = `ghost`, a `result` of `null` for `attemptUpdate`, an object of a type that is not a member type of its population, a missing declared field, an undeclared field, and, for an operation `probe(target: ConfigVersion)` with no result, a missing, an unknown and an ill-typed parameter and a result value. | Test (TC-465) |
 | FR-106-AC-4 | The incomplete-population snapshot (`complete: false`, `child.parent` naming `missing`) gives `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling refusal; the same snapshot with `complete: true` gives `Refused` with `dangling_reference`, naming `missing` and `config_history`. A second, incomplete population that no reference value names does not make a healthy case incomplete. | Test (TC-465) |
 | FR-106-AC-5 | The forbidden-parent-change invocation (post sets `child.parent` absent) refuses `frame_violation`/`unauthorized-change` naming `child` and `parent`. A package whose `attemptUpdate` frame modifies only `parent`, with an invocation that changes only `versionNumber`, refuses `frame_violation`/`unauthorized-change` naming `versionNumber` (a scalar field). An invocation declaring `created: [child]` refuses `population_delta_mismatch`/`delta-disagreement`. | Test (TC-465) |
 | FR-106-AC-6 | Running admission twice over the same inputs gives equal results, and admission builds its result without reading the filesystem (the provisions are in-memory maps; a test with no files on disk passes). | Test (TC-464) |
-| FR-106-AC-7 | Multi-defect documents report the first defect by the order above: bytes edited under their original digest that also add an unknown member refuse `byte-digest-mismatch`; a snapshot with `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` refuses `invalid-value` at `root`; an invocation whose post both deletes `root` and changes `child.parent` refuses the deletion. | Test (TC-465) |
+| FR-106-AC-7 | Multi-defect documents report the first defect by the order above: bytes edited under their original digest that also add an unknown member refuse `byte-digest-mismatch`; a snapshot with `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` refuses `invalid-value` at `root`; an invocation whose post both deletes `root` and changes `child.parent` refuses the deletion; over a package where `Sub` specializes `ConfigVersion`, an invocation whose post changes `child`'s type to `Sub` and deletes `root` refuses the type change, naming `child`; an invocation whose pre and post list `archive` before `config_history`, with a change outside the frame in each, refuses naming the `archive` object. | Test (TC-465) |
 
 ## Dependencies
 

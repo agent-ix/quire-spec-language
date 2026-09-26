@@ -49,5 +49,7 @@ Tag the tests `#[trace("TC-463", "FR-105-AC-n")]`.
 
 ## Status
 
-Planned (QSL-273). Step 1 is pending STD-111: QSL's reader admits these
-bodies once the QSpec body rules land. Steps 2 to 4 do not wait on it.
+Planned (QSL-273). Steps 1 to 3 are pending STD-111: QSL's reader admits
+these bodies once the QSpec body rules land, and the node ids and
+`package_id` steps 2 and 3 compare have STD-111 spellings in their
+preimages. Step 4 does not wait on it.

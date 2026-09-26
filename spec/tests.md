@@ -236,11 +236,11 @@ operational validation remains outside this audit-only plan.
 | TC-456 | S2 builds state clause forms and the self, result and reaches expressions | Unit | P1 | FR-102-AC-1, FR-102-AC-2, FR-102-AC-3 | 🚧 Planned; QSL-273 |
 | TC-457 | S2 state clause dispatch is thin, bounded and seam-probed | Unit | P1 | FR-102-AC-4, FR-102-AC-5, FR-102-AC-6 | 🚧 Planned; QSL-273 |
 | TC-458 | Spine intake and assembly admit operations and frames | Integration | P1 | FR-103-AC-1, FR-103-AC-2, FR-103-AC-3, FR-103-AC-4, FR-103-AC-5 | 🚧 Planned; QSL-273 |
-| TC-459 | S3 checks the ConfigVersion state clauses and types self, result and pre | Unit | P1 | FR-104-AC-1, FR-104-AC-2, FR-104-AC-7 | 🚧 Planned; QSL-273 |
+| TC-459 | S3 checks the ConfigVersion state clauses and types self, result and pre | Unit | P1 | FR-104-AC-1, FR-104-AC-2, FR-104-AC-7, FR-104-AC-8 | 🚧 Planned; QSL-273 |
 | TC-460 | S3 refuses ill-formed state clauses with their catalog codes | Unit | P1 | FR-104-AC-3, FR-104-AC-4 | 🚧 Planned; QSL-273 |
 | TC-461 | S3 records one operation-contract requirement per state clause and frame | Unit | P1 | FR-104-AC-5, FR-104-AC-6 | 🚧 Planned; QSL-273 |
 | TC-462 | S4 emits state clause, operation anchor and frame nodes with their bodies | Integration | P1 | FR-105-AC-1, FR-105-AC-2, FR-105-AC-5 | 🚧 Planned; QSL-273; steps 1 to 3 pending STD-111 |
-| TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | 🚧 Planned; QSL-273; step 1 pending STD-111 |
+| TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | 🚧 Planned; QSL-273; steps 1 to 3 pending STD-111 |
 | TC-464 | Snapshot and invocation documents read and admit into an observation set | Unit | P1 | FR-106-AC-1, FR-106-AC-2, FR-106-AC-6 | 🚧 Planned; QSL-273 |
 | TC-465 | Admission refuses or reports incomplete for each input defect, in check order | Unit | P1 | FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7 | 🚧 Planned; QSL-273 |
 | TC-466 | S6a evaluates state clauses over their observations, pre reads and reaches | Integration | P1 | FR-107-AC-1, FR-107-AC-2, FR-107-AC-3 | 🚧 Planned; QSL-273 |
@@ -607,7 +607,7 @@ operations and frames at I1 and E3 (FR-103), the S3 `ProtocolClause` check
 and its requirement records (FR-104), S4 `state` node emission (FR-105), the
 snapshot and invocation input (FR-106), S6a clause evaluation (FR-107), the
 ConfigVersion spine corpus (FR-108) and the layer-6 run entry (FR-109).
-TC-456 to TC-469 back every AC and are all `🚧 Planned`. FR-105-AC-1 to AC-3
+TC-456 to TC-469 back every AC and are all `🚧 Planned`. FR-105-AC-1 to AC-4
 and FR-108-AC-6 are pending STD-111, the QSpec wire changes; nothing else
 waits on it. TC-469's native parity step retires when M-6c retires the
 `0-draft` native path (ADR-012 §15.8); its check against the independent

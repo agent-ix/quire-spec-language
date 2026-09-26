@@ -44,3 +44,16 @@ Verdict: changes requested (three medium).
 
 Changes requested: FND-001 to FND-003 leave object identity open to two
 readings.
+
+## Dispositions
+
+Disposition pass at `agent-ix/quire-spec-language@c35a6a49` (fix commit `c35a6a49`, "QSL-273 spec: fix SR-660 to SR-664 review findings", rebased onto main 5e7a2615). Each outcome was re-checked against the spec and code at that head, not taken from the commit message. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed c35a6a49 | One node per distinct clause node id, with one `claim` occurrence per declaration in source order; FR-105-AC-4 adds `ParentOrder2` (no new node, a second occurrence at ordinal 1). |
+| FND-002 | fixed c35a6a49 | One anchor and one frame per (declaring object type, operation name); FR-105-AC-4 adds the `Sub` case. |
+| FND-003 | fixed c35a6a49 | FR-104 refuses a clause named like another clause or a function with `ambiguous_declaration`/`ambiguous-name`, and FR-109 resolves one shared name table (AC-3). |
+| FND-004 | fixed c35a6a49 | FR-102 refuses a multi-segment edge with `UnrepresentedConstruct` (AC-3). |
+| FND-005 | fixed c35a6a49 | FR-107's Outputs is `Result<Evaluation, CallFailure>`. |
+| FND-006 | fixed c35a6a49 | FR-103 refuses relationship `modifies` and process `creates`/`deletes` entries as `unknown_required_feature`/`unsupported-feature` (AC-2). |

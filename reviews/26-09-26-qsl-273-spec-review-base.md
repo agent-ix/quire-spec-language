@@ -66,7 +66,23 @@ clause cannot pass S3's definedness check as specified.
 | FND-006 | low | FR-103 cites qsl-semantics/src/check/assemble.rs:353-381 for the operation refusal. That range is the doc comment and the `unsupported` closure. The refusal arm is assemble.rs:405-409. Failure scenario: an implementer following the citation edits the closure, not the match arm that refuses `OperationMember`. | spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md:30-34 |
 | FND-007 | low | FR-108's Corpus table gives `self` for every `Current` case but not for the three invocation cases (unchanged-version, changed-version, forbidden-parent-change). The native catalog's `Input::Update` carries no self key (examples/config-version/cases.rs:60-63). TC-464 fixes `child` for changed-version only. Failure scenario: the fixtures generator picks `root` for unchanged-version. `root` is unchanged by every invocation, so the case still passes, and changed-version's `false` would then rest on a different object than native's. State `self child` in the three rows. | spec/functional/FR-108-run-the-configversion-spine-corpus.md:81-83 |
 | FND-008 | low | FR-108 gives the new domain package fixture and the generated unit `AGPL-3.0-only`. The repository's sources and Cargo.toml are `AGPL-3.0-or-later` (571 SPDX headers; Cargo.toml:16). Failure scenario: new fixtures ship under a different licence from the files beside them. Use `AGPL-3.0-or-later`, or say why these differ. | spec/functional/FR-108-run-the-configversion-spine-corpus.md:39-46 |
+| FND-009 | low | Disposition pass, at c35a6a49. FR-106-AC-3 now claims one case for "each condition of checks 1 to 6, 9 and 10", but TC-465 has no row for check 6.4 (a missing declared field, an undeclared field), for check 6.1's type half (an object type that is not a member type of its population), or for check 10's parameter conditions (a missing, unknown or ill-typed parameter, and a result value for an operation that declares none). Failure scenario: an implementation that reports a missing field as `unknown-member`, or skips the member-type check, passes TC-465. Add the rows, or narrow AC-3's claim to the rows listed. | spec/functional/FR-106-admit-snapshots-and-invocations.md:193-211, 224-231, 264; spec/test-cases/TC-465-admission-refuses-each-input-defect.md:27-58 |
 
 ## Verdict
 
 Changes requested. FND-001 blocks FR-104-AC-1 and most of FR-108.
+
+## Dispositions
+
+Disposition pass at `agent-ix/quire-spec-language@c35a6a49` (fix commit `c35a6a49`, "QSL-273 spec: fix SR-660 to SR-664 review findings", rebased onto main 5e7a2615). Each outcome was re-checked against the spec and code at that head, not taken from the commit message. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed c35a6a49 | FR-104's "Definedness facts" extends presence and interval facts to model read paths keyed by (observation, path); AC-1 now fixes each read's observation, and AC-4 pins `undefined_expression`/`unproved-presence`. The rule fits facts.rs: see the report. |
+| FND-002 | fixed c35a6a49 | FR-106 now orders the conditions inside each check, walks populations, objects and fields in a stated order, digests before reading members (1.3 before 1.4 to 1.8, as FR-056), orders check 11's violations, and adds AC-7 with TC-465 rows 29 to 31. |
+| FND-003 | fixed c35a6a49 | FR-107 charges `reaches` per QSpec value-accounting.md (`graph.expand`, `graph.edge`, `graph.result-retain`, which exist there at lines 44 and 126-128), and AC-3 and TC-466 step 3 pin the exact five-charge log (2 expansions) and a denial of each charge. |
+| FND-004 | fixed c35a6a49 | AC-3 pins `ambiguous_declaration`/`ambiguous-name` (AmbiguousName maps to AmbiguousDeclaration, qsl-semantics/src/check/refusal.rs:557, 589), and AC-4 pins `undefined_expression`/`unproved-presence`. |
+| FND-005 | fixed c35a6a49 | AC-3 now lists nesting depth, missing member, an unknown population and `unknown_wire`/`unsupported-wire`, and checks 7 and 8 are scoped out of AC-3. Residual gaps in TC-465 are new FND-009. |
+| FND-006 | fixed c35a6a49 | FR-103 cites the match arm at assemble.rs:405-409. |
+| FND-007 | fixed c35a6a49 | The three invocation rows state `self child`. |
+| FND-008 | rejected: the example already uses AGPL-3.0-only | FR-032:20 authors model.json as AGPL-3.0-only, and the fixtures generator writes the native unit and its Markdown as AGPL-3.0-only (examples/config-version/fixtures.rs:213, 329). FR-108 now states the reason. |

@@ -13,7 +13,7 @@ relationships:
 Verify that the `ProtocolClause` check admits the ConfigVersion clauses and
 types their context reads.
 
-Scope: FR-104-AC-1, FR-104-AC-2, FR-104-AC-7.
+Scope: FR-104-AC-1, FR-104-AC-2, FR-104-AC-7, FR-104-AC-8.
 
 ## Test Procedure
 
@@ -33,6 +33,11 @@ FR-108's unit.
    c. `let v = self.versionNumber in pre(v) = 1`;
    d. `let s = self in pre(s.versionNumber) = 1`;
    e. `let s = pre(self) in s.versionNumber = 1`.
+5. Against TC-466 step 3's `probe` package variant (`probe(target:
+   ConfigVersion)`, no result, empty frame), check these postconditions of
+   `probe`, one unit each:
+   a. `deref(target).versionNumber = 1`;
+   b. `pre(deref(target).versionNumber) = 1`.
 
 Tag the tests `#[trace("TC-459", "FR-104-AC-n")]`.
 
@@ -53,6 +58,10 @@ Tag the tests `#[trace("TC-459", "FR-104-AC-n")]`.
   `value(self.parent)`; (b) checks, every read `pre`; (c) and (d)
   `wrong_snapshot`/`forbidden-pre-read` at the `pre`; (e) checks, its read
   `pre`.
+- Step 5: (a) checks, its read through `target` `pre` (a parameter
+  reference carries the invocation's pre observation); (b)
+  `wrong_snapshot`/`forbidden-pre-read` at the `pre` (QSpec: "A pre selector
+  cannot retag a post-qualified parameter reference").
 
 ## Status
 
