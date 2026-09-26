@@ -151,7 +151,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
 ## Status
 
-Partly implemented (QSL-255 part b). D-1's spine resolution, D-2, D-3 and
+Implemented (QSL-255 part b). D-1's spine resolution, D-2, D-3 and
 D-5 are implemented: spine `compile` takes a `DependencyInput`, and the S4
 source resolution (`qsl-replay/src/spine.rs`) compiles each imported library
 from source within `DependencyLimits::depth`, binds it to the recomputed
@@ -163,8 +163,8 @@ against the library's package. TC-446 passes locally for AC-1 to AC-6
 (`qsl-replay` `spine::dependency_tests`; AC-2's S1 spellings are `qsl-cst`'s
 `an_import_digest_is_bare_lowercase_hex`). AC-5's `g::f(3)` clause was
 amended to expect the `Int[0, 9]` conversion node a local call also writes
-(QSL-262). D-1's CLI `libraries` (FR-027-AC-10) and replay (D-4) suppliers
-remain under QSL-255 part (b). Once the CLI supplies libraries, a
-`CompileRefusal::Dependency` is located in a library's source, so the CLI's
-`SpineFailure` must render it against that library's source and path, not
-the program's.
+(QSL-262). D-1's CLI `libraries` supplier (FR-027-AC-10, TC-446 step 7) and
+replay supplier (D-4, FR-098-AC-6 and AC-7, TC-444 step 7) are implemented
+under QSL-255 part (b). The CLI renders a refusal against the source its
+region is in, a library's or the program's
+(`a_library_refusal_renders_over_the_library_source`).

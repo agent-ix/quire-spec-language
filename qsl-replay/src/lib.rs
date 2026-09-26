@@ -36,7 +36,7 @@ pub mod spine;
 mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
-pub use execute::{replay, LimitAboveReader, ReplayRefusal};
+pub use execute::{replay, DependencySelectionsCause, LimitAboveReader, ReplayRefusal};
 pub use identity::{
     Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
     QualifiedName, RawSourceRef, TracePosition,
@@ -53,8 +53,8 @@ pub use proof_result::{
 // and `InvalidProvenance`) are not re-exported, and CG builds neither type.
 pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 pub use request::{
-    ByteProvision, ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits,
-    StateEnvironment,
+    ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
+    ReplayRequestWire, StageLimits, StateEnvironment,
 };
 pub use result::{
     read_bounded, DisagreementCause, EvaluatedValue, InputArmResult, InputSettlement, ReplayResult,
@@ -120,6 +120,7 @@ mod redaction_tests {
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),
             )],
+            dependencies: Vec::new(),
             selected_function: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
@@ -170,6 +171,7 @@ mod redaction_tests {
                 Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
                 source_digest_record.hex(),
             )],
+            dependencies: Vec::new(),
             selected_function: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),

@@ -26,7 +26,7 @@ use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_semantics::family::FamilyOutcome;
-use qsl_semantics::library::PackageId;
+use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType};
@@ -39,7 +39,10 @@ use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, Verdict,
     WitnessArmResult,
 };
-use crate::spine::{compile, CompileRefusal, Compiled, DependencyInput, SpineLimits};
+use crate::spine::{
+    compile, CompileRefusal, Compiled, DependencyInput, DependencyInputRefusal, SpineLimits,
+    SuppliedLibrary,
+};
 use crate::witness::{DecodeRefusal, ReplaySource};
 
 /// The S1 limit a request names that is above this executor's reader
@@ -85,6 +88,28 @@ pub enum ReplayRefusal {
     /// stage limits the request carries (`stage_limit_exceeded`).
     #[error("the recompile refused at stage {stage}: {refusal}", stage = .0.stage().as_str(), refusal = .0)]
     Recompile(Box<CompileRefusal>),
+    /// ADR-015 D-4 rules 1 and 6: the package reference's `dependencies`
+    /// are not in strictly ascending UTF-8 byte order of identity, or name
+    /// an identity the recompiled package does not select
+    /// (`invalid_package`/`invalid-value` at `/package/dependencies`).
+    #[error("invalid_package/invalid-value at /package/dependencies: {0}")]
+    DependencySelections(DependencySelectionsCause),
+    /// ADR-015 D-4 rule 3: the `dependencies` entries do not form a
+    /// dependency input (ADR-015 D-1).
+    #[error("the package reference's dependencies are no dependency input: {0}")]
+    DependencyInput(DependencyInputRefusal),
+    /// ADR-015 D-4 rule 7: an entry's `package_id` is not the recompiled
+    /// closure's selection of its identity
+    /// (`stale_dependency`/`byte-digest-mismatch`).
+    #[error("stale_dependency: the request names {identity} as {} but it recompiles to {}", .requested.hex(), .recompiled.hex())]
+    DependencyIdentityMismatch {
+        /// The entry's identity.
+        identity: LibraryName,
+        /// The `package_id` the entry names.
+        requested: DigestRecord,
+        /// The closure's recomputed selection of that identity.
+        recompiled: PackageId,
+    },
     /// The recompiled `package_id` is not the request's: the source's
     /// meaning changed since the proving run.
     #[error("stale_dependency: the request names package {} but the source recompiles to {}", .requested.hex(), .recompiled.hex())]
@@ -150,7 +175,11 @@ impl ReplayRefusal {
             Self::LimitAboveReader(_) => Code::StageLimitExceeded,
             Self::NotASource(_) | Self::SourceCount(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
-            Self::PackageIdMismatch { .. } => Code::StaleDependency,
+            Self::PackageIdMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {
+                Code::StaleDependency
+            }
+            Self::DependencySelections(_) => Code::InvalidPackage,
+            Self::DependencyInput(refusal) => refusal.code(),
             Self::UnknownFunction { .. } => Code::MissingDeclaration,
             Self::UnknownParameter(_)
             | Self::DuplicateArgument(_)
@@ -161,6 +190,28 @@ impl ReplayRefusal {
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
+}
+
+/// Why the package reference's `dependencies` refused (ADR-015 D-4 rules 1
+/// and 6).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum DependencySelectionsCause {
+    /// Rule 1: the entry at `index` does not follow the one before it in
+    /// strictly ascending UTF-8 byte order of identity; a repeated identity
+    /// included.
+    #[error("entry {index} ({identity}) is not after the entry before it")]
+    Unordered {
+        /// The entry's position.
+        index: usize,
+        /// The entry's identity.
+        identity: LibraryName,
+    },
+    /// Rule 6: the recompiled package selects no library of this identity.
+    #[error("the recompiled package selects no {identity}")]
+    Unselected {
+        /// The entry's identity.
+        identity: LibraryName,
+    },
 }
 
 /// The executor's toolchain pin in every result it settles (ADR-013 O-27).
@@ -301,32 +352,66 @@ fn spine_limits(stages: StageLimits) -> Result<SpineLimits, ReplayRefusal> {
     })
 }
 
-/// Recompile the request's one source unit from the byte provision, with
-/// every domain package the provision carries under its `sha256-jcs`
-/// digest as I1's package input, and require the recompiled `package_id`
-/// to equal the request's.
+/// Recompile the request's one source unit from the byte provision against
+/// the dependency input its `dependencies` entries build, with every domain
+/// package the provision carries under its `sha256-jcs` digest as I1's
+/// package input, applying ADR-015 D-4's seven rules in order: each rule
+/// over every entry, in entry order, before the next.
 fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
-    let limits = spine_limits(request.stage_limits())?;
-    if let Some(other) = request
-        .source_digests()
-        .iter()
-        .find(|reference| reference.digest().domain() != DigestDomain::SourceBytesV1)
-    {
-        return Err(ReplayRefusal::NotASource(Box::new(other.clone())));
+    // Rule 1: strictly ascending identities, before anything is built.
+    for (index, pair) in request.dependencies().windows(2).enumerate() {
+        if let [before, entry] = pair {
+            if entry.identity() <= before.identity() {
+                return Err(ReplayRefusal::DependencySelections(
+                    DependencySelectionsCause::Unordered {
+                        index: index + 1,
+                        identity: entry.identity().clone(),
+                    },
+                ));
+            }
+        }
     }
-    let [source] = request.source_digests() else {
-        return Err(ReplayRefusal::SourceCount(request.source_digests().len()));
+    // Rule 2: the proved package's sources, and each entry's, name one
+    // source unit.
+    let source = one_source(request.source_digests())?;
+    let library_sources = request
+        .dependencies()
+        .iter()
+        .map(|entry| one_source(entry.sources()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let limits = spine_limits(request.stage_limits())?;
+    let provided = |reference: &RawSourceRef| {
+        request
+            .byte_provision()
+            .get(reference.digest())
+            .ok_or_else(|| {
+                // `ReplayRequest::decode` refuses an incomplete provision.
+                ReplayRefusal::Fault(InternalFault::new(
+                    "replay",
+                    "decoded-request-byte-provision-complete",
+                ))
+            })
     };
-    let bytes = request
-        .byte_provision()
-        .get(source.digest())
-        .ok_or_else(|| {
-            // `ReplayRequest::decode` refuses an incomplete provision.
-            ReplayRefusal::Fault(InternalFault::new(
-                "replay",
-                "decoded-request-byte-provision-complete",
-            ))
-        })?;
+    // Rule 3: the dependency input.
+    let libraries = request
+        .dependencies()
+        .iter()
+        .zip(library_sources)
+        .map(|(entry, reference)| {
+            Ok(SuppliedLibrary {
+                identity: entry.identity().as_str().to_owned(),
+                version: entry.version().to_owned(),
+                source: labels(reference),
+                path: reference.identity().to_owned(),
+                bytes: provided(reference)?.to_vec(),
+            })
+        })
+        .collect::<Result<Vec<_>, ReplayRefusal>>()?;
+    let dependencies = DependencyInput::new(libraries).map_err(ReplayRefusal::DependencyInput)?;
+    dependencies
+        .check_unit_owner(&labels(source))
+        .map_err(ReplayRefusal::DependencyInput)?;
+    let bytes = provided(source)?;
     let packages = package_input(
         request
             .byte_provision()
@@ -334,32 +419,81 @@ fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
             .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
             .map(|(_, bytes)| bytes),
     );
+    // Rule 4: the recompile.
     let compiled = compile(
-        SourceIdentity::new(
-            source.authority(),
-            source.identity(),
-            source.revision_namespace(),
-            source.revision(),
-        ),
+        labels(source),
         source.identity(),
         bytes,
         &packages,
-        // FR-098 replays a package with no dependencies; ADR-015 D-4's
-        // `dependencies` entries build this input (QSL-255 part b, PR 3).
-        &DependencyInput::default(),
+        &dependencies,
         limits,
     )
     .map_err(ReplayRefusal::Recompile)?;
+    // Rule 5: the proved package's `package_id`.
     let requested = request.package_id();
     let recompiled = compiled.emitted.package_id();
-    if requested.domain() != DigestDomain::PackageSemanticV2 || requested.hex() != recompiled.hex()
-    {
+    if !recompiled.matches(&requested) {
         return Err(ReplayRefusal::PackageIdMismatch {
             requested,
             recompiled,
         });
     }
+    // Rules 6 and 7: every entry names a selection of the recompiled
+    // closure, then at its recomputed `package_id`.
+    let selections = compiled.package.dependency_selections();
+    for entry in request.dependencies() {
+        if !selections.contains_key(entry.identity()) {
+            return Err(ReplayRefusal::DependencySelections(
+                DependencySelectionsCause::Unselected {
+                    identity: entry.identity().clone(),
+                },
+            ));
+        }
+    }
+    for entry in request.dependencies() {
+        let Some(selected) = selections.get(entry.identity()) else {
+            return Err(ReplayRefusal::DependencySelections(
+                DependencySelectionsCause::Unselected {
+                    identity: entry.identity().clone(),
+                },
+            ));
+        };
+        let selected = selected.selection.package_id;
+        if !selected.matches(&entry.package_id()) {
+            return Err(ReplayRefusal::DependencyIdentityMismatch {
+                identity: entry.identity().clone(),
+                requested: entry.package_id(),
+                recompiled: selected,
+            });
+        }
+    }
     Ok(compiled)
+}
+
+/// The one `quire.source.bytes/v1` source `references` names (ADR-015 D-4
+/// rule 2), else [`ReplayRefusal::NotASource`] or
+/// [`ReplayRefusal::SourceCount`].
+fn one_source(references: &[RawSourceRef]) -> Result<&RawSourceRef, ReplayRefusal> {
+    if let Some(other) = references
+        .iter()
+        .find(|reference| reference.digest().domain() != DigestDomain::SourceBytesV1)
+    {
+        return Err(ReplayRefusal::NotASource(Box::new(other.clone())));
+    }
+    match references {
+        [source] => Ok(source),
+        _ => Err(ReplayRefusal::SourceCount(references.len())),
+    }
+}
+
+/// A source reference's four FR-001 labels.
+fn labels(reference: &RawSourceRef) -> SourceIdentity {
+    SourceIdentity::new(
+        reference.authority(),
+        reference.identity(),
+        reference.revision_namespace(),
+        reference.revision(),
+    )
 }
 
 /// The selected function: its S6a name, and its parameter nodes and

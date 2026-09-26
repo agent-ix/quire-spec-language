@@ -140,6 +140,7 @@ fn request(
             Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
             digest.hex(),
         )],
+        dependencies: Vec::new(),
         selected_function: function,
         source,
         originating_counterexample_identity: [2; 32],
@@ -773,6 +774,356 @@ fn tc_444_a_non_predicate_refuses() {
             ReplayRefusal::NotAPredicate { selection, package }
                 if selection == &name(&["id"]) && package == &compiled.emitted.package_id()
         ),
+        "{refused:?}"
+    );
+}
+
+/// TC-444 step 7's library `test/units` version `2`.
+const UNITS_IDENTITY: &str = "test:units";
+
+fn units_source(body: &str) -> String {
+    format!("language \"ix:native\" edition \"1-draft\";\n{PROFILE}{body}")
+}
+
+const BIG: &str = "function big using v(x: Int[0, 9]): Boolean pure { x > 5 }\n";
+const BIG_EDITED: &str = "function big using v(x: Int[0, 9]): Boolean pure { x > 6 }\n";
+
+/// A source reference in wire shape for `bytes` under (`agent-ix`,
+/// `identity`, `git`, `revision`).
+fn source_ref(identity: &str, revision: &str, bytes: &[u8]) -> crate::identity::SourceDigestWire {
+    (
+        AUTHORITY.to_owned(),
+        identity.to_owned(),
+        NAMESPACE.to_owned(),
+        revision.to_owned(),
+        Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+        source_digest(bytes).hex(),
+    )
+}
+
+/// A `dependencies` entry naming `identity` at `version` and `package_id`,
+/// with `sources`.
+fn entry(
+    identity: &str,
+    version: &str,
+    package_id: PackageId,
+    sources: Vec<crate::identity::SourceDigestWire>,
+) -> crate::request::DependencyEntryWire {
+    crate::request::DependencyEntryWire {
+        identity: identity.to_owned(),
+        version: version.to_owned(),
+        package_id: (
+            Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+            package_id.hex(),
+        ),
+        sources,
+    }
+}
+
+/// TC-444 step 7's proved unit, compiled against `test/units` supplied from
+/// `units`: the unit's bytes, the compiled unit, `test/units`'s
+/// `package_id` and the request replaying `q(x)`.
+struct Importing {
+    unit: String,
+    units: String,
+    units_id: PackageId,
+    compiled: Compiled,
+}
+
+impl Importing {
+    fn new() -> Self {
+        let units = units_source(BIG);
+        let units_id = compile(
+            SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
+            UNITS_IDENTITY,
+            units.as_bytes(),
+            &BTreeMap::new(),
+            &crate::spine::DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .expect("test/units compiles")
+        .emitted
+        .package_id();
+        let unit = format!(
+            "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+             import \"test/units\" version \"2\" digest \"{}\" as u;\n\
+             function q using v(x: Int[0, 9]): Boolean pure {{ u::big(x) }}\n",
+            units_id.hex()
+        );
+        let dependencies =
+            crate::spine::DependencyInput::new(vec![crate::spine::SuppliedLibrary {
+                identity: "test/units".to_owned(),
+                version: "2".to_owned(),
+                source: SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
+                path: UNITS_IDENTITY.to_owned(),
+                bytes: units.clone().into_bytes(),
+            }])
+            .unwrap();
+        let compiled = compile(
+            SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            IDENTITY,
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &dependencies,
+            SpineLimits::default(),
+        )
+        .expect("the importing unit compiles");
+        Self {
+            unit,
+            units,
+            units_id,
+            compiled,
+        }
+    }
+
+    /// The request replaying `q(3)`, whose package reference's
+    /// `dependencies` are `entries`, with every source in `provision` in its
+    /// byte provision beside the unit's.
+    fn request(
+        &self,
+        entries: Vec<crate::request::DependencyEntryWire>,
+        provision: &[&[u8]],
+    ) -> ReplayRequestWire {
+        let mut wire = request(
+            self.unit.as_bytes(),
+            self.compiled.emitted.package_id(),
+            name(&["q"]),
+            input(parameter(&self.compiled, "q", 0), 3),
+        );
+        wire.dependencies = entries;
+        for bytes in provision {
+            let digest = source_digest(bytes);
+            if !wire
+                .byte_provision
+                .iter()
+                .any(|(_, hex, _)| *hex == digest.hex())
+            {
+                wire.byte_provision.push((
+                    Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+                    digest.hex(),
+                    bytes.to_vec(),
+                ));
+            }
+        }
+        wire
+    }
+
+    /// The `test/units` entry, from the unit's own source.
+    fn units_entry(&self) -> crate::request::DependencyEntryWire {
+        entry(
+            "test/units",
+            "2",
+            self.units_id,
+            vec![source_ref(UNITS_IDENTITY, REVISION, self.units.as_bytes())],
+        )
+    }
+}
+
+/// FR-098-AC-6 (TC-444 step 7): a proved package importing `test/units`
+/// replays from the byte provision alone, the `dependencies` entry saying
+/// which source is `test/units`; `q(3)` is `false` and agrees. An edited
+/// `test/units` source refuses `Recompile` carrying
+/// `DependencyIdentityMismatch` at the import; a changed entry
+/// `package_id` alone refuses `DependencyIdentityMismatch` naming
+/// `test/units`.
+#[trace("TC-444", "FR-098-AC-6")]
+#[test]
+fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
+    let importing = Importing::new();
+    let ReplayResult::Input(result) =
+        replay(importing.request(vec![importing.units_entry()], &[importing.units.as_bytes()]))
+            .expect("the replay runs")
+    else {
+        panic!("Input arm");
+    };
+    assert_eq!(
+        result.settlement(),
+        InputSettlement::ReproducedWithoutWitness
+    );
+    assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
+
+    // The entry's source edited, its digest updated to the new bytes.
+    let edited = units_source(BIG_EDITED);
+    let mut stale = importing.units_entry();
+    stale.sources = vec![source_ref(UNITS_IDENTITY, REVISION, edited.as_bytes())];
+    let refused = replay(importing.request(vec![stale], &[edited.as_bytes()]))
+        .expect_err("test/units no longer compiles to the recorded id");
+    let ReplayRefusal::Recompile(refusal) = &refused else {
+        panic!("expected a recompile refusal, got {refused:?}");
+    };
+    assert_eq!(refused.code(), Code::StaleDependency);
+    let CompileRefusal::Import {
+        refusal:
+            crate::spine::ImportRefusal::DependencyIdentityMismatch {
+                identity,
+                recorded,
+                recompiled,
+            },
+        ..
+    } = &**refusal
+    else {
+        panic!("expected DependencyIdentityMismatch, got {refusal:?}");
+    };
+    assert_eq!(identity.as_str(), "test/units");
+    assert_eq!(*recorded, importing.units_id.record());
+    assert_ne!(*recompiled, importing.units_id);
+
+    // Only the entry's `package_id` changed.
+    let other = importing.compiled.emitted.package_id();
+    let mut changed = importing.units_entry();
+    changed.package_id = (
+        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+        other.hex(),
+    );
+    let refused = replay(importing.request(vec![changed], &[importing.units.as_bytes()]))
+        .expect_err("the entry names another package_id");
+    assert_eq!(refused.code(), Code::StaleDependency);
+    assert!(
+        matches!(
+            &refused,
+            ReplayRefusal::DependencyIdentityMismatch { identity, requested, recompiled }
+                if identity.as_str() == "test/units"
+                    && *requested == other.record()
+                    && *recompiled == importing.units_id
+        ),
+        "{refused:?}"
+    );
+}
+
+/// FR-098-AC-7 (TC-444 step 7): the `dependencies` entries' order, extent
+/// and sources refuse by ADR-015 D-4's rules, each with no verdict.
+#[trace("TC-444", "FR-098-AC-7")]
+#[test]
+fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
+    let importing = Importing::new();
+    let units = importing.units_entry();
+    let units_bytes = importing.units.as_bytes();
+    let extra_bytes = units_source("function spare using v(): Boolean pure { true }\n");
+    let extra = entry(
+        "test/zzz",
+        "1",
+        importing.units_id,
+        vec![source_ref("test:zzz", REVISION, extra_bytes.as_bytes())],
+    );
+    let provision: &[&[u8]] = &[units_bytes, extra_bytes.as_bytes()];
+
+    // An extra entry no import reaches: refused after the recompile.
+    let refused = replay(importing.request(vec![units.clone(), extra.clone()], provision))
+        .expect_err("test/zzz is not selected");
+    assert_eq!(refused.code(), Code::InvalidPackage);
+    assert!(
+        matches!(
+            &refused,
+            ReplayRefusal::DependencySelections(DependencySelectionsCause::Unselected { identity })
+                if identity.as_str() == "test/zzz"
+        ),
+        "{refused:?}"
+    );
+
+    // Swapped, and repeated: refused before any recompile, so even a
+    // second entry that would not compile is never read.
+    for (entries, index) in [
+        (vec![extra.clone(), units.clone()], 1),
+        (vec![units.clone(), units.clone()], 1),
+    ] {
+        let refused = replay(importing.request(entries, provision)).expect_err("out of order");
+        assert!(
+            matches!(
+                &refused,
+                ReplayRefusal::DependencySelections(DependencySelectionsCause::Unordered { index: at, .. })
+                    if *at == index
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(refused.code(), Code::InvalidPackage);
+    }
+
+    // An entry whose source has test/units's authority and identity.
+    let mut same_owner = extra.clone();
+    same_owner.sources = vec![source_ref(UNITS_IDENTITY, "r2", extra_bytes.as_bytes())];
+    let refused = replay(importing.request(vec![units.clone(), same_owner], provision))
+        .expect_err("one owner per compile");
+    assert_eq!(refused.code(), Code::InvalidPackage);
+    assert!(
+        matches!(
+            &refused,
+            ReplayRefusal::DependencyInput(
+                crate::spine::DependencyInputRefusal::SharedOwner { .. }
+            )
+        ),
+        "{refused:?}"
+    );
+
+    // An entry whose source has the proved unit's authority and identity:
+    // refused as the dependency input (rule 3), not as the recompile.
+    let mut unit_owner = units.clone();
+    unit_owner.sources = vec![source_ref(IDENTITY, "r2", importing.units.as_bytes())];
+    let refused = replay(importing.request(vec![unit_owner], provision))
+        .expect_err("the unit's owner is not a library's");
+    assert_eq!(refused.code(), Code::InvalidPackage);
+    assert!(
+        matches!(
+            &refused,
+            ReplayRefusal::DependencyInput(crate::spine::DependencyInputRefusal::SharedOwner {
+                first: crate::spine::SourceHolder::Unit,
+                ..
+            })
+        ),
+        "{refused:?}"
+    );
+
+    // The entry removed: the import has no supplied library.
+    let refused =
+        replay(importing.request(Vec::new(), &[])).expect_err("test/units is not supplied");
+    let ReplayRefusal::Recompile(refusal) = &refused else {
+        panic!("expected a recompile refusal, got {refused:?}");
+    };
+    assert_eq!(refused.code(), Code::MissingImport);
+    assert!(
+        matches!(
+            &**refusal,
+            CompileRefusal::Import {
+                refusal: crate::spine::ImportRefusal::MissingSelection { identity },
+                ..
+            } if identity.as_str() == "test/units"
+        ),
+        "{refusal:?}"
+    );
+
+    // The entry naming a second source.
+    let mut two = units.clone();
+    two.sources
+        .push(source_ref("test:zzz", REVISION, extra_bytes.as_bytes()));
+    let refused = replay(importing.request(vec![two], provision)).expect_err("two sources");
+    assert!(
+        matches!(refused, ReplayRefusal::SourceCount(2)),
+        "{refused:?}"
+    );
+
+    // The entry naming a definition document in place of its source.
+    let definition = b"definition bytes".to_vec();
+    let digest = DigestRecord::mint(
+        DigestDomain::DefinitionBytesV1,
+        ByteDigest::of(&definition).as_bytes(),
+    );
+    let mut document = units.clone();
+    document.sources = vec![(
+        AUTHORITY.to_owned(),
+        UNITS_IDENTITY.to_owned(),
+        NAMESPACE.to_owned(),
+        REVISION.to_owned(),
+        Some(DigestDomain::DefinitionBytesV1.as_str().to_owned()),
+        digest.hex(),
+    )];
+    let mut wire = importing.request(vec![document], &[]);
+    wire.byte_provision.push((
+        Some(DigestDomain::DefinitionBytesV1.as_str().to_owned()),
+        digest.hex(),
+        definition,
+    ));
+    let refused = replay(wire).expect_err("a definition document");
+    assert!(
+        matches!(&refused, ReplayRefusal::NotASource(reference) if reference.digest() == digest),
         "{refused:?}"
     );
 }

@@ -117,5 +117,6 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 ## Status
 
 Passed locally (QSL-5, QSL-257), `qsl-replay/src/execute/tests.rs`, for
-steps 1 to 6. Step 7 (FR-098-AC-6, FR-098-AC-7) is planned (QSL-255 part
-b).
+steps 1 to 6. Step 7 (FR-098-AC-6, FR-098-AC-7) passes locally (QSL-255
+part b): `tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one`
+and `tc_444_dependency_entries_refuse_by_the_d4_rules`.

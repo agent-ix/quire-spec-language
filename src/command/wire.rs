@@ -40,6 +40,20 @@ pub(super) struct CompileRequest {
     pub models: Vec<Model>,
     #[serde(deserialize_with = "from_object")]
     pub program: Program,
+    /// A `1-draft` program's supplied libraries (FR-027, ADR-015 D-1); none
+    /// when absent.
+    #[serde(default, deserialize_with = "deserialize_objects")]
+    pub libraries: Vec<Library>,
+}
+
+/// One supplied library: its identity, version and source selection.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Library {
+    pub identity: String,
+    pub version: String,
+    #[serde(deserialize_with = "from_object")]
+    pub source: SourceFile,
 }
 
 #[derive(Deserialize)]

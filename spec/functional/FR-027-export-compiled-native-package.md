@@ -117,3 +117,4 @@ typed failure without a successful artifact.
 
 FR-027-AC-4 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-430.
 FR-027-AC-5 to FR-027-AC-8 are implemented under QSL-8 (ADR-011 §7.3 M-6a) and backed by TC-435.
+FR-027-AC-10 (the `libraries` member) is implemented under QSL-255 part (b) and backed by TC-446 step 7. Library source files count toward the request's `programs` file limit; FR-027 names no separate category (QSL-265).
