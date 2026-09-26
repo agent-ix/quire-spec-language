@@ -192,3 +192,22 @@ post-rebase commits are:
 | FND-020 | low | The AC-8 alias scan is per-file. A `pub(crate) type Ev = qsl_eval::value::QualifiedName;` in `spine.rs`, used by `pub fn probe(&self) -> Option<super::Ev>` in `call.rs`, PASSes (probe). Aliases declared in a sibling or parent module are not followed. | tools/arch-lint/api_surface.rs:1276-1336 |
 
 **Round-2 verdict:** nothing blocking remains. Every earlier finding is fixed. FND-019 and FND-020 are new, non-blocking lows and are still-open until the coder fixes them or defers them to a ticket.
+
+## Reviewer dispositions, round 3 (982a52e3)
+
+I verified these myself at 982a52e3 in a fresh worktree, reverting each
+mutation afterwards; the tree was left clean. I did not re-run `make ci` (the
+coder's gate log is `qsl-271-impl-ci-r5.log`), because I found no code
+problem. The change in 3c4c1586 is tests plus arch-lint only.
+
+| FND | Outcome | fix_sha / reason |
+| --- | --- | --- |
+| FND-019 | fixed | 3c4c1586. `refused_locus_and_location_render` asserts the whole `outcome` for a record, with the fixture-F `locus` and a `location`, and for a family refusal with a `location`. The drop-locus mutant now fails that test, and so does a second mutant that drops `location` on the family row. |
+| FND-020 | fixed | 3c4c1586. Aliases are collected across every scanned file before the fixed point runs. The cross-file probe (`pub(crate) type Ev` in `spine.rs`, `Option<super::Ev>` in `call.rs`) now FAILs (`impl fn probe`), and the clean tree still PASSes. |
+
+The alias set is now shared by every scanned file. It errs toward false
+positives: a public item that reuses a name another file imports from
+`qsl_eval` is flagged. That is acceptable for a layering check, and it is not
+a finding.
+
+**Round-3 verdict: every finding in SR-674 is settled (fixed or accepted-no-change). Mergeable.**

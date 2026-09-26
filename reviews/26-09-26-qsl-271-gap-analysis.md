@@ -89,3 +89,9 @@ Post-rebase SHAs for the round-1 dispositions above: 3f49b580→482a1ac1,
 | FND | Outcome | fix_sha / reason |
 | --- | --- | --- |
 | FND-002 | fixed | 2a059b32. The CLI's renderer and exit mapping are tested for the record (exit by code, 22), family, kernel (20) and fault (30) rows; see SR-674 FND-013. The `locus` rendering gap is carried as SR-674 FND-019. |
+
+## Dispositions, round 3 (982a52e3)
+
+There are no open SR-675 findings; each is fixed or accepted-no-change as of
+round 2. The SR-674 FND-019 locus-render gap, cross-referenced from FND-002,
+is fixed in 3c4c1586.
