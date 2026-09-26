@@ -722,6 +722,9 @@ pub struct FunctionDeclaration {
     /// The clause this declaration's body is checked as. Every ordinary
     /// named function is [`ClauseKind::Body`].
     clause_kind: ClauseKind,
+    /// Whether this is a `function` or a `predicate` declaration
+    /// (FR-091 "Predicate form").
+    kind: DeclarationKind,
     /// Whether an ordinary named [`Expression::Call`] elsewhere in the same
     /// package may resolve to this declaration. `false` for every
     /// FR-151 synthesized function (TC-196 D07's bypass:
@@ -735,6 +738,17 @@ pub struct FunctionDeclaration {
     /// The `using` alias as written, when the declaration was read from a
     /// source unit (FR-091-AC-2). A declaration built by hand has none.
     using: Option<UsingAlias>,
+}
+
+/// The declaration kind of a [`FunctionDeclaration`] (FR-091 "Predicate
+/// form"): every declaration other than a `predicate` is a `Function`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeclarationKind {
+    /// A `function` declaration, or a synthesized function or clause.
+    Function,
+    /// A `predicate` declaration: a function with a `Boolean` result and no
+    /// measure.
+    Predicate,
 }
 
 /// A declaration's `using` alias as written, with the span of the alias
@@ -765,10 +779,24 @@ impl FunctionDeclaration {
             measure,
             body,
             clause_kind: ClauseKind::Body,
+            kind: DeclarationKind::Function,
             callable_by_name: true,
             spans: None,
             using: None,
         }
+    }
+
+    /// This declaration with declaration kind `kind`: a `predicate`
+    /// declaration is a function whose kind is [`DeclarationKind::Predicate`].
+    #[must_use]
+    pub fn with_kind(mut self, kind: DeclarationKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    /// Whether this is a `function` or a `predicate` declaration.
+    pub fn kind(&self) -> DeclarationKind {
+        self.kind
     }
 
     /// A declaration checked as `clause_kind`, never reachable through an
@@ -799,6 +827,7 @@ impl FunctionDeclaration {
             measure,
             body,
             clause_kind: clause_kind.into(),
+            kind: DeclarationKind::Function,
             callable_by_name: false,
             spans: None,
             using: None,
@@ -899,6 +928,30 @@ pub struct TupleForm {
     pub elements: Vec<TypeForm>,
 }
 
+/// One member of an [`EnumForm`]: its case name, and its display string as
+/// spelled when `= "text"` is written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumMemberForm {
+    /// The case name and the span of its identifier.
+    pub case: DeclaredName,
+    /// The display string exactly as spelled, quotes included, with the
+    /// span of the string literal; `None` when none is written. It enters
+    /// no identity and no comparison (QSpec FR-141).
+    pub display: Option<(String, Span)>,
+}
+
+/// `enum Name { A, B = "text" }` and `ordered enum Name { .. }` (FR-091
+/// "Enum form").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// Whether the declaration is written `ordered enum`.
+    pub ordered: bool,
+    /// The members in source order.
+    pub members: Vec<EnumMemberForm>,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -912,6 +965,8 @@ pub enum DeclarationForm {
     Record(RecordForm),
     /// A `tuple` declaration.
     Tuple(TupleForm),
+    /// An `enum` or `ordered enum` declaration.
+    Enum(EnumForm),
 }
 
 #[cfg(test)]
@@ -1018,6 +1073,7 @@ mod tests {
                 measure: _,
                 body: _,
                 clause_kind: _,
+                kind: _,
                 callable_by_name: _,
                 spans: _,
                 using: _,

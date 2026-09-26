@@ -22,8 +22,9 @@ use super::dispatch::{Construct, FormsCause, FormsFailure, FormsLimits};
 use super::spans::{DeclarationSpans, ExpressionSpans};
 use super::syntax::{
     Accumulation, AliasForm, BinaryOperator, BinderQuery, BuiltinType, DeclarationForm,
-    DeclaredName, Expression, FieldInitializer, FunctionDeclaration, RecordFieldForm, RecordForm,
-    TupleForm, TypeForm, TypeFormHead, UsingAlias,
+    DeclarationKind, DeclaredName, EnumForm, EnumMemberForm, Expression, FieldInitializer,
+    FunctionDeclaration, RecordFieldForm, RecordForm, TupleForm, TypeForm, TypeFormHead,
+    UsingAlias,
 };
 
 /// One significant child of a CST node: a token or a node.
@@ -165,6 +166,23 @@ fn only<'c>(
 /// `function name using alias(parameters): result pure [decreases(m)] {
 /// body }` (FR-091 "Function form").
 pub(crate) fn function(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+    function_like(construct, DeclarationKind::Function)
+}
+
+/// `predicate name using alias(parameters): Boolean { body }` (FR-091
+/// "Predicate form"): the `forms` `FunctionDeclaration` of kind
+/// `Predicate`, with a `Boolean` result type form and no measure.
+pub(crate) fn predicate(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+    function_like(construct, DeclarationKind::Predicate)
+}
+
+/// The one `FunctionDeclaration` reading `function` and `predicate` share:
+/// they differ in the result type's spelling and in the `decreases` clause
+/// only the `Function` production has.
+fn function_like(
+    construct: Construct<'_>,
+    kind: DeclarationKind,
+) -> Result<DeclarationForm, FormsFailure> {
     let cst = construct.cst;
     let node = production_node(construct)?;
     let items = items(cst, node);
@@ -187,11 +205,23 @@ pub(crate) fn function(construct: Construct<'_>) -> Result<DeclarationForm, Form
             type_form(cst, reference, construct.limits)?,
         ));
     }
-    let result = type_form(
-        cst,
-        only(&items, Production::TypeReference, node)?,
-        construct.limits,
-    )?;
+    let result = match kind {
+        DeclarationKind::Function => type_form(
+            cst,
+            only(&items, Production::TypeReference, node)?,
+            construct.limits,
+        )?,
+        DeclarationKind::Predicate => {
+            let boolean = items
+                .iter()
+                .find_map(|item| match item {
+                    Item::Token(token) if token.spelling() == b"Boolean" => Some(*token),
+                    Item::Token(_) | Item::Node(_) => None,
+                })
+                .ok_or_else(|| unexpected(node))?;
+            TypeForm::builtin(BuiltinType::Boolean, boolean.span())
+        }
+    };
     let measure = match nodes_of(&items, Production::Expression).as_slice() {
         [] => None,
         [measure] => Some(expression(cst, measure, construct.limits)?),
@@ -209,6 +239,7 @@ pub(crate) fn function(construct: Construct<'_>) -> Result<DeclarationForm, Form
     });
     let declaration =
         FunctionDeclaration::new(text(name, node)?, parameters, result, measure, body)
+            .with_kind(kind)
             .with_using(UsingAlias {
                 alias: text(alias, node)?,
                 span: alias.span(),
@@ -220,6 +251,33 @@ pub(crate) fn function(construct: Construct<'_>) -> Result<DeclarationForm, Form
             })
             .map_err(|_| unexpected(node))?;
     Ok(DeclarationForm::Function(Box::new(declaration)))
+}
+
+/// `[ordered] enum Name { A, B = "text", }` (FR-091 "Enum form"). Members
+/// stay in source order; the assembler sorts an unordered enum's cases for
+/// its preimage.
+pub(crate) fn enumeration(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+    let cst = construct.cst;
+    let node = production_node(construct)?;
+    let items = items(cst, node);
+    let mut members = Vec::new();
+    for member in nodes_of(&items, Production::EnumMember) {
+        let member_items = self::items(cst, member);
+        let display = match tokens_of(&member_items, TokenKind::Text).as_slice() {
+            [] => None,
+            [literal] => Some((text(literal, member)?, literal.span())),
+            _ => return Err(unexpected(member)),
+        };
+        members.push(EnumMemberForm {
+            case: declared_name(&member_items, member)?,
+            display,
+        });
+    }
+    Ok(DeclarationForm::Enum(EnumForm {
+        name: declared_name(&items, node)?,
+        ordered: has_token(&items, b"ordered"),
+        members,
+    }))
 }
 
 /// `type Name = T;` (FR-091 "Alias form").

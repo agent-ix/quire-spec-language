@@ -292,6 +292,11 @@ impl SemanticGraph {
 pub(crate) struct FunctionInput<'a> {
     /// The declared name, `::`-separated.
     pub(crate) name: &'a str,
+    /// The declaration kind: a `Predicate`'s node `semantic_form` is
+    /// `predicate` rather than `pure_function` (FR-092 "Function nodes"). A
+    /// recursion group's members are `recursive_function` whatever their
+    /// kind.
+    pub(crate) kind: qsl_forms::DeclarationKind,
     /// The declaration's region.
     pub(crate) location: &'a Location,
     /// The parameters in order.
@@ -2460,6 +2465,10 @@ impl<'a> Lowering<'a> {
             let measure = self.expression(measure, &mut binders)?;
             members.push(SemanticTerm::binding("decreases", measure));
         }
+        let semantic_form = match function.kind {
+            qsl_forms::DeclarationKind::Predicate => "predicate",
+            qsl_forms::DeclarationKind::Function => "pure_function",
+        };
         let key = match function.clause {
             // FR-094: a clause function carries its declaration's
             // `ModelOwner`, no `declaration` and a trailing `clause`
@@ -2470,7 +2479,7 @@ impl<'a> Lowering<'a> {
                 self.insert_owned(
                     function.location,
                     NodeTag::Function,
-                    "pure_function",
+                    semantic_form,
                     Some(result),
                     owner,
                     SemanticTerm::Aggregate { members },
@@ -2481,7 +2490,7 @@ impl<'a> Lowering<'a> {
                 let key = self.insert(
                     function.location,
                     NodeTag::Function,
-                    "pure_function",
+                    semantic_form,
                     Some(result),
                     Some(declaration),
                     SemanticTerm::Aggregate { members },

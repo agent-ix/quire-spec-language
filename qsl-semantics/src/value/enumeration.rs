@@ -104,6 +104,34 @@ impl EnumDeclarationPreimage {
         })
     }
 
+    /// Build a preimage from its parts. It applies the schema checks
+    /// [`Self::from_json`] applies and refuses with `NonCanonicalPreimage`:
+    /// the members are nonempty, distinct identifiers, and the owner and
+    /// the qualified name are well formed. Member order is the caller's:
+    /// declaration order for an `ordered enum`, sorted otherwise (FR-141).
+    pub fn new(
+        owner: NodeOwner,
+        qualified_declaration: Vec<String>,
+        ordered: bool,
+        members: Vec<String>,
+    ) -> Result<Self, InvalidSemanticGraph> {
+        let distinct: BTreeSet<_> = members.iter().collect();
+        let well_formed = owner.is_well_formed()
+            && is_qualified_name(&qualified_declaration)
+            && !members.is_empty()
+            && distinct.len() == members.len()
+            && members.iter().all(|case| is_identifier(case));
+        if !well_formed {
+            return Err(refuse(SemanticGraphCause::NonCanonicalPreimage));
+        }
+        Ok(Self {
+            owner,
+            qualified_declaration,
+            ordered,
+            members,
+        })
+    }
+
     /// The owner projection.
     pub fn owner(&self) -> &NodeOwner {
         &self.owner
@@ -169,6 +197,24 @@ impl EnumMemberPreimage {
         Ok(Self {
             declaration,
             case: document.case,
+        })
+    }
+
+    /// Build a preimage from its parts: the case of the enum declaration
+    /// keyed by `declaration`. It applies the schema check
+    /// [`Self::from_json`] applies to the case and refuses with
+    /// `NonCanonicalPreimage`.
+    pub fn new(
+        declaration: NodeKey,
+        case: impl Into<String>,
+    ) -> Result<Self, InvalidSemanticGraph> {
+        let case = case.into();
+        if !is_identifier(&case) {
+            return Err(refuse(SemanticGraphCause::NonCanonicalPreimage));
+        }
+        Ok(Self {
+            declaration: WireNodeId::from_digest(*declaration.as_bytes()),
+            case,
         })
     }
 

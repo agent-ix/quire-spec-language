@@ -59,8 +59,10 @@ Tag the test `#[trace("FR-091-AC-4", "FR-091-AC-5", "FR-091-AC-6", "TC-395")]`.
 ## Status
 
 Steps 1 to 3 are backed by `qsl-forms/tests/it/value_forms.rs`:
-`s2_refuses_inadmissible_input_and_undispatched_declarations`. That test
-also asserts `NoDispatchEntry` for `enum`, `ordered enum`, `predicate`,
-`dimension` and `unit`, which the amended FR-091-AC-6 (QSL-275) retires:
-QSL-275 replaces those cases with step 4. Step 4 and step 5's `syn` scan
-are not written.
+`s2_refuses_inadmissible_input_and_undispatched_declarations`, which now
+asserts `NoDispatchEntry` for `dimension` and `unit` only. Step 4's `enum`,
+`ordered enum` and `predicate` cases are backed by
+`enum_and_predicate_declarations_build_one_form_each`, and step 5's scan by
+`only_the_value_builder_names_the_enum_dimension_unit_and_predicate_productions`.
+Step 4's `dimension` and `unit` cases wait on QSL-275's dimension and unit
+forms.

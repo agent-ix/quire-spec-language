@@ -570,11 +570,13 @@ fn each_spine_stage_refusal_reports_its_stage_and_code() {
             None,
         ),
         (
-            "predicate p using v(): Boolean { true }\n",
+            "temporal Due using v over (view: M::Node) clock \"c\" on origin { always[0,1] holds(true) }\n",
             "forms",
             "unsupported_construct",
             21,
-            Some("predicate p using v(): Boolean { true }"),
+            Some(
+                "temporal Due using v over (view: M::Node) clock \"c\" on origin { always[0,1] holds(true) }",
+            ),
         ),
         (
             "function f using v(p: Nope): Int[0, 9] pure { 1 }\n",
