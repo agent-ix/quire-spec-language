@@ -231,7 +231,7 @@ fn selection_and_dependency_input_refusals() {
             CompileRefusal::Import {
                 refusal: ImportRefusal::MissingSelection { identity },
                 ..
-            } if identity == "test/geometry"
+            } if identity.as_str() == "test/geometry"
         ),
         "{missing:?}"
     );
@@ -433,7 +433,7 @@ fn cycle_diamond_and_a_library_refusal() {
             CompileRefusal::Import {
                 refusal: ImportRefusal::MissingSelection { identity },
                 ..
-            } if identity == "test/missing"
+            } if identity.as_str() == "test/missing"
         ),
         "{refusal:?}"
     );
@@ -482,4 +482,169 @@ fn library_identities_are_strings_listed_in_byte_order() {
             .collect();
         assert_eq!(identities, ["test/a", "test/b"]);
     }
+
+    // Byte order, not segment or case order: `Z` (0x5A) before `a`
+    // (0x61), and `a.b` (0x2E) before `a/b` (0x2F), imported in reverse.
+    let names = ["Z", "a", "a.b", "a/b"];
+    let supplied: Vec<SuppliedLibrary> = names
+        .iter()
+        .enumerate()
+        .map(|(index, identity)| library(identity, "1", &format!("lib-{index}"), H))
+        .collect();
+    let imports: String = supplied
+        .iter()
+        .enumerate()
+        .rev()
+        .map(|(index, library)| {
+            let id = package_id(library, &DependencyInput::default());
+            import(&library.identity, "1", &id.hex(), &format!("l{index}"))
+        })
+        .collect();
+    let compiled = compile_as("u", &unit(&format!("{imports}{H}")), &input(supplied))
+        .expect("four libraries compile");
+    let identities: Vec<String> = wire(&compiled)["lock"]["dependency_selections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["identity"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(identities, names);
+}
+
+/// FR-099 (ADR-015 D-1 step 2): an import equal to an earlier one in the
+/// closure reuses that import's completed library. The unit imports
+/// test/geometry and test/a, which imports the same test/geometry: the
+/// compile succeeds, the closure is {test/a, test/geometry}, and both
+/// imports hold one shared library package.
+#[trace("FR-099-AC-3", "TC-446")]
+#[test]
+fn an_equal_import_reuses_the_completed_library() {
+    let geometry = library("test/geometry", "1", "geometry", F);
+    let d = package_id(&geometry, &DependencyInput::default());
+    let geometry_import = import("test/geometry", "1", &d.hex(), "g");
+    let a = library("test/a", "1", "a", &format!("{geometry_import}{H}"));
+    let a_id = package_id(&a, &input(vec![geometry.clone()]));
+    let dependencies = input(vec![geometry, a]);
+    let source = unit(&format!(
+        "{geometry_import}{}{H}",
+        import("test/a", "1", &a_id.hex(), "la")
+    ));
+    let compiled = compile_as("u", &source, &dependencies).expect("the equal diamond compiles");
+    assert_eq!(
+        compiled
+            .package
+            .dependency_selections()
+            .keys()
+            .collect::<Vec<_>>(),
+        [&lib("test/a"), &lib("test/geometry")]
+    );
+    let direct = &compiled.package.dependencies()[&d];
+    let through_a = &compiled.package.dependencies()[&a_id].dependencies()[&d];
+    assert!(std::sync::Arc::ptr_eq(direct, through_a));
+}
+
+/// ADR-015 D-1 step 4: library compiles nest at most
+/// `DependencyLimits::depth` deep; a longer chain refuses
+/// `stage_limit_exceeded`/`nesting-depth-exceeded`, unwrapped, at the import
+/// that would exceed it.
+#[trace("FR-099-AC-3", "TC-446")]
+#[test]
+fn a_dependency_chain_deeper_than_the_limit_refuses() {
+    // test/c0 imports nothing; test/cN imports test/c(N-1).
+    let mut chain = Vec::new();
+    for index in 0..4 {
+        let body = if index == 0 {
+            H.to_owned()
+        } else {
+            format!(
+                "{}{H}",
+                import(&format!("test/c{}", index - 1), "1", &arbitrary(), "l")
+            )
+        };
+        chain.push(library(
+            &format!("test/c{index}"),
+            "1",
+            &format!("c{index}"),
+            &body,
+        ));
+    }
+    let source = unit(&format!("{}{H}", import("test/c3", "1", &arbitrary(), "l")));
+    let refusal = compile(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "u.native",
+        source.as_bytes(),
+        &BTreeMap::new(),
+        &input(chain),
+        SpineLimits {
+            dependencies: super::DependencyLimits { depth: 2 },
+            ..SpineLimits::default()
+        },
+    )
+    .expect_err("a chain of four is deeper than two");
+    assert_eq!(refusal.code(), Code::StageLimitExceeded);
+    assert_eq!(refusal.stage(), SpineStage::Intake);
+    let CompileRefusal::Import {
+        refusal: depth @ ImportRefusal::DepthLimit { limit, path },
+        ..
+    } = &*refusal
+    else {
+        panic!("expected an unwrapped depth refusal, got {refusal:?}");
+    };
+    assert_eq!(depth.cause(), Some("nesting-depth-exceeded"));
+    assert_eq!(*limit, 2);
+    assert_eq!(*path, [lib("test/c3"), lib("test/c2"), lib("test/c1")]);
+}
+
+/// FR-091-AC-24's selective form (ADR-015 D-1): the assembler refuses
+/// `UnsuppliedImport` only for an import with no admitted entry. With
+/// test/geometry admitted and test/other not, exactly one error names
+/// test/other.
+#[trace("FR-091-AC-24", "TC-405")]
+#[test]
+fn the_assembler_refuses_only_the_unadmitted_import() {
+    use qsl_semantics::check::{AdmittedImport, AssemblyCause, PackageDeclarations};
+    let geometry = library("test/geometry", "1", "geometry", F);
+    let alone = compile(
+        geometry.source.clone(),
+        &geometry.path,
+        &geometry.bytes,
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .unwrap();
+    let emission = emit_checked(&alone.package).unwrap();
+    let view = read_import_view(&emission, lib("test/geometry"), "1", &BTreeMap::new()).unwrap();
+    let source = unit(&format!(
+        "{}{}{H}",
+        import("test/geometry", "1", &alone.emitted.package_id().hex(), "g"),
+        import("test/other", "1", &arbitrary(), "o"),
+    ));
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "u.native",
+        source.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .unwrap();
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default()).unwrap();
+    let refusal = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        Vec::new(),
+        vec![AdmittedImport {
+            identity: lib("test/geometry"),
+            view,
+        }],
+    )
+    .expect_err("test/other is not admitted");
+    assert_eq!(refusal.errors.len(), 1, "{refusal:?}");
+    assert_eq!(
+        refusal.errors[0].cause,
+        AssemblyCause::UnsuppliedImport {
+            identity: "test/other".to_owned()
+        }
+    );
+    let start = usize::try_from(refusal.errors[0].span.start).unwrap();
+    assert!(source[start..].starts_with("import \"test/other\""));
 }

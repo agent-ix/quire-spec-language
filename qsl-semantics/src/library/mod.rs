@@ -79,10 +79,9 @@ pub use witness::SupportedV2Wire;
 pub mod fixtures {
     use super::{LibraryName, PinnedRequest, Selection};
 
-    /// A pinned request with one entry, through `PinnedRequest::new`
-    /// (`pub(crate)`: no production caller yet).
+    /// A pinned request with one entry ([`PinnedRequest::single`]).
     pub fn single_pin(library: LibraryName, selection: Selection) -> PinnedRequest {
-        PinnedRequest::new([(library, selection)]).expect("one entry never conflicts")
+        PinnedRequest::single(library, selection)
     }
 }
 

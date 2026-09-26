@@ -754,6 +754,12 @@ pub type ImportViewRefusal = StageFailure<V2ReadRefusal>;
 /// and against `domain_packages`, FR-056's package input by `sha256-jcs`
 /// digest, for its `model_selections`. The reader's ceilings are its
 /// defaults.
+///
+/// The artifact evidence is vacuous by construction: it is the emission's
+/// own record of what it compiled against, so it cannot disagree with the
+/// lock. The authority for a library is its source compile (ADR-015 D-1);
+/// this read only turns the emitted bytes into the view E3 resolves
+/// against, through the one verified-binding path (ADR-011 §4).
 pub fn read_import_view(
     emission: &Emission,
     identity: LibraryName,

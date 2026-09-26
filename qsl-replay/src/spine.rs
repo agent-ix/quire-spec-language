@@ -180,7 +180,9 @@ impl CompileRefusal {
             self,
             Self::DependencyInput(_)
                 | Self::Import {
-                    refusal: ImportRefusal::Cycle { .. } | ImportRefusal::Diamond { .. },
+                    refusal: ImportRefusal::Cycle { .. }
+                        | ImportRefusal::Diamond { .. }
+                        | ImportRefusal::DepthLimit { .. },
                     ..
                 }
         )
@@ -590,8 +592,22 @@ pub enum ImportRefusal {
     #[error("missing_import/missing-selection: no library is supplied as {identity}")]
     MissingSelection {
         /// The identity the import names.
-        identity: String,
+        identity: LibraryName,
     },
+    /// Step 4: compiling the library would nest library compiles deeper
+    /// than [`DependencyLimits::depth`] (`stage_limit_exceeded`/
+    /// `nesting-depth-exceeded`). Closure-level.
+    #[error("stage_limit_exceeded/nesting-depth-exceeded: {} nests library compiles deeper than {limit}", display_path(.path))]
+    DepthLimit {
+        /// The configured ceiling.
+        limit: usize,
+        /// The dependency path whose compile would exceed it.
+        path: Vec<LibraryName>,
+    },
+    /// An import names the empty identity, which the parser never admits:
+    /// a broken invariant (`runtime_invariant`).
+    #[error("runtime_invariant: an admitted import names the empty library identity")]
+    UnnamedImport,
     /// Step 3: the library supplied under the import's identity has another
     /// version (`stale_dependency`/`revision-mismatch`).
     #[error(
@@ -623,7 +639,7 @@ pub enum ImportRefusal {
     },
     /// Step 6: the I2 read of the library's emitted bytes built no import
     /// view.
-    #[error("the I2 read of {identity} refused: {refusal:?}")]
+    #[error("the I2 read of {identity} refused: {}", view_message(.refusal))]
     View {
         /// The library identity.
         identity: LibraryName,
@@ -632,12 +648,27 @@ pub enum ImportRefusal {
     },
 }
 
+/// A readable account of an I2 view read's refusal or reached ceiling.
+fn view_message(refusal: &ImportViewRefusal) -> String {
+    match refusal {
+        StageFailure::Refused(refusal) => refusal.to_string(),
+        StageFailure::Limit(limit) => format!(
+            "{} (bound {}, reached {})",
+            limit.kind().catalog_cause(),
+            limit.configured_bound(),
+            limit.actual()
+        ),
+    }
+}
+
 impl ImportRefusal {
     /// The catalog code.
     pub fn code(&self) -> Code {
         match self {
             Self::Cycle { .. } | Self::Diamond { .. } => Code::InvalidPackage,
             Self::MissingSelection { .. } => Code::MissingImport,
+            Self::DepthLimit { .. } => Code::StageLimitExceeded,
+            Self::UnnamedImport => Code::RuntimeInvariant,
             Self::RevisionMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {
                 Code::StaleDependency
             }
@@ -654,6 +685,8 @@ impl ImportRefusal {
             Self::Cycle { .. } => Some("definition-cycle"),
             Self::Diamond { .. } => Some("conflicting-definition"),
             Self::MissingSelection { .. } => Some("missing-selection"),
+            Self::DepthLimit { .. } => Some("nesting-depth-exceeded"),
+            Self::UnnamedImport => None,
             Self::RevisionMismatch { .. } => Some("revision-mismatch"),
             Self::DependencyIdentityMismatch { .. } => Some("byte-digest-mismatch"),
             Self::View { .. } => None,
@@ -674,6 +707,24 @@ pub struct SpineLimits {
     pub model: ModelNormalizationLimits,
     /// S3: the checker's ceilings.
     pub checking: CheckingLimits,
+    /// The S4 source resolution's ceilings (ADR-015 D-1).
+    pub dependencies: DependencyLimits,
+}
+
+/// The S4 source resolution's ceilings. A library compile is charged the
+/// full S1 to S4 limits as its own unit; this bounds how deeply library
+/// compiles nest, since each nested compile holds its caller's state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DependencyLimits {
+    /// The most library compiles in progress at once: the longest
+    /// dependency path from the unit. Defaults to 64.
+    pub depth: usize,
+}
+
+impl Default for DependencyLimits {
+    fn default() -> Self {
+        Self { depth: 64 }
+    }
 }
 
 /// One unit compiled through S1 to S4: the in-process checked package and
@@ -836,15 +887,9 @@ impl Resolution<'_> {
         let at_identity = || region(raw, import.identity_span);
         let at_import = || region(raw, import.span);
         let refuse = |refusal, region| Box::new(CompileRefusal::Import { refusal, region });
-        // The parser admits no empty identity, so this refuses only a
-        // selection no source spells.
+        // The parser admits no empty identity.
         let Ok(identity) = LibraryName::new(import.identity.as_str()) else {
-            return Err(refuse(
-                ImportRefusal::MissingSelection {
-                    identity: import.identity.clone(),
-                },
-                at_identity(),
-            ));
+            return Err(refuse(ImportRefusal::UnnamedImport, at_identity()));
         };
         // 1. Cycle, before any digest is compared.
         if let Some(start) = self.active.iter().position(|active| *active == identity) {
@@ -880,9 +925,7 @@ impl Resolution<'_> {
         let dependencies = self.dependencies;
         let Some(supplied) = dependencies.libraries.get(&identity) else {
             return Err(refuse(
-                ImportRefusal::MissingSelection {
-                    identity: import.identity.clone(),
-                },
+                ImportRefusal::MissingSelection { identity },
                 at_identity(),
             ));
         };
@@ -896,7 +939,18 @@ impl Resolution<'_> {
                 at_import(),
             ));
         }
-        // 4. Compile, by this same resolution.
+        // 4. Compile, by this same resolution, within the depth ceiling.
+        if self.active.len() >= self.limits.dependencies.depth {
+            let mut path = self.active.clone();
+            path.push(identity);
+            return Err(refuse(
+                ImportRefusal::DepthLimit {
+                    limit: self.limits.dependencies.depth,
+                    path,
+                },
+                at_identity(),
+            ));
+        }
         self.active.push(identity.clone());
         let compiled = self.compile_unit(supplied.source.clone(), &supplied.path, &supplied.bytes);
         self.active.pop();
@@ -1027,7 +1081,7 @@ mod tests {
             panic!("expected an import refusal, got {refusal:?}");
         };
         assert!(
-            matches!(import, ImportRefusal::MissingSelection { identity } if identity == "test/units"),
+            matches!(import, ImportRefusal::MissingSelection { identity } if identity.as_str() == "test/units"),
             "{import:?}"
         );
         assert_eq!(import.cause(), Some("missing-selection"));
