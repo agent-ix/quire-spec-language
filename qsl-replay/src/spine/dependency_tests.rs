@@ -645,6 +645,6 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
             identity: "test/other".to_owned()
         }
     );
-    let start = usize::try_from(refusal.errors[0].span.start).unwrap();
+    let start = refusal.errors[0].span.start;
     assert!(source[start..].starts_with("import \"test/other\""));
 }
