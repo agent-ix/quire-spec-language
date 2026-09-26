@@ -1176,8 +1176,8 @@ mod tests {
         assert_eq!(
             names,
             [
-                "src/emit.rs",
                 "src/emit/keep.rs",
+                "src/emit.rs",
                 "src/lib.rs",
                 "src/real.rs"
             ]
