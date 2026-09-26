@@ -20,8 +20,8 @@ use super::{
 };
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\" version \"1\" digest \
-    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+    profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+    \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n";
 
 const F: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
 const F_CHANGED: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 6 }\n";
@@ -455,6 +455,34 @@ fn cycle_diamond_and_a_library_refusal() {
     assert_eq!(refusal.region().unwrap().source().identity(), "a");
     let a_source = format!("{HEADER}{a_imports_missing}{H}");
     assert_eq!(covered(&a_source, &wrapped), "\"test/missing\"");
+}
+
+/// FR-110 (TC-490): E3 resolves the header of each library the S4 source
+/// resolution compiles, not only the unit's: a library whose header selects
+/// an unknown profile refuses wrapped with its dependency path, located at
+/// the identity literal in the library's own source.
+#[trace("TC-490", "FR-110-AC-2")]
+#[test]
+fn a_library_header_that_does_not_resolve_is_refused() {
+    let bad = HEADER.replace("quire.value.complete/v1", "test:unknown-profile");
+    let mut lib_a = library("test/a", "1", "a", H);
+    lib_a.bytes = format!("{bad}{H}").into_bytes();
+    let source = unit(&format!("{}{H}", import("test/a", "1", &arbitrary(), "la")));
+    let wrapped = compile_as("u", &source, &input(vec![lib_a]))
+        .expect_err("test/a's header selects an unknown profile");
+    assert_eq!(wrapped.stage(), SpineStage::Assembly);
+    assert_eq!(wrapped.code(), Code::UnknownProfile);
+    let CompileRefusal::Dependency { path, refusal } = &*wrapped else {
+        panic!("expected a wrapped refusal, got {wrapped:?}");
+    };
+    assert_eq!(*path, [lib("test/a")]);
+    let CompileRefusal::Profile { refusals, .. } = &**refusal else {
+        panic!("expected a profile refusal, got {refusal:?}");
+    };
+    assert_eq!(refusals[0].cause(), "unsupported-selection");
+    assert_eq!(refusal.region().unwrap().source().identity(), "a");
+    let a_source = format!("{bad}{H}");
+    assert_eq!(covered(&a_source, &wrapped), "\"test:unknown-profile\"");
 }
 
 /// FR-099-AC-4 (TC-446 step 4): a library identity is any non-empty string,

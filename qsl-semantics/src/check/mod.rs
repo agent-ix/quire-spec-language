@@ -89,6 +89,7 @@ pub(crate) mod imports;
 mod ir;
 mod lowering;
 mod node_key;
+mod profile;
 mod refusal;
 mod region;
 mod termination;
@@ -117,6 +118,7 @@ use quire_exact::ValueType;
 pub use check::Scope;
 pub use claims::{ClaimSite, PathGuard, RequirementRecord, ResultBound, SiteGuard, ValueClaim};
 pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
+pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 // Named only by `fixtures::measure_resolved`'s return type.
 #[cfg(any(test, feature = "test-support"))]
 pub use family::DeclarationMetrics;

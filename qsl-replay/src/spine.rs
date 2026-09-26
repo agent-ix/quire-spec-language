@@ -33,8 +33,8 @@ use qsl_package::{
     EmittedPackage, Import, ImportViewRefusal, LinkRefusal, OmittedNode,
 };
 use qsl_semantics::check::{
-    AdmittedImport, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, CheckingLimits,
-    PackageDeclarations,
+    resolve_profiles, AdmittedImport, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal,
+    CheckingLimits, PackageDeclarations, ProfileRefusal,
 };
 use qsl_semantics::library::{ImportView, LibraryName, PackageId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -69,6 +69,15 @@ pub enum CompileRefusal {
         /// The intake refusal.
         refusal: UnitIntakeRefusal,
         /// The region of the `model` declaration.
+        region: Option<SourceRegion>,
+    },
+    /// E3 (FR-110): a header profile selection does not resolve against the
+    /// `DefinitionLock` catalog.
+    #[error("header profile `{}` does not resolve: {}/{}", .refusals[0].alias, .refusals[0].code().as_str(), .refusals[0].cause())]
+    Profile {
+        /// Every refusing profile in source order, never empty.
+        refusals: Vec<ProfileRefusal>,
+        /// The region of the first refusal's identity literal.
         region: Option<SourceRegion>,
     },
     /// E3: the FR-091 assembler refused the unit.
@@ -132,6 +141,9 @@ impl CompileRefusal {
             Self::Source(diagnostic) => diagnostic.code,
             Self::Forms { failure, .. } => failure.catalog_code(),
             Self::Intake { refusal, .. } => refusal.cause.code(),
+            Self::Profile { refusals, .. } => refusals
+                .first()
+                .map_or(Code::RuntimeInvariant, ProfileRefusal::code),
             Self::Assembly { refusal, .. } => refusal
                 .errors
                 .first()
@@ -158,7 +170,7 @@ impl CompileRefusal {
                 SpineStage::Intake
             }
             Self::Dependency { refusal, .. } => refusal.stage(),
-            Self::Assembly { .. } => SpineStage::Assembly,
+            Self::Assembly { .. } | Self::Profile { .. } => SpineStage::Assembly,
             Self::Check { .. } => SpineStage::Check,
             Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
         }
@@ -172,6 +184,7 @@ impl CompileRefusal {
             Self::Forms { region, .. }
             | Self::Intake { region, .. }
             | Self::Assembly { region, .. }
+            | Self::Profile { region, .. }
             | Self::Import { region, .. }
             | Self::Check { region, .. } => region.as_ref(),
             Self::Dependency { refusal, .. } => refusal.region(),
@@ -891,6 +904,14 @@ impl Resolution<'_> {
                 package: Arc::clone(&library.package),
             });
         }
+        resolve_profiles(&unit.selections().profiles).map_err(|refusals| {
+            Box::new(CompileRefusal::Profile {
+                region: refusals
+                    .first()
+                    .and_then(|refusal| region(&raw, refusal.identity_span)),
+                refusals,
+            })
+        })?;
         let declarations = PackageDeclarations::assemble(raw.clone(), unit, models, admitted)
             .map_err(|refusal| {
                 Box::new(CompileRefusal::Assembly {
@@ -1072,6 +1093,7 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::{Code, SourceIdentity};
     use qsl_semantics::check::CheckingLimits;
+    use qsl_semantics::value::{CatalogRole, DefinitionLock};
     use std::collections::BTreeMap;
 
     /// FR-096 at the CLI's compile: `Typer`'s depth stop on
@@ -1081,8 +1103,8 @@ mod tests {
     #[test]
     fn a_family_depth_stop_is_reported_at_the_node_that_failed() {
         const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-            profile v = \"quire.value.complete/v1\" version \"1\" digest \
-            \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+            profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+            \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
             function f using v(): Boolean pure { not not not true }\n";
         let refusal = compile(
             SourceIdentity::new("a", "u", "git", "1"),
@@ -1105,6 +1127,169 @@ mod tests {
         assert_eq!(start, UNIT.rfind("true").unwrap());
     }
 
+    /// The unit `header` declares, compiled through spine `compile`.
+    fn compile_header(header: &str) -> Result<super::Compiled, Box<CompileRefusal>> {
+        let unit = format!(
+            "language \"ix:native\" edition \"1-draft\";\n{header}\
+             function f using v(): Boolean pure {{ true }}\n"
+        );
+        compile(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+    }
+
+    fn profile_line(alias: &str, identity: &str, version: &str, digest: &str) -> String {
+        format!(
+            "profile {alias} = \"{identity}\" version \"{version}\" digest \"sha256:{digest}\";\n"
+        )
+    }
+
+    fn profile_refusals(refusal: &CompileRefusal) -> &[qsl_semantics::check::ProfileRefusal] {
+        let CompileRefusal::Profile { refusals, .. } = refusal else {
+            panic!("expected a profile refusal, got {refusal:?}");
+        };
+        refusals
+    }
+
+    /// FR-110 (TC-490): E3 admits a header profile only when it selects the
+    /// `DefinitionLock` catalog's `root` row exactly, and refuses every other
+    /// with its catalogued code and cause, all of them in source order.
+    #[trace(
+        "TC-490",
+        "FR-110-AC-1",
+        "FR-110-AC-2",
+        "FR-110-AC-3",
+        "FR-110-AC-4",
+        "FR-110-AC-5",
+        "FR-110-AC-6"
+    )]
+    #[test]
+    fn a_header_profile_resolves_only_against_the_root_row() {
+        let lock = DefinitionLock::pinned();
+        let root = lock.entry(CatalogRole::Root).unwrap();
+        let exact =
+            |alias: &str| profile_line(alias, root.identity, root.revision_value, root.digest);
+
+        // Step 1 (AC-1): compiles; the lock selects the root row once.
+        let compiled = compile_header(&exact("v")).expect("the exact root row resolves");
+        let wire: serde_json::Value = serde_json::from_slice(compiled.emitted.bytes()).unwrap();
+        assert_eq!(wire["lock"]["profile_selections"], serde_json::json!([]));
+        let selected: Vec<_> = wire["lock"]["definition_selections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["identity"] == root.identity)
+            .collect();
+        assert_eq!(selected, [&serde_json::to_value(root.reference()).unwrap()]);
+
+        // Step 2 (AC-2): an identity in no catalog.
+        let header = profile_line(
+            "v",
+            "test:unknown-profile",
+            root.revision_value,
+            root.digest,
+        );
+        let refusal = compile_header(&header).expect_err("an unknown identity refuses");
+        assert_eq!(refusal.stage(), SpineStage::Assembly);
+        assert_eq!(refusal.code(), Code::UnknownProfile);
+        let [first] = profile_refusals(&refusal) else {
+            panic!("expected one refusal");
+        };
+        assert_eq!(first.cause(), "unsupported-selection");
+        assert_eq!(first.alias, "v");
+        assert_eq!(first.selected.identity(), "test:unknown-profile");
+        assert_eq!(first.required_role, CatalogRole::Root);
+        let unit = format!("language \"ix:native\" edition \"1-draft\";\n{header}");
+        let region = refusal.region().expect("the refusal is located");
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        assert_eq!(&unit[start..end], "\"test:unknown-profile\"");
+
+        // Step 3 (AC-3): another catalog row's identity.
+        for role in [CatalogRole::IeeeProfile, CatalogRole::Edition] {
+            let row = lock.entry(role).unwrap();
+            let header = profile_line("v", row.identity, row.revision_value, row.digest);
+            let refusal = compile_header(&header).expect_err("another row's identity refuses");
+            assert_eq!(refusal.code(), Code::UnknownProfile);
+            let [first] = profile_refusals(&refusal) else {
+                panic!("expected one refusal");
+            };
+            assert_eq!(first.cause(), "wrong-selection-role");
+            assert_eq!(first.selected.identity(), row.identity);
+            assert_eq!(first.required_role, CatalogRole::Root);
+        }
+
+        // Step 4 (AC-4): root's identity at version "1".
+        let refusal = compile_header(&profile_line("v", root.identity, "1", root.digest))
+            .expect_err("a stale revision refuses");
+        assert_eq!(refusal.code(), Code::StaleDependency);
+        let [first] = profile_refusals(&refusal) else {
+            panic!("expected one refusal");
+        };
+        assert_eq!(first.cause(), "revision-mismatch");
+        assert_eq!(first.selected.identity(), root.identity);
+        assert_eq!(first.selected.version(), "1");
+        assert_eq!(
+            first.selected.digest().digest().to_string(),
+            format!("sha256:{}", root.digest)
+        );
+        assert_eq!(first.root.identity, root.identity);
+        assert_eq!(first.root.revision_value, root.revision_value);
+        assert_eq!(first.root.digest, root.digest);
+
+        // Step 5 (AC-5): root's identity and revision, another digest.
+        let other = "a".repeat(64);
+        let refusal = compile_header(&profile_line(
+            "v",
+            root.identity,
+            root.revision_value,
+            &other,
+        ))
+        .expect_err("a stale digest refuses");
+        assert_eq!(refusal.code(), Code::StaleDependency);
+        let [first] = profile_refusals(&refusal) else {
+            panic!("expected one refusal");
+        };
+        assert_eq!(first.cause(), "byte-digest-mismatch");
+        assert_eq!(first.selected.identity(), root.identity);
+        assert_eq!(first.selected.version(), root.revision_value);
+        assert_eq!(first.root.identity, root.identity);
+        assert_eq!(first.root.revision_value, root.revision_value);
+        assert_eq!(
+            first.selected.digest().digest().to_string(),
+            format!("sha256:{other}")
+        );
+        assert_eq!(first.root.digest, root.digest);
+
+        // Step 6 (AC-6): every refusing profile, in source order.
+        let header = format!(
+            "{}{}{}",
+            exact("v"),
+            profile_line("w", root.identity, "1", root.digest),
+            profile_line(
+                "x",
+                "test:unknown-profile",
+                root.revision_value,
+                root.digest
+            ),
+        );
+        let refusal = compile_header(&header).expect_err("w and x refuse");
+        let both = profile_refusals(&refusal);
+        assert_eq!(
+            both.iter()
+                .map(|r| (r.alias.as_str(), r.cause()))
+                .collect::<Vec<_>>(),
+            [("w", "revision-mismatch"), ("x", "unsupported-selection")]
+        );
+        compile_header(&format!("{}{}", exact("v"), exact("u")))
+            .expect("two exact root selections resolve");
+    }
+
     /// FR-091-AC-24 (ADR-015 D-1): with no library supplied, the S4 source
     /// resolution refuses an `import` at stage `intake`, before assembly, as
     /// `missing_import`/`missing-selection` at the import's identity string,
@@ -1114,8 +1299,8 @@ mod tests {
     fn an_import_no_dependency_input_supplies_refuses() {
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\" version \"1\" digest \
-             \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+             profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+             \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
              import \"test/units\" version \"2\" digest \"{}\" as u;\n\
              function f using v(): Boolean pure {{ true }}\n",
             "b".repeat(64)

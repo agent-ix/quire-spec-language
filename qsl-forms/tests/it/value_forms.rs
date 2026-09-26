@@ -857,6 +857,14 @@ fn s2_builds_dimension_and_unit_forms_as_written() {
         panic!("a unit form");
     };
     assert_eq!(celsius.name.name, "C");
+    let at = |needle: &str, skip: usize| {
+        let start = span_of(&text, needle).start + skip;
+        Span {
+            start,
+            end: start + 1,
+        }
+    };
+    assert_eq!(celsius.name.span, at("unit C", 5));
     assert_eq!(celsius.dimension.name, "Temperature");
     assert_eq!(celsius.dimension.span, span_of(&text, "Temperature"));
     assert_eq!(celsius.scale.kind, ExactNumberKind::Rational);
@@ -865,6 +873,7 @@ fn s2_builds_dimension_and_unit_forms_as_written() {
     assert_eq!(celsius.scale.span, span_of(&text, "rational(1, 1)"));
     let target = celsius.target.as_ref().expect("a target");
     assert_eq!(target.name, "K");
+    assert_eq!(target.span, at("* K", 2));
     let offset = celsius.offset.as_ref().expect("an offset");
     assert_eq!(offset.kind, ExactNumberKind::Decimal);
     assert_eq!(offset.first, Integer::from(27315_i64));

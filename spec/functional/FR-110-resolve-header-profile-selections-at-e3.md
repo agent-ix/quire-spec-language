@@ -165,23 +165,24 @@ unchanged.
 
 ## Status
 
-Specified under QSL-234; not yet implemented -- TC-490 planned. Owner of
-the implementation: QSL-284.
+Specified under QSL-234; implemented under QSL-284 and backed by the
+TC-490 test (`a_header_profile_resolves_only_against_the_root_row`,
+`qsl-replay/src/spine.rs`).
 
-Spine sources declare the placeholder header
+Spine sources declared the placeholder header
 `profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaa…"`,
-which this requirement refuses as `revision-mismatch`. Updates:
+which this requirement refuses as `revision-mismatch`. The updates:
 
-- **The implementing change** updates every source a spine compile reads
-  to the `root` row's revision value and digest, and keeps `make ci` green:
+- **The implementing change** updated every source a spine compile reads
+  to the `root` row's revision value and digest, and kept `make ci` green:
   `tests/fixtures/spine-compile.native`, `spine-model.native` and
   `spine-run.native`; `tests/it/compile_command.rs` and
   `tests/it/spine_run.rs`; and `qsl-replay`'s `spine.rs` tests,
   `spine/call/tests.rs`, `spine/dependency_tests.rs` and
   `execute/tests.rs`. Sources that stop before E3 (the S1, S2, formatter,
-  assembler and emitter unit tests) keep the placeholder. It also rewrites
-  the `CatalogEntry::digest` doc (`value/definition.rs:311-313`), which
-  says no reader verifies the digest; FR-110 reads the `root` digest.
+  assembler and emitter unit tests) keep the placeholder. It also rewrote
+  the `CatalogEntry::digest` doc (`value/definition.rs`), which
+  said no reader verifies the digest; FR-110 reads the `root` digest.
 - **Dependency on the A05 lane (QSL-273, QSL-271).** FR-108's corpus unit
   (`FR-108:51`) and TC-452 step 1's source (`TC-452:40`, and its byte
   count) spell `version "1"`. Those rows need the `root` revision value

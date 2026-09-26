@@ -60,4 +60,5 @@ criteria each step backs.
 
 ## Status
 
-Planned; no test backs this case (QSL-234).
+Implemented under QSL-284: `a_header_profile_resolves_only_against_the_root_row`
+(`qsl-replay/src/spine.rs`) backs steps 1-6.

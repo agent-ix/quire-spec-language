@@ -12,7 +12,7 @@ use quire_exact::{
     Presence, RoundingMode, ValueType,
 };
 
-use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, Unmapped};
+use super::{model_field, AssemblyCause, AssemblyError, AssemblyRefusal, TopologyFault, Unmapped};
 use crate::check::{
     CheckCause, CheckingLimits, Location, Origin, PackageDeclarations, TypeFormFault,
 };
@@ -1198,6 +1198,31 @@ fn key_of(hex: &str, graph: &crate::value::unit::UnitGraph) -> quire_exact::Node
         .unwrap_or_else(|| panic!("the graph holds unit {hex}"))
 }
 
+/// `Q_SOURCES` with its lines reversed: every declaration comes before
+/// the ones it depends on.
+fn reversed_sources() -> String {
+    Q_SOURCES.split('\n').rev().collect::<Vec<_>>().join("\n")
+}
+
+#[trace("FR-091-AC-32", "TC-483")]
+#[test]
+fn dependencies_are_keyed_before_their_dependents_whatever_the_source_order() {
+    let (_, assembled) = assemble(&reversed_sources());
+    let package = assembled.expect("the reversed unit assembles");
+    let graph = &package.units;
+    for hex in &Q[5..] {
+        key_of(hex, graph);
+    }
+    for hex in &Q[..5] {
+        assert!(package
+            .nominal_spans
+            .keys()
+            .any(|key| key.to_string() == *hex));
+    }
+    let km = graph.unit(key_of(Q[6], graph)).expect("km");
+    assert_eq!(km.root(), key_of(Q[5], graph));
+}
+
 #[trace("FR-091-AC-32", "TC-483")]
 #[test]
 fn dimensions_and_units_are_admitted_with_the_vector_keys() {
@@ -1476,6 +1501,13 @@ fn the_dimension_and_unit_causes_have_their_catalog_codes() {
         (
             AssemblyCause::ZeroDenominator,
             "undefined_expression/unproved-nonzero",
+        ),
+        (
+            AssemblyCause::UnitGraphTopology {
+                fault: TopologyFault::TwoRoots,
+                declarations: Vec::new(),
+            },
+            "invalid_package/unit-graph-topology",
         ),
         (
             AssemblyCause::DecimalScaleLimit(quire_exact_limit()),

@@ -514,8 +514,8 @@ fn tc_451_step_3_argument_binding_names_the_parameter() {
 fn tc_451_step_6_compile_refusals_carry_their_own_stage() {
     let syntax_error = b"language \"ix:native\" edition \"1-draft\";\nfunction (".to_vec();
     let ill_typed = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\" version \"1\" digest \
-        \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+        profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+        \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
         type Digit = Int[0, 9];\n\
         function inv using v(x: Digit): Boolean pure { 1 / x > 0 }\n"
         .to_owned()
@@ -703,7 +703,7 @@ fn tc_450_step_2_zero_draft_requests_are_unaffected() {
 #[test]
 #[trace("TC-450", "FR-100-AC-3")]
 fn tc_450_step_6_libraries_and_models_both_present_runs() {
-    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n";
     const LIBRARY: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
     let library = format!("{HEADER}{LIBRARY}").into_bytes();
     let library_digest = qsl_replay::spine::compile(

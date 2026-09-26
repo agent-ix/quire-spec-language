@@ -12,8 +12,8 @@ relationships:
 
 ## Description
 
-Verify that the shared checked-family contract's three separately-omittable
-parts (checked input, requirements, evaluate) each fail to compile
+Verify that the shared checked-family contract's two separately-omittable
+parts (checked input, requirements) each fail to compile
 when omitted, that identity is content-addressed and occurrence keys are
 distinct from identity (verifying identity and provenance behaviorally,
 since neither is a separate trait item to omit), that the typing context has
@@ -33,9 +33,12 @@ FR-057-AC-10's value-function row.
 
 1. Compile a minimal family implementation against the contract that in turn
    omits, one at a time: the checked-input (typing context) parameter type
-   on `check`; the `requirements` method; the `evaluate` hook (for a family
-   other than `Relation`). Confirm each omission fails to
-   compile. Identity and provenance are not tested this way: they are
+   on `check`; the `requirements` method. Confirm each omission fails to
+   compile, and that the complete implementation compiles. These are the
+   `compile_fail` doctests, and the control doctest, on `FamilyContract`
+   (`qsl-semantics/src/family/contract.rs`). `evaluate` is a member of the
+   crate-private `ReferenceEvaluation`, which no external family can name,
+   so its omission is not a case. Identity and provenance are not tested this way: they are
    properties of the `Checked` node type and the package's source map, not
    separate trait items, and are instead exercised by steps 2 and 3 below.
 2. Parse two structurally identical forms into the same package and check
@@ -58,7 +61,7 @@ FR-057-AC-10's value-function row.
    is a `Limit` outcome, not `Incomplete` and not a refusal. Separately, run
    a family's `evaluate` hook on a checked node under a meter small enough to
    exhaust mid-evaluation and confirm it returns `Incomplete`. Run `check`
-   and `qsl_package::emit_checked` across the same fixture set and confirm
+   and `qsl_package::emit_checked` across each stage's fixture set and confirm
    neither returns `Incomplete`.
 7. Construct a fixture nested to depth D (for example, D levels of nested
    function application). Check it with the nesting-depth limit configured
@@ -98,8 +101,8 @@ FR-057-AC-10's value-function row.
 
 ## Expected Results
 
-- Step 1: each of the three omissions fails to compile; no partial
-  implementation is accepted.
+- Step 1: each of the two omissions fails to compile (`E0050`, `E0046`) and
+  the control compiles; no partial implementation is accepted.
 - Steps 2 and 3: the two structurally identical forms mint one shared
   identity; the two occurrences of one node get distinct occurrence keys
   (identity, role, ordinal) that differ only in ordinal after reordering, and
