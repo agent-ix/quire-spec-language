@@ -896,22 +896,22 @@ mod tests {
                 "location": expected_location,
             })
         );
+    }
 
-        #[trace("TC-470", "FR-096-AC-12")]
-        #[test]
-        fn a_report_combines_exit_codes_by_fr_301_severity() {
-            for (pair, expected) in [
-                ([30, 20], 30),
-                ([30, 21], 30),
-                ([30, 22], 30),
-                ([20, 21], 20),
-                ([21, 22], 21),
-                ([20, 22], 20),
-            ] {
-                assert_eq!(combined_exit_code(pair.into_iter()), Some(expected));
-                assert_eq!(combined_exit_code(pair.into_iter().rev()), Some(expected));
-            }
-            assert_eq!(combined_exit_code(std::iter::empty()), None);
+    #[trace("TC-470", "FR-096-AC-12")]
+    #[test]
+    fn a_report_combines_exit_codes_by_fr_301_severity() {
+        for (pair, expected) in [
+            ([30, 20], 30),
+            ([30, 21], 30),
+            ([30, 22], 30),
+            ([20, 21], 20),
+            ([21, 22], 21),
+            ([20, 22], 20),
+        ] {
+            assert_eq!(combined_exit_code(pair.into_iter()), Some(expected));
+            assert_eq!(combined_exit_code(pair.into_iter().rev()), Some(expected));
         }
+        assert_eq!(combined_exit_code(std::iter::empty()), None);
     }
 }
