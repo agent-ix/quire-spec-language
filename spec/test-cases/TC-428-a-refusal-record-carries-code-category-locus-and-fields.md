@@ -40,4 +40,8 @@ Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
 
 ## Status
 
-Planned. ADR-013 §7 slice S-5b (QSL-160), after S-4b and FR-091-AC-10.
+Partial (QSL-245). Steps 1 to 3 pass locally (FR-096-AC-6, FR-096-AC-7).
+Step 4 (FR-096-AC-8) is not built: the catalog defines no code for most
+kernel `Refusal` causes (`InexactDecimal`, `IntegerOutOfDomain` and others), and
+`CheckedInvariant` maps to `runtime_invariant`, an internal-failure code, while
+a record's category is always refusal, so no total map is fixed to implement.

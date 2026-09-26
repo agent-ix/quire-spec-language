@@ -877,6 +877,20 @@ pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
     /// This cause's catalog code (O-17's method); its O-16 category is
     /// always `Category::Refusal`.
     fn catalog_code(&self) -> CatalogCode;
+
+    /// The structured payload the catalog row requires for the cause
+    /// [`Self::catalog_code`] names (ADR-013 O-17, FR-096), with the same
+    /// map shape as [`UndefinedRecord::fields`]: one entry for each required
+    /// payload item other than a location, valued by the item's rendering.
+    /// A location item is the record's [`Locus`], not a field. Read from the
+    /// cause's own variant, never from a message.
+    fn catalog_fields(&self) -> BTreeMap<&'static str, String>;
+
+    /// This cause as O-17's [`RefusalRecord`], raised at `locus`: its code,
+    /// its fields, and category refusal.
+    fn refusal_record(&self, locus: Option<Locus>) -> RefusalRecord {
+        RefusalRecord::new(self.catalog_code(), self.catalog_fields(), locus)
+    }
 }
 
 /// ADR-013 O-17 (FR-096): a refusal as a consumer outside its producer

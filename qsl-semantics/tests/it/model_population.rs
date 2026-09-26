@@ -735,6 +735,7 @@ fn l03_lookup_refused_mode() {
             assert_eq!(
                 refusal.cause,
                 ModelRefusalCause::AbsentKey {
+                    binding: binding.population_id().to_string(),
                     key: b"c9".to_vec(),
                 }
             );
@@ -780,6 +781,7 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
         LookupOutcome::Refused(ModelRefusal {
             code: Code::InvalidRuntimeInput,
             cause: ModelRefusalCause::AbsentKey {
+                binding: binding.population_id().to_string(),
                 key: vec![0xFF, 0xFE],
             },
             detail: "identity bytes 0xfffe (not UTF-8) is not a member of the bound population"

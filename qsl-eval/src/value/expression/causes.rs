@@ -43,15 +43,48 @@ pub(crate) struct PreconditionFailure {
 /// FR-091-AC-8). The evaluator raises only
 /// [`WrongSnapshotCause::WrongAnchor`]; [`WrongSnapshotCause::ForbiddenPreRead`]
 /// is a checking-time cause. `catalog_code()` covers both (O-17).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct ProtocolClauseSnapshot(pub(crate) WrongSnapshotCause);
+///
+/// Each variant carries the payload the catalog requires for its cause
+/// (FR-096), read by [`CatalogCoded::catalog_fields`].
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum ProtocolClauseSnapshot {
+    /// `wrong-anchor`: the required and the supplied anchor selection.
+    WrongAnchor {
+        /// The required anchor selection.
+        required: &'static str,
+        /// The supplied anchor selection.
+        supplied: &'static str,
+    },
+    /// `forbidden-pre-read`: the exact prohibited read.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "a checking-time cause: the evaluator raises only wrong-anchor (see the type doc); the checker's own refusal is `CheckCause::WrongSnapshot`"
+        )
+    )]
+    ForbiddenPreRead {
+        /// The prohibited read, rendered.
+        read: String,
+    },
+}
+
+impl ProtocolClauseSnapshot {
+    /// The closed cause this payload belongs to.
+    pub(crate) fn cause(&self) -> WrongSnapshotCause {
+        match self {
+            Self::WrongAnchor { .. } => WrongSnapshotCause::WrongAnchor,
+            Self::ForbiddenPreRead { .. } => WrongSnapshotCause::ForbiddenPreRead,
+        }
+    }
+}
 
 impl CatalogCoded for ProtocolClauseSnapshot {
     /// FR-063-AC-7: `#[deny(...)]` closes the `_ => unsupported(...)` escape
     /// hatch the seam probe alone cannot see.
     #[deny(clippy::wildcard_enum_match_arm)]
     fn catalog_code(&self) -> CatalogCode {
-        match self.0 {
+        match self.cause() {
             WrongSnapshotCause::WrongAnchor => CatalogCode::new("wrong_snapshot", "wrong-anchor"),
             WrongSnapshotCause::ForbiddenPreRead => {
                 CatalogCode::new("wrong_snapshot", "forbidden-pre-read")
@@ -65,6 +98,18 @@ impl CatalogCoded for ProtocolClauseSnapshot {
             // for the root crate's own seams to be reached at all.
             #[cfg(seam_probe_eval_downstream)]
             WrongSnapshotCause::__SeamProbe => CatalogCode::new("__seam_probe__", "__seam_probe__"),
+        }
+    }
+
+    /// FR-096's key table: `wrong-anchor` has `required` and `supplied`,
+    /// `forbidden-pre-read` has `read`.
+    fn catalog_fields(&self) -> BTreeMap<&'static str, String> {
+        match self {
+            Self::WrongAnchor { required, supplied } => BTreeMap::from([
+                ("required", (*required).to_owned()),
+                ("supplied", (*supplied).to_owned()),
+            ]),
+            Self::ForbiddenPreRead { read } => BTreeMap::from([("read", read.clone())]),
         }
     }
 }
@@ -95,6 +140,18 @@ impl From<ModelRefusal> for ModelQueryRefusal {
 impl CatalogCoded for ModelQueryRefusal {
     fn catalog_code(&self) -> CatalogCode {
         self.cause.catalog_code()
+    }
+
+    /// FR-096's key table row for this cause: `absent-key` has `binding`
+    /// and `key`. The table has no row for the model refusal's other
+    /// causes, which return no fields until it does.
+    fn catalog_fields(&self) -> BTreeMap<&'static str, String> {
+        match &self.cause {
+            ModelRefusalCause::AbsentKey { binding, key } => {
+                BTreeMap::from([("binding", binding.clone()), ("key", identity_string(key))])
+            }
+            _ => BTreeMap::new(),
+        }
     }
 }
 
@@ -159,8 +216,49 @@ mod tests {
     use super::{identity_string, ModelQueryRefusal, ProtocolClauseSnapshot};
     use ix_trace_rs::trace;
     use qsl_foundation::diagnostic::{category_of, CatalogCode, CatalogCoded, Category, Code};
-    use qsl_semantics::check::WrongSnapshotCause;
     use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
+
+    fn wrong_anchor() -> ProtocolClauseSnapshot {
+        ProtocolClauseSnapshot::WrongAnchor {
+            required: "pre",
+            supplied: "post",
+        }
+    }
+
+    fn forbidden_pre_read() -> ProtocolClauseSnapshot {
+        ProtocolClauseSnapshot::ForbiddenPreRead {
+            read: "pre(p)".to_owned(),
+        }
+    }
+
+    /// TC-428 (FR-096-AC-7): each cause in FR-096's key table gives exactly
+    /// the keys the table lists for it, valued from its own variant.
+    #[trace("TC-428", "FR-096-AC-7")]
+    #[test]
+    fn catalog_fields_hold_exactly_the_keys_of_the_key_table() {
+        fn keys(cause: &dyn CatalogCoded) -> Vec<(&'static str, String)> {
+            cause.catalog_fields().into_iter().collect()
+        }
+        assert_eq!(
+            keys(&wrong_anchor()),
+            [
+                ("required", "pre".to_owned()),
+                ("supplied", "post".to_owned())
+            ]
+        );
+        assert_eq!(keys(&forbidden_pre_read()), [("read", "pre(p)".to_owned())]);
+        let absent = ModelQueryRefusal {
+            cause: ModelRefusalCause::AbsentKey {
+                binding: "pop-1".to_owned(),
+                key: b"c9".to_vec(),
+            },
+            detail: String::new(),
+        };
+        assert_eq!(
+            keys(&absent),
+            [("binding", "pop-1".to_owned()), ("key", "c9".to_owned())]
+        );
+    }
 
     /// TC-387 (FR-090-AC-6): each `WrongSnapshotCause` maps to
     /// `wrong_snapshot` with its own catalog cause tag, never through the
@@ -169,11 +267,11 @@ mod tests {
     #[test]
     fn protocol_clause_snapshot_catalog_code() {
         assert_eq!(
-            ProtocolClauseSnapshot(WrongSnapshotCause::WrongAnchor).catalog_code(),
+            wrong_anchor().catalog_code(),
             CatalogCode::new("wrong_snapshot", "wrong-anchor")
         );
         assert_eq!(
-            ProtocolClauseSnapshot(WrongSnapshotCause::ForbiddenPreRead).catalog_code(),
+            forbidden_pre_read().catalog_code(),
             CatalogCode::new("wrong_snapshot", "forbidden-pre-read")
         );
     }
@@ -186,11 +284,8 @@ mod tests {
     #[trace("FR-090-AC-5", "TC-386")]
     #[test]
     fn family_refusal_codes_map_to_category_refusal() {
-        for cause in [
-            WrongSnapshotCause::WrongAnchor,
-            WrongSnapshotCause::ForbiddenPreRead,
-        ] {
-            let code = ProtocolClauseSnapshot(cause).catalog_code();
+        for cause in [wrong_anchor(), forbidden_pre_read()] {
+            let code = cause.catalog_code();
             assert_eq!(category_of(&code), Some(Category::Refusal), "{code}");
         }
         let samples = qsl_semantics::model::refusal::fixtures::exhaustive_samples();

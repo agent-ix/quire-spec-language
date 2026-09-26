@@ -319,6 +319,9 @@ pub enum ModelRefusalCause {
     },
     /// A reference key is not a member of the bound population.
     AbsentKey {
+        /// The population binding the query ran against, rendered for the
+        /// catalog's `binding` payload item (its `PopulationId`'s display).
+        binding: String,
         /// The absent key's raw object bytes, exactly as supplied. A
         /// [`crate::model::population::LookupKey`]'s plain `object` bytes,
         /// not a [`DeclarationKey`] -- not always valid UTF-8 itself
@@ -1001,7 +1004,10 @@ pub mod fixtures {
             actual: effective_id().as_bytes().to_vec(),
             expected: universe_id(),
         },
-        AbsentKey => ModelRefusalCause::AbsentKey { key: Vec::new() },
+        AbsentKey => ModelRefusalCause::AbsentKey {
+            binding: String::new(),
+            key: Vec::new()
+        },
         WrongExport => ModelRefusalCause::WrongExport,
         ConflictingBinding => ModelRefusalCause::ConflictingBinding { key: key("p") },
         UnknownRelationship => ModelRefusalCause::UnknownRelationship {

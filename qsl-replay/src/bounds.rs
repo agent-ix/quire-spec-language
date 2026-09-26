@@ -34,6 +34,12 @@ impl qsl_foundation::diagnostic::CatalogCoded for BoundExceeded {
     fn catalog_code(&self) -> qsl_foundation::diagnostic::CatalogCode {
         qsl_foundation::diagnostic::CatalogCode::new("stage_limit_exceeded", "input-bytes-exceeded")
     }
+
+    /// FR-096's key table has no row for this cause; `actual` is its own
+    /// field.
+    fn catalog_fields(&self) -> std::collections::BTreeMap<&'static str, String> {
+        std::collections::BTreeMap::new()
+    }
 }
 
 impl BoundExceeded {

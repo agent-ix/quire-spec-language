@@ -3383,3 +3383,111 @@ fn tc_441_population_maximum_absence_must_match_at_admission() {
         );
     }
 }
+
+/// TC-428 (FR-096-AC-6): a declared function `G(p, r) = lookup<M::A>(p, r)
+/// absent refused`, read from a unit (its forms carry spans), called with a
+/// reference that is no member of the population. The refusal builds a
+/// `RefusalRecord` with code `invalid_runtime_input`/`absent-key`, category
+/// refusal, fields `binding` (the population's identity) and `key` (`c9`),
+/// and `Locus::Region` over the span of the `lookup` expression, the
+/// function body's root. An evaluation whose location is `None` builds a
+/// record with no locus.
+#[test]
+#[trace("TC-428", "FR-096-AC-6")]
+fn a_refused_lookup_builds_a_record_at_the_lookup_expression() {
+    use qsl_forms::{DeclarationSpans, ExpressionSpans};
+    use qsl_foundation::diagnostic::{Category, Locus};
+    use qsl_foundation::source::provenance::SourceRegion;
+    use qsl_foundation::Span;
+
+    let scenario = scenario();
+    let source = qsl_semantics::check::fixture_source();
+    let whole = Span { start: 40, end: 66 };
+    let mut body_spans = ExpressionSpans::new(whole).unwrap();
+    let root = body_spans.root();
+    body_spans
+        .push_child(root, Span { start: 59, end: 60 })
+        .unwrap();
+    body_spans
+        .push_child(root, Span { start: 62, end: 63 })
+        .unwrap();
+    let function = FunctionDeclaration::new(
+        "G",
+        vec![
+            (
+                "p".to_owned(),
+                crate::support::type_form::type_form(&ValueType::Population(Some(3)))
+                    .with_arguments(vec![crate::support::type_form::named_type_form("M::A")]),
+            ),
+            (
+                "r".to_owned(),
+                crate::support::type_form::named_type_form("M::A"),
+            ),
+        ],
+        crate::support::type_form::named_type_form("M::A"),
+        None,
+        lookup(ValueType::Reference(scenario.a), AbsenceMode::Refused),
+    )
+    .with_spans(DeclarationSpans {
+        declaration: Span { start: 0, end: 70 },
+        body: body_spans,
+        measure: None,
+    })
+    .expect("the spans have the body's shape");
+    let package = CheckedPackage::link(
+        PackageDeclarations {
+            types: types(&scenario),
+            models: vec![scenario.model.clone()],
+            functions: vec![function],
+            ..PackageDeclarations::new(source.clone())
+        }
+        .check(CheckingLimits::default())
+        .expect("the unit checks"),
+    );
+    let world = objects(&scenario)
+        .with_population(scenario.binding.clone())
+        .unwrap();
+    let mut meter = Meter::new(SCALAR_UNLIMITED);
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified("G").unwrap(),
+            vec![
+                population_argument(&scenario),
+                Value::Reference(object_reference(&scenario.universe, &scenario.a, "c9")),
+            ],
+            &world,
+            &mut meter,
+        )
+        .expect("the call runs");
+
+    let record = evaluation
+        .refusal_record(package.graph())
+        .expect("a family refusal builds a record");
+    assert_eq!(
+        record.code(),
+        qsl_foundation::diagnostic::CatalogCode::new("invalid_runtime_input", "absent-key")
+    );
+    assert_eq!(record.category(), Category::Refusal);
+    let binding = scenario.binding.population_id().to_string();
+    assert_eq!(
+        record
+            .fields()
+            .iter()
+            .map(|(k, v)| (*k, v.as_str()))
+            .collect::<Vec<_>>(),
+        [("binding", binding.as_str()), ("key", "c9")]
+    );
+    assert_eq!(
+        record.locus(),
+        Some(&Locus::Region(SourceRegion::new(source, 40, 66).unwrap()))
+    );
+
+    let unlocated = Evaluation {
+        location: None,
+        ..evaluation
+    };
+    let record = unlocated
+        .refusal_record(package.graph())
+        .expect("a family refusal builds a record");
+    assert_eq!(record.locus(), None);
+}

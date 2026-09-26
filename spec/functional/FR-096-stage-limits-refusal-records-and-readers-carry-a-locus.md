@@ -297,12 +297,32 @@ Partly implemented under QSL-160.
   locus and catalog fields. The I2 reader builds one for its version
   refusal.
 
-Not implemented: `CatalogCoded::catalog_fields`, and the S6a record built
-from an `Evaluation` (AC-6 to AC-8, TC-428).
-`ModelRefusalCause::AbsentKey` carries the key but not the population
-binding, and `WrongSnapshotCause::WrongAnchor` carries neither anchor
-selection, so both causes still need the payload the key table names. The
-`CheckingLimits` ceilings that `Typer` (other than its depth stop),
-lowering and package checking reach still surface as a
-`CheckRefusal` located by its `check::Location`, not as a
-`LimitExceeded`.
+Implemented under QSL-245:
+
+- `CatalogCoded::catalog_fields` exists, and `CatalogCoded::refusal_record`
+  builds a `RefusalRecord` from a cause and a locus. `ProtocolClauseSnapshot`
+  carries `required`/`supplied` for `wrong-anchor` and `read` for
+  `forbidden-pre-read`, and `ModelRefusalCause::AbsentKey` carries the
+  `binding` beside its `key`, so `catalog_fields` reads the key table's keys
+  from the variant (AC-7).
+- `Evaluation::refusal_record` builds the record of a family refusal, with
+  `Evaluation.location` resolved by the checked package as its locus (AC-6).
+- `DeclarationRegions::limit_exceeded` gives every `CheckingLimits` stop a
+  package check returns (`Typer`'s node count and depth, lowering's and
+  package checking's input bytes and work) as a `LimitExceeded` carrying the
+  `Locus::Region` of `refusal_region`. The package check itself still
+  returns the `CheckRefusal` that `limit_exceeded` reads.
+
+Not implemented:
+
+- AC-8. A kernel `Outcome::Refused` builds no record: F has no map of a
+  kernel `Refusal` cause to a catalog code, and the catalog defines a code
+  for only `CardinalityOutOfBound` and `ForeignReference` of them (the
+  latter without a cause tag the kernel carries). `CheckedInvariant` maps to
+  `runtime_invariant`, whose category is internal failure, not refusal. This
+  requirement and ADR-013 O-17 do not say what code and cause each kernel
+  cause takes.
+- The key table has no row for the causes of `ModelQueryRefusal` other than
+  `absent-key`, for `LimitExceeded` and for the `qsl-route` and `qsl-replay`
+  causes; their `catalog_fields` return no fields until it does.
+- The embedded-document mapping of AC-1 (TC-426 step 3).

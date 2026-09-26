@@ -174,6 +174,12 @@ impl CatalogCoded for BoundRefusal {
             | Self::NoUnboundedDomain => CatalogCode::new("invalid_runtime_input", "invalid-value"),
         }
     }
+
+    /// FR-096's key table has no row for `invalid-value`; each variant
+    /// carries its own typed fields.
+    fn catalog_fields(&self) -> std::collections::BTreeMap<&'static str, String> {
+        std::collections::BTreeMap::new()
+    }
 }
 
 /// Writes the items of one request, giving each its own [`RequestIndex`] in

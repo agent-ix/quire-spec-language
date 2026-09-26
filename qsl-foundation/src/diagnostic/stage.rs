@@ -146,6 +146,13 @@ impl CatalogCoded for LimitExceeded {
     fn catalog_code(&self) -> CatalogCode {
         CatalogCode::new("stage_limit_exceeded", self.kind.catalog_cause())
     }
+
+    /// FR-096's key table has no row for a stage limit: its kind, bound and
+    /// actual counter are this value's own accessors, and its position is
+    /// its locus, so no field is repeated here.
+    fn catalog_fields(&self) -> std::collections::BTreeMap<&'static str, String> {
+        std::collections::BTreeMap::new()
+    }
 }
 
 #[cfg(test)]

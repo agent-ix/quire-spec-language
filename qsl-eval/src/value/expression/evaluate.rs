@@ -14,10 +14,10 @@ use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
     StateModelUndefined,
 };
-use qsl_foundation::diagnostic::InternalFault;
+use qsl_foundation::diagnostic::{InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
     Arithmetic, CheckedGraph, Connective, DispatchTable, Location, Node, NodeKind, OrderedKind,
-    RecordSlot, Scope, Slot, Visit, WrongSnapshotCause,
+    RecordSlot, Scope, Slot, Visit,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
@@ -67,6 +67,29 @@ pub struct Evaluation {
     /// The loss records of the operations a completed evaluation performed,
     /// in evaluation order; empty unless completed.
     pub losses: Vec<LocatedLoss>,
+}
+
+impl Evaluation {
+    /// FR-096, ADR-013 O-17: this evaluation's refusal as an O-17
+    /// [`RefusalRecord`]: the family cause's code and catalog fields, and,
+    /// as its locus, [`Self::location`] resolved by `graph`, the checked
+    /// package the evaluation ran. The locus is absent when the location is
+    /// `None` or names a tree not read from a source unit.
+    ///
+    /// `None` when the outcome is not a family refusal. A kernel
+    /// `Outcome::Refused` also gives `None`: F holds no map of the kernel
+    /// cause to a catalog code yet (FR-096-AC-8).
+    pub fn refusal_record(&self, graph: &CheckedGraph) -> Option<RefusalRecord> {
+        let FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) = &self.outcome else {
+            return None;
+        };
+        let locus = self
+            .location
+            .as_ref()
+            .and_then(|location| graph.region(location))
+            .map(Locus::Region);
+        Some(cause.refusal_record(locus))
+    }
 }
 
 /// Information one completed operation discarded.
@@ -550,9 +573,14 @@ impl<'a, 'm> Machine<'a, 'm> {
             // ADR-013 T-6, FR-090-AC-7: a `ProtocolClause` family-owned
             // refusal.
             Anchor::Pre => binding.pre_anchor().ok_or_else(|| {
-                Halt::Family(FamilyResult::Refused(Box::new(ProtocolClauseSnapshot(
-                    WrongSnapshotCause::WrongAnchor,
-                ))))
+                Halt::Family(FamilyResult::Refused(Box::new(
+                    // The pre anchor is required; the binding was admitted
+                    // with its post selection only (no `pre_anchor`).
+                    ProtocolClauseSnapshot::WrongAnchor {
+                        required: "pre",
+                        supplied: "post",
+                    },
+                )))
             }),
         }
     }
