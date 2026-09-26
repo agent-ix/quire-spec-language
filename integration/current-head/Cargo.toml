@@ -27,8 +27,8 @@ quire-spec-language = { path = "../..", default-features = false }
 qsl-foundation = { path = "../../qsl-foundation" }
 # Informational: the lane pins IR at 53cc03c6; quire-spec-language's root
 # `Cargo.toml` pins 48ab5dc2. The revs differ and the `[patch]` below overrides
-# both to the same current-head clone. Cargo refuses to `[patch]` a git source with a different
-# branch/rev of the *same* git URL ("points to the same source"); redirecting
+# both to the same current-head clone. Cargo refuses to `[patch]` a git source
+# with a different branch/rev of the *same* git URL ("points to the same source"); redirecting
 # to a local path clone of the current head, as this patch does, is Cargo's
 # supported mechanism for this ("prepare" below keeps that clone fresh).
 quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "53cc03c639e2e26528132d34d96dc56449df78e8" }
