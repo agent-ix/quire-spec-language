@@ -725,7 +725,7 @@ fn holds_int_0_9(written: &Value) -> bool {
 /// `result_type` is the Boolean type node, and whose `dependencies` do not
 /// list `f`; QSL's I2 read admits the package. `g::f(true)` refuses
 /// `ill_typed` at the argument, and a unit whose only call is `g::f(3)`
-/// holds no `Int[0, 9]` node.
+/// holds the `Int[0, 9]` node typing the argument's conversion.
 #[trace("FR-099-AC-5", "TC-446")]
 #[test]
 fn an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_reference() {
@@ -792,16 +792,14 @@ fn an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_refere
     assert_eq!(refusal.code(), Code::IllTyped);
     assert_eq!(covered(&source, &refusal), "true");
 
-    // `g::f(3)` checks. FR-099-AC-5 says its package holds no `Int[0, 9]`
-    // node; it does, as the type of the conversion that checks the argument
-    // `3` against `f`'s parameter, the same conversion a call of a local
-    // function writes. Reported against FR-099-AC-5, not asserted here.
-    assert!(holds_int_0_9(&wire(&alone)));
+    // `g::f(3)` checks, and its package holds the `Int[0, 9]` node typing
+    // the conversion of `3` to `f`'s parameter, as a local call writes.
     let source = unit(&format!(
         "{declaration}function p using v(): Boolean pure {{ g::f(3) }}\n"
     ));
-    compile_as("u", &source, &dependencies)
+    let three = compile_as("u", &source, &dependencies)
         .unwrap_or_else(|refusal| panic!("g::f(3) checks: {refusal}"));
+    assert!(holds_int_0_9(&wire(&three)));
 }
 
 /// FR-099-AC-5 (TC-446 step 5), refusals: a call of a library function

@@ -225,7 +225,7 @@ operational validation remains outside this audit-only plan.
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally (QSL-249) |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally (QSL-252) |
 | TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ Passed locally (QSL-5) for steps 1 to 6; step 6 (a predicate whose body calls another declared function, the QSL-22 Layer 3 exemplar's shape) added by QSL-257; step 7 (FR-098-AC-6, FR-098-AC-7, replay against dependencies) planned (QSL-255) |
-| TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Steps 1 to 6 pass locally (one step 5 result open); step 7 planned (QSL-255) |
+| TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Steps 1 to 6 pass locally (step 5's `g::f(3)` result amended, QSL-262); step 7 planned (QSL-255) |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

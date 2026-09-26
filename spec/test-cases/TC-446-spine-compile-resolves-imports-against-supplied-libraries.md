@@ -91,7 +91,8 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   `dependencies` do not list `f`. `g::f(true)` refuses `ill_typed` at the
   argument, and each of the four calls and the use `g::R` refuses
   `ill_typed`/`operator-ineligible` at the use. The `g::f(3)` unit's
-  package holds no `Int[0, 9]` type node.
+  package holds the `Int[0, 9]` type node typing the conversion of `3` to
+  `f`'s parameter, as a local call's does.
 - Step 6: `p`'s call node id and the package's `package_id` both differ
   from step 5's.
 - Step 7: stdout is exactly the bytes spine `compile` returns for step 5's
@@ -103,7 +104,6 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 
 Steps 1 to 6 pass locally (QSL-255 part b): `qsl-replay`
 `spine::dependency_tests`, and `qsl-cst` `an_import_digest_is_bare_lowercase_hex`
-for step 2's digest spellings. One step 5 result does not hold: the
-`g::f(3)` unit's package holds an `Int[0, 9]` node, the type of the
-argument's conversion to `f`'s parameter type (see FR-099 Status). Step 7
+for step 2's digest spellings. Step 5's `g::f(3)` result was amended to
+expect the `Int[0, 9]` conversion node (QSL-262). Step 7
 (the CLI `libraries` member, FR-027-AC-10) is planned.
