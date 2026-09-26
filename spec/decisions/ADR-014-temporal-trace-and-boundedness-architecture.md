@@ -233,6 +233,16 @@ domain:
 
 No unbounded domain gives `Bounded`. Otherwise the extent is `Bounded`.
 
+**Operation application claims.** A scalar operation application in a
+`Value` function body is a claim of its own (FR-057, FR-062 "Requirement
+records of a value function"). Its arguments are the function parameters
+its argument subtrees read, and its bound variables are the query, `count`,
+`sum`, `fold` and `reduce` binders they read. Each is a root keyed by its
+parameter node. A read of a `let` binder contributes the roots its bound
+value reads, and a literal contributes none, because a literal is one value
+and not a domain. So `x + 1` over `x: Int[0, 9]` is `Bounded`, and
+`n + 1` over `n: Integer` is `Unbounded` with one `Integer` domain at `n`.
+
 **Available finite bound.** For an item with extent `Unbounded`, a finite
 bound is available exactly when every domain in `domains` is boundable (the
 table's right column). QSL-140's O-20 request writer computes it and writes it
@@ -482,6 +492,12 @@ It does not touch `NativeModelProfile` or the native-v1 ceilings (B-6).
 
 Temporal atoms over state and protocol operations need the checked types of
 QSL-68 (#120) and QSL-21 (#218); atoms over values alone do not.
+
+**QSL-266** builds `requirements()` for the `Value` function declaration:
+one `value-validity` record per scalar operation application occurrence,
+with §4's operation-application extent (FR-062-AC-13), and the `route`
+request builder that turns a package's records into requested items
+(FR-075-AC-8).
 
 Both tickets settle their exit cases through `Registry::candidates`,
 CG `negotiate_*` (agent-ix/quire-contract-codegen#86, which reads the extent

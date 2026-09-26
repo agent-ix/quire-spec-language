@@ -45,10 +45,13 @@ The contract's six parts (ADR-012 §2):
    environment and limits are read-only, and through which only a
    work-budget meter, a diagnostic sink and a scope stack are mutable.
    `check` SHALL read no global or thread-local state.
-4. **Requirements.** A pure function of a checked node SHALL yield the node's
-   `Requirements` (its one capability kind, its declared extent, and any
-   authored bound) or, for a claim form with no FR-057 kind, SHALL yield no
-   `Requirements` value.
+4. **Requirements.** A pure function of a checked item SHALL yield one
+   `Requirements` value (its one capability kind, its declared extent, and
+   any authored bound) for each claim the item carries, each paired with the
+   checked site the claim covers: the item's own clause, or, for a `Value`
+   function declaration, each scalar operation application in its body
+   (FR-057's claim-form table). A claim form with no FR-057 kind SHALL
+   yield no `Requirements` value.
 5. **Structured outcome.** A family's `check` SHALL return the checked node,
    or a refusal carrying a family-owned typed cause that maps to a catalog
    code through one exhaustive function with no fallback arm; a `check` that
@@ -95,7 +98,10 @@ a family that sits out the stage SHALL have an explicit arm that returns
 
 - A checked node carrying a minted identity and, through the package's
   source map, provenance to its source occurrence.
-- A `Requirements` value, or none, for a checked node's own claim form.
+- A `Requirements` value for each claim a checked item carries, at the
+  checked site the claim covers, and none for a claim form with no kind.
+- The package's requirement records (`CheckedGraph::requirements`): one
+  per claim site occurrence, keyed by that occurrence's key (ADR-013 O-07).
 - A structured outcome: the checked node, a typed refusal, a limit outcome
   naming the exhausted budget, or an internal fault distinct from both.
 - For evaluation, on every family except `Relation`: an evaluated result or
@@ -175,6 +181,46 @@ occur; a package reader that later finds a declaration node with no body
 because emission stopped partway is evidence of a defect, not an admitted
 outcome.
 
+### Requirement records of a value function
+
+A `Value` function declaration carries one `value-validity` claim for each
+scalar operation application in its body (FR-057's claim-form table). A
+scalar operation application is an application node that FR-093 lowers from
+the function's checked body whose `operation.identity` is in one of these
+operation families: `quire.op.integer`, `quire.op.rational`,
+`quire.op.decimal`, `quire.op.ieee`, `quire.op.quantity`,
+`quire.op.numeric`, `quire.op.text` and `quire.op.enum`. Every other
+application (`let`, `if`, a Boolean connective, `quire.op.boolean.eq` and
+`.ne`, structural and reference equality, a projection, an option read, a
+call, a dispatch, a collection or model operation) carries no claim of its
+own.
+
+`check` SHALL record one requirement record for each `expression`
+occurrence of each scalar operation application node:
+
+- **Key.** The record's key is the occurrence key (application node id,
+  role `expression`, ordinal) that `check` records for that occurrence
+  (ADR-013 O-07, FR-093 "One node per checked expression"). Two
+  structurally identical applications are one node with two occurrences,
+  and so two records whose keys differ only in ordinal. Ordinals follow
+  source order (FR-093), so the records' bytewise key order, which is the
+  request order (ADR-012 §13.5), is independent of check order.
+- **Kind.** `value-validity`.
+- **Extent.** `ClaimExtent` by ADR-014 §4's extent rule over the
+  application's arguments and bound variables (ADR-014 §4 "Operation
+  application claims"): each function parameter and each bound variable
+  read anywhere in the application's argument subtrees contributes its
+  checked type, keyed by its parameter node; a read of a `let` binder
+  contributes what its bound value reads; a literal contributes nothing.
+  An application that reads no parameter or bound variable is `Bounded`.
+
+Each record is computed from the checked tree of its own occurrence, so two
+occurrences of one node each carry their own extent.
+
+No requirement record is dropped: a scalar operation application occurrence
+that `check` cannot key is `KeyFault::UnkeyableRequirements`, and the
+package does not check.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -182,7 +228,7 @@ outcome.
 | FR-062-AC-1 | The contract exposes exactly the six parts (identity, provenance, checked input, requirements, structured outcome, stage hooks) as one set of associated types and methods that a family implements once. A family implementation that omits the checked-input parameter type on `check`, the `requirements` method, the `package` hook, or the `evaluate` hook (for a family other than `Relation`) fails to compile. Identity and provenance are structural properties of the `Checked` node type and the package's source map, not separate trait items a family can individually omit; they are instead enforced behaviorally by FR-062-AC-2. A correct-looking implementation that instead defines its own free-standing `check`/`package`/`requirements`/`evaluate` functions with no shared associated-type binding does not satisfy this criterion. | Test (TC-160) |
 | FR-062-AC-2 | Given two parsed forms with identical structure checked into the same package, the checker mints one identity for both, and given the same node occurring twice in the source, the source map carries two distinct occurrence keys (identity, role, ordinal) for the one identity. Reordering the two source occurrences changes only their ordinal, never the identity. | Test (TC-160) |
 | FR-062-AC-3 | A family's `check` compiles with no path to global or thread-local state, and a test that mutates only the typing context's meter, diagnostic sink and scope stack observes those mutations reflected in the returned outcome; a test that constructs two typing contexts from the same resolved declarations and checks the same form through each produces identical checked output, showing no hidden shared mutable state. | Test (TC-160) |
-| FR-062-AC-4 | A claim form with no FR-057 capability kind yields no `Requirements` value from the pure requirements function, and a claim form with a kind yields exactly one `Requirements` value naming that kind; calling the requirements function twice on the same checked node yields equal values. | Test (TC-160) |
+| FR-062-AC-4 | A claim form with no FR-057 capability kind yields no `Requirements` value from the pure requirements function, and each claim with a kind yields exactly one `Requirements` value naming that kind at its checked site: a function declaration whose body is `b and c` over Boolean parameters yields none, and one whose body is `x + y` over `Int[0, 9]` parameters yields exactly one, `value-validity`, at the `+` application. Calling the requirements function twice on the same checked item yields equal values. | Test (TC-160) |
 | FR-062-AC-5 | A `check` that reaches a limit (input bytes, nesting depth, node count or work budget) returns a `Limit` outcome naming that limit kind, and a test asserts the returned value is not a refusal, not a checked node and not `Incomplete`; a family's `evaluate` hook that exhausts its meter budget returns `Incomplete`, and a test asserts neither `check` nor `package` ever returns `Incomplete` across the same fixture set. | Test (TC-160) |
 | FR-062-AC-6 | The `Relation` family has no evaluation hook, and S6a's input type admits no `Relation` node, so a `Relation` node never reaches evaluation and yields neither a panic, a silently omitted call, nor a successful evaluated result (FR-090-AC-4). Every other family's evaluation hook, invoked on a checked node built only from checked input, returns without reading any CST, token or display string (verified by a test double that panics if such an input is touched). | Test (TC-160) |
 | FR-062-AC-7 | Given a fixture nested to depth D (for example, function application nested D levels deep), checking it with the nesting-depth limit configured to D-1 returns a `Limit` outcome naming the nesting-depth limit. Checking the identical fixture with the limit configured to D, one greater and nothing else changed, does not return a nesting-depth `Limit` outcome. A test holds the fixture fixed and varies only the configured limit by exactly one, so the limit value, not the fixture's absolute size or the host's available stack, is shown to be the proximate cause of the refusal; this holds regardless of whether `check` walks the form by native recursion or by an explicit-stack iterative loop. | Test (TC-378) |
@@ -191,7 +237,7 @@ outcome.
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
 | FR-062-AC-11 | The package-wide `CheckingLimits` node budget is separate from the per-declaration `StageLimits::node_count` limit of FR-062-AC-5, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4, 128)` admits a package holding `a` alone; with `CheckingLimits::new(100, 128)` it admits a package holding both; with `CheckingLimits::new(4, 128)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
 | FR-062-AC-12 | A family `check` that reaches one of its four stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the depth the refused entry would reach for nesting depth, the measured preimage byte length for input bytes, the measured expression-node count for node count, and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
-| FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's per-item requirement records (ADR-012 §13.5, ADR-011 E7): one record per checked item that has `Requirements` from a family's pure requirements function, keyed by the item's occurrence key, not dropped after `check`. `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). `ValueFunctionFamily` requests no capability kind for a function declaration (FR-062-AC-4), so a package holding only functions carries none; the with-kind production case waits on a claim family (QSL-42, QSL-43). ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
+| FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site occurrence, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For value functions (this requirement's "Requirement records of a value function"), each over `Int[0, 9]` parameters unless stated: `-z` gives exactly one record, keyed by the `quire.op.integer.negate` node's `expression` occurrence, `value-validity`, `Bounded`; `x + y` gives one at the `quire.op.integer.add` node and `x = y` one at the `quire.op.integer.eq` node, each `Bounded`; `(x + 1) * (x + 1)` gives two records at the one `+` node, ordinals 0 and 1, and one at the `*` node; `n + 1` over `n: Integer` gives one record whose extent is `Unbounded` with one `Integer` domain keyed by `n`'s parameter node and the empty path; `let t = x + 1 in t * 2` gives a `*` record whose extent is `Bounded`, through `t`'s bound value; `1 + 1` gives one `Bounded` record; `b and c` over Boolean parameters gives none. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
 
 ## Dependencies
 
@@ -271,12 +317,12 @@ tags as they exist in the delivered code today:
   mutations reflected in the outcome -- remain untested. Owner: QSL-246.
 - FR-062-AC-4: partly backed (`TC-160`, QSL-140; ADR-014 §11 moved it
   from QSL-152). `FamilyContract::requirements` returns
-  `Option<Requirements>`. The no-kind clause is backed: `Value`'s function
-  declaration returns `None`, twice equal
-  (`qsl-eval/src/value/expression/family.rs`,
-  `a_function_declaration_has_no_requirements`). The with-kind clause is
-  pending QSL-42's first real claim family: no migrated family carries an
-  FR-057 kind yet, so no test can show one returning its own kind.
+  `Option<Requirements>`, one per declaration. The no-kind clause for a
+  declaration with no scalar operation application is backed:
+  `a_function_declaration_has_no_requirements`
+  (`qsl-eval/src/value/expression/family.rs`). The per-site shape and the
+  with-kind clause (a value function's scalar operation applications,
+  QSL-266) are not implemented. Owner: QSL-266.
 - FR-062-AC-5: backed at the hook level (`TC-160`, `qsl-eval/src/value/expression/
   family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`
   (QSL-166), which QSL-153 uses as `ValueFunctionFamily::check`'s and
@@ -404,26 +450,20 @@ tags as they exist in the delivered code today:
   (`qsl-eval/tests/it/total_functions.rs`). The test observes the stop as
   `Refused{ResourceExhausted}`; its `StageFailure::Limit` outcome, amended
   here, is ADR-013 §7 slice S-5b's (QSL-160, FR-096).
-- FR-062-AC-13: backed (`TC-160`), QSL-258:
-  `a_function_unit_carries_no_requirement_records`
-  (`qsl-semantics/src/check/mod.rs`, `tests`) exercises the shipped empty
-  case: `ValueFunctionFamily` is this crate's one shipped family and it
-  requests no capability kind (FR-062-AC-4), so there is no shipped
-  non-empty `CheckedGraph::requirements` case yet. The keying mechanism
-  itself -- an item never silently dropped, and two items sharing one
-  identity each landing on a distinct occurrence key (ADR-013 O-07) -- is
-  backed directly by `key_requirements_tests` (`qsl-semantics/src/check/
-  mod.rs`, `tests`), a hand-built-`OccurrenceMap` unit-test module in the
-  same style as `check::identity`'s own clause-identity mechanism test
-  (this crate has no real clause syntax yet, FR-088-CON-1). Owner of the
-  with-kind production case: QSL-42/QSL-43, same as AC-4's own pending
-  clause.
+- FR-062-AC-13: partly backed (`TC-160`), QSL-258. The keying mechanism
+  -- an item never silently dropped, and two items sharing one identity
+  each landing on a distinct occurrence key (ADR-013 O-07) -- is backed by
+  `key_requirements_tests` (`qsl-semantics/src/check/mod.rs`, `tests`).
+  `a_function_unit_carries_no_requirement_records` asserts the empty map
+  QSL-258 shipped, which QSL-266's value-function records replace. The
+  value-function records (keyed by each scalar operation application's
+  `expression` occurrence) are not implemented. Owner: QSL-266.
 
-Six of this requirement's thirteen Acceptance Criteria are backed (AC-2,
-AC-5, AC-7, AC-8, AC-12 and AC-13); four (AC-3, AC-4, AC-6, AC-11) are
+Five of this requirement's thirteen Acceptance Criteria are backed (AC-2,
+AC-5, AC-7, AC-8 and AC-12); five (AC-3, AC-4, AC-6, AC-11, AC-13) are
 partly backed, each for the specific clause named in its own row above --
-AC-4's by QSL-140 (PR #435): the no-kind clause, backed; the with-kind
-clause, pending QSL-42. AC-1, AC-9 and AC-10 are unbacked. AC-1's
+AC-4's no-kind clause by QSL-140 (PR #435), and AC-4's with-kind clause and
+AC-13's value-function records owned by QSL-266. AC-1, AC-9 and AC-10 are unbacked. AC-1's
 `requirements` half is owned by QSL-140 the same way; its `package` half,
 and AC-9 entirely, are owned by QSL-242, filed to replace the
 QSL-16/QSL-143 references PR #262 had pointed at. AC-10 is unbacked

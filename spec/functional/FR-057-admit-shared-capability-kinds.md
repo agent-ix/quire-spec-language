@@ -159,11 +159,15 @@ affect admission of the other pairs.
 The QSL composed linker SHALL record for each requested item exactly one
 kind: the kind the FR-290 claim-form assignment table gives its clause's own
 claim form. The QSL composed linker SHALL record no kind for an expression
-nested in a clause, such as a function application or a `case` expression:
+nested in a clause, such as a function application or a `case` expression.
+A `Value` function declaration carries no clause; each scalar operation
+application in its body is one claim of its own, its value validity
+(FR-062 "Requirement records of a value function"):
 
 | Claim form | Kind |
 | --- | --- |
 | Boolean clause over pure expressions, including function application (#217) | `value-validity` |
+| Scalar operation application in a `Value` function body (FR-062): the application is defined and its result lies in its result type, for every assignment of the parameters and bound variables it reads | `value-validity`, one claim per occurrence |
 | Clause containing a `case` expression over a sum type | `value-validity` |
 | `case` exhaustiveness obligation | none; language admission discharges it (quire-specification FR-146), and an unproved obligation refuses as `undefined_expression`/`unproved-exhaustiveness` |
 | Operation precondition, postcondition or invariant | `operation-contract` |
@@ -353,7 +357,7 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-6 | Given settled dispositions in which one item is `unsupported` for an empty candidate set and one is `supported`, routing routes only the `supported` item. The `unsupported` item gets no target and no artifact, and is not turned into a refusal or a hold. The other item routes without delay. | Test (TC-155) |
 | FR-057-AC-7 | The QSL source tree defines one type carrying capability-kind labels, and no other type parses or emits an FR-290 label. | Test (TC-153) |
 | FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. A registration repeating an already-held identity with an equal descriptor is not refused; with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused `invalid_capability`/`duplicate-backend` and the held registration is withdrawn (FR-075-AC-4, FR-075-AC-7). Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
-| FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item; a nested expression adds no kind; a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153) |
+| FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item; an expression nested in a clause adds no kind; a scalar operation application in a `Value` function body requests `value-validity` once per occurrence (FR-062-AC-13); a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153, TC-160) |
 | FR-057-AC-11 | Each kind is applicable to exactly the family this requirement's applicability table gives it. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration is an inapplicable capability naming the state family, and its declaration's body still reaches its family checker. | Test (TC-115) |
 
 ## Dependencies
