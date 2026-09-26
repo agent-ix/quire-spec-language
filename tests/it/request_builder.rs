@@ -119,7 +119,7 @@ fn tc_449_one_item_per_record_in_key_order() {
         assert_eq!(item.extent(), ExtentClassification::Bounded);
         assert_eq!(item.unbounded(), []);
         assert_eq!(item.result_bound(), record.result_bound().node());
-        assert_eq!(candidates(item), [kani.clone()]);
+        assert_eq!(candidates(item), std::slice::from_ref(&kani));
     }
     let keys: Vec<_> = items.iter().map(RequirementItem::occurrence).collect();
     assert!(keys.windows(2).all(|pair| pair[0] < pair[1]), "{keys:?}");
