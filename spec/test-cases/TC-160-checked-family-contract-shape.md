@@ -67,6 +67,15 @@ Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9 and FR-062-AC-13.
    a checked node.
 10. Check a package holding only function declarations and read
     `CheckedGraph::requirements`.
+11. Over a hand-built `OccurrenceMap` (this crate has no real clause syntax
+    yet, FR-088-CON-1, so this is exercised the same way `check::identity`'s
+    own clause-identity mechanism test is): key two distinct identities,
+    each with one recorded occurrence and one requested `Requirements`; key
+    one identity with a requested `Requirements` and no recorded occurrence;
+    key an index whose `Requirements` is requested but whose identity is
+    `None`; key one identity shared by two indices, each with its own
+    requested `Requirements`, over two recorded occurrences of that
+    identity.
 
 ## Expected Results
 
@@ -97,3 +106,8 @@ Scope: FR-062-AC-1 through FR-062-AC-7, FR-062-AC-9 and FR-062-AC-13.
   panicking, showing no CST, token or display string was read.
 - Step 10: the returned map is empty, since a function declaration requests
   no FR-057 capability kind (FR-062-AC-4).
+- Step 11: the two distinct identities each key to their own occurrence key;
+  the identity with no recorded occurrence, and the `None` identity, each
+  return `KeyFault::UnkeyableRequirements` rather than an omission from the
+  map; the one shared identity's two indices key to two distinct occurrence
+  keys, one per recorded occurrence.

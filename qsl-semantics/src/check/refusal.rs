@@ -408,6 +408,12 @@ pub enum KeyFault {
     /// A family `check` reported a stage limit of a kind no checking limit
     /// names (a token, edge, occurrence or diagnostic count).
     UncheckedLimitKind(LimitKind),
+    /// A checked item's `Requirements` (ADR-012 §13.5) could not be keyed
+    /// by occurrence: either its identity never got minted, or its
+    /// identity was minted but has fewer recorded occurrences than the
+    /// number of items sharing it. `Requirements` are never silently
+    /// dropped.
+    UnkeyableRequirements,
 }
 
 impl KeyFault {
@@ -430,6 +436,7 @@ impl KeyFault {
             Self::DuplicateModelSelection(_) => "one-model-version-per-identity",
             Self::NonCanonicalNominal(_) => "nominal-preimage-canonical",
             Self::UncheckedLimitKind(_) => "family-limit-is-a-checking-limit",
+            Self::UnkeyableRequirements => "requirements-item-keyed",
         }
     }
 }

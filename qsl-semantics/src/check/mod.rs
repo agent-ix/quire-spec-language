@@ -107,9 +107,10 @@ pub(crate) use check::{Signature, Signatures};
 use facts::Definedness;
 use quire_exact::Identifier;
 
-use crate::family::FamilyContract;
+use crate::family::{FamilyContract, Requirements};
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use qsl_foundation::diagnostic::{Locus, StageFailure};
+use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::ValueType;
 
 pub use check::Scope;
@@ -306,8 +307,7 @@ pub struct CheckedGraph {
     /// records -- one per checked item that has `Requirements`, keyed by
     /// the item's occurrence key. Read through [`Self::requirements`], the
     /// candidate step's own input (`qsl-route`), not dropped after `check`.
-    requirements:
-        BTreeMap<qsl_foundation::source::provenance::OccurrenceKey, crate::family::Requirements>,
+    requirements: BTreeMap<OccurrenceKey, Requirements>,
     /// ADR-013 O-04/FR-088-AC-2: the model correspondence this package's own
     /// checking recorded, read only through [`Self::resolve_declaration`] --
     /// a node-id-keyed accessor, never a name-keyed one (R-06). FR-094:
@@ -746,7 +746,7 @@ impl PackageDeclarations {
         // against the lowered identities once those are minted, to key each
         // `Requirements` by its declaration's occurrence (`requirements`,
         // below).
-        let mut requirements_per_index: Vec<Option<crate::family::Requirements>> =
+        let mut requirements_per_index: Vec<Option<Requirements>> =
             Vec::with_capacity(self.functions.len());
         // QSL-148: identity, the real typing/definedness verdict and one
         // success diagnostic are all produced through one call into the
@@ -1054,14 +1054,22 @@ impl PackageDeclarations {
         for (node, declaration) in correspondence {
             model_correspondence.record(node, declaration);
         }
-        // ADR-012 §13.5, ADR-011 E7: each admitted declaration's
-        // `Requirements`, by its now-minted node identity.
-        let requirements_by_identity: BTreeMap<quire_exact::NodeKey, crate::family::Requirements> =
-            identities
-                .iter()
-                .zip(&requirements_per_index)
-                .filter_map(|(identity, requirements)| Some(((*identity)?, requirements.clone()?)))
-                .collect();
+        // ADR-012 §13.5, ADR-011 E7: exactly one record per checked item
+        // that has `Requirements`, keyed by the item's occurrence key
+        // (ADR-013 O-07). `ValueFunctionFamily` requests none
+        // (FR-062-AC-4), so this is empty until a claim family ships
+        // (QSL-42, QSL-43). `key_requirements` never drops a requested
+        // item's `Requirements` silently: a check-time invariant break (an
+        // item whose identity never got minted, or whose identity was
+        // minted but has fewer recorded occurrences than the number of
+        // items sharing it) is a fault, not an omission.
+        let requirements = key_requirements(&identities, requirements_per_index, &occurrences)
+            .map_err(|fault| {
+                vec![CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::InternalFault(Box::new(fault)),
+                }]
+            })?;
         let functions = CheckedFunctions::new(
             drafts
                 .into_iter()
@@ -1078,31 +1086,6 @@ impl PackageDeclarations {
                 })
                 .collect(),
         );
-        // ADR-012 §13.5: exactly one record per checked item that has
-        // `Requirements`, keyed by the item's occurrence key (ADR-013 O-07)
-        // -- here, its declaration occurrence, the only occurrence a
-        // function's identity is requested over. `ValueFunctionFamily`
-        // requests none (FR-062-AC-4), so this is empty until a claim
-        // family ships (QSL-42, QSL-43).
-        let requirements: BTreeMap<
-            qsl_foundation::source::provenance::OccurrenceKey,
-            crate::family::Requirements,
-        > = occurrences
-            .iter()
-            .filter_map(|(node, origin, _location)| {
-                if origin.role().as_str() != "declaration" {
-                    return None;
-                }
-                let requirements = requirements_by_identity.get(&node)?.clone();
-                Some((
-                    qsl_foundation::source::provenance::OccurrenceKey::new(
-                        qsl_foundation::digest::WireNodeId::from_digest(*node.as_bytes()),
-                        origin,
-                    ),
-                    requirements,
-                ))
-            })
-            .collect();
         Ok(CheckedGraph {
             source,
             scope,
@@ -1119,6 +1102,59 @@ impl PackageDeclarations {
             model_selections,
         })
     }
+}
+
+/// ADR-012 §13.5, ADR-011 E7: key each index's `Requirements` (`per_index`)
+/// by the occurrence key of an occurrence `occurrences` recorded for that
+/// index's own identity (`identities`, index-aligned with `per_index`).
+///
+/// Two indices whose identity is equal (structurally identical content,
+/// ADR-013 O-04) share one node id but keep distinct occurrence keys,
+/// ADR-013 O-07's own disambiguation: each is matched to one of that
+/// identity's own recorded occurrences, in the order `occurrences` gives
+/// them (ascending by role, each role in ordinal order), so the first index
+/// to request one gets the first occurrence.
+///
+/// An item is never silently dropped: an index whose `Requirements` is
+/// `Some` but whose identity is `None` (the item was omitted before an
+/// identity was minted), or whose identity has fewer recorded occurrences
+/// than the number of indices sharing it, is `KeyFault::UnkeyableRequirements`,
+/// not an absence from the returned map.
+fn key_requirements(
+    identities: &[Option<quire_exact::NodeKey>],
+    per_index: Vec<Option<Requirements>>,
+    occurrences: &family::OccurrenceMap<Location>,
+) -> Result<BTreeMap<OccurrenceKey, Requirements>, KeyFault> {
+    let mut by_identity: BTreeMap<quire_exact::NodeKey, Vec<Requirements>> = BTreeMap::new();
+    for (index, requirements) in per_index.into_iter().enumerate() {
+        let Some(requirements) = requirements else {
+            continue;
+        };
+        let Some(identity) = identities.get(index).copied().flatten() else {
+            return Err(KeyFault::UnkeyableRequirements);
+        };
+        by_identity.entry(identity).or_default().push(requirements);
+    }
+    let mut keyed = BTreeMap::new();
+    for (identity, requested) in by_identity {
+        let mut origins = occurrences
+            .iter()
+            .filter(|(node, _, _)| *node == identity)
+            .map(|(_, origin, _)| origin);
+        for requirements in requested {
+            let Some(origin) = origins.next() else {
+                return Err(KeyFault::UnkeyableRequirements);
+            };
+            keyed.insert(
+                OccurrenceKey::new(
+                    qsl_foundation::digest::WireNodeId::from_digest(*identity.as_bytes()),
+                    origin,
+                ),
+                requirements,
+            );
+        }
+    }
+    Ok(keyed)
 }
 
 impl CheckedGraph {
@@ -1319,14 +1355,10 @@ impl CheckedGraph {
     /// This package's per-item requirement records (ADR-012 §13.5, ADR-011
     /// E7): one per checked item that has `Requirements`, keyed by the
     /// item's occurrence key. `qsl-route`'s candidate step reads these from
-    /// the in-process `CheckedPackage` (`qsl_package::CheckedPackage::
-    /// requirements`, which delegates here); `ValueFunctionFamily` requests
-    /// none (FR-062-AC-4), so this is empty until a claim family ships
-    /// (QSL-42, QSL-43).
-    pub fn requirements(
-        &self,
-    ) -> &BTreeMap<qsl_foundation::source::provenance::OccurrenceKey, crate::family::Requirements>
-    {
+    /// the in-process `CheckedPackage` through `CheckedPackage::graph().
+    /// requirements()`; `ValueFunctionFamily` requests none (FR-062-AC-4),
+    /// so this is empty until a claim family ships (QSL-42, QSL-43).
+    pub fn requirements(&self) -> &BTreeMap<OccurrenceKey, Requirements> {
         &self.requirements
     }
 
@@ -1740,6 +1772,102 @@ mod tests {
             graph.requirements().is_empty(),
             "a function requests no capability kind, so it has no requirement record"
         );
+    }
+
+    /// `key_requirements` unit tests (MED-2, #454 review): this crate's
+    /// only shipped family requests no capability kind (FR-062-AC-4), so
+    /// there is no production non-empty case to drive these through
+    /// `PackageDeclarations::check` -- exactly like
+    /// `check::identity::clause_occurrence_keys_disambiguate_structurally_identical_clauses`,
+    /// these build a real `OccurrenceMap` by hand instead.
+    mod key_requirements_tests {
+        use super::*;
+
+        fn req() -> Requirements {
+            Requirements::new(
+                Capability::ValueValidity,
+                crate::family::ClaimExtent::Bounded,
+            )
+        }
+
+        /// (a) Two functions, each with its own identity and its own
+        /// recorded occurrence, each land on their own occurrence key.
+        #[trace("FR-062-AC-13", "TC-160")]
+        #[test]
+        fn two_functions_each_land_on_their_own_occurrence_key() {
+            let a = quire_exact::NodeKey::from_digest([1; 32]);
+            let b = quire_exact::NodeKey::from_digest([2; 32]);
+            let mut occurrences = family::OccurrenceMap::default();
+            let a_origin =
+                occurrences.record(a, "declaration", root(crate::check::Origin::Expression));
+            let b_origin =
+                occurrences.record(b, "declaration", root(crate::check::Origin::Expression));
+            let identities = [Some(a), Some(b)];
+            let per_index = vec![Some(req()), Some(req())];
+            let keyed = key_requirements(&identities, per_index, &occurrences)
+                .expect("both identities have one occurrence each");
+            assert_eq!(keyed.len(), 2);
+            assert!(keyed.contains_key(&OccurrenceKey::new(
+                qsl_foundation::digest::WireNodeId::from_digest(*a.as_bytes()),
+                a_origin,
+            )));
+            assert!(keyed.contains_key(&OccurrenceKey::new(
+                qsl_foundation::digest::WireNodeId::from_digest(*b.as_bytes()),
+                b_origin,
+            )));
+        }
+
+        /// (b) A minted identity with no recorded occurrence faults instead
+        /// of silently dropping its `Requirements`.
+        #[trace("FR-062-AC-13", "TC-160")]
+        #[test]
+        fn a_node_with_no_recorded_occurrence_faults_instead_of_dropping() {
+            let a = quire_exact::NodeKey::from_digest([3; 32]);
+            let occurrences: family::OccurrenceMap<Location> = family::OccurrenceMap::default();
+            let identities = [Some(a)];
+            let per_index = vec![Some(req())];
+            assert_eq!(
+                key_requirements(&identities, per_index, &occurrences),
+                Err(KeyFault::UnkeyableRequirements)
+            );
+        }
+
+        /// An index whose `Requirements` is `Some` but whose identity never
+        /// got minted (`None`) faults the same way: never dropped.
+        #[trace("FR-062-AC-13", "TC-160")]
+        #[test]
+        fn a_dropped_identity_faults_instead_of_dropping_its_requirements() {
+            let occurrences: family::OccurrenceMap<Location> = family::OccurrenceMap::default();
+            let identities = [None];
+            let per_index = vec![Some(req())];
+            assert_eq!(
+                key_requirements(&identities, per_index, &occurrences),
+                Err(KeyFault::UnkeyableRequirements)
+            );
+        }
+
+        /// (c) Two indices that share one identity (structurally identical
+        /// content, ADR-013 O-04) each still land on a distinct occurrence
+        /// key: ADR-013 O-07's own disambiguation, exercised here exactly
+        /// as `check::identity`'s own clause-identity unit test exercises
+        /// it, over a hand-built `OccurrenceMap` (this crate has no real
+        /// clause syntax yet, FR-088-CON-1).
+        #[trace("FR-062-AC-13", "TC-160")]
+        #[test]
+        fn two_identical_items_give_two_distinct_keys() {
+            let shared = quire_exact::NodeKey::from_digest([4; 32]);
+            let mut occurrences = family::OccurrenceMap::default();
+            let first =
+                occurrences.record(shared, "clause", root(crate::check::Origin::Expression));
+            let second =
+                occurrences.record(shared, "clause", root(crate::check::Origin::Expression));
+            assert_ne!(first, second, "one identity, two distinct occurrence keys");
+            let identities = [Some(shared), Some(shared)];
+            let per_index = vec![Some(req()), Some(req())];
+            let keyed = key_requirements(&identities, per_index, &occurrences)
+                .expect("the shared identity has two recorded occurrences");
+            assert_eq!(keyed.len(), 2);
+        }
     }
 
     /// ADR-013 O-07 (FR-322): every node of a checked package's semantic

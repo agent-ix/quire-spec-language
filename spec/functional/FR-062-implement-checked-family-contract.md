@@ -191,7 +191,7 @@ outcome.
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
 | FR-062-AC-11 | The package-wide `CheckingLimits` node budget is separate from the per-declaration `StageLimits::node_count` limit of FR-062-AC-5, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4, 128)` admits a package holding `a` alone; with `CheckingLimits::new(100, 128)` it admits a package holding both; with `CheckingLimits::new(4, 128)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
 | FR-062-AC-12 | A family `check` that reaches one of its four stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the depth the refused entry would reach for nesting depth, the measured preimage byte length for input bytes, the measured expression-node count for node count, and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
-| FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's per-item requirement records (ADR-012 §13.5, ADR-011 E7): one record per checked item that has `Requirements` from a family's pure requirements function, keyed by the item's occurrence key, not dropped after `check`. `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). `ValueFunctionFamily` requests no capability kind for a function declaration (FR-062-AC-4), so a package holding only functions carries none. | Test (TC-160) |
+| FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's per-item requirement records (ADR-012 §13.5, ADR-011 E7): one record per checked item that has `Requirements` from a family's pure requirements function, keyed by the item's occurrence key, not dropped after `check`. `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). `ValueFunctionFamily` requests no capability kind for a function declaration (FR-062-AC-4), so a package holding only functions carries none; the with-kind production case waits on a claim family (QSL-42, QSL-43). ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
 
 ## Dependencies
 
@@ -406,11 +406,18 @@ tags as they exist in the delivered code today:
   here, is ADR-013 §7 slice S-5b's (QSL-160, FR-096).
 - FR-062-AC-13: backed (`TC-160`), QSL-258:
   `a_function_unit_carries_no_requirement_records`
-  (`qsl-semantics/src/check/mod.rs`, `tests`). Only the empty case is
-  exercised: `ValueFunctionFamily` is this crate's one shipped family and
-  it requests no capability kind (FR-062-AC-4), so there is no shipped
-  non-empty `CheckedGraph::requirements` case to test yet. Owner of the
-  with-kind case: QSL-42/QSL-43, same as AC-4's own pending clause.
+  (`qsl-semantics/src/check/mod.rs`, `tests`) exercises the shipped empty
+  case: `ValueFunctionFamily` is this crate's one shipped family and it
+  requests no capability kind (FR-062-AC-4), so there is no shipped
+  non-empty `CheckedGraph::requirements` case yet. The keying mechanism
+  itself -- an item never silently dropped, and two items sharing one
+  identity each landing on a distinct occurrence key (ADR-013 O-07) -- is
+  backed directly by `key_requirements_tests` (`qsl-semantics/src/check/
+  mod.rs`, `tests`), a hand-built-`OccurrenceMap` unit-test module in the
+  same style as `check::identity`'s own clause-identity mechanism test
+  (this crate has no real clause syntax yet, FR-088-CON-1). Owner of the
+  with-kind production case: QSL-42/QSL-43, same as AC-4's own pending
+  clause.
 
 Six of this requirement's thirteen Acceptance Criteria are backed (AC-2,
 AC-5, AC-7, AC-8, AC-12 and AC-13); four (AC-3, AC-4, AC-6, AC-11) are
