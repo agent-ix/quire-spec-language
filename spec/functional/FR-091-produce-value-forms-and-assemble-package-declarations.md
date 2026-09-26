@@ -538,7 +538,11 @@ unit's declarations and dispatches `function`, `type`, `record` and `tuple`
 to the `Value` builder (`qsl-forms/src/value.rs`), which maps every row of
 the expression table with each node's span, refuses the listed
 unrepresented constructs, and bounds its depth. The forms
-`FunctionDeclaration` carries its `using` alias. The assembler is
+`FunctionDeclaration` carries its `using` alias. The assembler records each
+resolved selection in `PackageDeclarations::function_selections`
+(FR-091-AC-22). A bare `Float32` or `Float64` is admitted by S1 and builds a
+type form with no rounding mode (FR-091-AC-23). No `match` over `Production`
+in `qsl-forms` has a `_` arm (FR-091-AC-11). The assembler is
 `PackageDeclarations::assemble` (`qsl-semantics/src/check/assemble.rs`). It
 resolves aliases, records, tuples and function signatures, mints each
 record's and tuple's handle over the unit's `SourceOwner`, records the span
@@ -546,13 +550,11 @@ of each declared type's name for FR-096, and reports every error it finds.
 
 Remaining work:
 
-- FR-091-AC-23: `qsl-cst` still requires `[mode]` on `Float32` and
-  `Float64`, so a bare floating type does not reach S2.
-- FR-091-AC-22: the assembler checks each `using` alias against the unit's
-  profile selections but does not record the resolved selection, since
-  nothing reads one yet.
-- FR-091-AC-11 (TC-398 step 3): the builder's production match refuses any
-  non-expression production through a `_` arm (`UnexpectedShape`).
+- FB-13 (QSL-141): `enum`, `ordered enum`, `predicate`, `dimension` and
+  `unit` declarations still refuse `NoDispatchEntry` (FR-091-AC-6). Their
+  parsed-form types, the assembler wiring of `EnumDeclaration::admit` and
+  `UnitGraph::admit`, and the retained unit and dimension preimages
+  (QSL-238, QSL-64) land with the post-G2 M-6 lanes.
 - `ValueType::Float` still holds only an `IeeeWidth`; the assembler refuses
   every floating type (FR-091-AC-19) rather than resolving one.
 

@@ -275,7 +275,7 @@ fn records_and_tuples_are_keyed_over_the_units_owner() {
     assert_ne!(other.2, first.2);
 }
 
-#[trace("FR-091-AC-19", "TC-405")]
+#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]
 #[test]
 fn floating_and_reference_types_are_refused() {
     let (text, found) =
@@ -294,6 +294,18 @@ fn floating_and_reference_types_are_refused() {
     assert_eq!(
         found[0].cause.catalog_code().to_string(),
         "unknown_required_feature/unsupported-feature"
+    );
+    let (text, found) = errors("function h using v(x: Float64): Boolean pure { true }");
+    assert_eq!(
+        found,
+        [AssemblyError {
+            cause: AssemblyCause::FloatingType {
+                width: IeeeWidth::Binary64,
+                rounding: RoundingMode::Exact,
+                profile: Some("v".into()),
+            },
+            span: last(&text, "Float64"),
+        }]
     );
     let (text, found) = errors("function g using v(r: Reference<M::T>): Boolean pure { true }");
     assert_eq!(
@@ -412,6 +424,11 @@ fn using_aliases_resolve_to_the_units_profile_selections() {
             .map(|using| using.alias.as_str()),
         Some("v")
     );
+    let selection = package
+        .function_selections
+        .get(&0)
+        .expect("f's alias resolved to a recorded selection");
+    assert_eq!(selection.alias, "v");
     let (text, found) = errors(
         "function f using v(): Boolean pure { true }\n\
          function g using w(): Boolean pure { true }",
