@@ -41,19 +41,27 @@ impl<'a> RunSelection<'a> {
         Ok(Self::Native(request))
     }
 
+    /// `source` is the program source, already read by the caller (FND-011:
+    /// a selected package's own construction does not read `program.source`
+    /// a second time). The extraction arm threads it through the same way
+    /// (FND-014): `Selected::compile` no longer re-reads `program.source`
+    /// itself.
     pub fn compile<'model>(
         self,
         intake: &mut Intake<'_>,
         models: &'model [NativeModel],
+        source: FormalSource,
     ) -> Result<RunPackage<'model>> {
         match self {
             Self::Native(request) => Ok(RunPackage::Native(Box::new(match &request.package {
-                Some(selected) => selected_package(intake, selected, &request.program, models)?,
-                None => package(intake, &request.program, models)?,
+                Some(selected) => {
+                    selected_package(intake, selected, &request.program, models, source)?
+                }
+                None => package_of(source, &request.program, models)?,
             }))),
             #[cfg(feature = "quire-extraction")]
             Self::Extracted(selected) => Ok(RunPackage::Extracted(Box::new(
-                selected.compile(intake, models)?,
+                selected.compile(models, source)?,
             ))),
         }
     }
@@ -113,8 +121,13 @@ pub(super) fn package_of<'model>(
 }
 
 fn bindings(source: FormalSource, program: &wire::Program) -> Result<CheckBindings> {
-    let clauses = program
-        .clauses
+    // FR-026: a `0-draft` program's `clauses` is required (a `1-draft`
+    // program never reaches native package construction: `run_complete`/
+    // `complete` refuse it before either ever calls this).
+    let Some(clauses) = &program.clauses else {
+        return Err(RunCause::MissingClauses);
+    };
+    let clauses = clauses
         .iter()
         .map(wire::Binding::bind)
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -126,9 +139,9 @@ pub(super) fn selected_package<'model>(
     selected: &wire::SelectedPackage,
     program: &wire::Program,
     models: &'model [NativeModel],
+    source: FormalSource,
 ) -> Result<NativePackage<'model>> {
     let expected = NativePackageRef::new(selected.digest.parse()?);
-    let source = intake.source(&program.source)?;
     let bindings = bindings(source, program)?;
     let limits = PackageReadLimits::default();
     let bytes = intake.file(&selected.file, limits.package.artifact_bytes)?;

@@ -31,6 +31,8 @@ use sha2::{Digest as _, Sha256};
 use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
+mod golden;
+
 /// The unit the fixture packages are read from; every occurrence's region is
 /// the whole of it.
 const TEXT: &[u8] = b"function t using v(): Boolean pure { if true then true else true }";
