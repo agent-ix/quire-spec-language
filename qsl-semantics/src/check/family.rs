@@ -2914,6 +2914,113 @@ pub(crate) mod checking_tests {
         );
     }
 
+    /// FR-062-AC-5 third clause, `check` half (TC-160 step 6): across one
+    /// fixture set, `check` returns a checked node, a typed refusal or a
+    /// `Limit` outcome, and never `Incomplete`. The fixture set has one
+    /// admitted declaration, one refused declaration and one declaration
+    /// that reaches each of the four stage-entry limits; the last, a
+    /// work-budget denial, is the meter state that makes `evaluate` return
+    /// `Incomplete`, so `check` is shown to answer the same exhausted meter
+    /// with a `Limit`. `classify` matches `CheckOutcome` and `StageFailure`
+    /// with no wildcard arm: a variant added to either, such as an
+    /// `Incomplete`, stops this test compiling until `classify` says what
+    /// `check` does with it, and the exact expected classification per
+    /// fixture fails if `check` mapped any of them to something else.
+    #[trace("TC-160", "FR-062-AC-5")]
+    #[test]
+    fn check_never_returns_incomplete_across_the_fixture_set() {
+        #[derive(Debug, Eq, PartialEq)]
+        enum Seen {
+            Checked,
+            Refused,
+            Limit(LimitKind),
+        }
+        fn classify(
+            outcome: crate::family::CheckOutcome<CheckedDeclaration, CheckRefusal>,
+        ) -> Seen {
+            match outcome {
+                Ok(staged) => {
+                    let _checked = staged.into_value();
+                    Seen::Checked
+                }
+                Err(StageFailure::Refused(_)) => Seen::Refused,
+                Err(StageFailure::Limit(exceeded)) => Seen::Limit(exceeded.kind()),
+            }
+        }
+        let scope = empty_scope();
+        let location = root_location();
+        let own_signature = declaration_signature("f");
+        let signatures = Signatures::default();
+        let declarations = declarations_for(
+            &scope,
+            &signatures,
+            &own_signature,
+            &[],
+            CheckingLimits::default(),
+            &location,
+        );
+        let roomy = StageLimits {
+            nesting_depth: 128,
+            input_bytes: u64::MAX,
+            node_count: u64::MAX,
+        };
+        let seen = |form: &FunctionDeclaration, stage: StageLimits, work_units: u64| {
+            let mut meter = Meter::new(quire_exact::ScalarLimits {
+                work_units,
+                ..SCALAR_LIMITS_UNLIMITED
+            });
+            let mut diagnostics = DiagnosticSink::default();
+            let mut scopes = ScopeStack::default();
+            let mut cx = CheckContext::new(
+                &declarations,
+                stage,
+                &mut meter,
+                &mut diagnostics,
+                &mut scopes,
+            );
+            classify(ValueFunctionFamily::check(form, &mut cx))
+        };
+        let good = declaration("f", Expression::Boolean(true));
+        let ill_typed = declaration("f", Expression::Integer(quire_exact::Integer::from(1_i64)));
+        let unlimited = SCALAR_LIMITS_UNLIMITED.work_units;
+        assert_eq!(seen(&good, roomy, unlimited), Seen::Checked);
+        assert_eq!(seen(&ill_typed, roomy, unlimited), Seen::Refused);
+        assert_eq!(
+            seen(
+                &good,
+                StageLimits {
+                    nesting_depth: 0,
+                    ..roomy
+                },
+                unlimited
+            ),
+            Seen::Limit(LimitKind::NestingDepth)
+        );
+        assert_eq!(
+            seen(
+                &good,
+                StageLimits {
+                    input_bytes: 0,
+                    ..roomy
+                },
+                unlimited
+            ),
+            Seen::Limit(LimitKind::InputBytes)
+        );
+        assert_eq!(
+            seen(
+                &good,
+                StageLimits {
+                    node_count: 0,
+                    ..roomy
+                },
+                unlimited
+            ),
+            Seen::Limit(LimitKind::NodeCount)
+        );
+        assert_eq!(seen(&good, roomy, 0), Seen::Limit(LimitKind::WorkBudget));
+    }
+
     /// FR-062-AC-7's fixture-at-depth-D requirement, backed against
     /// `Typer`'s own pre-existing, already-correct
     /// [`crate::check::CheckingLimits`] depth bound -- not the contract's
