@@ -219,10 +219,16 @@ pub fn classify_extent(
     position_limit: u64,
 ) -> Result<ClaimExtent, ClassifyFailure> {
     let types_only: Vec<&ValueType> = roots.iter().map(|(_, value_type)| *value_type).collect();
-    let domains = classify_domains(&types_only, types, position_limit)?
-        .into_iter()
-        .map(|((root, path), kind)| (DomainKey::new(roots[root].0, path), kind))
-        .collect();
+    let mut domains = BTreeMap::new();
+    for ((root, path), kind) in classify_domains(&types_only, types, position_limit)? {
+        let Some((node, _)) = roots.get(root) else {
+            return Err(ClassifyFailure::Fault(InternalFault::new(
+                STAGE,
+                "domain-root-classified",
+            )));
+        };
+        domains.insert(DomainKey::new(*node, path), kind);
+    }
     Ok(ClaimExtent::from_domains(domains))
 }
 

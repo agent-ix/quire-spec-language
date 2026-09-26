@@ -377,7 +377,7 @@ fn element_type(source: &Node) -> Result<&ValueType, ClassifyFailure> {
 
 /// The claims of a function whose checked body is `body`, whose parameters
 /// are `parameters` and whose body root is at `location`: one per scalar
-/// operation application in the body, in the walk's pre-order-exit order,
+/// operation application in the body, in the order the walk leaves them,
 /// each extent classified over `types` with at most `position_limit` type
 /// positions per claim.
 ///
@@ -531,10 +531,16 @@ fn claim(
         };
         typed.push(value_type);
     }
-    let domains = classify_domains(&typed, types, position_limit)?
-        .into_iter()
-        .map(|((root, path), kind)| ((roots[root].clone(), path), kind))
-        .collect();
+    let mut domains = BTreeMap::new();
+    for ((root, path), kind) in classify_domains(&typed, types, position_limit)? {
+        let Some(root) = roots.get(root) else {
+            return Err(ClassifyFailure::Fault(InternalFault::new(
+                STAGE,
+                "domain-root-classified",
+            )));
+        };
+        domains.insert((root.clone(), path), kind);
+    }
     let (result_bound, narrowed) = match narrow {
         Some(interval) => (ValueType::Int(interval.clone()), true),
         None => (node.value_type.clone(), false),

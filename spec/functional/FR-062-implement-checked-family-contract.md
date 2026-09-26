@@ -399,14 +399,14 @@ tags as they exist in the delivered code today:
   The first two clauses -- `check` compiling with no path to global or
   thread-local state, and a test observing meter/diagnostic-sink/scope-stack
   mutations reflected in the outcome -- remain untested. Owner: QSL-246.
-- FR-062-AC-4: partly backed (`TC-160`, QSL-140; ADR-014 §11 moved it
-  from QSL-152). `FamilyContract::requirements` returns
-  `Option<Requirements>`, one per declaration. The no-kind clause for a
-  declaration with no scalar operation application is backed:
+- FR-062-AC-4: backed (`TC-160`, QSL-140, QSL-266).
+  `FamilyContract::requirements` returns one claim per claim site
+  (`Vec<Self::Claim>`; for `Value`, `check::ValueClaim`: the site and its
+  extent keyed by binder until S3 names each root's parameter node).
+  `tc_160_the_requirements_function_yields_one_claim_per_scalar_application`
+  (`qsl-semantics/src/check/claims/tests.rs`) and
   `a_function_declaration_has_no_requirements`
-  (`qsl-eval/src/value/expression/family.rs`). The per-site shape and the
-  with-kind clause (a value function's scalar operation applications,
-  QSL-266) are not implemented. Owner: QSL-266.
+  (`qsl-eval/src/value/expression/family.rs`).
 - FR-062-AC-5: backed at the hook level (`TC-160`, `qsl-eval/src/value/expression/
   family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`
   (QSL-166), which QSL-153 uses as `ValueFunctionFamily::check`'s and
@@ -534,20 +534,18 @@ tags as they exist in the delivered code today:
   (`qsl-eval/tests/it/total_functions.rs`). The test observes the stop as
   `Refused{ResourceExhausted}`; its `StageFailure::Limit` outcome, amended
   here, is ADR-013 §7 slice S-5b's (QSL-160, FR-096).
-- FR-062-AC-13: partly backed (`TC-160`), QSL-258. The keying mechanism
-  -- an item never silently dropped, and two items sharing one identity
-  each landing on a distinct occurrence key (ADR-013 O-07) -- is backed by
-  `key_requirements_tests` (`qsl-semantics/src/check/mod.rs`, `tests`).
-  `a_function_unit_carries_no_requirement_records` asserts the empty map
-  QSL-258 shipped, which QSL-266's value-function records replace. The
-  value-function records (keyed by each scalar operation application's
-  `expression` occurrence) are not implemented. Owner: QSL-266.
+- FR-062-AC-13: partly backed (`TC-160`, QSL-258, QSL-266):
+  `qsl-semantics/src/check/claims/tests.rs` checks RR-1 to RR-13 and
+  RR-15 to RR-17 (RR-15 in both operand orders, RR-5 twice), and the
+  keying faults over hand-built occurrence maps;
+  `tests/it/request_builder.rs` reads RR-5's records through
+  `CheckedPackage::graph()`. RR-14 does not parse: its function name
+  `all` is a reserved word.
 
-Five of this requirement's thirteen Acceptance Criteria are backed (AC-2,
-AC-5, AC-7, AC-8 and AC-12); five (AC-3, AC-4, AC-6, AC-11, AC-13) are
-partly backed, each for the specific clause named in its own row above --
-AC-4's no-kind clause by QSL-140 (PR #435), and AC-4's with-kind clause and
-AC-13's value-function records owned by QSL-266. AC-1, AC-9 and AC-10 are unbacked. AC-1's
+Six of this requirement's thirteen Acceptance Criteria are backed (AC-2,
+AC-5, AC-7, AC-8 and AC-12) and AC-4; four (AC-3, AC-6, AC-11, AC-13) are
+partly backed, each for the specific clause named in its own row above.
+AC-1, AC-9 and AC-10 are unbacked. AC-1's
 `requirements` half is owned by QSL-140 the same way; its `package` half,
 and AC-9 entirely, are owned by QSL-242, filed to replace the
 QSL-16/QSL-143 references PR #262 had pointed at. AC-10 is unbacked

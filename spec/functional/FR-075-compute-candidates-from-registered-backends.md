@@ -332,4 +332,4 @@ By Acceptance Criterion:
   (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`), and
   `tc_282_duplicate_backend_identity::db_01_identical_repeat_holds_once_with_no_refusal`/`db_02_identical_repeats_plus_another_identity_hold_both`
   (`qsl-route/tests/it/route_registry.rs`).
-- FR-075-AC-8: not implemented. Owner: QSL-266.
+- FR-075-AC-8: backed (`TC-449`, QSL-266): `tests/it/request_builder.rs`.
