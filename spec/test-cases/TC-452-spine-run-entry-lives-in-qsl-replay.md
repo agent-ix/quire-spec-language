@@ -37,8 +37,9 @@ Scope: FR-100-AC-7 to FR-100-AC-9.
    `-17` and `2^70`; `Outcome::Refused` of each of the thirteen kernel
    refusals, `CardinalityOutOfBound` once `below-minimum` and once
    `above-maximum`; `Outcome::Undefined` of each of the four kernel reasons;
-   `Outcome::Incomplete` at `work_units`; `FamilyResult::Refused` of an
-   `invalid_runtime_input` cause and an `unsupported_construct` cause; and
+   `Outcome::Incomplete` at `work_units`; `FamilyResult::Refused` of a
+   `ModelQueryRefusal` `absent-key` cause (an FR-096 key-table row) and of a
+   `ModelQueryRefusal` `type-mismatch` cause (no row); and
    `FamilyResult::Undefined` with reason `precondition-false` and
    `absent-key`.
 
@@ -58,17 +59,18 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
 - Step 4: `completed` with `{"kind": "boolean", "value": true}`,
   `{"kind": "boolean", "value": false}`, and `{"kind": "integer",
   "decimal": ...}` of `"0"`, `"-17"` and `"1180591620717411303424"`, exit 0;
-  `refused` with `code` `invalid_runtime_input` and the tabled `cause` for
-  each of the ten kernel refusals other than `ForeignReference`,
-  `CardinalityOutOfBound` and `CheckedInvariant`, exit 20; `refused` with
-  `code` `foreign_reference` and `cause` `foreign_reference`, exit 20;
-  `refused` with `code` `cardinality_out_of_bound` and `cause`
-  `cardinality_out_of_bound`, exit 20, carrying `details` `{"violation":
-  "below-minimum"}` and `{"violation": "above-maximum"}`; `refused` with
-  `code` `runtime_invariant` and `cause` `checked_invariant`, exit 30; `undefined` with each kernel reason's tabled
-  spelling, exit 20; `incomplete` with `limit` `work_units`, exit 22;
-  `refused` with `code` `invalid_runtime_input` and no `cause`, exit 20, and
-  with `code` `unsupported_construct`, exit 21; `undefined` with `reason`
+  for `CardinalityOutOfBound`, `refused` with `code`
+  `cardinality_out_of_bound`, `cause` `below-minimum` and then
+  `above-maximum`, and `fields` `collection`, `bound` and `count`, exit 20;
+  for each of the ten kernel refusals awaiting STD-110 and for
+  `ForeignReference`, exactly `{"kind": "refused"}`, exit 20;
+  `CheckedInvariant` writes no `spine-run-result/1` document and is a
+  `runtime_invariant` command error at stage `call`, exit 30; `undefined`
+  with each kernel reason's tabled spelling, exit 20; `incomplete` with
+  `limit` `work_units`, exit 22; the `absent-key` family refusal renders
+  `refused` with `code` `invalid_runtime_input`, `cause` `absent-key` and
+  `fields` `binding` and `key`, exit 20, and the `type-mismatch` one renders
+  exactly `{"kind": "refused"}`, exit 20; `undefined` with `reason`
   `precondition-false` and `absent-key`, exit 20.
 
 ## Status
