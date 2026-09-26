@@ -21,4 +21,7 @@ Scope: FR-096-AC-12.
 2. Corrupt a validated evaluation context so `evaluate` refuses with
    `runtime_invariant`; assert the diagnostic's `exit_code()` is 30.
 
+3. Combine the code pairs {30,20}, {30,21}, {30,22}, {20,21}, {21,22}, {20,22} through
+   the report's combining function (both orders); assert 30, 30, 30, 20, 21, 20.
+
 Tag the tests `#[trace("TC-470", "FR-096-AC-12")]`.

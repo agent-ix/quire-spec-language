@@ -36,15 +36,22 @@ impl std::fmt::Display for NativeResult {
 }
 
 /// FR-301's severity order over a diagnostic's possible exit codes: tool
-/// failure (30), invalid (20), unsupported (21), incomplete (22). Lower rank
-/// is more severe; the exit codes themselves are not ascending-numeric.
+/// failure (30), invalid (20), unsupported (21), incomplete (22); the exit
+/// codes themselves are not ascending-numeric. `Code::exit_code` is the only
+/// source of a code; this only orders codes it can return, and a code outside
+/// that set ranks as most severe rather than being hidden.
 fn exit_severity(code: u8) -> u8 {
     match code {
-        30 => 0,
         20 => 1,
         21 => 2,
-        _ => 3,
+        22 => 3,
+        _ => 0,
     }
+}
+
+/// The highest-severity exit code among `codes`, or `None` when empty.
+fn combined_exit_code(codes: impl Iterator<Item = u8>) -> Option<u8> {
+    codes.min_by_key(|code| exit_severity(*code))
 }
 
 fn source(value: &FormalSource) -> types::Source<'_> {
@@ -325,16 +332,17 @@ pub(super) fn report(
                 ValidationStatus::Refused => types::FailureStatus::Refused,
                 ValidationStatus::Incomplete => types::FailureStatus::Incomplete,
             };
-            let code = failure
-                .diagnostics
-                .iter()
-                .chain(failure.terminal.as_deref())
-                .map(|diagnostic| diagnostic.diagnostic.exit_code())
-                .min_by_key(|code| exit_severity(*code))
-                .unwrap_or(match failure.status {
-                    ValidationStatus::Incomplete => 22,
-                    ValidationStatus::Refused => 20,
-                });
+            let code = combined_exit_code(
+                failure
+                    .diagnostics
+                    .iter()
+                    .chain(failure.terminal.as_deref())
+                    .map(|diagnostic| diagnostic.diagnostic.exit_code()),
+            )
+            .unwrap_or(match failure.status {
+                ValidationStatus::Incomplete => 22,
+                ValidationStatus::Refused => 20,
+            });
             (
                 code,
                 types::Outcome::Validate {
@@ -442,4 +450,27 @@ pub(super) fn report(
         exit_code,
         value: NativeResult(serde_json::to_value(document).map_err(RunCause::Output)?),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::combined_exit_code;
+    use ix_trace_rs::trace;
+
+    #[trace("TC-470", "FR-096-AC-12")]
+    #[test]
+    fn a_report_combines_exit_codes_by_fr_301_severity() {
+        for (pair, expected) in [
+            ([30, 20], 30),
+            ([30, 21], 30),
+            ([30, 22], 30),
+            ([20, 21], 20),
+            ([21, 22], 21),
+            ([20, 22], 20),
+        ] {
+            assert_eq!(combined_exit_code(pair.into_iter()), Some(expected));
+            assert_eq!(combined_exit_code(pair.into_iter().rev()), Some(expected));
+        }
+        assert_eq!(combined_exit_code(std::iter::empty()), None);
+    }
 }

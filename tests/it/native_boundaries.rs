@@ -298,7 +298,7 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
             !(code.is_unsupported() && code.is_incomplete()),
             "{code} claims both unsupported and incomplete"
         );
-        // command/output.rs's combined_exit_code() encodes FR-301's severity
+        // command/output.rs's combined_exit_code() (via exit_severity) encodes FR-301's severity
         // order over exactly this range; a new code outside it needs a rank.
         assert!(
             matches!(code.exit_code(), 20..=22 | 30),
