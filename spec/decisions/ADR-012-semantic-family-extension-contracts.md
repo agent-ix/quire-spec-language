@@ -232,7 +232,10 @@ trait FamilyContract {
         // CheckOutcome<T, C> = Result<Staged<T>, StageFailure<C>> (ADR-013 T-4):
         // checked | refused | limit | fault
     fn requirements(checked: &Self::Checked) -> Vec<(ClaimSite, Requirements)>;
-        // one per claim; S3 keys each ClaimSite by its occurrence key (§13.5)
+        // one per claim; S3 keys each ClaimSite by the occurrence recorded at
+        // its own location (§13.5). ClaimSite: FR-062 "Requirement records
+        // of a value function" (location, result bound, path condition).
+        // Extents are classified in `check`, under its stage limits.
     fn package(checked: &Self::Checked, out: &mut PackageEmitter)
         -> Result<(), PackageRefusal>;
 }
@@ -657,7 +660,7 @@ runs:
    record of the checked package (§13.5), in record key order, and computes
    each item's candidate set from its `Requirements`, matching on capability
    kind alone (FR-075 "Requested items from a package's requirement
-   records"). The caller supplies no item list. A backend
+   records"). A backend
    matches when it advertises the item's one kind (FR-057). The mode is
    compared in step 3:
    - If the request names a registered `BackendId`, the set is that backend
@@ -1013,7 +1016,7 @@ item settles `invalid-request` with no preference order
 | Question | Answer |
 |---|---|
 | ADR-011: per-stage hooks and how a missing hook fails | Hooks per stage (§2, §8): ADR-011 S2 family form builder, ADR-011 S3 `check` and `requirements`, ADR-011 S4 `package`, ADR-011 S6a `evaluate` (`ReferenceEvaluation`). A missing hook is a compile error: the S2 and S3 matches that call a family's hooks have one arm per family and no `_` arm, and the S1 stage-participation table has one entry per family (§5.1). At ADR-011 S6a a family that sits out evaluation is absent from the input type (for `Relation`, the S6a family kind has no `Relation` variant), so it has no arm and no refusal (§2). At lowering and proof stages a family that sits out the stage has an explicit, hand-written arm that returns `unsupported` with a catalog code. |
-| ADR-011: what ADR-011 S3 records as per-item requirement records | exactly one record per occurrence of a claim site that has `Requirements`: a clause, or a scalar operation application in a `Value` function body (FR-062). The record is keyed by that site's occurrence key (ADR-013 O-07): for an operation application, the application node's `expression` occurrence, so the key names the node CG generates an obligation for. `request_index` is the bytewise order of those keys, so two identical claims stay distinct. Each entry holds exactly the item's one capability kind (FR-057; vocabulary per agent-ix/quire-specification#134, FR-290), the declared extent and the authored bound (#222), because ADR-011 S3 negotiates nothing (§2, §6). The v2 `capability_report` member is FR-322's feature-level report, not these records. |
+| ADR-011: what ADR-011 S3 records as per-item requirement records | exactly one record per occurrence of a claim site that has `Requirements`: a clause, or a scalar operation application in a `Value` function body (FR-062). The record is keyed by that site's occurrence key (ADR-013 O-07): for an operation application, the application node's `expression` occurrence recorded at the site's own location, so the key names the node CG generates an obligation for and tells two occurrences of it apart. An operation-application record also holds the application's result bound and path condition (FR-062). `request_index` is the bytewise order of those keys, so two identical claims stay distinct. Each entry holds exactly the item's one capability kind (FR-057; vocabulary per agent-ix/quire-specification#134, FR-290), the declared extent and the authored bound (#222), because ADR-011 S3 negotiates nothing (§2, §6). The v2 `capability_report` member is FR-322's feature-level report, not these records. |
 | ADR-011: v2 family forms replacing IR's admission of QSL types | predicate admission reads the v2 value and expression nodes emitted by the `Value` `package` hook; temporal admission reads the v2 temporal nodes emitted by the `TemporalTrace` `package` hook. QSpec owns their spelling. IR decodes them at v2 intake (agent-ix/quire-contract-ir#141) and admits them there (#218 and #223 with agent-ix/quire-contract-ir#109). |
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |

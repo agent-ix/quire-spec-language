@@ -156,9 +156,10 @@ affect admission of the other pairs.
 
 ### Claim forms and their kinds
 
-The QSL composed linker SHALL record for each requested item exactly one
-kind: the kind the FR-290 claim-form assignment table gives its clause's own
-claim form. The QSL composed linker SHALL record no kind for an expression
+QSL's claim-form table below holds FR-290's claim-form assignment rows
+and QSL's own `Value` function rows. Its kinds are FR-290's vocabulary. QSL
+SHALL record for each requested item exactly one kind: the kind this table
+gives the item's claim form. QSL SHALL record no kind for an expression
 nested in a clause, such as a function application or a `case` expression.
 A `Value` function declaration carries no clause; each scalar operation
 application in its body is one claim of its own, its value validity
@@ -167,8 +168,8 @@ application in its body is one claim of its own, its value validity
 | Claim form | Kind |
 | --- | --- |
 | Boolean clause over pure expressions, including function application (#217) | `value-validity` |
-| Scalar operation application in a `Value` function body (FR-062): the application is defined and its result lies in its result type, or in the target range of an enclosing narrowing conversion, for every assignment of the parameters and bound variables it reads | `value-validity`, one claim per occurrence |
-| Narrowing conversion (`quire.op.numeric.narrow`) in a `Value` function body | none; it is the result bound of the application it wraps |
+| Scalar operation application in a `Value` function body (FR-062): the application is defined and its result lies in its result bound (the target range of the narrow that wraps it, or its own result type), for every assignment of its extent roots under which its path condition holds | `value-validity`, one claim per occurrence |
+| Narrowing conversion (`quire.op.numeric.narrow`) in a `Value` function body | none. When it wraps a scalar operation application, its target range is that application's result bound. When it wraps anything else, `check`'s `Coerce` range obligation discharges it (FR-093) |
 | Clause containing a `case` expression over a sum type | `value-validity` |
 | `case` exhaustiveness obligation | none; language admission discharges it (quire-specification FR-146), and an unproved obligation refuses as `undefined_expression`/`unproved-exhaustiveness` |
 | Operation precondition, postcondition or invariant | `operation-contract` |
@@ -364,10 +365,12 @@ checker's definition permissions. Their ownership is decided in #211.
 ## Dependencies
 
 - quire-specification FR-290 (`ix://agent-ix/quire-specification/FR-290`) at
-  revision `55d2fcc` owns the ten labels, their meanings and families, the
-  claim-form assignment, (kind, mode) advertisement, the candidate-set rule and
-  the tool-absence result. Its FR-290-AC-4 owns the backend-absence settlement
-  at negotiation.
+  revision `55d2fcc` owns the kind vocabulary (the ten labels, their
+  meanings and families), (kind, mode) advertisement, the candidate-set rule
+  and the tool-absence result. Its FR-290-AC-4 owns the backend-absence
+  settlement at negotiation. This requirement's claim-form table is QSL's
+  own; quire-specification STD-108 carries its `Value` function rows
+  upstream.
 - quire-specification AD-010 and AD-016 fix the single registration contract,
   the single negotiation point, the four dispositions and the FR-331 accounting
   join. FR-331 carries the per-item `candidates`.

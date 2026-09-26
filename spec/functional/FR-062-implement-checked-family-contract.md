@@ -15,6 +15,12 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-063
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-057
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-093
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-014
+    type: depends_on
 ---
 # FR-062: Implement the shared checked-family contract
 
@@ -101,7 +107,9 @@ a family that sits out the stage SHALL have an explicit arm that returns
 - A `Requirements` value for each claim a checked item carries, at the
   checked site the claim covers, and none for a claim form with no kind.
 - The package's requirement records (`CheckedGraph::requirements`): one
-  per claim site occurrence, keyed by that occurrence's key (ADR-013 O-07).
+  per claim site, keyed by the site's occurrence key (ADR-013 O-07), each
+  holding the claim's `Requirements` and, for an operation application, its
+  result bound and path condition.
 - A structured outcome: the checked node, a typed refusal, a limit outcome
   naming the exhausted budget, or an internal fault distinct from both.
 - For evaluation, on every family except `Relation`: an evaluated result or
@@ -183,51 +191,119 @@ outcome.
 
 ### Requirement records of a value function
 
-A `Value` function declaration carries one `value-validity` claim for each
-scalar operation application in its body (FR-057's claim-form table). A
-scalar operation application is an application node that FR-093 lowers from
-the function's checked body whose `operation.identity` is in one of these
-operation families: `quire.op.integer`, `quire.op.rational`,
-`quire.op.decimal`, `quire.op.ieee`, `quire.op.quantity`,
-`quire.op.numeric`, `quire.op.text` and `quire.op.enum`, other than
-`quire.op.numeric.narrow`. Every other application (`let`, `if`, a Boolean
-connective, `quire.op.boolean.eq` and `.ne`, structural and reference
-equality, a projection, an option read, a call, a dispatch, a collection or
-model operation) carries no claim of its own.
+**Scalar operation application.** A scalar operation application is an
+application node that FR-093 lowers from a checked expression, whose
+`operation.identity` is in one of these operation families:
+`quire.op.integer`, `quire.op.rational`, `quire.op.decimal`,
+`quire.op.ieee`, `quire.op.quantity`, `quire.op.numeric`, `quire.op.text`
+and `quire.op.enum`, other than `quire.op.numeric.narrow`. Every other
+application (`let`, `if`, a Boolean connective, `quire.op.boolean.eq` and
+`.ne`, structural and reference equality, a projection, an option read, a
+call, a dispatch, a collection or model operation) carries no claim of its
+own.
 
-A `quire.op.numeric.narrow` application (a checked `Coerce`, FR-093)
-carries no claim of its own: it supplies the result bound of the
-application it wraps. That application's claim covers the narrow's target
-range as its result bound, so `x + 1` checked into `Int[0, 10]` is one
-claim, on the `+` node, whose result bound is `[0, 10]`.
+**Claim sites.** A `Value` function declaration carries one `value-validity`
+claim for each occurrence of a scalar operation application whose region
+lies inside the function's body (FR-057's claim-form table). An occurrence
+in the function's `decreases` measure is not in the body. The claim covers
+one site. A claim site (design name `ClaimSite`; the implementing ticket
+chooses the Rust spelling) holds:
 
-`check` SHALL record one requirement record for each `expression`
-occurrence of each scalar operation application node:
+- the checked application's `check::Location`: the region of the unit the
+  checked expression was read from (FR-096);
+- the application's **result bound**: the target range of the
+  `quire.op.numeric.narrow` that wraps it, when a narrow's operand is this
+  application, and otherwise the application's own result type;
+- the application's **path condition**: the guards `check` walks the
+  occurrence under, outermost first. A guard is an enclosing `if`'s
+  condition, required true in the `then` branch and false in the
+  `otherwise` branch, or the left operand of an enclosing `and`, `or` or
+  `implies` whose right operand holds the occurrence, required true for
+  `and` and `implies` and false for `or`. Each guard is recorded as its
+  own node's `expression` occurrence key and the required outcome.
 
-- **Key.** The record's key is the occurrence key (application node id,
-  role `expression`, ordinal) that `check` records for that occurrence
-  (ADR-013 O-07, FR-093 "One node per checked expression"). Two
-  structurally identical applications are one node with two occurrences,
-  and so two records whose keys differ only in ordinal. Ordinals follow
-  source order (FR-093), so the records' bytewise key order, which is the
-  request order (ADR-012 §13.5), is independent of check order.
+Two occurrences of one application node have two regions, so they are two
+claim sites, whatever their extents, result bounds or path conditions.
+
+**The claim.** The application is defined and its result lies in its
+result bound, for every assignment of its extent roots under which its
+path condition holds. `check` proves definedness and narrow ranges under
+those same guards (FR-146, `check::facts`), so a body `check` admits never
+yields a claim that fails on an assignment `check` excluded.
+
+A narrow wraps exactly one expression. A narrow whose operand is not a
+scalar operation application (a literal, a parameter or binder read, a
+call, `sum`, `count`, `size`, a projection or a `value` read) yields no
+claim: `check`'s `Coerce` range obligation discharges its range (FR-093).
+
+**Records.** `check` SHALL record one requirement record for each claim
+site:
+
+- **Key.** The occurrence key (application node id, role `expression`,
+  ordinal) that `check` records at the site's `Location` for the node
+  lowered from the site's checked application (ADR-013 O-07, FR-093 "One
+  node per checked expression"). `check` SHALL pair each site with the
+  occurrence recorded at that site's own `Location`, never by the order in
+  which sites or occurrences were produced. Ordinals follow source order
+  (FR-093), so the records' bytewise key order, which is the request order
+  (ADR-012 §13.5), is independent of check order.
 - **Kind.** `value-validity`.
-- **Extent.** `ClaimExtent` by ADR-014 §4's extent rule over the
-  application's arguments and bound variables (ADR-014 §4 "Operation
-  application claims"): each function parameter and each bound variable
-  read anywhere in the application's argument subtrees contributes its
-  checked type, keyed by its parameter node; a read of a `let` binder
-  contributes what its bound value reads; a literal contributes nothing.
-  An application that reads no parameter or bound variable is `Bounded`.
-  The result bound taken from an enclosing narrow is a finite range and
-  adds no unbounded domain.
+- **Extent.** `ClaimExtent` by ADR-014 §4's extent rule over the claim's
+  extent roots (ADR-014 §4 "Operation application claims"). Each function
+  parameter and each query, `count`, `sum`, `fold` or `reduce` binder read
+  anywhere in the application's argument subtrees or in a guard of its path
+  condition is a root, with its checked type, keyed by its parameter node.
+  A read of a `let` binder contributes the roots its bound value reads, and
+  a literal contributes none. A claim with no root is `Bounded`. The result
+  bound is a finite range or the application's own result type, and adds
+  no root.
+- **Result bound and path condition**, as the site holds them, the result
+  bound as its checked `ValueType` and the `WireNodeId` of its FR-092 type
+  node.
 
-Each record is computed from the checked tree of its own occurrence, so two
-occurrences of one node each carry their own extent.
+Each record is computed from the checked tree at its own site, so two
+occurrences of one node each carry their own extent, result bound and path
+condition.
 
-No requirement record is dropped: a scalar operation application occurrence
-that `check` cannot key is `KeyFault::UnkeyableRequirements`, and the
-package does not check.
+Every scalar operation application whose region lies in a function body
+has at least one `expression` occurrence (FR-093). If `check` cannot pair
+a claim site with an `expression` occurrence at its `Location`, including
+an application that has only a `generated` occurrence, then `check` SHALL
+return `KeyFault::UnkeyableRequirements` and SHALL produce no checked
+package.
+
+`check` SHALL classify each claim's extent while it checks the declaration,
+under the declaration's stage limits, and `requirements()` reads the
+result. If classification reaches its node-count ceiling, then `check`
+SHALL return the declaration's `StageFailure::Limit` of kind node count,
+located at the declaration (FR-096). If classification finds a composite
+missing from the type environment, then `check` SHALL return an internal
+fault (FR-097-AC-2).
+
+**Fixtures.** Each unit below holds the functions shown; `v` is the
+`quire.value.complete/v1` profile. A record is written as its
+application's operation identity, then its extent, result bound and path
+condition.
+
+| ID | Unit | Requirement records |
+| --- | --- | --- |
+| RR-1 | `function neg using v(z: Int[0, 9]): Int[-9, 0] pure { -z }` | one: `integer.negate`, `Bounded`, `Int[-9, 0]`, no guard |
+| RR-2 | `function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }` | one: `integer.add`, `Bounded`, `Int[0, 10]` (the narrow that wraps it), no guard; none at the narrow |
+| RR-3 | `function add using v(x: Int[0, 9], y: Int[0, 9]): Int[0, 18] pure { x + y }` | one: `integer.add`, `Bounded`, `Int[0, 18]`, no guard |
+| RR-4 | `function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure { x = y }` | one: `integer.eq`, `Bounded`, `Boolean`, no guard |
+| RR-5 | `function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }` | three: `integer.add` at ordinal 0 and at ordinal 1 of the one `+` node, and `integer.mul`; each `Bounded`, its own result type, no guard |
+| RR-6 | `function big using v(n: Integer): Integer pure { n + 1 }` | one: `integer.add`, `Unbounded` with one `Integer` domain keyed by `n`'s parameter node and the empty path, `Integer`, no guard |
+| RR-7 | `function lt using v(x: Int[0, 9]): Integer pure { let t = x + 1 in t * 2 }` | two: `integer.add` and `integer.mul`, each `Bounded` (the `*` through `t`'s bound value), no guard |
+| RR-8 | `function two using v(): Integer pure { 1 + 1 }` | one: `integer.add`, `Bounded`, no guard |
+| RR-9 | `function both using v(b: Boolean, c: Boolean): Boolean pure { b and c }` | none |
+| RR-10 | `function c2 using v(): Int[0, 9] pure { 3 }` | none: the narrow wraps a literal |
+| RR-11 | `function clamp using v(n: Integer): Int[0, 10] pure { if n >= 0 and n <= 10 then n else 0 }` | two: `integer.ge`, `Unbounded` at `n`, no guard; `integer.le`, `Unbounded` at `n`, guard `n >= 0` true. None at the narrow over `n` |
+| RR-12 | `function g using v(p: Int[0, 10]): Boolean pure { true }` and `function f using v(n: Integer): Boolean pure { if n >= 0 and n < 10 then g(n + 1) else true }` | three: `integer.ge`, no guard; `integer.lt`, guard `n >= 0` true; `integer.add`, result bound `Int[0, 10]`, guard `n >= 0 and n < 10` true. Each `Unbounded` with one `Integer` domain at `n` |
+| RR-13 | `function q using v(x: Int[0, 9], y: Int[-9, 9]): Rational[-9, 9; 1, 9] pure { if y != 0 then x / y else rational(0, 1) }` | two: `integer.ne`, `Bounded`, no guard; `rational.div`, `Bounded`, its own result type, guard `y != 0` true |
+| RR-14 | `function all using v(s: Sequence<Integer>[0, 5]): Boolean pure { forall(v in s: v + 1 > 0) }` | two: `integer.add` and `integer.gt`, each `Unbounded` with one `Integer` domain keyed by the binder `v`'s parameter node, no guard |
+| RR-15 | `function sib using v(x: Int[0, 9], n: Integer): Integer pure { (let t = x + 1 in t * 2) + (let t = n + 1 in t * 2) }` | five: `x + 1` `Bounded`; the first `t * 2` `Bounded` and the second `Unbounded` at `n`, each at its own occurrence; `n + 1` `Unbounded` at `n`; the outer `+` `Unbounded` at `n` |
+| RR-16 | `function g using v(p: Int[0, 10]): Boolean pure { true }`, `function h using v(q: Int[0, 20]): Boolean pure { true }` and `function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) and h(x + 1) }` | two, at ordinals 0 and 1 of the one `+` node: the first with result bound `Int[0, 10]` and no guard, the second with result bound `Int[0, 20]` and guard `g(x + 1)` true; each `Bounded` |
+| RR-17 | `function m using v(x: Int[0, 9]): Integer pure decreases(x + 1) { x + 1 }` | one: `integer.add` at the body's occurrence, `Bounded`; none at the measure's |
 
 ## Acceptance Criteria
 
@@ -245,7 +321,7 @@ package does not check.
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
 | FR-062-AC-11 | The package-wide `CheckingLimits` node budget is separate from the per-declaration `StageLimits::node_count` limit of FR-062-AC-5, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4, 128)` admits a package holding `a` alone; with `CheckingLimits::new(100, 128)` it admits a package holding both; with `CheckingLimits::new(4, 128)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
 | FR-062-AC-12 | A family `check` that reaches one of its four stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the depth the refused entry would reach for nesting depth, the measured preimage byte length for input bytes, the measured expression-node count for node count, and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
-| FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site occurrence, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For value functions (this requirement's "Requirement records of a value function"), each over `Int[0, 9]` parameters unless stated: `-z` gives exactly one record, keyed by the `quire.op.integer.negate` node's `expression` occurrence, `value-validity`, `Bounded`; `x + 1` with result type `Int[0, 10]` gives exactly one record, at the `quire.op.integer.add` node, `Bounded`, and none at the enclosing `quire.op.numeric.narrow` node; `x + y` gives one at the `quire.op.integer.add` node and `x = y` one at the `quire.op.integer.eq` node, each `Bounded`; `(x + 1) * (x + 1)` gives two records at the one `+` node, ordinals 0 and 1, and one at the `*` node; `n + 1` over `n: Integer` gives one record whose extent is `Unbounded` with one `Integer` domain keyed by `n`'s parameter node and the empty path; `let t = x + 1 in t * 2` gives a `*` record whose extent is `Bounded`, through `t`'s bound value; `1 + 1` gives one `Bounded` record; `b and c` over Boolean parameters gives none. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
+| FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For each fixture RR-1 to RR-17 of this requirement's "Requirement records of a value function", the map holds exactly the records the fixture lists and no other: each `value-validity`, keyed by its application node's `expression` occurrence at its own site, with the listed extent, result bound and path condition. Where a fixture has two records at one node (RR-5, RR-15, RR-16), the keys differ only in ordinal, in source order, and each record's extent, result bound and guards are those of its own occurrence. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
 
 ## Dependencies
 

@@ -71,7 +71,7 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
 | FR-097-AC-3 | The request writer classifies a bounded item `bounded`, and an unbounded item `unbounded` with `finite_bound_available` true exactly when every domain is boundable; a loop or infinite-trace domain makes it false. A bounded request that supplies one bound of the right kind per domain is written as its own item, with its own request index, classified `bounded`, carrying its proof bounds in key order; the unbounded item keeps its own index and classification. Two bounded items with different bounds are different items. | Test (TC-438) |
 | FR-097-AC-4 | The writer refuses, in this order: a bounded request for an item with no unbounded domain; a bound whose key names no unbounded domain of the item; an item with any domain no finite bound can stand for (loop, infinite trace, quantity), whether or not a bound was supplied for it; then, domain by domain in key order, a missing bound or a bound of the wrong kind. Each refusal is `invalid_runtime_input`/`invalid-value`, and no item is written. | Test (TC-438) |
 | FR-097-AC-5 | `explore::Outcome::category()` maps `Exhaustive` to success and `Bounded` and `Cancelled` to incomplete; the stopped outcomes keep their frontier and, for `Bounded`, the limit reached. | Test (TC-439) |
-| FR-097-AC-6 | For records QSL checks and emits, IR's v2 lowering at the pinned revision with `require_bounds` returns `RequiresBound` exactly when QSL's extent is `Unbounded`, and IR's first unbounded node is a form QSL names as a domain. | Test (TC-440) |
+| FR-097-AC-6 | For record types QSL checks and emits, IR's v2 lowering at the pinned revision with `require_bounds` returns `RequiresBound` exactly when QSL's extent is `Unbounded`, and IR's first unbounded node is a form QSL names as a domain. For operation-application requirement records (FR-062-AC-13) the agreement is per application node: IR's predicate on each record's application node returns `RequiresBound` exactly when that record's extent is `Unbounded`. In `function f using v(x: Int[0, 9], n: Integer): Integer pure { (x + 1) + n }`, IR's answer for the inner `+` agrees with its `Bounded` record and for the outer `+` with its `Unbounded` record. | Test (TC-440) |
 | FR-097-AC-7 | An unbounded collection type admits a collection value of any size with no cardinality refusal; it still charges `collection.bound`, and stops with `Incomplete` at that charge point only when the caller's meter runs out. `K<T>` and `K<T>[0, u64::MAX]` are different types and different v2 nodes. The checker types `map`, `flatMap`, `filter` and `flatten` over an unbounded source as unbounded, and proves no size maximum for it. | Test (TC-441) |
 | FR-097-AC-8 | A `Population<T>` with no declared maximum is unbounded: `allInstances` over it checks to an unbounded `Set<Reference<T>>` and selects every member with no cardinality refusal; a population parameter admits a binding only when their declared maxima are equal, absence included; and it lowers to its own v2 node, distinct from an unbounded `Set<Reference<T>>`. | Test (TC-441) |
 
@@ -81,9 +81,10 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
   §1, §2, §4, §7, §9 N-3 and §11.
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
   O-19, O-20, O-21 and the §7 S-6 row.
-- [FR-062](FR-062-implement-checked-family-contract.md) AC-4:
-  `FamilyContract::requirements()`, which returns the `Requirements` value
-  carrying this requirement's `ClaimExtent`.
+- [FR-062](FR-062-implement-checked-family-contract.md) AC-4 and AC-13:
+  `FamilyContract::requirements()`, which returns one `(ClaimSite,
+  Requirements)` pair per claim site, each `Requirements` carrying this
+  requirement's `ClaimExtent`.
 - [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md) AC-3:
   the witness envelope's `run_limits` and `FiniteBound` declared domains.
 - IR at the revision `qsl-package/Cargo.toml` pins, for AC-6.
@@ -102,4 +103,5 @@ position, and the `collection_bounds` literals typed at that node read as an
 unbounded integer. IR-284: IR has no recursion rule. A quantity fixture is not
 compared yet: the emitter omits a record whose field names a declared unit
 node, because lowering does not build that node. The ignored test is
-un-ignored when both land.
+un-ignored when both land. FR-097-AC-6's per-application-node agreement
+(TC-440 step 4) is not implemented. Owner: QSL-266.

@@ -235,16 +235,25 @@ No unbounded domain gives `Bounded`. Otherwise the extent is `Bounded`.
 
 **Operation application claims.** A scalar operation application in a
 `Value` function body is a claim of its own (FR-057, FR-062 "Requirement
-records of a value function"). Its arguments are the function parameters
-its argument subtrees read, and its bound variables are the query, `count`,
-`sum`, `fold` and `reduce` binders they read. Each is a root keyed by its
-parameter node. A read of a `let` binder contributes the roots its bound
-value reads, and a literal contributes none, because a literal is one value
-and not a domain. An enclosing `quire.op.numeric.narrow` is not a claim of
-its own: its target range is the wrapped application's result bound, which
-the application's claim covers. It is finite, so it adds no domain. So
-`x + 1` over `x: Int[0, 9]`, checked into `Int[0, 10]`, is one `Bounded`
-claim on the `+` node, and `n + 1` over `n: Integer` is `Unbounded` with one
+records of a value function"): the application is defined and its result
+lies in its result bound, for every assignment of its roots under which its
+path condition holds. The path condition is the enclosing `if` conditions
+and short-circuit left operands `check` walks the occurrence under. Its
+roots are the function parameters and the query, `count`, `sum`, `fold`
+and `reduce` binders that its argument subtrees or its path condition read,
+each keyed by its parameter node. A read of a `let` binder contributes the
+roots its bound value reads, and a literal contributes none, because a
+literal is one value and not a domain. A root read only by the path
+condition still counts, so an application reading `x: Int[0, 9]` under a
+guard on `n: Integer` is `Unbounded` at `n`.
+
+A `quire.op.numeric.narrow` is not a claim of its own. When it wraps a
+scalar operation application, its target range is that application's
+result bound; otherwise `check`'s `Coerce` range obligation discharges it
+(FR-093). The result bound is finite or the application's own result type,
+so it adds no domain. So `x + 1` over `x: Int[0, 9]`, checked into
+`Int[0, 10]`, is one `Bounded` claim on the `+` node with result bound
+`Int[0, 10]`, and `n + 1` over `n: Integer` is `Unbounded` with one
 `Integer` domain at `n`.
 
 **Available finite bound.** For an item with extent `Unbounded`, a finite
@@ -277,7 +286,10 @@ bounds for one domain cannot be built: the writer takes a map keyed by
 **IR's predicate.** AD-016's IR `requires-bound` is the same classification
 over the lowered form: which IR forms carry an unbounded domain. IR reads the
 v2 wire QSL emits (ADR-011 FB-05), and a QSL-140 and IR conformance test over
-the §10 scenarios pins that the two agree.
+the §10 scenarios pins that the two agree. The two agree per application
+node: for each operation-application record, IR's predicate on that
+record's application node answers `requires-bound` exactly when the
+record's extent is `Unbounded`.
 
 ### 5. The `quire.temporal.infinite-trace/v1` facet (ticket decision 4)
 

@@ -69,13 +69,11 @@ FR-057-AC-10's value-function row.
 9. Instrument every family's evaluation hook with a test double that
    panics if a CST, token or display string is touched, then invoke each on
    a checked node.
-10. Check each of these units and read `CheckedGraph::requirements` (and
-    `CheckedPackage::graph().requirements()` for one of them); parameters are
-    `Int[0, 9]` unless stated: bodies `-z`; `x + 1` with result type
-    `Int[0, 10]`; `x + y`; `x = y`;
-    `(x + 1) * (x + 1)`; `n + 1` over `n: Integer`;
-    `let t = x + 1 in t * 2`; `1 + 1`; `b and c` over Boolean parameters.
-    Check the `(x + 1) * (x + 1)` unit a second time.
+10. Check each unit RR-1 to RR-17 of FR-062 "Requirement records of a
+    value function" and read `CheckedGraph::requirements`, and for RR-5
+    also `CheckedPackage::graph().requirements()`. Check RR-5 a second
+    time. For RR-15, also check the unit with its two `let` operands
+    swapped.
 11. Over a hand-built `OccurrenceMap` (this crate has no real clause syntax
     yet, FR-088-CON-1, so this is exercised the same way `check::identity`'s
     own clause-identity mechanism test is): key two distinct identities,
@@ -113,19 +111,23 @@ FR-057-AC-10's value-function row.
   example, a declaration node with no body).
 - Step 9: every family's evaluation hook completes without the test double
   panicking, showing no CST, token or display string was read.
-- Step 10: every record is `value-validity` and keyed by an application
-  node's `expression` occurrence. `-z`: one record at the
-  `quire.op.integer.negate` node, `Bounded`. `x + 1` into `Int[0, 10]`:
-  exactly one record, at the `quire.op.integer.add` node, `Bounded`, and
-  none at the enclosing `quire.op.numeric.narrow` node. `x + y`: one at
-  `quire.op.integer.add`, `Bounded`. `x = y`: one at `quire.op.integer.eq`,
-  `Bounded`. `(x + 1) * (x + 1)`: three records, two at the one `+` node
-  with ordinals 0 and 1 and one at the `*` node, and the second check gives
-  an equal map. `n + 1`: one record, `Unbounded` with exactly one `Integer`
-  domain keyed by `n`'s parameter node and the empty path. `let t = x + 1
-  in t * 2`: the `*` record is `Bounded`. `1 + 1`: one `Bounded` record.
-  `b and c`: no record. `CheckedPackage::graph().requirements()` equals
-  the S3 map.
+- Step 10: each unit's map holds exactly the records FR-062's fixture
+  table lists for it and no other. Every record is `value-validity` and
+  keyed by its application node's `expression` occurrence at its own site,
+  with the listed extent, result bound (as its type node) and path
+  condition (each guard as its node's occurrence key and required
+  outcome). In particular: RR-2 has no record at the narrow; RR-10 has no
+  record; RR-12's `+` is `Unbounded` at `n` with guard `n >= 0 and n < 10`
+  true; RR-13's `/` has guard `y != 0` true; RR-14's roots are keyed by
+  the binder `v`, not by `s`; RR-17's one record is at the body's
+  occurrence, not the measure's. Where one node has two records (RR-5,
+  RR-15, RR-16), the keys differ only in ordinal in source order, and each
+  record carries its own occurrence's extent, result bound and guards: in
+  RR-15 the `Bounded` extent is at the `t * 2` occurrence inside the
+  `x + 1` binding and the `Unbounded` one inside the `n + 1` binding, in
+  both orders of the operands; in RR-16 `Int[0, 10]` is at ordinal 0 and
+  `Int[0, 20]` at ordinal 1. RR-5's second check gives an equal map, and
+  `CheckedPackage::graph().requirements()` equals the S3 map.
 - Step 11: the two distinct identities each key to their own occurrence key;
   the identity with no recorded occurrence, and the `None` identity, each
   return `KeyFault::UnkeyableRequirements` rather than an omission from the
