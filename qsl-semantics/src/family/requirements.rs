@@ -191,9 +191,10 @@ pub enum ClassifyFailure {
 /// The fault stage name [`classify_extent`] reports.
 const STAGE: &str = "check.requirements";
 
-/// One pending type position.
+/// One pending type position: its root's index, the child-index path from
+/// that root, and its type.
 struct Position<'t> {
-    node: WireNodeId,
+    root: usize,
     path: Vec<u32>,
     value_type: &'t ValueType,
     /// The records and tuples on the path to this position, each with the
@@ -217,12 +218,36 @@ pub fn classify_extent(
     types: &TypeEnvironment,
     position_limit: u64,
 ) -> Result<ClaimExtent, ClassifyFailure> {
+    let types_only: Vec<&ValueType> = roots.iter().map(|(_, value_type)| *value_type).collect();
+    let mut domains = BTreeMap::new();
+    for ((root, path), kind) in classify_domains(&types_only, types, position_limit)? {
+        let Some((node, _)) = roots.get(root) else {
+            return Err(ClassifyFailure::Fault(InternalFault::new(
+                STAGE,
+                "domain-root-classified",
+            )));
+        };
+        domains.insert(DomainKey::new(*node, path), kind);
+    }
+    Ok(ClaimExtent::from_domains(domains))
+}
+
+/// [`classify_extent`]'s walk over roots named by their index in `roots`:
+/// each unbounded domain keyed by (root index, child-index path), under the
+/// same position ceiling. A caller that knows its roots before their wire
+/// ids exist keys the domains by its own root names.
+pub fn classify_domains(
+    roots: &[&ValueType],
+    types: &TypeEnvironment,
+    position_limit: u64,
+) -> Result<BTreeMap<(usize, Vec<u32>), DomainKind>, ClassifyFailure> {
     let mut domains = BTreeMap::new();
     let mut pending: Vec<Position<'_>> = roots
         .iter()
+        .enumerate()
         .rev()
-        .map(|(node, value_type)| Position {
-            node: *node,
+        .map(|(root, value_type)| Position {
+            root,
             path: Vec::new(),
             value_type,
             composites: Vec::new(),
@@ -238,7 +263,7 @@ pub fn classify_extent(
             )));
         }
         visited += 1;
-        let key = || DomainKey::new(position.node, position.path.clone());
+        let key = || (position.root, position.path.clone());
         match position.value_type {
             ValueType::Integer => {
                 domains.insert(key(), DomainKind::Integer);
@@ -264,10 +289,7 @@ pub fn classify_extent(
                     .iter()
                     .find(|(open, _)| open == declaration)
                 {
-                    domains.insert(
-                        DomainKey::new(position.node, entered.clone()),
-                        DomainKind::Recursive,
-                    );
+                    domains.insert((position.root, entered.clone()), DomainKind::Recursive);
                     continue;
                 }
                 let Some(composite) = types.composite(*declaration) else {
@@ -298,7 +320,7 @@ pub fn classify_extent(
             | ValueType::Population(Some(_)) => {}
         }
     }
-    Ok(ClaimExtent::from_domains(domains))
+    Ok(domains)
 }
 
 /// The child position `index` of `parent`, typed `value_type`; `entered`
@@ -319,7 +341,7 @@ fn child<'t>(
     let mut path = parent.path.clone();
     path.push(index);
     Ok(Position {
-        node: parent.node,
+        root: parent.root,
         path,
         value_type,
         composites,
@@ -577,6 +599,7 @@ mod tests {
         type Checked = CheckedClaim;
         type Cause = InternalFault;
         type Declarations<'a> = TypeEnvironment;
+        type Claim = Requirements;
 
         fn check<'a>(
             form: &Self::Form,
@@ -604,8 +627,8 @@ mod tests {
             }))
         }
 
-        fn requirements(checked: &CheckedClaim) -> Option<Requirements> {
-            Some(checked.requirements.clone())
+        fn requirements(checked: &CheckedClaim) -> Vec<Requirements> {
+            vec![checked.requirements.clone()]
         }
     }
 
@@ -694,21 +717,23 @@ mod tests {
         use crate::family::FamilyContract;
         let set = ValueType::collection(CollectionType::new(CollectionKind::Set, int_0_9(), None));
         let checked = check_claim(&[(node(7), set)]);
-        let first = ValidityClaim::requirements(&checked).expect("one requirements value");
+        let [first] = ValidityClaim::requirements(&checked)
+            .try_into()
+            .expect("one requirements value");
         assert_eq!(first.kind(), Capability::ValueValidity);
         assert_eq!(
             first.extent(),
             &unbounded(&[(vec![], DomainKind::Collection)])
         );
-        assert_eq!(ValidityClaim::requirements(&checked), Some(first));
+        assert_eq!(ValidityClaim::requirements(&checked), [first]);
 
         let bounded = check_claim(&[(node(7), int_0_9())]);
         assert_eq!(
             ValidityClaim::requirements(&bounded),
-            Some(Requirements::new(
+            [Requirements::new(
                 Capability::ValueValidity,
                 ClaimExtent::Bounded
-            ))
+            )]
         );
     }
 

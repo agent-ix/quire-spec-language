@@ -765,7 +765,95 @@ impl<'c> Mapping<'c> {
             Production::Unary => self.unary(task, &items),
             Production::Postfix => self.postfix(task, &items),
             Production::Primary => self.primary(task, &items),
-            _ => Err(unexpected(node)),
+            Production::CompleteUnit
+            | Production::Header
+            | Production::Profile
+            | Production::ImportDeclaration
+            | Production::Model
+            | Production::Declaration
+            | Production::TypeReference
+            | Production::QualifiedName
+            | Production::ModelName
+            | Production::TypeName
+            | Production::OperationName
+            | Production::ParameterType
+            | Production::RoundingMode
+            | Production::TextProfile
+            | Production::DimensionDeclaration
+            | Production::DimensionTerm
+            | Production::UnitDeclaration
+            | Production::EnumDeclaration
+            | Production::EnumMember
+            | Production::RecordDeclaration
+            | Production::Field
+            | Production::TupleDeclaration
+            | Production::AliasDeclaration
+            | Production::FunctionDeclaration
+            | Production::Predicate
+            | Production::Parameter
+            | Production::StateClause
+            | Production::Block
+            | Production::ExactNumber
+            | Production::FloatValue
+            | Production::Hex32
+            | Production::Hex64
+            | Production::HexDigit
+            | Production::EnumValue
+            | Production::CollectionValue
+            | Production::RecordValue
+            | Production::FieldValue
+            | Production::TupleValue
+            | Production::CollectionCall
+            | Production::SignedInteger
+            | Production::TemporalClause
+            | Production::Activation
+            | Production::Capture
+            | Production::Interval
+            | Production::TemporalExpression
+            | Production::TemporalImplication
+            | Production::TemporalDisjunction
+            | Production::TemporalConjunction
+            | Production::TemporalRelation
+            | Production::TemporalUnary
+            | Production::TemporalPrimary
+            | Production::ProtocolClause
+            | Production::Role
+            | Production::RoleLifetime
+            | Production::Relationship
+            | Production::Channel
+            | Production::Ordering
+            | Production::DeliveryPolicy
+            | Production::Capacity
+            | Production::OverflowPolicy
+            | Production::ProtocolRequirement
+            | Production::NodeReference
+            | Production::Compensation
+            | Production::Control
+            | Production::Sequence
+            | Production::Visibility
+            | Production::Choice
+            | Production::Case
+            | Production::Parallel
+            | Production::JoinPolicy
+            | Production::Branch
+            | Production::Repetition
+            | Production::AwaitControl
+            | Production::Related
+            | Production::EventNode
+            | Production::Check
+            | Production::Commit
+            | Production::Finish
+            | Production::RelationClause
+            | Production::ExecutionBinding
+            | Production::HyperClause
+            | Production::TraceDomain
+            | Production::Quantifier
+            | Production::HybridDeclaration
+            | Production::HybridMode
+            | Production::Equation
+            | Production::SynthesisDeclaration
+            | Production::VerificationPlan
+            | Production::VerificationStep => Err(unexpected(node)),
         }
     }
 
@@ -1139,7 +1227,97 @@ impl<'c> Mapping<'c> {
                 self.with_children(Shape::Call(name), &task, arguments)
             }
             Production::CollectionCall => self.collection_call(task, child, &items),
-            _ => Err(unexpected(child)),
+            Production::CompleteUnit
+            | Production::Header
+            | Production::Profile
+            | Production::ImportDeclaration
+            | Production::Model
+            | Production::Declaration
+            | Production::TypeReference
+            | Production::ModelName
+            | Production::TypeName
+            | Production::OperationName
+            | Production::ParameterType
+            | Production::RoundingMode
+            | Production::TextProfile
+            | Production::DimensionDeclaration
+            | Production::DimensionTerm
+            | Production::UnitDeclaration
+            | Production::EnumDeclaration
+            | Production::EnumMember
+            | Production::RecordDeclaration
+            | Production::Field
+            | Production::TupleDeclaration
+            | Production::AliasDeclaration
+            | Production::FunctionDeclaration
+            | Production::Predicate
+            | Production::Parameter
+            | Production::StateClause
+            | Production::Block
+            | Production::Expression
+            | Production::Implication
+            | Production::Disjunction
+            | Production::Conjunction
+            | Production::Comparison
+            | Production::Sum
+            | Production::Product
+            | Production::Unary
+            | Production::Postfix
+            | Production::Primary
+            | Production::Hex32
+            | Production::Hex64
+            | Production::HexDigit
+            | Production::FieldValue
+            | Production::SignedInteger
+            | Production::TemporalClause
+            | Production::Activation
+            | Production::Capture
+            | Production::Interval
+            | Production::TemporalExpression
+            | Production::TemporalImplication
+            | Production::TemporalDisjunction
+            | Production::TemporalConjunction
+            | Production::TemporalRelation
+            | Production::TemporalUnary
+            | Production::TemporalPrimary
+            | Production::ProtocolClause
+            | Production::Role
+            | Production::RoleLifetime
+            | Production::Relationship
+            | Production::Channel
+            | Production::Ordering
+            | Production::DeliveryPolicy
+            | Production::Capacity
+            | Production::OverflowPolicy
+            | Production::ProtocolRequirement
+            | Production::NodeReference
+            | Production::Compensation
+            | Production::Control
+            | Production::Sequence
+            | Production::Visibility
+            | Production::Choice
+            | Production::Case
+            | Production::Parallel
+            | Production::JoinPolicy
+            | Production::Branch
+            | Production::Repetition
+            | Production::AwaitControl
+            | Production::Related
+            | Production::EventNode
+            | Production::Check
+            | Production::Commit
+            | Production::Finish
+            | Production::RelationClause
+            | Production::ExecutionBinding
+            | Production::HyperClause
+            | Production::TraceDomain
+            | Production::Quantifier
+            | Production::HybridDeclaration
+            | Production::HybridMode
+            | Production::Equation
+            | Production::SynthesisDeclaration
+            | Production::VerificationPlan
+            | Production::VerificationStep => Err(unexpected(child)),
         }
     }
 

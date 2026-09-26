@@ -180,13 +180,13 @@ invalid. No bound in QSL is "unspecified".
 
 | ID | Concept | Owner and type | Rule |
 | --- | --- | --- | --- |
-| TR-1 | Trace identity | No new identity or digest domain. A counterexample trace is identified by its packet (obligation identity O-09, occurrence key O-07) and compared lexically over its canonical encoding, as O-25 compares a transcript. A sampled trace is identified by `SampleProvenance{seed, sampler_version}` plus its index in the run's output. An observation trace handed to S6a is an input value, not an identity | A trace never takes its identity from arrival order or storage position (ADR-013 R-05). QSpec FR-181 names the sampler by `DefinitionRef`; replacing `sampler_version: String` with it is the simulation lane's work |
+| TR-1 | Trace identity | No new identity or digest domain. A counterexample trace is identified by its packet (obligation identity O-09, occurrence key O-07) and compared lexically over its canonical encoding, as O-25 compares a transcript. A sampled trace is identified by `SampleProvenance{seed, trace, sampler}`: its seed, its trace index and the sampler's `DefinitionRef` (FR-101). An observation trace handed to S6a is an input value, not an identity | A trace never takes its identity from arrival order or storage position (ADR-013 R-05). QSpec FR-181 names the sampler by `DefinitionRef`; FR-101 replaces `sampler_version: String` with it (QSL-272) |
 | TR-2 | Trace position | Layer-5 TemporalTrace evaluator: `TemporalPosition(u64)`, the zero-based index into the represented trace, prefix first, then loop. It crosses replay in `qsl_replay::TracePosition` as decimal ASCII with no leading zero (`0` is position zero). Replay stores it and does not read it (O-25) | Only the TemporalTrace evaluate hook decodes it. A position outside the represented trace refuses at reconstruction, `invalid_runtime_input`/`invalid-value` |
 | TR-3 | Interval | Layer-3 TemporalTrace `check`: `TemporalInterval{lower: u64, upper: u64}`, one validated constructor. It exists only under a bounded profile. Its key is QSpec FR-255's (`lower`, `upper`, profile identity, clock binding), and it is identified by the checked node id of the operator that carries it (O-04). A checked operator holds `Option<TemporalInterval>`: `Some` under a bounded profile, `None` under infinite-trace | `lower > upper`, a missing interval under a bounded profile, any interval (including `[a,*]`) under infinite-trace, and `[a,*]` under a bounded profile each refuse as QSpec FR-091, FR-092 and FR-090 state. Bounded and infinite-trace operators never share a representation |
 | TR-4 | Horizon | Derived, not stored. The TemporalTrace `check` computes the greatest reach of a bounded-profile formula's intervals with checked arithmetic. Overflow past `u64` refuses as a TemporalTrace `check` stage limit, `LimitExceeded` with limit kind work budget (`stage_limit_exceeded`), at the operator. An infinite-trace formula has no horizon | A horizon is a B-1 consequence, never a budget |
 | TR-5 | Evaluation budget | The kernel `Meter` (B-2). The S6a TemporalTrace evaluator charges `quire_exact::LimitKind::WorkUnits` once per (temporal node, position) visit | Running out yields `Incomplete`, never a truth value. The native `quire.native.temporal-work/1` counters retire with M-6c |
 | TR-6 | Seed | `SampleProvenance.seed` in `qsl_eval::simulation`. Exhaustive exploration (`explore`) has no seed: it is deterministic given its `Limits` and the model | The same seed and sampler reproduce the same traces |
-| TR-7 | Frontier | `qsl_eval::simulation::frontier::Frontier` in `explore::Outcome::{Bounded{frontier, limit}, Cancelled{frontier}}` | An exploration that stops early reports its frontier and never claims exhaustive success (QSpec FR-181) |
+| TR-7 | Frontier | `qsl_eval::simulation::frontier::Frontier`, the unexplored states' `quire.simulation.state-key/v1` digests (FR-101), in `explore::Outcome::{Bounded{stats, frontier, limit}, Cancelled{stats, frontier, cause}}` | An exploration that stops early reports its frontier and never claims exhaustive success (QSpec FR-181) |
 | TR-8 | Liveness capability | No new type. It is the QSpec FR-290 pair (`temporal-satisfaction`, `unbounded`) in `BackendDescriptor.advertises`, plus a CG `negotiate_*` arm that discharges the infinite-trace IR form | §6 |
 
 ### 4. Extent, domains and the available finite bound (Q222-3)
@@ -240,8 +240,9 @@ lies in its result bound, for every assignment of its roots under which its
 path condition holds. The path condition is the enclosing `if` conditions
 and short-circuit left operands `check` walks the occurrence under. Its
 roots are the function parameters and the query, `count`, `sum`, `fold`
-and `reduce` binders that its argument subtrees or its path condition read,
-each keyed by its parameter node. A read of a `let` binder contributes the
+(accumulator and element) and `reduce` binders that its argument subtrees
+or its path condition read, other than a binder bound inside those
+subtrees, each keyed by its parameter node. A read of a `let` binder contributes the
 roots its bound value reads, and a literal contributes none, because a
 literal is one value and not a domain. A root read only by the path
 condition still counts, so an application reading `x: Int[0, 9]` under a
@@ -349,7 +350,7 @@ No new capability kind, flag or mode is added. QSL records; CG settles.
 | Bound exhaustion, backend | backend | `IncompleteCause::ResourceExhausted` | QSpec FR-331 `incomplete`; incomplete |
 | Stage ceiling | S1 to S4, I2, `check`, `replay`, `route` | `StageFailure::Limit(LimitExceeded)` | `stage_limit_exceeded`; a stage failure |
 | Timeout | backend | `IncompleteCause::TimedOut` | QSpec FR-331 `incomplete`; incomplete |
-| Cancellation | backend or exploration | `IncompleteCause::Cancelled`; `explore::Outcome::Cancelled{frontier}` | `cancelled`/`caller-cancelled`; incomplete. The kernel `Outcome` has no cancellation variant, and S6a is not cancellable |
+| Cancellation | backend or exploration | `IncompleteCause::Cancelled`; `explore::Outcome::Cancelled{stats, frontier, cause}`, `cause` the F `CatalogCode` `cancelled`/`caller-cancelled` (FR-101) | `cancelled`/`caller-cancelled`; incomplete. The kernel `Outcome` has no cancellation variant, and S6a is not cancellable |
 | Semantic violation | S6a or backend | `Completed(false)` of a claim; QSpec FR-331 `refuted` with its counterexample | violation |
 | Unresolved liveness on a finite prefix | S6a | pending truth | inconclusive |
 

@@ -9,13 +9,19 @@ description = "ADR-011 §6.1 layer 5: the S6a evaluator (value::expression) over
 
 # ADR-011 §6.1 layer 5 depends on "4, 3, F, K". The root crate's
 # `tests/it/family_outcome_layering.rs` (TC-390) asserts this table exactly:
-# the four layer crates, plus one third-party crate the shipped code calls.
+# the four layer crates, plus the third-party crates the shipped code calls.
 # No `test-support` feature: nothing here is test-only.
 [dependencies]
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-package = { path = "../qsl-package" }
 qsl-semantics = { path = "../qsl-semantics" }
 quire-exact = { path = "../quire-exact" }
+# ADR-011 X-8: the simulation state key and the pinned sampler's draw
+# preimage encode through the one RFC 8785 implementation (FR-101).
+quire-canonical = { workspace = true }
+# The pinned sampler's draw preimage and the simulation-state typed
+# canonical form fixtures are `Serialize` (FR-101; ADR-011 X-8).
+serde = { version = "=1.0.228", features = ["derive"] }
 # The derived `Error` impls of `InputRefusal`, `CallFailure` and
 # `InvalidQualifiedName`.
 thiserror = "=2.0.20"

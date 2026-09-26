@@ -163,6 +163,10 @@ CONFORMANCE_SOURCE_MAP_TEST := checked_v2::tests::conformance_c14_source_map_loo
 CONFORMANCE_I2_TEST := checked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures
 # QSL-255: QSL's I2 read over QSpec's `dependency-selection-vectors.json`.
 CONFORMANCE_DEPENDENCY_TEST := checked_v2::tests::conformance_dependency_selection_vectors
+# QSL-6 (FR-093-AC-13, TC-416 step 7): the emitted application nodes against
+# QSpec's `positive-operation-identities.json` and
+# `positive-control-operations.json`.
+CONFORMANCE_GOLDEN_TEST := emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures
 conformance:
 	@if [ -z "$(QSPEC_DIR)" ]; then \
 		echo "conformance: set QSPEC_DIR to a quire-specification checkout" >&2; \
@@ -199,6 +203,11 @@ conformance:
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* dependency-selection entry mutations and [1-9][0-9]* order vectors$$' || { echo "conformance: the dependency-selection vector check did not run" >&2; exit 1; }
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_GOLDEN_TEST) --nocapture 2>&1); \
+	status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -q '^conformance: [1-9][0-9]* emitted application nodes match QSpec.s positive fixtures$$' || { echo "conformance: the emitter golden check did not run" >&2; exit 1; }
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059

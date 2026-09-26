@@ -877,6 +877,86 @@ pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
     /// This cause's catalog code (O-17's method); its O-16 category is
     /// always `Category::Refusal`.
     fn catalog_code(&self) -> CatalogCode;
+
+    /// The structured payload the catalog row requires for the cause
+    /// [`Self::catalog_code`] names (ADR-013 O-17, FR-096), with the same
+    /// map shape as [`UndefinedRecord::fields`]: one entry for each required
+    /// payload item other than a location, valued by the item's rendering.
+    /// A location item is the record's [`Locus`], not a field. Read from the
+    /// cause's own variant, never from a message.
+    ///
+    /// `None` for a cause FR-096's key table has no row for: it has no
+    /// fields to give, and an empty map would pass for a cause whose row
+    /// requires none.
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>>;
+
+    /// This cause as O-17's [`RefusalRecord`], raised at `locus`: its code,
+    /// its fields, and category refusal. `None` when
+    /// [`Self::catalog_fields`] is.
+    fn refusal_record(&self, locus: Option<Locus>) -> Option<RefusalRecord> {
+        Some(RefusalRecord::new(
+            self.catalog_code(),
+            self.catalog_fields()?,
+            locus,
+        ))
+    }
+}
+
+/// FR-096-AC-8: a kernel [`quire_exact::Refusal`] as O-17's
+/// [`RefusalRecord`] raised at `locus`, for the kernel causes the catalog
+/// gives a code and fields: `CardinalityOutOfBound` is
+/// `cardinality_out_of_bound`/`below-minimum` or `above-maximum`, with
+/// `collection`, `bound` (`[minimum, maximum]`) and `count`.
+///
+/// `None` for every other kernel cause. `CheckedInvariant` is an
+/// [`InternalFault`], never a refusal record (a record is always category
+/// refusal). `ForeignReference` carries neither universe, so it has no
+/// fields to give. The remaining causes have no catalog code yet.
+#[deny(clippy::wildcard_enum_match_arm)]
+pub fn kernel_refusal_record(
+    refusal: &quire_exact::Refusal,
+    locus: Option<Locus>,
+) -> Option<RefusalRecord> {
+    use quire_exact::{CollectionKind, Refusal};
+    match refusal {
+        Refusal::CardinalityOutOfBound {
+            violation,
+            kind,
+            bound,
+            count,
+        } => {
+            let collection = match kind {
+                CollectionKind::Sequence => "sequence",
+                CollectionKind::Set => "set",
+                CollectionKind::Bag => "bag",
+                CollectionKind::OrderedSet => "ordered-set",
+            };
+            Some(RefusalRecord::new(
+                CatalogCode::new("cardinality_out_of_bound", violation.as_str()),
+                BTreeMap::from([
+                    ("collection", collection.to_owned()),
+                    (
+                        "bound",
+                        format!("[{}, {}]", bound.minimum(), bound.maximum()),
+                    ),
+                    ("count", count.to_string()),
+                ]),
+                locus,
+            ))
+        }
+        Refusal::InexactDecimal
+        | Refusal::DecimalOutOfDomain
+        | Refusal::DivisionPairOutOfDomain { .. }
+        | Refusal::ModuloOutOfDomain
+        | Refusal::TextLengthOutOfDomain
+        | Refusal::IntegerOutOfDomain
+        | Refusal::RationalOutOfDomain
+        | Refusal::IeeeNotExact { .. }
+        | Refusal::IeeeNanPayloadNotRepresentable
+        | Refusal::IeeeRationalOutOfDomain
+        | Refusal::ForeignReference
+        | Refusal::CheckedInvariant => None,
+    }
 }
 
 /// ADR-013 O-17 (FR-096): a refusal as a consumer outside its producer

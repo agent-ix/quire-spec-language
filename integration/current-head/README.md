@@ -99,22 +99,16 @@ converges the lane's own `Cargo.lock` to exactly one revision per repository
   manifest, a toolchain error) is reported as a distinct failure instead of
   being misreported as the expected one (#249 review HIGH-3).
 
-### A real finding this lane already surfaced
+### A finding this lane surfaced, now resolved
 
-Building this lane's own manifest at real current heads (not the
-intentionally incompatible fixture) currently fails: real
-quire-contract-codegen head does not compile, with `error[E0560]: struct
-CounterexamplePacket has no field named witness` at CG's own
-`src/bounded_kani_corpus.rs:196`. This is a **CG/IR** incompatibility, not
-CG/RT: `CounterexamplePacket` is defined in quire-contract-**ir**
-(`src/kani/replay.rs:45`), not in quire-contract-runtime at all. IR's real
-head already renamed that field (`witness: Option<Witness>` became `source:
-ReplaySource`, IR commit `ef11217`, "kani: ReplaySource replaces the
-optional witness"); CG's own `bounded_kani_corpus.rs` still constructs the
-old `witness:` field, which no longer exists on IR's head. This is exactly
-the class of incompatibility this lane exists to catch, reported here as
-real, current evidence; it is a CG/IR concern to fix, not this lane's or
-QSL's, and the ownership procedure below applies to it directly.
+This lane once failed at real current heads because quire-contract-codegen
+built `CounterexamplePacket { witness, .. }` after quire-contract-ir replaced
+`witness: Option<Witness>` with `source: ReplaySource` (IR commit `ef11217`).
+That was a CG/IR incompatibility, not CG/RT. CG main now builds
+`source: ReplaySource::Input(..)` (`src/bounded_kani_corpus.rs:403` in the CG
+repository), so that failure no longer applies. No recorded run of
+`make integration-current-head` exits 0 yet (QSL-250 AC3); until one does, any
+later break is a CG/IR concern for the ownership procedure below.
 
 ## What it deliberately does not attempt
 

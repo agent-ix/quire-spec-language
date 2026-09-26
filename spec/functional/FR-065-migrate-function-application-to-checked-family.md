@@ -342,17 +342,15 @@ delivered code today:
   `#[trace("TC-376", "FR-065-AC-4")]`) each check an `Expression::Call`
   through `Typer::infer`, so each fails when `Application`'s resolution,
   arity check or parameter typing is removed.
-- FR-065-AC-5: unbacked; a test is needed (`TC-164`). The criterion is
+- FR-065-AC-5: backed (`TC-164`,
+  `a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measure`,
+  `qsl-eval/tests/it/call_verdicts.rs`). The criterion is
   amended by QSL-148's spec lane: it requires the same call verdict from a
   declaration body checked through `PackageDeclarations::check` and from a
   precondition clause checked through `CheckedGraph::check_clause_expression`,
   in place of the earlier symbol-absence and enum-variant conditions, which
   ADR-012 §4.3 contradicts (`Expression::Call` is a `Value`-owned variant of
   the one `Expression` enum) and the testing policy does not admit.
-  `synthesized_dispatch_candidate_is_not_callable_by_name`
-  (`qsl-eval/tests/it/dispatch_calls.rs`) shows a declaration body's
-  `missing-name` refusal through `PackageDeclarations::check`, but no test
-  compares the two positions.
 - FR-065-AC-6: unbacked. No `#[trace(..., "FR-065-AC-6")]` tag exists,
   though `CheckedPackage::call`'s typed-`QualifiedName` lookup
   (`qsl-eval/src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
@@ -374,13 +372,13 @@ delivered code today:
   key builder in `qsl-semantics/src/check/node_key/` reproduces QSpec's
   operation vectors under the opt-in `make conformance`.
 
-Six of this requirement's eight Acceptance Criteria are backed (AC-1, the
+Seven of this requirement's eight Acceptance Criteria are backed (AC-1, the
 packaging API's checked-node-only entry; AC-2, identity/provenance; AC-3,
 occurrence-span survival across check, linking and a v2 round trip; AC-4,
-the application check's verdicts; AC-7, the contract `check` hook's typing
-verdict and F1; AC-8, on the A4b branch); the other two (AC-5, AC-6) are
-unbacked, for the reasons above.
-`TC-164`, `TC-165` and `TC-166` have zero tests each in the delivered code.
+the application check's verdicts; AC-5, the same call verdict at every
+entry point; AC-7, the contract `check` hook's typing verdict and F1; AC-8,
+on the A4b branch); the other one (AC-6) is unbacked, for the reason above.
+`TC-166` has zero tests in the delivered code.
 
 ## Open Questions
 

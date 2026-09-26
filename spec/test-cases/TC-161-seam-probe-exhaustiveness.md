@@ -66,10 +66,15 @@ FR-063-AC-6 names -- and step 8 below exercises each of the five in turn.
 
 ## Test Procedure
 
-1. Run `cargo build -p qsl-semantics --lib` with `RUSTFLAGS=--cfg
-   seam_probe`, then `cargo build -p quire-spec-language --lib`,
-   `cargo build -p qsl-route --lib` and `cargo build -p qsl-eval --lib` with
-   `RUSTFLAGS=--cfg seam_probe --cfg seam_probe_downstream`; confirm each
+1. Run `cargo build -p qsl-forms --lib` with `RUSTFLAGS=--cfg
+   seam_probe_forms`, `cargo build -p qsl-semantics --lib` with
+   `RUSTFLAGS=--cfg seam_probe`, then `cargo build -p quire-spec-language
+   --lib` (with `--cfg seam_probe --cfg seam_probe_downstream --cfg
+   seam_probe_eval_downstream --cfg seam_probe_replay_downstream`),
+   `cargo build -p qsl-route --lib` and `cargo build -p qsl-eval --lib`
+   (each with `--cfg seam_probe --cfg seam_probe_downstream`) and `cargo
+   build -p qsl-replay --lib` (with `--cfg seam_probe --cfg
+   seam_probe_downstream --cfg seam_probe_eval_downstream`); confirm each
    fails, and collect the union of their `E0004` diagnostic locations
    (via `--message-format=json`, filtering `compiler-message` entries whose
    `code.code` is `"E0004"`, reading each primary span's `file_name` and

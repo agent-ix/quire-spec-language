@@ -1877,6 +1877,7 @@ pub fn lookup(
             LookupOutcome::Refused(ModelRefusal {
                 code: Code::InvalidRuntimeInput,
                 cause: ModelRefusalCause::AbsentKey {
+                    binding: binding.population_id().to_string(),
                     key: r.object.clone(),
                 },
                 detail: format!("{display} is not a member of the bound population"),

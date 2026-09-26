@@ -112,3 +112,82 @@ fn no_shipped_item_in_qsl_forms_names_value_type_or_node_key() {
         "a parsed form names a check-time type: {offending:#?}"
     );
 }
+
+/// Every `match` in shipped code with an arm that names a `Production`
+/// variant and a catch-all arm (`_` or a bare binding), as `line`.
+#[derive(Default)]
+struct ProductionCatchAlls {
+    found: Vec<usize>,
+}
+
+/// Whether `pattern` names a `Production::Variant` path anywhere.
+fn names_production(pattern: &syn::Pat) -> bool {
+    struct Finder(bool);
+    impl<'ast> Visit<'ast> for Finder {
+        fn visit_path(&mut self, path: &'ast syn::Path) {
+            if path.segments.len() >= 2 && path.segments[0].ident == "Production" {
+                self.0 = true;
+            }
+        }
+    }
+    let mut finder = Finder(false);
+    finder.visit_pat(pattern);
+    finder.0
+}
+
+impl<'ast> Visit<'ast> for ProductionCatchAlls {
+    fn visit_item(&mut self, item: &'ast syn::Item) {
+        let attrs: &[syn::Attribute] = match item {
+            syn::Item::Mod(item) => &item.attrs,
+            syn::Item::Fn(item) => &item.attrs,
+            syn::Item::Impl(item) => &item.attrs,
+            _ => &[],
+        };
+        if !is_cfg_test(attrs) {
+            syn::visit::visit_item(self, item);
+        }
+    }
+
+    fn visit_expr_match(&mut self, expression: &'ast syn::ExprMatch) {
+        if expression.arms.iter().any(|arm| names_production(&arm.pat)) {
+            for arm in &expression.arms {
+                if matches!(arm.pat, syn::Pat::Wild(_) | syn::Pat::Ident(_)) {
+                    self.found.push(arm.pat.span_start_line());
+                }
+            }
+        }
+        syn::visit::visit_expr_match(self, expression);
+    }
+}
+
+trait StartLine {
+    fn span_start_line(&self) -> usize;
+}
+
+impl StartLine for syn::Pat {
+    fn span_start_line(&self) -> usize {
+        syn::spanned::Spanned::span(self).start().line
+    }
+}
+
+#[trace("FR-091-AC-11", "TC-398")]
+#[test]
+fn no_production_match_in_qsl_forms_has_a_catch_all_arm() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut offending = Vec::new();
+    let mut matches_seen = 0_usize;
+    for name in ["value.rs", "dispatch.rs", "syntax.rs"] {
+        let path = src.join(name);
+        let source = std::fs::read_to_string(&path).expect("a source file reads");
+        matches_seen += source.matches("Production::").count();
+        let file = syn::parse_file(&source).expect("a source file parses");
+        let mut visitor = ProductionCatchAlls::default();
+        visitor.visit_file(&file);
+        offending.extend(visitor.found.iter().map(|line| format!("{name}:{line}")));
+    }
+    assert!(matches_seen > 0, "the scan reads matches over Production");
+    assert!(
+        offending.is_empty(),
+        "a match over Production has a catch-all arm: {offending:?}"
+    );
+}

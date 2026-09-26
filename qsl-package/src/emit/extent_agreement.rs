@@ -30,6 +30,13 @@
 //!
 //! The ignored test gathers every fixture's disagreement before failing,
 //! so one run reports them all.
+//!
+//! **Operation-application records** (FR-097-AC-6). QSL's requirement
+//! record is the authority for an operation-application claim's extent.
+//! IR's predicate on the application node agrees with it for each record
+//! whose roots are all reachable from the node through its operands. A
+//! record rooted through a `let`'s bound value, or read only by a guard, is
+//! outside that agreement: only its own extent is asserted.
 
 use quire_contract_ir::{
     read_checked_package, CheckedNodeId, CheckedNodeTag, CheckedPackageDispatchResult,
@@ -52,7 +59,7 @@ use quire_exact::{
 
 use super::tests::{locked_artifacts, nodes, source, whole_unit, wire};
 use super::tests::{metre_units, METRE};
-use super::{emit_package, CheckedPackage, OmittedNode};
+use super::{emit_checked, emit_package, CheckedPackage, Emission, OmittedNode};
 
 const LIMIT: u64 = 1_000;
 
@@ -156,7 +163,13 @@ fn emit_and_read(types: TypeEnvironment) -> (Value, Box<CheckedPackageV2>, Vec<O
         .expect("the fixture records check"),
     );
     let emission = emit_package(&package, whole_unit).expect("the package emits");
-    let wire = wire(&emission);
+    let (wire, admitted) = read_emission(&emission);
+    (wire, admitted, emission.omitted)
+}
+
+/// IR's v2 reading of `emission`, with its wire.
+fn read_emission(emission: &Emission) -> (Value, Box<CheckedPackageV2>) {
+    let wire = wire(emission);
     let mut evidence = CheckedPackageEvidence::new();
     locked_artifacts(&wire["lock"], &mut evidence);
     locked_artifacts(&wire["diagnostics"], &mut evidence);
@@ -170,7 +183,7 @@ fn emit_and_read(types: TypeEnvironment) -> (Value, Box<CheckedPackageV2>, Vec<O
     ) else {
         panic!("IR admits the emitted package");
     };
-    (wire, admitted, emission.omitted)
+    (wire, admitted)
 }
 
 /// The written node declaring `name`, as IR's node id and QSL's wire id.
@@ -328,4 +341,163 @@ fn disagreement(
         ) if domains.iter().any(|(_, domain)| domain == kind) => None,
         _ => Some(format!("{name}: QSL {extent:?}; IR {lowering:?}")),
     }
+}
+
+const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"quire.value.complete/v1\" version \"1\" digest \
+    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+
+/// `declarations` checked from source text through S1 to S4, emitted at
+/// its form spans and read back by IR's v2 reader.
+fn emit_text(declarations: &str) -> (CheckedPackage, Value, Box<CheckedPackageV2>) {
+    let text = format!("{HEADER}{declarations}\n");
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .expect("S2 builds the unit");
+    let package = CheckedPackage::link(
+        PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            unit,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}")),
+    );
+    let emission = emit_checked(&package).expect("the package emits");
+    let (wire, admitted) = read_emission(&emission);
+    (package, wire, admitted)
+}
+
+/// The written node whose id is `node`, as IR's node id.
+fn written(wire: &Value, node: WireNodeId) -> CheckedNodeId {
+    let digest = node.to_string();
+    let written = nodes(wire)
+        .iter()
+        .find(|written| written["node_id"]["digest"] == json!(digest))
+        .unwrap_or_else(|| panic!("{digest} is written"));
+    CheckedNodeId {
+        domain: written["node_id"]["domain"].as_str().unwrap().into(),
+        digest: digest.into(),
+    }
+}
+
+/// Each requirement record of `package` whose application applies
+/// `operation`, in key order: its node and its extent.
+fn requirement_records(
+    package: &CheckedPackage,
+    operation: &str,
+) -> Vec<(WireNodeId, ClaimExtent)> {
+    let graph = package.graph();
+    graph
+        .requirements()
+        .iter()
+        .filter(|(key, _)| {
+            let node = graph
+                .semantic_graph()
+                .node(NodeKey::from_digest(*key.node().as_bytes()))
+                .expect("the record's node is lowered");
+            matches!(
+                node.body(),
+                qsl_semantics::check::SemanticTerm::Application { operation: applied, .. }
+                    if applied.identity() == operation
+            )
+        })
+        .map(|(key, record)| (key.node(), record.requirements().extent().clone()))
+        .collect()
+}
+
+/// `function`'s parameter at `index`, as the unbounded `Integer` domain of
+/// an extent rooted there.
+fn integer_at(package: &CheckedPackage, function: &str, index: usize) -> ClaimExtent {
+    let graph = package.graph();
+    let parameter = graph
+        .semantic_graph()
+        .node(graph.function_identity(function).expect("declared"))
+        .and_then(|node| node.function_parameters())
+        .expect("a function node")[index];
+    ClaimExtent::from_domains(std::collections::BTreeMap::from([(
+        qsl_foundation::bound::DomainKey::new(
+            WireNodeId::from_digest(*parameter.as_bytes()),
+            Vec::new(),
+        ),
+        DomainKind::Integer,
+    )]))
+}
+
+/// `(x + 1) + n`'s two `+` records, checked and emitted: the inner and the
+/// outer application's node and extent, and IR's lowering of each node.
+fn inner_and_outer() -> [(ClaimExtent, CompleteLoweringRecordV2); 2] {
+    let (package, wire, admitted) =
+        emit_text("function f using v(x: Int[0, 9], n: Integer): Integer pure { (x + 1) + n }");
+    let outer = integer_at(&package, "f", 1);
+    let mut found: Vec<(ClaimExtent, CompleteLoweringRecordV2)> =
+        requirement_records(&package, "quire.op.integer.add")
+            .into_iter()
+            .map(|(node, extent)| {
+                let lowering = ir_lowering(&admitted, &written(&wire, node));
+                (extent, lowering)
+            })
+            .collect();
+    // The inner `+` first: its extent is the bounded one.
+    found.sort_by_key(|(extent, _)| *extent != ClaimExtent::Bounded);
+    let [inner, outer_found] = <[_; 2]>::try_from(found).expect("two `+` records");
+    assert_eq!(inner.0, ClaimExtent::Bounded);
+    assert_eq!(outer_found.0, outer, "the outer `+` is unbounded at `n`");
+    [inner, outer_found]
+}
+
+/// TC-440 step 4 (FR-097-AC-6): over `(x + 1) + n`, the inner `+` record
+/// is `Bounded` and IR lowers its node; the outer `+` record is
+/// `Unbounded` at `n`. RR-7's `*` (rooted through `t`'s bound value) and
+/// `k`'s `+` (rooted at `n` through its guard) are outside the agreement;
+/// their records' extents are asserted, `Bounded` and `Unbounded` at `n`.
+#[trace("TC-440", "FR-097-AC-6")]
+#[test]
+fn tc_440_operation_application_records_agree_with_ir_per_node() {
+    let [(_, inner), _] = inner_and_outer();
+    assert!(
+        matches!(inner, CompleteLoweringRecordV2::Lowered { .. }),
+        "IR lowers the bounded inner `+`: {inner:?}"
+    );
+
+    let (package, _, _) =
+        emit_text("function lt using v(x: Int[0, 9]): Integer pure { let t = x + 1 in t * 2 }");
+    let multiply: Vec<ClaimExtent> = requirement_records(&package, "quire.op.integer.mul")
+        .into_iter()
+        .map(|(_, extent)| extent)
+        .collect();
+    assert_eq!(multiply, [ClaimExtent::Bounded]);
+
+    let (package, _, _) = emit_text(
+        "function k using v(x: Int[0, 9], n: Integer): Integer pure { if n = 0 then x + 1 else 0 }",
+    );
+    let add: Vec<ClaimExtent> = requirement_records(&package, "quire.op.integer.add")
+        .into_iter()
+        .map(|(_, extent)| extent)
+        .collect();
+    assert_eq!(add, [integer_at(&package, "k", 1)]);
+}
+
+/// TC-440 step 4 (FR-097-AC-6, IR-283): IR requires a bound for the outer
+/// `+` of `(x + 1) + n`, whose record is `Unbounded` at `n`. At the pinned
+/// revision IR lowers it: `x: Int[0, 9]`'s `bounded_domain` over the shared
+/// `integer` node bounds `n`'s position too.
+#[trace("TC-440", "FR-097-AC-6")]
+#[test]
+#[ignore = "IR-283: IR's pinned requires-bound predicate does not distinguish integer positions"]
+fn tc_440_an_unbounded_application_record_requires_a_bound_in_ir_pending_ir_283() {
+    let [_, (_, outer)] = inner_and_outer();
+    assert!(
+        matches!(outer, CompleteLoweringRecordV2::RequiresBound { .. }),
+        "IR requires a bound for the unbounded outer `+`: {outer:?}"
+    );
 }

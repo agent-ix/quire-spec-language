@@ -53,4 +53,8 @@ waits on IR-283 (the predicate does not distinguish integer positions) and
 IR-284 (no recursion rule). It also holds a quantity fixture, `Measure`,
 which cannot be compared yet: the emitter omits the record because it
 names the unit node lowering does not build. It reports every fixture's
-disagreement in one run. Step 4 (QSL-266) is not implemented.
+disagreement in one run. Step 4 passes for the inner `+` and for RR-7's
+`*` and `k`'s `+` (`tc_440_operation_application_records_agree_with_ir_per_node`).
+IR lowers the outer `+` of `(x + 1) + n` instead of requiring a bound
+(IR-283); that assertion is in the ignored
+`tc_440_an_unbounded_application_record_requires_a_bound_in_ir_pending_ir_283`.
