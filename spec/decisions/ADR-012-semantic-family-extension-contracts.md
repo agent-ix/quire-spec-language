@@ -30,6 +30,11 @@ This record is the `/specify` output for #210. Its `/spec-review` (all
 analyses, SR-474 to SR-481) is in
 [`spec/reviews/family-extension/`](../reviews/family-extension/base.md).
 
+Amended 2026-09-26 by QSL-273 (A05-3): §15 maps state clauses, frames,
+operation anchors and observations onto this contract. It is the state share
+of the #220 (QSL-19) mapping that §14.1 hands to #120, #121 and #164, and it
+is the design FR-102 to FR-109 implement.
+
 ## Context
 
 #210 requires QSL semantic families to extend the compiler and the proof
@@ -1096,6 +1101,151 @@ Requirements needed before implementation starts:
 - The exit cases of #185, #188 and #189 that need a disposition run in CG
   over the candidate-set wire and the v2 bytes as data (§5.3), so they need
   no #225 edge.
+
+## 15. State clauses on the shared contract (QSL-19 mapping, QSL-273)
+
+This section maps the state behaviour that native-run/1 executes today
+(FR-023, FR-026, FR-028, FR-031 and FR-032) onto the families, stages and
+seams of this record. ADR-011 §7.3 M-6c deletes native `run`, `state` and
+`runtime` in the PR that lands this replacement, and not before its
+end-to-end corpus (FR-108) passes. FR-102 to FR-109 are the requirements.
+
+### 15.1 Scope
+
+In scope is a `1-draft` unit that imports one domain package with
+`model M = ...` and declares state clauses over it, with the grammar of QSpec
+`shared-grammar.md`:
+
+- `invariant N using p on M::T at current { e }`;
+- `pre N using p on M::T::op { e }`;
+- `post N using p on M::T::op { e }`.
+
+The domain package declares the object types, their fields, their
+populations and their operations with parameters, result and frame
+(`model-complete.md` Frames row). The clauses are evaluated over supplied
+finite observations: a current snapshot for an invariant, and an invocation
+with a pre and a post snapshot for a precondition or postcondition.
+
+Out of scope are protocols and protocol transitions (#218), temporal clauses
+(#188, #189), finite exploration (QSL-272, FR-181), and model state values
+that are not object fields. Native-run/1's `values` roots (a State root such
+as ConfigVersion's `other`) have no `1-draft` spelling, so a comparison of two
+selected objects is a function over two references (FR-108).
+
+### 15.2 Family assignment
+
+The §1 catalogue already names the owners. This is how each state concern
+falls to them.
+
+| Concern | Family | Why |
+| --- | --- | --- |
+| The `invariant`, `pre` and `post` declaration forms, their anchors and their frames | `ProtocolClause` | §1 and §3 give it "operation clauses, frames, scoped anchors" and "v2 `state`/`frame` and clause nodes" |
+| `self`, `result` and `pre(e)` inside a clause | `ProtocolClause` | they read the clause's observation; §4.3 moves `Pre` here, and ADR-013 T-6 makes `wrong_snapshot` its cause |
+| Admitting operations, frames and populations of the domain package at I1 and E3 | `StateModel` | §3 gives it model declarations, populations and dispatch |
+| Admitting a snapshot's populations and objects, and an invocation's pre/post pair and frame, before S6a | `StateModel` | `model::population::admit_binding` and `admit_invocation` are its code today |
+| Field reads, `deref`, `reaches` and object identity equality | `StateModel` | §4.3 moves `Deref` to `StateModel` |
+| The clause's Boolean body, arithmetic, `let`, `if` and connectives | `Value` | unchanged |
+
+The `StateModel` rows are values `ProtocolClause` reads, which is the §1
+order. No family edge is added.
+
+### 15.3 Stage table
+
+| Stage | Change | Module | Seam forced | Requirement |
+| --- | --- | --- | --- | --- |
+| S1 | none. The CST already parses the three clause forms and `self`, `result` and `reaches` | `qsl-cst` | none | none |
+| S2 | three leading-token kinds (`Invariant`, `Pre`, `Post`) with one entry, `protocol_clause::state_clause`; `DeclarationForm::StateClause`; `Expression` variants for `self`, `result` and `reaches` | `forms` core; `forms::protocol_clause` | S2 | FR-102 |
+| I1 and E3 | operation frames become `OperationEffect`; the assembler declares operations of object types instead of refusing them | `model::intake`; `check::assemble` | none | FR-103 |
+| S3 | the state clause check: context, anchor and body typing under the clause kind, and one `operation-contract` requirement record per clause and per frame | `check::protocol_clause`; `check` core dispatch arm | S1, S3, S7 | FR-104 |
+| S4 | `state`/`state_clause`, `state`/`operation_anchor` and `state`/`frame` nodes, and the `model`/`field_declaration` and `model`/`operation_declaration` nodes they name | `package` (v2 emitter, `ProtocolClause` and `StateModel` arms) | S1, S3, S5 | FR-105 |
+| E6 input | the snapshot and invocation documents and their admission into an observation set | `model::observation` (admission); layer-6 reader | none | FR-106 |
+| S6a | the `ProtocolClause` variant of the S6a family kind and its `evaluate` hook; observation-qualified field reads | `value::expression::protocol_clause` | S1 | FR-107 |
+| Layer 6 | the clause run entry: compile, select, admit, evaluate, report | `qsl_replay::spine` | none | FR-109 |
+
+A state clause is one clause with one body. It is not a construct with
+several clauses, so it needs no §4 staged builder. The pre and post clauses of
+one operation are separate declarations in `1-draft`, joined only through the
+operation anchor node they share.
+
+### 15.4 Identity and wire
+
+- **Clause identity.** A state clause's identity is the checked node id of its
+  `state`/`state_clause` node, with the `claim` occurrence of the declaration
+  as its occurrence key (ADR-013 O-07, O-09). Two structurally equal clauses
+  under different names share a node id and differ by occurrence. The clause
+  name is not on the wire, because a `state` node carries no `declaration`
+  (QSpec `DeclarationTagRules`). The in-process `CheckedPackage` keeps the
+  name → (node id, occurrence) table the run entry selects by (FR-109).
+- **Clause kind.** The layer-3 `CheckedClauseKind` (ADR-013 O-10) gains
+  `Invariant`, `Precondition` and `Postcondition`. Each maps to the pair
+  (`state`, `state_clause`) plus its body's kind binding. The mapping is
+  total and injective over the enum, as FR-088-AC-4 requires.
+- **Frame identity.** ADR-013 O-08 is unchanged: the checked node id of the
+  `state`/`frame` node. Its subjects are the `model`/`field_declaration` and
+  `model`/`object_type` nodes S4 now emits.
+- **Wire.** The body shapes are QSL's proposal in FR-105. They use only the
+  existing `aggregate`, `binding`, `reference` and application terms, so
+  QSpec needs a body rule for `state_clause` and `operation_anchor`, not a new
+  term kind or operator. `reaches` over a field edge needs the catalog entry
+  `quire.op.model.reaches` to admit a `field_declaration` member; today it
+  admits `relationship_end` only. Both are QSpec changes, owned there (FR-105
+  Dependencies). v2 is prerelease and QSpec revises it in place (§12.1).
+- **Not emitted.** QSL emits no `state`/`snapshot` node. A snapshot is an
+  observation supplied at E6, and a package's identity must not depend on its
+  observations (ADR-011 E6). QSL emits no `state`/`transition` node from a
+  state clause. Transitions are protocol controls that carry a
+  `protocol_profile` law, and they belong to `ProtocolClause`'s protocol
+  emission (#218).
+
+### 15.5 Observations
+
+A snapshot is a document with its own FR-001 labels and a `sha256-jcs`
+digest, and an invocation names its pre and post snapshots by that identity
+(FR-106). The run entry receives them by digest, like domain packages, and
+reads no path, environment variable or search location. Admission converts
+them into the `StateModel` types that exist today (`PopulationBinding`,
+`ObjectEnvironment`, `admit_invocation`) and adds what they lack: every field
+value of every object, per observation, so that `pre(self.f)` reads the pre
+snapshot, and so that a frame compares scalar fields as well as reference
+fields.
+
+### 15.6 Outcomes
+
+Every result maps to the ADR-013 O-16 categories through the three places
+that produce one. None adds a category.
+
+| Where | Result | O-16 category | Catalog code |
+| --- | --- | --- | --- |
+| compile (S1 to S4, I1) | refusal or limit | refusal, incomplete | the stage's own code, such as `missing_import` |
+| admission (FR-106) | a bad document, selection or value | refusal | `invalid_runtime_input`, `wrong_snapshot`, `invalid_model_binding`, `stale_dependency` |
+| admission (FR-106) | a reference to a key absent from a complete population | refusal | `dangling_reference` |
+| admission (FR-106) | a required population declared incomplete | incomplete | `incomplete_population` |
+| admission (FR-106) | a change outside the frame, or a declared delta that disagrees | refusal | `frame_violation`, `population_delta_mismatch` |
+| S6a (FR-107) | `Completed(true)` or `Completed(false)` | success, violation | none |
+| S6a (FR-107) | meter exhausted | incomplete | `resource_exhausted` |
+| S6a (FR-107) | `wrong_snapshot` at run time | refusal | `wrong_snapshot` |
+
+FR-109 fixes the report and the FR-301 exit code of each category.
+
+### 15.7 Requirements
+
+Each state clause records one `operation-contract` requirement, and so does
+each frame an anchored operation carries, as FR-057 assigns. Each is keyed by
+its node's own occurrence (§13.5). Its extent follows ADR-014 §4 over the
+clause's `self`, `result` and operation parameter types. A reference is not an
+unbounded domain in that table, so a clause over bounded fields is `Bounded`.
+Recording a requirement grants nothing; no backend proves a state clause
+until IR admits `state` nodes (IR `lower` returns no form for them at the
+pinned revision 48ab5dc).
+
+### 15.8 Replacement and deletion
+
+The native path runs until FR-108's corpus passes through FR-109. The PR
+that lands FR-109 and a passing FR-108 deletes native `run`, `state`,
+`runtime`, `mapped`, `model_source`, `native_model` and the SEAM-3 reads that
+feed them (ADR-011 §7.3 M-6c). The parity half of FR-108, which runs native
+and the spine side by side, is deleted in that PR too. The half that checks
+the spine against the independent expected dispositions stays.
 
 ## Consequences
 
