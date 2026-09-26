@@ -1273,7 +1273,11 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
     // `qsl_eval` path, walking `UseTree::Path`/`Name`/`Rename`/`Group`
     // recursively; `UseTree::Glob` binds no enumerable name (see the type
     // doc above).
-    fn qsl_eval_aliases(file: &syn::File) -> std::collections::HashSet<String> {
+    // Every local name a top-level `use` item in one file binds to a
+    // `qsl_eval` path, walking `UseTree::Path`/`Name`/`Rename`/`Group`
+    // recursively; `UseTree::Glob` binds no enumerable name (see the type
+    // doc above).
+    fn use_aliases(file: &syn::File) -> std::collections::HashSet<String> {
         fn walk(
             tree: &syn::UseTree,
             under_qsl_eval: bool,
@@ -1307,31 +1311,6 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
                 walk(&use_item.tree, false, &mut aliases);
             }
         }
-        // FND-015: a `type` alias (private or public) whose own definition
-        // names `qsl_eval` -- directly, or through another such alias -- is
-        // itself an alias: a public item spelling only the alias's own name
-        // (`type Q = qsl_eval::value::QualifiedName;` then `pub fn f() ->
-        // Option<Q>`) still names `qsl_eval` through it. Fixed point over
-        // the file's own `type` items, since one alias may be defined in
-        // terms of another declared later in the same file.
-        loop {
-            let mut changed = false;
-            for item in &file.items {
-                if let syn::Item::Type(type_item) = item {
-                    let name = type_item.ident.to_string();
-                    if aliases.contains(&name) {
-                        continue;
-                    }
-                    if names_qsl_eval(&aliases, |finder| finder.visit_type(&type_item.ty)) {
-                        aliases.insert(name);
-                        changed = true;
-                    }
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
         aliases
     }
 
@@ -1350,12 +1329,54 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
             }
         }
     }
+    // FND-020: every scanned file's syntax tree, read and parsed once, so
+    // the alias set below can be resolved across all of them together --
+    // `pub(crate) type Ev = qsl_eval::...;` declared in `spine.rs` and used
+    // only by its bare name in `call.rs` is still an alias there.
+    let parsed_files = files
+        .iter()
+        .map(|file| {
+            let text = fs::read_to_string(file).map_err(|error| Error::io(file, error))?;
+            let parsed = syn::parse_file(&text)
+                .map_err(|error| Error::new(Code::Usage, format!("{}: {error}", file.display())))?;
+            Ok((file, parsed))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut aliases = std::collections::HashSet::new();
+    for (_, parsed) in &parsed_files {
+        aliases.extend(use_aliases(parsed));
+    }
+    // FND-015/FND-020: a `type` alias (private or public), in any scanned
+    // file, whose own definition names `qsl_eval` -- directly, or through
+    // another such alias declared in the same or a different file -- is
+    // itself an alias: a public item spelling only the alias's own name
+    // (`type Q = qsl_eval::value::QualifiedName;` then `pub fn f() ->
+    // Option<Q>`, however far apart the two are) still names `qsl_eval`
+    // through it. Fixed point over every scanned file's own `type` items
+    // together, since one alias may be defined in terms of another
+    // declared in a different file.
+    loop {
+        let mut changed = false;
+        for (_, parsed) in &parsed_files {
+            for item in &parsed.items {
+                if let syn::Item::Type(type_item) = item {
+                    let name = type_item.ident.to_string();
+                    if aliases.contains(&name) {
+                        continue;
+                    }
+                    if names_qsl_eval(&aliases, |finder| finder.visit_type(&type_item.ty)) {
+                        aliases.insert(name);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
     let mut findings = Vec::new();
-    for file in &files {
-        let text = fs::read_to_string(file).map_err(|error| Error::io(file, error))?;
-        let parsed = syn::parse_file(&text)
-            .map_err(|error| Error::new(Code::Usage, format!("{}: {error}", file.display())))?;
-        let aliases = qsl_eval_aliases(&parsed);
+    for (file, parsed) in &parsed_files {
         for item in &parsed.items {
             // `mod tests { ... }` is test-only code, not part of the shipped
             // public surface, even where a stray `pub` appears inside it.
@@ -1413,7 +1434,8 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
     let text = fs::read_to_string(&lib).map_err(|error| Error::io(&lib, error))?;
     let parsed = syn::parse_file(&text)
         .map_err(|error| Error::new(Code::Usage, format!("{}: {error}", lib.display())))?;
-    let lib_aliases = qsl_eval_aliases(&parsed);
+    let mut lib_aliases = aliases;
+    lib_aliases.extend(use_aliases(&parsed));
     for item in &parsed.items {
         if let syn::Item::Use(use_item) = item {
             if is_pub(&use_item.vis)
@@ -2703,6 +2725,31 @@ mod tests {
             "type Q = qsl_eval::value::QualifiedName;\n\
              pub struct Selected;\n\
              impl Selected {\n    pub fn probe(&self) -> Option<Q> { None }\n}\n",
+        );
+        write(dir.path(), "lib.rs", "pub mod spine;\n");
+        let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].contains("impl fn probe"), "{findings:?}");
+    }
+
+    /// FND-020: a `type` alias declared in one scanned file and used, by
+    /// its bare name, in another is still an alias -- `Ev` is declared in
+    /// `spine.rs` and only ever spelled in `spine/call.rs`.
+    #[trace("TC-452", "FR-100-AC-8")]
+    #[test]
+    fn tc_452_spine_surface_check_resolves_a_cross_file_type_alias() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "spine.rs",
+            "pub(crate) type Ev = qsl_eval::value::QualifiedName;\n\
+             pub mod call;\n",
+        );
+        write(
+            dir.path(),
+            "spine/call.rs",
+            "pub struct Selected;\n\
+             impl Selected {\n    pub fn probe(&self) -> Option<super::Ev> { None }\n}\n",
         );
         write(dir.path(), "lib.rs", "pub mod spine;\n");
         let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();

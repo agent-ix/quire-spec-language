@@ -810,4 +810,82 @@ mod tests {
             );
         }
     }
+
+    /// FR-100-AC-9 (TC-452 step 4, FND-019): a record refusal's `locus`
+    /// renders `{source_digest, span}` exactly -- the TC-452 fixture-F
+    /// values -- and `location` renders on both a record refusal and a
+    /// family refusal.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn refused_locus_and_location_render() {
+        use qsl_replay::spine::{CallLocus, CallRefusal};
+        use qsl_semantics::check::{Location, Origin};
+        let span = qsl_foundation::LocatedSpan {
+            start: qsl_foundation::Position {
+                byte: 225,
+                line: 3,
+                column: 54,
+            },
+            end: qsl_foundation::Position {
+                byte: 226,
+                line: 3,
+                column: 55,
+            },
+        };
+        let locus = CallLocus {
+            source_digest:
+                "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26".to_owned(),
+            span,
+        };
+        let location = Location {
+            origin: Origin::Body {
+                function: "f".to_owned(),
+                index: 0,
+            },
+            path: vec![1],
+        };
+        let fields = std::collections::BTreeMap::from([("binding", "people".to_owned())]);
+        let expected_location = serde_json::json!({"origin": {"kind": "body", "function": "f", "index": 0}, "path": [1]});
+
+        let record = render(CallOutcome::Refused(CallRefusal::Record {
+            code: qsl_foundation::diagnostic::CatalogCode::new(
+                "invalid_runtime_input",
+                "absent-key",
+            ),
+            fields: fields.clone(),
+            locus: Some(locus),
+            location: Some(location.clone()),
+        }));
+        assert_eq!(
+            record.value.as_value()["outcome"],
+            serde_json::json!({
+                "kind": "refused",
+                "code": "invalid_runtime_input",
+                "cause": "absent-key",
+                "fields": fields,
+                "locus": {
+                    "source_digest": "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26",
+                    "span": {
+                        "start": {"byte": 225, "line": 3, "column": 54},
+                        "end": {"byte": 226, "line": 3, "column": 55},
+                    },
+                },
+                "location": expected_location,
+            })
+        );
+
+        let family = render(CallOutcome::Refused(CallRefusal::Family {
+            code: qsl_foundation::diagnostic::CatalogCode::new("ill_typed", "type-mismatch"),
+            location: Some(location),
+        }));
+        assert_eq!(
+            family.value.as_value()["outcome"],
+            serde_json::json!({
+                "kind": "refused",
+                "code": "ill_typed",
+                "cause": "type-mismatch",
+                "location": expected_location,
+            })
+        );
+    }
 }
