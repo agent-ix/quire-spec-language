@@ -1921,9 +1921,9 @@ fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
         .map(|omission| omission.node.clone())
         .collect();
     assert_eq!(omitted, expected);
-    assert!(omitted.iter().all(|id| id.digest.to_string() != t_key));
+    assert!(omitted.iter().all(|id| *id.digest != *t_key));
     // `q` is absent from the wire's exports, `t` is present.
-    assert!(!exports.values().any(|key| *key == q_key.digest.to_string()));
+    assert!(!exports.values().any(|key| **key == *q_key.digest));
 }
 
 /// FR-062-AC-9 (TC-160 step 8, second half): the same package with an
