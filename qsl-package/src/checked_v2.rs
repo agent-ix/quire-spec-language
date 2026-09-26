@@ -772,13 +772,26 @@ pub enum ImportViewRefusal {
     },
     /// The I2 read of the package, or of a package of its closure, refused
     /// or reached a ceiling.
-    #[error("the I2 read of {package} refused: {refusal:?}")]
+    #[error("the I2 read of {package} refused: {}", read_message(refusal))]
     Read {
         /// The library identity of the package whose read refused.
         package: LibraryName,
         /// The read's refusal or reached ceiling.
         refusal: StageFailure<V2ReadRefusal>,
     },
+}
+
+/// A readable account of an I2 read's refusal or reached ceiling.
+fn read_message(refusal: &StageFailure<V2ReadRefusal>) -> String {
+    match refusal {
+        StageFailure::Refused(refusal) => refusal.to_string(),
+        StageFailure::Limit(limit) => format!(
+            "{} (bound {}, reached {})",
+            limit.kind().catalog_cause(),
+            limit.configured_bound(),
+            limit.actual()
+        ),
+    }
 }
 
 impl ImportViewRefusal {

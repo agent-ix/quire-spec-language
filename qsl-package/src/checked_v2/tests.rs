@@ -742,7 +742,7 @@ fn refuses_an_ambiguous_declaration_at_ir_intake() {
 /// `/identity_preimage/dependency_selections/0`.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
-fn admits_dependency_selections() {
+fn dependency_selections_reach_binding_and_refuse_unsupplied() {
     let dependencies = vec![
         dependency_selection("geometry", "1", "geometry-pkg"),
         dependency_selection("units", "2", "units-pkg"),
