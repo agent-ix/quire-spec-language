@@ -302,6 +302,12 @@ pub struct CheckedGraph {
     /// declaration and function-application occurrence this package
     /// checked.
     occurrences: family::OccurrenceMap<Location>,
+    /// ADR-012 §13.5, ADR-011 E7: this package's per-item requirement
+    /// records -- one per checked item that has `Requirements`, keyed by
+    /// the item's occurrence key. Read through [`Self::requirements`], the
+    /// candidate step's own input (`qsl-route`), not dropped after `check`.
+    requirements:
+        BTreeMap<qsl_foundation::source::provenance::OccurrenceKey, crate::family::Requirements>,
     /// ADR-013 O-04/FR-088-AC-2: the model correspondence this package's own
     /// checking recorded, read only through [`Self::resolve_declaration`] --
     /// a node-id-keyed accessor, never a name-keyed one (R-06). FR-094:
@@ -733,6 +739,15 @@ impl PackageDeclarations {
         }
         let mut drafts: Vec<(Signature, family::CheckedDeclarationBody)> =
             Vec::with_capacity(self.functions.len());
+        // ADR-012 §13.5, ADR-011 E7: each admitted declaration's own
+        // `Requirements`, read from the contract's `Checked` value before it
+        // is unpacked into `drafts` below, index-aligned with `drafts` by
+        // construction (both are pushed together, only on `Ok`). Zipped
+        // against the lowered identities once those are minted, to key each
+        // `Requirements` by its declaration's occurrence (`requirements`,
+        // below).
+        let mut requirements_per_index: Vec<Option<crate::family::Requirements>> =
+            Vec::with_capacity(self.functions.len());
         // QSL-148: identity, the real typing/definedness verdict and one
         // success diagnostic are all produced through one call into the
         // checked-family contract's own `check` hook
@@ -876,6 +891,11 @@ impl PackageDeclarations {
                     // channel: no `.expect(...)` unwrap of a slot `check`
                     // might not have filled.
                     let checked = staged.into_value();
+                    // ADR-012 §13.5: read this declaration's `Requirements`
+                    // (FR-062-AC-4: `ValueFunctionFamily` requests none)
+                    // before `checked` is unpacked below.
+                    requirements_per_index
+                        .push(family::ValueFunctionFamily::requirements(&checked));
                     // PR #303 review round 3, finding F1: advance the
                     // package's running node total from this admitted
                     // declaration's own final count, so the next
@@ -1034,6 +1054,14 @@ impl PackageDeclarations {
         for (node, declaration) in correspondence {
             model_correspondence.record(node, declaration);
         }
+        // ADR-012 §13.5, ADR-011 E7: each admitted declaration's
+        // `Requirements`, by its now-minted node identity.
+        let requirements_by_identity: BTreeMap<quire_exact::NodeKey, crate::family::Requirements> =
+            identities
+                .iter()
+                .zip(&requirements_per_index)
+                .filter_map(|(identity, requirements)| Some(((*identity)?, requirements.clone()?)))
+                .collect();
         let functions = CheckedFunctions::new(
             drafts
                 .into_iter()
@@ -1050,12 +1078,38 @@ impl PackageDeclarations {
                 })
                 .collect(),
         );
+        // ADR-012 §13.5: exactly one record per checked item that has
+        // `Requirements`, keyed by the item's occurrence key (ADR-013 O-07)
+        // -- here, its declaration occurrence, the only occurrence a
+        // function's identity is requested over. `ValueFunctionFamily`
+        // requests none (FR-062-AC-4), so this is empty until a claim
+        // family ships (QSL-42, QSL-43).
+        let requirements: BTreeMap<
+            qsl_foundation::source::provenance::OccurrenceKey,
+            crate::family::Requirements,
+        > = occurrences
+            .iter()
+            .filter_map(|(node, origin, _location)| {
+                if origin.role().as_str() != "declaration" {
+                    return None;
+                }
+                let requirements = requirements_by_identity.get(&node)?.clone();
+                Some((
+                    qsl_foundation::source::provenance::OccurrenceKey::new(
+                        qsl_foundation::digest::WireNodeId::from_digest(*node.as_bytes()),
+                        origin,
+                    ),
+                    requirements,
+                ))
+            })
+            .collect();
         Ok(CheckedGraph {
             source,
             scope,
             functions,
             dispatch_tables,
             occurrences,
+            requirements,
             model_correspondence,
             type_nodes,
             semantic_graph,
@@ -1260,6 +1314,20 @@ impl CheckedGraph {
         &self,
     ) -> impl Iterator<Item = (quire_exact::NodeKey, quire_exact::Origin, &Location)> {
         self.occurrences.iter()
+    }
+
+    /// This package's per-item requirement records (ADR-012 §13.5, ADR-011
+    /// E7): one per checked item that has `Requirements`, keyed by the
+    /// item's occurrence key. `qsl-route`'s candidate step reads these from
+    /// the in-process `CheckedPackage` (`qsl_package::CheckedPackage::
+    /// requirements`, which delegates here); `ValueFunctionFamily` requests
+    /// none (FR-062-AC-4), so this is empty until a claim family ships
+    /// (QSL-42, QSL-43).
+    pub fn requirements(
+        &self,
+    ) -> &BTreeMap<qsl_foundation::source::provenance::OccurrenceKey, crate::family::Requirements>
+    {
+        &self.requirements
     }
 
     /// One admitted function's own name, checked body and evaluation slot
@@ -1641,6 +1709,36 @@ mod tests {
             renamed.occurrence(call_identity, &first),
             Some(&first_location),
             "the diagnostic location's own embedded function name is expected to change"
+        );
+    }
+
+    /// ADR-012 §13.5, ADR-011 E7: `CheckedGraph::requirements` is a real
+    /// checked package's per-item requirement records, keyed by occurrence
+    /// key. `ValueFunctionFamily` requests no FR-057 capability kind for a
+    /// function declaration (FR-062-AC-4), so a package holding only
+    /// functions carries none -- exactly what the driver's E7 candidate
+    /// step reads today, until a claim family ships (QSL-42, QSL-43).
+    #[trace("FR-062-AC-13", "TC-160")]
+    #[test]
+    fn a_function_unit_carries_no_requirement_records() {
+        fn literal_function(name: &str, body: Expression) -> FunctionDeclaration {
+            FunctionDeclaration::new(
+                name,
+                Vec::new(),
+                qsl_forms::TypeForm::builtin(
+                    qsl_forms::BuiltinType::Boolean,
+                    qsl_foundation::Span { start: 0, end: 0 },
+                ),
+                None,
+                body,
+            )
+        }
+        let graph = declarations(vec![literal_function("t", Expression::Boolean(true))])
+            .check(CheckingLimits::default())
+            .expect("t checks cleanly");
+        assert!(
+            graph.requirements().is_empty(),
+            "a function requests no capability kind, so it has no requirement record"
         );
     }
 
