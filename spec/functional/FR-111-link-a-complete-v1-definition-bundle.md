@@ -119,7 +119,7 @@ applies them to the catalog and `link_bundle` to the closure.
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-111-CON-1 | `library::bundle` depends only on layers F and K, on `semantic_value` (`value::semantic_node::IDENTITY_LIMITS`, the canonical-encoding limits its identity digest uses) and on `library`'s own items, as ADR-011 §6.1's layer-3 order permits. It names no `check`, `package`, `model`, emitter or backend type, and returns no checked or emitted package. | Design | Inspection |
+| FR-111-CON-1 | `library::bundle` depends only on layers F and K, on `semantic_value` (`value::semantic_node::IDENTITY_LIMITS`, the canonical-encoding limits its identity digest uses) and on `library`'s own items, and on the external `quire-canonical` and `serde` crates it encodes the identity through, as ADR-011 §6.1's layer-3 order permits. It names no `check`, `package`, `model`, emitter or backend type, and returns no checked or emitted package. | Design | Inspection |
 
 ## Acceptance Criteria
 
