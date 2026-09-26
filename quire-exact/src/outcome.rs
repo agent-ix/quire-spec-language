@@ -36,6 +36,7 @@
 
 use crate::accounting::Incomplete;
 use crate::collection::{CardinalityBound, CollectionKind};
+use crate::identity::UniverseId;
 use crate::ieee::IeeeFlags;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
@@ -141,8 +142,18 @@ pub enum Refusal {
     /// An exact rational converted from an IEEE value is outside the
     /// `Rational[..]` target domain.
     IeeeRationalOutOfDomain,
-    /// A comparison met two references of different universes.
-    ForeignReference,
+    /// A comparison met two references of different universes (FR-096: the
+    /// `foreign_reference`/`foreign-universe` key-table row, `required` and
+    /// `supplied` rendered as lowercase hex). `required` is the left
+    /// operand's universe, `supplied` the right's -- an equality comparison
+    /// has no "binding" side, so the raise site's operand order settles
+    /// which is which.
+    ForeignReference {
+        /// The left operand's universe.
+        required: UniverseId,
+        /// The right operand's universe.
+        supplied: UniverseId,
+    },
     /// A formed collection's bound count is outside its declared bound; no
     /// collection is materialized.
     CardinalityOutOfBound {
@@ -170,7 +181,7 @@ impl Refusal {
         match self {
             Self::IeeeNanPayloadNotRepresentable => Some("ieee_nan_payload_not_representable"),
             Self::IeeeRationalOutOfDomain => Some("ieee_rational_out_of_domain"),
-            Self::ForeignReference => Some("foreign_reference"),
+            Self::ForeignReference { .. } => Some("foreign_reference"),
             Self::CardinalityOutOfBound { .. } => Some("cardinality_out_of_bound"),
             Self::InexactDecimal
             | Self::DecimalOutOfDomain
@@ -198,7 +209,7 @@ impl Refusal {
             | Self::IeeeNotExact { .. }
             | Self::IeeeNanPayloadNotRepresentable
             | Self::IeeeRationalOutOfDomain
-            | Self::ForeignReference
+            | Self::ForeignReference { .. }
             | Self::CheckedInvariant => None,
         }
     }

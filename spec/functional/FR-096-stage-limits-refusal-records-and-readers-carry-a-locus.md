@@ -343,8 +343,9 @@ Not backed:
 - A kernel `CheckedInvariant` builds no record, and its conversion to an
   `InternalFault` is not built: the evaluator still returns it as a
   refusal.
-  `ForeignReference` carries neither universe in the kernel variant, so it
-  builds no record until the `quire-exact` variant does.
+  `ForeignReference` now carries both universes (`quire-exact` variant fields
+  `required`/`supplied`, QSL-281), and `kernel_refusal_record` builds its
+  `foreign_reference`/`foreign-universe` record from them.
 - The key table has no row for the other `ModelQueryRefusal` causes
   (including `type-mismatch`) or for `qsl-route`'s `BoundRefusal`; they build
   no record.

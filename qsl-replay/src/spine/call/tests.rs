@@ -446,7 +446,6 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         },
         Refusal::IeeeNanPayloadNotRepresentable,
         Refusal::IeeeRationalOutOfDomain,
-        Refusal::ForeignReference,
     ];
     for refusal in kernel_no_record {
         match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal))).unwrap() {
@@ -454,6 +453,44 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 assert_location(&got);
             }
             other => panic!("{refusal:?}: {other:?}"),
+        }
+    }
+
+    // ForeignReference (QSL-281): a record, with `required`/`supplied` fields
+    // and a locus -- no longer bare, now that the kernel variant carries both
+    // universes.
+    {
+        let required = UniverseId::from_digest([0x01; 32]);
+        let supplied = UniverseId::from_digest([0x02; 32]);
+        let refusal = Refusal::ForeignReference { required, supplied };
+        match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal))).unwrap() {
+            CallOutcome::Refused(CallRefusal::Record {
+                code,
+                fields,
+                locus,
+                location: got_location,
+            }) => {
+                assert_eq!(
+                    code,
+                    CatalogCode::new("foreign_reference", "foreign-universe")
+                );
+                assert_eq!(
+                    fields,
+                    BTreeMap::from([
+                        ("required", required.to_string()),
+                        ("supplied", supplied.to_string()),
+                    ])
+                );
+                let locus = locus.expect("a record locus");
+                assert_eq!(
+                    locus.source_digest,
+                    "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26"
+                );
+                assert_eq!(locus.span.start.byte, 225);
+                assert_eq!(locus.span.end.byte, 226);
+                assert_location(&got_location);
+            }
+            other => panic!("{other:?}"),
         }
     }
 

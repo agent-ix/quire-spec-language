@@ -535,9 +535,17 @@ fn c10_reference_holder_sets_charge_pairs_and_refuse_foreign_universes() {
 
     let hx = holder(&env, "u2", "hx");
     let mut meter = Meter::new(UNLIMITED);
+    // `coalesce` tests each later candidate (`hx`, universe `u2`) against an
+    // already-retained member (`h1`, universe `u1`) via
+    // `member_equal_stop(candidate, member, ..)`, whose `plan_pairs(candidate,
+    // member)` call makes the candidate `required` and the member `supplied`
+    // (QSL-281).
     assert_outcome(
         &construct(&holders, vec![h1, hx], &mut meter),
-        &Outcome::Refused(Refusal::ForeignReference),
+        &Outcome::Refused(Refusal::ForeignReference {
+            required: universe_id("u2"),
+            supplied: universe_id("u1"),
+        }),
     );
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 6);
     assert!(!meter

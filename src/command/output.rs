@@ -741,6 +741,39 @@ mod tests {
         );
     }
 
+    /// FR-100-AC-9 (TC-452 step 4, QSL-281): a kernel `ForeignReference`
+    /// record renders `foreign_reference`/`foreign-universe` with its
+    /// `required`/`supplied` universes and exits 20, no longer the bare
+    /// `{"kind":"refused"}` a kernel-no-record row renders.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn refused_foreign_reference_renders_record_and_exits_20() {
+        use qsl_replay::spine::CallRefusal;
+        let fields = std::collections::BTreeMap::from([
+            ("required", "01".repeat(32)),
+            ("supplied", "02".repeat(32)),
+        ]);
+        let result = render(CallOutcome::Refused(CallRefusal::Record {
+            code: qsl_foundation::diagnostic::CatalogCode::new(
+                "foreign_reference",
+                "foreign-universe",
+            ),
+            fields: fields.clone(),
+            locus: None,
+            location: None,
+        }));
+        assert_eq!(result.exit_code, 20);
+        assert_eq!(
+            result.value.as_value()["outcome"],
+            serde_json::json!({
+                "kind": "refused",
+                "code": "foreign_reference",
+                "cause": "foreign-universe",
+                "fields": fields,
+            })
+        );
+    }
+
     /// FR-100-AC-9 (TC-452 step 4, FND-013): a family refusal with no FR-096
     /// record carries its code and cause but no `fields`/`locus`.
     #[test]
