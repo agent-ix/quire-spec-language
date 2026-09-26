@@ -236,11 +236,16 @@ trait FamilyContract {
         -> CheckOutcome<Self::Checked, Self::Cause>;
         // CheckOutcome<T, C> = Result<Staged<T>, StageFailure<C>> (ADR-013 T-4):
         // checked | refused | limit | fault
-    fn requirements(checked: &Self::Checked) -> Vec<(ClaimSite, Requirements)>;
-        // one per claim; S3 keys each ClaimSite by the occurrence recorded at
-        // its own location (§13.5). ClaimSite: FR-062 "Requirement records
-        // of a value function" (location, result bound, path condition).
-        // Extents are classified in `check`, under its stage limits.
+    type Claim;             // one claim: its ClaimSite, kind and extent
+    fn requirements(checked: &Self::Checked) -> Vec<Self::Claim>;
+        // one per claim. ClaimSite: FR-062 "Requirement records of a value
+        // function" (location, result bound, path condition). Extents are
+        // classified in `check`, under its stage limits, with each domain
+        // keyed by the binder that carries it: parameter node ids exist only
+        // once lowering has keyed the nodes. S3 then keys each claim by the
+        // occurrence recorded at its site's own location and renames each
+        // binder to its parameter node, giving the record's `Requirements`
+        // (§13.5).
     fn package(checked: &Self::Checked, out: &mut PackageEmitter)
         -> Result<(), PackageRefusal>;
 }

@@ -148,10 +148,10 @@ supplies one `FiniteBound` for each of the item's unbounded `DomainKey`s,
 and a fresh `RequestWriter` writes the follow-up as that request's single
 item, index 0. `RequestWriter::bounded_item` SHALL take the originating
 occurrence key as a parameter (design-level signature
-`bounded_item(occurrence: OccurrenceKey, node: WireNodeId, requirements:
-&Requirements, bounds: BTreeMap<DomainKey, FiniteBound>) ->
-Result<RequestIndex, BoundRefusal>`), and the item it writes SHALL carry
-that occurrence key. The driver writes at most one bounded follow-up per
+`bounded_item(occurrence: OccurrenceKey, requirements: &Requirements,
+bounds: BTreeMap<DomainKey, FiniteBound>) -> Result<RequestIndex,
+BoundRefusal>`), and the item it writes SHALL carry that occurrence key,
+with the occurrence key's node as its node. The driver writes at most one bounded follow-up per
 record, so each record has at most one follow-up settlement, and joins it
 to the record by occurrence key. Writing several bounded items for one
 domain set with different bounds (FR-097-AC-3) stays a capability of the

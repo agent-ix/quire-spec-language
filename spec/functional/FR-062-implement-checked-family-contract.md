@@ -244,15 +244,21 @@ site:
   lowered from the site's checked application (ADR-013 O-07, FR-093 "One
   node per checked expression"). `check` SHALL pair each site with the
   occurrence recorded at that site's own `Location`, never by the order in
-  which sites or occurrences were produced. Ordinals follow source order
-  (FR-093), so the records' bytewise key order, which is the request order
-  (ADR-012 §13.5), is independent of check order.
+  which sites or occurrences were produced. Ordinals follow lowering
+  order (FR-093): a function's body is numbered before its `decreases`
+  measure, and within each, in source order. So the records' bytewise key
+  order, which is the request order (ADR-012 §13.5), is independent of
+  check order.
 - **Kind.** `value-validity`.
 - **Extent.** `ClaimExtent` by ADR-014 §4's extent rule over the claim's
   extent roots (ADR-014 §4 "Operation application claims"). Each function
   parameter and each query, `count`, `sum`, `fold` or `reduce` binder read
-  anywhere in the application's argument subtrees or in a guard of its path
+  in the application's argument subtrees or in a guard of its path
   condition is a root, with its checked type, keyed by its parameter node.
+  A `fold` binds two roots, its accumulator and its element. A binder bound
+  inside the application's own argument subtrees is not a root of that
+  application: in `size(filter(v in s: v > 0)) + 1`, the `>` is rooted at
+  `v` and the outer `+` at `s` only.
   A read of a `let` binder contributes the roots its bound value reads, and
   a literal contributes none. A claim with no root is `Bounded`. The result
   bound is a finite range or the application's own result type, and adds
@@ -300,7 +306,7 @@ condition.
 | RR-11 | `function clamp using v(n: Integer): Int[0, 10] pure { if n >= 0 and n <= 10 then n else 0 }` | two: `integer.ge`, `Unbounded` at `n`, `Boolean`, no guard; `integer.le`, `Unbounded` at `n`, `Boolean`, guard `n >= 0` true. None at the narrow over `n` |
 | RR-12 | `function g using v(p: Int[0, 10]): Boolean pure { true }` and `function f using v(n: Integer): Boolean pure { if n >= 0 and n < 10 then g(n + 1) else true }` | three: `integer.ge`, result bound `Boolean`, no guard; `integer.lt`, result bound `Boolean`, guard `n >= 0` true; `integer.add`, result bound `Int[0, 10]`, guard `n >= 0 and n < 10` true. Each `Unbounded` with one `Integer` domain at `n` |
 | RR-13 | `function q using v(x: Int[0, 9], y: Int[-9, 9]): Rational[-9, 9; 1, 9] pure { if y != 0 then x / y else rational(0, 1) }` | two: `integer.ne`, `Bounded`, `Boolean`, no guard; `rational.div`, `Bounded`, `Rational[-9, 9; 1, 9]`, guard `y != 0` true |
-| RR-14 | `function all using v(s: Sequence<Integer>[0, 5]): Boolean pure { forall(v in s: v + 1 > 0) }` | two: `integer.add`, result bound `Integer`, and `integer.gt`, result bound `Boolean`, each `Unbounded` with one `Integer` domain keyed by the binder `v`'s parameter node, no guard |
+| RR-14 | `function all_positive using v(s: Sequence<Integer>[0, 5]): Boolean pure { forall(v in s: v + 1 > 0) }` | two: `integer.add`, result bound `Integer`, and `integer.gt`, result bound `Boolean`, each `Unbounded` with one `Integer` domain keyed by the binder `v`'s parameter node, no guard |
 | RR-15 | `function sib using v(x: Int[0, 9], n: Integer): Integer pure { (let t = x + 1 in t * 2) + (let t = n + 1 in t * 2) }` | five, each with result bound `Integer` and no guard: `x + 1` `Bounded`; the first `t * 2` `Bounded` and the second `Unbounded` at `n`, each at its own occurrence; `n + 1` `Unbounded` at `n`; the outer `+` `Unbounded` at `n` |
 | RR-16 | `function g using v(p: Int[0, 10]): Boolean pure { true }`, `function h using v(q: Int[0, 20]): Boolean pure { true }` and `function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) and h(x + 1) }` | two, at ordinals 0 and 1 of the one `+` node: the first with result bound `Int[0, 10]` and no guard, the second with result bound `Int[0, 20]` and guard `g(x + 1)` true; each `Bounded` |
 | RR-17 | `function m using v(x: Int[0, 9]): Integer pure decreases(x + 1) { x + 1 }` | one: `integer.add` at the body's occurrence, `Bounded`, `Integer`, no guard; none at the measure's |
@@ -534,16 +540,16 @@ tags as they exist in the delivered code today:
   (`qsl-eval/tests/it/total_functions.rs`). The test observes the stop as
   `Refused{ResourceExhausted}`; its `StageFailure::Limit` outcome, amended
   here, is ADR-013 §7 slice S-5b's (QSL-160, FR-096).
-- FR-062-AC-13: partly backed (`TC-160`, QSL-258, QSL-266):
-  `qsl-semantics/src/check/claims/tests.rs` checks RR-1 to RR-13 and
-  RR-15 to RR-17 (RR-15 in both operand orders, RR-5 twice), and the
+- FR-062-AC-13: backed (`TC-160`, QSL-258, QSL-266):
+  `qsl-semantics/src/check/claims/tests.rs` checks RR-1 to RR-17 (RR-15
+  in both operand orders, RR-5 twice), guards, binder scope and `fold`,
+  `reduce` and `flatMap` roots, and the
   keying faults over hand-built occurrence maps;
   `tests/it/request_builder.rs` reads RR-5's records through
-  `CheckedPackage::graph()`. RR-14 does not parse: its function name
-  `all` is a reserved word.
+  `CheckedPackage::graph()`.
 
-Six of this requirement's thirteen Acceptance Criteria are backed (AC-2,
-AC-5, AC-7, AC-8 and AC-12) and AC-4; four (AC-3, AC-6, AC-11, AC-13) are
+Seven of this requirement's thirteen Acceptance Criteria are backed (AC-2,
+AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13); three (AC-3, AC-6, AC-11) are
 partly backed, each for the specific clause named in its own row above.
 AC-1, AC-9 and AC-10 are unbacked. AC-1's
 `requirements` half is owned by QSL-140 the same way; its `package` half,

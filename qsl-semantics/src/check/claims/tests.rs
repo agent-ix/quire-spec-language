@@ -1040,3 +1040,31 @@ fn tc_160_fold_reduce_and_flat_map_binders_are_roots() {
         &extent(&[(x, &[], DomainKind::Integer), (y, &[], DomainKind::Integer)])
     );
 }
+
+/// TC-160 step 10 (FR-062-AC-13): RR-14. The `+` and the `>` are each
+/// unbounded with one `Integer` domain keyed by the binder `v`'s parameter
+/// node, not by `s`, with result bounds `Integer` and `Boolean` and no
+/// guard.
+#[trace("TC-160", "FR-062-AC-13")]
+#[test]
+fn tc_160_rr_14_query_binder_roots() {
+    let checked = check(
+        "function all_positive using v(s: Sequence<Integer>[0, 5]): Boolean pure { forall(v in s: v + 1 > 0) }",
+    );
+    assert_eq!(checked.graph.requirements().len(), 2);
+    let v = checked.operand("v + 1", 0, ADD, 0);
+    assert_ne!(v, wire(checked.parameter("all_positive", 0)));
+    for (needle, operation, bound) in [
+        ("v + 1", ADD, ValueType::Integer),
+        ("v + 1 > 0", "quire.op.integer.gt", ValueType::Boolean),
+    ] {
+        let record = checked.record(needle, 0, operation);
+        assert_eq!(
+            record.requirements().extent(),
+            &extent(&[(v, &[], DomainKind::Integer)]),
+            "{needle}"
+        );
+        assert_eq!(record.result_bound().value_type(), &bound, "{needle}");
+        assert_eq!(record.path_condition(), [], "{needle}");
+    }
+}
