@@ -37,3 +37,12 @@ owning requirement (FND-001).
 | --- | --- | --- | --- |
 | FND-001 | medium | The operand-order rule is code with no owning requirement. No FR or AC says which operand's universe is `required`; only the variant's doc comment does. It is tested (TC-322 and the qsl-eval c10/e16 tests pin it), but against the implementation, not a spec. This is the same root as SR-682 FND-001 and the membership inversion in SR-680 FND-001. | quire-exact/src/outcome.rs:145-156; quire-exact/src/equality.rs:164-170 |
 | FND-002 | low | No test raises `ForeignReference` through `Contains` (`x in c`), the second production caller of `member_equal`. The operand order there is untested and follows only from `member_equal`'s argument order. | qsl-eval/src/value/expression/evaluate.rs:1220 |
+
+## Dispositions
+
+Round 1, re-checked at 6c213eb2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6c213eb2: FR-096's key table gains a kernel `Refusal::ForeignReference` row owning the operand rule (code order corrected in 7f4bd626; FR-100 states it too) |
+| FND-002 | fixed | 7f4bd626: `c06b_contains_a_foreign_universe_probe_refuses_required_is_the_member` drives a checked `Contains` through `evaluate`; killed the membership-swap mutant |

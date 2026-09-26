@@ -188,7 +188,7 @@ catalog payload item beside it (`quire.native.diagnostics/v1` revision
 | `LimitExceeded` | `stage_limit_exceeded` / the kind's cause | `kind`: the exceeded limit kind's cause tag; `bound`: the configured bound; `actual`: the actual counter |
 | `BoundExceeded` (`replay`) | `stage_limit_exceeded` / `input-bytes-exceeded` | `kind`, `bound`, `actual`, as for `LimitExceeded` |
 | kernel `Refusal::CardinalityOutOfBound` | `cardinality_out_of_bound` / `below-minimum` or `above-maximum` | `collection`: the collection kind; `bound`: the inclusive bound `[minimum, maximum]`; `count`: the formed count |
-| kernel `Refusal::ForeignReference` | `foreign_reference` / `foreign-universe` | `required`: the universe already in force (an equality's left operand, or membership's collection or already-kept member), as lowercase hex; `supplied`: the value tested against it, as lowercase hex |
+| kernel `Refusal::ForeignReference` | `foreign_reference` / `foreign-universe` | `required`: the universe already in force (an equality's left operand, or membership's collection or already-kept member), as lowercase hex; `supplied`: the universe of the value tested against it, as lowercase hex |
 
 A cause another family adds to S6a adds its row here, with the key for each
 payload item its catalog row requires. A cause with no row here has no

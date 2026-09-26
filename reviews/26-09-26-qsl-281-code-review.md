@@ -67,3 +67,13 @@ already in force (the binding's).
 
 `make ci` at 2fc99d9d, re-run by the reviewer with one target dir in the
 worktree. Log: scratchpad/rv479/make-ci.log (SHA first line, `exit=` last). Result: exit 0. Mutant logs: scratchpad/rv479/mut-raise-swap.log, scratchpad/rv479/mut-record-swap.log (both mutants killed; tree restored clean).
+
+## Dispositions
+
+Round 1, re-checked at 6c213eb2 (fix round 7f4bd626; rebased on main at 87f54643, #481) in a fresh worktree. The reviewer re-ran two mutants. Reverting `member_equal_stop` to `plan_pairs(candidate, member)` fails c06b and c10. Swapping the fields in `kernel_refusal_record` fails the TC-428 test, qsl-replay TC-452 step 4 and the CLI `refused_foreign_reference_renders_record_and_exits_20`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7f4bd626: `member_equal_stop` calls `plan_pairs(member, candidate)`; c10 expects required=u1 supplied=u2; c06b covers `Contains` |
+| FND-002 | fixed | 7f4bd626: `tc_322_foreign_reference_universes_are_not_swapped` deleted |
+| FND-003 | fixed | 7f4bd626: qsl-replay asserts literal `"01"`/`"02"` x32; the CLI test builds its record through `kernel_refusal_record` and asserts literals |
