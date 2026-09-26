@@ -2328,6 +2328,292 @@ pub(crate) mod checking_tests {
         assert_eq!(diagnostics_b.entries().len(), 1);
     }
 
+    /// Checks `form` (one `Boolean` declaration named `f`) through
+    /// `ValueFunctionFamily::check` against the caller's own `meter`,
+    /// `diagnostics` and `scopes`, and returns only the outcome, so a test
+    /// varies exactly one of the three and reads the difference back.
+    fn check_f_with(
+        form: &FunctionDeclaration,
+        meter: &mut Meter,
+        diagnostics: &mut DiagnosticSink,
+        scopes: &mut ScopeStack,
+    ) -> crate::family::CheckOutcome<CheckedDeclaration, CheckRefusal> {
+        let scope = empty_scope();
+        let location = root_location();
+        let own_signature = declaration_signature("f");
+        let signatures = Signatures::default();
+        let declarations = declarations_for(
+            &scope,
+            &signatures,
+            &own_signature,
+            &[],
+            CheckingLimits::default(),
+            &location,
+        );
+        let mut cx = CheckContext::new(&declarations, limits(), meter, diagnostics, scopes);
+        ValueFunctionFamily::check(form, &mut cx)
+    }
+
+    /// FR-062-AC-3 clause 2, meter: mutating only the context's meter shows
+    /// up in the outcome. A meter that has already admitted `k` charges
+    /// makes the sink's recorded `meter admissions=` figure `k` higher
+    /// (`check` reads `cx.meter`, not a private counter), and a meter whose
+    /// work bound is one below the declaration's charge turns the same
+    /// form's outcome into a `WorkBudget` `Limit`.
+    #[trace("TC-160", "FR-062-AC-3")]
+    #[test]
+    fn a_mutated_meter_is_reflected_in_the_check_outcome() {
+        let form = declaration("f", Expression::Boolean(true));
+        let admissions = |pre_admitted: u64| {
+            let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+            for _ in 0..pre_admitted {
+                meter
+                    .charge(quire_exact::Charge::new(
+                        quire_exact::ChargePoint::FunctionCall,
+                    ))
+                    .expect("an unlimited meter admits");
+            }
+            let mut diagnostics = DiagnosticSink::default();
+            let mut scopes = ScopeStack::default();
+            let outcome = check_f_with(&form, &mut meter, &mut diagnostics, &mut scopes);
+            assert!(outcome.is_ok(), "the fixture checks: {outcome:?}");
+            let [entry] = diagnostics.entries() else {
+                panic!(
+                    "one check records one diagnostic: {:?}",
+                    diagnostics.entries()
+                );
+            };
+            entry.message.clone()
+        };
+        let fresh = admissions(0);
+        let used = admissions(5);
+        // The declaration's own charge is admitted first, so the recorded
+        // figure is `pre-admitted + 1` for a fresh meter's single charge.
+        assert!(
+            fresh.contains("meter admissions=1)"),
+            "a fresh meter shows the check's own one admission: {fresh}"
+        );
+        assert!(
+            used.contains("meter admissions=6)"),
+            "five earlier admissions show in the outcome: {used}"
+        );
+
+        let charge = measure_resolved(&empty_scope(), &form).work_budget;
+        let mut tight = Meter::new(quire_exact::ScalarLimits {
+            work_units: charge - 1,
+            ..SCALAR_LIMITS_UNLIMITED
+        });
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let outcome = check_f_with(&form, &mut tight, &mut diagnostics, &mut scopes);
+        let Err(StageFailure::Limit(exceeded)) = outcome else {
+            panic!("a meter one unit short must yield a Limit outcome: {outcome:?}");
+        };
+        assert_eq!(exceeded.kind(), LimitKind::WorkBudget);
+        assert!(
+            diagnostics.entries().is_empty(),
+            "a denied check is not diagnosed as checked"
+        );
+    }
+
+    /// FR-062-AC-3 clause 2, diagnostic sink: entries already in the sink
+    /// are kept in order and the check appends exactly its own one after
+    /// them, so the sink is the one channel the check writes through.
+    #[trace("TC-160", "FR-062-AC-3")]
+    #[test]
+    fn a_mutated_diagnostic_sink_is_reflected_in_the_check_outcome() {
+        let form = declaration("f", Expression::Boolean(true));
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        diagnostics.record(&scopes, "seeded before the check");
+        let seeded = diagnostics.entries().to_vec();
+        let outcome = check_f_with(&form, &mut meter, &mut diagnostics, &mut scopes);
+        assert!(outcome.is_ok(), "{outcome:?}");
+        let entries = diagnostics.entries();
+        assert_eq!(entries.len(), 2, "the seeded entry plus the check's own");
+        assert_eq!(&entries[..1], &seeded[..], "the seeded entry is untouched");
+        assert!(
+            entries[1]
+                .message
+                .contains("checked function declaration f"),
+            "{:?}",
+            entries[1]
+        );
+    }
+
+    /// FR-062-AC-3 clause 2, scope stack: the scope stack the caller hands
+    /// in is what the check's diagnostic is scoped to (a frame pushed by the
+    /// caller stays beneath the check's own frame and is restored on every
+    /// return path, success and refusal alike).
+    #[trace("TC-160", "FR-062-AC-3")]
+    #[test]
+    fn a_mutated_scope_stack_is_reflected_in_the_check_outcome() {
+        let good = declaration("f", Expression::Boolean(true));
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        scopes.enter("caller-frame");
+        let outcome = check_f_with(&good, &mut meter, &mut diagnostics, &mut scopes);
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(
+            diagnostics.entries()[0].scope,
+            "value.function-declaration:f",
+            "the diagnostic is scoped to the check's own frame on top of the caller's"
+        );
+        assert_eq!(
+            scopes.current(),
+            "caller-frame",
+            "the caller's frame is restored"
+        );
+
+        // A refusal (`Integer` body, `Boolean` result) restores it too.
+        let bad = declaration("f", Expression::Integer(1_i64.into()));
+        let refused = check_f_with(&bad, &mut meter, &mut diagnostics, &mut scopes);
+        assert!(
+            matches!(refused, Err(StageFailure::Refused(_))),
+            "{refused:?}"
+        );
+        assert_eq!(scopes.current(), "caller-frame");
+        assert_eq!(diagnostics.entries().len(), 1, "a refusal records nothing");
+
+        // With no caller frame the same check is scoped identically: the
+        // scope name comes from the check, and the base is `<root>`.
+        let mut bare = ScopeStack::default();
+        let mut sink = DiagnosticSink::default();
+        let again = check_f_with(&good, &mut meter, &mut sink, &mut bare);
+        assert!(again.is_ok());
+        assert_eq!(bare.current(), "<root>");
+    }
+
+    /// FR-062-AC-3 clause 1: the family-contract and check-stage sources
+    /// (non-test items of `src/check` and `src/family`) have no path to
+    /// global or thread-local state: no `static mut`, no `thread_local!`
+    /// or `lazy_static!`, and no once-cell, lazy, lock or atomic type. Scans
+    /// the parsed syntax, so a violation added anywhere in those modules
+    /// fails this test. A synthetic violating source proves the scanner
+    /// fires on each form.
+    #[trace("TC-160", "FR-062-AC-3")]
+    #[test]
+    fn check_stage_sources_have_no_global_or_thread_local_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        for module in ["check", "family"] {
+            collect_sources(&root.join(module), &mut files);
+        }
+        assert!(files.len() > 5, "the scan found the sources: {files:?}");
+        let mut findings = Vec::new();
+        for file in &files {
+            let text = std::fs::read_to_string(file).expect("source reads");
+            for finding in global_state_findings(&text) {
+                findings.push(format!("{}: {finding}", file.display()));
+            }
+        }
+        assert!(findings.is_empty(), "global state reachable: {findings:#?}");
+
+        let violating = "static mut RAW: u8 = 0;\n\
+             static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);\n\
+             thread_local! { static SEEN: std::cell::Cell<u8> = std::cell::Cell::new(0); }\n\
+             fn f() { let _c: std::sync::OnceLock<u8>; let _m: std::sync::Mutex<u8>; }";
+        let found = global_state_findings(violating);
+        for needle in [
+            "static mut RAW",
+            "thread_local",
+            "OnceLock",
+            "Mutex",
+            "AtomicU64",
+        ] {
+            assert!(
+                found.iter().any(|finding| finding.contains(needle)),
+                "the scanner must flag {needle}: {found:?}"
+            );
+        }
+        let test_only = "#[cfg(test)] mod t { static OK: u8 = 0; }";
+        assert!(global_state_findings(test_only).is_empty());
+    }
+
+    fn collect_sources(directory: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(directory).expect("directory reads") {
+            let path = entry.expect("entry reads").path();
+            if path.is_dir() {
+                collect_sources(&path, files);
+            } else if path.extension().is_some_and(|extension| extension == "rs")
+                && !path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .is_some_and(|stem| stem.contains("tests"))
+            {
+                files.push(path);
+            }
+        }
+    }
+
+    /// Every global- or thread-local-state construct in `source`'s non-test
+    /// items, each described with its identifier.
+    fn global_state_findings(source: &str) -> Vec<String> {
+        use syn::visit::Visit;
+        struct Scan(Vec<String>);
+        fn is_cfg_test(attributes: &[syn::Attribute]) -> bool {
+            attributes.iter().any(|attribute| {
+                attribute.path().is_ident("cfg")
+                    && attribute
+                        .parse_args::<syn::Ident>()
+                        .is_ok_and(|ident| ident == "test")
+            })
+        }
+        impl<'ast> Visit<'ast> for Scan {
+            fn visit_item_mod(&mut self, item: &'ast syn::ItemMod) {
+                if !is_cfg_test(&item.attrs) {
+                    syn::visit::visit_item_mod(self, item);
+                }
+            }
+            fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
+                if !is_cfg_test(&item.attrs) {
+                    syn::visit::visit_item_fn(self, item);
+                }
+            }
+            fn visit_item_static(&mut self, item: &'ast syn::ItemStatic) {
+                // An immutable `static` of a plain type is a constant (the
+                // checker's `BOOLEAN` and `NO_GROUP`); only `static mut`
+                // is state, and interior-mutable statics are caught by the
+                // type-name scan below.
+                if matches!(item.mutability, syn::StaticMutability::Mut(_)) {
+                    self.0.push(format!("static mut {}", item.ident));
+                }
+                syn::visit::visit_item_static(self, item);
+            }
+            fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+                if let Some(segment) = mac.path.segments.last() {
+                    if segment.ident == "thread_local" || segment.ident == "lazy_static" {
+                        self.0.push(format!("{}! macro", segment.ident));
+                    }
+                }
+            }
+            fn visit_path_segment(&mut self, segment: &'ast syn::PathSegment) {
+                let name = segment.ident.to_string();
+                let banned = matches!(
+                    name.as_str(),
+                    "OnceLock"
+                        | "OnceCell"
+                        | "LazyLock"
+                        | "LazyCell"
+                        | "Lazy"
+                        | "Mutex"
+                        | "RwLock"
+                        | "UnsafeCell"
+                ) || (name.starts_with("Atomic") && name.len() > "Atomic".len());
+                if banned {
+                    self.0.push(format!("type {name}"));
+                }
+                syn::visit::visit_path_segment(self, segment);
+            }
+        }
+        let file = syn::parse_file(source).expect("source parses");
+        let mut scan = Scan(Vec::new());
+        scan.visit_file(&file);
+        scan.0
+    }
+
     /// Guards the top-level declaration-entry charge alone (limit 0
     /// refuses with actual counter 1, limit 1 admits a leaf-bodied
     /// declaration). Not tagged for FR-062-AC-7, whose own fixture-at-depth-D
@@ -3123,7 +3409,7 @@ mod locus_tests {
         let unit = unit();
         let charge = measure_resolved(&empty_scope(), &unit.functions[0]).work_budget;
         let bound = charge - 1;
-        let mut meter = Meter::new(ScalarLimits {
+        let mut meter = Meter::new(quire_exact::ScalarLimits {
             work_units: bound,
             ..SCALAR_LIMITS_UNLIMITED
         });

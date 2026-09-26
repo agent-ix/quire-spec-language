@@ -385,26 +385,32 @@ tags as they exist in the delivered code today:
   references PR #262 had pointed at, both of which explicitly disclaim the
   work).
 - FR-062-AC-2: backed (`TC-160`, `qsl-semantics/src/check/family.rs`, `checking_tests`).
-- FR-062-AC-3: partly backed (`TC-160`, QSL-161) -- the third clause only
-  ("a test that constructs two typing contexts from the same resolved
-  declarations and checks the same form through each produces identical
-  checked output"):
-  `two_contexts_from_the_same_declarations_check_identically`
-  (`qsl-semantics/src/check/family.rs`, `checking_tests`) compares the two
-  independently constructed contexts' `Debug`-formatted checked output
-  (`CheckedDeclaration` carries no `PartialEq` -- `ir.rs`'s own doc on
-  `Node`'s deliberate privacy -- so this repo's own established substitute,
-  already used in `qsl-eval`'s collection tests, applies: compare
-  `format!("{:?}", ..)`), with context `b` seeded with an extra signature
-  ahead of the one the checked form calls, so the two constructions are not
-  byte-identical, and with each context's own legitimate, positional
-  `function`/`callee` index (`Signatures::callable`'s own doc: "index-
-  aligned with the package's functions") normalized to a shared name before
-  comparing, so an extra declaration's *position* does not fail this
-  assertion for a reason that is not a state leak.
-  The first two clauses -- `check` compiling with no path to global or
-  thread-local state, and a test observing meter/diagnostic-sink/scope-stack
-  mutations reflected in the outcome -- remain untested. Owner: QSL-246.
+- FR-062-AC-3: backed (`TC-160`, QSL-161, QSL-246), all three clauses, in
+  `qsl-semantics/src/check/family.rs`, `checking_tests`:
+  - Clause 1 (no path to global or thread-local state):
+    `check_stage_sources_have_no_global_or_thread_local_state` parses the
+    non-test sources of `src/check` and `src/family` and fails on
+    `static mut`, `thread_local!`, `lazy_static!`, and any once-cell, lazy,
+    lock, atomic or `UnsafeCell` type. Immutable statics of plain types
+    (`BOOLEAN`, `NO_GROUP`) are constants and pass. The scope is this
+    crate's check stage; dependencies are not scanned.
+  - Clause 2 (meter, sink, scope in the outcome):
+    `a_mutated_meter_is_reflected_in_the_check_outcome` (pre-admitted
+    charges show in the recorded admission count; a work bound one short
+    gives a `WorkBudget` `Limit`),
+    `a_mutated_diagnostic_sink_is_reflected_in_the_check_outcome` (seeded
+    entry kept, the check's own appended) and
+    `a_mutated_scope_stack_is_reflected_in_the_check_outcome` (the diagnostic
+    is scoped to the check's frame over the caller's, and the caller's frame
+    is restored on success and refusal).
+  - Clause 3: `two_contexts_from_the_same_declarations_check_identically`
+    compares the two independently constructed contexts' `Debug`-formatted
+    checked output (`CheckedDeclaration` carries no `PartialEq`, so this
+    repo's established substitute applies), with context `b` seeded with an
+    extra signature ahead of the one the form calls and each context's own
+    positional `function`/`callee` index normalized, so an extra
+    declaration's position does not fail for a reason that is not a state
+    leak.
 - FR-062-AC-4: backed (`TC-160`, QSL-140, QSL-266).
   `FamilyContract::requirements` returns one claim per claim site
   (`Vec<Self::Claim>`; for `Value`, `check::ValueClaim`: the site and its
@@ -548,8 +554,8 @@ tags as they exist in the delivered code today:
   `tests/it/request_builder.rs` reads RR-5's records through
   `CheckedPackage::graph()`.
 
-Seven of this requirement's thirteen Acceptance Criteria are backed (AC-2,
-AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13); three (AC-3, AC-6, AC-11) are
+Eight of this requirement's thirteen Acceptance Criteria are backed (AC-2,
+AC-3, AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13); two (AC-6, AC-11) are
 partly backed, each for the specific clause named in its own row above.
 AC-1, AC-9 and AC-10 are unbacked. AC-1's
 `requirements` half is owned by QSL-140 the same way; its `package` half,
