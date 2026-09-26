@@ -74,7 +74,4 @@ carry `#[trace("TC-435", "FR-027-AC-5")]`.
 
 Passed locally (QSL-8).
 
-Step 6's forms case changes with QSL-275: `tests/it/compile_command.rs`
-(`each_spine_stage_refusal_reports_its_stage_and_code`) still uses a
-`predicate`, which builds a form once FR-091-AC-6's amendment lands, so
-QSL-275's implementing change swaps it for the `temporal` clause above.
+Step 6's forms case uses the `temporal` clause (QSL-275).

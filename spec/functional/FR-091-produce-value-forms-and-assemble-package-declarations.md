@@ -222,8 +222,8 @@ the unit's edition. It carries no semantic identity (FR-067-AC-2).
   in order.
 - **Enum form.** It carries the declared name and its span; whether the
   declaration is `ordered`; and each member, in source order, with its case
-  name, the span of that name, and its display string as spelled with the
-  span of the string literal when `= "text"` is written.
+  name, the span of that name, and its display string as spelled, quotes
+  included, with the span of the string literal when `= "text"` is written.
 - **Predicate form.** This is the `forms` `FunctionDeclaration` with
   declaration kind `Predicate`. Every other `FunctionDeclaration` has kind
   `Function`. It carries the declared name; the `using` field; each
@@ -420,7 +420,7 @@ For each enum form, the assembler:
    - `members`: the case names in source order when `ordered`, and sorted
      by case name (byte order) otherwise.
 3. Mints the declaration key with `check::node_key::nominal_key(&impl
-   NodeIdentityPreimage) -> NodeKey`, the one function that mints a nominal
+   NodeIdentityPreimage) -> Result<NodeKey, InvalidSemanticGraph>`, the one function that mints a nominal
    node's key: the SHA-256 of the preimage's RFC 8785 bytes, the digest
    `value::enumeration` computes. It is separate from
    `check::node_key::node_key`, which keys structural and application
