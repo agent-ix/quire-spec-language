@@ -228,7 +228,7 @@ claim sites, whatever their extents, result bounds or path conditions.
 **The claim.** The application is defined and its result lies in its
 result bound, for every assignment of its extent roots under which its
 path condition holds. `check` proves definedness and narrow ranges under
-those same guards (FR-146, `check::facts`), so a body `check` admits never
+those same guards (FR-093's definedness walk, `check::facts`), so a body `check` admits never
 yields a claim that fails on an assignment `check` excluded.
 
 A narrow wraps exactly one expression. A narrow whose operand is not a
@@ -291,19 +291,19 @@ condition.
 | RR-2 | `function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }` | one: `integer.add`, `Bounded`, `Int[0, 10]` (the narrow that wraps it), no guard; none at the narrow |
 | RR-3 | `function add using v(x: Int[0, 9], y: Int[0, 9]): Int[0, 18] pure { x + y }` | one: `integer.add`, `Bounded`, `Int[0, 18]`, no guard |
 | RR-4 | `function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure { x = y }` | one: `integer.eq`, `Bounded`, `Boolean`, no guard |
-| RR-5 | `function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }` | three: `integer.add` at ordinal 0 and at ordinal 1 of the one `+` node, and `integer.mul`; each `Bounded`, its own result type, no guard |
+| RR-5 | `function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }` | three: `integer.add` at ordinal 0 and at ordinal 1 of the one `+` node, and `integer.mul`; each `Bounded`, result bound `Integer`, no guard |
 | RR-6 | `function big using v(n: Integer): Integer pure { n + 1 }` | one: `integer.add`, `Unbounded` with one `Integer` domain keyed by `n`'s parameter node and the empty path, `Integer`, no guard |
-| RR-7 | `function lt using v(x: Int[0, 9]): Integer pure { let t = x + 1 in t * 2 }` | two: `integer.add` and `integer.mul`, each `Bounded` (the `*` through `t`'s bound value), no guard |
-| RR-8 | `function two using v(): Integer pure { 1 + 1 }` | one: `integer.add`, `Bounded`, no guard |
+| RR-7 | `function lt using v(x: Int[0, 9]): Integer pure { let t = x + 1 in t * 2 }` | two: `integer.add` and `integer.mul`, each `Bounded` (the `*` through `t`'s bound value), result bound `Integer`, no guard |
+| RR-8 | `function two using v(): Integer pure { 1 + 1 }` | one: `integer.add`, `Bounded`, `Integer`, no guard |
 | RR-9 | `function both using v(b: Boolean, c: Boolean): Boolean pure { b and c }` | none |
 | RR-10 | `function c2 using v(): Int[0, 9] pure { 3 }` | none: the narrow wraps a literal |
-| RR-11 | `function clamp using v(n: Integer): Int[0, 10] pure { if n >= 0 and n <= 10 then n else 0 }` | two: `integer.ge`, `Unbounded` at `n`, no guard; `integer.le`, `Unbounded` at `n`, guard `n >= 0` true. None at the narrow over `n` |
-| RR-12 | `function g using v(p: Int[0, 10]): Boolean pure { true }` and `function f using v(n: Integer): Boolean pure { if n >= 0 and n < 10 then g(n + 1) else true }` | three: `integer.ge`, no guard; `integer.lt`, guard `n >= 0` true; `integer.add`, result bound `Int[0, 10]`, guard `n >= 0 and n < 10` true. Each `Unbounded` with one `Integer` domain at `n` |
-| RR-13 | `function q using v(x: Int[0, 9], y: Int[-9, 9]): Rational[-9, 9; 1, 9] pure { if y != 0 then x / y else rational(0, 1) }` | two: `integer.ne`, `Bounded`, no guard; `rational.div`, `Bounded`, its own result type, guard `y != 0` true |
-| RR-14 | `function all using v(s: Sequence<Integer>[0, 5]): Boolean pure { forall(v in s: v + 1 > 0) }` | two: `integer.add` and `integer.gt`, each `Unbounded` with one `Integer` domain keyed by the binder `v`'s parameter node, no guard |
-| RR-15 | `function sib using v(x: Int[0, 9], n: Integer): Integer pure { (let t = x + 1 in t * 2) + (let t = n + 1 in t * 2) }` | five: `x + 1` `Bounded`; the first `t * 2` `Bounded` and the second `Unbounded` at `n`, each at its own occurrence; `n + 1` `Unbounded` at `n`; the outer `+` `Unbounded` at `n` |
+| RR-11 | `function clamp using v(n: Integer): Int[0, 10] pure { if n >= 0 and n <= 10 then n else 0 }` | two: `integer.ge`, `Unbounded` at `n`, `Boolean`, no guard; `integer.le`, `Unbounded` at `n`, `Boolean`, guard `n >= 0` true. None at the narrow over `n` |
+| RR-12 | `function g using v(p: Int[0, 10]): Boolean pure { true }` and `function f using v(n: Integer): Boolean pure { if n >= 0 and n < 10 then g(n + 1) else true }` | three: `integer.ge`, result bound `Boolean`, no guard; `integer.lt`, result bound `Boolean`, guard `n >= 0` true; `integer.add`, result bound `Int[0, 10]`, guard `n >= 0 and n < 10` true. Each `Unbounded` with one `Integer` domain at `n` |
+| RR-13 | `function q using v(x: Int[0, 9], y: Int[-9, 9]): Rational[-9, 9; 1, 9] pure { if y != 0 then x / y else rational(0, 1) }` | two: `integer.ne`, `Bounded`, `Boolean`, no guard; `rational.div`, `Bounded`, `Rational[-9, 9; 1, 9]`, guard `y != 0` true |
+| RR-14 | `function all using v(s: Sequence<Integer>[0, 5]): Boolean pure { forall(v in s: v + 1 > 0) }` | two: `integer.add`, result bound `Integer`, and `integer.gt`, result bound `Boolean`, each `Unbounded` with one `Integer` domain keyed by the binder `v`'s parameter node, no guard |
+| RR-15 | `function sib using v(x: Int[0, 9], n: Integer): Integer pure { (let t = x + 1 in t * 2) + (let t = n + 1 in t * 2) }` | five, each with result bound `Integer` and no guard: `x + 1` `Bounded`; the first `t * 2` `Bounded` and the second `Unbounded` at `n`, each at its own occurrence; `n + 1` `Unbounded` at `n`; the outer `+` `Unbounded` at `n` |
 | RR-16 | `function g using v(p: Int[0, 10]): Boolean pure { true }`, `function h using v(q: Int[0, 20]): Boolean pure { true }` and `function f using v(x: Int[0, 9]): Boolean pure { g(x + 1) and h(x + 1) }` | two, at ordinals 0 and 1 of the one `+` node: the first with result bound `Int[0, 10]` and no guard, the second with result bound `Int[0, 20]` and guard `g(x + 1)` true; each `Bounded` |
-| RR-17 | `function m using v(x: Int[0, 9]): Integer pure decreases(x + 1) { x + 1 }` | one: `integer.add` at the body's occurrence, `Bounded`; none at the measure's |
+| RR-17 | `function m using v(x: Int[0, 9]): Integer pure decreases(x + 1) { x + 1 }` | one: `integer.add` at the body's occurrence, `Bounded`, `Integer`, no guard; none at the measure's |
 
 ## Acceptance Criteria
 

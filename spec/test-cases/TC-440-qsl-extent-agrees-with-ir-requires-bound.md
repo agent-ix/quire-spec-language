@@ -26,7 +26,10 @@ over the v2 wire QSL emits. Scope: FR-097-AC-6.
 4. Check and emit `function f using v(x: Int[0, 9], n: Integer): Integer
    pure { (x + 1) + n }`. Read its requirement records (FR-062-AC-13) and,
    with IR's v2 reader at the pinned revision, apply IR's `requires-bound`
-   predicate to each record's application node.
+   predicate to each record's application node. Then check and emit
+   FR-062's RR-7 (`let t = x + 1 in t * 2`) and `function k using v(x:
+   Int[0, 9], n: Integer): Integer pure { if n = 0 then x + 1 else 0 }`,
+   and read their records.
 
 ## Expected Results
 
@@ -34,7 +37,10 @@ over the v2 wire QSL emits. Scope: FR-097-AC-6.
   IR's first unbounded node is the form QSL names.
 - Step 4: IR answers `requires-bound` for the outer `+` node, whose record
   is `Unbounded` at `n`, and not for the inner `+` node, whose record is
-  `Bounded`.
+  `Bounded`. For RR-7's `*` record (rooted through `t`'s bound value) and
+  `k`'s `+` record (rooted at `n` through the guard), IR's predicate is not
+  asserted; the records' extents are asserted: `Bounded` for the `*`, and
+  `Unbounded` with one `Integer` domain at `n` for `k`'s `+`.
 
 ## Status
 

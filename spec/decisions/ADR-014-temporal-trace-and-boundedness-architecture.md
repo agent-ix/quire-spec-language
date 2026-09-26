@@ -286,10 +286,14 @@ bounds for one domain cannot be built: the writer takes a map keyed by
 **IR's predicate.** AD-016's IR `requires-bound` is the same classification
 over the lowered form: which IR forms carry an unbounded domain. IR reads the
 v2 wire QSL emits (ADR-011 FB-05), and a QSL-140 and IR conformance test over
-the §10 scenarios pins that the two agree. The two agree per application
-node: for each operation-application record, IR's predicate on that
-record's application node answers `requires-bound` exactly when the
-record's extent is `Unbounded`.
+the §10 scenarios pins that the two agree. QSL's record is the authority
+for an operation-application claim's extent. IR's predicate agrees with it
+per application node for each record whose roots are all reachable from
+the application node through its operands: IR's predicate on that node
+answers `requires-bound` exactly when the record's extent is `Unbounded`.
+A record with a root reached through a `let` binder's bound value, or read
+only by a guard of its path condition, is outside that agreement, and the
+driver uses the record's extent for it.
 
 ### 5. The `quire.temporal.infinite-trace/v1` facet (ticket decision 4)
 

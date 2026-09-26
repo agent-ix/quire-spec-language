@@ -29,8 +29,9 @@ extent from anywhere but the record.
    with no named backend.
 2. Check `function big using v(n: Integer): Integer pure { n + 1 }` and
    run the builder over its records with the same registry. Write a bounded
-   follow-up for its one item, supplying `IntegerRange{0, 100}` for the
-   item's one unbounded `DomainKey`.
+   follow-up for its one item as a new request with a fresh
+   `RequestWriter`, supplying `IntegerRange{0, 100}` for the item's one
+   unbounded `DomainKey`.
 3. Run the builder over step 1's records with a registry whose one backend
    advertises only `operation-contract`.
 4. Run the builder over step 1's records with the step 1 registry and a
@@ -49,8 +50,9 @@ extent from anywhere but the record.
   and its candidate set is exactly the one backend.
 - Step 2: one item, classified `unbounded` with `finite_bound_available`
   true, carrying one unbounded domain: kind `Integer`, keyed by `n`'s
-  parameter node and the empty path. The follow-up is written with its own
-  request index, not 0, and classified `bounded`.
+  parameter node and the empty path. The follow-up request holds one item,
+  request index 0, classified `bounded`, carrying the original item's
+  occurrence key.
 - Step 3: three items, each with an empty candidate set.
 - Step 4: three items, each carrying the unknown-backend marker naming
   `missing`.
