@@ -41,7 +41,7 @@ missing_docs = "warn"
 # `is_childless` each carry an unconditional arm for, so this crate keeps
 # compiling under the probe (the real S2 seam it exists to demonstrate is
 # `qsl-semantics`' `Typer::infer_form`, above this crate).
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)", "cfg(seam_probe_forms)"] }
 
 [lints.clippy]
 all = "deny"
