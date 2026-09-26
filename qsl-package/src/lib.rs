@@ -21,7 +21,9 @@ pub use checked_v2::{
     read_import_view, AdmittedPackages, ImportViewRefusal, SourceMapDefect, UnsupportedWire,
     V2ReadRefusal,
 };
-pub use emit::{diagnostics_catalog, emit_checked, Emission, EmitRefusal, OmissionCause, OmittedNode};
+pub use emit::{
+    diagnostics_catalog, emit_checked, Emission, EmitRefusal, OmissionCause, OmittedNode,
+};
 
 // ADR-011 §4 I2: `read_checked_package_v2`, its outcome type
 // (`V2ReadOutcome`) and its refusal/incomplete types (`V2ReadRefusal`,
