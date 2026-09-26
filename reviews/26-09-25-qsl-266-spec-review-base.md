@@ -58,3 +58,11 @@ Disposition pass at `agent-ix/quire-spec-language@accbac3849a26f9f8206e655369105
 | FND-002 | fixed accbac38 | Every RR unit is a full declaration with its result type. RR-1 is `-z` into `Int[-9, 0]` and RR-4 is `x = y` into `Boolean` (FR-062:290-306). |
 
 New in this pass: FND-003 (low), recorded in `## Findings` above. It has no outcome yet.
+
+## Dispositions (second pass)
+
+Second disposition pass at `agent-ix/quire-spec-language@1d69b5eeccff5e935012e7bcb3b4482558c3f19b` (fix commit `1d69b5ee`, "QSL-266 spec: address spec review disposition pass"). It covers the findings the first pass left open. Each outcome was re-checked against the spec at that head.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed 1d69b5ee | Every fixture that has records now names each record's result bound. RR-5, RR-7, RR-8, RR-14 (`+`), RR-15 and RR-17 give `Integer`. RR-11 and RR-12 (`ge`, `le`, `lt`), RR-13 (`ne`) and RR-14 (`gt`) give `Boolean`. RR-13's `/` gives `Rational[-9, 9; 1, 9]`. RR-9 and RR-10 have no records (FR-062:294-306). RR-13's bound is consistent with the rule. `Coerce` exists only for integer narrowing (FR-093), so no narrow wraps the `/`. Integer `/` takes its type from context (`contextual`, qsl-semantics/src/check/check.rs:814-824), and the expected type flows through the `if` into the `then` branch. So the `/`'s own result type, and therefore its result bound, is the declared `Rational[-9, 9; 1, 9]`. |

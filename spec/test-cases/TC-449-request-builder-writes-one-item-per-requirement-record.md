@@ -30,8 +30,10 @@ extent from anywhere but the record.
 2. Check `function big using v(n: Integer): Integer pure { n + 1 }` and
    run the builder over its records with the same registry. Write a bounded
    follow-up for its one item as a new request with a fresh
-   `RequestWriter`, supplying `IntegerRange{0, 100}` for the item's one
-   unbounded `DomainKey`.
+   `RequestWriter`, passing the item's occurrence key to `bounded_item`
+   and supplying `IntegerRange{0, 100}` for the item's one unbounded
+   `DomainKey`. Finish the follow-up request and count its items for that
+   occurrence key.
 3. Run the builder over step 1's records with a registry whose one backend
    advertises only `operation-contract`.
 4. Run the builder over step 1's records with the step 1 registry and a
@@ -51,8 +53,10 @@ extent from anywhere but the record.
 - Step 2: one item, classified `unbounded` with `finite_bound_available`
   true, carrying one unbounded domain: kind `Integer`, keyed by `n`'s
   parameter node and the empty path. The follow-up request holds one item,
-  request index 0, classified `bounded`, carrying the original item's
-  occurrence key.
+  request index 0, classified `bounded`, carrying the occurrence key
+  passed to `bounded_item`, which equals the original item's. The
+  follow-up request holds exactly one item for that occurrence key, so the
+  record has a single follow-up settlement.
 - Step 3: three items, each with an empty candidate set.
 - Step 4: three items, each carrying the unknown-backend marker naming
   `missing`.
