@@ -6,7 +6,7 @@
 
 use super::*;
 
-/// The application nodes of one fixture, `(identity, mode value, node)`.
+/// The application nodes of the fixture at `path`.
 fn fixture_applications(path: &std::path::Path) -> Vec<Value> {
     let bytes =
         std::fs::read(path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
@@ -268,10 +268,9 @@ fn cases() -> Vec<Case> {
             )]),
         ),
         case(
-            // `a = a`: IR's v2 reader refuses `a = b` over two distinct
-            // record parameters (`ill_typed`/`operator-ineligible` at the
-            // second argument), so the comparison uses one operand twice,
-            // as the fixture's own node does.
+            // `a = a`, not `a = b`: IR's v2 reader refuses `a = b` over two
+            // distinct record parameters (`ill_typed`/`operator-ineligible`,
+            // IR-307), so this uses one operand twice, as the fixture does.
             "quire.op.structural.eq",
             None,
             with_record(vec![typed(

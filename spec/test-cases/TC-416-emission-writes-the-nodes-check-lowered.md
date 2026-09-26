@@ -107,4 +107,4 @@ compared, and IR's v2 reader admits each emitted package. It excludes `mode`
 for `quire.op.ieee.float64.add` (the fixtures carry `toward-zero` and
 `nearest-even`; QSL admits only `exact`) and skips, by name, the fixture
 identities no row lowers in a function body. The `float64.add` `mode` clause
-of FR-093-AC-13 awaits a spec ruling.
+of FR-093-AC-13 is UNMET until FR-091-OQ-4 is implemented (QSL-280).
