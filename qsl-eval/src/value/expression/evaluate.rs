@@ -240,6 +240,20 @@ enum Task<'a> {
     /// Restore the anchor a `pre(..)` or a `Call` saved before evaluating its
     /// operand/callee body.
     RestoreAnchor(Anchor),
+    /// Restore the package an imported call switched from, once the
+    /// imported function's body has returned (ADR-015 D-5).
+    RestorePackage(Box<PackageContext<'a>>),
+}
+
+/// The package whose declarations a body evaluates against: its scope,
+/// functions, dispatch tables, units and enum members. An imported call
+/// evaluates the callee's body against the library's own package.
+struct PackageContext<'a> {
+    scope: &'a Scope,
+    graph: &'a CheckedGraph,
+    dispatch_tables: &'a [DispatchTable],
+    units: UnitScope<'a>,
+    enum_members: &'a EnumMemberIndex,
 }
 
 /// A dispatched call's linked candidate body, awaiting its effective
@@ -310,6 +324,11 @@ pub(crate) struct Machine<'a, 'm> {
     /// `Value::Enum` (O-14/OQ-D) carries no declaration, ordered flag or
     /// case name of its own.
     enum_members: &'a EnumMemberIndex,
+    /// The `ImportedCall` nodes whose library bodies are running, outermost
+    /// first. A halt inside a library body is located at the outermost one,
+    /// the call in the caller's own graph: the library's node locations
+    /// name another package's source (ADR-015 D-5).
+    imported: Vec<&'a Node>,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -334,6 +353,19 @@ impl<'a, 'm> Machine<'a, 'm> {
             anchor: Anchor::Post,
             units: UnitScope::new(scope.types().units()),
             enum_members,
+            imported: Vec::new(),
+        }
+    }
+
+    /// Evaluate against `package` from now on, returning the package this
+    /// machine evaluated against until now.
+    fn enter(&mut self, package: PackageContext<'a>) -> PackageContext<'a> {
+        PackageContext {
+            scope: std::mem::replace(&mut self.scope, package.scope),
+            graph: std::mem::replace(&mut self.graph, package.graph),
+            dispatch_tables: std::mem::replace(&mut self.dispatch_tables, package.dispatch_tables),
+            units: std::mem::replace(&mut self.units, package.units),
+            enum_members: std::mem::replace(&mut self.enum_members, package.enum_members),
         }
     }
 
@@ -381,9 +413,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                 | Task::ChargeElement(node) => node,
                 Task::Iterate(iteration) => iteration.node,
                 Task::DispatchGuard(guard) => guard.node,
-                Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) => root,
+                Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) | Task::RestorePackage(_) => {
+                    root
+                }
             };
             if let Err(halt) = self.step(task) {
+                let located = self.imported.first().copied().unwrap_or(located);
                 return match halt {
                     Halt::Fault(fault) => Err(fault),
                     // FR-090-OQ-3 ruling: a family-owned result is located
@@ -651,6 +686,11 @@ impl<'a, 'm> Machine<'a, 'm> {
             Task::Iterate(iteration) => self.iterate(iteration),
             Task::RestoreAnchor(previous) => {
                 self.anchor = previous;
+                Ok(())
+            }
+            Task::RestorePackage(previous) => {
+                self.enter(*previous);
+                self.imported.pop();
                 Ok(())
             }
         }
@@ -965,6 +1005,40 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // Reset to `Post` for the callee, then restore the caller's
                 // anchor once its own `Task::Eval`/`Task::Return` complete
                 // (mirrors `NodeKind::Pre`'s own save/restore pair).
+                self.tasks.push(Task::RestoreAnchor(self.anchor));
+                self.anchor = Anchor::Post;
+                self.tasks.push(Task::Return);
+                self.tasks.push(Task::Eval(callable.body));
+                return Ok(());
+            }
+            // ADR-015 D-5: the callee is a function of an imported library,
+            // at the index check time resolved from its node id; its body
+            // evaluates against the library's own package.
+            NodeKind::ImportedCall {
+                callee,
+                function,
+                arguments,
+            } => {
+                let library = self
+                    .graph
+                    .scope()
+                    .imported_graph(callee.package)
+                    .ok_or_else(invariant)?;
+                let callable = library.function_state(*function).ok_or_else(invariant)?;
+                let arguments = self.pop_many(arguments.len())?;
+                charge_call(self.meter)?;
+                let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
+                frame.resize(callable.slots.max(frame.len()), None);
+                self.frames.push(frame);
+                let previous = self.enter(PackageContext {
+                    scope: library.scope(),
+                    graph: library,
+                    dispatch_tables: library.dispatch_tables(),
+                    units: UnitScope::new(library.scope().types().units()),
+                    enum_members: library.scope().enum_member_index(),
+                });
+                self.imported.push(node);
+                self.tasks.push(Task::RestorePackage(Box::new(previous)));
                 self.tasks.push(Task::RestoreAnchor(self.anchor));
                 self.anchor = Anchor::Post;
                 self.tasks.push(Task::Return);

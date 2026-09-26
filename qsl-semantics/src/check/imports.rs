@@ -22,22 +22,8 @@ use super::refusal::CheckCause;
 /// `ambiguous-name` as a malformed preimage), so a view never carries two
 /// entries with one name.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(
-    not(any(test, feature = "test-support")),
-    expect(
-        dead_code,
-        reason = "no production caller yet: E3 imported-name resolution (FR-087-AC-13, TC-379; QSL-6) is its caller"
-    )
-)]
 pub struct ImportedNames<'a>(BTreeMap<&'a str, PackageNodeKey>);
 
-#[cfg_attr(
-    not(any(test, feature = "test-support")),
-    expect(
-        dead_code,
-        reason = "no production caller yet: E3 imported-name resolution (FR-087-AC-13, TC-379; QSL-6) is its caller"
-    )
-)]
 impl<'a> ImportedNames<'a> {
     /// The name index of `view`'s entries.
     pub fn of(view: &'a ImportView) -> Self {

@@ -131,7 +131,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 | FR-099-AC-2 | The import with `digest "sha256:<d>"`, with `d` in uppercase hex, and with 63 or 65 hex characters, each refuses at S1 with `invalid-digest` at the digest string. The library supplied from a source whose one declaration is changed refuses `DependencyIdentityMismatch` (`stale_dependency`/`byte-digest-mismatch`) at the import, naming `test/geometry`, `d` and the recompiled `package_id`, with no package. | Test (TC-446) |
 | FR-099-AC-3 | With no library supplied as `test/geometry` the import refuses `missing_import`/`missing-selection` at the import's identity string, stage `intake`; with `test/geometry` supplied at version `2` it refuses `stale_dependency`/`revision-mismatch`; with two libraries supplied as `test/geometry`, or a library whose source has the unit's authority and identity, the dependency input refuses `invalid_package`/`conflicting-definition` naming both; with an empty identity it refuses `invalid_identifier`; with `test/a` and `test/b` supplied, each importing the other under arbitrary digests, the compile refuses `invalid_package`/`definition-cycle`, unwrapped, naming both identities, at `test/b`'s import of `test/a`; with the unit declaring its `test/geometry` version `1` import before its `test/a` import, where `test/a` imports `test/geometry` version `2`, the compile refuses `invalid_package`/`conflicting-definition`, unwrapped, naming both dependency paths; with `test/a` importing a `test/missing` no library supplies, the compile refuses `CompileRefusal::Dependency` with path `[test/a]` carrying `missing_import`/`missing-selection` in `test/a`'s source. None yields a package. | Test (TC-446) |
 | FR-099-AC-4 | `LibraryName` admits `test/geometry`, `a.b` and `L` and refuses only the empty string; two supplied libraries `test/b` and `test/a` import in either order into a closure listed `test/a` then `test/b`. | Test (TC-446) |
-| FR-099-AC-5 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }`, a unit importing it `as g` checks `function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }`, and `g::f(true)` refuses `ill_typed` at the argument. The emitted `p` body is a `quire.op.function.call` application whose callee is `{term: "dependency_reference", package: <test/geometry's package_id>, node: <f's node id>}`, whose `result_type` is the Boolean type node, and whose node `dependencies` do not list `f`; `g::f(3)`, whose unit writes no `Int[0, 9]`, emits no `Int[0, 9]` type node. With `test/geometry` also declaring a record `R`, a call `g::mk(y)` of a function returning `R`, a call of a function over `Set<R>`, a call of a function over a tuple holding `R`, a call of a function over `Reference<M::T>` for a model type `M::T`, and a use `g::R`, each refuses `ill_typed`/`operator-ineligible` at the use. | Test (TC-446) |
+| FR-099-AC-5 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }`, a unit importing it `as g` checks `function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }`, and `g::f(true)` refuses `ill_typed` at the argument. The emitted `p` body is a `quire.op.function.call` application whose callee is `{term: "dependency_reference", package: <test/geometry's package_id>, node: <f's node id>}`, whose `result_type` is the Boolean type node, and whose node `dependencies` do not list `f`; `g::f(3)` emits the `Int[0, 9]` type node typing the conversion of `3` to `f`'s parameter, as a call of a local function does. With `test/geometry` also declaring a record `R`, a call `g::mk(y)` of a function returning `R`, a call of a function over `Set<R>`, a call of a function over a tuple holding `R`, a call of a function over `Reference<M::T>` for a model type `M::T`, and a use `g::R`, each refuses `ill_typed`/`operator-ineligible` at the use. | Test (TC-446) |
 | FR-099-AC-6 | Recompiling that unit with `test/geometry` supplied from a source whose `f` body changes to `x < 6`, and the import's digest updated to the new `package_id`, gives `p`'s call node a different node id and the package a different `package_id`. | Test (TC-446) |
 
 ## Dependencies
@@ -151,15 +151,19 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
 ## Status
 
-Partly implemented (QSL-255 part b). D-1's spine resolution, D-2 and D-3
-are implemented: spine `compile` takes a `DependencyInput`, and the S4
+Partly implemented (QSL-255 part b). D-1's spine resolution, D-2, D-3 and
+D-5 are implemented: spine `compile` takes a `DependencyInput`, and the S4
 source resolution (`qsl-replay/src/spine.rs`) compiles each imported library
 from source within `DependencyLimits::depth`, binds it to the recomputed
 `package_id`, reads its import view through `qsl_package::read_import_view`,
-and links it through `CheckedPackage::link_with`. TC-446 passes locally for
-AC-1 to AC-4 (`qsl-replay` `spine::dependency_tests`; AC-2's S1 spellings are
-`qsl-cst`'s `an_import_digest_is_bare_lowercase_hex`). D-1's CLI
-`libraries` (FR-027-AC-10) and replay (D-4) suppliers, and D-5 (AC-5, AC-6),
+and links it through `CheckedPackage::link_with`; E3 types an imported call
+from the library's checked graph (`check::family` `Application::Imported`),
+lowers it to a `dependency_reference` callee, and the evaluator runs it
+against the library's package. TC-446 passes locally for AC-1 to AC-6
+(`qsl-replay` `spine::dependency_tests`; AC-2's S1 spellings are `qsl-cst`'s
+`an_import_digest_is_bare_lowercase_hex`). AC-5's `g::f(3)` clause was
+amended to expect the `Int[0, 9]` conversion node a local call also writes
+(QSL-262). D-1's CLI `libraries` (FR-027-AC-10) and replay (D-4) suppliers
 remain under QSL-255 part (b). Once the CLI supplies libraries, a
 `CompileRefusal::Dependency` is located in a library's source, so the CLI's
 `SpineFailure` must render it against that library's source and path, not

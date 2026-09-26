@@ -129,7 +129,7 @@ use crate::emit::{emit_checked, EmitRefusal};
 /// it and `CheckedPackage`.
 #[derive(Debug)]
 pub struct CheckedPackage {
-    graph: CheckedGraph,
+    graph: Arc<CheckedGraph>,
     /// E4's checked dependency closure: each directly imported package's
     /// own checked package, compiled from its digest-addressed source, by
     /// its recomputed `package_id` ([`Self::link_with`]). Shared: one
@@ -311,7 +311,7 @@ impl CheckedPackage {
     /// ```
     pub fn link(graph: CheckedGraph) -> Self {
         Self {
-            graph,
+            graph: Arc::new(graph),
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
         }
@@ -377,7 +377,7 @@ impl CheckedPackage {
             dependencies.insert(recompiled, import.package);
         }
         Ok(Self {
-            graph,
+            graph: Arc::new(graph),
             dependencies,
             selections,
         })
@@ -389,6 +389,12 @@ impl CheckedPackage {
     /// `qsl-package` re-declaring or re-importing `check`'s types itself.
     pub fn graph(&self) -> &CheckedGraph {
         &self.graph
+    }
+
+    /// This package's checked graph, shared: an importing package's E3
+    /// types an imported name from it (ADR-015 D-5).
+    pub fn shared_graph(&self) -> Arc<CheckedGraph> {
+        Arc::clone(&self.graph)
     }
 
     /// The checked dependency closure (E4): each imported identity's own

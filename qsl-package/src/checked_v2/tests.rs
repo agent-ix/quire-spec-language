@@ -734,31 +734,37 @@ fn refuses_an_ambiguous_declaration_at_ir_intake() {
 }
 
 /// FR-322 `dependency_selections` (QSL-255): a lock and identity preimage
-/// carrying two `DependencySelection` entries, one per identity in ascending
-/// order, is admitted, and the entries enter `package_id`. An entry in the
-/// retired `Selection` shape is a wire-shape refusal located under
+/// carrying two well-shaped `DependencySelection` entries is read as far as
+/// binding them. With no dependency package supplied for them, IR's reader
+/// refuses `missing_import` at the first entry (QSpec FR-322-AC-36, IR-289);
+/// a package with a supplied closure is admitted in `emit::tests`. An entry
+/// in the retired `Selection` shape is a wire-shape refusal located under
 /// `/identity_preimage/dependency_selections/0`.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
-fn admits_dependency_selections() {
+fn dependency_selections_reach_binding_and_refuse_unsupplied() {
     let dependencies = vec![
         dependency_selection("geometry", "1", "geometry-pkg"),
         dependency_selection("units", "2", "units-pkg"),
     ];
     let preimage = identity_preimage(dependencies);
+    assert_ne!(
+        PackageId::of_preimage(&jcs(&preimage)),
+        PackageId::of_preimage(&jcs(&identity_preimage(vec![])))
+    );
     let bytes = jcs(&valid_envelope(&preimage));
     match read(&bytes, &pinned_for(&preimage)) {
-        Read::Verified { package, .. } => {
-            assert_eq!(
-                package.package_id(),
-                PackageId::of_preimage(&jcs(&preimage))
-            );
-            assert_ne!(
-                package.package_id(),
-                PackageId::of_preimage(&jcs(&identity_preimage(vec![])))
-            );
+        Read::Refused(refusal @ V2ReadRefusal::Envelope { .. }) => {
+            let V2ReadRefusal::Envelope { refusal: ir, .. } = &refusal else {
+                unreachable!("matched above");
+            };
+            assert_eq!(ir.code, CheckedPackageRefusalCode::MissingImport);
+            let Some(Locus::Artifact { pointer, .. }) = refusal.locus() else {
+                panic!("an unsupplied entry is located, got {refusal:?}");
+            };
+            assert_eq!(pointer.as_str(), "/lock/dependency_selections/0");
         }
-        other => panic!("expected Verified, got {other:?}"),
+        other => panic!("expected missing_import, got {other:?}"),
     }
 
     let preimage = identity_preimage(vec![selection("profile", "dep-def")]);
@@ -1557,7 +1563,8 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
 /// QSpec TC-233), read at run time from `$QSPEC_DIR`: the published
 /// `DependencySelection` entries, inserted into the all-families fixture's
 /// lock and identity preimage, recompute the recorded `package_id` and pass
-/// QSL's full I2 read; each authored entry mutation is refused at the
+/// QSL's I2 read up to binding the entries to supplied packages (see the
+/// body); each authored entry mutation is refused at the
 /// mutated entry (a shape mutation in either member, a digest-domain
 /// mutation in both); and each order vector gets its recorded outcome, a
 /// refusal located at its last recorded locus (the repeating or misordered
@@ -1586,10 +1593,27 @@ fn conformance_dependency_selection_vectors() {
             json!(PackageId::of_preimage(&jcs(&envelope["identity_preimage"])).hex());
         envelope
     };
+    // The vectors' `package_id`s are placeholders no admitted package has,
+    // so since IR-289 (QSpec FR-322-AC-36) a read that gets past the entries'
+    // shape and order binds the first entry to a supplied package and
+    // refuses `missing_import` there. A vector recorded `admitted` is checked
+    // to that point: its shape and order are admitted. QSpec STD-107 owns
+    // vectors with supplied dependency packages.
+    let unsupplied = |id: &str, outcome: &Read| match outcome {
+        Read::Refused(refusal @ V2ReadRefusal::Envelope { refusal: ir, .. }) => {
+            assert_eq!(ir.code, CheckedPackageRefusalCode::MissingImport, "{id}");
+            assert!(
+                matches!(refusal.locus(), Some(Locus::Artifact { pointer, .. })
+                    if pointer.as_str() == "/lock/dependency_selections/0"),
+                "{id}: {refusal:?}"
+            );
+        }
+        other => panic!("{id}: expected missing_import at the first entry, got {other:?}"),
+    };
     let selections = &vectors["dependency_selections"];
     let (package_id, outcome) = read_fixture_wire(&with(selections, selections));
     assert_eq!(package_id.hex(), vectors["package_id"].as_str().unwrap());
-    assert!(matches!(outcome, Read::Verified { .. }), "{outcome:?}");
+    unsupplied("dependency_selections", &outcome);
 
     let refused_at = |outcome: &Read, bytes: &[u8]| -> (CheckedPackageRefusalCode, String) {
         match outcome {
@@ -1656,10 +1680,7 @@ fn conformance_dependency_selection_vectors() {
         let (_, outcome) = read_fixture_wire(&envelope);
         let expected = vector["outcome"].as_str().unwrap();
         if expected == "admitted" {
-            assert!(
-                matches!(outcome, Read::Verified { .. }),
-                "{id}: {outcome:?}"
-            );
+            unsupplied(id, &outcome);
             continue;
         }
         let cause = match expected {

@@ -67,9 +67,12 @@ use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Locus, StageFailure, 
 // crosses that boundary.
 use super::check::{bind_parameters, Signature, Signatures, Typer};
 use super::facts::{CallSite, Definedness};
+use super::imports::ImportedNames;
 use super::ir::Node;
 use super::refusal::{CheckCause, CheckRefusal, CheckingLimitKind, Location as CheckLocation};
+use super::AdmittedImport;
 use super::{CheckingLimits, DeclarationRegions, DispatchTable, Origin as CheckOrigin, Scope};
+use crate::library::PackageNodeKey;
 use crate::value::declaration::CompositeShape;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTypedCause;
@@ -728,6 +731,41 @@ pub(crate) enum Application<'a> {
         /// Its position types, in order.
         positions: &'a [ValueType],
     },
+    /// A call of an imported library's function (ADR-015 D-5), typed from
+    /// the library's checked graph.
+    Imported {
+        /// The function, as the import view names it.
+        callee: PackageNodeKey,
+        /// The function's index in the library's checked graph.
+        function: usize,
+        /// The function's checked signature in the library's graph; every
+        /// type in it is package-independent.
+        signature: &'a Signature,
+    },
+}
+
+/// ADR-015 D-5, QSpec FR-322: whether `value_type` is the same type in
+/// every package, so an importing graph holds it under the id the library
+/// gives it. A builtin scalar, and an option or collection over such types,
+/// is; a type naming a declaration (a record, a tuple, an enum, a declared
+/// unit) or a model owner (a reference, a population) is not.
+fn is_package_independent(value_type: &ValueType) -> bool {
+    match value_type {
+        ValueType::Boolean
+        | ValueType::Integer
+        | ValueType::Int(_)
+        | ValueType::Rational(_)
+        | ValueType::Decimal(_)
+        | ValueType::Float(_)
+        | ValueType::Text(_) => true,
+        ValueType::Option(payload) => is_package_independent(payload),
+        ValueType::Collection(collection) => is_package_independent(collection.element()),
+        ValueType::Quantity(_)
+        | ValueType::Enum(_)
+        | ValueType::Composite(_)
+        | ValueType::Reference(_)
+        | ValueType::Population(_) => false,
+    }
 }
 
 impl<'a> Application<'a> {
@@ -740,6 +778,11 @@ impl<'a> Application<'a> {
         arity: usize,
         location: &CheckLocation,
     ) -> Result<Self, CheckRefusal> {
+        if let Some((qualifier, member)) = name.split_once("::") {
+            if let Some(import) = typer.scope().imported(qualifier) {
+                return Self::imported(import, member, arity, location);
+            }
+        }
         if let Some((function, signature)) = typer.signatures().callable(name) {
             if signature.parameters.len() != arity {
                 return Err(CheckRefusal::ill_typed(
@@ -799,10 +842,56 @@ impl<'a> Application<'a> {
         }
     }
 
+    /// ADR-015 D-5: a call of `member` of the admitted import `import`.
+    /// `member` resolves through the import view (FR-087-AC-13), else
+    /// `missing_declaration`/`missing-name`; the node it names is looked up
+    /// among the library graph's function identities, and a name that is no
+    /// function callable by name, or a function one of whose signature types
+    /// is package-dependent, refuses `ill_typed`/`operator-ineligible`; an
+    /// arity mismatch refuses `ill_typed`/`type-mismatch`.
+    fn imported(
+        import: &'a AdmittedImport,
+        member: &str,
+        arity: usize,
+        location: &CheckLocation,
+    ) -> Result<Self, CheckRefusal> {
+        let callee = ImportedNames::of(&import.view)
+            .resolve(member)
+            .map_err(|cause| CheckRefusal {
+                location: location.clone(),
+                cause,
+            })?;
+        let ineligible = || CheckRefusal::ill_typed(location, IllTypedCause::OperatorIneligible);
+        let (function, signature) = import
+            .graph
+            .imported_function(&callee.node)
+            .ok_or_else(ineligible)?;
+        let independent = signature
+            .parameters
+            .iter()
+            .map(|(_, parameter)| parameter)
+            .chain([&signature.result])
+            .all(is_package_independent);
+        if !independent {
+            return Err(ineligible());
+        }
+        if signature.parameters.len() != arity {
+            return Err(CheckRefusal::ill_typed(
+                location,
+                IllTypedCause::TypeMismatch,
+            ));
+        }
+        Ok(Self::Imported {
+            callee,
+            function,
+            signature,
+        })
+    }
+
     /// The type the argument at `index` is checked against.
     pub(crate) fn parameter(self, index: usize) -> Option<&'a ValueType> {
         match self {
-            Self::Function { signature, .. } => signature
+            Self::Function { signature, .. } | Self::Imported { signature, .. } => signature
                 .parameters
                 .get(index)
                 .map(|(_, parameter)| parameter),
@@ -820,6 +909,19 @@ impl<'a> Application<'a> {
                 signature,
             } => Node {
                 kind: super::ir::NodeKind::Call {
+                    function,
+                    arguments,
+                },
+                value_type: signature.result.clone(),
+                location: location.clone(),
+            },
+            Self::Imported {
+                callee,
+                function,
+                signature,
+            } => Node {
+                kind: super::ir::NodeKind::ImportedCall {
+                    callee,
                     function,
                     arguments,
                 },

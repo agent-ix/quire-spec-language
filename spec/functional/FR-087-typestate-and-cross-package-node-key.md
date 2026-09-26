@@ -716,7 +716,8 @@ the steps its test backs.
   `VerifiedPackage::into_import_view`, the two composing them
   (`qsl_package::read_import_view`, the I2 read of a library's own
   emission, and the spine's per-unit chain `Resolution::compile_unit`,
-  ADR-015 D-1), plus the two lane-private producers. `compile_fail` doctests cover TC-244 rows 1 to 5. Rows 3 to 5
+  ADR-015 D-1), `CheckedPackage::shared_graph` (a shared handle to the
+  linked graph, ADR-015 D-5), plus the two lane-private producers. `compile_fail` doctests cover TC-244 rows 1 to 5. Rows 3 to 5
   (`VerifiedPackage`, `ImportView` and `protocol_artifact::AdmittedPackage`
   into checked typestate) fail with E0277. Stable rustdoc does not check
   that code, so each block is paired with one that must compile over the
@@ -736,7 +737,7 @@ the steps its test backs.
   `ExportIdentity` exists, and `library` defines no `resolve_name` and no
   field or variant holding a `NodeKey`.
 
-AC-7 (TC-246) and AC-13 (TC-379) are not delivered:
+AC-7 (TC-246) is not delivered, and AC-13 (TC-379) is partly delivered:
 
 - **AC-7 and CON-4.** Amended by the ruling on QSL-229 (2026-09-24) to
   follow ADR-011. They used to require every caller of
@@ -751,19 +752,19 @@ AC-7 (TC-246) and AC-13 (TC-379) are not delivered:
   criterion is backed and TC-246 is gated on both tickets.
   `ResolvedSourcePackage` stays, reached through `command::resolve_parsed_source`
   (`src/command/source_package.rs`) and tested by
-  `tests/it/complete_package.rs`. Today's `ImportSelection` carries a
-  `DefinitionRef` that `resolve_source_package` resolves against
-  `DefinitionCatalog`; an I2 import view is keyed by `package_id`
-  (ADR-011 §2.4). Remaining work: QSL-6, QSL-189.
+  `tests/it/complete_package.rs`. `ImportSelection` carries the library
+  identity, version and recorded digest (ADR-015 D-2), and
+  `resolve_source_package` no longer treats an import as a definition
+  root; an I2 import view is keyed by `package_id` (ADR-011 §2.4). Remaining work: QSL-6, QSL-189.
 - **AC-13.** E3's resolution rule is specified, and the QSpec schema defect
   that blocked it is fixed (QSpec STD-105, IR-287). E4 fills the dependency
   closure (`CheckedPackage::link_with`, AC-14), the emitter writes
   `dependency_selections`, and the I2 reader admits a non-empty one. The
   resolution against an `ImportView` (`check::imports::ImportedNames`)
   exists. Spine `compile`'s dependency input and the S4 source resolution
-  (ADR-015 D-1, FR-099) are implemented; the typing of an imported name at
-  E3 (ADR-015 D-5) is not, and TC-379 is planned with it under QSL-255
-  part (b).
+  (ADR-015 D-1, FR-099) and the typing of an imported name at E3
+  (ADR-015 D-5) are implemented; TC-379 passes steps 1 and 3, and its steps
+  2 and 4 are unreachable as written (see TC-379 Status).
 
 AC-14 (TC-253) is backed by `qsl-package`'s
 `e4_refuses_a_stale_dependency_and_a_conflicting_diamond`,

@@ -153,6 +153,11 @@ impl PackageId {
         self.0.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 
+    /// The digest bytes, for writing this identity; not a constructor.
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
     /// This `package_id` as a `quire.package.semantic/v2` digest record, for
     /// writing it where a record is read. Formats an existing identity; it
     /// is not a constructor of one.

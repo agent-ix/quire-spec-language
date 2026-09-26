@@ -95,11 +95,12 @@
 //! of the contract version is `unknown_wire`/`unsupported-wire`, naming the
 //! version IR read (ADR-013 O-22).
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use quire_contract_ir::{
     read_checked_package, CheckedArtifactRef, CheckedOccurrenceRole, CheckedPackageDispatchResult,
     CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageLimit,
-    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode,
+    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
     CheckedSourceMapEntry, CheckedSourceRegion, CHECKED_PACKAGE_V2,
 };
 
@@ -117,7 +118,8 @@ use qsl_semantics::library::{
 };
 use qsl_semantics::model::key::hex;
 
-use crate::emit::Emission;
+use crate::checked::{CheckedPackage, ResolvedDependency};
+use crate::emit::{emit_checked, Emission, EmitRefusal};
 use qsl_semantics::value::IDENTITY_LIMITS;
 use quire_exact::{Origin, Role};
 
@@ -160,6 +162,7 @@ pub(crate) fn read_v2(
                 package,
                 source_map,
                 effective_limits,
+                ..
             } = staged.into_value();
             Read::Verified {
                 package,
@@ -582,6 +585,9 @@ pub(crate) struct V2Read {
     /// [`V2ReadLimits`] as given, with `depth` reported as at most
     /// [`SERDE_JSON_RECURSION_LIMIT`] (see [`V2ReadLimits::enforced`]).
     pub(crate) effective_limits: V2ReadLimits,
+    /// IR's admitted package, supplied to a later read whose
+    /// `dependency_selections` name it.
+    pub(crate) admitted: Arc<CheckedPackageV2>,
 }
 
 /// I2's own outcome, ADR-013 T-4's stage result (FR-322-AC-9): a verified
@@ -703,6 +709,7 @@ pub(crate) fn read_checked_package_v2(
                     package: verified,
                     source_map,
                     effective_limits: limits.enforced(),
+                    admitted: Arc::from(package),
                 })),
                 Err(refusal) => refused(V2ReadRefusal::Structural(Box::new(refusal))),
             }
@@ -742,18 +749,85 @@ pub(crate) fn read_checked_package_v2(
     }
 }
 
-/// Why [`read_import_view`] built no import view: the I2 read refused the
-/// bytes, or reached one of its ceilings.
-pub type ImportViewRefusal = StageFailure<V2ReadRefusal>;
+/// Why [`read_import_view`] built no import view (ADR-015 D-1 step 6).
+#[derive(Debug, thiserror::Error)]
+pub enum ImportViewRefusal {
+    /// The package, or a package of its dependency closure, did not emit
+    /// complete v2 bytes: the emitter refused (`Some`), or would omit nodes
+    /// (`None`).
+    #[error("the package {package} does not emit a complete checked package")]
+    Emission {
+        /// The library identity of the package that did not emit.
+        package: LibraryName,
+        /// The emitter's refusal, or `None` when the emission omits nodes.
+        refusal: Option<EmitRefusal>,
+    },
+    /// A closure entry names a `package_id` no package of the closure has.
+    /// A broken invariant of `CheckedPackage::link_with`, which records
+    /// only recomputed ids of packages it holds.
+    #[error("the dependency {identity} is not held by the closure")]
+    UnheldDependency {
+        /// The closure entry's identity.
+        identity: LibraryName,
+    },
+    /// The I2 read of the package, or of a package of its closure, refused
+    /// or reached a ceiling.
+    #[error("the I2 read of {package} refused: {}", read_message(refusal))]
+    Read {
+        /// The library identity of the package whose read refused.
+        package: LibraryName,
+        /// The read's refusal or reached ceiling.
+        refusal: StageFailure<V2ReadRefusal>,
+    },
+}
 
-/// ADR-015 D-1 step 6: read a library's freshly emitted v2 bytes through the
-/// I2 reader, pinned to the one selection `identity`, `version` and the
-/// emission's recomputed `package_id`, into the [`VerifiedPackage`]'s
-/// [`ImportView`] (ADR-011 §4 verified binding). The lock is checked
-/// against the emission's own evidence of the artifacts it compiled against
-/// and against `domain_packages`, FR-056's package input by `sha256-jcs`
-/// digest, for its `model_selections`. The reader's ceilings are its
-/// defaults.
+/// A readable account of an I2 read's refusal or reached ceiling.
+fn read_message(refusal: &StageFailure<V2ReadRefusal>) -> String {
+    match refusal {
+        StageFailure::Refused(refusal) => refusal.to_string(),
+        StageFailure::Limit(limit) => format!(
+            "{} (bound {}, reached {})",
+            limit.kind().catalog_cause(),
+            limit.configured_bound(),
+            limit.actual()
+        ),
+    }
+}
+
+impl ImportViewRefusal {
+    /// The catalog code.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Emission {
+                refusal: Some(refusal),
+                ..
+            } => refusal.code(),
+            Self::Emission { refusal: None, .. } => Code::UnsupportedProjection,
+            Self::UnheldDependency { .. } => Code::RuntimeInvariant,
+            Self::Read {
+                refusal: StageFailure::Refused(refusal),
+                ..
+            } => refusal.code(),
+            Self::Read {
+                refusal: StageFailure::Limit(_),
+                ..
+            } => Code::StageLimitExceeded,
+        }
+    }
+}
+
+/// ADR-015 D-1 step 6: read `package`'s `emission` through the I2
+/// reader, pinned to the one selection `identity`, `version` and the
+/// recomputed `package_id`, into the [`VerifiedPackage`]'s [`ImportView`]
+/// (ADR-011 §4 verified binding). The lock is checked against the
+/// emission's own evidence of the artifacts it compiled against, against
+/// `domain_packages` (FR-056's package input, by `sha256-jcs` digest) for
+/// its `model_selections`, and against the admitted package of every entry
+/// of its `dependency_selections` (QSpec FR-322-AC-36): taken from
+/// `admitted`, by `package_id`, where an earlier read admitted it, and
+/// otherwise read the same way from the closure `package` holds. Every
+/// package this read admits, `package` among them, is added to `admitted`
+/// for the next read. The reader's ceilings are its defaults.
 ///
 /// The artifact evidence is vacuous by construction: it is the emission's
 /// own record of what it compiled against, so it cannot disagree with the
@@ -761,29 +835,169 @@ pub type ImportViewRefusal = StageFailure<V2ReadRefusal>;
 /// this read only turns the emitted bytes into the view E3 resolves
 /// against, through the one verified-binding path (ADR-011 §4).
 pub fn read_import_view(
+    package: &CheckedPackage,
     emission: &Emission,
     identity: LibraryName,
     version: &str,
     domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    admitted: &mut AdmittedPackages,
 ) -> Result<ImportView, ImportViewRefusal> {
-    let mut evidence = emission.evidence.clone();
-    for (digest, document) in domain_packages {
-        evidence.insert_domain_package_document(hex(digest), document.as_slice());
+    let mut held = BTreeMap::new();
+    hold_closure(package, &mut held);
+    let mut reader = ClosureReader {
+        held,
+        domain_packages,
+        admitted: std::mem::take(&mut admitted.0),
+    };
+    let read = reader.read_emitted(package, emission, identity, version);
+    admitted.0 = reader.admitted;
+    let read = read?;
+    admitted
+        .0
+        .insert(emission.package().package_id(), Arc::clone(&read.admitted));
+    Ok(read.package.into_import_view())
+}
+
+/// The packages [`read_import_view`] calls have admitted, by `package_id`:
+/// one compile's reads share it, so each package of the closure is read
+/// once.
+#[derive(Debug, Default)]
+pub struct AdmittedPackages(BTreeMap<PackageId, Arc<CheckedPackageV2>>);
+
+/// Supply `evidence` with the admitted package of every entry of
+/// `package`'s `dependency_selections`, each read as [`read_import_view`]
+/// reads it: for a caller that reads `package`'s own bytes itself.
+#[cfg(test)]
+pub(crate) fn supply_closure(
+    package: &CheckedPackage,
+    evidence: &mut CheckedPackageEvidence,
+) -> Result<(), ImportViewRefusal> {
+    let domain_packages = BTreeMap::new();
+    let mut held = BTreeMap::new();
+    hold_closure(package, &mut held);
+    ClosureReader {
+        held,
+        domain_packages: &domain_packages,
+        admitted: BTreeMap::new(),
     }
-    let pinned = PinnedRequest::single(
-        identity.clone(),
-        Selection {
-            version: version.to_owned(),
-            package_id: emission.package.package_id(),
-        },
-    );
-    read_checked_package_v2(
-        emission.package.bytes(),
-        identity,
-        version.to_owned(),
-        V2ReadLimits::default(),
-        &evidence,
-        &pinned,
-    )
-    .map(|read| read.into_value().package.into_import_view())
+    .supply(package, evidence)
+}
+
+/// Every package of `package`'s dependency closure, by recomputed
+/// `package_id`.
+fn hold_closure<'p>(
+    package: &'p CheckedPackage,
+    held: &mut BTreeMap<PackageId, &'p CheckedPackage>,
+) {
+    for (id, dependency) in package.dependencies() {
+        if held.insert(*id, dependency).is_none() {
+            hold_closure(dependency, held);
+        }
+    }
+}
+
+/// One [`read_import_view`] call's reads: each package of the closure is
+/// admitted at most once.
+struct ClosureReader<'p> {
+    held: BTreeMap<PackageId, &'p CheckedPackage>,
+    domain_packages: &'p BTreeMap<[u8; 32], Vec<u8>>,
+    admitted: BTreeMap<PackageId, Arc<CheckedPackageV2>>,
+}
+
+impl ClosureReader<'_> {
+    /// `package`, emitted and read under `identity` and `version`, with its
+    /// closure's admitted packages supplied first.
+    fn read(
+        &mut self,
+        package: &CheckedPackage,
+        identity: LibraryName,
+        version: &str,
+    ) -> Result<V2Read, ImportViewRefusal> {
+        let emission = emit_checked(package).map_err(|refusal| ImportViewRefusal::Emission {
+            package: identity.clone(),
+            refusal: Some(refusal),
+        })?;
+        self.read_emitted(package, &emission, identity, version)
+    }
+
+    /// `package`'s `emission`, read under `identity` and `version`, with
+    /// its closure's admitted packages supplied first.
+    fn read_emitted(
+        &mut self,
+        package: &CheckedPackage,
+        emission: &Emission,
+        identity: LibraryName,
+        version: &str,
+    ) -> Result<V2Read, ImportViewRefusal> {
+        if !emission.omitted().is_empty() {
+            return Err(ImportViewRefusal::Emission {
+                package: identity,
+                refusal: None,
+            });
+        }
+        let mut evidence = emission.evidence.clone();
+        for (digest, document) in self.domain_packages {
+            evidence.insert_domain_package_document(hex(digest), document.as_slice());
+        }
+        self.supply(package, &mut evidence)?;
+        let pinned = PinnedRequest::single(
+            identity.clone(),
+            Selection {
+                version: version.to_owned(),
+                package_id: emission.package.package_id(),
+            },
+        );
+        read_checked_package_v2(
+            emission.package.bytes(),
+            identity.clone(),
+            version.to_owned(),
+            V2ReadLimits::default(),
+            &evidence,
+            &pinned,
+        )
+        .map(Staged::into_value)
+        .map_err(|refusal| ImportViewRefusal::Read {
+            package: identity,
+            refusal,
+        })
+    }
+
+    /// Supply `evidence` with the admitted package of every entry of
+    /// `package`'s `dependency_selections`.
+    fn supply(
+        &mut self,
+        package: &CheckedPackage,
+        evidence: &mut CheckedPackageEvidence,
+    ) -> Result<(), ImportViewRefusal> {
+        for (dependency, resolved) in package.dependency_selections() {
+            let admitted = self.admitted(dependency, resolved)?;
+            evidence.insert_dependency_package(
+                dependency.as_str(),
+                resolved.selection.version.as_str(),
+                admitted,
+            );
+        }
+        Ok(())
+    }
+
+    /// The admitted package of the closure entry `identity`, read once.
+    fn admitted(
+        &mut self,
+        identity: &LibraryName,
+        resolved: &ResolvedDependency,
+    ) -> Result<Arc<CheckedPackageV2>, ImportViewRefusal> {
+        let id = resolved.selection.package_id;
+        if let Some(admitted) = self.admitted.get(&id) {
+            return Ok(Arc::clone(admitted));
+        }
+        let package = *self
+            .held
+            .get(&id)
+            .ok_or_else(|| ImportViewRefusal::UnheldDependency {
+                identity: identity.clone(),
+            })?;
+        let read = self.read(package, identity.clone(), &resolved.selection.version)?;
+        self.admitted.insert(id, Arc::clone(&read.admitted));
+        Ok(read.admitted)
+    }
 }

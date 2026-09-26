@@ -314,6 +314,10 @@ pub struct PackageDeclarations {
     /// assembler fills it). A type declared by hand has none, and its
     /// `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// Each `import ... as a` the S4 source resolution admitted, by its
+    /// qualifier `a` (ADR-015 D-1, D-5). An import with no `as` binds no
+    /// qualifier (FR-087-AC-13).
+    pub imports: BTreeMap<String, super::AdmittedImport>,
 }
 
 impl PackageDeclarations {
@@ -335,6 +339,7 @@ impl PackageDeclarations {
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
+            imports: BTreeMap::new(),
         }
     }
 
@@ -379,6 +384,8 @@ pub struct Scope {
     /// model operations are only ever looked up by name, so only this index
     /// holds them.
     index: ScopeIndex,
+    /// Each admitted import by its qualifier (ADR-015 D-5).
+    imports: BTreeMap<String, super::AdmittedImport>,
 }
 
 /// `Scope`'s by-name lookups (QSL-205), keyed by the parsed parts of a name,
@@ -477,7 +484,32 @@ impl Scope {
             ieee_profile,
             dispatch_operations,
             index,
+            imports: BTreeMap::new(),
         }
+    }
+
+    /// This scope with `imports`, each admitted import by its qualifier.
+    pub(crate) fn with_imports(mut self, imports: BTreeMap<String, super::AdmittedImport>) -> Self {
+        self.imports = imports;
+        self
+    }
+
+    /// The checked graph of the admitted import whose library has
+    /// `package_id` `package` (ADR-015 D-5): where an imported call's callee
+    /// is evaluated.
+    pub fn imported_graph(
+        &self,
+        package: crate::library::PackageId,
+    ) -> Option<&super::CheckedGraph> {
+        self.imports
+            .values()
+            .find(|import| import.view.package() == package)
+            .map(|import| import.graph.as_ref())
+    }
+
+    /// The admitted import whose qualifier is `qualifier`.
+    pub(crate) fn imported(&self, qualifier: &str) -> Option<&super::AdmittedImport> {
+        self.imports.get(qualifier)
     }
 
     /// Every type `name` binds -- an alias, composite, enum or object type --

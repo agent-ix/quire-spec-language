@@ -45,6 +45,9 @@ use super::type_form::{
     parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
 use crate::library::{ImportView, LibraryName};
+use std::sync::Arc;
+
+use super::CheckedGraph;
 use crate::model::domain_package::{
     DomainPackageRecord, FieldMemberRecord, NativeValueType, ValueTypeRef,
 };
@@ -115,6 +118,13 @@ pub enum AssemblyCause {
     /// A declared type's handle could not be encoded: a broken invariant,
     /// never a property of the source.
     Handle(NodeKeyRefusal),
+    /// A type position names a declaration of an imported library
+    /// (`a::R` for an import qualifier `a`): an imported name stands only
+    /// as a callee (ADR-015 D-5; `ill_typed`/`operator-ineligible`).
+    ImportedTypeName {
+        /// The qualified name as written.
+        name: String,
+    },
     /// An `import` declaration has no admitted import: the S4 source
     /// resolution admitted no library for its identity, so E3 refuses it
     /// rather than drop it from the package (ADR-011 §2.4, ADR-015 D-1,
@@ -161,7 +171,7 @@ impl AssemblyCause {
             Self::AmbiguousTypeName { .. } | Self::DuplicateAlias { .. } => {
                 Code::AmbiguousDeclaration
             }
-            Self::IllFormedBounds(_) => Code::IllTyped,
+            Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 Code::UnknownRequiredFeature
             }
@@ -193,6 +203,7 @@ impl AssemblyCause {
             Self::UnresolvedTypeName { .. } => "missing-name",
             Self::AmbiguousTypeName { .. } | Self::DuplicateAlias { .. } => "ambiguous-name",
             Self::IllFormedBounds(_) => "type-mismatch",
+            Self::ImportedTypeName { .. } => "operator-ineligible",
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 "unsupported-feature"
             }
@@ -621,6 +632,7 @@ fn body_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
 fn check_names(
     unit: &Unit,
     object_types: &BTreeMap<String, EffectiveId>,
+    imports: &BTreeMap<String, AdmittedImport>,
     form: &TypeForm,
     profile: Option<&str>,
     errors: &mut Vec<AssemblyError>,
@@ -674,6 +686,16 @@ fn check_names(
             }
             TypeFormHead::Name(name) => match unit.declared.get(name).map(Vec::len) {
                 None | Some(0) if object_types.contains_key(name) => {}
+                None | Some(0)
+                    if name
+                        .split_once("::")
+                        .is_some_and(|(qualifier, _)| imports.contains_key(qualifier)) =>
+                {
+                    errors.push(AssemblyError {
+                        cause: AssemblyCause::ImportedTypeName { name: name.clone() },
+                        span: form.span,
+                    });
+                }
                 None | Some(0) => errors.push(AssemblyError {
                     cause: AssemblyCause::UnresolvedTypeName { name: name.clone() },
                     span: form.span,
@@ -796,14 +818,17 @@ fn admit_types(
 }
 
 /// One `import` the S4 source resolution admitted (ADR-015 D-1): the
-/// library identity it names and the library's verified import view
-/// (ADR-011 §4).
+/// library identity it names, the library's verified import view (ADR-011
+/// §4), and the library's checked graph, compiled from source, which E3
+/// types an imported name from (ADR-015 D-5).
 #[derive(Clone, Debug)]
 pub struct AdmittedImport {
     /// The library identity the import names.
     pub identity: LibraryName,
     /// The library's import view, read from its emitted v2 bytes.
     pub view: ImportView,
+    /// The library's checked graph.
+    pub graph: Arc<CheckedGraph>,
 }
 
 impl PackageDeclarations {
@@ -891,11 +916,15 @@ impl PackageDeclarations {
                 });
             }
         }
+        let mut qualified = BTreeMap::new();
         for import in &selections.imports {
             let admitted = imports
                 .iter()
-                .any(|admitted| admitted.identity.as_str() == import.identity);
-            if !admitted {
+                .find(|admitted| admitted.identity.as_str() == import.identity);
+            if let (Some(admitted), Some(alias)) = (admitted, &import.alias) {
+                qualified.insert(alias.clone(), admitted.clone());
+            }
+            if admitted.is_none() {
                 errors.push(AssemblyError {
                     cause: AssemblyCause::UnsuppliedImport {
                         identity: import.identity.clone(),
@@ -942,18 +971,32 @@ impl PackageDeclarations {
         // Every type form names declarations of the unit or admitted model
         // object types.
         for alias in &unit.aliases {
-            check_names(&unit, &object_names, &alias.target, None, &mut errors);
+            check_names(
+                &unit,
+                &object_names,
+                &qualified,
+                &alias.target,
+                None,
+                &mut errors,
+            );
         }
         for composite in &unit.composites {
             match &composite.members {
                 Members::Record(fields) => {
                     for field in fields {
-                        check_names(&unit, &object_names, &field.type_form, None, &mut errors);
+                        check_names(
+                            &unit,
+                            &object_names,
+                            &qualified,
+                            &field.type_form,
+                            None,
+                            &mut errors,
+                        );
                     }
                 }
                 Members::Tuple(elements) => {
                     for element in elements {
-                        check_names(&unit, &object_names, element, None, &mut errors);
+                        check_names(&unit, &object_names, &qualified, element, None, &mut errors);
                     }
                 }
             }
@@ -961,10 +1004,17 @@ impl PackageDeclarations {
         for function in &unit.functions {
             let profile = function.using().map(|using| using.alias.as_str());
             for form in signature_type_forms(function) {
-                check_names(&unit, &object_names, form, profile, &mut errors);
+                check_names(&unit, &object_names, &qualified, form, profile, &mut errors);
             }
             for form in body_type_forms(function) {
-                check_names(&unit, &object_names, &form, profile, &mut errors);
+                check_names(
+                    &unit,
+                    &object_names,
+                    &qualified,
+                    &form,
+                    profile,
+                    &mut errors,
+                );
             }
         }
         if !errors.is_empty() {
@@ -1154,6 +1204,7 @@ impl PackageDeclarations {
         }
         package.functions = unit.functions;
         package.declared_type_spans = declared_type_spans;
+        package.imports = qualified;
         Ok(package)
     }
 }

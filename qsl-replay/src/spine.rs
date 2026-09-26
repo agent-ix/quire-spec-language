@@ -23,14 +23,13 @@ use std::sync::Arc;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{build_unit, FormsCause, FormsFailure, FormsLimits};
-use qsl_foundation::diagnostic::StageFailure;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{
-    emit_checked, read_import_view, CheckedPackage, Emission, EmitRefusal, EmittedPackage, Import,
-    ImportViewRefusal, LinkRefusal, OmittedNode,
+    emit_checked, read_import_view, AdmittedPackages, CheckedPackage, Emission, EmitRefusal,
+    EmittedPackage, Import, ImportViewRefusal, LinkRefusal, OmittedNode,
 };
 use qsl_semantics::check::{
     AdmittedImport, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, CheckingLimits,
@@ -283,6 +282,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
     };
     let message = match &first.cause {
         AssemblyCause::UnresolvedTypeName { name } => format!("no declaration is named `{name}`"),
+        AssemblyCause::ImportedTypeName { name } => {
+            format!("`{name}` names an imported declaration, which stands only as a callee")
+        }
         AssemblyCause::AmbiguousTypeName { name, .. } => {
             format!("`{name}` names more than one declaration")
         }
@@ -639,26 +641,13 @@ pub enum ImportRefusal {
     },
     /// Step 6: the I2 read of the library's emitted bytes built no import
     /// view.
-    #[error("the I2 read of {identity} refused: {}", view_message(.refusal))]
+    #[error("the I2 read of {identity} refused: {refusal}")]
     View {
         /// The library identity.
         identity: LibraryName,
         /// The read's refusal or reached ceiling.
         refusal: Box<ImportViewRefusal>,
     },
-}
-
-/// A readable account of an I2 view read's refusal or reached ceiling.
-fn view_message(refusal: &ImportViewRefusal) -> String {
-    match refusal {
-        StageFailure::Refused(refusal) => refusal.to_string(),
-        StageFailure::Limit(limit) => format!(
-            "{} (bound {}, reached {})",
-            limit.kind().catalog_cause(),
-            limit.configured_bound(),
-            limit.actual()
-        ),
-    }
 }
 
 impl ImportRefusal {
@@ -672,10 +661,7 @@ impl ImportRefusal {
             Self::RevisionMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {
                 Code::StaleDependency
             }
-            Self::View { refusal, .. } => match &**refusal {
-                StageFailure::Refused(refusal) => refusal.code(),
-                StageFailure::Limit(_) => Code::StageLimitExceeded,
-            },
+            Self::View { refusal, .. } => refusal.code(),
         }
     }
 
@@ -764,6 +750,7 @@ pub fn compile(
         active: Vec::new(),
         visited: BTreeMap::new(),
         compiled: BTreeMap::new(),
+        admitted: AdmittedPackages::default(),
     };
     let (package, emission) = resolution.compile_unit(source, path, bytes)?;
     Ok(Compiled {
@@ -793,6 +780,9 @@ struct Resolution<'a> {
     /// once per compile, so the number of library compiles is at most the
     /// number of supplied libraries.
     compiled: BTreeMap<LibraryName, Arc<ResolvedLibrary>>,
+    /// IR's admitted package of each library read so far, which a later
+    /// library's view read takes for its closure instead of reading again.
+    admitted: AdmittedPackages,
 }
 
 impl Resolution<'_> {
@@ -835,6 +825,7 @@ impl Resolution<'_> {
             admitted.push(AdmittedImport {
                 identity: identity.clone(),
                 view: library.view.clone(),
+                graph: library.package.shared_graph(),
             });
             links.push(Import {
                 identity,
@@ -968,16 +959,23 @@ impl Resolution<'_> {
             ));
         }
         // 6. View.
-        let view = read_import_view(&emission, identity.clone(), &import.version, self.packages)
-            .map_err(|refusal| {
-                refuse(
-                    ImportRefusal::View {
-                        identity: identity.clone(),
-                        refusal: Box::new(refusal),
-                    },
-                    at_import(),
-                )
-            })?;
+        let view = read_import_view(
+            &package,
+            &emission,
+            identity.clone(),
+            &import.version,
+            self.packages,
+            &mut self.admitted,
+        )
+        .map_err(|refusal| {
+            refuse(
+                ImportRefusal::View {
+                    identity: identity.clone(),
+                    refusal: Box::new(refusal),
+                },
+                at_import(),
+            )
+        })?;
         let library = Arc::new(ResolvedLibrary {
             package: Arc::new(package),
             view,

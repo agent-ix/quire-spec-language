@@ -57,8 +57,8 @@ use super::family::OccurrenceMap;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::node_key::{
     group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
-    Operation, OperationLaw, OperationLeaf, OperationMode, Operator, Owner, SemanticTerm,
-    SourceOwner,
+    Operation, OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef,
+    SemanticTerm, SourceOwner, WireNodeRef,
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, Location, Origin,
@@ -2933,6 +2933,28 @@ impl<'a> Lowering<'a> {
                     frames,
                 );
             }
+            // ADR-015 D-5: an imported call is a `quire.op.function.call`
+            // application whose callee is the `dependency_reference` term.
+            NodeKind::ImportedCall {
+                callee, arguments, ..
+            } => {
+                let mut terms = Vec::with_capacity(arguments.len() + 1);
+                terms.push(SemanticTerm::DependencyReference {
+                    package: PackageRef(callee.package),
+                    node: WireNodeRef(callee.node),
+                });
+                return self.next_operand(
+                    Box::new(OperandsFrame {
+                        node,
+                        depth,
+                        operands: Operands::Each(arguments),
+                        next: 0,
+                        terms,
+                        keyed: Keyed::Application(Operator::Call, plain("quire.op.function.call")),
+                    }),
+                    frames,
+                );
+            }
             NodeKind::Tuple {
                 declaration,
                 arguments,
@@ -3807,6 +3829,8 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
             }
             SemanticTerm::Aggregate { members } => terms.extend(members),
             SemanticTerm::Binding { value, .. } => terms.push(value),
+            // A dependency's node is not a node of this graph.
+            SemanticTerm::DependencyReference { .. } => {}
         }
     }
     named

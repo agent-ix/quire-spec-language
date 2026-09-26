@@ -18,7 +18,8 @@ mod emit;
 
 pub use checked::{CheckedPackage, EmittedPackage, Import, LinkRefusal, ResolvedDependency};
 pub use checked_v2::{
-    read_import_view, ImportViewRefusal, SourceMapDefect, UnsupportedWire, V2ReadRefusal,
+    read_import_view, AdmittedPackages, ImportViewRefusal, SourceMapDefect, UnsupportedWire,
+    V2ReadRefusal,
 };
 pub use emit::{emit_checked, Emission, EmitRefusal, OmissionCause, OmittedNode};
 

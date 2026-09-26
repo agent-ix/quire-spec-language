@@ -388,6 +388,17 @@ pub enum NodeKind {
         /// The arguments, in parameter order.
         arguments: Vec<Node>,
     },
+    /// A call of an imported library's function (ADR-015 D-5). Its
+    /// callee lowers to a `dependency_reference` term.
+    ImportedCall {
+        /// The function, by the library's `package_id` and its node id.
+        callee: crate::library::PackageNodeKey,
+        /// The callee's function index in the library's checked graph,
+        /// resolved from `callee.node` once, at check time.
+        function: usize,
+        /// The arguments, in parameter order.
+        arguments: Vec<Node>,
+    },
     /// A tuple of a declared tuple type.
     Tuple {
         /// The tuple type's declaration.
@@ -537,9 +548,9 @@ impl Node {
             | NodeKind::Equality(_, _, left, right)
             | NodeKind::Connective(_, left, right)
             | NodeKind::Contains(left, right) => vec![left, right],
-            NodeKind::Call { arguments, .. } | NodeKind::Tuple { arguments, .. } => {
-                arguments.iter().collect()
-            }
+            NodeKind::Call { arguments, .. }
+            | NodeKind::ImportedCall { arguments, .. }
+            | NodeKind::Tuple { arguments, .. } => arguments.iter().collect(),
             NodeKind::Record { slots, .. } => slots
                 .iter()
                 .filter_map(|slot| match slot {

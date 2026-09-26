@@ -228,6 +228,11 @@ pub(super) fn locked_artifacts(value: &Value, evidence: &mut CheckedPackageEvide
 /// QSL's full I2 read of `emission`, pinned at its own `package_id`, with
 /// the emitted lock's artifacts as current evidence.
 fn read_back(emission: &Emission) -> Read {
+    read_with(emission, &read_evidence(emission))
+}
+
+/// The emitted lock's artifacts and features as current evidence.
+fn read_evidence(emission: &Emission) -> CheckedPackageEvidence {
     let wire = wire(emission);
     let mut evidence = CheckedPackageEvidence::new();
     locked_artifacts(&wire["lock"], &mut evidence);
@@ -235,6 +240,12 @@ fn read_back(emission: &Emission) -> Read {
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
+    evidence
+}
+
+/// QSL's full I2 read of `emission` against `evidence`, pinned at its own
+/// `package_id`.
+fn read_with(emission: &Emission, evidence: &CheckedPackageEvidence) -> Read {
     let pinned: PinnedRequest = qsl_semantics::library::fixtures::single_pin(
         library(),
         Selection {
@@ -247,7 +258,7 @@ fn read_back(emission: &Emission) -> Read {
         library(),
         "1".to_owned(),
         V2ReadLimits::default(),
-        &evidence,
+        evidence,
         &pinned,
     )
 }
@@ -2328,6 +2339,17 @@ fn linked(imports: Vec<crate::Import>) -> CheckedPackage {
         .expect("the intermediate package links")
 }
 
+/// QSL's I2 read of `package`, a package with a dependency closure, admits
+/// it: `read_import_view` supplies IR's reader the admitted package of every
+/// closure entry (QSpec FR-322-AC-36).
+fn read_linked(package: &CheckedPackage) {
+    let emission = emit(package);
+    let mut evidence = read_evidence(&emission);
+    crate::checked_v2::supply_closure(package, &mut evidence).expect("each dependency reads back");
+    let outcome = read_with(&emission, &evidence);
+    assert!(matches!(outcome, Read::Verified { .. }), "{outcome:?}");
+}
+
 /// The closure of `package` as `(identity, version, package_id, path)`.
 fn closure(package: &CheckedPackage) -> Vec<(LibraryName, String, PackageId, Vec<LibraryName>)> {
     package
@@ -2370,7 +2392,7 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
     .expect("two imports of one package link");
     assert_eq!(linked_root.dependencies().keys().collect::<Vec<_>>(), [&d]);
     let emission = emit(&linked_root);
-    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+    read_linked(&linked_root);
     let written = wire(&emission);
     let entry = |identity: &str, version: &str| {
         json!({
@@ -2413,7 +2435,7 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
         ]
     );
     let emission = emit(&root);
-    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+    read_linked(&root);
     assert_eq!(
         wire(&emission)["lock"]["dependency_selections"]
             .as_array()
@@ -2442,7 +2464,7 @@ fn a_diamond_selecting_one_package_unifies() {
     let units = &root.dependency_selections()[&lib("test/units")];
     assert_eq!(units.selection.package_id, d);
     assert_eq!(units.path, path(&["test/units"]));
-    assert!(matches!(read_back(&emit(&root)), Read::Verified { .. }));
+    read_linked(&root);
 }
 
 /// FR-322 orders `dependency_selections` by UTF-8 bytes. `test/\u{FF61}`
@@ -2461,7 +2483,7 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
     )
     .expect("two identities link");
     let emission = emit(&root);
-    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+    read_linked(&root);
     let identities: Vec<String> = wire(&emission)["lock"]["dependency_selections"]
         .as_array()
         .unwrap()

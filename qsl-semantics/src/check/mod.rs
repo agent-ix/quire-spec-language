@@ -123,7 +123,7 @@ pub use lowering::{
 pub use node_key::{
     IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment, LiteralValue,
     ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf,
-    OperationMode, Operator, Owner, SemanticTerm, SourceOwner,
+    OperationMode, Operator, Owner, PackageRef, SemanticTerm, SourceOwner, WireNodeRef,
 };
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
@@ -578,7 +578,8 @@ impl PackageDeclarations {
             self.model_operations,
             self.ieee_profile,
             self.dispatch_operations,
-        );
+        )
+        .with_imports(self.imports);
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
             .resolved_signatures
@@ -1281,6 +1282,28 @@ impl CheckedGraph {
         identity: quire_exact::NodeKey,
     ) -> Option<FunctionState<'_>> {
         self.functions.with_identity(identity).map(function_state)
+    }
+
+    /// ADR-015 D-5: the signature of the function callable by name whose
+    /// checked identity has the bytes of `node`, found among the identities
+    /// this graph holds and never by minting a `NodeKey` (ADR-013 O-04,
+    /// R-10), with its function index in this graph, which the imported
+    /// call records so evaluation reads it by [`Self::function_state`].
+    /// `None` when no such function is declared.
+    pub(crate) fn imported_function(
+        &self,
+        node: &qsl_foundation::digest::WireNodeId,
+    ) -> Option<(usize, &Signature)> {
+        let position = self
+            .functions
+            .by_identity
+            .iter()
+            .find(|(identity, _)| identity.as_bytes() == node.as_bytes())
+            .map(|(_, position)| *position)?;
+        self.functions
+            .get(position)
+            .map(|(signature, _)| (position, signature))
+            .filter(|(_, signature)| signature.callable_by_name)
     }
 
     /// `name`'s identity and declared parameters, filtered to functions a
