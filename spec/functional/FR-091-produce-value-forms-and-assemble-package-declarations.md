@@ -821,7 +821,13 @@ a field path in a package document. STD-112 asks QSpec for the causes
 
 ## Status
 
-The `Value` slice is implemented (QSL-141), with the `enum`, `ordered enum`
+The `Value` slice is implemented (QSL-141), with the `dimension` and `unit`
+declarations (QSL-275: FR-091-AC-31 to AC-34, AC-6's other half): S2 builds
+the dimension and unit forms as written, and the assembler normalizes
+terms, reduces exact numbers, mints keys with `nominal_key` and admits a
+`UnitGraph` (`PackageDeclarations::units`, `nominal_spans`;
+`assemble_with_limits` takes the decimal-scale bound). AC-35's errors are
+raised with their declarations; only their catalog code is open. It also has the `enum`, `ordered enum`
 and `predicate` declarations (QSL-275: FR-091-AC-25 to AC-30; the enum and
 predicate half of AC-6). `enum` and `ordered` build the enum form, and
 `predicate` builds the `forms` `FunctionDeclaration` of kind `Predicate`.
@@ -846,12 +852,11 @@ of each declared type's name for FR-096, and reports every error it finds.
 
 Remaining work:
 
-- FB-13, QSL-275: the `dimension` and `unit` entries and forms and the
-  assembler's `UnitGraph` admission (FR-091-AC-31 to AC-35) are specified
-  and not implemented (the dimension and unit half of FR-091-AC-6 with
-  them); today both refuse `NoDispatchEntry`, and the only
-  callers of `UnitGraph::admit` are tests. AC-35's catalog code waits on
-  STD-112 (FR-091-OQ-12). The hand-off to QSL-238 and QSL-247 is under
+- AC-35's catalog code waits on STD-112 (FR-091-OQ-12). Until QSpec
+  publishes the topology causes the topology cause reports
+  `invalid_package` with the informational cause `unit-graph-topology`.
+  The hand-off to QSL-238 (retaining preimages through `Unit` and
+  `UnitGraph`, lowering) and QSL-247 (quantity type nodes) is under
   Dependencies.
 - The other families' parsed-form types are not built: the state family's
   under QSL-67, and the others under QSL-45, QSL-44, QSL-43, QSL-42,

@@ -1160,3 +1160,337 @@ fn the_preimage_constructors_apply_the_reader_checks() {
     assert!(EnumMemberPreimage::new(key, "A").is_ok());
     assert!(EnumMemberPreimage::new(key, "not an identifier").is_err());
 }
+
+// ----------------------------------------------------------------------
+// QSL-275: dimensions and units (TC-483)
+// ----------------------------------------------------------------------
+
+/// FR-091 vectors Q1 to Q10.
+const Q: [&str; 10] = [
+    "ff856699d6710bab9b9a893db4b7cf079f203258f543f02f990191d0e4834028",
+    "e277e2dae0f9bae883f80b677af21b3ab95e9ae4c5406864d1dd307d0024f927",
+    "3843d2d5c9906e126f8310cf148fa9b8f7366e0d5bdb762db7b8567e0968c10e",
+    "7d3bb56f6ff61b76783c608273c6c9b773376958449b3b1ace348ff582fa08d7",
+    "3e5ab5ca1538a74d998648ec764c1dc6081acbc0dcdce0c8e81011fd7603730d",
+    "4c5aa30d2878d6197f7292492907082ccc857c60da88979b0a99eee5a5aecb0b",
+    "700256858942ebde86f19abdfa12423cfc5f7e58d830ba3c5903c2d189cd2edd",
+    "83b004fb06bbc9fbe56999ac263d2f3eafe87a25c3182c90acbf1131c0d260ee",
+    "5cc7dfb7cedf23b3dff8012718e3cea37586ed90c6b824affb6fafee10db49db",
+    "12b65987f369f8908be0d690d372e2b3fc3bae7623672a83a942a950663c67fa",
+];
+
+const Q_SOURCES: &str = "dimension Length;\n\
+    dimension Time;\n\
+    dimension Speed = Length / Time;\n\
+    dimension Accel = Speed / Time;\n\
+    dimension Temperature;\n\
+    unit m : Length = rational(1, 1);\n\
+    unit km : Length = rational(2000, 2) * m;\n\
+    unit cm : Length = decimal(1, 2) * m;\n\
+    unit K : Temperature = rational(1, 1);\n\
+    unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);";
+
+fn key_of(hex: &str, graph: &crate::value::UnitGraph) -> quire_exact::NodeKey {
+    graph
+        .units()
+        .map(|unit| unit.key())
+        .find(|key| key.to_string() == hex)
+        .unwrap_or_else(|| panic!("the graph holds unit {hex}"))
+}
+
+#[trace("FR-091-AC-32", "TC-483")]
+#[test]
+fn dimensions_and_units_are_admitted_with_the_vector_keys() {
+    let (text, assembled) = assemble(Q_SOURCES);
+    let package = assembled.expect("the unit assembles");
+    let graph = &package.units;
+    // Units Q6 to Q10 are admitted under their vector keys.
+    let km = graph.unit(key_of(Q[6], graph)).expect("km");
+    assert_eq!(km.canonical().scale().to_string(), "1000/1");
+    let cm = graph.unit(key_of(Q[7], graph)).expect("cm");
+    assert_eq!(cm.canonical().scale().to_string(), "1/100");
+    let celsius = graph.unit(key_of(Q[9], graph)).expect("C");
+    assert_eq!(celsius.canonical().offset().to_string(), "5463/20");
+    assert!(celsius.is_affine());
+    assert!(!km.is_affine());
+    let metre = graph.unit(key_of(Q[5], graph)).expect("m");
+    assert_eq!(km.root(), metre.key());
+    key_of(Q[8], graph);
+    // Dimensions Q1 to Q5: each key is a dimension the units name, and the
+    // derived ones normalize to the base terms of the vectors.
+    let dimension = |hex: &str| {
+        let key = package
+            .nominal_spans
+            .keys()
+            .find(|key| key.to_string() == hex)
+            .copied()
+            .unwrap_or_else(|| panic!("nominal_spans holds {hex}"));
+        graph
+            .dimension(key)
+            .unwrap_or_else(|| panic!("the graph holds dimension {hex}"))
+    };
+    let exponents = |hex: &str| -> Vec<(String, String)> {
+        dimension(hex)
+            .exponents()
+            .map(|(base, exponent)| (base.to_string(), exponent.to_string()))
+            .collect()
+    };
+    assert_eq!(exponents(Q[0]), [(Q[0].to_owned(), "1".to_owned())]);
+    assert_eq!(exponents(Q[1]), [(Q[1].to_owned(), "1".to_owned())]);
+    assert_eq!(
+        exponents(Q[2]),
+        [
+            (Q[1].to_owned(), "-1".to_owned()),
+            (Q[0].to_owned(), "1".to_owned())
+        ]
+    );
+    assert_eq!(
+        exponents(Q[3]),
+        [
+            (Q[1].to_owned(), "-2".to_owned()),
+            (Q[0].to_owned(), "1".to_owned())
+        ]
+    );
+    assert_eq!(exponents(Q[4]), [(Q[4].to_owned(), "1".to_owned())]);
+    // `nominal_spans` holds the span of each declared name by its key.
+    assert_eq!(package.nominal_spans.len(), 10);
+    for (hex, name) in Q.iter().zip([
+        "Length",
+        "Time",
+        "Speed",
+        "Accel",
+        "Temperature",
+        "m",
+        "km",
+        "cm",
+        "K",
+        "C",
+    ]) {
+        let span = package
+            .nominal_spans
+            .iter()
+            .find(|(key, _)| key.to_string() == *hex)
+            .map(|(_, span)| *span)
+            .unwrap_or_else(|| panic!("a span for {name}"));
+        assert_eq!(&text[span.start..span.end], name);
+    }
+    // A unit with no dimension or unit form has the empty graph.
+    let empty = assemble("type Digit = Int[0, 9];").1.expect("assembles");
+    assert_eq!(empty.units.units().count(), 0);
+    assert!(empty.nominal_spans.is_empty());
+}
+
+#[trace("FR-091-AC-32", "TC-483")]
+#[test]
+fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
+    let assemble_with = |scale: u64| {
+        let text = text(
+            PROFILE_V,
+            &format!(
+                "dimension Length; unit m : Length = rational(1, 1);\n\
+                 unit c : Length = decimal(1, {scale}) * m;"
+            ),
+        );
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        let unit = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
+        let assembled = PackageDeclarations::assemble_with_limits(
+            parsed.source().reference().clone(),
+            unit,
+            Vec::new(),
+            Vec::new(),
+            crate::check::AssemblyLimits { decimal_scale: 4 },
+        );
+        (text, assembled)
+    };
+    let (text, assembled) = assemble_with(5);
+    let refusal = assembled.expect_err("scale 5 is above the bound 4");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error, not {:?}", refusal.errors)
+    };
+    let AssemblyCause::DecimalScaleLimit(limit) = &error.cause else {
+        panic!("a decimal-scale limit, not {:?}", error.cause)
+    };
+    assert_eq!(limit.configured_bound(), 4);
+    assert_eq!(limit.actual(), 5);
+    assert_eq!(error.span, last(&text, "decimal(1, 5)"));
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        "stage_limit_exceeded/work-budget-exceeded"
+    );
+    assert!(assemble_with(4).1.is_ok());
+}
+
+#[trace("FR-091-AC-33", "TC-483")]
+#[test]
+fn a_unit_name_is_not_a_type() {
+    let (_, found) = errors(
+        "dimension Length;\n\
+         unit m : Length = rational(1, 1);\n\
+         function f using v(x: m): Boolean pure { true }",
+    );
+    assert!(matches!(
+        found.as_slice(),
+        [AssemblyError {
+            cause: AssemblyCause::UnresolvedTypeName { name },
+            ..
+        }] if name == "m"
+    ));
+}
+
+#[trace("FR-091-AC-34", "TC-483")]
+#[test]
+fn every_dimension_and_unit_source_error_is_reported() {
+    let (text, found) = errors(
+        "dimension Length;\n\
+         dimension Mass;\n\
+         dimension Mass;\n\
+         dimension Area = Width^2;\n\
+         dimension P = Q;\n\
+         dimension Q = P;\n\
+         unit a : Length = rational(1, 0);\n\
+         unit b : Length = rational(2, 1) * c;\n\
+         unit c : Length = rational(1, 2) * b;",
+    );
+    let codes: Vec<String> = found
+        .iter()
+        .map(|error| error.cause.catalog_code().to_string())
+        .collect();
+    assert_eq!(found.len(), 5, "{found:?}");
+    let has = |predicate: &dyn Fn(&AssemblyCause) -> bool| {
+        found.iter().any(|error| predicate(&error.cause))
+    };
+    let mass_span = |start: usize| Span {
+        start: start + "dimension ".len(),
+        end: start + "dimension Mass".len(),
+    };
+    let first = text.find("dimension Mass").expect("first Mass");
+    let second = text.rfind("dimension Mass").expect("second Mass");
+    assert!(has(&|cause| *cause
+        == AssemblyCause::DuplicateQuantityName {
+            name: "Mass".to_owned(),
+            spans: vec![mass_span(first), mass_span(second)],
+        }));
+    assert!(has(&|cause| matches!(
+        cause,
+        AssemblyCause::UnresolvedQuantityName { name } if name == "Width"
+    )));
+    let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
+    assert!(has(&|cause| *cause
+        == AssemblyCause::QuantityCycle {
+            edges: vec![edge("P", "Q"), edge("Q", "P")]
+        }));
+    assert!(has(&|cause| *cause
+        == AssemblyCause::QuantityCycle {
+            edges: vec![edge("b", "c"), edge("c", "b")]
+        }));
+    assert!(found
+        .iter()
+        .any(|error| error.cause == AssemblyCause::ZeroDenominator
+            && error.span == last(&text, "rational(1, 0)")));
+    for expected in [
+        "ambiguous_declaration/ambiguous-name",
+        "missing_declaration/missing-name",
+        "invalid_package/definition-cycle",
+        "undefined_expression/unproved-nonzero",
+    ] {
+        assert!(
+            codes.iter().any(|code| code == expected),
+            "{expected}: {codes:?}"
+        );
+    }
+}
+
+#[trace("FR-091-AC-35", "TC-483")]
+#[test]
+fn each_unit_graph_topology_error_refuses_alone() {
+    use super::TopologyFault as Fault;
+    for (source, fault, declarations) in [
+        (
+            "dimension L; dimension N = L / L;",
+            Fault::EmptyDerivedDimension,
+            vec!["N"],
+        ),
+        (
+            "dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * r;",
+            Fault::ZeroScale,
+            vec!["z"],
+        ),
+        (
+            "dimension L; unit r : L = rational(2, 1);",
+            Fault::NonIdentityRoot,
+            vec!["r"],
+        ),
+        (
+            "dimension L; dimension T; unit r : L = rational(1, 1); \
+             unit s : T = rational(1, 1) * r;",
+            Fault::CrossDimensionTarget,
+            vec!["s", "r"],
+        ),
+        (
+            "dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1);",
+            Fault::TwoRoots,
+            vec!["L", "r", "q"],
+        ),
+    ] {
+        let (_, found) = errors(source);
+        let [error] = found.as_slice() else {
+            panic!("{source}: one error, not {found:?}")
+        };
+        assert_eq!(
+            error.cause,
+            AssemblyCause::UnitGraphTopology {
+                fault,
+                declarations: declarations.into_iter().map(str::to_owned).collect(),
+            },
+            "{source}"
+        );
+    }
+}
+
+#[trace("FR-091-AC-21", "TC-406")]
+#[test]
+fn the_dimension_and_unit_causes_have_their_catalog_codes() {
+    let span = Span { start: 0, end: 0 };
+    let cases = [
+        (
+            AssemblyCause::DuplicateQuantityName {
+                name: "m".into(),
+                spans: vec![span],
+            },
+            "ambiguous_declaration/ambiguous-name",
+        ),
+        (
+            AssemblyCause::UnresolvedQuantityName { name: "m".into() },
+            "missing_declaration/missing-name",
+        ),
+        (
+            AssemblyCause::QuantityCycle { edges: Vec::new() },
+            "invalid_package/definition-cycle",
+        ),
+        (
+            AssemblyCause::ZeroDenominator,
+            "undefined_expression/unproved-nonzero",
+        ),
+        (
+            AssemblyCause::DecimalScaleLimit(quire_exact_limit()),
+            "stage_limit_exceeded/work-budget-exceeded",
+        ),
+    ];
+    for (cause, code) in cases {
+        assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
+    }
+}
+
+fn quire_exact_limit() -> qsl_foundation::diagnostic::LimitExceeded {
+    qsl_foundation::diagnostic::LimitExceeded::new(
+        qsl_foundation::diagnostic::LimitKind::WorkBudget,
+        4,
+        5,
+    )
+}

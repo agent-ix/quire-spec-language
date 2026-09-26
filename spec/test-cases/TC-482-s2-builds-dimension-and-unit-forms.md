@@ -50,5 +50,5 @@ Tag the test `#[trace("FR-091-AC-31", "TC-482")]`.
 
 ## Status
 
-Not implemented. QSL-275 adds the entries and forms; today S2 refuses
-`dimension` and `unit` with `NoDispatchEntry`.
+Backed by `qsl-forms/tests/it/value_forms.rs`:
+`s2_builds_dimension_and_unit_forms_as_written` (FR-091-AC-31).

@@ -60,7 +60,10 @@ fn reduce(number: &ExactNumberForm, limits: AssemblyLimits) -> Result<Rational, 
     let denominator = match number.kind {
         ExactNumberKind::Rational => number.second.clone(),
         ExactNumberKind::Decimal => {
-            let scale = number.second.to_u64().filter(|scale| *scale <= limits.decimal_scale);
+            let scale = number
+                .second
+                .to_u64()
+                .filter(|scale| *scale <= limits.decimal_scale);
             match scale {
                 Some(scale) => Integer::power_of_ten(scale),
                 None => {
@@ -83,12 +86,7 @@ fn reduce(number: &ExactNumberForm, limits: AssemblyLimits) -> Result<Rational, 
 
 /// The edges of one graph as the components that reach themselves, each as
 /// its dependency edges by name.
-fn cycles(
-    names: &[&str],
-    spans: &[Span],
-    edges: &[Vec<usize>],
-    errors: &mut Vec<AssemblyError>,
-) {
+fn cycles(names: &[&str], spans: &[Span], edges: &[Vec<usize>], errors: &mut Vec<AssemblyError>) {
     for component in strongly_connected(edges) {
         let cyclic = component.len() > 1
             || component
@@ -108,7 +106,10 @@ fn cycles(
         cycle.sort();
         cycle.dedup();
         let first = component.iter().min().copied().unwrap_or_default();
-        errors.push(error(AssemblyCause::QuantityCycle { edges: cycle }, spans[first]));
+        errors.push(error(
+            AssemblyCause::QuantityCycle { edges: cycle },
+            spans[first],
+        ));
     }
 }
 
@@ -175,7 +176,10 @@ pub(super) fn assemble(
     let unit_names: Vec<&str> = units.iter().map(|u| u.name.name.as_str()).collect();
     let unit_spans: Vec<Span> = units.iter().map(|u| u.name.span).collect();
     let dimension_index = index_names(
-        dimension_names.iter().copied().zip(dimension_spans.iter().copied()),
+        dimension_names
+            .iter()
+            .copied()
+            .zip(dimension_spans.iter().copied()),
         &mut errors,
     );
     let unit_index = index_names(
@@ -186,7 +190,12 @@ pub(super) fn assemble(
     // Names resolve in their own namespaces: dimension terms and a unit's
     // `:` name against dimensions, a unit's `*` target against units.
     let unresolved = |name: &str, span: Span| {
-        error(AssemblyCause::UnresolvedQuantityName { name: name.to_owned() }, span)
+        error(
+            AssemblyCause::UnresolvedQuantityName {
+                name: name.to_owned(),
+            },
+            span,
+        )
     };
     let mut dimension_edges = vec![Vec::new(); dimensions.len()];
     for (index, form) in dimensions.iter().enumerate() {
@@ -211,30 +220,29 @@ pub(super) fn assemble(
             }
         }
     }
-    cycles(&dimension_names, &dimension_spans, &dimension_edges, &mut errors);
+    cycles(
+        &dimension_names,
+        &dimension_spans,
+        &dimension_edges,
+        &mut errors,
+    );
     cycles(&unit_names, &unit_spans, &unit_edges, &mut errors);
 
     let mut scales = Vec::with_capacity(units.len());
     let mut offsets = Vec::with_capacity(units.len());
     for form in units {
-        let scale = reduce(&form.scale, limits);
-        let offset = form.offset.as_ref().map(|offset| reduce(offset, limits));
-        match (scale, offset) {
-            (scale, offset) => {
-                let mut ok = |value: Result<Rational, AssemblyError>| match value {
-                    Ok(value) => Some(value),
-                    Err(refusal) => {
-                        errors.push(refusal);
-                        None
-                    }
-                };
-                scales.push(ok(scale));
-                offsets.push(match offset {
-                    Some(offset) => ok(offset),
-                    None => Some(Rational::from_integer(Integer::zero())),
-                });
+        let mut kept = |value: Result<Rational, AssemblyError>| match value {
+            Ok(value) => Some(value),
+            Err(refusal) => {
+                errors.push(refusal);
+                None
             }
-        }
+        };
+        scales.push(kept(reduce(&form.scale, limits)));
+        offsets.push(match &form.offset {
+            Some(offset) => kept(reduce(offset, limits)),
+            None => Some(Rational::from_integer(Integer::zero())),
+        });
     }
     if !errors.is_empty() {
         return Err(errors);
@@ -340,12 +348,9 @@ pub(super) fn assemble(
                 }
                 terms.sort();
             }
-            let preimage = DimensionPreimage::new(
-                node_owner.clone(),
-                vec![form.name.name.clone()],
-                terms,
-            )
-            .map_err(fault)?;
+            let preimage =
+                DimensionPreimage::new(node_owner.clone(), vec![form.name.name.clone()], terms)
+                    .map_err(fault)?;
             let key = nominal_key(&preimage).map_err(fault)?;
             dimension_keys[index] = Some(key);
             dimension_nodes.push((preimage, key));
@@ -362,7 +367,9 @@ pub(super) fn assemble(
                         cause: crate::value::semantic_node::SemanticGraphCause::UnknownDimension,
                     })
                 })?;
-            let target = unit_edges[index].first().and_then(|target| unit_keys[*target]);
+            let target = unit_edges[index]
+                .first()
+                .and_then(|target| unit_keys[*target]);
             let preimage = UnitPreimage::new(
                 node_owner.clone(),
                 vec![units[index].name.name.clone()],

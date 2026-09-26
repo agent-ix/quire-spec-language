@@ -1152,14 +1152,14 @@ impl PackageDeclarations {
         // The unit's dimensions and units, admitted under its owner.
         let owner = SourceOwner::from(&source);
         let owners = OwnerSelection::new([owner.node_owner()]);
-        let quantities = match units::assemble(&unit.dimensions, &unit.units, &owner, &owners, limits)
-        {
-            Ok(quantities) => Some(quantities),
-            Err(found) => {
-                errors.extend(found);
-                None
-            }
-        };
+        let quantities =
+            match units::assemble(&unit.dimensions, &unit.units, &owner, &owners, limits) {
+                Ok(quantities) => Some(quantities),
+                Err(found) => {
+                    errors.extend(found);
+                    None
+                }
+            };
 
         // Every type form names declarations of the unit or admitted model
         // object types.

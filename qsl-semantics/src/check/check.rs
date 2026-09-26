@@ -319,7 +319,7 @@ pub struct PackageDeclarations {
     pub units: crate::value::UnitGraph,
     /// The span of each dimension's and unit's declared name, by its node
     /// key (FR-096).
-    pub nominal_spans: BTreeMap<NodeKey, qsl_foundation::Span>,
+    pub nominal_spans: BTreeMap<quire_exact::NodeKey, qsl_foundation::Span>,
     /// Each `import ... as a` the S4 source resolution admitted, by its
     /// qualifier `a` (ADR-015 D-1, D-5). An import with no `as` binds no
     /// qualifier (FR-087-AC-13).

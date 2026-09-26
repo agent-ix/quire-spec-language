@@ -320,6 +320,25 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::DuplicateEnumMember {
             enumeration, case, ..
         } => format!("the enum `{enumeration}` declares the case `{case}` more than once"),
+        AssemblyCause::DuplicateQuantityName { name, .. } => {
+            format!("the dimension or unit `{name}` is declared more than once")
+        }
+        AssemblyCause::UnresolvedQuantityName { name } => {
+            format!("no dimension or unit is named `{name}`")
+        }
+        AssemblyCause::QuantityCycle { .. } => "a dimension or unit reaches itself".to_owned(),
+        AssemblyCause::ZeroDenominator => "an exact number has a zero denominator".to_owned(),
+        AssemblyCause::DecimalScaleLimit(limit) => format!(
+            "a decimal scale is above the bound {} (reached {})",
+            limit.configured_bound(),
+            limit.actual()
+        ),
+        AssemblyCause::UnitGraphTopology { declarations, .. } => {
+            format!(
+                "the unit graph is not admissible at {}",
+                declarations.join(", ")
+            )
+        }
         AssemblyCause::NominalAdmission(_) => {
             "an enum declaration could not be admitted".to_owned()
         }
