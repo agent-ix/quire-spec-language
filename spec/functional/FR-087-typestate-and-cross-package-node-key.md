@@ -749,13 +749,15 @@ AC-7 (TC-246) is not delivered, and AC-13 (TC-379) is partly delivered:
   (ADR-011 §6.2, §8), owned by QSL-6 (M-4). The header-selection half moves
   to E3's identity-preimage builder (ADR-011 §2.4), which depends on the
   QSpec lock accessor, QSL-189. Neither successor exists today, so neither
-  criterion is backed and TC-246 is gated on both tickets.
+  criterion is backed. QSL-6 is Done and QSL-189 is Canceled (the `DefinitionLock`
+  catalog supplies the selections), so ownership moved: QSL-269 retires the type
+  (child of QSL-158) and QSL-234 owns the header half (E3 identity-preimage builder).
   `ResolvedSourcePackage` stays, reached through `command::resolve_parsed_source`
   (`src/command/source_package.rs`) and tested by
   `tests/it/complete_package.rs`. `ImportSelection` carries the library
   identity, version and recorded digest (ADR-015 D-2), and
   `resolve_source_package` no longer treats an import as a definition
-  root; an I2 import view is keyed by `package_id` (ADR-011 §2.4). Remaining work: QSL-6, QSL-189.
+  root; an I2 import view is keyed by `package_id` (ADR-011 §2.4). Remaining work: QSL-269 (retire the type), QSL-234 (header half).
 - **AC-13.** E3's resolution rule is specified, and the QSpec schema defect
   that blocked it is fixed (QSpec STD-105, IR-287). E4 fills the dependency
   closure (`CheckedPackage::link_with`, AC-14), the emitter writes
