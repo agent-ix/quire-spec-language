@@ -16,10 +16,10 @@ use qsl_eval::simulation::{
     explore_request, replay, sample_request, Limit, Limits, NotSimulated, Outcome, ReplayError,
     StopReason, Trace, TransitionSystem,
 };
-use qsl_foundation::diagnostic::LimitKind;
+use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::selection::{DefinitionDigest, DefinitionRef};
-use qsl_foundation::{ByteDigest, CatalogCode, CatalogCoded};
+use qsl_foundation::{ByteDigest, CatalogCode, CatalogCoded, InternalFault};
 use qsl_semantics::family::{ClassifyFailure, DomainKind};
 use qsl_semantics::value::declaration::TypeEnvironment;
 use quire_exact::{Integer, IntegerInterval, ValueType};
@@ -1582,7 +1582,7 @@ fn sample_request_refuses_a_generator_mismatch_before_any_call() {
     );
     assert_eq!(
         error.catalog_code(),
-        CatalogCode::new("invalid_runtime_input", "invalid-value")
+        Some(CatalogCode::new("invalid_runtime_input", "invalid-value"))
     );
     assert_eq!(system.calls(), 0);
 
@@ -1610,7 +1610,88 @@ fn sample_request_refuses_a_generator_mismatch_before_any_call() {
             supplied: wrong_version
         }
     );
+    assert_eq!(
+        error.catalog_code(),
+        Some(CatalogCode::new("invalid_runtime_input", "invalid-value"))
+    );
     assert_eq!(system.calls(), 0);
+}
+
+/// R1-FND-003 (PR #467 review): `NotSimulated::catalog_code` and
+/// `catalog_fields` are total, and this asserts every variant literally,
+/// including `Extent(ClassifyFailure::Limit(_))`'s delegation to
+/// `LimitExceeded`'s own fields. `RequiresBound` has no catalog code: it is
+/// a negotiation disposition, not a refusal (FR-101 Behavior).
+#[test]
+fn not_simulated_catalog_code_and_fields_cover_every_variant() {
+    let node = WireNodeId::from_digest([9; 32]);
+    let unbounded = ValueType::Integer;
+    let requires_bound_domains = [(node, &unbounded)];
+    let system = RecordingSystem::new();
+    let requires_bound = explore_request(
+        &system,
+        &requires_bound_domains,
+        &empty_types(),
+        1000,
+        generous_limits(),
+        never_cancels,
+    )
+    .expect_err("an unbounded Integer domain requires a bound");
+    assert!(matches!(requires_bound, NotSimulated::RequiresBound(_)));
+    assert_eq!(requires_bound.catalog_code(), None);
+    assert_eq!(requires_bound.catalog_fields(), None);
+
+    let exceeded = LimitExceeded::new(LimitKind::NodeCount, 0, 1);
+    let extent_limit = NotSimulated::Extent(ClassifyFailure::Limit(exceeded.clone()));
+    assert_eq!(extent_limit.catalog_code(), Some(exceeded.catalog_code()));
+    assert_eq!(extent_limit.catalog_fields(), exceeded.catalog_fields());
+    assert_eq!(
+        extent_limit.catalog_fields(),
+        Some(std::collections::BTreeMap::from([
+            ("kind", "node-count-exceeded".to_owned()),
+            ("bound", "0".to_owned()),
+            ("actual", "1".to_owned()),
+        ]))
+    );
+
+    let fault = InternalFault::new("S3", "test-fixture-invariant");
+    let extent_fault = NotSimulated::Extent(ClassifyFailure::Fault(fault));
+    assert_eq!(extent_fault.catalog_code(), Some(fault.catalog_code()));
+    assert_eq!(extent_fault.catalog_fields(), None);
+
+    let generator_mismatch = NotSimulated::GeneratorMismatch {
+        supplied: sampler_ref(),
+    };
+    assert_eq!(
+        generator_mismatch.catalog_code(),
+        Some(CatalogCode::new("invalid_runtime_input", "invalid-value"))
+    );
+    assert_eq!(generator_mismatch.catalog_fields(), None);
+
+    assert_eq!(
+        NotSimulated::EmptyInitial.catalog_code(),
+        Some(CatalogCode::new("invalid_runtime_input", "invalid-value"))
+    );
+    assert_eq!(NotSimulated::EmptyInitial.catalog_fields(), None);
+
+    let unencodable = BigIntKeyGraph {
+        key: (1u64 << 53) + 1,
+    };
+    let key_encoding = explore_request(
+        &unencodable,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        generous_limits(),
+        never_cancels,
+    )
+    .expect_err("an unencodable key refuses");
+    assert!(matches!(key_encoding, NotSimulated::KeyEncoding(_)));
+    assert_eq!(
+        key_encoding.catalog_code(),
+        Some(CatalogCode::new("invalid_runtime_input", "invalid-value"))
+    );
+    assert_eq!(key_encoding.catalog_fields(), None);
 }
 
 /// TC-454 step 9, FR-101-AC-10: `sample_request` refuses `EmptyInitial` when

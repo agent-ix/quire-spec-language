@@ -140,14 +140,22 @@ transition identity reached mid-walk that has no RFC 8785 encoding: a
 implementer-supplied, not engine-built, so an encoding failure is a caller
 defect the engine refuses rather than a broken internal invariant.
 
-`NotSimulated` implements `CatalogCoded`. `GeneratorMismatch` maps to
-`invalid_runtime_input`/`invalid-value`; `RequiresBound`, `EmptyInitial` and
-`KeyEncoding` share that code, the same category ADR-014 TR-2 gives a
-malformed runtime request. `Extent` delegates to whichever of
-`classify_extent`'s own two failure types stopped it: `LimitExceeded`'s own
+`RequiresBound` is not a refusal: ADR-014 §4 and QSpec FR-181 treat
+requires-bound as a negotiation disposition the caller answers with a
+bounded request, the same disposition `qsl-route`'s own
+`Disposition::RequiresBound` carries with no catalog code
+(`qsl-route/src/routing.rs:29-31`). `NotSimulated` gives `catalog_code` and
+`catalog_fields` as inherent methods, not a `CatalogCoded` impl -- a
+`CatalogCoded` cause is always `Category::Refusal`, which `RequiresBound`
+is not -- and `catalog_code` returns `None` for `RequiresBound`. It is
+`Some(invalid_runtime_input/invalid-value)` for `EmptyInitial` and
+`KeyEncoding`, the same category ADR-014 TR-2 gives a malformed runtime
+request; `GeneratorMismatch` reads the same code for a different reason
+(FR-101-AC-10). `Extent` delegates to whichever of `classify_extent`'s own
+two failure types stopped it: `LimitExceeded`'s own
 `stage_limit_exceeded`/`<kind>-exceeded`, or `InternalFault`'s own
 `runtime_invariant`/`established-invariant-broken`. No code is invented for
-`NotSimulated` itself.
+`NotSimulated` itself, and none for `RequiresBound`.
 
 **Canonical order.** The engine orders successors itself. It does not keep
 the order a `TransitionSystem` lists them in. Breadth-first exploration
@@ -246,8 +254,8 @@ disposition of each existing test is in the table below.
 | FR-101-AC-7 | A run that reaches `max_states`, `max_depth` or `max_transitions` before its frontier empties returns `Outcome::Bounded` with that `Limit` and the unexplored frontier as state-key digests in next-expansion order, category incomplete. The same model returns `Exhaustive` once `max_states` is at least its reachable state count, `max_transitions` at least its transition count, and `max_depth` greater than its deepest state's depth. `Exhaustive` is returned only when the frontier is empty, and its `Stats` count distinct states, explored transitions and the deepest depth. | Test (TC-455) |
 | FR-101-AC-8 | `explore_request` or `sample_request` over `domains` that include an unbounded domain under the ADR-014 §4 extent rule returns `NotSimulated::RequiresBound` naming each unbounded domain's key and kind, calls no `TransitionSystem` method, and returns no `Outcome`. A `classify_extent` stage limit returns `NotSimulated::Extent`. The same request with every domain bounded explores. Raising exploration `Limits` does not change a `RequiresBound` result. | Test (TC-455) |
 | FR-101-AC-9 | Initial states are admitted in ascending state-key byte order, and equal keys coalesce into one state. A `max_states` cap reached during admission returns `Bounded` at `Limit::States` with frontier: admitted, then refused, then the rest, in canonical order; `max_states` 0 admits none and puts every initial state in the frontier. Exploring a system with no initial state returns `Exhaustive` with zero stats. | Test (TC-453) |
-| FR-101-AC-10 | `sample_request` refuses before any draw with `NotSimulated::GeneratorMismatch` when the supplied `DefinitionRef`'s identity is not `quire.simulation.sampler/v1` or its version is not `1-draft.1`, and with `NotSimulated::EmptyInitial` when the system has no initial state. A run that reaches `max_steps` stops with `StopReason::StepLimit`, whether or not the current state has successors. | Test (TC-454) |
-| FR-101-AC-11 | A `TransitionSystem::Key` or `TransitionId` with no RFC 8785 encoding -- for example a `u64` above `2^53` -- refuses `NotSimulated::KeyEncoding` from `explore_request` and `sample_request`, and `ReplayError::KeyEncoding` from `replay`, instead of aborting the process. `GeneratorMismatch`'s catalog code is `invalid_runtime_input`/`invalid-value`. | Test (TC-453) |
+| FR-101-AC-10 | `sample_request` refuses before any draw with `NotSimulated::GeneratorMismatch` when the supplied `DefinitionRef`'s identity is not `quire.simulation.sampler/v1` or its version is not `1-draft.1`, and with `NotSimulated::EmptyInitial` when the system has no initial state. A run that reaches `max_steps` stops with `StopReason::StepLimit`, whether or not the current state has successors. `GeneratorMismatch`'s catalog code is `invalid_runtime_input`/`invalid-value`. | Test (TC-454) |
+| FR-101-AC-11 | A `TransitionSystem::Key` or `TransitionId` with no RFC 8785 encoding -- for example a `u64` above `2^53` -- refuses `NotSimulated::KeyEncoding` from `explore_request` and `sample_request`, and `ReplayError::KeyEncoding` from `replay`, instead of aborting the process. | Test (TC-453) |
 
 ## Existing test disposition
 
@@ -320,7 +328,9 @@ deleted. `Outcome::Cancelled` carries `cause: CatalogCode::new("cancelled",
 `NotSimulated::EmptyInitial` as this requirement specifies.
 `NotSimulated::KeyEncoding` and `ReplayError::KeyEncoding` (FR-101-AC-11)
 refuse a `TransitionSystem::Key` or `TransitionId` with no RFC 8785 encoding
-instead of panicking. `NotSimulated` implements `CatalogCoded`.
+instead of panicking. `NotSimulated` gives `catalog_code` and
+`catalog_fields` as inherent methods returning `Option`, `None` for
+`RequiresBound` (a negotiation disposition, never a refusal).
 `qsl-eval/tests/it/finite_simulation.rs` traces to FR-101, TC-453, TC-454
 and TC-455, and carries none of QSpec's `TC-210` or `FR-181-AC-*` tags.
 
@@ -337,6 +347,20 @@ no longer has an `unreachable!` path (SR-672 FND-007); replay reports
 TC-453 step 4 are now tested as written, and AC-4's provenance is asserted
 literally with a replay (SR-673 FND-003 to FND-005); the FIFO-order test is
 retagged to AC-1 (SR-673 FND-006).
+
+Disposition-pass round (R1): fixed in this PR. `RequiresBound` is no longer
+`CatalogCoded`; no requires-bound catalog code or disposition exists on
+`main` (checked `qsl-route`'s `Disposition::RequiresBound`, which itself
+carries none), so `NotSimulated` gives `catalog_code`/`catalog_fields` as
+inherent `Option`-returning methods instead, `None` for `RequiresBound`
+(R1-FND-002). The sampler's acceptance test is split into `accepts`, tested
+at the real `n = 7` threshold `floor(2^256/7)*7` and one below it, and the
+`u256_divmod_and_mul_on_a_synthetic_value` comment no longer calls its
+synthetic `98` the sampler's rejection bound (R1-FND-001). `GeneratorMismatch`'s
+catalog code moved from AC-11 to AC-10 and TC-454 step 8's expected results;
+a new test asserts `catalog_code` and `catalog_fields` for every
+`NotSimulated` variant, including `Extent(Limit)`'s delegation to
+`LimitExceeded`'s fields (R1-FND-003).
 
 The ACs use no EARS keyword. They state behaviour declaratively, as FR-097
 does, and each names its oracle (SR-642 FND-002, no change).

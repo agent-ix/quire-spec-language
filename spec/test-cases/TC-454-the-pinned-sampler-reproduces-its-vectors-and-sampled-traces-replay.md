@@ -71,7 +71,8 @@ tests in `qsl-eval/src/simulation/`.
   digest; the altered ones refuse with `UnknownInitial`, `MissingTransition`
   and `KeyMismatch`, each at the altered step and each carrying digests.
 - Step 8: both return `NotSimulated::GeneratorMismatch` with the supplied
-  `DefinitionRef`, and no `TransitionSystem` method and no draw runs.
+  `DefinitionRef`, whose catalog code is `invalid_runtime_input`/
+  `invalid-value`, and no `TransitionSystem` method and no draw runs.
 - Step 9: `NotSimulated::EmptyInitial`; then a one-step trace with
   `StopReason::StepLimit`.
 

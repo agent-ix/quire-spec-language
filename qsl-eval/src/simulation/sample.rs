@@ -157,13 +157,24 @@ impl Sampler for PinnedSampler {
             }
             let v = U256::from_be_bytes(digest);
             let (_, v_remainder) = v.divmod_u64(n64);
-            if always_accepts || v < quotient.mul_u64(n64) {
+            if accepts(v, quotient, n64, always_accepts) {
                 // `v_remainder < n64 == n as u64`, so it fits `usize`.
                 return v_remainder as usize;
             }
             draw += 1;
         }
     }
+}
+
+/// FR-101's rejection-sampling acceptance test: draw digest `v`, read as a
+/// big-endian `u256`, is accepted when `v < n * floor(2^256 / n)`
+/// (`quotient * n64`), or unconditionally when `always_accepts` (`n64`
+/// divides `2^256` exactly, so the threshold itself is `2^256` and
+/// unrepresentable in 256 bits). Split out from [`PinnedSampler::
+/// next_index`] so the real threshold, not a synthetic one, can be
+/// exercised directly (R1-FND-001, PR #467 review).
+fn accepts(v: U256, quotient: U256, n64: u64, always_accepts: bool) -> bool {
+    always_accepts || v < quotient.mul_u64(n64)
 }
 
 /// Draw one sampled run from `system`, starting at trace `trace_index mod m`
@@ -351,14 +362,45 @@ mod tests {
         assert_eq!(remainder, 2);
         assert_eq!(quotient.mul_u64(7), U256([0, 0, 0, 98]));
 
-        // The acceptance-threshold boundary `next_index` itself tests:
-        // `98` is an exact multiple of 7 (the least value the sampler
-        // would reject at `n = 7`, since `v < quotient * n` is the
-        // acceptance test and `98 == quotient * n`), while `97`, one less,
-        // divides with a nonzero remainder and would be accepted.
+        // `98` and `97` are values chosen purely to make `divmod_u64` easy
+        // to check by hand (98 divides 7 exactly, 97 does not); they are
+        // not the sampler's real `n = 7` rejection threshold, which is
+        // `floor(2^256 / 7) * 7` -- see
+        // `accepts_at_the_real_n7_threshold_and_one_below` below for that.
         let (_, boundary_remainder) = U256([0, 0, 0, 98]).divmod_u64(7);
         assert_eq!(boundary_remainder, 0);
         let (_, below_boundary_remainder) = U256([0, 0, 0, 97]).divmod_u64(7);
         assert_eq!(below_boundary_remainder, 6);
+    }
+
+    /// R1-FND-001: `accepts` at the sampler's real `n = 7` threshold,
+    /// `floor(2^256 / 7) * 7`, and at one below it -- not a synthetic
+    /// stand-in. `n = 7` does not divide `2^256` exactly, so
+    /// `always_accepts` is `false` and the threshold is representable.
+    #[trace("TC-454", "FR-101-AC-3")]
+    #[test]
+    fn accepts_at_the_real_n7_threshold_and_one_below() {
+        let n64 = 7u64;
+        let (quotient, remainder) = U256::MAX.divmod_u64(n64);
+        let always_accepts = remainder == n64 - 1;
+        assert!(!always_accepts, "n = 7 does not divide 2^256 exactly");
+        let threshold = quotient.mul_u64(n64);
+        assert!(accepts(sub_one(threshold), quotient, n64, always_accepts));
+        assert!(!accepts(threshold, quotient, n64, always_accepts));
+    }
+
+    /// `v - 1` over the 256-bit limbs, borrowing across limb boundaries.
+    /// Test-only: production code never needs to decrement a draw value.
+    fn sub_one(v: U256) -> U256 {
+        let mut limbs = v.0;
+        for limb in limbs.iter_mut().rev() {
+            if *limb == 0 {
+                *limb = u64::MAX;
+            } else {
+                *limb -= 1;
+                break;
+            }
+        }
+        U256(limbs)
     }
 }

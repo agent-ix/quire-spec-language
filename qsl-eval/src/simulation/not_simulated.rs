@@ -52,36 +52,45 @@ pub enum NotSimulated {
     KeyEncoding(#[from] EncodingRefusal),
 }
 
-impl CatalogCoded for NotSimulated {
-    /// `GeneratorMismatch` is `invalid_runtime_input`/`invalid-value`
-    /// (FR-101 Behavior). `RequiresBound`, `EmptyInitial` and `KeyEncoding`
-    /// are the same code: each is a defect in the shape of the request or
-    /// the `TransitionSystem` handed to it, the same category TR-2 gives a
-    /// malformed runtime request (ADR-014 TR-2). `Extent` delegates to
-    /// whichever of `classify_extent`'s own two failure types stopped it --
-    /// `LimitExceeded`'s own `stage_limit_exceeded`/`<kind>-exceeded`, or
-    /// `InternalFault`'s own `runtime_invariant`/`established-invariant-
-    /// broken` -- rather than inventing a third code for `Extent` itself.
-    fn catalog_code(&self) -> CatalogCode {
+impl NotSimulated {
+    /// This cause's catalog code, when it has one (ADR-013 O-16/O-17).
+    /// `RequiresBound` is `None`, not an invented code: ADR-014 §4 and
+    /// QSpec FR-181 treat requires-bound as a negotiation disposition the
+    /// caller answers with a bounded request, never a refusal, exactly as
+    /// `qsl-route`'s own `Disposition::RequiresBound` carries no catalog
+    /// code (`qsl-route/src/routing.rs:29-31`); a `CatalogCoded` impl is
+    /// documented as always `Category::Refusal` (`qsl_foundation::
+    /// diagnostic::CatalogCoded`), which `RequiresBound` is not, so this is
+    /// an inherent method, not that trait. `GeneratorMismatch`,
+    /// `EmptyInitial` and `KeyEncoding` are each
+    /// `invalid_runtime_input`/`invalid-value`: `EmptyInitial` and
+    /// `KeyEncoding` are the malformed-runtime-request category ADR-014
+    /// TR-2 gives, and `GeneratorMismatch` is FR-101's own reading of the
+    /// same code. `Extent` delegates to whichever of `classify_extent`'s
+    /// own two failure types stopped it -- `LimitExceeded`'s own
+    /// `stage_limit_exceeded`/`<kind>-exceeded`, or `InternalFault`'s own
+    /// `runtime_invariant`/`established-invariant-broken` -- rather than
+    /// inventing a third code for `Extent` itself.
+    pub fn catalog_code(&self) -> Option<CatalogCode> {
         match self {
-            Self::RequiresBound(_) | Self::EmptyInitial | Self::KeyEncoding(_) => {
-                CatalogCode::new("invalid_runtime_input", "invalid-value")
+            Self::RequiresBound(_) => None,
+            Self::EmptyInitial | Self::KeyEncoding(_) | Self::GeneratorMismatch { .. } => {
+                Some(CatalogCode::new("invalid_runtime_input", "invalid-value"))
             }
-            Self::Extent(ClassifyFailure::Limit(exceeded)) => exceeded.catalog_code(),
-            Self::Extent(ClassifyFailure::Fault(fault)) => fault.catalog_code(),
-            Self::GeneratorMismatch { .. } => {
-                CatalogCode::new("invalid_runtime_input", "invalid-value")
-            }
+            Self::Extent(ClassifyFailure::Limit(exceeded)) => Some(exceeded.catalog_code()),
+            Self::Extent(ClassifyFailure::Fault(fault)) => Some(fault.catalog_code()),
         }
     }
 
-    /// `Extent(ClassifyFailure::Limit(_))` delegates to `LimitExceeded`'s own
-    /// fields (`kind`, `bound`, `actual`, FR-096). `InternalFault` carries no
-    /// catalog fields, and FR-096's key table has no row for
-    /// `invalid-value`, so every other case is `None` (the same shape
+    /// The structured payload for [`Self::catalog_code`]'s cause, when one
+    /// applies (ADR-013 O-17, FR-096). `Extent(ClassifyFailure::Limit(_))`
+    /// delegates to `LimitExceeded`'s own fields (`kind`, `bound`,
+    /// `actual`). Every other case is `None`: `RequiresBound` carries no
+    /// catalog code at all; `InternalFault` carries no catalog fields; and
+    /// FR-096's key table has no row for `invalid-value` (the same shape
     /// `BoundRefusal::catalog_fields` uses at `qsl-route/src/
     /// request.rs:179`).
-    fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+    pub fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
         match self {
             Self::Extent(ClassifyFailure::Limit(exceeded)) => exceeded.catalog_fields(),
             Self::RequiresBound(_)
