@@ -240,8 +240,9 @@ lies in its result bound, for every assignment of its roots under which its
 path condition holds. The path condition is the enclosing `if` conditions
 and short-circuit left operands `check` walks the occurrence under. Its
 roots are the function parameters and the query, `count`, `sum`, `fold`
-and `reduce` binders that its argument subtrees or its path condition read,
-each keyed by its parameter node. A read of a `let` binder contributes the
+(accumulator and element) and `reduce` binders that its argument subtrees
+or its path condition read, other than a binder bound inside those
+subtrees, each keyed by its parameter node. A read of a `let` binder contributes the
 roots its bound value reads, and a literal contributes none, because a
 literal is one value and not a domain. A root read only by the path
 condition still counts, so an application reading `x: Int[0, 9]` under a

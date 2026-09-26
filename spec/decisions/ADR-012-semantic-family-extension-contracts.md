@@ -220,7 +220,7 @@ The shared contract is the minimum every family implements. It has six parts.
 | Identity | Every checked node carries a stable identity, minted by QSL at check time. It is content-addressed over the ADR-013 O-04 preimage, whose owner subject is the declaring source's `SourceOwner` or definition's `DefinitionOwner` (`{authority, identity}`), or for a model-owned node the domain package's identity and declared version plus the IR node identity; a builtin or anonymous type node has no owner and shares one id across packages. It is therefore independent of counters, display strings and collection positions. Nodes identical in structure, qualified name and owner share one id. Each source occurrence is keyed by (node id, role, ordinal) (ADR-013 O-07). | ADR-013 O-04 (DA-02) and O-07; package identity O-02 |
 | Provenance | Every checked node occurrence maps to its source span through a source map keyed by its occurrence key. QSL is the only minter (AD-016 arrow 1). | ADR-013 O-12 (DA-13) |
 | Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: the QSL `check` core (ADR-011, #209) |
-| Requirements | A pure function of a checked item returns one `Requirements` per claim the item carries, each at the checked site it covers: a clause, or a scalar operation application in a `Value` function body (FR-062 "Requirement records of a value function"). Each holds the claim's one capability kind (FR-057, FR-290), its declared extent and any authored bound. A claim form whose FR-057 kind is none yields no `Requirements` value and requests no backend (§7.2). S3 keys each claim by its site's occurrence key (§13.5). | kinds from agent-ix/quire-specification#134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
+| Requirements | A pure function of a checked item, `requirements()`, returns one claim per claim site the item carries: a clause, or a scalar operation application in a `Value` function body (FR-062 "Requirement records of a value function"). Each claim holds its site, its one capability kind (FR-057, FR-290) and its extent, classified by `check` with each domain keyed by the binder that carries it. A claim form whose FR-057 kind is none yields no claim and requests no backend (§7.2). After lowering, S3 keys each claim by its site's occurrence key, renames each binder to its parameter node, and derives the record's `Requirements`: the kind, the extent and any authored bound (§13.5). | kinds from agent-ix/quire-specification#134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
 | Structured outcome | A family `check` returns the checked node or a refusal with a family-typed cause. A family `check` that reaches a limit or exhausts the meter returns `StageFailure::Limit(LimitExceeded)` with limit kind work budget (ADR-013 T-4); `Incomplete` is an S6a outcome only. Each cause maps to a stable catalog code through one exhaustive `catalog_code()`. | ADR-013 O-16 (outcomes) and O-17 (refusals): each family has its own `Cause` enum with `catalog_code()`; the shared part is `RefusalRecord` in F `diagnostic` (O-17); the kernel `Refusal` carries kernel causes only |
 | Stage hooks | The family implements a hook for each stage in §8 that it takes part in. Every hook takes checked input; none takes CST, tokens or display strings. | this record |
 
@@ -236,11 +236,16 @@ trait FamilyContract {
         -> CheckOutcome<Self::Checked, Self::Cause>;
         // CheckOutcome<T, C> = Result<Staged<T>, StageFailure<C>> (ADR-013 T-4):
         // checked | refused | limit | fault
-    fn requirements(checked: &Self::Checked) -> Vec<(ClaimSite, Requirements)>;
-        // one per claim; S3 keys each ClaimSite by the occurrence recorded at
-        // its own location (§13.5). ClaimSite: FR-062 "Requirement records
-        // of a value function" (location, result bound, path condition).
-        // Extents are classified in `check`, under its stage limits.
+    type Claim;             // one claim: its ClaimSite, kind and extent
+    fn requirements(checked: &Self::Checked) -> Vec<Self::Claim>;
+        // one per claim. ClaimSite: FR-062 "Requirement records of a value
+        // function" (location, result bound, path condition). Extents are
+        // classified in `check`, under its stage limits, with each domain
+        // keyed by the binder that carries it: parameter node ids exist only
+        // once lowering has keyed the nodes. S3 then keys each claim by the
+        // occurrence recorded at its site's own location and renames each
+        // binder to its parameter node, giving the record's `Requirements`
+        // (§13.5).
     fn package(checked: &Self::Checked, out: &mut PackageEmitter)
         -> Result<(), PackageRefusal>;
 }

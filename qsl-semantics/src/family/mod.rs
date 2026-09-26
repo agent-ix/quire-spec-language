@@ -49,10 +49,10 @@
 //! **The sixth contract part, `requirements` (ADR-012 §2, FR-062-AC-4).**
 //! ADR-014 §11 moved it to QSL-140: [`Requirements`], [`ClaimExtent`] and
 //! the `FamilyContract::requirements` method live in [`requirements`].
-//! `Value`'s function-declaration form carries no FR-057 capability kind
-//! (FR-057: "no kind for an expression nested in a clause, such as a
-//! function application"), so its `requirements` returns `None`. The
-//! claim families QSL-42 and QSL-43 migrate return one value each.
+//! A family returns one claim per claim site its checked item carries: a
+//! `Value` function declaration, one `value-validity` claim per scalar
+//! operation application in its body (FR-062 "Requirement records of a
+//! value function"), which `check` keys by occurrence (ADR-012 §13.5).
 
 mod contract;
 mod evaluation;
@@ -70,7 +70,8 @@ pub(crate) use contract::{DiagnosticSink, ScopeStack, StageLimits};
 pub use evaluation::{EvalOutcome, FamilyOutcome, FamilyResult};
 pub use outcome::CheckOutcome;
 pub use requirements::{
-    classify_extent, ClaimExtent, ClassifyFailure, DomainKind, Requirements, UnboundedDomains,
+    classify_domains, classify_extent, ClaimExtent, ClassifyFailure, DomainKind, Requirements,
+    UnboundedDomains,
 };
 
 // ADR-013 O-11's `QualifiedName` (the replay executor's typed

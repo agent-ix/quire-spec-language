@@ -104,4 +104,8 @@ unbounded integer. IR-284: IR has no recursion rule. A quantity fixture is not
 compared yet: the emitter omits a record whose field names a declared unit
 node, because lowering does not build that node. The ignored test is
 un-ignored when both land. FR-097-AC-6's per-application-node agreement
-(TC-440 step 4) is not implemented. Owner: QSL-266.
+(TC-440 step 4) passes for the inner `+` of `(x + 1) + n` and the
+records outside the agreement. The outer `+` is in the ignored
+`tc_440_an_unbounded_application_record_requires_a_bound_in_ir_pending_ir_283`:
+IR lowers it, because `x: Int[0, 9]` bounds the shared `integer` node
+(IR-283).

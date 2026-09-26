@@ -18,6 +18,8 @@ qsl-semantics = { path = "../qsl-semantics" }
 thiserror = "=2.0.20"
 
 [dev-dependencies]
+# Layer K: the request writer's tests name an occurrence key's origin.
+quire-exact = { path = "../quire-exact" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
 # `tests/it/route_registry.rs` (TC-205) writes a throwaway manifest for
 # `cargo deny check bans` into a scratch directory.

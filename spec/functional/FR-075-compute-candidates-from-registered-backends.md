@@ -148,10 +148,10 @@ supplies one `FiniteBound` for each of the item's unbounded `DomainKey`s,
 and a fresh `RequestWriter` writes the follow-up as that request's single
 item, index 0. `RequestWriter::bounded_item` SHALL take the originating
 occurrence key as a parameter (design-level signature
-`bounded_item(occurrence: OccurrenceKey, node: WireNodeId, requirements:
-&Requirements, bounds: BTreeMap<DomainKey, FiniteBound>) ->
-Result<RequestIndex, BoundRefusal>`), and the item it writes SHALL carry
-that occurrence key. The driver writes at most one bounded follow-up per
+`bounded_item(occurrence: OccurrenceKey, requirements: &Requirements,
+bounds: BTreeMap<DomainKey, FiniteBound>) -> Result<RequestIndex,
+BoundRefusal>`), and the item it writes SHALL carry that occurrence key,
+with the occurrence key's node as its node. The driver writes at most one bounded follow-up per
 record, so each record has at most one follow-up settlement, and joins it
 to the record by occurrence key. Writing several bounded items for one
 domain set with different bounds (FR-097-AC-3) stays a capability of the
@@ -332,4 +332,4 @@ By Acceptance Criterion:
   (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`), and
   `tc_282_duplicate_backend_identity::db_01_identical_repeat_holds_once_with_no_refusal`/`db_02_identical_repeats_plus_another_identity_hold_both`
   (`qsl-route/tests/it/route_registry.rs`).
-- FR-075-AC-8: not implemented. Owner: QSL-266.
+- FR-075-AC-8: backed (`TC-449`, QSL-266): `tests/it/request_builder.rs`.

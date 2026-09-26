@@ -1468,6 +1468,7 @@ dependencies = [
  "ix-trace-rs",
  "qsl-foundation",
  "qsl-semantics",
+ "quire-exact",
  "tempfile",
  "thiserror",
 ]

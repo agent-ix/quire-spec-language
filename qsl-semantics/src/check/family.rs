@@ -69,9 +69,12 @@ use super::check::{bind_parameters, Signature, Signatures, Typer};
 use super::facts::{CallSite, Definedness};
 use super::imports::ImportedNames;
 use super::ir::Node;
-use super::refusal::{CheckCause, CheckRefusal, CheckingLimitKind, Location as CheckLocation};
+use super::refusal::{
+    CheckCause, CheckRefusal, CheckingLimitKind, KeyFault, Location as CheckLocation,
+};
 use super::AdmittedImport;
 use super::{CheckingLimits, DeclarationRegions, DispatchTable, Origin as CheckOrigin, Scope};
+use crate::family::ClassifyFailure;
 use crate::library::PackageNodeKey;
 use crate::value::declaration::CompositeShape;
 use quire_exact::IeeeWidth;
@@ -1280,6 +1283,9 @@ impl ValueDeclarations<'_> {
 #[derive(Debug)]
 pub struct CheckedDeclaration {
     pub(crate) body: CheckedDeclarationBody,
+    /// The body's claims, one per scalar operation application, each
+    /// extent classified under the declaration's stage limits.
+    pub(crate) claims: Vec<super::claims::ValueClaim>,
 }
 
 /// `Value`'s checked-package producer for the function-declaration form
@@ -1308,12 +1314,17 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
     type Cause = CheckRefusal;
     /// See [`ValueDeclarations`]'s own doc.
     type Declarations<'a> = ValueDeclarations<'a>;
+    /// A scalar operation application's `value-validity` claim (FR-057's
+    /// claim-form table), keyed by `check` once lowering records its
+    /// occurrence.
+    type Claim = super::claims::ValueClaim;
 
-    /// A function declaration requests no FR-057 capability kind (FR-057:
-    /// "no kind for an expression nested in a clause, such as a function
-    /// application"), so it has no requirements (FR-062-AC-4).
-    fn requirements(_checked: &CheckedDeclaration) -> Option<crate::family::Requirements> {
-        None
+    /// One `value-validity` claim per scalar operation application in the
+    /// body (FR-062 "Requirement records of a value function"), as `check`
+    /// found and classified them; none for a body with no such
+    /// application.
+    fn requirements(checked: &CheckedDeclaration) -> Vec<super::claims::ValueClaim> {
+        checked.claims.clone()
     }
 
     fn check<'a>(
@@ -1492,7 +1503,24 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
             }
             _ => StageFailure::Refused(refusal),
         })?;
-        Ok(Staged::new(CheckedDeclaration { body }))
+        // FR-062: each claim's extent is classified here, under the
+        // declaration's node-count limit. A reached ceiling is the
+        // declaration's limit; a broken check invariant, an internal fault.
+        let claims = super::claims::claims_of(
+            &body.body,
+            &declarations.own_signature.parameters,
+            declarations.location,
+            declarations.scope.types(),
+            cx.limits().node_count,
+        )
+        .map_err(|failure| match failure {
+            ClassifyFailure::Limit(exceeded) => located(exceeded),
+            ClassifyFailure::Fault(fault) => StageFailure::Refused(CheckRefusal {
+                location: declarations.location.clone(),
+                cause: CheckCause::InternalFault(Box::new(KeyFault::UnclassifiedExtent(fault))),
+            }),
+        })?;
+        Ok(Staged::new(CheckedDeclaration { body, claims }))
     }
 }
 

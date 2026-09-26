@@ -5,7 +5,6 @@
 //! (`value::expression::s6a`, ADR-011 §6.2 `family` row).
 
 use super::outcome::CheckOutcome;
-use super::requirements::Requirements;
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
 use quire_exact::Meter;
 
@@ -302,10 +301,16 @@ pub trait FamilyContract {
         cx: &mut CheckContext<'a, Self::Declarations<'a>>,
     ) -> CheckOutcome<Self::Checked, Self::Cause>;
 
-    /// The requirements of one checked item (ADR-012 §2, FR-062-AC-4): one
-    /// [`Requirements`] value naming the item's FR-057 capability kind and
-    /// its extent, or `None` for a form that carries no kind. Pure and
-    /// total: it reads only `checked`, which carries the extent `check`
-    /// classified, and two calls on the same node return equal values.
-    fn requirements(checked: &Self::Checked) -> Option<Requirements>;
+    /// One claim of a checked item: its capability kind and classified
+    /// extent, paired with the checked site it covers (ADR-012 §2). A
+    /// family whose sites carry their own occurrence data names it here;
+    /// `check` keys each claim by the occurrence recorded at its site.
+    type Claim;
+
+    /// The claims of one checked item (ADR-012 §2, FR-062-AC-4): one per
+    /// claim site whose form has an FR-057 capability kind, and none for a
+    /// form that has no kind. Pure and total: it reads only `checked`,
+    /// which carries the extents `check` classified, and two calls on the
+    /// same node return equal values.
+    fn requirements(checked: &Self::Checked) -> Vec<Self::Claim>;
 }

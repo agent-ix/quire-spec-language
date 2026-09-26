@@ -59,9 +59,9 @@ FR-066-AC-2's three categories, per family:
    in TC-385's `s6a_family_name` match. `Relation` has no evaluator: S6a's
    input type has no `Relation` variant (ADR-012 §2, FR-090-AC-4).
 3. **Requirement derivation**: the family's pure `requirements()` function
-   from a checked node to zero or one `Requirements` value (FR-062-AC-4);
-   see this document's own note below on when this function has anything
-   real to derive.
+   from a checked node to one `Self::Claim` per claim site it carries, and
+   none for a form with no FR-057 kind (FR-062-AC-4);
+   see this document's own note below.
 
 For a family whose forms cross into IR, RT or CG (`StateModel`, `SumCase`,
 `TemporalTrace`, `ProtocolClause`, `Relation` all do, per ADR-012 §8's stage
@@ -71,23 +71,15 @@ tickets, not to the QSL migration ticket: ADR-012 §14.1 names
 `agent-ix/quire-contract-codegen#86` (CG enum matches) as the owners of
 that side, and an RT ticket the RT owner opens separately.
 
-**A note on `requirements()`.** #214's own implementation defers
-`Requirements` and its substructure (`CapabilityKind`, `Extent`, `Bound`)
-entirely: FR-057/#229 (QSL-11, Done) states plainly that "family-body
-admission is language admission, not a capability kind" and that there is
-"no kind for an expression nested in a clause, such as a function
-application" (FR-057:159-186). Function declaration and application, the
-family this ticket migrates, has no FR-057 capability kind at all, so its
-`requirements()` would return `None` unconditionally -- a function with
-exactly one always-taken branch is not a real implementation of a pure
-function from checked node to requirement, it is the function's own
-absence wearing a signature. #214 does not add `requirements()` to the
-contract for this reason (see `qsl-semantics/src/family/mod.rs`'s own module doc). A
-family migration whose claim forms *do* carry a real FR-057 capability kind
-adds `requirements()` back to the contract in that same change, with a real
-non-`None` arm to justify it -- StateModel's model-element lookups and
-Relation's refinement claims are the two families in ADR-012 §3's table
-most likely to need this first.
+**A note on `requirements()`.** A function declaration carries no clause
+of its own, but each scalar operation application in its body is a
+`value-validity` claim (FR-057's claim-form table, FR-062 "Requirement
+records of a value function"). `ValueFunctionFamily::requirements()`
+returns one `ValueClaim` per such application, whose extent `check`
+classified with each domain keyed by binder; S3 keys each claim by the
+occurrence at its site and names each binder's parameter node
+(`qsl-semantics/src/check/claims.rs`). A family whose forms carry no
+FR-057 kind returns no claim.
 
 ## Removal condition
 
@@ -172,8 +164,9 @@ above.
   layer-3 `check`. It is reached through the S6a
   seam `evaluate_declaration` in `qsl-eval/src/value/expression/mod.rs`, which
   `CheckedPackage::call` calls.
-- Requirement derivation: deferred for this family, per this document's own
-  note above.
+- Requirement derivation: `FamilyContract::requirements` for
+  `ValueFunctionFamily` in `qsl-semantics/src/check/family.rs`, per this
+  document's own note above.
 
 **Real deleted symbols from this migration** (FR-066-AC-4). **Correction
 (PR #262 review, finding F13):** an earlier revision of this section cited
