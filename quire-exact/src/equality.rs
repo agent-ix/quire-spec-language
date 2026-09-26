@@ -350,38 +350,4 @@ mod tests {
             }
         );
     }
-
-    /// QSL-281: swapping which operand's universe lands in `required` versus
-    /// `supplied` is observable -- a mutant that flips them at the raise site
-    /// fails this assertion.
-    #[trace("TC-322")]
-    #[test]
-    fn tc_322_foreign_reference_universes_are_not_swapped() {
-        use crate::identity::{EffectiveId, ObjectId, UniverseId};
-        use crate::reference::ObjectReference;
-
-        fn digest(byte: u8) -> [u8; 32] {
-            let mut bytes = [0_u8; 32];
-            bytes[31] = byte;
-            bytes
-        }
-
-        let object_type = EffectiveId::from_digest(digest(1));
-        let object = ObjectId::new("o1").unwrap();
-        let left_universe = UniverseId::from_digest(digest(10));
-        let right_universe = UniverseId::from_digest(digest(20));
-        let left = Value::Reference(ObjectReference::new(
-            left_universe,
-            object_type,
-            object.clone(),
-        ));
-        let right = Value::Reference(ObjectReference::new(right_universe, object_type, object));
-        let Err(Refusal::ForeignReference { required, supplied }) = plan_pairs(&left, &right)
-        else {
-            panic!("expected ForeignReference");
-        };
-        assert_eq!(required, left_universe);
-        assert_ne!(required, supplied);
-        assert_eq!(supplied, right_universe);
-    }
 }

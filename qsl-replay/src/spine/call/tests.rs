@@ -476,18 +476,15 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 );
                 assert_eq!(
                     fields,
-                    BTreeMap::from([
-                        ("required", required.to_string()),
-                        ("supplied", supplied.to_string()),
-                    ])
+                    BTreeMap::from([("required", "01".repeat(32)), ("supplied", "02".repeat(32)),])
                 );
                 let locus = locus.expect("a record locus");
                 assert_eq!(
                     locus.source_digest,
-                    "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26"
+                    "sha256:3cb8ab70e4d3187dae8621768491c4d2eb0c8c0b82d330d4f2fba72883f6e77c"
                 );
-                assert_eq!(locus.span.start.byte, 225);
-                assert_eq!(locus.span.end.byte, 226);
+                assert_eq!(locus.span.start.byte, 233);
+                assert_eq!(locus.span.end.byte, 234);
                 assert_location(&got_location);
             }
             other => panic!("{other:?}"),

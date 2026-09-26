@@ -144,14 +144,19 @@ pub enum Refusal {
     IeeeRationalOutOfDomain,
     /// A comparison met two references of different universes (FR-096: the
     /// `foreign_reference`/`foreign-universe` key-table row, `required` and
-    /// `supplied` rendered as lowercase hex). `required` is the left
-    /// operand's universe, `supplied` the right's -- an equality comparison
-    /// has no "binding" side, so the raise site's operand order settles
-    /// which is which.
+    /// `supplied` rendered as lowercase hex). `required` is the universe
+    /// already in force, `supplied` the one tested against it: for a bare
+    /// equality (`plan_pairs(left, right)`, `equality.rs`), that is the left
+    /// operand's universe and the right's, since equality has no "binding"
+    /// side and the raise site's operand order settles which is which; for
+    /// membership (`collection.rs`'s `member_equal_stop`, both `Contains`
+    /// and collection construction's dedup), that is the already-retained
+    /// member's or collection's own universe, not the probed candidate's
+    /// (QSL-281).
     ForeignReference {
-        /// The left operand's universe.
+        /// The universe already in force.
         required: UniverseId,
-        /// The right operand's universe.
+        /// The universe tested against it.
         supplied: UniverseId,
     },
     /// A formed collection's bound count is outside its declared bound; no

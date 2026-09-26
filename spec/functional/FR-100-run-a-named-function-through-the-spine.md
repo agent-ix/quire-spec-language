@@ -155,9 +155,14 @@ At catalog revision `1-draft.7`, `kernel_refusal_record` builds a record for
 `below-minimum` or `above-maximum` and fields `collection`, `bound` and
 `count` (FR-096 key table), exit 20; and for `ForeignReference`,
 `foreign_reference` with cause `foreign-universe` and fields `required` and
-`supplied`, each the operand's universe rendered as lowercase hex (FR-096 key
-table, QSL-281), exit 20. Every other kernel refusal but `CheckedInvariant`
-renders by the kernel, no-record row, exit 20.
+`supplied`, each rendered as lowercase hex (FR-096 key table, QSL-281), exit
+20. `required` is the universe already in force and `supplied` the one
+tested against it: for the equality raise site (`quire-exact`'s
+`plan_pairs(left, right)`), the left operand's universe and the right's; for
+the membership raise site (`member_equal_stop(candidate, member, ..)`, both
+`x in c` and collection construction's dedup), the already-admitted member's
+or collection's own universe and the probed candidate's. Every other kernel
+refusal but `CheckedInvariant` renders by the kernel, no-record row, exit 20.
 
 The kernel defines no spelling method for `Undefined`, and FR-096 spells no
 kernel undefined reason, so FR-100 spells them in kebab case:

@@ -331,6 +331,12 @@ Implemented under QSL-282:
 
 - `Code::exit_code` maps `runtime_invariant` to 30 (QSpec FR-301 tool failure; ADR-013 T-4 internal failure), and a report combining diagnostics ranks 30 first (AC-12). The kernel `CheckedInvariant` to `InternalFault` conversion remains unbuilt.
 
+Implemented under QSL-281:
+
+- The kernel `Refusal::ForeignReference` variant now carries both universes
+  (`quire-exact` fields `required`/`supplied`), and `kernel_refusal_record`
+  builds its `foreign_reference`/`foreign-universe` record from them.
+
 Not backed:
 
 - AC-8 is only partly backed: the kernel causes `InexactDecimal`,
@@ -343,9 +349,6 @@ Not backed:
 - A kernel `CheckedInvariant` builds no record, and its conversion to an
   `InternalFault` is not built: the evaluator still returns it as a
   refusal.
-  `ForeignReference` now carries both universes (`quire-exact` variant fields
-  `required`/`supplied`, QSL-281), and `kernel_refusal_record` builds its
-  `foreign_reference`/`foreign-universe` record from them.
 - The key table has no row for the other `ModelQueryRefusal` causes
   (including `type-mismatch`) or for `qsl-route`'s `BoundRefusal`; they build
   no record.
