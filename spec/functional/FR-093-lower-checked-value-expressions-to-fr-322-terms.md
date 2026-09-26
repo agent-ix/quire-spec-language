@@ -762,18 +762,15 @@ vocabulary lacks, a node naming a node the checked graph does not hold
 (a declared unit node, so a compound unit over one), a nominal node whose
 owner the lock does not select, and every node that names an omitted one;
 AC-7 and AC-12 are checked on every node the arm writes, omitted or not.
-AC-13 is backed, with one member excluded (QSL-6):
+AC-13 is backed (QSL-6, QSL-280):
 `conformance_emitted_application_nodes_match_qspec_positive_fixtures`
 (`qsl-package/src/emit/tests/golden.rs`, run by `make conformance`) emits a
 function for each fixture operation a row lowers and compares 13 fixture
 application nodes on the AC's members, and IR's v2 reader admits each emitted
 package. The fixtures' two `quire.op.ieee.float64.add` nodes carry `mode`
-`toward-zero` and `nearest-even`, and QSL admits only the omitted `exact`
-spelling of a float's rounding, so for that identity every member is compared
-except `mode`; the AC's `mode` clause is UNMET there until FR-091-OQ-4 is
-implemented (QSL-280: `ValueType::Float` carries the rounding mode,
-FR-091-AC-19 stops refusing `Float64[mode]`, the evaluator applies it), after
-which the except-`mode` carve-out is dropped. The fixture identities no row lowers in a function
+`toward-zero` and `nearest-even`; `ValueType::Float` carries the mode
+(FR-091-OQ-4), so the golden test writes one `Float64[mode]` function per mode
+and compares `mode` on every member. The fixture identities no row lowers in a function
 body (`ieee.numeric_equal`, `integer.div`, `integer.rem`, `collection.sum.decimal`,
 `model.reaches` and the `model.*` rows AC-3 excludes) are skipped by name. The
 `dependencies` rule is specified under QSL-225. Ownership, decided here: QSL-156 A4b builds
