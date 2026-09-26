@@ -173,7 +173,6 @@ fn tc_449_an_unbounded_item_and_its_bounded_follow_up() {
     let index = follow_up
         .bounded_item(
             item.occurrence().clone(),
-            item.node(),
             record.requirements(),
             BTreeMap::from([(
                 n,

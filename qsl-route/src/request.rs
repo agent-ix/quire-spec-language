@@ -102,7 +102,6 @@ impl ExtentClassification {
 pub struct RequestItem {
     index: RequestIndex,
     occurrence: OccurrenceKey,
-    node: WireNodeId,
     kind: Capability,
     extent: ExtentClassification,
     domains: Vec<ProofBound>,
@@ -119,9 +118,10 @@ impl RequestItem {
         &self.occurrence
     }
 
-    /// The checked node the item requests a claim over.
+    /// The checked node the item requests a claim over: its occurrence's
+    /// node.
     pub fn node(&self) -> WireNodeId {
-        self.node
+        self.occurrence.node()
     }
 
     /// The requested capability kind.
@@ -211,20 +211,15 @@ impl RequestWriter {
         Self::default()
     }
 
-    /// Write the item for the claim at `occurrence` of `node` with
+    /// Write the item for the claim at `occurrence` with
     /// `requirements` and no proof bounds. Its classification comes from
     /// the checked extent alone.
-    pub fn item(
-        &mut self,
-        occurrence: OccurrenceKey,
-        node: WireNodeId,
-        requirements: &Requirements,
-    ) -> RequestIndex {
+    pub fn item(&mut self, occurrence: OccurrenceKey, requirements: &Requirements) -> RequestIndex {
         let extent = ExtentClassification::of(requirements.extent());
-        self.push(occurrence, node, requirements.kind(), extent, Vec::new())
+        self.push(occurrence, requirements.kind(), extent, Vec::new())
     }
 
-    /// Write the bounded item for the claim at `occurrence` of `node` with
+    /// Write the bounded item for the claim at `occurrence` with
     /// `requirements`, substituting `bounds` for its unbounded domains
     /// (ADR-014 §4 "Bounded request"). The item carries `occurrence`, the
     /// originating item's, so a follow-up request's settlement joins the
@@ -237,7 +232,6 @@ impl RequestWriter {
     pub fn bounded_item(
         &mut self,
         occurrence: OccurrenceKey,
-        node: WireNodeId,
         requirements: &Requirements,
         bounds: BTreeMap<DomainKey, FiniteBound>,
     ) -> Result<RequestIndex, BoundRefusal> {
@@ -286,7 +280,6 @@ impl RequestWriter {
             .collect();
         Ok(self.push(
             occurrence,
-            node,
             requirements.kind(),
             ExtentClassification::Bounded,
             domains,
@@ -306,7 +299,6 @@ impl RequestWriter {
     fn push(
         &mut self,
         occurrence: OccurrenceKey,
-        node: WireNodeId,
         kind: Capability,
         extent: ExtentClassification,
         domains: Vec<ProofBound>,
@@ -315,7 +307,6 @@ impl RequestWriter {
         self.items.push(RequestItem {
             index,
             occurrence,
-            node,
             kind,
             extent,
             domains,
@@ -467,11 +458,10 @@ mod tests {
     #[test]
     fn tc_438_finite_bound_available_exactly_when_every_domain_is_boundable() {
         let mut writer = RequestWriter::new();
-        let bounded = writer.item(occurrence(), node(9), &claim(&[]));
-        let set = writer.item(occurrence(), node(9), &set_claim());
+        let bounded = writer.item(occurrence(), &claim(&[]));
+        let set = writer.item(occurrence(), &set_claim());
         let set_and_loop = writer.item(
             occurrence(),
-            node(9),
             &claim(&[
                 (key(1, &[]), DomainKind::Collection),
                 (key(2, &[]), DomainKind::Loop),
@@ -479,7 +469,6 @@ mod tests {
         );
         let formula = writer.item(
             occurrence(),
-            node(9),
             &Requirements::new(
                 Capability::TemporalSatisfaction,
                 ClaimExtent::from_domains(BTreeMap::from([(
@@ -525,11 +514,10 @@ mod tests {
             (key(1, &[]), DomainKind::Collection),
             (key(1, &[0]), DomainKind::Recursive),
         ]);
-        let unbounded = writer.item(occurrence(), node(9), &requirements);
+        let unbounded = writer.item(occurrence(), &requirements);
         let eight = writer
             .bounded_item(
                 occurrence(),
-                node(9),
                 &requirements,
                 BTreeMap::from([
                     (key(1, &[]), FiniteBound::cardinality(8)),
@@ -540,7 +528,6 @@ mod tests {
         let four = writer
             .bounded_item(
                 occurrence(),
-                node(9),
                 &requirements,
                 BTreeMap::from([
                     (key(1, &[]), FiniteBound::cardinality(4)),
@@ -684,7 +671,7 @@ mod tests {
         for (requirements, bounds, expected) in cases {
             let mut writer = RequestWriter::new();
             let refusal = writer
-                .bounded_item(occurrence(), node(9), &requirements, bounds)
+                .bounded_item(occurrence(), &requirements, bounds)
                 .expect_err("the bounds refuse");
             assert_eq!(refusal, expected);
             assert_eq!(
