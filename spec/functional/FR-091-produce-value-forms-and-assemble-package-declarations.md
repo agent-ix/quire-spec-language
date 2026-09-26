@@ -821,7 +821,15 @@ a field path in a package document. STD-112 asks QSpec for the causes
 
 ## Status
 
-The `Value` slice is implemented (QSL-141). `qsl_forms::build_unit` walks a
+The `Value` slice is implemented (QSL-141), with the `enum`, `ordered enum`
+and `predicate` declarations (QSL-275: FR-091-AC-25 to AC-30; the enum and
+predicate half of AC-6). `enum` and `ordered` build the enum form, and
+`predicate` builds the `forms` `FunctionDeclaration` of kind `Predicate`.
+The assembler admits each enum form as an `EnumBinding` over keys that
+`check::node_key::nominal_key` mints, records its name span in
+`declared_type_spans`, and resolves an enum name in a type form to
+`ValueType::Enum`. `nominal_key` returns a `Result`, because encoding a
+preimage can refuse, and the refusal is the nominal-admission fault. `qsl_forms::build_unit` walks a
 unit's declarations and dispatches `function`, `type`, `record` and `tuple`
 to the `Value` builder (`qsl-forms/src/value.rs`), which maps every row of
 the expression table with each node's span, refuses the listed
@@ -838,15 +846,10 @@ of each declared type's name for FR-096, and reports every error it finds.
 
 Remaining work:
 
-- FB-13, QSL-275: the `enum`, `ordered` and `predicate` entries, the enum
-  and predicate forms, the assembler's enum admission and the `predicate`
-  function node (FR-091-AC-6 and AC-25 to AC-30, FR-092-AC-13) are
-  specified and not implemented. Today every one of these declarations
-  refuses `NoDispatchEntry`, and the only callers of
-  `EnumDeclaration::admit` are tests.
 - FB-13, QSL-275: the `dimension` and `unit` entries and forms and the
   assembler's `UnitGraph` admission (FR-091-AC-31 to AC-35) are specified
-  and not implemented; today both refuse `NoDispatchEntry`, and the only
+  and not implemented (the dimension and unit half of FR-091-AC-6 with
+  them); today both refuse `NoDispatchEntry`, and the only
   callers of `UnitGraph::admit` are tests. AC-35's catalog code waits on
   STD-112 (FR-091-OQ-12). The hand-off to QSL-238 and QSL-247 is under
   Dependencies.

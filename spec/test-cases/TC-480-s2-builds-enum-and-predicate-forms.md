@@ -56,5 +56,8 @@ Tag the tests `#[trace("FR-091-AC-25", "TC-480")]` and
 
 ## Status
 
-Not implemented. QSL-275 adds the entries and the forms; today S2 refuses
-steps 1 to 3 with `NoDispatchEntry`.
+Backed by `qsl-forms/tests/it/value_forms.rs`:
+`s2_builds_enum_forms_with_members_in_source_order_and_display_strings`
+(FR-091-AC-25) and
+`s2_builds_a_predicate_as_a_function_declaration_of_kind_predicate`
+(FR-091-AC-26). A display string is carried as spelled, quotes included.

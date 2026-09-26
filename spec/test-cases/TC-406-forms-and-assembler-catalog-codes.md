@@ -58,4 +58,4 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
 
 ## Status
 
-Steps 1, 2 and 4 are backed by `qsl-forms/tests/it/value_forms.rs` (the S2 causes and the depth limit) and `qsl-semantics` `check::assemble` tests (`each_assembler_cause_has_its_catalog_code`). Step 3's `syn` inspection is not written; both `catalog_code` matches have no `_` arm. The enum, dimension and unit causes do not exist yet; they land with QSL-275, and the unit-graph topology row waits on STD-112.
+Steps 1, 2 and 4 are backed by `qsl-forms/tests/it/value_forms.rs` (the S2 causes and the depth limit) and `qsl-semantics` `check::assemble` tests (`each_assembler_cause_has_its_catalog_code`). Step 3's `syn` inspection is not written; both `catalog_code` matches have no `_` arm. The duplicate-enum-member and nominal-admission causes are backed by `the_enum_causes_have_their_catalog_codes` (QSL-275). The dimension and unit causes do not exist yet; they land with QSL-275, and the unit-graph topology row waits on STD-112.
