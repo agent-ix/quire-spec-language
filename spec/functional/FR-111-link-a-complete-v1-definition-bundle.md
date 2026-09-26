@@ -81,8 +81,11 @@ no stage of the S1 to S4 spine calls it.
   `unknown_required_feature`/`unsupported-feature`; a capability outside
   the inventory SHALL refuse `unknown_required_feature`/`unknown-feature`.
 - The bundle's identity SHALL be the `quire.complete.resolved-graph/2`
-  `SemanticDigest` of the closed definitions (exact reference, role,
-  dependencies, capabilities) and the capabilities. No backend, installed
+  `SemanticDigest` of the preimage `{capabilities, definitions, models}`:
+  the capabilities, the closed definitions (exact reference, role,
+  dependencies, capabilities) and `models`, which is always the empty
+  array, because model selections resolve only through I1 (FR-056). The
+  label stays `/2`, so the identity of an existing bundle is unchanged. No backend, installed
   runtime or support set is an input, so none changes the identity or the
   admission.
 
@@ -116,7 +119,7 @@ applies them to the catalog and `link_bundle` to the closure.
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-111-CON-1 | `library::bundle` depends only on layer F and on `library`'s own items. It names no `check`, `package`, `model`, emitter or backend type, and returns no checked or emitted package. | Design | Inspection |
+| FR-111-CON-1 | `library::bundle` depends only on layers F and K, on `semantic_value` (`value::semantic_node::IDENTITY_LIMITS`, the canonical-encoding limits its identity digest uses) and on `library`'s own items, as ADR-011 §6.1's layer-3 order permits. It names no `check`, `package`, `model`, emitter or backend type, and returns no checked or emitted package. | Design | Inspection |
 
 ## Acceptance Criteria
 
@@ -126,7 +129,7 @@ applies them to the catalog and `link_bundle` to the closure.
 | FR-111-AC-2 | A root whose identity the catalog lacks refuses `unknown_profile`/`unsupported-selection`; one held at another version refuses `stale_dependency`/`revision-mismatch`; one held with other bytes refuses `stale_dependency`/`byte-digest-mismatch`; a dependency edge to an absent definition refuses `missing_import`/`missing-selection`. Each names the root's index. | Test (TC-491) |
 | FR-111-AC-3 | Two roots, or a root and a reached definition, selecting one identity at two exact selections refuse `ambiguous_declaration`/`conflicting-authority` naming both; a dependency cycle refuses `invalid_package`/`definition-cycle` naming the cycle in path order. | Test (TC-491) |
 | FR-111-AC-4 | Removing the definitions of one facet refuses `invalid_package`/`feature-set-mismatch` naming that facet; removing one capability refuses `unknown_required_feature`/`unsupported-feature`. | Test (TC-491) |
-| FR-111-AC-5 | The bundle identity matches the `quire.complete.resolved-graph/2` golden vector, and changing one definition's role, dependencies, capabilities or bytes changes it. | Test (TC-491) |
+| FR-111-AC-5 | The bundle identity matches the `quire.complete.resolved-graph/2` golden vector (preimage `{"capabilities":[…],"definitions":[],"models":[]}`), and changing one definition's role, dependencies, capabilities or bytes changes it. | Test (TC-491) |
 | FR-111-AC-6 | Each `PackageLimits` field admits at its bound and refuses one past it, at catalog construction and at link, with the table's code and cause; a caller-raised `definitions` ceiling admits a catalog the default refuses, and the link records the limits it ran under. | Test (TC-491) |
 | FR-111-AC-7 | Every refusal's (code, cause) pair is one `quire.native.diagnostics/v1` revision `1-draft.7` lists. | Test (TC-491) |
 

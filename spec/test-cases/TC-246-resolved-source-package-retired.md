@@ -30,8 +30,10 @@ both successors exist"; ruling on QSL-229):
 
 1. Search every crate of the workspace (`src/`, `tests/`, `examples/`,
    `xtask/` and each layer crate) for `ResolvedSourcePackage`,
-   `resolve_source_package`, `resolve_parsed_source`, `SourceAuthority`,
-   `ModelCatalog`, `ModelArtifact` and `qsl_semantics::complete`.
+   `resolve_source_package`, `resolve_parsed_source`,
+   `struct SourceAuthority`, `complete::SourceAuthority`, `ModelCatalog`,
+   `ModelArtifact` and `qsl_semantics::complete`. The composed linker's
+   unrelated `ConflictKind::SourceAuthority` variant is not an occurrence.
 2. Search for any re-export, type alias or `pub use` naming a removed item
    under any spelling.
 3. Build the workspace. A build that succeeds with a removed item reachable
