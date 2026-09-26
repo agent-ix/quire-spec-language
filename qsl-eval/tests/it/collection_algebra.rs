@@ -535,9 +535,18 @@ fn c10_reference_holder_sets_charge_pairs_and_refuse_foreign_universes() {
 
     let hx = holder(&env, "u2", "hx");
     let mut meter = Meter::new(UNLIMITED);
+    // `coalesce` tests each later candidate (`hx`, universe `u2`) against an
+    // already-retained member (`h1`, universe `u1`) via
+    // `member_equal_stop(candidate, member, ..)`, whose `plan_pairs(member,
+    // candidate)` call makes the already-retained member `required` and the
+    // candidate `supplied` (QSL-281: `required` is the universe already in
+    // force, `supplied` the one tested against it).
     assert_outcome(
         &construct(&holders, vec![h1, hx], &mut meter),
-        &Outcome::Refused(Refusal::ForeignReference),
+        &Outcome::Refused(Refusal::ForeignReference {
+            required: universe_id("u1"),
+            supplied: universe_id("u2"),
+        }),
     );
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 6);
     assert!(!meter
@@ -943,6 +952,75 @@ mod checked {
                 format!("{:?}", run(expression)),
                 format!("{:?}", Value::Boolean(true))
             );
+        }
+    }
+
+    /// QSL-281 (SR-681 FND-002): `x in c` (`Contains`) is the second
+    /// production caller of `member_equal`, distinct from collection
+    /// construction's `coalesce` dedup (`c10` above). A foreign-universe
+    /// probe raises `ForeignReference` with `required` the already-formed
+    /// collection's member universe (`u1`) and `supplied` the probed item's
+    /// (`u2`), the same `member_equal_stop(candidate, member, ..)` ->
+    /// `plan_pairs(member, candidate)` convention `c10` exercises.
+    #[trace("TC-189", "FR-144-AC-6")]
+    #[trace("TC-189", "FR-144-AC-7")]
+    #[test]
+    fn c06b_contains_a_foreign_universe_probe_refuses_required_is_the_member() {
+        let types = holder_environment();
+        let package = package(PackageDeclarations {
+            types: types.clone(),
+            models: vec![crate::support::model::object_model(
+                "collection-algebra",
+                "M::Obj",
+                object_type("M::Obj"),
+            )],
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        });
+        let holder_type = ValueType::Composite(key("Holder"));
+        let holders = collection_type(CollectionKind::Set, holder_type.clone(), 0, 2);
+        let h1 = holder(&types, "u1", "h1");
+        let probe = holder(&types, "u2", "h1");
+        let hs = formed(&holders, vec![h1]);
+        let objects = ObjectEnvironment::new(
+            &types,
+            [("u1", "h1"), ("u2", "h1")].map(|(universe, identity)| {
+                (
+                    ObjectReference::new(
+                        universe_id(universe),
+                        object_type("M::Obj"),
+                        ObjectId::new(identity).unwrap(),
+                    ),
+                    Vec::new(),
+                )
+            }),
+        )
+        .unwrap();
+        let parameters = [
+            ("hs", ValueType::collection(holders)),
+            ("item", holder_type),
+        ];
+        let checked = check(
+            &package,
+            &parameters,
+            &Expression::Contains {
+                collection: Box::new(name("hs")),
+                item: Box::new(name("item")),
+            },
+        )
+        .unwrap();
+        let mut meter = Meter::new(UNLIMITED);
+        let evaluation = package
+            .evaluate(&checked, vec![hs, probe], &objects, &mut meter)
+            .unwrap();
+        match evaluation.outcome {
+            FamilyOutcome::Evaluated(Outcome::Refused(Refusal::ForeignReference {
+                required,
+                supplied,
+            })) => {
+                assert_eq!(required, universe_id("u1"));
+                assert_eq!(supplied, universe_id("u2"));
+            }
+            other => panic!("expected ForeignReference, got {other:?}"),
         }
     }
 

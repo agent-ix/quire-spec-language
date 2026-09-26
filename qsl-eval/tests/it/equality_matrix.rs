@@ -983,9 +983,19 @@ fn e16_references_compare_identity_triple_only() {
             &Value::Reference(reference("u2", "a")),
             &mut meter
         ),
-        Outcome::Refused(Refusal::ForeignReference)
+        Outcome::Refused(Refusal::ForeignReference {
+            required: universe_id("u1"),
+            supplied: universe_id("u2"),
+        })
     );
-    assert_eq!(Refusal::ForeignReference.code(), Some("foreign_reference"));
+    assert_eq!(
+        Refusal::ForeignReference {
+            required: universe_id("u1"),
+            supplied: universe_id("u2"),
+        }
+        .code(),
+        Some("foreign_reference")
+    );
     assert_eq!(meter.admitted_charges(), [ChargePoint::EqualityPlanForm]);
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 2);
     assert_disjoint(&env, &r);

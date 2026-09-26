@@ -163,7 +163,10 @@ pub(crate) fn plan_pairs(left: &Value, right: &Value) -> Result<PlannedPairs, Re
             (Value::Enum(l), Value::Enum(r)) => l.variant() == r.variant(),
             (Value::Reference(l), Value::Reference(r)) => {
                 if l.universe() != r.universe() {
-                    return Err(Refusal::ForeignReference);
+                    return Err(Refusal::ForeignReference {
+                        required: l.universe(),
+                        supplied: r.universe(),
+                    });
                 }
                 l == r
             }
@@ -311,7 +314,9 @@ mod tests {
     }
 
     /// TC-322: a reference pair of different universes refuses with
-    /// `ForeignReference` rather than comparing structurally.
+    /// `ForeignReference` rather than comparing structurally, carrying the
+    /// left operand's universe as `required` and the right's as `supplied`
+    /// (QSL-281).
     #[trace("TC-322")]
     #[test]
     fn tc_322_foreign_reference_pair_is_refused() {
@@ -326,19 +331,23 @@ mod tests {
 
         let object_type = EffectiveId::from_digest(digest(1));
         let object = ObjectId::new("o1").unwrap();
+        let left_universe = UniverseId::from_digest(digest(10));
+        let right_universe = UniverseId::from_digest(digest(20));
         let left = Value::Reference(ObjectReference::new(
-            UniverseId::from_digest(digest(10)),
+            left_universe,
             object_type,
             object.clone(),
         ));
-        let right = Value::Reference(ObjectReference::new(
-            UniverseId::from_digest(digest(20)),
-            object_type,
-            object,
-        ));
-        assert!(matches!(
-            plan_pairs(&left, &right),
-            Err(Refusal::ForeignReference)
-        ));
+        let right = Value::Reference(ObjectReference::new(right_universe, object_type, object));
+        let Err(refusal) = plan_pairs(&left, &right) else {
+            panic!("expected ForeignReference");
+        };
+        assert_eq!(
+            refusal,
+            Refusal::ForeignReference {
+                required: left_universe,
+                supplied: right_universe,
+            }
+        );
     }
 }

@@ -41,9 +41,10 @@ Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
 ## Status
 
 Partial (QSL-245). Steps 1 to 3 pass locally (FR-096-AC-6, FR-096-AC-7).
-Step 4 (FR-096-AC-8) is partly backed: `CardinalityOutOfBound` builds its
-record, and `CheckedInvariant` builds no record; its conversion to an internal
-fault is not built. It is not backed for `InexactDecimal`,
+Step 4 (FR-096-AC-8) is partly backed: `CardinalityOutOfBound` and
+`ForeignReference` (QSL-281) build a record, and `CheckedInvariant` builds no
+record; its conversion to an internal fault is not built. It is not backed
+for `InexactDecimal`,
 `DecimalOutOfDomain`, `DivisionPairOutOfDomain`, `ModuloOutOfDomain`,
 `TextLengthOutOfDomain`, `IntegerOutOfDomain`, `RationalOutOfDomain` and
 `IeeeNotExact`, which await catalog revision `1-draft.8` (STD-110), nor for

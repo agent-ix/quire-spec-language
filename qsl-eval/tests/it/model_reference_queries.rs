@@ -3586,9 +3586,48 @@ fn a_kernel_refusal_builds_a_record_only_where_the_catalog_has_a_code() {
     for refusal in [
         Refusal::InexactDecimal,
         Refusal::IntegerOutOfDomain,
-        Refusal::ForeignReference,
         Refusal::CheckedInvariant,
     ] {
         assert_eq!(evaluation(refusal).refusal_record(package.graph()), None);
     }
+}
+
+/// TC-428 (FR-096-AC-8, QSL-281): the kernel `ForeignReference` variant now
+/// carries both universes, so `kernel_refusal_record` builds
+/// `foreign_reference`/`foreign-universe` with `required`/`supplied` exactly
+/// as the family `ForeignUniverse` row does -- a mutant that swaps which
+/// universe lands in which field fails this assertion.
+#[test]
+#[trace("TC-428", "FR-096-AC-8")]
+fn a_kernel_foreign_reference_builds_a_record_with_both_universes() {
+    use quire_exact::Refusal;
+    let scenario = scenario();
+    let package = package(&scenario);
+    let evaluation = Evaluation {
+        outcome: FamilyOutcome::Evaluated(Outcome::Refused(Refusal::ForeignReference {
+            required: scenario.universe,
+            supplied: foreign_universe_id(),
+        })),
+        location: None,
+        losses: Vec::new(),
+    };
+    let record = evaluation
+        .refusal_record(package.graph())
+        .expect("foreign_reference has a code");
+    assert_eq!(
+        record.code(),
+        qsl_foundation::diagnostic::CatalogCode::new("foreign_reference", "foreign-universe")
+    );
+    let hex = |bytes: &[u8]| -> String { bytes.iter().map(|b| format!("{b:02x}")).collect() };
+    assert_eq!(
+        record
+            .fields()
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect::<Vec<_>>(),
+        [
+            ("required", hex(scenario.universe.as_bytes())),
+            ("supplied", hex(foreign_universe_id().as_bytes())),
+        ]
+    );
 }
