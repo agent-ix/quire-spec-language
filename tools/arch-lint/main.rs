@@ -270,6 +270,30 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
             summary.push_str(&format!("    (not evaluated for every role: {note})\n"));
         }
     }
+    // FR-100-AC-8 (TC-452 step 3): the facade's own public surface, scanned
+    // for a forbidden *callee* (no `qsl_replay::spine` public item, and no
+    // `qsl_replay` re-export, names a `qsl_eval` path) -- the opposite
+    // direction from the `RULES` above, which each name a disallowed
+    // *caller* of one of QSL's own constructors, so it is evaluated
+    // separately rather than as one more `Rule` entry.
+    let qsl_replay_src = qsl.join("qsl-replay/src");
+    if qsl_replay_src.join("spine.rs").is_file() {
+        let findings = api_surface::spine_surface_qsl_eval_findings(&qsl_replay_src)?;
+        if findings.is_empty() {
+            summary.push_str("  FR-100-AC-8 [qsl_replay::spine names no qsl_eval path]: PASS\n");
+        } else {
+            all_passed = false;
+            summary.push_str("  FR-100-AC-8 [qsl_replay::spine names no qsl_eval path]: FAIL\n");
+            for finding in &findings {
+                summary.push_str(&format!("    {finding}\n"));
+            }
+        }
+    } else {
+        summary.push_str(
+            "  FR-100-AC-8 [qsl_replay::spine names no qsl_eval path]: NOT EVALUATED -- \
+             qsl-replay/src/spine.rs is absent from the --qsl tree\n",
+        );
+    }
     if !missing_flags.is_empty() {
         return Err(Error::new(
             Code::Usage,
