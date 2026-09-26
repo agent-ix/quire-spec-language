@@ -784,7 +784,7 @@ AC-7 (TC-246) is delivered under QSL-269, and AC-13 (TC-379) is partly delivered
   no QSpec accessor (QSL-189 is Canceled, ADR-011 §2.4 amended
   2026-09-24). FR-110 is implemented (QSL-284, PR #478, TC-490).
   QSL-269 retired `ResolvedSourcePackage`, `resolve_source_package`,
-  `SourceAuthority`, `ModelCatalog`, `ModelArtifact`, `ModelConflict` and
+  `SourceAuthority`, `ModelCatalog`, `ModelArtifact`, the complete-package `ModelConflict` and
   `command::resolve_parsed_source` in one change, and moved the closure,
   bundle, limits and identity to `library::bundle` (FR-111), with no old name
   reachable: `qsl_semantics::complete`, `src/command/source_package.rs` and

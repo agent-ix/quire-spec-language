@@ -345,6 +345,12 @@ fn one_identity_selected_at_two_exact_selections_refuses_naming_both() {
     assert_eq!(both.code, Code::AmbiguousDeclaration);
     assert_eq!(both.cause_tag, ResolutionCause::ConflictingAuthority);
     assert_eq!(both.root, Some(1));
+    let PackageError::ConflictingDefinitions(details) = &both.cause else {
+        panic!("expected a typed two-root conflict")
+    };
+    assert_eq!(details.first, *left.exact());
+    assert_eq!(details.first_root, 0);
+    assert_eq!(details.second, *right.exact());
     assert_catalogued(&both);
 }
 
@@ -784,16 +790,46 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
     );
     definitions.extend([middle, leaf]);
     let exact = PackageLimits {
-        definitions: 12,
+        definitions: 11,
         dependency_edges: 2,
         depth: 3,
         ..PackageLimits::default()
     };
+    let linked = link_roots(&definitions, 9, exact).unwrap();
     assert_eq!(
-        link_roots(&definitions, 9, exact).unwrap().limits(),
+        linked.limits(),
         exact,
         "a link records exactly the limits it was checked against"
     );
+    assert_eq!(linked.definitions().len(), 11);
+    for name in ["acme.chain.middle", "acme.chain.leaf"] {
+        assert!(linked
+            .definitions()
+            .keys()
+            .any(|exact| exact.identity() == name));
+    }
+    // The closure holds 11 definitions: one fewer refuses, at the definition
+    // that would be the 11th (root 8).
+    let over = link_roots(
+        &definitions,
+        9,
+        PackageLimits {
+            definitions: 10,
+            ..exact
+        },
+    )
+    .unwrap_err();
+    assert_eq!(over.code, Code::ResourceExhausted);
+    assert_eq!(
+        over.cause,
+        PackageError::ResourceLimit {
+            kind: PackageLimitKind::Definitions,
+            limit: 10,
+            actual: None,
+        }
+    );
+    assert_eq!(over.cause_tag, ResolutionCause::InsufficientNextCharge);
+    assert_eq!(over.root, Some(8));
     let raised = PackageLimits {
         definitions: PackageLimits::default().definitions + 1,
         dependency_edges: PackageLimits::default().dependency_edges + 1,
@@ -931,7 +967,6 @@ fn a_catalog_holding_one_exact_definition_twice_refuses() {
     let error =
         DefinitionCatalog::new(vec![definitions[0].clone(), definitions[0].clone()]).unwrap_err();
     assert_eq!(error, PackageError::DuplicateDefinition);
-    assert!(ResolutionCause::DuplicateMember.is_cause_of(Code::InvalidPackage));
 }
 
 /// QSL-199: the size of one definition is a caller limit

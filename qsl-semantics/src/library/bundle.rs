@@ -34,7 +34,8 @@ pub struct ReaderAuthority {
 
 impl ReaderAuthority {
     /// Test-only fixture authority (`test-support`), so the tests that build
-    /// definitions (`library::bundle_tests`) can. It forges the capability this type exists to withhold, so
+    /// definitions (`library::bundle_tests`) can. It forges the capability
+    /// this type exists to withhold, so
     /// `test-support` must never be enabled by a shipped dependent: only a
     /// `[dev-dependencies]` entry may turn it on, which
     /// `no_shipped_dependency_enables_test_support` checks.
