@@ -1105,3 +1105,37 @@ fn a_halt_inside_an_imported_body_is_located_at_the_callers_call() {
         "the budgets reach into the library body: {stops}"
     );
 }
+
+/// ADR-015 D-5 (`is_package_independent`): a library function over each
+/// accepted non-integer scalar kind -- Decimal, Rational, Text, Option and
+/// a collection -- is callable through an import, and the importing
+/// package's I2 view read admits it. Float is package-independent too, but
+/// the assembler refuses a Float type in a `1-draft` unit (FR-091-AC-19,
+/// TC-405), so no compiled call over it exists to test.
+#[trace("FR-099-AC-5", "TC-446")]
+#[test]
+fn an_imported_call_over_each_independent_scalar_kind_checks_and_reads() {
+    for kind in [
+        "Decimal[0, 100; 0, 2; nearest-even]",
+        "Rational[0, 1; 1, 5]",
+        "Text[1, 100; nfc]",
+        "Option<Boolean>",
+        "Set<Int[0, 9]>[0, 4]",
+    ] {
+        let geometry = library(
+            "test/geometry",
+            "1",
+            "geometry",
+            &format!("function f using v(x: {kind}): Boolean pure {{ true }}\n"),
+        );
+        let d = package_id(&geometry, &DependencyInput::default());
+        let source = unit(&format!(
+            "{}function p using v(x: {kind}): Boolean pure {{ g::f(x) }}\n",
+            import("test/geometry", "1", &d.hex(), "g")
+        ));
+        let compiled = compile_as("u", &source, &input(vec![geometry]))
+            .unwrap_or_else(|refusal| panic!("{kind}: {refusal}"));
+        view_of(&compiled.package, "u")
+            .unwrap_or_else(|refusal| panic!("{kind}: the I2 read admits p: {refusal}"));
+    }
+}
