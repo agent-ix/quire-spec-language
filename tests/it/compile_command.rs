@@ -943,3 +943,90 @@ fn a_library_refusal_renders_over_the_library_source() {
     );
     assert!(from >= start as u64 && to <= end, "{failure}");
 }
+
+/// A `libraries` row selecting `file` as `identity` version `1`, under the
+/// source identity `test:<file>`.
+fn library_row(file: &str, identity: &str, bytes: &[u8]) -> Value {
+    json!({"identity":identity,"version":"1","source":{
+        "file":file,"authority":"agent-ix","identity":format!("test:{file}"),
+        "revision_namespace":"fixture","revision":"fixture:1",
+        "digest":ByteDigest::of(bytes).to_string(),"document":"Library","formal_revision":1}})
+}
+
+/// FR-027-AC-10: an import cycle between two supplied libraries is a
+/// closure-level refusal located inside a library, so it renders against
+/// that library's file and keeps its span, not against the program.
+#[test]
+#[trace("TC-446", "FR-027-AC-10")]
+fn a_cycle_inside_the_libraries_renders_over_the_library_source() {
+    let digest = "e".repeat(64);
+    let import = |identity: &str| {
+        format!(
+            "import \"{identity}\" version \"1\" digest \"{digest}\" as x;\n\
+                 function h using v(): Boolean pure {{ true }}\n"
+        )
+    };
+    let a = format!("{SPINE_HEADER}{}", import("test/b")).into_bytes();
+    let b = format!("{SPINE_HEADER}{}", import("test/a")).into_bytes();
+    // The program's bytes differ from b.native's, so the two digests do.
+    let program = format!(
+        "{SPINE_HEADER}{}function u using v(): Boolean pure {{ false }}\n",
+        import("test/a")
+    )
+    .into_bytes();
+    let directory = tempfile::tempdir().unwrap();
+    spine_request(directory.path(), &program);
+    std::fs::write(directory.path().join("a.native"), &a).unwrap();
+    std::fs::write(directory.path().join("b.native"), &b).unwrap();
+    let path = directory.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    job["request"]["libraries"] = json!([
+        library_row("a.native", "test/a", &a),
+        library_row("b.native", "test/b", &b)
+    ]);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(directory.path());
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "invalid_package", "{failure}");
+    let file = failure["details"]["path"].as_str().unwrap();
+    let text = match file {
+        "a.native" => &a,
+        "b.native" => &b,
+        _ => panic!("the cycle renders against a library file: {failure}"),
+    };
+    let start = usize::try_from(
+        failure["details"]["span"]["start"]["byte"]
+            .as_u64()
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        start >= SPINE_HEADER.len() && start < text.len(),
+        "{failure}"
+    );
+}
+
+/// FR-027-AC-10: library sources count toward the request's `programs`
+/// file limit (QSL-265), so 64 libraries beside the program refuse.
+#[test]
+#[trace("TC-446", "FR-027-AC-10")]
+fn sixty_four_libraries_exceed_the_file_limit() {
+    let library = format!("{SPINE_HEADER}{GEOMETRY}").into_bytes();
+    let directory = tempfile::tempdir().unwrap();
+    spine_library_request(directory.path(), &library, "test/geometry", "1");
+    let path = directory.path().join("compile.json");
+    let mut job: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let row = job["request"]["libraries"][0].clone();
+    job["request"]["libraries"] = json!(vec![row; 64]);
+    std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(directory.path());
+    assert_eq!(output.status.code(), Some(22));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "resource_exhausted", "{failure}");
+    assert_eq!(failure["details"]["limit"], "selected files", "{failure}");
+    assert_eq!(failure["details"]["category"], "programs", "{failure}");
+    assert_eq!(failure["details"]["requested"], 65, "{failure}");
+}

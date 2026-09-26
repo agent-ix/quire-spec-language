@@ -108,5 +108,8 @@ for step 2's digest spellings. Step 5's `g::f(3)` result was amended to
 expect the `Int[0, 9]` conversion node (QSL-262). Step 7
 (the CLI `libraries` member, FR-027-AC-10) passes locally:
 `tests/it/compile_command.rs`
-`a_complete_v1_request_supplies_its_libraries_to_the_spine` and
-`malformed_libraries_refuse_as_invalid_request`.
+`a_complete_v1_request_supplies_its_libraries_to_the_spine`,
+`malformed_libraries_refuse_as_invalid_request`,
+`a_library_refusal_renders_over_the_library_source`,
+`a_cycle_inside_the_libraries_renders_over_the_library_source` and
+`sixty_four_libraries_exceed_the_file_limit`.

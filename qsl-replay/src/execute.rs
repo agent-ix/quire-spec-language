@@ -408,6 +408,9 @@ fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
         })
         .collect::<Result<Vec<_>, ReplayRefusal>>()?;
     let dependencies = DependencyInput::new(libraries).map_err(ReplayRefusal::DependencyInput)?;
+    dependencies
+        .check_unit_owner(&labels(source))
+        .map_err(ReplayRefusal::DependencyInput)?;
     let bytes = provided(source)?;
     let packages = package_input(
         request
@@ -448,7 +451,14 @@ fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
         }
     }
     for entry in request.dependencies() {
-        let selected = selections[entry.identity()].selection.package_id;
+        let Some(selected) = selections.get(entry.identity()) else {
+            return Err(ReplayRefusal::DependencySelections(
+                DependencySelectionsCause::Unselected {
+                    identity: entry.identity().clone(),
+                },
+            ));
+        };
+        let selected = selected.selection.package_id;
         if !selected.matches(&entry.package_id()) {
             return Err(ReplayRefusal::DependencyIdentityMismatch {
                 identity: entry.identity().clone(),

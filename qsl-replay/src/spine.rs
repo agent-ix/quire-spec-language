@@ -526,7 +526,10 @@ impl DependencyInput {
 
     /// Refuse a library whose source has the owner of `unit`, the unit
     /// being compiled against this input (ADR-013 O-04).
-    fn check_unit_owner(&self, unit: &SourceIdentity) -> Result<(), DependencyInputRefusal> {
+    pub(crate) fn check_unit_owner(
+        &self,
+        unit: &SourceIdentity,
+    ) -> Result<(), DependencyInputRefusal> {
         match self
             .libraries
             .iter()

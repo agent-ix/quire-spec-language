@@ -456,20 +456,18 @@ fn complete(
             .map(|document| document.source().text().as_bytes()),
     );
     let libraries = library_sources(request, intake)?;
-    // A refusal is rendered over the source it is located in: a library's
-    // own refusal, wrapped as `Dependency`, over that library's source.
+    // A refusal is rendered over the source its region is in, by that
+    // region's source digest: the program's or one library's, wherever in
+    // the closure it arose. A refusal with no region names the program.
     let spine_failure = |refusal: qsl_replay::spine::CompileRefusal| {
-        let located = match &refusal {
-            qsl_replay::spine::CompileRefusal::Dependency { path, .. } => path
-                .last()
-                .and_then(|identity| {
-                    libraries
-                        .iter()
-                        .find(|(library, _)| library.identity == identity.as_str())
-                })
-                .map_or(source, |(_, read)| read.source()),
-            _ => source,
-        };
+        let located = refusal
+            .region()
+            .and_then(|region| {
+                std::iter::once(source)
+                    .chain(libraries.iter().map(|(_, read)| read.source()))
+                    .find(|candidate| candidate.reference().digest() == region.source().digest())
+            })
+            .unwrap_or(source);
         RunCause::Spine(Box::new(SpineFailure {
             source: located.identity().clone(),
             path: located.path().to_owned(),

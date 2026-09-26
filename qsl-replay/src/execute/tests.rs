@@ -940,6 +940,7 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
         result.settlement(),
         InputSettlement::ReproducedWithoutWitness
     );
+    assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
 
     // The entry's source edited, its digest updated to the new bytes.
     let edited = units_source(BIG_EDITED);
@@ -1049,6 +1050,24 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
             ReplayRefusal::DependencyInput(
                 crate::spine::DependencyInputRefusal::SharedOwner { .. }
             )
+        ),
+        "{refused:?}"
+    );
+
+    // An entry whose source has the proved unit's authority and identity:
+    // refused as the dependency input (rule 3), not as the recompile.
+    let mut unit_owner = units.clone();
+    unit_owner.sources = vec![source_ref(IDENTITY, "r2", importing.units.as_bytes())];
+    let refused = replay(importing.request(vec![unit_owner], provision))
+        .expect_err("the unit's owner is not a library's");
+    assert_eq!(refused.code(), Code::InvalidPackage);
+    assert!(
+        matches!(
+            &refused,
+            ReplayRefusal::DependencyInput(crate::spine::DependencyInputRefusal::SharedOwner {
+                first: crate::spine::SourceHolder::Unit,
+                ..
+            })
         ),
         "{refused:?}"
     );

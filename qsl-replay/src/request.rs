@@ -776,11 +776,6 @@ mod tests {
         assert_ne!(request, other);
     }
 
-    /// FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7 (TC-186): no
-    /// path-typed member exists (structural: `ReplayRequest`'s only byte
-    /// accessor is digest-keyed `ByteProvision::get`); an out-of-domain
-    /// byte-provision digest refuses; a byte/digest mismatch refuses; an
-    /// incomplete byte provision refuses; an oversized encoding refuses.
     /// A `dependencies` entry over one `fill`-byte source under `identity`.
     fn dependency(identity: &str, version: &str, fill: u8) -> (DependencyEntryWire, Vec<u8>) {
         let bytes = source_bytes(fill, 32);
@@ -879,6 +874,11 @@ mod tests {
         ));
     }
 
+    /// FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7 (TC-186): no
+    /// path-typed member exists (structural: `ReplayRequest`'s only byte
+    /// accessor is digest-keyed `ByteProvision::get`); an out-of-domain
+    /// byte-provision digest refuses; a byte/digest mismatch refuses; an
+    /// incomplete byte provision refuses; an oversized encoding refuses.
     #[trace("TC-186", "FR-071-AC-2", "FR-071-AC-5", "FR-071-AC-6", "FR-071-AC-7")]
     #[test]
     fn tc_186_byte_provision_is_digest_only_complete_and_bounded() {
@@ -987,6 +987,13 @@ mod tests {
         oversized.package_contract_version = "x".repeat(MAX_ENCODED_BYTES + 1);
         assert!(matches!(
             ReplayRequest::decode(oversized),
+            Err(ReplayRequestRefusal::BoundExceeded(_))
+        ));
+        // The bound measures the `dependencies` entries too.
+        let (mut entry, bytes) = dependency("test/a", "1", 0x0A);
+        entry.version = "x".repeat(MAX_ENCODED_BYTES + 1);
+        assert!(matches!(
+            ReplayRequest::decode(with_dependencies(vec![(entry, bytes)])),
             Err(ReplayRequestRefusal::BoundExceeded(_))
         ));
     }
