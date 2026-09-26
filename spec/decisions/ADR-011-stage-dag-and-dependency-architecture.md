@@ -542,12 +542,13 @@ required role `root`) or `stale_dependency` (`revision-mismatch`,
 family's catalog (ADR-012 §2, #218). A `model`
 declaration resolves only through I1 (FR-056). This is the header-selection
 successor of `complete::resolve_source_package`, and FR-087-AC-7 retires
-that function once FR-110 is implemented and an owner ruling places its
-QSpec FR-131 capabilities: the closure over a caller-supplied
-`DefinitionCatalog`, the complete-V1 bundle, `PackageLimits`, the
-resolved-graph identity and the compiled-model catalog. The
-`DefinitionLock` rows carry no edges, bytes or facets, so they cannot
-compute those as they stand (FR-087 Behavior, held rows).
+that function once FR-110 is implemented. Its QSpec FR-131 capabilities
+(the closure over a caller-supplied `DefinitionCatalog`, the complete-V1
+bundle, `PackageLimits` and the resolved-graph identity) move to layer-3
+`library::bundle`
+([FR-111](../functional/FR-111-link-a-complete-v1-definition-bundle.md)),
+which computes a bundle and builds no package. The `DefinitionLock` stays
+as FR-110 defines it.
 
 ## 3. Forbidden bypasses
 

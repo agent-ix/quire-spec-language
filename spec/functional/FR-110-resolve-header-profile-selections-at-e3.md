@@ -166,7 +166,7 @@ unchanged.
 ## Status
 
 Specified under QSL-234; not yet implemented -- TC-490 planned. Owner of
-the implementation: the QSL-234 implementation ticket.
+the implementation: QSL-284.
 
 Spine sources declare the placeholder header
 `profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaa…"`,
