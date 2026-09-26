@@ -292,9 +292,10 @@ impl CatalogCoded for ModelCause {
 }
 
 /// TC-452's fixture unit `F`: three LF-terminated lines, 237 bytes, with a
-/// `function f` whose body's literal `5` (path `[1]`) is at byte 225 to
-/// 226, line 3 column 54 to 55 -- recomputed independently of the spec's
-/// own literal digest and span, which it agrees with byte for byte.
+/// `function f` whose body's literal `5` (path `[1]`) is at byte 233 to
+/// 234, line 3 column 54 to 55 -- recomputed independently of the spec's
+/// own literal digest and span, which TC-452 (A05's lane) still spells for
+/// the placeholder header.
 const FIXTURE_F: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\nfunction f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
 
 fn fixture_f_location() -> Location {

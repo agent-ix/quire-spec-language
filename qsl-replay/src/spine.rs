@@ -1207,7 +1207,12 @@ mod tests {
             panic!("expected one refusal");
         };
         assert_eq!(first.cause(), "revision-mismatch");
+        assert_eq!(first.selected.identity(), root.identity);
         assert_eq!(first.selected.version(), "1");
+        assert_eq!(
+            first.selected.digest().digest().to_string(),
+            format!("sha256:{}", root.digest)
+        );
         assert_eq!(first.root.identity, root.identity);
         assert_eq!(first.root.revision_value, root.revision_value);
         assert_eq!(first.root.digest, root.digest);
@@ -1226,6 +1231,10 @@ mod tests {
             panic!("expected one refusal");
         };
         assert_eq!(first.cause(), "byte-digest-mismatch");
+        assert_eq!(first.selected.identity(), root.identity);
+        assert_eq!(first.selected.version(), root.revision_value);
+        assert_eq!(first.root.identity, root.identity);
+        assert_eq!(first.root.revision_value, root.revision_value);
         assert_eq!(
             first.selected.digest().digest().to_string(),
             format!("sha256:{other}")
