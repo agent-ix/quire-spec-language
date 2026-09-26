@@ -185,6 +185,12 @@ pub(super) enum Details<'a> {
     Position {
         position: usize,
     },
+    /// FR-100 "Internal failure at S6a": the `InternalFault`'s own stable
+    /// stage and invariant identifiers (`runtime_invariant`, exit 30).
+    Invariant {
+        stage: &'static str,
+        invariant: &'static str,
+    },
 }
 
 /// FR-100: the program source as `spine-run-result/1` renders one -- its
@@ -206,17 +212,62 @@ pub(super) enum SpineValue {
     Integer { decimal: String },
 }
 
-/// FR-100's `outcome` member: the S6a outcome mapping this build converts
-/// (completed, kernel/family undefined, incomplete, family refused). A
-/// kernel refusal is not converted by this build (see
-/// `qsl_replay::spine::call`'s deferred note); it never reaches this type.
+/// FR-096/FR-100: a `refused` record's or cause's resolved locus -- the
+/// `sha256:` digest of the source the region belongs to, and its span
+/// rendered over that source.
+#[derive(Serialize)]
+pub(super) struct SpineLocus {
+    pub source_digest: String,
+    pub span: LocatedSpan,
+}
+
+/// FR-096/FR-100: the declaration and child-index path a `refused` outcome
+/// arose at (`Evaluation.location`).
+#[derive(Serialize)]
+pub(super) struct SpineLocation {
+    pub origin: SpineOrigin,
+    pub path: Vec<usize>,
+}
+
+/// FR-096/FR-100's `location.origin`.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub(super) enum SpineOrigin {
+    Body { function: String, index: usize },
+    Measure { function: String, index: usize },
+    Expression,
+    TypeDeclaration { name: String },
+}
+
+/// FR-100's `outcome` member. `Refused`'s members follow the refusal
+/// table's three rows exactly, by which of `code`/`cause`/`fields`/`locus`
+/// are present: a record row carries all four (plus `location` when known);
+/// a family-no-record row carries `code`/`cause` and `location` alone; a
+/// kernel-no-record row carries only `location`, when known.
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(super) enum SpineOutcome {
-    Completed { value: SpineValue },
-    Refused { code: &'static str },
-    Undefined { reason: &'static str },
-    Incomplete { limit: &'static str },
+    Completed {
+        value: SpineValue,
+    },
+    Refused {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        code: Option<&'static str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cause: Option<&'static str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        fields: Option<std::collections::BTreeMap<&'static str, String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        locus: Option<SpineLocus>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        location: Option<SpineLocation>,
+    },
+    Undefined {
+        reason: &'static str,
+    },
+    Incomplete {
+        limit: &'static str,
+    },
 }
 
 /// The `spine-run-result/1` outcome document (FR-100).

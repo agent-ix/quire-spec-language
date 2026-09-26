@@ -37,7 +37,7 @@ fn spine_run_request(directory: &Path, program: &[u8], call: Value) {
     std::fs::write(directory.join("program.native"), program).unwrap();
     let request = json!({"format":"native-run/1","request":{
         "models":[],
-        "program":{"source":program_source(program),"clauses":[]},
+        "program":{"source":program_source(program)},
         "call":call,
     }});
     std::fs::write(
@@ -100,6 +100,27 @@ fn tc_450_step_1_seven_completes_through_the_spine() {
         document["outcome"],
         json!({"kind": "completed", "value": {"kind": "integer", "decimal": "7"}})
     );
+    // FND-008: the whole document, not only its members individually --
+    // catches a stray extra member the per-field assertions above would
+    // miss.
+    assert_eq!(
+        document,
+        json!({
+            "format": "spine-run-result/1",
+            "request_digest": ByteDigest::of(&request_bytes).to_string(),
+            "package_id": compiled.emitted.package_id().hex(),
+            "source": {
+                "authority": "agent-ix",
+                "identity": "test:spine-run",
+                "revision_namespace": "fixture",
+                "revision": "fixture:1",
+                "digest": ByteDigest::of(&program).to_string(),
+                "path": "program.native",
+            },
+            "function": "seven",
+            "outcome": {"kind": "completed", "value": {"kind": "integer", "decimal": "7"}},
+        })
+    );
 }
 
 /// FR-100-AC-2 (TC-450 step 3): a program declaring `edition "7-draft"`
@@ -145,7 +166,7 @@ fn tc_450_step_4_native_only_members_refuse_before_any_model_is_read() {
                 "file":"missing-model.json","authority":"agent-ix","identity":"acme/model",
                 "revision_namespace":"fixture","revision":"fixture:1",
                 "digest":format!("sha256:{}", "0".repeat(64)),"document":"M","formal_revision":1}}],
-            "program":{"source":program_source(&program),"clauses":[]},
+            "program":{"source":program_source(&program)},
             "call":call("seven", json!([])),
         }})
     };
@@ -189,6 +210,14 @@ fn tc_450_step_4_native_only_members_refuse_before_any_model_is_read() {
                 job["request"]["program"]["clauses"] = json!([{
                     "name":"c","owner":{"package":"p","requirement":"r","revision":1},
                     "clause":"c","point":{"kind":"initialization","name":"n"}}]);
+            }) as Mutation,
+        ),
+        (
+            // FND-002: any `clauses` key at all -- including an empty array
+            // -- is "carrying" `clauses` for a `1-draft` program.
+            "clauses (empty array)",
+            (|job: &mut Value| {
+                job["request"]["program"]["clauses"] = json!([]);
             }) as Mutation,
         ),
         (
@@ -274,6 +303,35 @@ fn tc_451_step_1_arguments_bind_by_declared_name() {
     assert_eq!(
         document["outcome"],
         json!({"kind": "completed", "value": {"kind": "boolean", "value": false}})
+    );
+
+    // FND-008: CLI-level coverage for `flag` and `id`, not only `lt`.
+    let directory = tempfile::tempdir().unwrap();
+    spine_run_request(
+        directory.path(),
+        &program,
+        call("flag", json!([{"parameter": "b", "value": 1}])),
+    );
+    let output = run(directory.path());
+    assert_eq!(output.status.code(), Some(0));
+    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        document["outcome"],
+        json!({"kind": "completed", "value": {"kind": "boolean", "value": true}})
+    );
+
+    let directory = tempfile::tempdir().unwrap();
+    spine_run_request(
+        directory.path(),
+        &program,
+        call("id", json!([{"parameter": "x", "value": 4}])),
+    );
+    let output = run(directory.path());
+    assert_eq!(output.status.code(), Some(0));
+    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        document["outcome"],
+        json!({"kind": "completed", "value": {"kind": "integer", "decimal": "4"}})
     );
 }
 
@@ -451,7 +509,7 @@ fn tc_450_step_4_malformed_work_units_refuses() {
         placeholder_call["work_units"] = json!(0);
         let request = json!({"format":"native-run/1","request":{
             "models":[],
-            "program":{"source":program_source(&program),"clauses":[]},
+            "program":{"source":program_source(&program)},
             "call": placeholder_call,
         }});
         let text = serde_json::to_string(&request).unwrap().replacen(
@@ -518,4 +576,78 @@ fn tc_450_step_2_zero_draft_requests_are_unaffected() {
     assert!(output.stderr.is_empty());
     let document: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(document["format"], "native-run-result/1");
+    // FND-008: a stronger oracle than the format alone -- the fixture's
+    // clause (`true implies flag`, `flag` bound `true`) actually evaluates
+    // and completes `true`, not merely reaching some other stage or a
+    // refusal that happens to still exit 0.
+    assert_eq!(document["stage"], "evaluate");
+    assert_eq!(document["truth"], true);
+}
+
+/// FR-100-AC-3 (TC-450 step 6): a `1-draft` request whose `libraries`
+/// supplies an imported library and whose `models` supplies a domain
+/// package the program selects runs, exit 0. Neither the imported function
+/// nor the model type is called: this is FR-100's own text ("supplies ...
+/// and ... selects"), not a claim that the call itself touches them.
+#[test]
+#[trace("TC-450", "FR-100-AC-3")]
+fn tc_450_step_6_libraries_and_models_both_present_runs() {
+    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+    const LIBRARY: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
+    let library = format!("{HEADER}{LIBRARY}").into_bytes();
+    let library_digest = qsl_replay::spine::compile(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:geometry", "fixture", "fixture:1"),
+        "geometry.native",
+        &library,
+        &std::collections::BTreeMap::new(),
+        &qsl_replay::spine::DependencyInput::default(),
+        qsl_replay::spine::SpineLimits::default(),
+    )
+    .unwrap()
+    .emitted
+    .package_id()
+    .hex();
+    let document = std::fs::read("tests/fixtures/spine-model.semantic-ir.json").unwrap();
+    let program = format!(
+        "{HEADER}\
+         import \"test/geometry\" version \"1\" digest \"{library_digest}\" as g;\n\
+         model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd\";\n\
+         function seven using v(): Integer pure {{ 7 }}\n"
+    )
+    .into_bytes();
+
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("program.native"), &program).unwrap();
+    std::fs::write(directory.path().join("geometry.native"), &library).unwrap();
+    std::fs::write(directory.path().join("orders.json"), &document).unwrap();
+    let request = json!({"format":"native-run/1","request":{
+        "models":[{"format":"semantic-ir/2.0.0","source":{
+            "file":"orders.json","authority":"agent-ix","identity":"acme/orders",
+            "revision_namespace":"fixture","revision":"fixture:1",
+            "digest":ByteDigest::of(&document).to_string(),"document":"Orders","formal_revision":1}}],
+        "libraries":[{"identity":"test/geometry","version":"1","source":{
+            "file":"geometry.native","authority":"agent-ix","identity":"test:geometry",
+            "revision_namespace":"fixture","revision":"fixture:1",
+            "digest":ByteDigest::of(&library).to_string(),"document":"Geometry","formal_revision":1}}],
+        "program":{"source":program_source(&program)},
+        "call":call("seven", json!([])),
+    }});
+    std::fs::write(
+        directory.path().join("request.json"),
+        serde_json::to_vec(&request).unwrap(),
+    )
+    .unwrap();
+    let output = run(directory.path());
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        document["outcome"],
+        json!({"kind": "completed", "value": {"kind": "integer", "decimal": "7"}})
+    );
 }

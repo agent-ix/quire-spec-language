@@ -337,8 +337,7 @@ fn spine_request(directory: &Path, program: &[u8]) {
     let request = json!({"format":"native-compile/1","request":{"models":[],"program":{
         "source":{"file":"program.native","authority":"agent-ix","identity":"test:spine",
         "revision_namespace":"fixture","revision":"fixture:1",
-        "digest":ByteDigest::of(program).to_string(),"document":"Spine","formal_revision":1},
-        "clauses":[]}}});
+        "digest":ByteDigest::of(program).to_string(),"document":"Spine","formal_revision":1}}}});
     std::fs::write(
         directory.join("compile.json"),
         serde_json::to_vec(&request).unwrap(),
@@ -532,7 +531,20 @@ fn a_complete_v1_request_selecting_native_inputs_refuses() {
             "{failure}"
         );
     }
+    // FND-002: any `clauses` key at all -- including an empty array --
+    // refuses a `1-draft` program; only its outright absence admits one.
     job["request"]["program"]["clauses"] = json!([]);
+    std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
+    let output = compile(directory.path());
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(failure["code"], "invalid-request", "{failure}");
+
+    job["request"]["program"]
+        .as_object_mut()
+        .unwrap()
+        .remove("clauses");
     std::fs::write(&request, serde_json::to_vec(&job).unwrap()).unwrap();
     let output = compile(directory.path());
     assert_eq!(

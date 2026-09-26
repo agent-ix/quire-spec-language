@@ -1217,22 +1217,39 @@ pub(crate) fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
 /// `qsl_replay_src` is the `qsl-replay` crate's `src/` directory. Returns
 /// one finding per offending public item, `"<file>: <description>"`.
 pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<Vec<String>> {
-    struct PathFinder {
+    // FR-100-AC-8: a `qsl_eval` path is named either literally
+    // (`qsl_eval::value::Evaluation`) or through a local name a `use` import
+    // bound to one (`use qsl_eval::value::Evaluation as Ev;` then `Ev` in a
+    // signature or field type) -- `aliases` holds every such local name this
+    // file's own top-level `use` items bind, so both spellings are caught by
+    // the same identifier scan. A glob import (`use qsl_eval::value::*;`)
+    // binds names this check cannot enumerate; that is a documented
+    // limitation, not a case this check silently passes over the *literal*
+    // path for.
+    struct PathFinder<'a> {
+        aliases: &'a std::collections::HashSet<String>,
         found: bool,
     }
-    impl<'ast> syn::visit::Visit<'ast> for PathFinder {
+    impl<'ast> syn::visit::Visit<'ast> for PathFinder<'_> {
         // A type path's leading segment (`qsl_eval::value::Evaluation`) and
         // a `use` tree's own identifiers (`UseTree::Path`/`UseTree::Name`,
         // which hold a bare `Ident`, never a `Path`) both surface here, so
-        // visiting every identifier catches both forms.
+        // visiting every identifier catches both forms, plus any aliased
+        // local name this file's own imports bound to a `qsl_eval` item.
         fn visit_ident(&mut self, ident: &'ast proc_macro2::Ident) {
-            if ident == "qsl_eval" {
+            if ident == "qsl_eval" || self.aliases.contains(&ident.to_string()) {
                 self.found = true;
             }
         }
     }
-    fn names_qsl_eval(visit: impl FnOnce(&mut PathFinder)) -> bool {
-        let mut finder = PathFinder { found: false };
+    fn names_qsl_eval(
+        aliases: &std::collections::HashSet<String>,
+        visit: impl FnOnce(&mut PathFinder<'_>),
+    ) -> bool {
+        let mut finder = PathFinder {
+            aliases,
+            found: false,
+        };
         visit(&mut finder);
         finder.found
     }
@@ -1251,6 +1268,42 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
             syn::Item::Use(_) => "use".to_owned(),
             _ => return None,
         })
+    }
+    // Every local name a top-level `use` item in this file binds to a
+    // `qsl_eval` path, walking `UseTree::Path`/`Name`/`Rename`/`Group`
+    // recursively; `UseTree::Glob` binds no enumerable name (see the type
+    // doc above).
+    fn qsl_eval_aliases(file: &syn::File) -> std::collections::HashSet<String> {
+        fn walk(tree: &syn::UseTree, under_qsl_eval: bool, out: &mut std::collections::HashSet<String>) {
+            match tree {
+                syn::UseTree::Path(path) => {
+                    walk(&path.tree, under_qsl_eval || path.ident == "qsl_eval", out);
+                }
+                syn::UseTree::Name(name) => {
+                    if under_qsl_eval {
+                        out.insert(name.ident.to_string());
+                    }
+                }
+                syn::UseTree::Rename(rename) => {
+                    if under_qsl_eval {
+                        out.insert(rename.rename.to_string());
+                    }
+                }
+                syn::UseTree::Group(group) => {
+                    for tree in &group.items {
+                        walk(tree, under_qsl_eval, out);
+                    }
+                }
+                syn::UseTree::Glob(_) => {}
+            }
+        }
+        let mut aliases = std::collections::HashSet::new();
+        for item in &file.items {
+            if let syn::Item::Use(use_item) = item {
+                walk(&use_item.tree, false, &mut aliases);
+            }
+        }
+        aliases
     }
 
     let mut files = vec![qsl_replay_src.join("spine.rs")];
@@ -1273,6 +1326,7 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
         let text = fs::read_to_string(file).map_err(|error| Error::io(file, error))?;
         let parsed = syn::parse_file(&text)
             .map_err(|error| Error::new(Code::Usage, format!("{}: {error}", file.display())))?;
+        let aliases = qsl_eval_aliases(&parsed);
         for item in &parsed.items {
             // `mod tests { ... }` is test-only code, not part of the shipped
             // public surface, even where a stray `pub` appears inside it.
@@ -1280,6 +1334,23 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
                 if module.ident == "tests" {
                     continue;
                 }
+            }
+            // FND-001: an inherent `impl` block's own `pub fn` methods are a
+            // real public surface (`impl Selected { pub fn f(...) }`); a
+            // trait impl's methods carry no `pub` of their own (visibility
+            // is the trait's), so only an explicitly `pub` method here is in
+            // scope.
+            if let syn::Item::Impl(item_impl) = item {
+                for impl_item in &item_impl.items {
+                    if let syn::ImplItem::Fn(method) = impl_item {
+                        if is_pub(&method.vis)
+                            && names_qsl_eval(&aliases, |finder| finder.visit_signature(&method.sig))
+                        {
+                            findings.push(format!("{}: impl fn {}", file.display(), method.sig.ident));
+                        }
+                    }
+                }
+                continue;
             }
             let Some(visibility) = item_visibility(item) else {
                 continue;
@@ -1289,9 +1360,9 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
             }
             let violated = match item {
                 syn::Item::Fn(function) => {
-                    names_qsl_eval(|finder| finder.visit_signature(&function.sig))
+                    names_qsl_eval(&aliases, |finder| finder.visit_signature(&function.sig))
                 }
-                _ => names_qsl_eval(|finder| finder.visit_item(item)),
+                _ => names_qsl_eval(&aliases, |finder| finder.visit_item(item)),
             };
             if violated {
                 if let Some(name) = item_name(item) {
@@ -1307,9 +1378,12 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
     let text = fs::read_to_string(&lib).map_err(|error| Error::io(&lib, error))?;
     let parsed = syn::parse_file(&text)
         .map_err(|error| Error::new(Code::Usage, format!("{}: {error}", lib.display())))?;
+    let lib_aliases = qsl_eval_aliases(&parsed);
     for item in &parsed.items {
         if let syn::Item::Use(use_item) = item {
-            if is_pub(&use_item.vis) && names_qsl_eval(|finder| finder.visit_item_use(use_item)) {
+            if is_pub(&use_item.vis)
+                && names_qsl_eval(&lib_aliases, |finder| finder.visit_item_use(use_item))
+            {
                 findings.push(format!(
                     "{}: re-export names a qsl_eval path",
                     lib.display()
@@ -2540,5 +2614,44 @@ mod tests {
         let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert!(findings[0].contains("fn run"));
+    }
+
+    /// FND-001: a `pub` field typed through a `use qsl_eval::... as X`
+    /// alias is a violation, even though its own type text never spells
+    /// `qsl_eval` literally.
+    #[trace("TC-452", "FR-100-AC-8")]
+    #[test]
+    fn tc_452_spine_surface_check_resolves_an_aliased_import_in_a_pub_field() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "spine.rs",
+            "use qsl_eval::value::Evaluation as Ev;\n\
+             pub struct Selected {\n    pub value: Ev,\n}\n",
+        );
+        write(dir.path(), "lib.rs", "pub mod spine;\n");
+        let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].contains("struct Selected"), "{findings:?}");
+    }
+
+    /// FND-001: a `pub fn` inside an inherent `impl` block returning a
+    /// `qsl_eval` type is a violation; `item_visibility`/`item_name` never
+    /// classified `syn::Item::Impl` before, so this bypass this is a real
+    /// probe against, not only against the alias resolution above.
+    #[trace("TC-452", "FR-100-AC-8")]
+    #[test]
+    fn tc_452_spine_surface_check_scans_pub_fn_inside_impl_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "spine.rs",
+            "pub struct Selected;\n\
+             impl Selected {\n    pub fn evaluation(&self) -> qsl_eval::value::Evaluation { todo!() }\n}\n",
+        );
+        write(dir.path(), "lib.rs", "pub mod spine;\n");
+        let findings = spine_surface_qsl_eval_findings(dir.path()).unwrap();
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].contains("impl fn evaluation"), "{findings:?}");
     }
 }

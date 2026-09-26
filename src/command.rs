@@ -362,6 +362,13 @@ impl RunCause {
     pub fn exit_code(&self) -> u8 {
         match self {
             Self::Output(_) => 30,
+            // FR-100 "Internal failure at S6a": a checked-program invariant
+            // failing is a tool failure, so this path exits 30 directly and
+            // never through `Code::exit_code` (which would give 20 for
+            // `Code::RuntimeInvariant`).
+            Self::SpineRun(refusal) if matches!(**refusal, qsl_replay::spine::RunRefusal::Fault(_)) => {
+                30
+            }
             _ => self.code().exit_code(),
         }
     }
@@ -954,7 +961,10 @@ fn run_complete(
     let spine_call = qsl_replay::spine::Call {
         function: call.function.clone(),
         arguments,
-        accounting: qsl_replay::spine::default_accounting(call.work_units.unwrap_or(1_000_000)),
+        accounting: qsl_replay::spine::default_accounting(
+            call.work_units
+                .unwrap_or(qsl_replay::spine::DEFAULT_WORK_UNITS),
+        ),
     };
     let (package_id, outcome) = qsl_replay::spine::run(
         source.source().identity().clone(),

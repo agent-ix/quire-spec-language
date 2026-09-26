@@ -273,8 +273,11 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                         position: *position,
                     }
                 }
-                qsl_replay::spine::RunRefusal::Compile(_)
-                | qsl_replay::spine::RunRefusal::Fault(_) => types::Details::None,
+                qsl_replay::spine::RunRefusal::Compile(_) => types::Details::None,
+                qsl_replay::spine::RunRefusal::Fault(fault) => types::Details::Invariant {
+                    stage: fault.stage(),
+                    invariant: fault.invariant(),
+                },
             },
         ),
         RunCause::Lowering {
@@ -318,6 +321,49 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
     })
 }
 
+/// FR-096/FR-100: `Evaluation.location`'s `origin`, rendered by kind.
+fn spine_origin(origin: &qsl_semantics::check::Origin) -> types::SpineOrigin {
+    match origin {
+        qsl_semantics::check::Origin::Body { function, index } => types::SpineOrigin::Body {
+            function: function.clone(),
+            index: *index,
+        },
+        qsl_semantics::check::Origin::Measure { function, index } => types::SpineOrigin::Measure {
+            function: function.clone(),
+            index: *index,
+        },
+        qsl_semantics::check::Origin::Expression => types::SpineOrigin::Expression,
+        qsl_semantics::check::Origin::TypeDeclaration { name } => {
+            types::SpineOrigin::TypeDeclaration { name: name.clone() }
+        }
+    }
+}
+
+/// FR-096/FR-100: `Evaluation.location`, rendered as `{origin, path}`.
+fn spine_location(location: &qsl_semantics::check::Location) -> types::SpineLocation {
+    types::SpineLocation {
+        origin: spine_origin(&location.origin),
+        path: location.path.clone(),
+    }
+}
+
+/// FR-096/FR-100: a record's resolved locus, rendered as
+/// `{source_digest, span}`.
+fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
+    types::SpineLocus {
+        source_digest: locus.source_digest,
+        span: locus.span,
+    }
+}
+
+/// A refusal's exit status: the record's or cause's catalog code exit
+/// status, or 20 when the code names no `Code` (FR-100). Never used for a
+/// kernel-no-record row, which is always exit 20 by the mapping table.
+fn refusal_exit_code(code: qsl_foundation::diagnostic::CatalogCode) -> u8 {
+    qsl_foundation::Code::from_code(code.code())
+        .map_or(20, qsl_foundation::Code::exit_code)
+}
+
 /// FR-100: render `spine-run-result/1`, the outcome mapping's stdout
 /// document and FR-301 exit status, from `qsl_replay::spine::run`'s result.
 pub(super) fn spine_run_result(
@@ -327,7 +373,7 @@ pub(super) fn spine_run_result(
     function: &str,
     outcome: qsl_replay::spine::CallOutcome,
 ) -> super::Result<RunResult> {
-    use qsl_replay::spine::{CallOutcome, CallValue};
+    use qsl_replay::spine::{CallOutcome, CallRefusal, CallValue};
     let (exit_code, outcome) = match outcome {
         CallOutcome::Completed(CallValue::Boolean(value)) => (
             0,
@@ -343,10 +389,39 @@ pub(super) fn spine_run_result(
                 },
             },
         ),
-        CallOutcome::Refused { code } => (
-            code.exit_code(),
+        CallOutcome::Refused(CallRefusal::Record {
+            code,
+            fields,
+            locus,
+            location,
+        }) => (
+            refusal_exit_code(code),
             types::SpineOutcome::Refused {
-                code: code.as_str(),
+                code: Some(code.code()),
+                cause: Some(code.cause()),
+                fields: Some(fields),
+                locus: locus.map(spine_locus),
+                location: location.as_ref().map(spine_location),
+            },
+        ),
+        CallOutcome::Refused(CallRefusal::Family { code, location }) => (
+            refusal_exit_code(code),
+            types::SpineOutcome::Refused {
+                code: Some(code.code()),
+                cause: Some(code.cause()),
+                fields: None,
+                locus: None,
+                location: location.as_ref().map(spine_location),
+            },
+        ),
+        CallOutcome::Refused(CallRefusal::Kernel { location }) => (
+            20,
+            types::SpineOutcome::Refused {
+                code: None,
+                cause: None,
+                fields: None,
+                locus: None,
+                location: location.as_ref().map(spine_location),
             },
         ),
         CallOutcome::Undefined { reason } => (20, types::SpineOutcome::Undefined { reason }),
