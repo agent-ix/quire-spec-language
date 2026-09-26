@@ -65,14 +65,75 @@ pub(super) struct Request {
     pub models: Vec<Model>,
     #[serde(deserialize_with = "from_object")]
     pub program: Program,
-    #[serde(deserialize_with = "deserialize_objects")]
-    pub snapshots: Vec<FileSelection<SnapshotRef>>,
-    #[serde(deserialize_with = "deserialize_objects")]
-    pub invocations: Vec<FileSelection<InvocationRef>>,
-    #[serde(deserialize_with = "from_object")]
-    pub selection: Selection,
+    // FR-026's native-only members. A `0-draft` program (or one declaring
+    // no edition) requires each; a `1-draft` program admits none of them
+    // (FR-100), so each is optional here and the edition-specific
+    // requirement is applied after the program's declared edition is read
+    // (`RunSelection::new`/`native_only`).
+    #[serde(default, deserialize_with = "deserialize_objects_opt")]
+    pub snapshots: Option<Vec<FileSelection<SnapshotRef>>>,
+    #[serde(default, deserialize_with = "deserialize_objects_opt")]
+    pub invocations: Option<Vec<FileSelection<InvocationRef>>>,
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub selection: Option<Selection>,
     #[serde(default, deserialize_with = "from_object")]
     pub limits: Limits,
+    /// FR-100: a `1-draft` program's named call. Absent for a `0-draft`
+    /// program.
+    #[serde(default, deserialize_with = "from_object_opt")]
+    pub call: Option<Call>,
+    /// FR-100/ADR-015 D-1: a `1-draft` program's supplied libraries; none
+    /// when absent. A `0-draft` program admits none (FR-026).
+    #[serde(default, deserialize_with = "deserialize_objects")]
+    pub libraries: Vec<Library>,
+}
+
+// Present only when the field itself is present; `#[serde(default)]` alone
+// supplies `None` when the JSON key is absent (`from_object`/
+// `deserialize_objects` are only ever invoked for a present key).
+fn from_object_opt<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(
+    decoder: D,
+) -> Result<Option<T>, D::Error> {
+    from_object(decoder).map(Some)
+}
+
+fn deserialize_objects_opt<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(
+    decoder: D,
+) -> Result<Option<Vec<T>>, D::Error> {
+    deserialize_objects(decoder).map(Some)
+}
+
+/// The `call` member of a `1-draft` native-run/1 request (FR-100): which
+/// function to call, its arguments, and an optional `work_units` limit.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Call {
+    pub function: String,
+    #[serde(deserialize_with = "deserialize_objects")]
+    pub arguments: Vec<Argument>,
+    /// FR-100: a JSON integer from 0 to `u64::MAX` when present. A present
+    /// `null` is not admitted: unlike `from_object_opt`/
+    /// `deserialize_objects_opt` (wrapped so `#[serde(default)]` alone
+    /// covers absence), this deserializes `u64` directly -- so serde only
+    /// ever calls it for a present key, and a present `null` fails `u64`'s
+    /// own visitor rather than silently becoming the default.
+    #[serde(default, deserialize_with = "work_units")]
+    pub work_units: Option<u64>,
+}
+
+fn work_units<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<u64>, D::Error> {
+    u64::deserialize(decoder).map(Some)
+}
+
+/// One `{parameter, value}` argument of a [`Call`] (FR-100): `value` is a
+/// JSON integer in the signed 64-bit range, read as `i64` so an out-of-range
+/// or non-integer JSON value refuses at decode (`invalid-request`), never
+/// reaching `qsl_replay::spine::run`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Argument {
+    pub parameter: String,
+    pub value: i64,
 }
 
 #[derive(Deserialize)]
@@ -114,8 +175,11 @@ pub(super) struct Program {
     pub extraction: Option<Extraction>,
     #[serde(deserialize_with = "from_object")]
     pub source: SourceFile,
-    #[serde(deserialize_with = "deserialize_objects")]
-    pub clauses: Vec<Binding>,
+    /// A `0-draft` program's authored clause bindings, required (FR-026); a
+    /// `1-draft` program carries none (FR-100), so any presence at all --
+    /// including an empty array -- is "carrying" `clauses` and refuses.
+    #[serde(default, deserialize_with = "deserialize_objects_opt")]
+    pub clauses: Option<Vec<Binding>>,
 }
 
 #[cfg(feature = "quire-extraction")]

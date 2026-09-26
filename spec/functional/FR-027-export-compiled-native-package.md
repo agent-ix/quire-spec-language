@@ -38,8 +38,11 @@ For a `0-draft` program, successful stdout is exactly NativePackage::bytes in
 native-linked-package/1 format, with no command wrapper or extra newline; exit 0.
 For a `1-draft` program, successful stdout is exactly the
 `quire.checked-package/v2` bytes `qsl_replay::spine::compile` writes for that
-source, with no command wrapper or extra newline; exit 0. A `1-draft` request
-selects no clause bindings, and each model it selects is a domain package
+source, with no command wrapper or extra newline; exit 0. A `1-draft`
+program's `program` carries no `clauses` key at all -- any presence,
+including an empty array, refuses with `invalid-request` (FR-027-AC-7),
+consistent with FR-100's `1-draft` request. Each model a `1-draft` request
+selects is a domain package
 document in format `semantic-ir/2.0.0`, read under its source digest and handed
 to spine `compile` as FR-056's package input; the program's `model`
 declarations select from it by `sha256-jcs` digest, and the v2 lock's
