@@ -767,3 +767,7 @@ the fixture comparison are specified under QSL-225. Ownership, decided here: QSL
 the lowering and the keys in `check`; QSL-6 S1b serializes the lowered nodes
 and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
 postcondition lowering backs it. Remaining work: #218.
+
+AC-17 is backed (QSL-260): `diagnostics_catalog_matches_the_emitted_reference`
+(`qsl-package/src/emit/tests.rs`) confirms the public `diagnostics_catalog()`
+accessor equals the emitted `diagnostics.catalog` reference.

@@ -367,19 +367,10 @@ fn diagnostics_catalog_matches_the_emitted_reference() {
     let emission = emit(&package(vec![t()]));
     assert!(matches!(read_back(&emission), Read::Verified { .. }));
     let wire = wire(&emission);
-    let catalog = crate::diagnostics_catalog();
     assert_eq!(
-        wire["diagnostics"]["catalog"],
-        json!({
-            "authority": catalog.authority,
-            "identity": catalog.identity,
-            "revision": {
-                "namespace": catalog.revision.namespace,
-                "value": catalog.revision.value,
-            },
-            "digest_domain": catalog.digest_domain,
-            "digest": catalog.digest,
-        })
+        serde_json::from_value::<CheckedArtifactRef>(wire["diagnostics"]["catalog"].clone())
+            .unwrap(),
+        crate::diagnostics_catalog()
     );
 }
 
