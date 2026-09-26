@@ -167,5 +167,5 @@ added TC-444 coverage of a predicate whose body calls another declared
 function (the QSL-22 Layer 3 exemplar's shape), confirming the S4 emitter
 writes the checked `call` node codegen's FR-021 oracle generator reads.
 
-AC-6 and AC-7 are specified (ADR-015 D-4) and not delivered; QSL-255 part
-(b) owns them.
+AC-6 and AC-7 (ADR-015 D-4) are implemented under QSL-255 part (b);
+TC-444 step 7 passes locally.
