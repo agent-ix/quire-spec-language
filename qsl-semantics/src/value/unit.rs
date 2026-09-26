@@ -184,6 +184,29 @@ impl DimensionPreimage {
         })
     }
 
+    /// Build a preimage from its parts, applying the schema checks
+    /// [`Self::from_json`] applies (`NonCanonicalPreimage`). `terms` name
+    /// base dimensions by node key, in the order the caller keys them:
+    /// ascending by key (checked at [`UnitGraph::admit`]). Empty terms
+    /// declare a base dimension.
+    pub fn new(
+        owner: NodeOwner,
+        qualified_declaration: Vec<String>,
+        terms: Vec<(NodeKey, Integer)>,
+    ) -> Result<Self, InvalidSemanticGraph> {
+        if !owner.is_well_formed() || !is_qualified_name(&qualified_declaration) {
+            return Err(refuse(SemanticGraphCause::NonCanonicalPreimage));
+        }
+        Ok(Self {
+            owner,
+            qualified_declaration,
+            terms: terms
+                .into_iter()
+                .map(|(key, exponent)| (WireNodeId::from_digest(*key.as_bytes()), exponent))
+                .collect(),
+        })
+    }
+
     /// The owner projection.
     pub fn owner(&self) -> &NodeOwner {
         &self.owner
@@ -265,6 +288,32 @@ pub struct UnitPreimage {
 }
 
 impl UnitPreimage {
+    /// Build a preimage from its parts, applying the schema checks
+    /// [`Self::from_json`] applies (`NonCanonicalPreimage`). `scale` and
+    /// `offset` are `Rational`s, so they are reduced with a positive
+    /// denominator; `target` is `None` for a canonical root.
+    pub fn new(
+        owner: NodeOwner,
+        qualified_declaration: Vec<String>,
+        dimension: NodeKey,
+        target: Option<NodeKey>,
+        scale: &Rational,
+        offset: &Rational,
+    ) -> Result<Self, InvalidSemanticGraph> {
+        if !owner.is_well_formed() || !is_qualified_name(&qualified_declaration) {
+            return Err(refuse(SemanticGraphCause::NonCanonicalPreimage));
+        }
+        let wire = |key: NodeKey| WireNodeId::from_digest(*key.as_bytes());
+        Ok(Self {
+            owner,
+            qualified_declaration,
+            dimension: wire(dimension),
+            target: target.map(wire),
+            scale: (scale.numerator().clone(), scale.denominator().clone()),
+            offset: (offset.numerator().clone(), offset.denominator().clone()),
+        })
+    }
+
     /// Read a preimage object; any schema violation is non-canonical.
     pub fn from_json(value: serde_json::Value) -> Result<Self, InvalidSemanticGraph> {
         let non_canonical = refuse(SemanticGraphCause::NonCanonicalPreimage);

@@ -22,8 +22,9 @@ use super::dispatch::{Construct, FormsCause, FormsFailure, FormsLimits};
 use super::spans::{DeclarationSpans, ExpressionSpans};
 use super::syntax::{
     Accumulation, AliasForm, BinaryOperator, BinderQuery, BuiltinType, DeclarationForm,
-    DeclarationKind, DeclaredName, EnumForm, EnumMemberForm, Expression, FieldInitializer,
-    FunctionDeclaration, RecordFieldForm, RecordForm, TupleForm, TypeForm, TypeFormHead,
+    DeclarationKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
+    ExactNumberForm, ExactNumberKind, Expression, FieldInitializer, FunctionDeclaration, NameForm,
+    RecordFieldForm, RecordForm, TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm,
     UsingAlias,
 };
 
@@ -277,6 +278,113 @@ pub(crate) fn enumeration(construct: Construct<'_>) -> Result<DeclarationForm, F
         name: declared_name(&items, node)?,
         ordered: has_token(&items, b"ordered"),
         members,
+    }))
+}
+
+/// A `QualifiedName` node as a name form.
+fn name_form(cst: &LosslessCst, node: &CstNode) -> Result<NameForm, FormsFailure> {
+    Ok(NameForm {
+        name: spelled(cst, node)?,
+        span: node.span(),
+    })
+}
+
+/// `dimension Name;` and `dimension Name = T * U^-2 / V;` (FR-091
+/// "Dimension form"). Terms stay as written: the assembler normalizes.
+pub(crate) fn dimension(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+    let cst = construct.cst;
+    let node = production_node(construct)?;
+    let items = items(cst, node);
+    let mut terms = Vec::new();
+    let mut operator = None;
+    for item in &items {
+        match item {
+            Item::Token(token) => match token.spelling() {
+                b"*" => operator = Some(TermOperator::Multiply),
+                b"/" => operator = Some(TermOperator::Divide),
+                _ => {}
+            },
+            Item::Node(term) if term.production() == Production::DimensionTerm => {
+                let term_items = self::items(cst, term);
+                let exponent = match nodes_of(&term_items, Production::SignedInteger).as_slice() {
+                    [] => None,
+                    [exponent] => Some((
+                        integer(&spelled(cst, exponent)?, exponent)?,
+                        exponent.span(),
+                    )),
+                    _ => return Err(unexpected(term)),
+                };
+                terms.push(DimensionTermForm {
+                    operator: operator.take(),
+                    name: name_form(cst, only(&term_items, Production::QualifiedName, term)?)?,
+                    exponent,
+                });
+            }
+            Item::Node(_) => {}
+        }
+    }
+    Ok(DeclarationForm::Dimension(DimensionForm {
+        name: declared_name(&items, node)?,
+        terms,
+    }))
+}
+
+/// An `ExactNumber` node as written.
+fn exact_number(cst: &LosslessCst, node: &CstNode) -> Result<ExactNumberForm, FormsFailure> {
+    let items = items(cst, node);
+    let signed = nodes_of(&items, Production::SignedInteger);
+    let (kind, first, second) = if has_token(&items, b"rational") {
+        let [numerator, denominator] = signed.as_slice() else {
+            return Err(unexpected(node));
+        };
+        (
+            ExactNumberKind::Rational,
+            integer(&spelled(cst, numerator)?, node)?,
+            integer(&spelled(cst, denominator)?, node)?,
+        )
+    } else {
+        let scales = tokens_of(&items, TokenKind::Integer);
+        let ([coefficient], [scale]) = (signed.as_slice(), scales.as_slice()) else {
+            return Err(unexpected(node));
+        };
+        (
+            ExactNumberKind::Decimal,
+            integer(&spelled(cst, coefficient)?, node)?,
+            integer(&text(scale, node)?, node)?,
+        )
+    };
+    Ok(ExactNumberForm {
+        kind,
+        first,
+        second,
+        span: node.span(),
+    })
+}
+
+/// `unit name : Dimension = scale [* target] [+ offset];` (FR-091 "Unit
+/// form").
+pub(crate) fn unit(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+    let cst = construct.cst;
+    let node = production_node(construct)?;
+    let items = items(cst, node);
+    let names = nodes_of(&items, Production::QualifiedName);
+    let numbers = nodes_of(&items, Production::ExactNumber);
+    let (dimension, target) = match names.as_slice() {
+        [dimension] => (dimension, None),
+        [dimension, target] => (dimension, Some(name_form(cst, target)?)),
+        _ => return Err(unexpected(node)),
+    };
+    let (scale, offset) = match numbers.as_slice() {
+        [scale] => (scale, None),
+        [scale, offset] => (scale, Some(exact_number(cst, offset)?)),
+        _ => return Err(unexpected(node)),
+    };
+    Ok(DeclarationForm::Unit(UnitForm {
+        name: declared_name(&items, node)?,
+        dimension: name_form(cst, dimension)?,
+        scale: exact_number(cst, scale)?,
+        target,
+        offset,
     }))
 }
 
