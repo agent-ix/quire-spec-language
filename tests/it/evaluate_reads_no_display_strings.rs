@@ -8,8 +8,8 @@
 //!
 //! `CheckedPackage` is a concrete type, so a panicking test double cannot be
 //! substituted for it. This file backs the criterion's API-surface half
-//! instead: `qsl-eval`'s shipped dependencies cannot name source text at
-//! all, and the evaluator's own source calls nothing that renders text or
+//! instead: `qsl-eval` has no direct dependency on `qsl-cst` or `qsl-forms`,
+//! and the evaluator's own source calls nothing that renders text or
 //! reads a string-shaped accessor of the checked package. The behavioural
 //! half (renaming declared names changes no result) is
 //! `qsl-eval/tests/it/evaluation_ignores_display_strings.rs`.
@@ -121,8 +121,8 @@ fn shipped_dependencies(manifest: &str) -> &str {
 fn the_evaluator_has_no_path_to_source_text_or_rendering() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("qsl-eval");
 
-    // No shipped path to a CST, token or source text: neither `qsl-cst`
-    // (the S1 reader) nor `qsl-forms` (the S2 forms) is a dependency.
+    // No direct dependency on `qsl-cst` (the S1 reader) or `qsl-forms` (the
+    // S2 forms); `qsl-forms` is reachable through `qsl-semantics`.
     let manifest = std::fs::read_to_string(root.join("Cargo.toml")).expect("manifest reads");
     let shipped = shipped_dependencies(&manifest);
     for forbidden in ["qsl-cst", "qsl-forms"] {
