@@ -72,3 +72,11 @@ low status-text defects.
 - Untracked tests: none in the diff. Every new test carries `#[trace]`
   with TC and AC ids.
 - Semantic review: done inline (see SR-670).
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0872c86a: TC-160 step 11 and its expected result describe location-based pairing: a paired site, a `generated`-only site, a site with no occurrence, an unclaimed scalar application, and two sites of one node in both claim orders. The `None`-identity clause is removed, so each clause maps to `tc_160_an_unpaired_site_or_application_faults_instead_of_dropping` or `tc_160_two_sites_of_one_node_pair_by_location_not_order`. |
+| FND-002 | fixed | 0872c86a: FR-062's status reads "Seven … are backed (AC-2, AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13)", and the TC-160 row in `spec/tests.md` lists each criterion with its separator. |
+| FND-003 | fixed | 0872c86a: RR-14 is `function all_positive using v(…)` in FR-062, and `tc_160_rr_14_query_binder_roots` backs it. The "does not parse" status text is gone from FR-062 and `spec/tests.md`, and FR-062-AC-13 is backed. |

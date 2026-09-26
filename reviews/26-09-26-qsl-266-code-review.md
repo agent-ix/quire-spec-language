@@ -116,3 +116,14 @@ issues.
   was run with `--ignored`. It fails on its one assertion because IR
   returns `Lowered` for the outer `+`, which is the IR-283 behaviour its
   reason states. The ignore is honest.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 44750e77: `tc_160_guards_carry_their_outcome_outermost_first` covers an `if`'s `otherwise` guard (false), `or` (false), `implies` (true) and two nested guards outermost first. Each of these mutants fails it: swapping `then`/`otherwise`, treating `or` as true, deleting `path_condition.reverse()`. |
+| FND-002 | fixed | e0d67230, 44750e77, 0872c86a: per the leader's ruling, binder reads are scoped. A node's roots exclude binders bound inside it (`bound_by`), so the outer `+` of `size(filter(v in s: v > 0)) + 1` is rooted at `s` only (`tc_160_a_binder_is_a_root_only_inside_its_scope`, which fails without the scoping). FR-062 and ADR-014 §4 state the rule. |
+| FND-003 | fixed | 29ecb52a: `RequestWriter::item(occurrence, requirements)` and `bounded_item(occurrence, requirements, bounds)`. `RequestItem::node` is `occurrence.node()`. FR-075's design-level signature matches (0872c86a). |
+| FND-004 | fixed | e0d67230: a missing guard index is an `InternalFault` (`guard-in-arena`); `ClaimSite` holds `SiteBound::{Narrowed(IntegerInterval), Own(ValueType)}`; the walk state is grouped in `Classify`, and the `too_many_arguments` allow is gone. |
+| FND-005 | fixed | 44750e77: `tc_160_fold_reduce_and_flat_map_binders_are_roots` asserts that `fold` and `reduce` steps are unbounded at the accumulator and at the element, and that a `flatMap` step is unbounded at its binders. It fails when the accumulator is not a root. |
+| FND-006 | fixed | 0872c86a: `docs/family-migration-recipe.md` describes `requirements()` as one `Self::Claim` per claim site, and its `requirements()` note and migration entry are rewritten. |
