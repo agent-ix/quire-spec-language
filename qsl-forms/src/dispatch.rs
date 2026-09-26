@@ -6,7 +6,8 @@
 //! S2 visits a unit's `Declaration` nodes in source order, and each
 //! declaration's first significant token selects its dispatch entry
 //! (FR-091, refining FR-067's "root construct's leading token"). The `Value`
-//! family owns the `function`, `type`, `record` and `tuple` entries; every
+//! family owns the `function`, `type`, `record`, `tuple`, `enum`, `ordered`
+//! and `predicate` entries; every
 //! other leading token has none and refuses the whole unit with
 //! [`FormsCause::NoDispatchEntry`]. The families' own productions are in
 //! their own modules (`value` for `Value`); this module holds no grammar.
@@ -150,7 +151,7 @@ impl ParsedUnit {
 
 /// The closed leading-token-kind enum a declaration's first significant
 /// token selects (ADR-012 §3, §5.1 row S2). Each family's own migration
-/// ticket adds its variants; `Value` owns the four below (FR-091). The
+/// ticket adds its variants; `Value` owns the entries below (FR-091). The
 /// `#[cfg(test)]` variant exists only to exercise the dispatch mechanism
 /// (TC-167) over CSTs the real grammar cannot produce.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -163,6 +164,12 @@ pub enum LeadingTokenKind {
     Record,
     /// `tuple`: the `Value` tuple form.
     Tuple,
+    /// `enum`: the `Value` enum form, not ordered.
+    Enum,
+    /// `ordered`: the `Value` enum form, ordered.
+    Ordered,
+    /// `predicate`: the `forms` `FunctionDeclaration` of kind `Predicate`.
+    Predicate,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -396,6 +403,8 @@ fn dispatch(
         LeadingTokenKind::Type => value::alias(construct),
         LeadingTokenKind::Record => value::record(construct),
         LeadingTokenKind::Tuple => value::tuple(construct),
+        LeadingTokenKind::Enum | LeadingTokenKind::Ordered => value::enumeration(construct),
+        LeadingTokenKind::Predicate => value::predicate(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -428,6 +437,9 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"type" => Some(LeadingTokenKind::Type),
         b"record" => Some(LeadingTokenKind::Record),
         b"tuple" => Some(LeadingTokenKind::Tuple),
+        b"enum" => Some(LeadingTokenKind::Enum),
+        b"ordered" => Some(LeadingTokenKind::Ordered),
+        b"predicate" => Some(LeadingTokenKind::Predicate),
         _ => None,
     }
 }

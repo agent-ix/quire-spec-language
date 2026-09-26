@@ -6,8 +6,8 @@ use ix_trace_rs::trace;
 use qsl_cst::{CstElement, LosslessCst, ParsedSource, Production};
 use qsl_forms::{
     build_unit, Accumulation, BinaryOperator, BinderQuery, BuiltinType, DeclarationForm,
-    Expression, FieldInitializer, FormsCause, FormsFailure, FormsLimits, FunctionDeclaration,
-    ParsedUnit, TypeFormHead,
+    DeclarationKind, Expression, FieldInitializer, FormsCause, FormsFailure, FormsLimits,
+    FunctionDeclaration, ParsedUnit, TypeFormHead,
 };
 use qsl_foundation::diagnostic::{LimitKind, Locus};
 use qsl_foundation::{Code, SourceIdentity, Span};
@@ -49,9 +49,10 @@ fn build(declarations: &str) -> (String, ParsedUnit) {
 fn function(form: &DeclarationForm) -> &FunctionDeclaration {
     match form {
         DeclarationForm::Function(function) => function,
-        DeclarationForm::Alias(_) | DeclarationForm::Record(_) | DeclarationForm::Tuple(_) => {
-            panic!("a function form, not {form:?}")
-        }
+        DeclarationForm::Alias(_)
+        | DeclarationForm::Record(_)
+        | DeclarationForm::Tuple(_)
+        | DeclarationForm::Enum(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -176,6 +177,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Function(_) => "function",
             DeclarationForm::Record(_) => "record",
             DeclarationForm::Tuple(_) => "tuple",
+            DeclarationForm::Enum(_) => "enum",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);
@@ -421,9 +423,6 @@ fn s2_refuses_inadmissible_input_and_undispatched_declarations() {
     assert_eq!(span, Some(span_of(&text, invariant)));
 
     for (declaration, leading) in [
-        ("enum Color { red, green }", "enum"),
-        ("ordered enum Size { small, large }", "ordered"),
-        ("predicate p using v(): Boolean { true }", "predicate"),
         ("dimension Length;", "dimension"),
         ("unit metre: Length = rational(1, 1);", "unit"),
     ] {
@@ -681,4 +680,134 @@ fn a_bare_float_type_is_admitted_and_builds_with_no_rounding_mode() {
         TypeFormHead::Builtin(BuiltinType::Float32)
     ));
     assert!(z.bounds.is_empty());
+}
+
+/// TC-395 step 4 (enum and predicate part): each declaration builds one form
+/// and is not refused with `NoDispatchEntry`.
+#[trace("FR-091-AC-6", "TC-395")]
+#[test]
+fn enum_and_predicate_declarations_build_one_form_each() {
+    for declaration in [
+        "enum Color { RED }",
+        "ordered enum Level { LOW }",
+        "predicate P using v(x: Boolean): Boolean { x }",
+    ] {
+        let (_, unit) = build(declaration);
+        assert_eq!(unit.forms().len(), 1, "{declaration}");
+    }
+}
+
+/// TC-395 step 5: only the `Value` family form builder names the
+/// declaration productions QSL-275 gives it.
+#[trace("FR-091-AC-6", "TC-395")]
+#[test]
+fn only_the_value_builder_names_the_enum_dimension_unit_and_predicate_productions() {
+    use syn::visit::Visit;
+
+    struct Names(Vec<String>);
+    impl<'ast> Visit<'ast> for Names {
+        fn visit_path(&mut self, path: &'ast syn::Path) {
+            let segments: Vec<String> = path.segments.iter().map(|s| s.ident.to_string()).collect();
+            if let [head, production] = segments.as_slice() {
+                if head == "Production" {
+                    self.0.push(production.clone());
+                }
+            }
+            syn::visit::visit_path(self, path);
+        }
+    }
+
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let owned = [
+        "EnumDeclaration",
+        "EnumMember",
+        "Predicate",
+        "DimensionDeclaration",
+        "UnitDeclaration",
+    ];
+    let mut owners = Vec::new();
+    for entry in std::fs::read_dir(&src).expect("the crate's src directory") {
+        let path = entry.expect("a directory entry").path();
+        let source = std::fs::read_to_string(&path).expect("a source file");
+        let file = syn::parse_file(&source).expect("the file parses");
+        let mut names = Names(Vec::new());
+        names.visit_file(&file);
+        if names.0.iter().any(|name| owned.contains(&name.as_str())) {
+            owners.push(path.file_name().expect("a file name").to_owned());
+        }
+    }
+    assert_eq!(owners, [std::ffi::OsString::from("value.rs")]);
+}
+
+#[trace("FR-091-AC-25", "TC-480")]
+#[test]
+fn s2_builds_enum_forms_with_members_in_source_order_and_display_strings() {
+    let (text, unit) = build("ordered enum Level { LOW, HIGH = \"High\", }");
+    let [form] = unit.forms() else {
+        panic!("one form")
+    };
+    let DeclarationForm::Enum(level) = form.form() else {
+        panic!("an enum form");
+    };
+    assert_eq!(level.name.name, "Level");
+    assert_eq!(level.name.span, span_of(&text, "Level"));
+    assert!(level.ordered);
+    let [low, high] = level.members.as_slice() else {
+        panic!("two members")
+    };
+    assert_eq!(low.case.name, "LOW");
+    assert_eq!(low.case.span, span_of(&text, "LOW"));
+    assert_eq!(low.display, None);
+    assert_eq!(high.case.name, "HIGH");
+    assert_eq!(high.case.span, span_of(&text, "HIGH"));
+    assert_eq!(
+        high.display,
+        Some(("\"High\"".to_owned(), span_of(&text, "\"High\"")))
+    );
+
+    let (_, unit) = build("enum Color { RED, BLUE }");
+    let DeclarationForm::Enum(color) = unit.forms()[0].form() else {
+        panic!("an enum form");
+    };
+    assert!(!color.ordered);
+    let cases: Vec<&str> = color.members.iter().map(|m| m.case.name.as_str()).collect();
+    assert_eq!(cases, ["RED", "BLUE"]);
+}
+
+#[trace("FR-091-AC-26", "TC-480")]
+#[test]
+fn s2_builds_a_predicate_as_a_function_declaration_of_kind_predicate() {
+    let (text, unit) = build("predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }");
+    let predicate = function(unit.forms()[0].form());
+    assert_eq!(predicate.kind(), DeclarationKind::Predicate);
+    assert_eq!(predicate.name, "Positive");
+    let using = predicate.using().expect("a using alias");
+    assert_eq!(using.alias, "v");
+    let at = span_of(&text, "v(x").start;
+    assert_eq!(
+        using.span,
+        Span {
+            start: at,
+            end: at + 1
+        }
+    );
+    let [(parameter, form)] = predicate.parameters.as_slice() else {
+        panic!("one parameter")
+    };
+    assert_eq!(parameter, "x");
+    assert!(matches!(form.head, TypeFormHead::Builtin(BuiltinType::Int)));
+    assert_eq!(form.bounds, ["0", "9"]);
+    assert!(matches!(
+        predicate.result.head,
+        TypeFormHead::Builtin(BuiltinType::Boolean)
+    ));
+    assert_eq!(predicate.result.span, span_of(&text, "Boolean"));
+    assert!(predicate.measure.is_none());
+    assert_eq!(show(&predicate.body), "Greater(x, 0)");
+
+    let (_, unit) = build("function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }");
+    assert_eq!(
+        function(unit.forms()[0].form()).kind(),
+        DeclarationKind::Function
+    );
 }

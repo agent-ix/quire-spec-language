@@ -989,9 +989,10 @@ checking stage's work budget. An option or collection type whose node is a
 member of a recursion group is that member wherever it is named after the
 group is keyed (FR-093's P15 and P16 are typed at G17).
 
-AC-13, the `predicate` function node and a source enum's nodes, is specified
-under QSL-275 and not implemented: lowering writes `pure_function` for every
-function outside a recursion group, and no source enum reaches lowering.
+AC-13, the `predicate` function node and a source enum's nodes, is
+implemented (QSL-275): lowering writes `predicate` for a declaration of kind
+`Predicate` outside a recursion group, and a source enum's declaration and
+member nodes reach lowering through the assembler's `enums`.
 
 ## Open Questions
 

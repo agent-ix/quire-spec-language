@@ -330,6 +330,12 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             limit.actual()
         ),
         AssemblyCause::Handle(_) => "a declared type's handle could not be encoded".to_owned(),
+        AssemblyCause::DuplicateEnumMember {
+            enumeration, case, ..
+        } => format!("the enum `{enumeration}` declares the case `{case}` more than once"),
+        AssemblyCause::NominalAdmission(_) => {
+            "an enum declaration could not be admitted".to_owned()
+        }
         AssemblyCause::UnsuppliedImport { identity } => {
             format!("`import \"{identity}\"` names a library no dependency input supplies")
         }
