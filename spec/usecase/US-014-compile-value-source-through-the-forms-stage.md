@@ -72,7 +72,7 @@ until M-6c. The spine starts at source.
 - **When** the caller runs S1, S2 and the assembler.
 - **Then** the package carries the admitted unit graph, whose identities
   are the same however the numbers and derived terms are spelled, and a
-  unit graph with no canonical root, a cycle or a zero scale is refused
+  unit graph with two roots in one dimension, a cycle or a zero scale is refused
   with the declarations it concerns.
 
 ## Priority and Risk (Informative)
