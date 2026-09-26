@@ -35,6 +35,18 @@ impl std::fmt::Display for NativeResult {
     }
 }
 
+/// FR-301's severity order over a diagnostic's possible exit codes: tool
+/// failure (30), invalid (20), unsupported (21), incomplete (22). Lower rank
+/// is more severe; the exit codes themselves are not ascending-numeric.
+fn exit_severity(code: u8) -> u8 {
+    match code {
+        30 => 0,
+        20 => 1,
+        21 => 2,
+        _ => 3,
+    }
+}
+
 fn source(value: &FormalSource) -> types::Source<'_> {
     types::Source {
         identity: value.source().identity(),
@@ -305,21 +317,10 @@ pub(super) fn report(
     let (exit_code, outcome) = match report.outcome() {
         ExecutionOutcome::ValidationFailed(failure) => {
             // FR-301's exit ladder is the highest-severity code present
-            // across every retained diagnostic (including the terminal one,
-            // when present): invalid (20) outranks unsupported (21)
-            // outranks incomplete (22). `Code::exit_code()`'s range is
-            // exactly {20, 21, 22} (asserted over `Code::all()` in
-            // tests/native_boundaries.rs), and FR-301's ordering over that
-            // three-code range happens to coincide with ascending numeric
-            // order, so the minimum over `Diagnostic::exit_code` is exactly
-            // the highest-severity code present; a single unsupported
-            // diagnostic never promotes a report that also holds an invalid
-            // one. This is not general — FR-301's full order (tool failure,
-            // invalid, unsupported, incomplete, violation, success) is not
-            // ascending-numeric across 0/10/20/21/22/30, only within the
-            // three codes a diagnostic can actually carry here. ValidationStatus
-            // only carries the wire-schema's binary refused/incomplete
-            // distinction and does not drive the exit code.
+            // across every retained diagnostic (including the terminal one):
+            // tool failure (30), invalid (20), unsupported (21), incomplete
+            // (22). ValidationStatus only carries the wire-schema's binary
+            // refused/incomplete distinction and does not drive the code.
             let status = match failure.status {
                 ValidationStatus::Refused => types::FailureStatus::Refused,
                 ValidationStatus::Incomplete => types::FailureStatus::Incomplete,
@@ -329,7 +330,7 @@ pub(super) fn report(
                 .iter()
                 .chain(failure.terminal.as_deref())
                 .map(|diagnostic| diagnostic.diagnostic.exit_code())
-                .min()
+                .min_by_key(|code| exit_severity(*code))
                 .unwrap_or(match failure.status {
                     ValidationStatus::Incomplete => 22,
                     ValidationStatus::Refused => 20,
