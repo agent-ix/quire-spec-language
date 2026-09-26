@@ -47,10 +47,10 @@ criteria each step backs.
   `definition_selections` holds one entry for `quire.value.complete/v1`,
   equal to `R.reference()`.
 - Step 2 refuses `unknown_profile`/`unsupported-selection` at the identity
-  literal's span, naming `v` and the selection, with no catalog row. No
+  literal's span, naming `v`, the selection and required role `root`. No
   package.
 - Step 3 refuses `unknown_profile`/`wrong-selection-role` twice, once per
-  compile, retaining role `ieee_profile` and role `edition`.
+  compile, each retaining the selection and required role `root`.
 - Step 4 refuses `stale_dependency`/`revision-mismatch`, retaining the
   selection and `R`'s identity, revision and digest.
 - Step 5 refuses `stale_dependency`/`byte-digest-mismatch`, retaining the
