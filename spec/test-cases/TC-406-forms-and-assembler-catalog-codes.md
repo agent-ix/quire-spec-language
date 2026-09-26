@@ -48,8 +48,9 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
 - The duplicate dimension or unit name cause returns
   `ambiguous_declaration`/`ambiguous-name`, the unresolved dimension or unit
   name cause `missing_declaration`/`missing-name`, the dimension or unit
-  cycle cause `invalid_package`/`definition-cycle`, and the zero-denominator
-  cause `undefined_expression`/`unproved-nonzero`. The unit-graph topology
+  cycle cause `invalid_package`/`definition-cycle`, the zero-denominator
+  cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale
+  limit `stage_limit_exceeded`/`work-budget-exceeded`. The unit-graph topology
   cause returns the STD-112 cause once QSpec publishes it.
 - Step 2 returns `unknown_profile`.
 - Step 3 finds no `_` arm.

@@ -31,6 +31,9 @@ alias is `v`. The owner is authority `a`, identity `u`.
 1. Assemble one unit holding the sources of FR-091 vectors Q1 to Q10. Read
    `units` and `nominal_spans`. Assemble a unit with no dimension or unit
    form and read `units`.
+   With the decimal-scale bound set to `4`, assemble
+   `dimension Length; unit m : Length = rational(1, 1);` with
+   `unit c : Length = decimal(1, 5) * m;`, and again with `decimal(1, 4)`.
 2. Assemble `dimension Length;`, `unit m : Length = rational(1, 1);` and
    `function f using v(x: m): Boolean pure { true }`.
 3. Assemble FR-091-AC-34's unit.
@@ -44,13 +47,15 @@ Tag the tests with the AC ids they back and `TC-483`.
   Q4's terms as the vectors list; `km`'s scale `1000`, `cm`'s `1/100`,
   `C`'s offset `5463/20`; `C` affine and `km` not; a span for each key in
   `nominal_spans`. The unit with no dimension or unit form has the empty
-  `units`.
+  `units`. `decimal(1, 5)` gives a limit refusal,
+  `stage_limit_exceeded`/`work-budget-exceeded`, naming bound `4`, actual
+  `5` and its span; `decimal(1, 4)` assembles.
 - Step 2: an unresolved-type-name error naming `m`.
-- Step 3: one refusal holding the duplicate-name error (`Mass`), the
+- Step 3: one refusal holding exactly the duplicate-name error (`Mass`), the
   unresolved-name error (`Width`), the two cycle errors (`P`/`Q`, `b`/`c`)
   and the zero-denominator error, each with the code FR-091-AC-34 names,
   and no `PackageDeclarations`.
-- Step 4: each unit refuses with one unit-graph topology error naming the
+- Step 4: each unit refuses with exactly one unit-graph topology error naming the
   declarations it concerns, and no `PackageDeclarations`. Its catalog code
   is the STD-112 cause.
 
