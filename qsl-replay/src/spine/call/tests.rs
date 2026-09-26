@@ -7,9 +7,7 @@ use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::Origin;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::refusal::ModelRefusalCause;
-use quire_exact::{
-    BoundViolation, CardinalityBound, CollectionKind, Incomplete, UniverseId,
-};
+use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, Incomplete, UniverseId};
 use std::collections::BTreeMap;
 
 #[test]
@@ -166,18 +164,13 @@ fn tc_451_step_2_wrong_value_kind_names_position() {
 #[test]
 fn tc_451_step_3_argument_binding_names_the_parameter() {
     let unknown = run_fixture(FIXTURE, &call("id", vec![arg("y", 4)])).unwrap_err();
-    assert!(
-        matches!(*unknown, RunRefusal::UnknownParameter { ref parameter } if parameter == "y")
-    );
-    let duplicate =
-        run_fixture(FIXTURE, &call("id", vec![arg("x", 1), arg("x", 2)])).unwrap_err();
+    assert!(matches!(*unknown, RunRefusal::UnknownParameter { ref parameter } if parameter == "y"));
+    let duplicate = run_fixture(FIXTURE, &call("id", vec![arg("x", 1), arg("x", 2)])).unwrap_err();
     assert!(
         matches!(*duplicate, RunRefusal::DuplicateArgument { ref parameter } if parameter == "x")
     );
     let unbound = run_fixture(FIXTURE, &call("id", Vec::new())).unwrap_err();
-    assert!(
-        matches!(*unbound, RunRefusal::UnboundParameter { ref parameter } if parameter == "x")
-    );
+    assert!(matches!(*unbound, RunRefusal::UnboundParameter { ref parameter } if parameter == "x"));
     for refusal in [unknown, duplicate, unbound] {
         assert_eq!(refusal.stage(), "call");
         assert_eq!(refusal.code(), Code::InvalidRuntimeInput);
@@ -194,7 +187,8 @@ fn tc_451_step_3_argument_binding_names_the_parameter() {
 #[trace("FR-100-AC-4", "TC-451")]
 #[test]
 fn fnd_010_unbound_parameter_is_reported_before_an_earlier_wrong_kind() {
-    let refusal = run_fixture(FIXTURE, &call("lt", vec![arg("a", 9223372036854775807)])).unwrap_err();
+    let refusal =
+        run_fixture(FIXTURE, &call("lt", vec![arg("a", 9223372036854775807)])).unwrap_err();
     assert!(
         matches!(*refusal, RunRefusal::UnboundParameter { ref parameter } if parameter == "b"),
         "{refusal:?}"
@@ -346,7 +340,8 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     )
     .unwrap()];
 
-    let convert = |outcome: FamilyOutcome<Value>| convert_outcome(evaluation(outcome), graph, &sources);
+    let convert =
+        |outcome: FamilyOutcome<Value>| convert_outcome(evaluation(outcome), graph, &sources);
 
     // Completed: each value kind.
     for (value, expected) in [
@@ -361,9 +356,9 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         }
     }
     for (value, expected) in [(0i64, "0"), (-17, "-17")] {
-        match convert(FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(
-            Integer::from(value),
-        ))))
+        match convert(FamilyOutcome::Evaluated(Outcome::Completed(
+            Value::Integer(Integer::from(value)),
+        )))
         .unwrap()
         {
             CallOutcome::Completed(CallValue::Integer(rendered)) => {
@@ -373,9 +368,9 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         }
     }
     let big = Integer::from(1i64).shifted_left(70);
-    match convert(FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(
-        big,
-    ))))
+    match convert(FamilyOutcome::Evaluated(Outcome::Completed(
+        Value::Integer(big),
+    )))
     .unwrap()
     {
         CallOutcome::Completed(CallValue::Integer(rendered)) => {
@@ -509,13 +504,13 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     .unwrap()
     {
         CallOutcome::Refused(CallRefusal::Record { code, fields, .. }) => {
-            assert_eq!(code, CatalogCode::new("invalid_runtime_input", "absent-key"));
+            assert_eq!(
+                code,
+                CatalogCode::new("invalid_runtime_input", "absent-key")
+            );
             assert_eq!(
                 fields,
-                BTreeMap::from([
-                    ("binding", "people".to_owned()),
-                    ("key", "p7".to_owned()),
-                ])
+                BTreeMap::from([("binding", "people".to_owned()), ("key", "p7".to_owned()),])
             );
         }
         other => panic!("{other:?}"),
@@ -532,13 +527,13 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     .unwrap()
     {
         CallOutcome::Refused(CallRefusal::Record { code, fields, .. }) => {
-            assert_eq!(code, CatalogCode::new("foreign_reference", "foreign-universe"));
+            assert_eq!(
+                code,
+                CatalogCode::new("foreign_reference", "foreign-universe")
+            );
             assert_eq!(
                 fields,
-                BTreeMap::from([
-                    ("required", "02".repeat(32)),
-                    ("supplied", "01".repeat(32)),
-                ])
+                BTreeMap::from([("required", "02".repeat(32)), ("supplied", "01".repeat(32)),])
             );
         }
         other => panic!("{other:?}"),
@@ -569,7 +564,10 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     .unwrap()
     {
         CallOutcome::Refused(CallRefusal::Family { code, .. }) => {
-            assert_eq!(code, CatalogCode::new("resource_exhausted", "ancestor-steps"));
+            assert_eq!(
+                code,
+                CatalogCode::new("resource_exhausted", "ancestor-steps")
+            );
         }
         other => panic!("{other:?}"),
     }

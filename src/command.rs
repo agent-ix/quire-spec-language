@@ -366,7 +366,9 @@ impl RunCause {
             // failing is a tool failure, so this path exits 30 directly and
             // never through `Code::exit_code` (which would give 20 for
             // `Code::RuntimeInvariant`).
-            Self::SpineRun(refusal) if matches!(**refusal, qsl_replay::spine::RunRefusal::Fault(_)) => {
+            Self::SpineRun(refusal)
+                if matches!(**refusal, qsl_replay::spine::RunRefusal::Fault(_)) =>
+            {
                 30
             }
             _ => self.code().exit_code(),

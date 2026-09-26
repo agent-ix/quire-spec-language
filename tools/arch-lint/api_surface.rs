@@ -1274,7 +1274,11 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
     // recursively; `UseTree::Glob` binds no enumerable name (see the type
     // doc above).
     fn qsl_eval_aliases(file: &syn::File) -> std::collections::HashSet<String> {
-        fn walk(tree: &syn::UseTree, under_qsl_eval: bool, out: &mut std::collections::HashSet<String>) {
+        fn walk(
+            tree: &syn::UseTree,
+            under_qsl_eval: bool,
+            out: &mut std::collections::HashSet<String>,
+        ) {
             match tree {
                 syn::UseTree::Path(path) => {
                     walk(&path.tree, under_qsl_eval || path.ident == "qsl_eval", out);
@@ -1344,9 +1348,15 @@ pub(crate) fn spine_surface_qsl_eval_findings(qsl_replay_src: &Path) -> Result<V
                 for impl_item in &item_impl.items {
                     if let syn::ImplItem::Fn(method) = impl_item {
                         if is_pub(&method.vis)
-                            && names_qsl_eval(&aliases, |finder| finder.visit_signature(&method.sig))
+                            && names_qsl_eval(&aliases, |finder| {
+                                finder.visit_signature(&method.sig)
+                            })
                         {
-                            findings.push(format!("{}: impl fn {}", file.display(), method.sig.ident));
+                            findings.push(format!(
+                                "{}: impl fn {}",
+                                file.display(),
+                                method.sig.ident
+                            ));
                         }
                     }
                 }

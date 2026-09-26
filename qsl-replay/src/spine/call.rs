@@ -297,12 +297,15 @@ fn supplied_sources(
     limits: SpineLimits,
 ) -> Result<Vec<Source>, Box<RunRefusal>> {
     let byte_limit = limits.source.source_bytes;
-    let unresolved = || Box::new(RunRefusal::Fault(InternalFault::new(
-        "spine-run",
-        "locus-source-supplied",
-    )));
+    let unresolved = || {
+        Box::new(RunRefusal::Fault(InternalFault::new(
+            "spine-run",
+            "locus-source-supplied",
+        )))
+    };
     let mut sources = Vec::with_capacity(1 + dependencies.libraries.len());
-    sources.push(Source::read(source, path.to_owned(), bytes, byte_limit).map_err(|_| unresolved())?);
+    sources
+        .push(Source::read(source, path.to_owned(), bytes, byte_limit).map_err(|_| unresolved())?);
     for library in dependencies.libraries.values() {
         sources.push(
             Source::read(
@@ -567,15 +570,12 @@ fn convert_outcome(
         FamilyOutcome::Evaluated(Outcome::Completed(_)) => Err(Box::new(RunRefusal::Fault(
             InternalFault::new("call", "boolean-or-integer-function-completes-that-kind"),
         ))),
-        FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant)) => {
-            Err(Box::new(RunRefusal::Fault(InternalFault::new(
-                "S6a",
-                "checked-program-invariant",
-            ))))
-        }
-        FamilyOutcome::Evaluated(Outcome::Refused(_)) => Ok(CallOutcome::Refused(
-            convert_refusal(record, None, location, sources)?,
+        FamilyOutcome::Evaluated(Outcome::Refused(Refusal::CheckedInvariant)) => Err(Box::new(
+            RunRefusal::Fault(InternalFault::new("S6a", "checked-program-invariant")),
         )),
+        FamilyOutcome::Evaluated(Outcome::Refused(_)) => Ok(CallOutcome::Refused(convert_refusal(
+            record, None, location, sources,
+        )?)),
         FamilyOutcome::Evaluated(Outcome::Undefined(reason)) => Ok(CallOutcome::Undefined {
             reason: kernel_undefined_reason(reason),
         }),

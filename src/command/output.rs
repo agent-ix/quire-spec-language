@@ -360,8 +360,7 @@ fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
 /// status, or 20 when the code names no `Code` (FR-100). Never used for a
 /// kernel-no-record row, which is always exit 20 by the mapping table.
 fn refusal_exit_code(code: qsl_foundation::diagnostic::CatalogCode) -> u8 {
-    qsl_foundation::Code::from_code(code.code())
-        .map_or(20, qsl_foundation::Code::exit_code)
+    qsl_foundation::Code::from_code(code.code()).map_or(20, qsl_foundation::Code::exit_code)
 }
 
 /// FR-100: render `spine-run-result/1`, the outcome mapping's stdout
