@@ -13,10 +13,20 @@ relationships:
     type: references
   - target: "ix://agent-ix/quire-specification/FR-301"
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-100
+    type: references
 ---
 ## Description
 
-When an author invokes quire-spec run with a native-run/1 request file, the command shall compile the selected model and native sources and execute the selected clause against verified runtime artifacts.
+When an author invokes quire-spec run with a native-run/1 request file whose program source declares `0-draft` or no edition, the command shall compile the selected model and native sources and execute the selected clause against verified runtime artifacts.
+
+The run command routes each program source by the edition its header
+declares, with FR-027's edition reader. This requirement owns the `0-draft`
+route, which also takes a source declaring no edition. A `1-draft` program runs a named function through the spine under
+[FR-100](FR-100-run-a-named-function-through-the-spine.md), which owns that
+route's request members (`call`, `libraries`), outcome document
+(`spine-run-result/1`) and exit statuses. The members, outcome and exit
+contract below apply to `0-draft` programs.
 
 ## Inputs
 
@@ -52,8 +62,8 @@ package byte/static identities, original source/model/runtime identities
 (each source and runtime artifact rendered with all four labels),
 selected authored clause, actual stage status, diagnostics, work counters and
 ordered implication events. Only completed execution has Boolean truth.
-On FR-301's six-code contract, exit 0 means completed true; 10 means completed
-false (a logical violation); 20 means refused, invalid command usage, request
+On FR-301's six-code contract, for a `0-draft` program, exit 0 means completed
+true; 10 means completed false (a logical violation); 20 means refused, invalid command usage, request
 syntax, identifier or I/O failure; 21 means a construct the parser recognizes
 but the admitted profile does not support, or a native package naming an
 unknown or unavailable required feature; 22 means incomplete. Output failure
@@ -75,6 +85,9 @@ native code catalog. Resource causes distinguish file-byte and file-count limits
 ## Behavior
 
 The command shall decode the envelope and select its format before request fields.
+The command shall admit, at decode, the members FR-100 defines for a `1-draft`
+program, and shall apply the member rules of the program's edition after it
+reads the program source's declared edition.
 The command shall reject unknown/duplicate fields and positional record arrays.
 The command shall open each file once and cap reads before parsing or hashing.
 The command shall limit the request to 1 MiB, dependent files to 64, and aggregate
