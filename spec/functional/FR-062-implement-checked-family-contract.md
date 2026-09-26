@@ -396,8 +396,7 @@ tags as they exist in the delivered code today:
   `ReferenceEvaluation` (`qsl-eval/src/value/expression/s6a.rs`) requires
   `evaluate`. No test carries this criterion's tag: TC-160 step 1's
   compile-fail cases (one omission each of the checked-input parameter,
-  `requirements` and `evaluate`) do not exist. Remaining work: a follow-up
-  ticket, not yet filed, for those compile-fail tests.
+  `requirements` and `evaluate`) do not exist. Remaining work: QSL-283.
 - FR-062-AC-2: backed (`TC-160`, `qsl-semantics/src/check/family.rs`, `checking_tests`).
 - FR-062-AC-3: partly backed (`TC-160`, QSL-161) -- the third clause only
   ("a test that constructs two typing contexts from the same resolved
@@ -427,7 +426,7 @@ tags as they exist in the delivered code today:
   (`qsl-semantics/src/check/claims/tests.rs`) and
   `a_function_declaration_has_no_requirements`
   (`qsl-eval/src/value/expression/family.rs`).
-- FR-062-AC-5: backed at the hook level (`TC-160`, `qsl-eval/src/value/expression/
+- FR-062-AC-5: partly backed, at the hook level (`TC-160`, `qsl-eval/src/value/expression/
   family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`
   (QSL-166), which QSL-153 uses as `ValueFunctionFamily::check`'s and
   `::evaluate`'s real call sites to tag the `Limit` half, implement the
@@ -441,7 +440,7 @@ tags as they exist in the delivered code today:
   third clause, as amended by QSL-242 (the S4 v2 emitter in place of a
   `package` hook), is unbacked: no test runs `check` and `emit_checked`
   across one fixture set and asserts neither returns `Incomplete`.
-  Remaining work: the same follow-up ticket as AC-1.
+  Remaining work: QSL-283.
 - FR-062-AC-6: partly backed (QSL-152) -- the first sentence only. Stale
   as last written: it said "S6a has no family-kind dispatch yet," which
   QSL-148's `S6aFamilyKind` (`qsl-eval/src/value/expression/s6a.rs`) made no
@@ -535,8 +534,7 @@ tags as they exist in the delivered code today:
   asserts only the compound unit's own cause and that `t` is exported, not
   that `q` and its path are omitted with `NamesOmittedNode` or that `q` is
   absent from the read-back exports; `an_unplaced_occurrence_refuses`
-  covers the refusal half under FR-093-AC-9. Remaining work: the same
-  follow-up ticket as AC-1.
+  covers the refusal half under FR-093-AC-9. Remaining work: QSL-283.
 - FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
   `QualifiedName` lookup is implemented (`qsl-eval/src/value/expression/mod.rs`),
   but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
@@ -562,11 +560,11 @@ tags as they exist in the delivered code today:
   `tests/it/request_builder.rs` reads RR-5's records through
   `CheckedPackage::graph()`.
 
-Seven of this requirement's thirteen Acceptance Criteria are backed (AC-2,
-AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13); three (AC-3, AC-6, AC-11) are
+Six of this requirement's thirteen Acceptance Criteria are backed (AC-2,
+AC-4, AC-7, AC-8, AC-12 and AC-13); four (AC-3, AC-5, AC-6, AC-11) are
 partly backed, each for the specific clause named in its own row above.
 AC-1, AC-9 and AC-10 are unbacked. AC-1 and AC-9, as amended by QSL-242,
 describe code that exists; each needs its tagged test, and AC-5's third
-clause needs one too, all in one follow-up ticket not yet filed. AC-10 is unbacked
+clause needs one too. Remaining work: QSL-283. AC-10 is unbacked
 (untagged): its implementation exists, but no test carries the criterion's
 own trace tag. Owner: QSL-5 / #243.

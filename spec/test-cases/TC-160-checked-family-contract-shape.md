@@ -69,7 +69,9 @@ FR-057-AC-10's value-function row.
    does not build, and `t`, which names no omitted node. Emit it with
    `emit_checked` and read the bytes back through QSL's I2 read. Emit the
    same package again through `emit_package` with a region conversion that
-   places no occurrence.
+   places no occurrence. The fixture's omission relies on lowering not
+   building the `metre` unit node; when lowering builds it, this step
+   switches to another form the emitter omits.
 9. Instrument every family's evaluation hook with a test double that
    panics if a CST, token or display string is touched, then invoke each on
    a checked node.

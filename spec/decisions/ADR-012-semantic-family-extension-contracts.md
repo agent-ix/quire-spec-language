@@ -294,9 +294,11 @@ returns `unsupported` with a catalog code (§5.1).
 each checked item to the nodes of the checked semantic graph and mints their
 keys at E3 (FR-093, ADR-011 FB-13). The layer-4 v2 emitter
 (`qsl_package::emit_checked`) writes every family's nodes: it matches the
-node tag with one arm per tag and no `_` arm, so a family with no v2 arm
-fails to compile (ADR-013 C-03), and it builds no body term and mints no
-key (FR-093-CON-2). `FamilyContract` has no `package` part.
+node tag with one arm per tag and no `_` arm, so a new node tag with no v2
+arm fails to compile (ADR-013 C-03), and a node whose (tag, form) IR's v2
+vocabulary does not decode is omitted with `UnsupportedForm`, its
+dependents with it. It builds no body term and mints no key
+(FR-093-CON-2). `FamilyContract` has no `package` part.
 
 The emitter is all-or-nothing over the nodes a node names. It writes a node
 only when it writes every node that node names: its `dependencies`, its
@@ -1087,7 +1089,7 @@ item settles `invalid-request` with no preference order
 | `Relation`'s absence from S6a's input type (FR-090-AC-4, backed); FR-062-AC-8's S4 cause-bearing-family seam-probe coverage (backed, `CheckCause::code`) | [QSL-152](https://linear.app/agent-ix/issue/QSL-152) |
 | AC-6's second sentence (every other family's `evaluate` hook reads no CST, token or display string) and AC-3's first two clauses (`check` compiling with no path to global or thread-local state; a test observing meter/diagnostic-sink/scope-stack mutations reflected in the outcome) (FR-062-AC-3, AC-6) | [QSL-246](https://linear.app/agent-ix/issue/QSL-246) |
 | Decision: `FamilyContract` has no `package` part, and S4's all-or-nothing rule is the emitter's omission closure (§2 "Packaging"); FR-062-AC-1, AC-5's third clause and AC-9 amended to match | [QSL-242](https://linear.app/agent-ix/issue/QSL-242) |
-| Tagged tests for the amended FR-062-AC-1 (TC-160 step 1's three compile-fail cases), AC-5's third clause (`check` and `emit_checked` never return `Incomplete`) and AC-9 (TC-160 step 8) | follow-up ticket, not yet filed |
+| Tagged tests for the amended FR-062-AC-1 (TC-160 step 1's three compile-fail cases), AC-5's third clause (`check` and `emit_checked` never return `Incomplete`) and AC-9 (TC-160 step 8) | Remaining work: [QSL-283](https://linear.app/agent-ix/issue/QSL-283) |
 | `StageLimits`'/`LimitKind`'s (then `StageLimitKind`) input-bytes, node-count and work-budget limit kinds, with a real producer and consumer for each, and the `evaluate`-hook `Incomplete` outcome once `quire-exact`'s meter-charge API is exported (FR-062-AC-5) | [QSL-153](https://linear.app/agent-ix/issue/QSL-153) |
 | FR-063's S1-S4 seam-probe coverage of the mechanism itself (`xtask seam-probe`'s own end-to-end behavior, dedicated trace-tagged tests), and the checked-in list's coverage across all five of AC-6's named categories (tracked here, though AC-6 stays unbacked until QSL-143/QSL-152/`stage_hooks`'s replacement each land their own share) (FR-063-AC-1, AC-2, AC-3, AC-4, AC-6, AC-7) | [QSL-149](https://linear.app/agent-ix/issue/QSL-149) |
 | Spec defects: FR-063-AC-5's gate-stubbing test, and FR-064-AC-6's second half (the production gate actually invoking `xtask string-edge`'s lint denial) | [QSL-155](https://linear.app/agent-ix/issue/QSL-155) (spec defect) |
