@@ -29,12 +29,14 @@ Tag the tests `#[trace("TC-461", "FR-104-AC-n")]`.
 ## Expected Results
 
 - Step 1: four records, each capability kind `operation-contract` and extent
-  `Bounded`: one per clause keyed by that clause's `claim` occurrence, and one
+  `Unbounded` with one domain, the `config_history` population (kind
+  population, boundable by `Cardinality`): one per clause keyed by that clause's `claim` occurrence, and one
   keyed by `attemptUpdate`'s frame node occurrence.
 - Step 2: two records, both clauses; no frame record.
 - Step 3: equal clause node identities and equal record keys in all three.
-- Step 4: `ParentOrder2` has `ParentOrder`'s node identity and a different
-  `claim` occurrence; the unit has five records.
+- Step 4: `ParentOrder2` has `ParentOrder`'s node identity; the node carries
+  two `claim` occurrences, ordinals 0 (`ParentOrder`) and 1 (`ParentOrder2`);
+  the unit has five records, keyed by those two occurrences among others.
 
 ## Status
 

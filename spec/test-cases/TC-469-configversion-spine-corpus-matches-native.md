@@ -15,7 +15,7 @@ independent expected dispositions, against native `quire-spec run`, at the
 QSpec FR-180-AC-4 boundaries, for input-fixed identity, and through I3
 extraction.
 
-Scope: FR-108-AC-1 to FR-108-AC-5.
+Scope: FR-108-AC-1 to FR-108-AC-6.
 
 ## Test Procedure
 
@@ -32,7 +32,8 @@ all under `ParentOrder` with self `child`.
    exhaustive `match` over `Case` giving FR-108's Corpus table.
 2. For each case, run native `quire-spec run request.json` and `run_clause`;
    map native (`status`, `stage`, `truth`, `code` or diagnostic codes, exit)
-   through FR-108's map and compare.
+   through FR-108's map (native `resource_exhausted` ↔ spine
+   `limit: work_units`) and compare.
 3. For below-range and above-range, read the refusal's locus in both
    outputs.
 4. Generate the corpus into two temporary directories and compare every
@@ -43,6 +44,8 @@ all under `ParentOrder` with self `child`.
 5. With `--features quire-extraction`, embed each case's unit in a
    `rules.md` fence, extract it through `qsl-source`, and run the extracted
    source.
+6. Read the `package_id` pinned in the expected table, compare it with every
+   report's, and read the emitted package bytes through QSpec's I04 `read`.
 
 Extend `tests/it/config_version.rs`'s `expected()` with the four new cases
 (`Completed(true)` twice, `Validation { code: "invalid_runtime_input",
@@ -63,8 +66,11 @@ incomplete: false }` twice). Tag the tests `#[trace("TC-469",
 - Step 5: each extracted run's disposition equals the direct run's; its
   source identity and digest differ; its provenance carries the extraction's
   original identity and digest.
+- Step 6: every report carries the pinned `package_id`, and the bytes admit
+  through I04 `read`.
 
 ## Status
 
-Planned (QSL-273). Step 2 and the native test's four new cases run until
-M-6c deletes native `run`; that PR deletes step 2 with it (ADR-012 §15.8).
+Planned (QSL-273). Step 6 is pending STD-111 (FR-108-AC-6). Step 2 and the
+native test's four new cases run until M-6c retires the `0-draft` native
+path; that PR deletes step 2 with it (ADR-012 §15.8).

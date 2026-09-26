@@ -39,6 +39,10 @@ declares `model Config = ...` over it.
 1. Admit and assemble the fixture as written.
 2. Replace `modifies` with `[".../ConfigVersion/missing"]`; then with
    `[".../ConfigVersion"]`; then set `creates` to
+   `[".../ConfigVersion/versionNumber"]`; then declare a relationship
+   `Supersedes` from `ConfigVersion` to `ConfigVersion` and set `modifies` to
+   `[".../Supersedes"]`; then set both `modifies` to
+   `[".../ConfigVersion/missing"]` and `creates` to
    `[".../ConfigVersion/versionNumber"]`.
 3. Add parameter `note` typed `ix://quire/native/Text`; then replace it with
    parameter `delta` typed `VersionNumber`.
@@ -55,7 +59,9 @@ Tag the tests `#[trace("TC-458", "FR-103-AC-n")]`.
   `attemptUpdate` has no parameters, result `Boolean`, and effect
   `modifies == [versionNumber's key]`, `creates == []`, `deletes == []`.
 - Step 2: `missing_declaration`/`missing-name` at the entry; then
-  `invalid_model_binding`/`malformed-declaration` at the entry, twice. No
+  `invalid_model_binding`/`malformed-declaration` at the entry, twice; then
+  `unknown_required_feature`/`unsupported-feature` at the `Supersedes` entry;
+  then only the `modifies` entry's `missing_declaration`/`missing-name`. No
   declaration admitted.
 - Step 3: `unknown_required_feature`/`unsupported-feature` at the `model`
   declaration; then `delta: Int[0, 1000]`.

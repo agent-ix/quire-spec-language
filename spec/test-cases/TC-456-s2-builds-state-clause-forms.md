@@ -30,7 +30,9 @@ Parse each through S1 and build through `qsl_forms::build_unit`.
    { not reaches(self, self, parent) }`, then
    `post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate
    { self.versionNumber = pre(self.versionNumber) }`, then
-   `post R using v on Config::ConfigVersion::attemptUpdate { result }`.
+   `post R using v on Config::ConfigVersion::attemptUpdate { result }`,
+   then `invariant Q using v on Config::ConfigVersion at current
+   { reaches(self, self, Config::ConfigVersion::parent) }`.
 
 Tag the tests `#[trace("TC-456", "FR-102-AC-n")]`.
 
@@ -44,8 +46,9 @@ Tag the tests `#[trace("TC-456", "FR-102-AC-n")]`.
   `Postcondition` with the same operation.
 - Step 3: `Not(Reaches { SelfRef, SelfRef, edge: "parent" })`; an equality
   whose left is `Field(SelfRef, versionNumber)` and whose right is
-  `Pre(Field(SelfRef, versionNumber))`; `Expression::Result`. No step
-  refuses.
+  `Pre(Field(SelfRef, versionNumber))`; `Expression::Result`; and
+  `FormsCause::UnrepresentedConstruct` at the qualified edge
+  `Config::ConfigVersion::parent`. No other step refuses.
 
 ## Status
 

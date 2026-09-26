@@ -39,7 +39,10 @@ no case at the domain boundaries QSpec FR-180-AC-4 names (0, 1000, -1,
 - `examples/config-version/model.semantic-ir.json`: a newly authored,
   AGPL-3.0-only Semantic IR 2.0.0 domain package `example/config-version`
   version `1`, the spine counterpart of `model.json`, with the declarations
-  FR-103-AC-1 lists.
+  FR-103-AC-1 lists. It and the generated unit carry `AGPL-3.0-only`, not the
+  repository's `AGPL-3.0-or-later`, because they are example content beside
+  `model.json` and the generated `program.native`, which FR-032 authors as
+  `AGPL-3.0-only`; one example keeps one licence.
 - One `1-draft` unit, generated with the fixtures:
 
 ```text
@@ -64,7 +67,10 @@ function sameIdentity using v(a: Config::ConfigVersion, b: Config::ConfigVersion
 
 Stage maps native `validate` to spine `admit` and native `link` to spine
 `compile`; category maps native `completed` to `success` or `violation` by
-truth, and `refused` and `incomplete` to themselves.
+truth, and `refused` and `incomplete` to themselves. Native's
+`resource_exhausted` diagnostic maps to the spine's FR-100 outcome
+`{"kind": "incomplete", "limit": "work_units"}`. Every `Current` case selects
+the anchor `handler validate`, native's `point` for these clauses.
 
 | Case | Spine selection | Disposition (stage, category, truth or code) | Exit |
 | --- | --- | --- | --- |
@@ -73,14 +79,14 @@ truth, and `refused` and `incomplete` to themselves.
 | absent-parent | `ParentOrder`, self `root` | evaluate, success, true | 0 |
 | cycle | `NoCycle`, self `child` | evaluate, violation, false | 10 |
 | self-loop | `NoCycle`, self `child` | evaluate, violation, false | 10 |
-| distinct-identities | `sameIdentity(child, root)` | evaluate, violation, false | 10 |
+| distinct-identities | `sameIdentity` with `a` `child`, `b` `root` | evaluate, violation, false | 10 |
 | dangling-parent | `ParentOrder`, self `child` | admit, refusal, `dangling_reference` | 20 |
 | incomplete-population | `ParentOrder`, self `child` | admit, incomplete, `incomplete_population` | 22 |
 | missing-model | `ParentOrder`, no package | compile, refusal, `missing_import` | 20 |
-| exhausted-work | `ParentOrder`, budget 0 | evaluate, incomplete, `resource_exhausted` | 22 |
-| unchanged-version | `VersionUnchanged` | evaluate, success, true | 0 |
-| changed-version | `VersionUnchanged` | evaluate, violation, false | 10 |
-| forbidden-parent-change | `VersionUnchanged` | admit, refusal, `frame_violation` | 20 |
+| exhausted-work | `ParentOrder`, `work_units` 0 | evaluate, incomplete, `limit: work_units` | 22 |
+| unchanged-version | `VersionUnchanged`, self `child` | evaluate, success, true | 0 |
+| changed-version | `VersionUnchanged`, self `child` | evaluate, violation, false | 10 |
+| forbidden-parent-change | `VersionUnchanged`, self `child` | admit, refusal, `frame_violation` | 20 |
 | boundary-zero (new) | `ParentOrder`, root 0, child 1 | evaluate, success, true | 0 |
 | boundary-max (new) | `ParentOrder`, root 999, child 1000 | evaluate, success, true | 0 |
 | below-range (new) | `ParentOrder`, root -1 | admit, refusal, `invalid_runtime_input` | 20 |
@@ -122,6 +128,7 @@ the same two objects through `sameIdentity`, over the same snapshot data
 | FR-108-AC-3 | below-range and above-range refuse at admission in both paths with `invalid_runtime_input`, and both name the object (`root`, `child`) and the field `versionNumber`; boundary-zero and boundary-max complete with `true` in both (QSpec FR-180-AC-4, QSL's share). | Test (TC-469) |
 | FR-108-AC-4 | Generating the corpus twice gives identical files, and running it twice gives identical reports; each report's provenance names the source digest, `package_id`, the domain package's `sha256-jcs` digest, every observation's identity and digest, the selection and the limits, so the case is fixed by its inputs (QSpec FR-180-AC-5). A run whose request carries the `package_id` that spine `compile` emits for the unit gives the same report (FR-032-AC-4's package half). | Test (TC-469) |
 | FR-108-AC-5 | With `quire-extraction`, the Markdown run of each case gives the direct run's disposition, a different source identity and digest, and the extraction's original identity and digest in its provenance. | Test (TC-469) |
+| FR-108-AC-6 | The expected table pins the unit's `package_id`, the one spine `compile` emits for the FR-108 unit and package, and every case's report carries exactly that value; the emitted package bytes admit through QSpec I04 `read` (QSpec FR-180's reference verdict contract). | Test (TC-469); pending STD-111 |
 
 ## Dependencies
 
@@ -130,5 +137,13 @@ the same two objects through `sameIdentity`, over the same snapshot data
 - QSpec FR-180 and TC-209. QSL's share is the reference dispositions; the
   generated-oracle, property and proof consumers of FR-180-AC-1 are CG's and
   IR's, and IR admits no `state` node at 48ab5dc (ADR-012 §15.7).
-- The QSpec prerequisites FR-105 names, for the emitted package's `state`
-  bodies and the `reaches` member.
+- STD-111 (QSpec), which FR-105 names, for the emitted package's `state`
+  bodies, frame entries and `reaches_field` member. Only AC-6, the pinned
+  `package_id` and its I04 `read`, waits on it; AC-1 to AC-5 run over the
+  in-process `CheckedPackage`.
+
+## Status
+
+Specified under QSL-273. AC-6 is pending STD-111: the pinned `package_id` is
+fixed once the QSpec spellings of the `state` bodies land, because those
+spellings enter every `state` node's id.

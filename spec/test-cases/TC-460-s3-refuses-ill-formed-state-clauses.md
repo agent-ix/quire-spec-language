@@ -29,6 +29,8 @@ the clause shown (plus `ParentOrder` for the duplicate case).
 | 6 | `post E using v on Config::ConfigVersion::attemptUpdate { pre(result) }` |
 | 7 | `invariant F using v on Config::ConfigVersion at current { reaches(self, self, versionNumber) }` |
 | 8 | `invariant G using v on Config::ConfigVersion at current { deref(value(self.parent)).versionNumber < 5 }` |
+| 9 | `function ParentOrder using v(): Boolean pure { true }` beside `ParentOrder` |
+| 10 | `function r using v(x: Config::ConfigVersion, y: Config::ConfigVersion): Boolean pure { reaches(x, y, parent) }` |
 
 Tag the tests `#[trace("TC-460", "FR-104-AC-n")]`.
 
@@ -37,14 +39,16 @@ Tag the tests `#[trace("TC-460", "FR-104-AC-n")]`.
 1. `missing_declaration`/`missing-name` at `Config::Missing`.
 2. `missing_declaration`/`missing-name` at `missing`.
 3. `ill_typed`/`non-boolean-root` at the body.
-4. The code a duplicate function name gets, at the second `ParentOrder`.
+4. `ambiguous_declaration`/`ambiguous-name` at both `ParentOrder`
+   declarations.
 5. `wrong_snapshot`/`forbidden-pre-read` at the `pre`.
 6. `wrong_snapshot`/`forbidden-pre-read` at the `pre`.
 7. `ill_typed`/`operator-ineligible` at the `reaches`.
-8. The definedness refusal an unguarded `value(..)` gets today, at
-   `value(self.parent)`.
+8. `undefined_expression`/`unproved-presence` at `value(self.parent)`.
+9. `ambiguous_declaration`/`ambiguous-name` at the clause and the function.
+10. `ill_typed`/`operator-ineligible` at the `reaches`.
 
-No row yields a checked clause.
+No row yields a checked clause or function.
 
 ## Status
 

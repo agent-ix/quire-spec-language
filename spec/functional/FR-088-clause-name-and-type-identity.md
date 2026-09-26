@@ -85,9 +85,13 @@ ADR's summary sentence as if it were itself testable.
   `modifies`/`creates`/`deletes` node-id sets to their `DeclarationKey`s
   through the model correspondence (O-04). This requirement implements the
   identity and the resolution step only; FR-340's frame semantics
-  themselves are #210's.
+  themselves are #210's. Amended by FR-105 (QSL-273): a `modifies` entry
+  naming a field is the pair (declaring `object_type` node, field name),
+  not a node of its own (ADR-013 O-06, FR-094); it resolves by the object
+  type node's `DeclarationKey` and the member name.
 - Clause identity (O-09, clause half): the checked node id of the `claim`,
-  `temporal` or `protocol` node, with the O-07 occurrence key available to
+  `temporal`, `protocol` or `state`/`state_clause` node (the last added by
+  FR-105, QSL-273), with the O-07 occurrence key available to
   disambiguate two structurally identical clauses at different source
   occurrences. This requirement does not build `KaniObligationIdentity` or
   any CG-side type.
@@ -120,6 +124,19 @@ requirement's own QSL → v2 direction SHALL be total with no `_` arm: every
 variant of the checked clause-kind enum maps to exactly one v2 `node_tag`/
 `semantic_form` pair or clause operation identity, and no v2 string this
 enum's wire spelling admits maps to zero or more than one variant.
+
+Amended by FR-105 (QSL-273). The enum gains `Invariant`, `Precondition` and
+`Postcondition`. All three spell the pair (`state`, `state_clause`) and the
+clause operation `quire.op.state.clause` (STD-111); their application's kind
+member tells them apart, so for these three the injective spelling is the
+triple (pair, operation identity, kind member), and a decoder reads the kind
+member after the operation identity. `StateTransition` spells
+(`state`, `transition`), its QSpec form, not (`state`, `frame`). The pair
+(`state`, `frame`) decodes to no clause kind: a frame node's body is QSpec
+FR-340's frame term, which holds no clause application, so a frame is never
+read as a clause. Frame identity (O-08) is unchanged by this: a frame is
+identified by its own `state`/`frame` node id, whatever operation anchor
+references it.
 
 ### Two identities resolve through the model correspondence, never by search
 
@@ -218,7 +235,7 @@ only a unit node key as a declared-arm `UnitId`.
 | FR-088-AC-1 | Exactly one checked clause-kind enum is defined in the layer-3 `check` core; `syntax::ClauseKind` is unchanged and gains no variant. A whole-crate definition scan confirms one canonical enum and zero variants added to the lane-private one. | Test (TC-257) |
 | FR-088-AC-2 | Frame identity resolves each `modifies`/`creates`/`deletes` `NodeKey` to its `DeclarationKey` only by reading the model correspondence the S3 checker recorded on `CheckedGraph` and the S4 link step carried, unchanged, into the `CheckedPackage` a layer-4/layer-5 consumer holds (ADR-013 O-04: "Consumers read the correspondence from the `CheckedPackage`"); an adverse test that removes an entry from the correspondence and re-derives the same frame from source (rather than reusing the correspondence) demonstrates the resolution is not re-derived by search. | Test (TC-248) |
 | FR-088-AC-3 | Given two occurrences of a structurally identical clause (same checked node id) at two distinct source positions, the two clauses' occurrence keys (node id, role, ordinal) differ, and a consumer keying on (node id, occurrence key) together, not on node id alone, distinguishes them; an adverse test that changes display text, diagnostic text, or the collection order the clauses are iterated in leaves both clauses' identities (node id, occurrence key) unchanged (R-05). | Test (TC-249) |
-| FR-088-AC-4 | Every checked clause-kind variant maps to exactly one v2 `node_tag`/`semantic_form`/clause-operation-identity spelling, and every v2 spelling this enum's wire vocabulary defines maps back to exactly one variant: a wire-string totality test iterates every variant forward and every wire string backward and finds no gap and no ambiguity. A mutation test on the forward mapping function (each mutant flips one variant's target wire string, or deletes one match arm) fails the totality test for every mutant, with no mutant allow-listed (ADR-013 §4 preamble; ADR-012 §5.3 evidence convention). | Test (TC-250) |
+| FR-088-AC-4 | Every checked clause-kind variant maps to exactly one v2 `node_tag`/`semantic_form`/clause-operation-identity spelling (for `Invariant`, `Precondition` and `Postcondition`, that spelling plus the `quire.op.state.clause` kind member, FR-105), every v2 spelling this enum's wire vocabulary defines maps back to exactly one variant, and (`state`, `frame`) maps back to none: a wire-string totality test iterates every variant forward and every wire string backward and finds no gap and no ambiguity. A mutation test on the forward mapping function (each mutant flips one variant's target wire string, or deletes one match arm) fails the totality test for every mutant, with no mutant allow-listed (ADR-013 §4 preamble; ADR-012 §5.3 evidence convention). | Test (TC-250) |
 | FR-088-AC-5 | No function exists whose signature accepts a `QualifiedName` or a bare string and returns a node id or a declaration, callable from outside the check stage; a source and call-graph scan over every crate module confirms every call site of the checker's name-resolution function lies inside the check stage, with the sole documented exception being the `replay` facade's own E9 lookup (a separate module, not built by this requirement) never called from `check` itself. | Test (TC-251) |
 | FR-088-AC-6 | `QualifiedName` is used only as a declared component of an identity preimage (for example inside `DeclarationKey`'s or a checked node's own preimage where a name participates); no equality or hashing implementation on any identity type treats a `QualifiedName` as the sole identity-bearing field where a node id or digest is available instead. | Inspection (TC-258) |
 | FR-088-AC-7 | A package type's identity is its checked node id: node keys are content keys scoped only by owner (ADR-013 O-04, OQ-G). Two type declarations with the same structure under the same qualified name in two packages of the same owner share one node id. Two with the same structure and qualified name in packages with different source owners get distinct node ids, and two with different qualified names get distinct node ids. A builtin or anonymous type node, such as `Int[0, 9]`, has no owner and shares one id across packages and owners. A reference into another package is distinguished by its `PackageNodeKey` (ADR-013 T-3). Within one package, two source *occurrences* of a reference to the same declared type (ADR-013 O-07's own term: "each source occurrence of a node is keyed by (node id, role, ordinal)" — for example the same type named as the field type of two different fields) resolve to the one node id the single declaration was minted with; this is not a claim about declaring a type twice; declaring a structurally identical type a second time under a colliding name is a name-binding refusal (a duplicate declaration), a different criterion, not a second occurrence of the first node id, and is out of this criterion's scope. This repository's own precedent for a duplicate name/binding — `checking::composed::proofs::CorrespondenceError::DuplicateDeclaration`, `src/checking/composed/proofs/correspondence.rs:96` — refuses rather than admits with a shared id. | Test (TC-259) |

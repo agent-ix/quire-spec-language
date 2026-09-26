@@ -22,7 +22,7 @@ FR-106's examples, labelled as there, held in in-memory provisions keyed by
 their `sha256-jcs` digest.
 
 1. Admit the healthy-parent snapshot for `ParentOrder` with `Current {
-   snapshot, self: {config_history, child} }`.
+   snapshot, anchor: {handler, validate}, self: {config_history, child} }`.
 2. Re-serialize the same snapshot with other whitespace and reversed member
    order, and admit it with the same selection.
 3. Admit the changed-version invocation for `VersionUnchanged`, with its pre

@@ -10,8 +10,9 @@ relationships:
 
 ## Description
 
-Verify QSL's I2 read of the emitted state package, identity stability under
-edits, and all-or-nothing emission.
+Verify QSL's I2 read of the emitted state package, identity and cardinality
+rules under edits, anchoring of inherited operations, and all-or-nothing
+emission.
 
 Scope: FR-105-AC-3, FR-105-AC-4, FR-105-AC-6.
 
@@ -20,25 +21,33 @@ Scope: FR-105-AC-3, FR-105-AC-4, FR-105-AC-6.
 1. Read TC-462's emitted bytes through QSL's `checked_v2` I2 reader, and
    recompute the `package_id`.
 2. Compile the unit twice. Then rename `ParentOrder` to `ParentFirst`; then
-   change its `<` to `<=`; then add
-   `post Also using v on Config::ConfigVersion::attemptUpdate { result }`.
-3. Inject an emitter fault at the `frame` node (a test-only hook in the
+   change its `<` to `<=`; then add `ParentOrder2` with `ParentOrder`'s body;
+   then add `post Also using v on Config::ConfigVersion::attemptUpdate
+   { result }`.
+3. Add object type `Sub` with supertype `ConfigVersion` to the fixture
+   package, and compile a unit with
+   `pre A using v on Config::ConfigVersion::attemptUpdate { true }` and
+   `pre B using v on Config::Sub::attemptUpdate { true }`.
+4. Inject an emitter fault at the `frame` node (a test-only hook in the
    `ProtocolClause` emission arm) and compile.
 
 Tag the tests `#[trace("TC-463", "FR-105-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: the read admits the package, including its frame step (QSpec
-  FR-340), and the recomputed `package_id` equals the emitted one.
+- Step 1: the read admits the package, including its frame step, and the
+  recomputed `package_id` equals the emitted one.
 - Step 2: identical bytes twice; the rename changes no node id; `<=` changes
-  `ParentOrder`'s `state_clause` node id and the `package_id`; `Also` adds one
-  `state_clause` node and no second anchor or frame.
-- Step 3: the compile refuses; no package bytes and no `state` node are
+  `ParentOrder`'s `state_clause` node id and the `package_id`;
+  `ParentOrder2` adds no node and gives `ParentOrder`'s node a second `claim`
+  occurrence, ordinal 1; `Also` adds one `state_clause` node and no second
+  anchor or frame.
+- Step 3: one `operation_anchor` and one `frame`; the anchor's context is the
+  `ConfigVersion` node; both clauses reference that anchor.
+- Step 4: the compile refuses; no package bytes and no `state` node are
   emitted.
 
 ## Status
 
-Planned (QSL-273). Step 1 needs QSL's reader to carry the `state_clause` and
-`operation_anchor` body rule FR-105 proposes; the IR reader at 48ab5dc is not
-asked to read these bodies here (FR-105 Dependencies).
+Planned (QSL-273). Step 1 is pending STD-111: QSL's reader admits these
+bodies once the QSpec body rules land. Steps 2 to 4 do not wait on it.

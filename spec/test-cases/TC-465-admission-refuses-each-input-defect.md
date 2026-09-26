@@ -10,47 +10,62 @@ relationships:
 
 ## Description
 
-Verify that each FR-106 admission check fails alone with its code, cause and
-input path, that completeness precedes closure, and that the frame compares
-scalar as well as reference fields.
+Verify that each FR-106 admission condition fails alone with its code, cause
+and input path, that completeness precedes closure, that the frame compares
+scalar as well as reference fields, and that a document with several defects
+reports the first by FR-106's order.
 
-Scope: FR-106-AC-3, FR-106-AC-4, FR-106-AC-5.
+Scope: FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7.
 
 ## Test Procedure
 
-Start from TC-464's healthy-parent snapshot (for the `Current` rows) or its
-changed-version invocation (for the `Invocation` rows). Apply one mutation per
-row and admit.
+Start from TC-464's healthy-parent snapshot and selection (for the `Current`
+rows) or its changed-version invocation (for the `Invocation` rows). Apply one
+mutation per row and admit. The provision digest is recomputed for every
+mutated document except where the row says otherwise.
 
-| # | Mutation | Expected |
-| --- | --- | --- |
-| 1 | selected snapshot missing from the provision | `Incomplete`, `unavailable_observation`/`missing-required-artifact` |
-| 2 | snapshot of 1 MiB + 1 byte | `stage_limit_exceeded`, `input-bytes-exceeded` |
-| 3 | `format` `native-state-input/1` | `unknown_wire` |
-| 4 | an extra top-level member `note` | `invalid_runtime_input`/`unknown-member` |
-| 5 | blank `authority` | `invalid_source_identity` |
-| 6 | the snapshot's bytes edited (`child.versionNumber` `"3"`) but kept in the provision under the selected, original digest | `stale_dependency`/`byte-digest-mismatch` |
-| 7 | `Current` selecting `VersionUnchanged` | `wrong_snapshot`/`wrong-observation` |
-| 8 | the current snapshot's `observation` set to `pre` | `wrong_snapshot`/`wrong-observation` |
-| 9 | `model.digest` of another package | `invalid_model_binding`/`wrong-model-selection` |
-| 10 | invocation `operation` `other` | `wrong_snapshot`/`wrong-invocation` |
-| 11 | a second object keyed `root` | `invalid_runtime_input`/`conflicting-identity` |
-| 12 | `versionNumber` `{"boolean": true}` | `invalid_runtime_input`/`wrong-value-kind` |
-| 13 | `root.versionNumber` `"-1"`; then `child.versionNumber` `"1001"` | `invalid_runtime_input`/`invalid-value`, naming `root` then `child` and `versionNumber` |
-| 14 | `self` `{config_history, ghost}` | `invalid_runtime_input`/`wrong-role-mapping` |
-| 15 | invocation `result` `null` | `invalid_runtime_input`/`missing-member` |
-| 16 | `complete: false` and `child.parent` naming `missing` | `Incomplete`, `incomplete_population`/`incomplete-scope`, no dangling record |
-| 17 | row 16 with `complete: true` | `dangling_reference`/`absent-target-in-complete-population`, naming `missing` and `config_history` |
-| 18 | post `child.parent` absent | `frame_violation`/`unauthorized-change`, naming `child` and `parent` |
-| 19 | a package whose `attemptUpdate` frame modifies only `parent`, with the changed-version invocation (post `child.versionNumber` 3) | `frame_violation`/`unauthorized-change`, naming `child` and `versionNumber` |
-| 20 | invocation `created: [{config_history, child}]` | `population_delta_mismatch`/`delta-disagreement` |
+| # | Check | Mutation | Expected |
+| --- | --- | --- | --- |
+| 1 | 1.1 | selected snapshot missing from the provision | `Incomplete`, `unavailable_observation`/`missing-required-artifact` |
+| 2 | 1.2 | snapshot of 1 MiB + 1 byte | `stage_limit_exceeded`, `input-bytes-exceeded` |
+| 3 | 1.2 | a field value nested 65 `present` levels deep | `stage_limit_exceeded`, `nesting-depth-exceeded` |
+| 4 | 1.3 | the snapshot's bytes edited (`child.versionNumber` `"3"`), kept under the original digest | `stale_dependency`/`byte-digest-mismatch` |
+| 5 | 1.4 | `format` `native-state-input/1` | `unknown_wire`/`unsupported-wire` |
+| 6 | 1.5 | `populations` removed | `invalid_runtime_input`/`missing-member` |
+| 7 | 1.6 | an extra top-level member `note` | `invalid_runtime_input`/`unknown-member` |
+| 8 | 1.7 | blank `authority` in document and selection | `invalid_runtime_input`/`invalid-value` at `authority` |
+| 9 | 1.8 | the selection's `revision` `2` | `stale_dependency`/`revision-mismatch`, naming both |
+| 10 | 2 | `Current` selecting `VersionUnchanged` | `wrong_snapshot`/`wrong-observation` |
+| 11 | 3 | the current snapshot's `observation` set to `pre` (and `anchor` removed) | `wrong_snapshot`/`wrong-observation` |
+| 12 | 3 | the selection's anchor `{handler, other}` | `wrong_snapshot`/`wrong-anchor`, naming both |
+| 13 | 4 | `model.digest` of another package | `invalid_model_binding`/`wrong-model-selection` |
+| 14 | 5 | invocation `operation` `other` | `wrong_snapshot`/`wrong-invocation` |
+| 15 | 6.1 | population `ix://example/config-version/other` | `invalid_runtime_input`/`wrong-role-mapping` |
+| 16 | 6.3 | a second object keyed `root` | `invalid_runtime_input`/`conflicting-identity` at the second |
+| 17 | 6.2 | a package variant whose `ConfigVersion` has field `tags` typed a set of `ConfigVersion` | `unknown_required_feature`/`unsupported-feature` at `tags` |
+| 18 | 6.5 | `versionNumber` `{"boolean": true}` | `invalid_runtime_input`/`wrong-value-kind` |
+| 19 | 6.5 | `root.versionNumber` `"01"` | `invalid_runtime_input`/`invalid-value` at `root`, `versionNumber` |
+| 20 | 6.5 | `root.versionNumber` `"-1"`; then `child.versionNumber` `"1001"` | `invalid_runtime_input`/`invalid-value`, naming `root` then `child` and `versionNumber` |
+| 21 | 9 | `self` `{config_history, ghost}` | `invalid_runtime_input`/`wrong-role-mapping` |
+| 22 | 10 | invocation `result` `null` | `invalid_runtime_input`/`missing-member` |
+| 23 | 7 | `complete: false` and `child.parent` naming `missing` | `Incomplete`, `incomplete_population`/`incomplete-scope`, no dangling record |
+| 24 | 8 | row 23 with `complete: true` | `dangling_reference`/`absent-target-in-complete-population`, naming `missing` and `config_history` |
+| 25 | 7 | healthy-parent plus a second population `ix://example/config-version/archive` over `ConfigVersion`, `complete: false`, that no reference names | admitted |
+| 26 | 11.3 | post `child.parent` absent | `frame_violation`/`unauthorized-change`, naming `child` and `parent` |
+| 27 | 11.3 | a package whose `attemptUpdate` frame modifies only `parent`, with the changed-version invocation (post `child.versionNumber` 3) | `frame_violation`/`unauthorized-change`, naming `child` and `versionNumber` |
+| 28 | 11.4 | invocation `created: [{config_history, child}]` | `population_delta_mismatch`/`delta-disagreement` |
+| 29 | 1.3 over 1.6 | row 4's edit plus row 7's extra member, under the original digest | `stale_dependency`/`byte-digest-mismatch` |
+| 30 | 6.5 walk order | `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` together | `invalid_runtime_input`/`invalid-value` at `root` |
+| 31 | 11.1 over 11.3 | post deletes `root` and sets `child.parent` absent | `frame_violation`/`unauthorized-change` naming the deletion of `root` |
 
-Tag the tests `#[trace("TC-465", "FR-106-AC-n")]`.
+Row 25 needs the fixture package to declare a second population `archive`
+over `ConfigVersion`. Tag the tests `#[trace("TC-465", "FR-106-AC-n")]`.
 
 ## Expected Results
 
-Each row gives exactly its expected record and nothing else. Every row but 1
-and 16 is `Refused`. No row yields an `AdmittedObservations`.
+Each row gives exactly its expected record and nothing else. Rows 1 and 23
+are `Incomplete`, row 25 admits, and every other row is `Refused`. No failing
+row yields an `AdmittedObservations`.
 
 ## Status
 
