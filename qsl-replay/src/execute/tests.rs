@@ -1066,7 +1066,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
             CompileRefusal::Import {
                 refusal: crate::spine::ImportRefusal::MissingSelection { identity },
                 ..
-            } if identity == "test/units"
+            } if identity.as_str() == "test/units"
         ),
         "{refusal:?}"
     );
