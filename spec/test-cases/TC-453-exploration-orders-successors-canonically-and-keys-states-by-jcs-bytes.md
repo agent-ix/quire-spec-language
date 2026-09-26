@@ -19,30 +19,34 @@ frontier.
 
 ## Test Procedure
 
-1. Explore a system whose state 0 lists transitions `z` then `a`, where
-   `a`'s post-state key is greater than `z`'s, with `max_depth` 1.
-2. Explore a system whose state 0 lists `step(9)` then `step(10)`, integer
-   arguments, where `step(10)`'s post-state key is greater than
-   `step(9)`'s, with `max_depth` 1.
-3. Explore a system whose state 0 lists two successors with the same
-   transition identity and different post-states, the larger state key
-   first, with `max_depth` 1.
-4. Explore a system that lists three distinct initial states in
-   descending state-key order and then repeats one of them, with
-   `max_states` 3 and `max_depth` 0.
-5. Explore the graph 0 -`a`→ 1, 0 -`b`→ 2, 1 → 3, 2 → 4, with states
-   chosen so that key(1) > key(2) and key(3) > key(4), generous limits, and
-   a poll that cancels at the fourth expansion.
-6. Compute the state key and digest of the FR-101-AC-2 states with
-   `float64` bits `0000000000000000` and `8000000000000000`, and of the same
-   state with `float64` NaN bits `7ff8000000000000` and `7ff8000000000001`.
-   Explore a system with an initial state and one successor for each of
-   those two value pairs.
-7. Explore two paths 0 → 1 → 3 and 0 → 2 → 3 that reach an equal state
-   key.
-8. Explore a system that lists four distinct initial states a < b < c < d
-   (by key) in the order d, b, a, c with `max_states` 2; then with
-   `max_states` 0; then a system with no initial state.
+Every step is an integration test in `qsl-eval/tests/it/` through the
+public entries; `explore` is `pub(crate)` (FR-101).
+
+1. Call `explore_request` with an empty `domains` set, `max_depth` 1, on a system whose state 0 lists transitions
+   `z` then `a`, where `a`'s post-state key is greater than `z`'s.
+2. Call `explore_request` with an empty `domains` set, `max_depth` 1, on a system whose state 0 lists `step(9)` then
+   `step(10)`, integer arguments, where `step(10)`'s post-state key is
+   greater than `step(9)`'s.
+3. Call `explore_request` with an empty `domains` set, `max_depth` 1, on a system whose state 0 lists two successors
+   with the same transition identity and different post-states, the larger
+   state key first.
+4. Call `explore_request` with an empty `domains` set, `max_states` 3 and `max_depth` 0, on a system that lists three
+   distinct initial states in descending state-key order and then repeats
+   one of them.
+5. Call `explore_request` with an empty `domains` set, generous limits and a poll that cancels at the fourth
+   expansion, on the graph 0 -`a`→ 1, 0 -`b`→ 2, 1 → 3, 2 → 4, with states
+   chosen so that key(1) > key(2) and key(3) > key(4).
+6. Call `explore_request` with an empty `domains` set, `max_depth` 0, on systems whose one initial state is the
+   FR-101-AC-2 state with `float64` bits `0000000000000000`,
+   `8000000000000000`, `7ff8000000000000` and `7ff8000000000001` in turn,
+   and read each frontier digest. Then call `explore_request` with an empty `domains` set, generous limits, on a
+   system with an initial state and one successor for each of the two
+   value pairs (the signed zeros, the NaNs).
+7. Call `explore_request` with an empty `domains` set, generous limits, on two paths 0 → 1 → 3 and 0 → 2 → 3 that
+   reach an equal state key.
+8. Call `explore_request` with an empty `domains` set, `max_states` 2, on a system that lists four distinct initial
+   states a < b < c < d (by key) in the order d, b, a, c; then with
+   `max_states` 0; then on a system with no initial state.
 
 ## Expected Results
 

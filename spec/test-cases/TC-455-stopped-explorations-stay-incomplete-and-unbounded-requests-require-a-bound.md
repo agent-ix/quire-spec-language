@@ -16,18 +16,22 @@ FR-101-AC-8.
 
 ## Test Procedure
 
-1. Explore the graph 0 → {1, 2}, 1 → 3 with a poll that cancels at the
-   second expansion.
-2. Explore the chain 0 → 1 → 2 with `max_depth` 2 and then 3, `max_states`
-   2 and then 3, and `max_transitions` 1 and then 2.
-3. Explore the graph 0 → {1, 2}, 1 → 3 with `max_states` 3.
+Every step is an integration test in `qsl-eval/tests/it/` through the
+public entries; `explore` and `sample` are `pub(crate)` (FR-101).
+
+1. Call `explore_request` with an empty `domains` set, generous limits and a poll that cancels at the second
+   expansion, on the graph 0 → {1, 2}, 1 → 3.
+2. Call `explore_request` with an empty `domains` set on the chain 0 → 1 → 2 with `max_depth` 2 and then 3,
+   `max_states` 2 and then 3, and `max_transitions` 1 and then 2.
+3. Call `explore_request` with an empty `domains` set, `max_states` 3, on the graph 0 → {1, 2}, 1 → 3.
 4. Call `explore_request` and `sample_request` with `domains` holding one
    parameter typed `Integer` (no range), on a `TransitionSystem` that
    records every method call. Repeat `explore_request` with `Limits` at
    `usize::MAX`. Then call `explore_request` with a bounded domain and
    `position_limit` 0.
-5. Explore the graph 0 → {1, 2}, 1 → 3, 2 → 4 with generous limits.
-6. Call `explore_request` with the parameter typed `Int[0, 9]`.
+5. Call `explore_request` with an empty `domains` set, generous limits, on the graph 0 → {1, 2}, 1 → 3, 2 → 4.
+6. Call `explore_request` with `domains` holding one parameter typed
+   `Int[0, 9]`.
 
 ## Expected Results
 

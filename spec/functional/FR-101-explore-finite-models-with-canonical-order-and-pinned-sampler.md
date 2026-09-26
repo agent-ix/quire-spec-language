@@ -116,6 +116,14 @@ pub struct RequiresBound {
 }
 ```
 
+`explore_request` and `sample_request` are the only public entries that
+explore or sample: `explore`, `sample` and the `Sampler` trait are
+`pub(crate)`, so no caller skips the requires-bound check or the
+`GeneratorMismatch` check. `replay` stays public; it explores nothing new.
+Integration tests in `qsl-eval/tests/it/` call the two entries with a
+bounded or empty `domains` set; a check that needs draw internals is an
+in-crate unit test.
+
 `explore_request` never returns `GeneratorMismatch` or `EmptyInitial`.
 `GeneratorMismatch` maps to `invalid_runtime_input`/`invalid-value`.
 
@@ -280,7 +288,8 @@ Specified under QSL-272. Not implemented. Today:
   digests;
 - `CounterSampler` is the only sampler;
 - `Outcome::Cancelled` carries no cause;
-- no `explore_request`, `sample_request` or `NotSimulated` exists;
+- no `explore_request`, `sample_request` or `NotSimulated` exists, and
+  `explore`, `sample`, `Sampler` and `CounterSampler` are `pub`;
 - `qsl-eval/tests/it/finite_simulation.rs` still carries QSpec's `TC-210`
   and `FR-181-AC-*` tags.
 
