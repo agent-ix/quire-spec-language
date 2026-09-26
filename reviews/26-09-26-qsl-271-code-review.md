@@ -84,7 +84,7 @@ tracks rather than repeating a separate fix.
 | SR-674 | FND-003 | medium | 630728ba (`CheckedInvariant`/`CallFailure::Fault`/locus faults now exit 30 directly, never through `Code::exit_code`) |
 | SR-674 | FND-004 | medium | 3f49b580 |
 | SR-674 | FND-005 | medium | 8eda2b73 (this fix round: isolated native-model/no-call/extraction fixtures, TC-450 step 4) |
-| SR-674 | FND-006 | medium | 630728ba (kernel-side rows, `convert_outcome`); 8eda2b73 (`Undefined`, TC-452 step 4); e3c20e65 (remainder: refused/family/kernel rows, `location.origin` kinds and the fault envelope, FND-013) |
+| SR-674 | FND-006 | medium | 630728ba (kernel-side rows, `convert_outcome`); 8eda2b73 (remaining half: root-crate renderer/exit-mapping unit tests for `Undefined`, TC-452 step 4) |
 | SR-674 | FND-007 | medium | 630728ba (TC-450 step 6 CLI test for `libraries` plus `models`) |
 | SR-674 | FND-008 | low | 630728ba (whole-document assertions, `flag`/`id` CLI coverage, stronger TC-450 step 2 oracle) |
 | SR-674 | FND-009 | low | 3f49b580 |
@@ -92,7 +92,7 @@ tracks rather than repeating a separate fix.
 | SR-674 | FND-011 | low | 630728ba (`source` threaded through so `selected_package` does not re-read it) |
 | SR-674 | FND-012 | low | 630728ba (the `#[allow]` and named-constant nits); 7ce0d104 (the fixture's `corner`-not-`origin` note) |
 | SR-675 | FND-001 | medium | tracks SR-674 FND-005 (8eda2b73) and FND-007 (630728ba) |
-| SR-675 | FND-002 | medium | tracks SR-674 FND-006 (8eda2b73, e3c20e65) |
+| SR-675 | FND-002 | medium | tracks SR-674 FND-006 (8eda2b73) |
 | SR-675 | FND-003 | medium | tracks SR-674 FND-002 (3f49b580) |
 | SR-675 | FND-004 | low | 630728ba |
 | SR-675 | FND-005 | low | tracks SR-674 FND-003 (630728ba) |
@@ -154,15 +154,41 @@ Gate: `make ci` at efa42552 exit 0 (`make-ci-r1.log`).
 
 **Re-review verdict: not mergeable yet.** One medium (FND-013) remains, and it is a tests-only fix.
 
-## Coder dispositions (round 3, e3c20e65)
+## Reviewer dispositions, round 2 (46fff6e1)
 
-The re-review's own findings (FND-013 to FND-018), fixed in this round.
+I verified these myself at 46fff6e1, which is rebased onto main and includes
+#459 and #467. `make ci` at 46fff6e1: exit 0 (`make-ci-r2.log`). I re-ran my
+four FND-013 mutants, a fifth mutant, and the FND-015 and cross-file alias
+probes; the worktree was clean afterwards.
 
-| ID | Severity | Fixed in |
+This section replaces the coder-authored "fixed in e3c20e65" rows from
+46fff6e1. e3c20e65 is a pre-rebase SHA.
+
+The rebase rewrote the SHAs used in the round-1 dispositions above, so the
+post-rebase commits are:
+
+| Pre-rebase | Post-rebase |
+| --- | --- |
+| 3f49b580 | 482a1ac1 |
+| 630728ba | 239e664f |
+| 8eda2b73 | 3025bc3e |
+| 7ce0d104 | a2e8322a |
+
+| FND | Outcome | fix_sha / reason |
 | --- | --- | --- |
-| FND-013 | medium | e3c20e65. Unit tests for a record refusal (exits by its catalog code -- `resource_exhausted`/`ancestor-steps` gives 22), a family refusal with no record, a bare kernel refusal (exit 20), every `location.origin` kind including `type-declaration`, the `CheckedInvariant` and `CallFailure::Fault` fault envelopes (stage `call`, code `runtime_invariant`, `details {stage, invariant}`, exit 30), and a direct `convert_call_failure` test. Four mutants killed: `refusal_exit_code` forced to 20, the exit-30 special case disabled, `SpineOrigin`'s `rename_all` flipped to `snake_case`, and the fault `details.stage` filled from `invariant()`. |
-| FND-014 | low | e3c20e65. `Selected::compile` takes the already-read `FormalSource`; `program.source` is read exactly once even under `quire-extraction`. |
-| FND-015 | low | e3c20e65. `qsl_eval_aliases` now also resolves a private `type` alias naming `qsl_eval`, fixed point over the file's own `type` items. New probe `tc_452_spine_surface_check_resolves_a_private_type_alias`. |
-| FND-016 | low | e3c20e65, per Peter's ruling: `compile`/`Compiled` retain and return the `Source` objects `qsl_cst::parse` already built (the unit's and every resolved library's); `spine::run` reuses them instead of re-reading, so `supplied_sources` and its defensive fault are gone. |
-| FND-017 | low | e3c20e65. FR-027's Outputs section now states a `1-draft` `program` carries no `clauses` key at all, any presence (including `[]`) refusing, consistent with FR-100. The flipped test stays, tagged `FR-027-AC-7`. |
-| FND-018 | low | e3c20e65. The stale FND-004 comment is fixed; FND-007's severity is corrected to medium above; `tc_450_step_4_malformed_work_units_refuses` now includes a `null` case. |
+| FND-006 | fixed | 2a059b32. Its remaining half was carried as FND-013. |
+| FND-013 | fixed | 2a059b32. All four mutants now fail tests: `refusal_exit_code`→20 fails `refused_record_renders_and_exits_by_its_code`; the Fault→30 arm disabled and the fault `details.stage` from `invariant()` each fail both `*_fault_envelope_exits_30`; `snake_case` fails `location_origin_kinds_render_kebab_case`. `convert_call_failure` is tested. A fifth mutant survives (FND-019). |
+| FND-014 | fixed | 2a059b32. `Selected::compile(models, original: FormalSource)`. Extraction no longer calls `intake.source` a second time. |
+| FND-015 | fixed | 2a059b32. Fixed-point `type` alias resolution; the probe now FAILs (`impl fn probe`). A cross-file residual remains (FND-020). |
+| FND-016 | fixed | 2a059b32. `Compiled` gains `pub source: Source` and `pub libraries: Vec<Source>`, the `qsl_cst::parse` sources for the unit and every library it resolved. `supplied_sources` and its defensive fault are gone. Both types are `qsl_foundation`, so the public surface still names no `qsl_eval`, and the AC-8 check passes in `make ci`. |
+| FND-017 | fixed | 2a059b32. FR-027 Outputs now says a `1-draft` `program` carries no `clauses` key, and that any presence refuses. |
+| FND-018 | fixed | 2a059b32. The stale comment is fixed, `work_units: null` is pinned, and FND-007 is labelled medium. |
+
+## Round-2 new findings (46fff6e1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-019 | low | The CLI's rendering of a record's `locus`, and of `location` on record and family refusals, is not tested. The mutant `locus: locus.map(spine_locus)` → `locus: None` survives the root suite (49 lib, 910 it). TC-452 step 4 expects the fixture-F `locus` exactly as rendered, but the only exact check is in `qsl-replay`, before rendering. | src/command/output.rs:391-404; src/command/output.rs:760-790 |
+| FND-020 | low | The AC-8 alias scan is per-file. A `pub(crate) type Ev = qsl_eval::value::QualifiedName;` in `spine.rs`, used by `pub fn probe(&self) -> Option<super::Ev>` in `call.rs`, PASSes (probe). Aliases declared in a sibling or parent module are not followed. | tools/arch-lint/api_surface.rs:1276-1336 |
+
+**Round-2 verdict:** nothing blocking remains. Every earlier finding is fixed. FND-019 and FND-020 are new, non-blocking lows and are still-open until the coder fixes them or defers them to a ticket.

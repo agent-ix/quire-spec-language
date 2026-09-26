@@ -80,3 +80,12 @@ Reviewer disposition pass at efa42552 (based on a643665a, #469).
 | FND-004 | fixed | 630728ba. The TC-450/451/452 Status sections say "Passed locally". |
 | FND-005 | fixed | 630728ba. FR-100 Status is rewritten for the full mapping (kernel rows are live, exits 30 direct). |
 | FND-006 | accepted-no-change | The AC-8 CLI arm stays outside `make ci`; the workspace unit tests gate it. |
+
+## Dispositions, round 2 (46fff6e1)
+
+Post-rebase SHAs for the round-1 dispositions above: 3f49b580→482a1ac1,
+630728ba→239e664f and 8eda2b73→3025bc3e.
+
+| FND | Outcome | fix_sha / reason |
+| --- | --- | --- |
+| FND-002 | fixed | 2a059b32. The CLI's renderer and exit mapping are tested for the record (exit by code, 22), family, kernel (20) and fault (30) rows; see SR-674 FND-013. The `locus` rendering gap is carried as SR-674 FND-019. |
