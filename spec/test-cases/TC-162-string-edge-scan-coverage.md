@@ -17,35 +17,21 @@ its report is non-empty, rejects an allow-list entry that gates a branch
 (including each of ADR-010 §4.3's five named production sites), and that the
 lint gate fails when the tool does. Scope: FR-064-AC-1 through FR-064-AC-6.
 
-**Scope correction.** `xtask string-edge` itself (steps 1-6 below) is fully
-implemented and exercised by unit fixtures, and is clean over every file
-#214 adds or touches (`xtask/src/*`). Step 7 (the lint-gate wiring) is
-implemented only as a standalone `make string-edge` target, not as part of
-`ci:`/the lint gate: the real QSL crate today has 60 pre-existing,
-unmarked, mostly branch-gating occurrences outside `qsl-semantics/src/family/*` and
-`qsl-eval/src/value/expression/*`, which the allow-list cannot admit and which
-#214 does not own converting (see
-[QSL-145](https://linear.app/agent-ix/issue/QSL-145) and FR-064's own
-Status section). QSL-155 corrects step 7's original "stub the gate's target
-list" wording (the same defect as FR-063-AC-5's, and the same fix -- see
-below); the corrected version is still not satisfied, since no `Makefile`
-target invokes `xtask string-edge` yet, which remains QSL-145's gap, not
-this correction's.
-
-**QSL-150's real-site investigation (step 6).** Running the real scan (not
-a fixture) over the four of ADR-010 §4.3's five named sites still present in
-the tree, at their real file and line, found every one comes back
-`branch_gating: false`: each comparison is a term of a `&&`/`||` boolean
-expression or a `match` arm body whose *result*, not the comparison itself,
-is what an outer branch reads -- a shape this scanner's structural
-(syntactic-nesting-only) detector does not see, by its own documented scope.
-`branch_gating_entries` therefore does not reject an allow-list entry at any
-of the four real sites today. This is recorded as a concrete, tested finding
-(`xtask::string_edge::tests::real_adr010_sites_are_flagged_branch_gating_
-by_the_structural_detector`, `#[ignore]`d and asserting the desired
-rejection so it fails for a documented reason rather than passing on the
-current, wrong behavior) rather than left to the synthetic fixtures in
-step 6 below implying more than they show.
+**Status (QSL-145, QSL-268).** `xtask string-edge` is clean over the whole
+workspace and `string-edge` is a prerequisite of `make ci` (step 7, backed
+by `the_real_makefile_wires_string_edge_into_ci` and
+`a_failed_prerequisite_fails_the_aggregate_target`). The scan skips
+file-level test modules (`tests/`, `tests.rs`, `*_tests.rs`, and files
+declared by `#[cfg(test)] mod x;`). The detector treats a comparison that is
+a term of a `&&`/`||` chain, a match arm's own value, or a `strip_prefix`
+call as branch-gating. Step 6's real-site half runs the raw scan (marks
+ignored) over the ADR-010 §4.3 sites still in the tree --
+`Profile::classify`, `valid_digest`, `valid_adapter` -- and asserts each is
+branch-gating and rejected as an allow-list entry
+(`real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`,
+`FR-064-AC-5`). The `"allocation"` site is gone from the tree, and the
+`clock:` prefix is read through the named-constant `temporal::
+clock_binding_name`, which this literal-only scan does not see.
 
 **Correction: steps 2 and 6 (PR #262 review, finding F11).** An earlier
 draft of `xtask/src/string_edge.rs` checked the allow-list only through
@@ -66,8 +52,8 @@ rejection shape and step 6's five ADR-010 §4.3 sites through it
 (`allow_list_entry_at_a_branch_gating_occurrence_is_rejected`,
 `none_of_the_five_adr010_production_sites_can_be_allow_listed`). Step 6's
 production sites are fixtures shaped like each named site, not the real
-crate's own occurrences of them (those 60 sites are QSL-145's, not #214's,
-per this test's own earlier scope correction); the fixtures demonstrate the
+crate's own occurrences of them (the real-site half is
+`real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`); the fixtures demonstrate the
 rejection rule works, not that the real crate's five sites are converted.
 QSL-150 lands step 2's own dedicated test the same way: `run`'s allow-list
 filtering is split into a separate, pure `unreported_occurrences`, and

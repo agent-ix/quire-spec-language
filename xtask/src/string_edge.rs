@@ -1197,6 +1197,74 @@ mod tests {
         );
     }
 
+    /// FR-064-AC-6: the real `Makefile` names `string-edge` as a prerequisite
+    /// of `ci` and its recipe runs `cargo xtask string-edge`.
+    #[trace("TC-162", "FR-064-AC-6")]
+    #[test]
+    fn the_real_makefile_wires_string_edge_into_ci() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask lives one level below the workspace root");
+        let makefile =
+            fs::read_to_string(workspace_root.join("Makefile")).expect("the Makefile reads");
+        let ci = makefile
+            .lines()
+            .find_map(|line| line.strip_prefix("ci:"))
+            .expect("the Makefile has a `ci:` target");
+        assert!(
+            ci.split_whitespace().any(|target| target == "string-edge"),
+            "`ci:` must list string-edge as a prerequisite: {ci}"
+        );
+        let mut lines = makefile.lines();
+        assert!(
+            lines.any(|line| line == "string-edge:"),
+            "the Makefile must define a `string-edge:` target"
+        );
+        assert_eq!(
+            lines.next(),
+            Some("\tcargo xtask string-edge"),
+            "the recipe must run `cargo xtask string-edge`"
+        );
+    }
+
+    /// FR-064-AC-6: a `.PHONY` aggregate depending on a prerequisite whose
+    /// recipe can fail fails when the prerequisite fails, and not when it
+    /// succeeds -- `make`'s ordinary semantics, shown on a fixture of the
+    /// same aggregate/prerequisite shape.
+    #[trace("TC-162", "FR-064-AC-6")]
+    #[test]
+    fn a_failed_prerequisite_fails_the_aggregate_target() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let makefile = dir.path().join("Makefile");
+        fs::write(
+            &makefile,
+            ".PHONY: gate-fail gate-ok scan-fail scan-ok\n\
+             gate-fail: scan-fail\n\
+             gate-ok: scan-ok\n\
+             scan-fail:\n\tfalse\n\
+             scan-ok:\n\ttrue\n",
+        )
+        .expect("write the fixture Makefile");
+        let run = |target: &str| {
+            std::process::Command::new("make")
+                .arg("-f")
+                .arg(&makefile)
+                .arg(target)
+                .output()
+                .expect("make runs")
+                .status
+                .success()
+        };
+        assert!(
+            !run("gate-fail"),
+            "a failed prerequisite must fail the gate"
+        );
+        assert!(
+            run("gate-ok"),
+            "a passing prerequisite must not fail the gate"
+        );
+    }
+
     /// FR-064-AC-4: `xtask string-edge` exits non-zero when its report is
     /// non-empty and zero when it is empty. Builds one fixture workspace
     /// tree with every root [`crate_roots`] requires (`run`'s own
