@@ -262,15 +262,41 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
                 cause: error.cause.as_ref().map(package_cause),
             },
         ),
-        RunCause::CompleteSelection(_) | RunCause::Libraries(_) => {
-            (types::Stage::Request, types::Details::None)
-        }
+        RunCause::CompleteSelection(_)
+        | RunCause::Libraries(_)
+        | RunCause::CompleteRunSelection(_)
+        | RunCause::NativeRunSelection(_)
+        | RunCause::MissingClauses => (types::Stage::Request, types::Details::None),
         RunCause::Spine(failure) => (
             types::Stage::Spine(failure.refusal.stage()),
             types::Details::Spine {
                 source: &failure.source,
                 path: &failure.path,
                 span: failure.span,
+            },
+        ),
+        RunCause::SpineRun(refusal) => (
+            types::Stage::SpineRun(refusal.stage()),
+            match refusal.as_ref() {
+                qsl_replay::spine::RunRefusal::MissingDeclaration { function }
+                | qsl_replay::spine::RunRefusal::UnsupportedResult { function } => {
+                    types::Details::Function { function }
+                }
+                qsl_replay::spine::RunRefusal::UnknownParameter { parameter }
+                | qsl_replay::spine::RunRefusal::DuplicateArgument { parameter }
+                | qsl_replay::spine::RunRefusal::UnboundParameter { parameter } => {
+                    types::Details::Parameter { parameter }
+                }
+                qsl_replay::spine::RunRefusal::WrongValueKind { position } => {
+                    types::Details::Position {
+                        position: *position,
+                    }
+                }
+                qsl_replay::spine::RunRefusal::Compile(_) => types::Details::None,
+                qsl_replay::spine::RunRefusal::Fault(fault) => types::Details::Invariant {
+                    stage: fault.stage(),
+                    invariant: fault.invariant(),
+                },
             },
         ),
         RunCause::Lowering {
@@ -311,6 +337,129 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
         code: error.cause.code().as_str(),
         message: error.to_string(),
         details,
+    })
+}
+
+/// FR-096/FR-100: `Evaluation.location`'s `origin`, rendered by kind.
+fn spine_origin(origin: &qsl_semantics::check::Origin) -> types::SpineOrigin {
+    match origin {
+        qsl_semantics::check::Origin::Body { function, index } => types::SpineOrigin::Body {
+            function: function.clone(),
+            index: *index,
+        },
+        qsl_semantics::check::Origin::Measure { function, index } => types::SpineOrigin::Measure {
+            function: function.clone(),
+            index: *index,
+        },
+        qsl_semantics::check::Origin::Expression => types::SpineOrigin::Expression,
+        qsl_semantics::check::Origin::TypeDeclaration { name } => {
+            types::SpineOrigin::TypeDeclaration { name: name.clone() }
+        }
+    }
+}
+
+/// FR-096/FR-100: `Evaluation.location`, rendered as `{origin, path}`.
+fn spine_location(location: &qsl_semantics::check::Location) -> types::SpineLocation {
+    types::SpineLocation {
+        origin: spine_origin(&location.origin),
+        path: location.path.clone(),
+    }
+}
+
+/// FR-096/FR-100: a record's resolved locus, rendered as
+/// `{source_digest, span}`.
+fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
+    types::SpineLocus {
+        source_digest: locus.source_digest,
+        span: locus.span,
+    }
+}
+
+/// A refusal's exit status: the record's or cause's catalog code exit
+/// status, or 20 when the code names no `Code` (FR-100). Never used for a
+/// kernel-no-record row, which is always exit 20 by the mapping table.
+fn refusal_exit_code(code: qsl_foundation::diagnostic::CatalogCode) -> u8 {
+    qsl_foundation::Code::from_code(code.code()).map_or(20, qsl_foundation::Code::exit_code)
+}
+
+/// FR-100: render `spine-run-result/1`, the outcome mapping's stdout
+/// document and FR-301 exit status, from `qsl_replay::spine::run`'s result.
+pub(super) fn spine_run_result(
+    digest: ByteDigest,
+    package_id: qsl_semantics::library::PackageId,
+    source: &FormalSource,
+    function: &str,
+    outcome: qsl_replay::spine::CallOutcome,
+) -> super::Result<RunResult> {
+    use qsl_replay::spine::{CallOutcome, CallRefusal, CallValue};
+    let (exit_code, outcome) = match outcome {
+        CallOutcome::Completed(CallValue::Boolean(value)) => (
+            0,
+            types::SpineOutcome::Completed {
+                value: types::SpineValue::Boolean { value },
+            },
+        ),
+        CallOutcome::Completed(CallValue::Integer(value)) => (
+            0,
+            types::SpineOutcome::Completed {
+                value: types::SpineValue::Integer {
+                    decimal: value.to_string(),
+                },
+            },
+        ),
+        CallOutcome::Refused(CallRefusal::Record {
+            code,
+            fields,
+            locus,
+            location,
+        }) => (
+            refusal_exit_code(code),
+            types::SpineOutcome::Refused {
+                code: Some(code.code()),
+                cause: Some(code.cause()),
+                fields: Some(fields),
+                locus: locus.map(spine_locus),
+                location: location.as_ref().map(spine_location),
+            },
+        ),
+        CallOutcome::Refused(CallRefusal::Family { code, location }) => (
+            refusal_exit_code(code),
+            types::SpineOutcome::Refused {
+                code: Some(code.code()),
+                cause: Some(code.cause()),
+                fields: None,
+                locus: None,
+                location: location.as_ref().map(spine_location),
+            },
+        ),
+        CallOutcome::Refused(CallRefusal::Kernel { location }) => (
+            20,
+            types::SpineOutcome::Refused {
+                code: None,
+                cause: None,
+                fields: None,
+                locus: None,
+                location: location.as_ref().map(spine_location),
+            },
+        ),
+        CallOutcome::Undefined { reason } => (20, types::SpineOutcome::Undefined { reason }),
+        CallOutcome::Incomplete { limit } => (22, types::SpineOutcome::Incomplete { limit }),
+    };
+    let document = types::SpineRunReport {
+        format: types::Format::SpineRunResult,
+        request_digest: digest.to_string(),
+        package_id: package_id.hex(),
+        source: types::RunSource {
+            identity: source.source().identity(),
+            digest: source.source().digest().to_string(),
+            path: source.source().path(),
+        },
+        function,
+        outcome,
+    };
+    Ok(RunResult {
+        exit_code,
+        value: NativeResult(serde_json::to_value(document).map_err(RunCause::Output)?),
     })
 }
 
@@ -454,23 +603,315 @@ pub(super) fn report(
 
 #[cfg(test)]
 mod tests {
-    use super::combined_exit_code;
+    use super::*;
+    use crate::formal_source::FormalSource;
     use ix_trace_rs::trace;
+    use qsl_foundation::SourceIdentity;
+    use qsl_replay::spine::CallOutcome;
+    use qsl_semantics::library::PackageId;
 
-    #[trace("TC-470", "FR-096-AC-12")]
+    fn formal_source() -> FormalSource {
+        let source = qsl_foundation::Source::read(
+            SourceIdentity {
+                authority: "agent-ix".into(),
+                identity: "test:spine-run".into(),
+                revision_namespace: "fixture".into(),
+                revision: "fixture:1".into(),
+            },
+            "program.native",
+            b"",
+            1,
+        )
+        .unwrap();
+        let identity = ir::SourceIdentity::new(
+            ir::SourceDocumentId::new("SpineRun").unwrap(),
+            ir::SourceRevision::new(1).unwrap(),
+        );
+        FormalSource::new(source, identity)
+    }
+
+    /// Assert `spine_run_result`'s whole stdout document and exit code for
+    /// an `Undefined` outcome carrying `reason`, isolated from any specific
+    /// kernel or family origin (FR-100-AC-9, FND-006). The renderer
+    /// (`src/command/output.rs`) does not distinguish where a `reason`
+    /// string came from; `qsl_replay::spine::call::convert_outcome`'s own
+    /// tests cover that distinction.
+    fn assert_undefined_renders(reason: &'static str) {
+        let source = formal_source();
+        let digest = ByteDigest::of(b"request");
+        let package_id = PackageId::of_preimage(b"package");
+        let result = spine_run_result(
+            digest,
+            package_id,
+            &source,
+            "seven",
+            CallOutcome::Undefined { reason },
+        )
+        .unwrap();
+        assert_eq!(result.exit_code, 20, "{reason}");
+        assert_eq!(
+            result.value.as_value(),
+            &serde_json::json!({
+                "format": "spine-run-result/1",
+                "request_digest": digest.to_string(),
+                "package_id": package_id.hex(),
+                "source": {
+                    "authority": "agent-ix",
+                    "identity": "test:spine-run",
+                    "revision_namespace": "fixture",
+                    "revision": "fixture:1",
+                    "digest": source.source().digest().to_string(),
+                    "path": "program.native",
+                },
+                "function": "seven",
+                "outcome": {"kind": "undefined", "reason": reason},
+            }),
+            "{reason}"
+        );
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4): each kernel `Undefined` reason
+    /// (`qsl_replay::spine::call::kernel_undefined_reason`) renders
+    /// `{"kind":"undefined","reason":...}` and exits 20 (FND-006).
     #[test]
-    fn a_report_combines_exit_codes_by_fr_301_severity() {
-        for (pair, expected) in [
-            ([30, 20], 30),
-            ([30, 21], 30),
-            ([30, 22], 30),
-            ([20, 21], 20),
-            ([21, 22], 21),
-            ([20, 22], 20),
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn undefined_kernel_reasons_render_and_exit_20() {
+        for reason in [
+            "division-by-zero",
+            "ieee-not-finite",
+            "empty-reduction",
+            "none-value",
         ] {
-            assert_eq!(combined_exit_code(pair.into_iter()), Some(expected));
-            assert_eq!(combined_exit_code(pair.into_iter().rev()), Some(expected));
+            assert_undefined_renders(reason);
         }
-        assert_eq!(combined_exit_code(std::iter::empty()), None);
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4): each family `Undefined` reason
+    /// (`qsl_foundation::diagnostic::UndefinedReason::as_str`) renders
+    /// `{"kind":"undefined","reason":...}` and exits 20 (FND-006).
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn undefined_family_reasons_render_and_exit_20() {
+        for reason in ["precondition-false", "absent-key"] {
+            assert_undefined_renders(reason);
+        }
+    }
+
+    fn render(outcome: CallOutcome) -> RunResult {
+        spine_run_result(
+            ByteDigest::of(b"request"),
+            PackageId::of_preimage(b"package"),
+            &formal_source(),
+            "seven",
+            outcome,
+        )
+        .unwrap()
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4, FND-013): a record refusal renders every
+    /// FR-096 member and exits by its catalog code's mapping -- `resource_exhausted`
+    /// (`ancestor-steps`'s own code) is incomplete, so it exits 22, not the
+    /// kernel-refusal row's hardcoded 20.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn refused_record_renders_and_exits_by_its_code() {
+        use qsl_replay::spine::CallRefusal;
+        let fields = std::collections::BTreeMap::from([
+            ("from", "test/orders".to_owned()),
+            ("limit", "5".to_owned()),
+        ]);
+        let result = render(CallOutcome::Refused(CallRefusal::Record {
+            code: qsl_foundation::diagnostic::CatalogCode::new(
+                "resource_exhausted",
+                "ancestor-steps",
+            ),
+            fields: fields.clone(),
+            locus: None,
+            location: None,
+        }));
+        assert_eq!(result.exit_code, 22);
+        assert_eq!(
+            result.value.as_value()["outcome"],
+            serde_json::json!({
+                "kind": "refused",
+                "code": "resource_exhausted",
+                "cause": "ancestor-steps",
+                "fields": fields,
+            })
+        );
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4, FND-013): a family refusal with no FR-096
+    /// record carries its code and cause but no `fields`/`locus`.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn refused_family_with_no_record_renders_code_and_cause_only() {
+        use qsl_replay::spine::CallRefusal;
+        let result = render(CallOutcome::Refused(CallRefusal::Family {
+            code: qsl_foundation::diagnostic::CatalogCode::new("ill_typed", "type-mismatch"),
+            location: None,
+        }));
+        assert_eq!(result.exit_code, 20);
+        assert_eq!(
+            result.value.as_value()["outcome"],
+            serde_json::json!({"kind": "refused", "code": "ill_typed", "cause": "type-mismatch"})
+        );
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4, FND-013): a bare kernel refusal with no
+    /// code, cause, fields or locus exits 20.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn refused_kernel_with_no_record_exits_20() {
+        use qsl_replay::spine::CallRefusal;
+        let result = render(CallOutcome::Refused(CallRefusal::Kernel { location: None }));
+        assert_eq!(result.exit_code, 20);
+        assert_eq!(
+            result.value.as_value()["outcome"],
+            serde_json::json!({"kind": "refused"})
+        );
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4, FND-013): every `location.origin` kind
+    /// renders its kebab-case tag, including `type-declaration`.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn location_origin_kinds_render_kebab_case() {
+        use qsl_replay::spine::CallRefusal;
+        use qsl_semantics::check::{Location, Origin};
+        let cases = [
+            (
+                Origin::Body {
+                    function: "seven".to_owned(),
+                    index: 0,
+                },
+                serde_json::json!({"kind": "body", "function": "seven", "index": 0}),
+            ),
+            (
+                Origin::Measure {
+                    function: "seven".to_owned(),
+                    index: 1,
+                },
+                serde_json::json!({"kind": "measure", "function": "seven", "index": 1}),
+            ),
+            (
+                Origin::Expression,
+                serde_json::json!({"kind": "expression"}),
+            ),
+            (
+                Origin::TypeDeclaration {
+                    name: "Point".to_owned(),
+                },
+                serde_json::json!({"kind": "type-declaration", "name": "Point"}),
+            ),
+        ];
+        for (origin, expected) in cases {
+            let result = render(CallOutcome::Refused(CallRefusal::Kernel {
+                location: Some(Location {
+                    origin,
+                    path: vec![2, 0],
+                }),
+            }));
+            assert_eq!(
+                result.value.as_value()["outcome"]["location"],
+                serde_json::json!({"origin": expected, "path": [2, 0]}),
+                "{expected}"
+            );
+        }
+    }
+
+    /// FR-100-AC-9 (TC-452 step 4, FND-019): a record refusal's `locus`
+    /// renders `{source_digest, span}` exactly -- the TC-452 fixture-F
+    /// values -- and `location` renders on both a record refusal and a
+    /// family refusal.
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn refused_locus_and_location_render() {
+        use qsl_replay::spine::{CallLocus, CallRefusal};
+        use qsl_semantics::check::{Location, Origin};
+        let span = qsl_foundation::LocatedSpan {
+            start: qsl_foundation::Position {
+                byte: 225,
+                line: 3,
+                column: 54,
+            },
+            end: qsl_foundation::Position {
+                byte: 226,
+                line: 3,
+                column: 55,
+            },
+        };
+        let locus = CallLocus {
+            source_digest:
+                "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26".to_owned(),
+            span,
+        };
+        let location = Location {
+            origin: Origin::Body {
+                function: "f".to_owned(),
+                index: 0,
+            },
+            path: vec![1],
+        };
+        let fields = std::collections::BTreeMap::from([("binding", "people".to_owned())]);
+        let expected_location = serde_json::json!({"origin": {"kind": "body", "function": "f", "index": 0}, "path": [1]});
+
+        let record = render(CallOutcome::Refused(CallRefusal::Record {
+            code: qsl_foundation::diagnostic::CatalogCode::new(
+                "invalid_runtime_input",
+                "absent-key",
+            ),
+            fields: fields.clone(),
+            locus: Some(locus),
+            location: Some(location.clone()),
+        }));
+        assert_eq!(
+            record.value.as_value()["outcome"],
+            serde_json::json!({
+                "kind": "refused",
+                "code": "invalid_runtime_input",
+                "cause": "absent-key",
+                "fields": fields,
+                "locus": {
+                    "source_digest": "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26",
+                    "span": {
+                        "start": {"byte": 225, "line": 3, "column": 54},
+                        "end": {"byte": 226, "line": 3, "column": 55},
+                    },
+                },
+                "location": expected_location,
+            })
+        );
+
+        let family = render(CallOutcome::Refused(CallRefusal::Family {
+            code: qsl_foundation::diagnostic::CatalogCode::new("ill_typed", "type-mismatch"),
+            location: Some(location),
+        }));
+        assert_eq!(
+            family.value.as_value()["outcome"],
+            serde_json::json!({
+                "kind": "refused",
+                "code": "ill_typed",
+                "cause": "type-mismatch",
+                "location": expected_location,
+            })
+        );
+
+        #[trace("TC-470", "FR-096-AC-12")]
+        #[test]
+        fn a_report_combines_exit_codes_by_fr_301_severity() {
+            for (pair, expected) in [
+                ([30, 20], 30),
+                ([30, 21], 30),
+                ([30, 22], 30),
+                ([20, 21], 20),
+                ([21, 22], 21),
+                ([20, 22], 20),
+            ] {
+                assert_eq!(combined_exit_code(pair.into_iter()), Some(expected));
+                assert_eq!(combined_exit_code(pair.into_iter().rev()), Some(expected));
+            }
+            assert_eq!(combined_exit_code(std::iter::empty()), None);
+        }
     }
 }

@@ -66,4 +66,9 @@ Tag the tests `#[trace("TC-451", "FR-100-AC-4")]` (steps 1 to 4),
 
 ## Status
 
-Specified under QSL-271. Not run.
+Passed locally under QSL-271. FND-012: `origin` is a reserved keyword
+(`qsl-cst`'s token table), so the fixture's record-result function is
+named `corner`, not `origin`, in `tests/fixtures/spine-run.native`; every
+other fixture name above is exact. Nothing about the scenario changes --
+still a function whose declared result is a record, still refusing
+`unsupported_construct` before any call.

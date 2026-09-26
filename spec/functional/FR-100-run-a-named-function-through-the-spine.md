@@ -321,7 +321,11 @@ exit 30.
 
 ## Status
 
-Specified under QSL-271 (A05-1). Not implemented.
+Implemented under QSL-271. `qsl_replay::spine::run` and the CLI `run`
+command render the full outcome mapping, including every kernel-refusal row
+(record and no-record), the internal-failure path (`CheckedInvariant`,
+`CallFailure::Fault`, an unresolvable locus, each exiting 30 directly), and
+locus resolution over the program's and every supplied library's source.
 
 The refused outcome renders FR-096's `RefusalRecord`, so its kernel rows
 follow FR-096's status. At catalog revision `1-draft.7` only
