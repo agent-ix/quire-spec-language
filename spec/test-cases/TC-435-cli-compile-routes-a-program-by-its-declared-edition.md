@@ -34,7 +34,10 @@ Scope: FR-027-AC-5 to FR-027-AC-8.
    files hold malformed bytes, and clause bindings; then with its clause
    bindings only; then with neither.
 6. Compile one `1-draft` source per spine stage refusal: a syntax error
-   (source), a `predicate` (forms), an unresolved type name (assembly), a
+   (source), a `temporal` clause such as
+   `temporal Due using v over (view: M::Node) clock "c" on origin { always[0,1] holds(true) }`,
+   whose leading token has no dispatch entry (forms; FR-102-AC-4), an
+   unresolved type name (assembly), a
    Boolean body under an Integer result (check) and a unit with nothing
    writable (emit); and map an omitting emission to its code.
 7. Compile a source with no header, and one declaring `language "ix:other"`.
@@ -70,3 +73,8 @@ carry `#[trace("TC-435", "FR-027-AC-5")]`.
 ## Status
 
 Passed locally (QSL-8).
+
+Step 6's forms case changes with QSL-275: `tests/it/compile_command.rs`
+(`each_spine_stage_refusal_reports_its_stage_and_code`) still uses a
+`predicate`, which builds a form once FR-091-AC-6's amendment lands, so
+QSL-275's implementing change swaps it for the `temporal` clause above.
