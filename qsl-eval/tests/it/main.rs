@@ -13,6 +13,7 @@ mod collection_queries;
 mod composite_values;
 mod dispatch_calls;
 mod equality_matrix;
+mod evaluation_ignores_display_strings;
 mod finite_simulation;
 mod inherited_attributes;
 mod model_reference_queries;
