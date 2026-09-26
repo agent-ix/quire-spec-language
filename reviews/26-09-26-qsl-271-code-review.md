@@ -69,3 +69,31 @@ reaches the branch it names.
 ## Gate
 
 `make ci` at c23b3128, re-run by the reviewer (`CARGO_BUILD_JOBS=4`, one target dir in the worktree): exit 0. FND-001 was confirmed on a probe copy of the tree. A `pub` struct field typed through `use qsl_eval::value::QualifiedName;`, plus a `pub fn` in `impl RunRefusal` returning `qsl_eval::value::QualifiedName`, gives `FR-100-AC-8 ...: PASS`. Adding `pub use qsl_eval::value::Evaluation;` to `lib.rs` gives FAIL as intended.
+
+## Dispositions
+
+Every SR-674 (this review) and SR-675 (gap analysis) finding, with the commit
+that fixed it. SR-675's own findings mostly restate an SR-674 finding under a
+different angle; where they do, the SR-675 row names the SR-674 finding it
+tracks rather than repeating a separate fix.
+
+| Review | ID | Severity | Fixed in |
+| --- | --- | --- | --- |
+| SR-674 | FND-001 | high | 630728ba (use-alias/impl-block resolution added to the AC-8 check) |
+| SR-674 | FND-002 | medium | 3f49b580 |
+| SR-674 | FND-003 | medium | 630728ba (`CheckedInvariant`/`CallFailure::Fault`/locus faults now exit 30 directly, never through `Code::exit_code`) |
+| SR-674 | FND-004 | medium | 3f49b580 |
+| SR-674 | FND-005 | medium | 8eda2b73 (this fix round: isolated native-model/no-call/extraction fixtures, TC-450 step 4) |
+| SR-674 | FND-006 | medium | 630728ba (kernel-side rows, `convert_outcome`); 8eda2b73 (remaining half: root-crate renderer/exit-mapping unit tests for `Undefined`, TC-452 step 4) |
+| SR-674 | FND-007 | low | 630728ba (TC-450 step 6 CLI test for `libraries` plus `models`) |
+| SR-674 | FND-008 | low | 630728ba (whole-document assertions, `flag`/`id` CLI coverage, stronger TC-450 step 2 oracle) |
+| SR-674 | FND-009 | low | 3f49b580 |
+| SR-674 | FND-010 | low | 630728ba (`bind_arguments` binds every parameter before converting any value) |
+| SR-674 | FND-011 | low | 630728ba (`source` threaded through so `selected_package` does not re-read it) |
+| SR-674 | FND-012 | low | 630728ba (the `#[allow]` and named-constant nits); 7ce0d104 (the fixture's `corner`-not-`origin` note) |
+| SR-675 | FND-001 | medium | tracks SR-674 FND-005 (8eda2b73) and FND-007 (630728ba) |
+| SR-675 | FND-002 | medium | tracks SR-674 FND-006 (8eda2b73) |
+| SR-675 | FND-003 | medium | tracks SR-674 FND-002 (3f49b580) |
+| SR-675 | FND-004 | low | 630728ba |
+| SR-675 | FND-005 | low | tracks SR-674 FND-003 (630728ba) |
+| SR-675 | FND-006 | low | 630728ba |
