@@ -178,7 +178,7 @@ operational validation remains outside this audit-only plan.
 | TC-392 | S2 returns one Value form per declaration, in source order, with its span and the unit edition | Unit | P1 | FR-091-AC-1 | 🚧 Planned; QSL-141 |
 | TC-393 | The forms FunctionDeclaration carries its name, using alias, type forms, measure and body | Unit | P1 | FR-091-AC-2 | 🚧 Planned; QSL-141 |
 | TC-394 | Each Value expression construct maps to its Expression variant, with grouping from the CST | Unit | P1 | FR-091-AC-3 | 🚧 Planned; QSL-141 |
-| TC-395 | S2 refuses an inadmissible source and a unit holding a declaration with no dispatch entry | Unit | P1 | FR-091-AC-4, FR-091-AC-5, FR-091-AC-6 | 🚧 Planned; QSL-141 |
+| TC-395 | S2 refuses an inadmissible source and a unit holding a declaration with no dispatch entry | Unit | P1 | FR-091-AC-4, FR-091-AC-5, FR-091-AC-6 | 🚧 Partial: steps 1 to 4 pass locally (`qsl-forms/tests/it/value_forms.rs`); steps 5 and 6 (amended FR-091-AC-6) planned, QSL-275 |
 | TC-396 | S2 refuses unrepresented constructs, and the check stage refuses another family's construct with that family's cause | Integration | P1 | FR-091-AC-7, FR-091-AC-8 | 🚧 Planned; QSL-141 |
 | TC-397 | S2 bounds expression depth by its explicit limit, independently of S1 | Unit | P1 | FR-091-AC-9 | 🚧 Planned; QSL-141 |
 | TC-398 | The Value form builder depends only on layer 2, layer 1, F and K, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-11 | 🚧 Partial: step 1's crate edges (`tests/it/family_outcome_layering.rs`) and step 2 over the existing forms types (`qsl-forms/tests/it/identity_free_forms.rs`) pass locally; step 3's `_`-arm scan passes locally (`identity_free_forms.rs`); step 1's family-module edges planned, QSL-141 |
@@ -189,7 +189,7 @@ operational validation remains outside this audit-only plan.
 | TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | 🚧 Planned; QSL-141 |
 | TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | ✅ Passed locally |
 | TC-405 | The assembler refuses floating types and unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | ✅ Passed locally; QSL-141 |
-| TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; `stage_limit_exceeded` code needs QSL-160 |
+| TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; `stage_limit_exceeded` code needs QSL-160; the two enum causes QSL-275 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | ✅ Passed locally |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | ✅ Passed locally |
 | TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | ✅ Passed locally; QSL-131 V3; steps 2-6 via retagged tests, step 7 new |
@@ -247,6 +247,8 @@ operational validation remains outside this audit-only plan.
 | TC-467 | S6a clause entry refuses bad selections, reports exhaustion and is deterministic | Integration | P1 | FR-107-AC-4, FR-107-AC-5, FR-107-AC-6 | 🚧 Planned; QSL-273 |
 | TC-468 | The spine clause run entry reports typed dispositions with provenance and exit codes | Integration | P1 | FR-109-AC-1, FR-109-AC-2, FR-109-AC-3, FR-109-AC-4, FR-109-AC-5 | 🚧 Planned; QSL-273 |
 | TC-469 | The ConfigVersion spine corpus gives native-equal typed dispositions | Integration | P1 | FR-108-AC-1, FR-108-AC-2, FR-108-AC-3, FR-108-AC-4, FR-108-AC-5, FR-108-AC-6 | 🚧 Planned; QSL-273; step 6 pending STD-111 |
+| TC-470 | S2 builds enum and predicate forms | Unit | P1 | FR-091-AC-25, FR-091-AC-26 | 🚧 Planned; QSL-275 |
+| TC-471 | The assembler admits source enums and predicates, which check and lowering then use | Integration | P1 | FR-091-AC-27, FR-091-AC-28, FR-091-AC-29, FR-091-AC-30, FR-092-AC-13 | 🚧 Planned; QSL-275 |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -551,9 +553,12 @@ carries ADR-011 §2.1 to §2.3 (E2, E3, E9), §3 and §6.1, ADR-012 §1, §3 and
 production and the forms-to-`PackageDeclarations` assembler in the layer-3
 `check` core. TC-392 to TC-403 and TC-406 are `🚧 Planned`
 under QSL-141 (TC-405 and TC-412 pass locally), except TC-398's crate edges and its step 2 over the existing
-forms types, which pass locally (`🚧 Partial`). TC-398 and TC-402 use the resolved-import and definition-scan
+forms types, and TC-395's steps 1 to 4, which pass locally (`🚧 Partial`). TC-398 and TC-402 use the resolved-import and definition-scan
 approach of TC-256, TC-170 and TC-390. TC-399 is the end-to-end case from
-source to `CheckedPackage::call`. TC-404 backs FR-003-AC-7
+source to `CheckedPackage::call`. TC-470 and TC-471 back the `enum`,
+`ordered enum` and `predicate` declarations (FR-091-AC-25 to AC-30,
+FR-092-AC-13), planned under QSL-275; `dimension` and `unit` still refuse
+at S2 pending FR-091-OQ-11. TC-404 backs FR-003-AC-7
 and AC-8, the `format` input retargeted to the `qsl-cst` CST (ADR-011 §7.3
 M-6a), under QSL-8.
 

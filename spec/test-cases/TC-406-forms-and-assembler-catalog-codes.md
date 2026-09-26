@@ -42,10 +42,13 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
 - The undeclared-alias cause returns `missing_declaration`, the
   duplicate-alias cause `ambiguous_declaration`, and the alias-cycle cause
   `invalid_package`.
+- The duplicate-enum-member cause returns
+  `ambiguous_declaration`/`ambiguous-name`, and the enum-admission-fault
+  cause `runtime_invariant`/`established-invariant-broken`.
 - Step 2 returns `unknown_profile`.
 - Step 3 finds no `_` arm.
 - Step 4 reports `stage_limit_exceeded`/`nesting-depth-exceeded`.
 
 ## Status
 
-Steps 1, 2 and 4 are backed by `qsl-forms/tests/it/value_forms.rs` (the S2 causes and the depth limit) and `qsl-semantics` `check::assemble` tests (`each_assembler_cause_has_its_catalog_code`). Step 3's `syn` inspection is not written; both `catalog_code` matches have no `_` arm.
+Steps 1, 2 and 4 are backed by `qsl-forms/tests/it/value_forms.rs` (the S2 causes and the depth limit) and `qsl-semantics` `check::assemble` tests (`each_assembler_cause_has_its_catalog_code`). Step 3's `syn` inspection is not written; both `catalog_code` matches have no `_` arm. The duplicate-enum-member and enum-admission-fault causes do not exist yet; they land with QSL-275.

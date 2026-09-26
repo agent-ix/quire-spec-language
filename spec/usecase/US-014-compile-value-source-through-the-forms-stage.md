@@ -54,6 +54,16 @@ until M-6c. The spine starts at source.
 - **When** the assembler runs.
 - **Then** one refusal lists both names, each with its span.
 
+### US-014-EX-4: An enum and a predicate declared in source are usable
+
+- **Given** source that declares an `ordered enum Status`, a predicate over
+  an integer, and functions that compare `Status` members and call the
+  predicate.
+- **When** the caller runs S1, S2, the assembler and the checker.
+- **Then** the checker admits them, the enum's identity depends on its
+  owner, name, order and members and not on its display strings, and
+  calling the functions returns the values the source defines.
+
 ## Priority and Risk (Informative)
 
 Priority: High. The M-6a spine `compile` and `run`, and `replay`'s S1

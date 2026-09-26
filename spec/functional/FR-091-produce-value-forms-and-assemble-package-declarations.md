@@ -93,6 +93,18 @@ The requirement carries testable criteria for decisions already taken:
   (`shared-grammar.md`).
   `proposals/quire-v1/definitions/native-diagnostics.md` revision
   `1-draft.6`: the catalog codes and causes this requirement names.
+  `spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md`:
+  an enum declaration's key hashes
+  `{version: "quire.enum-declaration-node/v1", owner, qualified_declaration,
+  ordered, members}`, whose `members` are in declaration order for an
+  `ordered enum` and sorted by case name otherwise; a member's key hashes
+  `{version: "quire.enum-member-node/v1", declaration_node_id, case}`; the
+  optional display string of a member enters neither preimage and never
+  takes part in equality or ordering. `shared-grammar.md`: a predicate
+  reads only its explicit parameters and pure lexical values. The
+  checked-package-v2 `schema.json` `FunctionNode` admits the
+  `semantic_form` values `pure_function`, `predicate` and
+  `recursive_function`.
 - The rulings on FR-091-OQ-1 to OQ-5 and OQ-7, recorded under Rulings.
 
 The complete-V1 grammar is QSpec's `proposals/quire-v1/shared-grammar.md`,
@@ -150,6 +162,9 @@ begins with `language`, so each declaration is a construct of its own. The
 | `type` | `AliasDeclaration` | alias form |
 | `record` | `RecordDeclaration` | record form |
 | `tuple` | `TupleDeclaration` | tuple form |
+| `enum` | `EnumDeclaration` | enum form, not ordered |
+| `ordered` | `EnumDeclaration` | enum form, ordered |
+| `predicate` | `Predicate` | the `forms` `FunctionDeclaration`, kind `Predicate` |
 
 Each entry makes exactly one call into the `Value` family's production
 function (FR-067-CON-4, verified by inspection). When this table lands, the
@@ -160,14 +175,19 @@ When a declaration's leading token has no entry, S2 refuses the whole unit.
 The cause is `NoDispatchEntry`, and the refusal names the token spelling and
 the declaration's span. S2 returns no form for any declaration of that unit.
 
-The `Value` family also owns the `enum` (including `ordered enum`),
-`dimension`, `unit` and `predicate` declaration productions. No other family
-has a dispatch entry, production function or parsed-form type for them.
-Enum, dimension and unit declarations are value types (QSpec FR-322 classes
-them as `scalar_type` nodes), and a `predicate` is a function form with a
-`Boolean` result. The table above has no entry for these four, so S2
-refuses them with `NoDispatchEntry`. An `enum`, `dimension` or `unit`
-entry admits a declaration whose `NodeKey` only `check` mints (FB-13).
+The `Value` family owns the `enum` (including `ordered enum`), `dimension`,
+`unit` and `predicate` declaration productions. No other family has a
+dispatch entry, production function or parsed-form type for them. Enum,
+dimension and unit declarations are value types (QSpec FR-322 classes them
+as `scalar_type` nodes), and a `predicate` is a function form with a
+`Boolean` result. An `ordered enum` declaration's first significant token is
+`ordered`, so `ordered` is its entry's leading token. Only `check` mints an
+enum declaration's or member's `NodeKey` (FB-13).
+
+The `dimension` and `unit` productions have no entry in the table: S2
+refuses a unit holding either with `NoDispatchEntry`, naming the leading
+token and the declaration's span. Their entries wait on FR-091-OQ-11 (Open
+Questions).
 
 ### The unit's selections
 
@@ -191,6 +211,18 @@ the unit's edition. It carries no semantic identity (FR-067-AC-2).
   form and optional marker `?`, in order.
 - **Tuple form.** It carries the declared name and each element type form,
   in order.
+- **Enum form.** It carries the declared name and its span; whether the
+  declaration is `ordered`; and each member, in source order, with its case
+  name, the span of that name, and its display string as spelled with the
+  span of the string literal when `= "text"` is written.
+- **Predicate form.** This is the `forms` `FunctionDeclaration` with
+  declaration kind `Predicate`. Every other `FunctionDeclaration` has kind
+  `Function`. It carries the declared name; the `using` field; each
+  parameter's name and type form, in order; a result type form with head
+  `Boolean` and the span of the `Boolean` token; no measure, because the
+  `Predicate` production has no `decreases` clause; and the body
+  expression, which the expression mapping below builds from the
+  predicate's block exactly as it builds a function body.
 
 A **type form** is a type reference carried as syntax: the head (a
 constructor keyword or a qualified name) as written, every declared bound,
@@ -325,14 +357,70 @@ no token text (FB-01). It fills `PackageDeclarations` as follows:
 
 - `aliases`: one entry per alias form, in source order, holding the declared
   name and the resolved `ValueType`.
-- `functions`: one entry per `FunctionDeclaration`, in source order, each
-  name-callable with clause kind `Body`. Each entry carries a check-owned
-  resolved signature: the parameter types and the result type that check
-  resolved from the type forms, and the profile selection its `using`
-  alias resolves to. The resolved signature is a `check` type, not a
-  `forms` type.
+- `functions`: one entry per `FunctionDeclaration`, function or predicate,
+  in source order, each name-callable with clause kind `Body` and keeping
+  its declaration kind. Each entry carries a check-owned resolved
+  signature: the parameter types and the result type that check resolved
+  from the type forms, and the profile selection its `using` alias
+  resolves to. The resolved signature is a `check` type, not a `forms`
+  type.
 - `types`: one composite declaration per record form and tuple form. Each
   has a declaration key that `check` mints (FB-13, ADR-013 O-04).
+- `enums`: one `EnumBinding` per enum form, in source order, holding the
+  declared name, the admitted `EnumDeclaration` and its admitted members
+  in FR-141 canonical order (see "Enum declarations").
+- `declared_type_spans`: the span of each record's, tuple's and enum's
+  declared name, by that name (FR-096).
+
+### Enum declarations
+
+For each enum form, the assembler:
+
+1. Refuses a form that names one case more than once with a
+   duplicate-enum-member error, naming the enum, the case and the span of
+   each member that declares it. It admits nothing for that form.
+2. Builds the `quire.enum-declaration-node/v1` preimage:
+   - `owner`: the unit's owner as a source owner,
+     `{kind: "source", authority, identity}`, the same `SourceOwner` that
+     keys the unit's records, tuples and functions;
+   - `qualified_declaration`: the declared name's `::`-separated segments,
+     which for a declaration in source is the one segment of its name, the
+     same segments the lowered node's `declaration.qualified_name` carries
+     ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md));
+   - `ordered`: whether the form is `ordered`;
+   - `members`: the case names in source order when `ordered`, and sorted
+     by case name (byte order) otherwise.
+3. Mints the declaration key through the one `check::node_key` function
+   that mints a nominal node's key: the SHA-256 of the preimage's RFC 8785
+   bytes, the digest `value::enumeration` computes.
+4. Admits the declaration with `EnumDeclaration::admit(preimage, key,
+   owners)`, where `owners` holds exactly the unit's source owner.
+5. For each case in the preimage's `members` order, builds the
+   `quire.enum-member-node/v1` preimage over the declaration key and the
+   case, mints its key through the same `check::node_key` function, and
+   admits it with `EnumDeclaration::admit_member`.
+
+`value::enumeration` gives each preimage a constructor from its parts,
+beside `from_json`. The constructor applies the schema checks `from_json`
+applies and refuses with `NonCanonicalPreimage`. A member's display string
+enters no preimage and no `PackageDeclarations` field (QSpec FR-141).
+
+Steps 2 to 5 cannot refuse a form that step 1 admits: the grammar gives
+every enum at least one member and every case an identifier, step 1 makes
+the cases distinct, step 2 sorts an unordered enum, and step 3 mints the
+key that step 4 recomputes. A refusal from a constructor, `admit` or
+`admit_member` is therefore an enum-admission fault, a broken invariant of
+`check`, which the refusal carries with the declaration's span.
+
+### Predicates
+
+A predicate is a function whose declaration kind is `Predicate`. The
+assembler resolves its `using` alias, parameter type forms and body
+exactly as it resolves a function's, and its result type form resolves to
+`Boolean`. `check` checks and calls a predicate as it checks and calls a
+function (FR-151's acyclic call graph included), and
+[FR-092](FR-092-key-type-parameter-and-declared-nodes.md) keys its node with
+`semantic_form` `predicate`.
 
 The assembler also resolves every type form inside a body or measure: the
 targets of `convert<T>` and `allInstances<T>` and the named types of
@@ -359,9 +447,24 @@ across revisions of its source. The owner is a required E3 input, and
 `check` has no constant package identity:
 `DEFAULT_PACKAGE_IDENTITY` does not exist. The record, tuple and function
 nodes are keyed by the `quire.structural-node/v1` preimage, which carries the
-owner ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). QSpec
+owner ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). An enum
+declaration is keyed by QSpec's owner-bearing
+`quire.enum-declaration-node/v1` preimage over the same owner, and its
+members by `quire.enum-member-node/v1` over the declaration key. QSpec
 publishes owner scope for nominal enum, dimension and unit nodes; the
 structural-node preimage is a QSL proposal to QSpec (Dependencies).
+
+**Enum key vectors.** Each key is the SHA-256 of the RFC 8785 bytes of the
+preimage shown, owner `{kind: "source", authority: "a", identity: "u"}`
+unless stated. The method reproduces QSpec's `enum-status` vector in
+`node-identity-vectors.json` (`7928f1e1…1562`).
+
+| Vector | Source | Preimage (other members as above) | Key |
+|---|---|---|---|
+| N1 | `ordered enum Status { READY, DONE }` | `qualified_declaration: ["Status"]`, `ordered: true`, `members: ["READY", "DONE"]` | `e5e7c1d5b51c76e84c928b616d266d45a570e8211404c302b47dbec62ae00d27` |
+| N2 | member `READY` of N1 | `{version: "quire.enum-member-node/v1", declaration_node_id: {domain: "quire.checked-semantic-node/v1", digest: N1}, case: "READY"}` | `499f4989da1b6790fcda8c1e6e64ed04041d8cd304f336133c48f58c424d65ec` |
+| N3 | `enum Color { RED, BLUE = "Blue" }` | `qualified_declaration: ["Color"]`, `ordered: false`, `members: ["BLUE", "RED"]` | `0757650a7514f2f86e2101a0d02e5055d1152c36fc7e01ea2dfc8eabc21dae62` |
+| N4 | N1's source under owner identity `w` | N1's, with `identity: "w"` | `239e86987c45808a71cb0d23e7b25f8f70d6adb426288280c7eaf566f0f145e9` |
 
 Type resolution is the E3 name-binding phase (ADR-011 §1; ADR-013 O-11).
 The resolution `match` has one explicit arm per type-form head:
@@ -382,17 +485,25 @@ The resolution `match` has one explicit arm per type-form head:
 - a qualified name that names exactly one alias form of the unit resolves to
   that alias's resolved type;
 - a qualified name that names exactly one record or tuple form of the unit
-  resolves to `ValueType::Composite` of that declaration's key.
+  resolves to `ValueType::Composite` of that declaration's key;
+- a qualified name that names exactly one enum form of the unit resolves to
+  `ValueType::Enum` of that enum's `EnumBinding` shape.
+
+An enum member written as an expression, `E::m`, is resolved by `check`
+against `enums`, as FR-141 and the check stage already do: a case that `E`
+does not declare refuses there with `missing_declaration`/`missing-name`.
 
 The assembler refuses in these cases:
 
-- **Unresolved type name.** A qualified name names no alias, record or tuple
-  form of the unit and nothing in an admitted domain package. The refusal
-  names the name and the span of the type form.
+- **Unresolved type name.** A qualified name names no alias, record, tuple
+  or enum form of the unit and nothing in an admitted domain package. The
+  refusal names the name and the span of the type form.
 - **Ambiguous type name.** A qualified name names more than one alias,
-  record or tuple form of the unit (ADR-013 O-11). The refusal names the
-  name, the span of the referencing type form and the span of each
+  record, tuple or enum form of the unit (ADR-013 O-11). The refusal names
+  the name, the span of the referencing type form and the span of each
   candidate declaration.
+- **Duplicate enum member.** As stated under "Enum declarations".
+- **Enum-admission fault.** As stated under "Enum declarations".
 - **Ill-formed scalar bounds.** The value type rejects a built-in
   constructor's declared bounds. Examples are an `Int` interval whose lower
   bound is above its upper bound, a `Rational` denominator interval that
@@ -435,6 +546,8 @@ code or code/cause:
 | undeclared `using` alias | `missing_declaration`/`missing-selection` |
 | duplicate alias | `ambiguous_declaration`/`ambiguous-name` |
 | alias cycle | `invalid_package`/`definition-cycle` (catalog extension proposed, Dependencies) |
+| duplicate enum member | `ambiguous_declaration`/`ambiguous-name` |
+| enum-admission fault | `runtime_invariant`/`established-invariant-broken` |
 | S2 nesting-depth limit | `stage_limit_exceeded`/`nesting-depth-exceeded` |
 
 The floating-type row: no catalog code names a well-formed type that the
@@ -450,7 +563,12 @@ edges: the alias chain is those edges. The check stage uses the same code
 for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
 `CheckCause::DefinitionCycle`). The duplicate-alias row follows
 `complete::package`, which refuses a duplicate selection alias as
-`ambiguous-name`.
+`ambiguous-name`. The duplicate-enum-member row follows the record rule,
+where a duplicate field name is `ambiguous-name`
+(`DeclarationCause::DuplicateMember`): the catalog's `ambiguous-name`
+retains the visible name and the distinct conflicting declarations and
+loci. The enum-admission-fault row follows the assembler's other broken
+invariants (the declared-type handle, a domain package's object type).
 
 ## Constraints
 
@@ -468,7 +586,7 @@ for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
 | FR-091-AC-3 | For each row of the expression-mapping table, a function body that holds that construct maps to the listed `Expression` variant, with operands in source order. `a or b and c` maps to `Or(a, And(b, c))`. `a - b - c` maps to `Subtract(Subtract(a, b), c)`. `a implies b implies c` maps to `Implies(a, Implies(b, c))`. `(a + b) * c` maps to `Multiply(Add(a, b), c)`. `map(x in c: x)` and `collect(x in c: x)` both map to `Query` with `BinderQuery::Map`. `allInstances<M::T>(p)` maps to `AllInstances` whose target is a type form with qualified-name head `M::T`. | Test (TC-394) |
 | FR-091-AC-4 | S2 refuses a `ParsedSource` whose CST carries a recovery with cause `RecoveringCst`. It refuses an admissible parse, to which `prepend_diagnostic` has added one diagnostic, with the diagnosed-source cause holding that diagnostic's code. Neither refusal returns a parsed unit. | Test (TC-395) |
 | FR-091-AC-5 | S2 refuses the whole unit with cause `NoDispatchEntry` for an admissible unit holding a valid `function` declaration followed by `invariant Positive using v on M::T at current { true }`. The refusal names the spelling `invariant` and that declaration's span, and S2 returns no form for the `function` declaration. | Test (TC-395) |
-| FR-091-AC-6 | S2 refuses with cause `NoDispatchEntry`, naming the leading token and the declaration's span, an admissible unit whose only declaration is an `enum`, an `ordered enum`, a `predicate`, a `dimension` or a `unit` declaration. No module under `forms` other than the `Value` family form builder names the `EnumDeclaration`, `Predicate`, `DimensionDeclaration` or `UnitDeclaration` CST production. | Test (TC-395) |
+| FR-091-AC-6 | S2 refuses with cause `NoDispatchEntry`, naming the leading token and the declaration's span, an admissible unit whose only declaration is `dimension Length;` or `unit m : Length = rational(1, 1);`, and returns no parsed unit. S2 builds a parsed unit for an admissible unit whose only declaration is `enum Color { RED }`, `ordered enum Level { LOW }` or `predicate P using v(x: Boolean): Boolean { x }`. No module under `forms` other than the `Value` family form builder names the `EnumDeclaration`, `EnumMember`, `Predicate`, `DimensionDeclaration` or `UnitDeclaration` CST production. | Test (TC-395) |
 | FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: a text literal, `decimal(1, 2)`, `a mod b`, `xs[0]`, `none`, `reaches(a, b, M::R)`. | Test (TC-396) |
 | FR-091-AC-8 | For each of `function f using v(x: Int[0, 9]): Boolean pure { B }` with body `B` equal to `deref(x)`, `allInstances<M::T>(x)` or `pre(x)`, and `function g using v(x: Int[0, 9]): Boolean pure decreases(pre(x)) { true }`, each in a unit with no admitted domain package, S2 returns a parsed unit that holds `Deref`, `AllInstances` or `Pre` where the construct is written. Check refuses `pre(x)`, in the body and in the measure, with `wrong_snapshot`/`forbidden-pre-read`, the `ProtocolClause` cause, and `deref(x)` with `ill_typed`/`type-mismatch`. The assembler refuses `allInstances<M::T>(x)` with an unresolved-type-name error naming `M::T` (`missing_declaration`/`missing-name`). None of these refusals has code `unsupported_construct`. | Test (TC-396) |
 | FR-091-AC-9 | With S2 nesting-depth bound `L = 8`, S2 builds a function body `not`×7 `a`, whose deepest node is at depth 8. It refuses `not`×8 `a` with a limit refusal that names limit kind nesting depth, bound `8`, and the span of the node at depth 9, and returns no parsed unit. It refuses `not`×20 `a` in the same way. S1 admits all three sources, so each refusal comes from S2. | Test (TC-397) |
@@ -483,10 +601,16 @@ for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
 | FR-091-AC-18 | For `record Point { x: Int[0, 9]; y: Int[0, 9]; }`, `tuple Pair(Int[0, 9], Int[0, 9]);` and `function px using v(p: Point): Int[0, 9] pure { p.x }`, assembled under source owner authority `a`, identity `u`, the assembler's `types` holds one record declaration `Point` and one tuple declaration `Pair`, each with a key that `check` minted over that owner. `px`'s resolved parameter type is `ValueType::Composite` of `Point`'s key, and `PackageDeclarations::check` admits the package. Assembling and checking the same source again under (`a`, `u`) gives the same `Point` and `Pair` keys and the same checked node id for `px`. Under (`a`, `w`) it gives a different key for each of the three. No item named `DEFAULT_PACKAGE_IDENTITY` exists under `src/`. | Test (TC-401) |
 | FR-091-AC-19 | The assembler refuses a parameter typed `Float64[nearest-even]` with a floating-type error, code `unknown_required_feature`/`unsupported-feature`, that names width `Float64`, rounding mode `nearest-even`, the declaration's profile selection `v` and the type form's span. It refuses a parameter typed `Float64` with no mode with the same error naming rounding mode `exact`. It refuses a parameter typed `Reference<M::T>`, in a unit with no admitted domain package, with an unresolved-type-name error naming `M::T`. None of the three returns a `PackageDeclarations`. | Test (TC-405) |
 | FR-091-AC-20 | The assembler module is under the layer-3 `check` core. Its non-test code has no `use` edge or inline path to `qsl_cst`. Its `#[cfg(test)]` code may reach `qsl_cst` only to run S1 and S2. | Test (TC-402) |
-| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The floating-type cause returns `unknown_required_feature`, the undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, and the alias-cycle cause `invalid_package`. S2's nesting-depth limit refusal reports `stage_limit_exceeded`/`nesting-depth-exceeded`. | Test (TC-406) |
+| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The floating-type cause returns `unknown_required_feature`, the undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, the alias-cycle cause `invalid_package`, the duplicate-enum-member cause `ambiguous_declaration`/`ambiguous-name`, and the enum-admission-fault cause `runtime_invariant`/`established-invariant-broken`. S2's nesting-depth limit refusal reports `stage_limit_exceeded`/`nesting-depth-exceeded`. | Test (TC-406) |
 | FR-091-AC-22 | For a unit with one profile selection, alias `v`, and `function f using v(): Boolean pure { true }`, the assembler records `f`'s `using` alias as resolved to that selection. With `function g using w(): Boolean pure { true }` added, it returns one refusal holding an undeclared-alias error, code `missing_declaration`/`missing-selection`, that names `w` and the span of `g`'s `using` field, and no `PackageDeclarations`. A unit that declares two profile selections with alias `v` refuses with a duplicate-alias error, code `ambiguous_declaration`/`ambiguous-name`, naming `v` and both selection spans. | Test (TC-412) |
 | FR-091-AC-23 | S1 admits a unit whose function parameter is typed `Float32` or `Float64` with no `[mode]`, and S2 builds that parameter's type form with head `Float32` or `Float64` and no rounding mode. | Test (TC-405) |
 | FR-091-AC-24 | Spine `compile` of a unit that declares `import "test/units" version "2" digest "<64 lowercase hex>" as u;`, with no library supplied as `test/units`, refuses at stage `intake`, before assembly, with `missing_import`/`missing-selection` naming `test/units` at the import's identity string (FR-099, ADR-015 D-1), and emits no package. | Test (TC-405) |
+| FR-091-AC-25 | S2 builds, for `ordered enum Level { LOW, HIGH = "High", }`, an enum form with name `Level` and the span of `Level`, ordered, and the members `LOW` with no display string and then `HIGH` with display string `"High"` and the span of that literal, each member with the span of its case name. For `enum Color { RED, BLUE }` it builds an enum form that is not ordered, with members `RED` and then `BLUE`, in source order. | Test (TC-470) |
+| FR-091-AC-26 | The `FunctionDeclaration` that S2 builds from `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` reads: kind `Predicate`; name `Positive`; `using` field alias `v`, with the span of that `v`; parameter `x`, a type form with head `Int` and bounds spelled `0` and `9`; result, a type form with head `Boolean` and the span of the `Boolean` token; no measure; body `Binary{Greater, Name("x"), Integer(0)}`. The `FunctionDeclaration` that S2 builds from a `function` declaration has kind `Function`. | Test (TC-470) |
+| FR-091-AC-27 | The assembler returns, for `ordered enum Status { READY, DONE }` and then `enum Color { RED, BLUE = "Blue" }` under source owner authority `a`, identity `u`, `enums` holding `Status` and then `Color`. `Status`'s declaration key is vector N1 and its members are `READY` then `DONE`, with `READY`'s member key N2. `Color`'s declaration key is N3 and its members are `BLUE` then `RED`. Assembling `enum Color { RED, BLUE }` under (`a`, `u`) also gives N3. Assembling the `Status` source under (`a`, `w`) gives N4. `declared_type_spans` holds the span of each of `Status` and `Color`. | Test (TC-471) |
+| FR-091-AC-28 | On the package that `PackageDeclarations::check` admits and links from the assembler output for a unit with one profile selection `v`, `ordered enum Status { READY, DONE }`, `function isReady using v(s: Status): Boolean pure { s = Status::READY }`, `function ok using v(): Boolean pure { isReady(Status::READY) }` and `function later using v(): Boolean pure { Status::READY < Status::DONE }`, `isReady`'s resolved parameter type is `ValueType::Enum` of `Status`'s shape, and calling `ok` and `later` through `CheckedPackage::call` each return a completed outcome with value `true`. With `enum Color { RED, BLUE }` and `function bad using v(): Boolean pure { Color::RED < Color::BLUE }`, check refuses with `ill_typed`. With `function gone using v(): Boolean pure { Status::GONE = Status::READY }`, check refuses with `missing_declaration`/`missing-name` naming `Status::GONE`. | Test (TC-471) |
+| FR-091-AC-29 | The assembler returns one refusal, and no `PackageDeclarations`, for a unit with `enum E { A, B, A }`, `enum F { X }`, `record F { y: Boolean; }`, `function f using v(p: F): Boolean pure { true }` and `function g using v(p: Shade): Boolean pure { true }`. It holds a duplicate-enum-member error, code `ambiguous_declaration`/`ambiguous-name`, naming `E`, `A` and the spans of both `A` members; an ambiguous-type-name error naming `F`, the span of `p`'s type form in `f` and the spans of both `F` declarations; and an unresolved-type-name error naming `Shade`. | Test (TC-471) |
+| FR-091-AC-30 | The assembler returns, for `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` and then `function three using v(): Boolean pure { Positive(3) }`, `functions` holding `Positive`, kind `Predicate`, and then `three`, kind `Function`. `Positive`'s resolved signature has parameter type `Int[0..9]` and result type `Boolean`, and its `using` alias resolves to the selection `v`. Calling `three` through `CheckedPackage::call` on the checked package returns a completed outcome with value `true`. `predicate Q using w(x: Boolean): Boolean { x }`, in a unit with no selection `w`, refuses with an undeclared-alias error naming `w`. `predicate R using v(x: Boolean): Boolean { R(x) }` refuses at check with the FR-146 `missing-measure` obligation, as a recursive function written without `decreases` does. | Test (TC-471) |
 
 ## Dependencies
 
@@ -519,8 +643,16 @@ for an FR-151 call-graph cycle (`qsl-semantics/src/check/refusal.rs`,
   publishes an owner-bearing preimage for nominal enum, dimension and unit
   nodes only; the structural-node preimage is proposed to
   `ix://agent-ix/quire-specification` under ADR-013 QC-18 and QC-24.
-- An `enum`, `dimension` or `unit` entry needs `value::enumeration` and
-  `value::unit` to leave the FB-13 debt list, which QSL-131 owns.
+- The enum entries rely on `value::enumeration` computing preimage digests
+  and never minting a key (QSL-131 K4, ADR-011 FB-13), and on lowering
+  building an admitted `EnumBinding`'s declaration and member nodes from
+  its preimage (FR-092 rule 1, QSL-238's enum half).
+- The `dimension` and `unit` entries wait on FR-091-OQ-11. Where the work
+  splits once it is answered: the assembler ends at an admitted `UnitGraph`
+  in `PackageDeclarations`; keeping each unit's and dimension's preimage
+  through `Unit` and `UnitGraph` and lowering the `quire.dimension-node/v1`
+  and `quire.unit-node/v1` nodes is QSL-238's unit half; lowering quantity
+  type nodes is QSL-247.
 - Resolving a selection's definition reference against the library lock is
   the M-4 lock evidence (QSL-6).
 - FR-091-AC-17's code needs the QSpec catalog to name an alias cycle under
@@ -550,11 +682,15 @@ of each declared type's name for FR-096, and reports every error it finds.
 
 Remaining work:
 
-- FB-13: `enum`, `ordered enum`, `predicate`, `dimension` and `unit`
-  declarations still refuse `NoDispatchEntry` (FR-091-AC-6). Their
-  parsed-form types, the assembler wiring of `EnumDeclaration::admit` and
-  `UnitGraph::admit`, and the retained unit and dimension preimages are
-  QSL-275 (see also QSL-238).
+- FB-13, QSL-275: the `enum`, `ordered` and `predicate` entries, the enum
+  and predicate forms, the assembler's enum admission and the `predicate`
+  function node (FR-091-AC-6 and AC-25 to AC-30, FR-092-AC-13) are
+  specified and not implemented. Today every one of these declarations
+  refuses `NoDispatchEntry`, and the only callers of
+  `EnumDeclaration::admit` are tests.
+- `dimension` and `unit` declarations refuse `NoDispatchEntry`
+  (FR-091-AC-6) until FR-091-OQ-11 is answered; the hand-off to QSL-238
+  and QSL-247 is under Dependencies.
 - The other families' parsed-form types are not built: the state family's
   under QSL-67, and the others under QSL-45, QSL-44, QSL-43, QSL-42,
   QSL-40, QSL-39 and QSL-36.
@@ -593,3 +729,46 @@ decided; the last column names the fact that reopens it.
   producer does not represent, which is the reason the floating-type
   cause is `unknown_required_feature`/`unsupported-feature`. The Catalog
   codes table keeps `unsupported_construct` for these two causes.
+- **FR-091-OQ-11: What do `dimension` and `unit` declarations in source
+  mean, and how are their errors coded?** The grammar is fixed
+  (`shared-grammar.md`), and QSpec FR-142 fixes the preimages and the
+  admitted graph. Four points between them are not stated, and the
+  dimension and unit entries wait on the answers:
+  1. *Dimension terms.* A `quire.dimension-node/v1` preimage's `terms` name
+     base dimensions only, strictly ascending by key with nonzero
+     exponents, and empty `terms` declare a base dimension. Source can
+     write `A * A`, `A / A` and a term naming a derived dimension. Option
+     (a): normalize. Expand each derived term to its base terms, add
+     repeated exponents, drop zeros and sort by key, and refuse a
+     declaration with `=` whose terms cancel to none, because empty terms
+     would read as a new base dimension. Option (b): take the terms
+     literally and refuse a repeated or derived term. Recommendation: (a).
+     It matches FR-142's "normalized map" algebra, and a derived term is
+     how one writes acceleration from speed.
+  2. *Exact numbers.* Option (a): reduce `rational(n, d)` and read
+     `decimal(c, s)` as `c / 10^s`, so the preimage's scale and offset are
+     reduced as `UnitGraph::admit` requires. Option (b): refuse an
+     unreduced spelling. Recommendation: (a). The source number and the
+     reduced rational are one value (ADR-013 R-07), and `d = 0` refuses as
+     a zero denominator.
+  3. *Error codes.* `invalid_semantic_graph` is the reader's code for a
+     retained graph, not a source error. The source errors are: a unit
+     whose `:` name is no dimension, a target that is no unit, a target in
+     another dimension, a dimension with no root or two roots, a target
+     cycle, a zero scale, and an offset or scale on a targetless unit.
+     Recommendation: a cycle is `invalid_package`/`definition-cycle`, as
+     FR-091-OQ-7 codes an alias cycle, and a missing name is
+     `missing_declaration`/`missing-name`. No catalog cause fits the
+     others: `ill_typed` retains an operator locus and expected and actual
+     types, and `invalid_package`/`invalid-value` retains a field path in
+     a package document. Those need a catalog cause, which is a QSpec
+     (STD) change.
+  4. *Use sites.* The complete-V1 `type-ref` has no quantity form, so
+     nothing in source names a declared unit as a type, and `Quantity`
+     values reach `check` only from a domain package (FR-094). Option (a):
+     admit dimensions and units with no source use until QSpec adds one.
+     Option (b): read a qualified name that names a unit as
+     `ValueType::Quantity` of that unit. Option (c): ask QSpec for a
+     quantity `type-ref`. Recommendation: (a) now and (c) to QSpec.
+     Option (b) invents syntax meaning the grammar does not give.
+  Until then S2 refuses both with `NoDispatchEntry` (FR-091-AC-6).
