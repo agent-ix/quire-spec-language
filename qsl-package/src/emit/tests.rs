@@ -1222,6 +1222,59 @@ fn an_unplaced_occurrence_refuses() {
     );
 }
 
+/// FR-062-AC-5 third clause, S4 emitter half (TC-160 step 6):
+/// `emit_checked` returns an emission or an `EmitRefusal`, never
+/// `Incomplete`, across a fixture set of a package that writes every node, a
+/// package with nothing writable, and three whose occurrences it cannot
+/// place (`t` and `q`/`t` built without spans, and a declared type). `classify` matches `Result<Emission, EmitRefusal>` and
+/// every `EmitRefusal` variant with no wildcard arm, so a variant added to the
+/// refusal type, such as an `Incomplete`, stops this test compiling until it
+/// says what the emitter does with it; the exact classification per fixture
+/// fails if `emit_checked` answered any of them differently.
+#[trace("TC-160", "FR-062-AC-5")]
+#[test]
+fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
+    #[derive(Debug, Eq, PartialEq)]
+    enum Seen {
+        Written { omitting: bool },
+        NothingToEmit,
+        UnlocatedOccurrence,
+        UnknownOccurrenceRole,
+        Encoding,
+    }
+    fn classify(result: Result<Emission, EmitRefusal>) -> Seen {
+        match result {
+            Ok(emission) => Seen::Written {
+                omitting: !emission.omitted.is_empty(),
+            },
+            Err(EmitRefusal::NothingToEmit { .. }) => Seen::NothingToEmit,
+            Err(EmitRefusal::UnlocatedOccurrence { .. }) => Seen::UnlocatedOccurrence,
+            Err(EmitRefusal::UnknownOccurrenceRole { .. }) => Seen::UnknownOccurrenceRole,
+            Err(EmitRefusal::Encoding { .. }) => Seen::Encoding,
+        }
+    }
+    assert_eq!(
+        classify(emit_checked(&package(vec![t_read_from_text()]))),
+        Seen::Written { omitting: false }
+    );
+    assert_eq!(
+        classify(emit_checked(&q_and_t_package())),
+        Seen::UnlocatedOccurrence
+    );
+    assert_eq!(
+        classify(emit_checked(&package(Vec::new()))),
+        Seen::NothingToEmit
+    );
+    assert_eq!(
+        classify(emit_checked(&package(vec![t()]))),
+        Seen::UnlocatedOccurrence
+    );
+    assert_eq!(
+        classify(emit_checked(&declared_types(Vec::new(), Vec::new()))),
+        Seen::UnlocatedOccurrence
+    );
+}
+
 /// TC-416 step 3 (FR-093-CON-2): the `package` crate's non-test code calls
 /// no node body term constructor, no node key function and no `NodeKey`
 /// constructor. A source scan: the property is the absence of a call.
