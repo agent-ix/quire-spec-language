@@ -6,8 +6,8 @@ use ix_trace_rs::trace;
 use qsl_cst::{CstElement, LosslessCst, ParsedSource, Production};
 use qsl_forms::{
     build_unit, Accumulation, BinaryOperator, BinderQuery, BuiltinType, DeclarationForm,
-    DeclarationKind, Expression, FieldInitializer, FormsCause, FormsFailure, FormsLimits,
-    FunctionDeclaration, ParsedUnit, TypeFormHead,
+    DeclarationKind, ExactNumberKind, Expression, FieldInitializer, FormsCause, FormsFailure,
+    FormsLimits, FunctionDeclaration, ParsedUnit, TermOperator, TypeFormHead,
 };
 use qsl_foundation::diagnostic::{LimitKind, Locus};
 use qsl_foundation::{Code, SourceIdentity, Span};
@@ -52,7 +52,9 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         DeclarationForm::Alias(_)
         | DeclarationForm::Record(_)
         | DeclarationForm::Tuple(_)
-        | DeclarationForm::Enum(_) => panic!("a function form, not {form:?}"),
+        | DeclarationForm::Enum(_)
+        | DeclarationForm::Dimension(_)
+        | DeclarationForm::Unit(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -178,6 +180,8 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Record(_) => "record",
             DeclarationForm::Tuple(_) => "tuple",
             DeclarationForm::Enum(_) => "enum",
+            DeclarationForm::Dimension(_) => "dimension",
+            DeclarationForm::Unit(_) => "unit",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);
@@ -421,22 +425,6 @@ fn s2_refuses_inadmissible_input_and_undispatched_declarations() {
         }
     );
     assert_eq!(span, Some(span_of(&text, invariant)));
-
-    for (declaration, leading) in [
-        ("dimension Length;", "dimension"),
-        ("unit metre: Length = rational(1, 1);", "unit"),
-    ] {
-        let (text, cause, span) = refusal(declaration);
-        assert_eq!(
-            cause,
-            FormsCause::NoDispatchEntry {
-                spelling: name(leading)
-            },
-            "{declaration}"
-        );
-        assert_eq!(cause.catalog_code(), Code::UnsupportedConstruct);
-        assert_eq!(span, Some(span_of(&text, declaration)), "{declaration}");
-    }
 }
 
 #[trace("FR-091-AC-7", "TC-396")]
@@ -682,18 +670,24 @@ fn a_bare_float_type_is_admitted_and_builds_with_no_rounding_mode() {
     assert!(z.bounds.is_empty());
 }
 
-/// TC-395 step 4 (enum and predicate part): each declaration builds one form
-/// and is not refused with `NoDispatchEntry`.
+/// TC-395 step 4: each declaration builds one form and is not refused with
+/// `NoDispatchEntry`.
 #[trace("FR-091-AC-6", "TC-395")]
 #[test]
-fn enum_and_predicate_declarations_build_one_form_each() {
+fn enum_predicate_dimension_and_unit_declarations_build_forms() {
     for declaration in [
         "enum Color { RED }",
         "ordered enum Level { LOW }",
         "predicate P using v(x: Boolean): Boolean { x }",
+        "dimension Length;",
+        "dimension Length;\nunit m : Length = rational(1, 1);",
     ] {
         let (_, unit) = build(declaration);
-        assert_eq!(unit.forms().len(), 1, "{declaration}");
+        assert_eq!(
+            unit.forms().len(),
+            declaration.lines().count(),
+            "{declaration}"
+        );
     }
 }
 
@@ -810,4 +804,76 @@ fn s2_builds_a_predicate_as_a_function_declaration_of_kind_predicate() {
         function(unit.forms()[0].form()).kind(),
         DeclarationKind::Function
     );
+}
+
+#[trace("FR-091-AC-31", "TC-482")]
+#[test]
+fn s2_builds_dimension_and_unit_forms_as_written() {
+    let (_, unit) = build("dimension Length;");
+    let DeclarationForm::Dimension(length) = unit.forms()[0].form() else {
+        panic!("a dimension form");
+    };
+    assert_eq!(length.name.name, "Length");
+    assert!(length.terms.is_empty());
+
+    let (text, unit) = build("dimension Accel = Length * Time^-2 / Mass;");
+    let DeclarationForm::Dimension(accel) = unit.forms()[0].form() else {
+        panic!("a dimension form");
+    };
+    let shown: Vec<_> = accel
+        .terms
+        .iter()
+        .map(|term| (term.operator, term.name.name.as_str(), term.name.span))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (None, "Length", span_of(&text, "Length *")),
+            (
+                Some(TermOperator::Multiply),
+                "Time",
+                span_of(&text, "Time^")
+            ),
+            (Some(TermOperator::Divide), "Mass", span_of(&text, "Mass")),
+        ]
+        .map(|(operator, name, span)| (
+            operator,
+            name,
+            Span {
+                start: span.start,
+                end: span.start + name.len()
+            }
+        ))
+    );
+    assert_eq!(accel.terms[0].exponent, None);
+    assert_eq!(
+        accel.terms[1].exponent,
+        Some((Integer::from(-2_i64), span_of(&text, "-2")))
+    );
+    assert_eq!(accel.terms[2].exponent, None);
+
+    let (text, unit) = build("unit C : Temperature = rational(1, 1) * K + decimal(27315, 2);");
+    let DeclarationForm::Unit(celsius) = unit.forms()[0].form() else {
+        panic!("a unit form");
+    };
+    assert_eq!(celsius.name.name, "C");
+    assert_eq!(celsius.dimension.name, "Temperature");
+    assert_eq!(celsius.dimension.span, span_of(&text, "Temperature"));
+    assert_eq!(celsius.scale.kind, ExactNumberKind::Rational);
+    assert_eq!(celsius.scale.first, Integer::from(1_i64));
+    assert_eq!(celsius.scale.second, Integer::from(1_i64));
+    assert_eq!(celsius.scale.span, span_of(&text, "rational(1, 1)"));
+    let target = celsius.target.as_ref().expect("a target");
+    assert_eq!(target.name, "K");
+    let offset = celsius.offset.as_ref().expect("an offset");
+    assert_eq!(offset.kind, ExactNumberKind::Decimal);
+    assert_eq!(offset.first, Integer::from(27315_i64));
+    assert_eq!(offset.second, Integer::from(2_i64));
+    assert_eq!(offset.span, span_of(&text, "decimal(27315, 2)"));
+
+    let (_, unit) = build("unit m : Length = rational(1, 1);");
+    let DeclarationForm::Unit(metre) = unit.forms()[0].form() else {
+        panic!("a unit form");
+    };
+    assert!(metre.target.is_none() && metre.offset.is_none());
 }

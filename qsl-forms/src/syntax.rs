@@ -952,6 +952,86 @@ pub struct EnumForm {
     pub members: Vec<EnumMemberForm>,
 }
 
+/// A qualified name as written, with `::` separators, and its span.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NameForm {
+    /// The name as written.
+    pub name: String,
+    /// The span of the name.
+    pub span: Span,
+}
+
+/// The operator that precedes a dimension term.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TermOperator {
+    /// `*`.
+    Multiply,
+    /// `/`.
+    Divide,
+}
+
+/// One term of a derived dimension: `Name` or `Name^-2` (FR-091 "Dimension
+/// form").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DimensionTermForm {
+    /// The operator before the term; `None` for the first term.
+    pub operator: Option<TermOperator>,
+    /// The dimension's qualified name, as written.
+    pub name: NameForm,
+    /// The exponent when `^` is written, with the span of the signed
+    /// integer.
+    pub exponent: Option<(Integer, Span)>,
+}
+
+/// `dimension Name;` (a base dimension, no terms) or `dimension Name = T
+/// * U / V;` (FR-091 "Dimension form").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DimensionForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The terms in source order; empty when no `=` is written.
+    pub terms: Vec<DimensionTermForm>,
+}
+
+/// Which spelling an [`ExactNumberForm`] was written in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExactNumberKind {
+    /// `rational(numerator, denominator)`.
+    Rational,
+    /// `decimal(coefficient, scale)`.
+    Decimal,
+}
+
+/// An exact number as written, neither reduced nor checked (FR-091 "Unit
+/// form"): the assembler reduces it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExactNumberForm {
+    /// The spelling kind.
+    pub kind: ExactNumberKind,
+    /// The numerator, or the coefficient.
+    pub first: Integer,
+    /// The denominator, or the scale.
+    pub second: Integer,
+    /// The span of the whole exact number.
+    pub span: Span,
+}
+
+/// `unit name : Dimension = scale [* target] [+ offset];` (FR-091 "Unit
+/// form").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnitForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The dimension's qualified name after `:`.
+    pub dimension: NameForm,
+    /// The scale, the exact number after `=`.
+    pub scale: ExactNumberForm,
+    /// The target unit's qualified name after `*`, when written.
+    pub target: Option<NameForm>,
+    /// The offset, the exact number after `+`, when written.
+    pub offset: Option<ExactNumberForm>,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -967,6 +1047,10 @@ pub enum DeclarationForm {
     Tuple(TupleForm),
     /// An `enum` or `ordered enum` declaration.
     Enum(EnumForm),
+    /// A `dimension` declaration.
+    Dimension(DimensionForm),
+    /// A `unit` declaration.
+    Unit(UnitForm),
 }
 
 #[cfg(test)]
