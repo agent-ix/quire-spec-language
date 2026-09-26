@@ -230,8 +230,8 @@ fn tc_451_step_6_compile_refusals_carry_their_own_stage() {
     assert_eq!(refusal.code(), Code::InvalidSyntax);
 
     const ILL_TYPED: &str = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\" version \"1\" digest \
-        \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+        profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+        \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
         type Digit = Int[0, 9];\n\
         function inv using v(x: Digit): Boolean pure { 1 / x > 0 }\n";
     let refusal = run_fixture(ILL_TYPED, &call("inv", vec![arg("x", 1)])).unwrap_err();
@@ -291,11 +291,11 @@ impl CatalogCoded for ModelCause {
     }
 }
 
-/// TC-452's fixture unit `F`: three LF-terminated lines, 229 bytes, with a
+/// TC-452's fixture unit `F`: three LF-terminated lines, 237 bytes, with a
 /// `function f` whose body's literal `5` (path `[1]`) is at byte 225 to
 /// 226, line 3 column 54 to 55 -- recomputed independently of the spec's
 /// own literal digest and span, which it agrees with byte for byte.
-const FIXTURE_F: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\nfunction f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
+const FIXTURE_F: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\nfunction f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
 
 fn fixture_f_location() -> Location {
     Location {
@@ -321,7 +321,7 @@ fn evaluation(outcome: FamilyOutcome<Value>) -> qsl_eval::value::Evaluation {
 #[trace("TC-452", "FR-100-AC-9")]
 #[test]
 fn tc_452_step_4_outcome_mapping_covers_every_category() {
-    assert_eq!(FIXTURE_F.len(), 229, "fixture F is 229 bytes");
+    assert_eq!(FIXTURE_F.len(), 237, "fixture F is 237 bytes");
     let compiled = compile(
         source(),
         "tc-452-f.native",

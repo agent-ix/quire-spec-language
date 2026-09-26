@@ -3,7 +3,7 @@
 // `model M` selects `spine-model.semantic-ir.json` by its sha256-jcs digest.
 // The profile digest is a placeholder.
 language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+profile v = "quire.value.complete/v1" version "1-draft.2" digest "sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16";
 model M = "acme/orders" version "1.0.0" digest "sha256-jcs:5fc327ab7b2b90151ae6713296e15512c38930d9ba61cf5f586eaa2a70145bfd";
 function keep using v(g: M::Gadget): M::Gadget pure { g }
 function held using v(w: Reference<M::Widget>): Boolean pure { true }

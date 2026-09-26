@@ -310,7 +310,7 @@ pub struct CatalogEntry {
     pub revision_value: &'static str,
     /// Lowercase hex SHA-256 of the definition's bytes
     /// (`quire.definition.bytes/v1`), from QSpec's `complete-value-lock.json`.
-    /// Informational; no reader verifies it yet.
+    /// FR-110 compares a header profile's digest with the `root` row's.
     pub digest: &'static str,
 }
 
