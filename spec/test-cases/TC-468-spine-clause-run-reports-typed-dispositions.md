@@ -33,7 +33,8 @@ Build `ClauseRunRequest`s from FR-108's fixtures, in memory.
 5. healthy-parent twice; healthy-parent with the snapshot bytes edited after
    the selection digest was taken; then, for each S6a outcome FR-100-AC-9
    constructs other than `Completed`, pass it through `run_clause`'s mapping
-   and through FR-100's, and compare.
+   and through FR-100's, and compare; FR-100's internal failures (the kernel
+   `CheckedInvariant` and a `CallFailure::Fault`) among them.
 
 Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
 
@@ -54,7 +55,11 @@ Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
   `type-mismatch`, with an uncharged meter.
 - Step 5: equal reports including usage; `admit`, `stale_dependency`/
   `byte-digest-mismatch`; every compared outcome gives the same `outcome`
-  member and exit status in both mappings.
+  member and exit status in both mappings; `CheckedInvariant` and the
+  `CallFailure::Fault` each report stage `evaluate`, category
+  `internal-failure`, the fault's stage and invariant (for
+  `CheckedInvariant`, `S6a` and `checked-program-invariant`), no `outcome`
+  member, and FR-100's internal-failure exit status.
 
 ## Status
 

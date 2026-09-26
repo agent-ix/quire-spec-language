@@ -71,11 +71,13 @@ selection, admission or evaluation result is a report.
 `ClauseRunReport` holds:
 
 - `disposition`: `stage` (`compile`, `select`, `admit` or `evaluate`),
-  `category` (`success`, `violation`, `refusal`, `incomplete` or
-  `undefined`), `truth` (only for `success` and `violation`) and, for every
-  other category, the one record: for `compile`, `select` and `admit` a
-  `RefusalRecord` (code, cause, locus); for `evaluate`, FR-100's `outcome`
-  member for that S6a outcome;
+  `category` (`success`, `violation`, `refusal`, `incomplete`, `undefined`
+  or `internal-failure`), `truth` (only for `success` and `violation`) and,
+  for every other category, the one record: for `compile`, `select` and
+  `admit` a `RefusalRecord` (code, cause, locus); for an `evaluate`
+  refusal, undefined or incomplete, FR-100's `outcome` member for that S6a
+  outcome; for `evaluate` `internal-failure`, the `InternalFault`'s stage
+  and invariant, as FR-100's internal-failure section gives them;
 - provenance: the source identity and byte digest, the extraction's original
   identity and digest when I3 was used, the `package_id`, each model
   selection, the selection as given, and the identity and digest of every
@@ -119,9 +121,15 @@ selection, admission or evaluation result is a report.
   or family, by FR-100's outcome mapping, to FR-100's `outcome` member and
   FR-100's exit status, category `refusal`, `undefined` or `incomplete` by
   its ADR-013 O-16 category. It restates none of FR-100's rows.
+- If the S6a outcome is one FR-100 handles as an internal failure (the
+  kernel `Refusal::CheckedInvariant`, or `CallFailure::Fault`), then the
+  entry SHALL report stage `evaluate`, category `internal-failure`, with the
+  `InternalFault` FR-100's internal-failure section names, and FR-100's
+  internal-failure exit status.
 - `ClauseRunReport::exit_code()` SHALL be one total match over the stage and
   category with no `_` arm: 0 and 10 as above; FR-100's exit status for an
-  `evaluate` refusal, undefined or incomplete; and
+  `evaluate` refusal, undefined or incomplete; FR-100's internal-failure
+  exit status for `evaluate` `internal-failure`; and
   `qsl_foundation::diagnostic::Code::exit_code` of the record's code for a
   `compile`, `select` or `admit` result (20, 21 for an unsupported code, 22
   for an incomplete code).
@@ -141,12 +149,12 @@ selection, admission or evaluation result is a report.
 | FR-109-AC-2 | missing-model (no package supplied) reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20, with no snapshot in its provenance; an expected `package_id` of another unit reports stage `compile`, `stale_dependency`, naming both; a `Clause` selection naming `Absent`, and one naming the function `sameIdentity`, each report stage `select`, `missing_declaration`/`missing-name`. | Test (TC-468) |
 | FR-109-AC-3 | dangling-parent reports stage `admit`, `refusal`, `dangling_reference`, exit 20; incomplete-population reports stage `admit`, `incomplete`, `incomplete_population`, exit 22; exhausted-work (budget zero) reports stage `evaluate`, `incomplete`, FR-100's `{"kind": "incomplete", "limit": "work_units"}`, exit 22; none carries `truth`. | Test (TC-468) |
 | FR-109-AC-4 | A `Function` selection of `sameIdentity` with arguments `{b: child, a: root}` (given in that order) over the distinct-identities snapshot reports `violation`, `truth: false`; with `a` = `b` = `child`, `success`; with `b` naming `ghost`, stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; with an argument naming `c`, stage `admit`, FR-100's refusal for an unknown parameter; a function returning `Integer` reports stage `select`, `ill_typed`/`type-mismatch`, before any call. | Test (TC-468) |
-| FR-109-AC-5 | Running one request twice gives equal reports, including usage; a request whose snapshot bytes change after the selection digest was taken reports stage `admit`, `stale_dependency`/`byte-digest-mismatch`. For each S6a outcome other than `Completed`, the report's `outcome` member and exit code equal what FR-100's mapping gives for the same outcome (checked over the outcomes FR-100-AC-9 constructs). | Test (TC-468) |
+| FR-109-AC-5 | Running one request twice gives equal reports, including usage; a request whose snapshot bytes change after the selection digest was taken reports stage `admit`, `stale_dependency`/`byte-digest-mismatch`. For each S6a outcome other than `Completed`, the report's `outcome` member and exit code equal what FR-100's mapping gives for the same outcome (checked over the outcomes FR-100-AC-9 constructs); for the kernel `CheckedInvariant` and a `CallFailure::Fault`, which FR-100 handles as an internal failure, the report is stage `evaluate`, category `internal-failure`, carrying the fault's stage and invariant, with no `outcome` member and FR-100's internal-failure exit status. | Test (TC-468) |
 
 ## Dependencies
 
-- FR-100 (the spine run's argument binding, outcome mapping and exit
-  statuses), FR-106, FR-107 (admission and evaluation), FR-099 and FR-027
+- FR-100 (the spine run's argument binding, outcome mapping, internal-failure
+  handling and exit statuses), FR-106, FR-107 (admission and evaluation), FR-099 and FR-027
   (the spine compile), FR-098 (the stale `package_id` rule), FR-060 (the CG
   boundary).
 - QSpec FR-301 (exit codes).
