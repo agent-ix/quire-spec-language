@@ -30,9 +30,11 @@
 //! `implies`, false for `or`). A query filter is no guard.
 //!
 //! **Extent roots.** Each function parameter and each query, `count`,
-//! `sum`, `fold` or `reduce` binder read in the application's operand
-//! subtrees or in a guard of its path condition. A read of a `let` binder
-//! contributes the roots its bound value reads; a literal contributes none.
+//! `sum`, `fold` (accumulator and element) or `reduce` binder read in the
+//! application's operand subtrees or in a guard of its path condition,
+//! other than a binder bound inside the application's own subtree. A read
+//! of a `let` binder contributes the roots its bound value reads; a
+//! literal contributes none.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -107,13 +109,21 @@ impl SiteGuard {
     }
 }
 
+/// Where a claim site's result bound comes from.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum SiteBound {
+    /// The target range of the narrow that directly wraps the application.
+    Narrowed(IntegerInterval),
+    /// The application's own result type.
+    Own(ValueType),
+}
+
 /// The checked site a claim covers (ADR-012 §2's `ClaimSite`): the
 /// application's location, its result bound and its path condition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClaimSite {
     location: Location,
-    result_bound: ValueType,
-    narrowed: bool,
+    bound: SiteBound,
     path_condition: Vec<SiteGuard>,
 }
 
@@ -125,8 +135,11 @@ impl ClaimSite {
 
     /// The application's result bound: the target range of the narrow that
     /// wraps it, otherwise its own result type.
-    pub fn result_bound(&self) -> &ValueType {
-        &self.result_bound
+    pub fn result_bound(&self) -> ValueType {
+        match &self.bound {
+            SiteBound::Narrowed(interval) => ValueType::Int(interval.clone()),
+            SiteBound::Own(value_type) => value_type.clone(),
+        }
     }
 
     /// The path condition, outermost guard first.
@@ -364,6 +377,34 @@ impl Roots {
     }
 }
 
+/// The binder sites `node` binds, at `binding`: a query's slot, a fold's
+/// accumulator and element. A read of one of them is a root only of the
+/// applications inside `node`.
+fn bound_by(node: &Node, binding: &Location) -> Vec<BinderSite> {
+    let site = |slot: Slot| BinderSite {
+        binder: binding.clone(),
+        slot,
+    };
+    match &node.kind {
+        NodeKind::Query { slot, .. } => vec![site(*slot)],
+        NodeKind::Fold {
+            accumulator,
+            binder,
+            ..
+        } => vec![site(*accumulator), site(*binder)],
+        _ => Vec::new(),
+    }
+}
+
+/// The walk state a claim reads: the guard arena, each root's type, the
+/// type environment and the position ceiling of one classification.
+struct Classify<'w> {
+    guards: &'w [Guard],
+    root_types: &'w BTreeMap<BinderSite, ValueType>,
+    types: &'w TypeEnvironment,
+    position_limit: u64,
+}
+
 /// The element type of a query or fold source.
 fn element_type(source: &Node) -> Result<&ValueType, ClassifyFailure> {
     match &source.value_type {
@@ -470,16 +511,16 @@ pub(crate) fn claims_of(
                 }
                 _ => None,
             });
-            claims.push(claim(
-                frame.node,
-                narrow,
-                frame.guard,
-                &guards,
-                &reads,
-                &roots.types,
+            let walk = Classify {
+                guards: &guards,
+                root_types: &roots.types,
                 types,
                 position_limit,
-            )?);
+            };
+            claims.push(walk.claim(frame.node, narrow, frame.guard, &reads)?);
+        }
+        for bound in bound_by(frame.node, &frame.binding) {
+            reads.remove(&bound);
         }
         if let Some(parent) = stack.last_mut() {
             if parent.next == 1 {
@@ -491,69 +532,63 @@ pub(crate) fn claims_of(
     Ok(claims)
 }
 
-/// The claim at scalar application `node`, wrapped by a narrow into
-/// `narrow` when one wraps it, under the innermost guard `guard`, whose
-/// operand subtrees read `reads`.
-#[allow(clippy::too_many_arguments)] // The walk's state, read once per claim.
-fn claim(
-    node: &Node,
-    narrow: Option<&IntegerInterval>,
-    guard: Option<usize>,
-    guards: &[Guard],
-    reads: &BTreeSet<BinderSite>,
-    root_types: &BTreeMap<BinderSite, ValueType>,
-    types: &TypeEnvironment,
-    position_limit: u64,
-) -> Result<ValueClaim, ClassifyFailure> {
-    let mut roots = reads.clone();
-    let mut path_condition = Vec::new();
-    let mut at = guard;
-    while let Some(index) = at {
-        let Some(guard) = guards.get(index) else {
-            break;
+impl Classify<'_> {
+    /// The claim at scalar application `node`, wrapped by a narrow into
+    /// `narrow` when one wraps it, under the innermost guard `guard`, whose
+    /// operand subtrees read `reads`.
+    fn claim(
+        &self,
+        node: &Node,
+        narrow: Option<&IntegerInterval>,
+        guard: Option<usize>,
+        reads: &BTreeSet<BinderSite>,
+    ) -> Result<ValueClaim, ClassifyFailure> {
+        let fault = |invariant| ClassifyFailure::Fault(InternalFault::new(STAGE, invariant));
+        let mut roots = reads.clone();
+        let mut path_condition = Vec::new();
+        let mut at = guard;
+        while let Some(index) = at {
+            let guard = self
+                .guards
+                .get(index)
+                .ok_or_else(|| fault("guard-in-arena"))?;
+            roots.extend(guard.reads.iter().cloned());
+            path_condition.push(SiteGuard {
+                location: guard.location.clone(),
+                holds: guard.holds,
+            });
+            at = guard.outer;
+        }
+        path_condition.reverse();
+        let roots: Vec<BinderSite> = roots.into_iter().collect();
+        let mut typed = Vec::with_capacity(roots.len());
+        for root in &roots {
+            typed.push(
+                self.root_types
+                    .get(root)
+                    .ok_or_else(|| fault("extent-root-typed"))?,
+            );
+        }
+        let mut domains = BTreeMap::new();
+        for ((root, path), kind) in classify_domains(&typed, self.types, self.position_limit)? {
+            let root = roots
+                .get(root)
+                .ok_or_else(|| fault("domain-root-classified"))?;
+            domains.insert((root.clone(), path), kind);
+        }
+        let bound = match narrow {
+            Some(interval) => SiteBound::Narrowed(interval.clone()),
+            None => SiteBound::Own(node.value_type.clone()),
         };
-        roots.extend(guard.reads.iter().cloned());
-        path_condition.push(SiteGuard {
-            location: guard.location.clone(),
-            holds: guard.holds,
-        });
-        at = guard.outer;
+        Ok(ValueClaim {
+            site: ClaimSite {
+                location: node.location.clone(),
+                bound,
+                path_condition,
+            },
+            domains,
+        })
     }
-    path_condition.reverse();
-    let roots: Vec<BinderSite> = roots.into_iter().collect();
-    let mut typed = Vec::with_capacity(roots.len());
-    for root in &roots {
-        let Some(value_type) = root_types.get(root) else {
-            return Err(ClassifyFailure::Fault(InternalFault::new(
-                STAGE,
-                "extent-root-typed",
-            )));
-        };
-        typed.push(value_type);
-    }
-    let mut domains = BTreeMap::new();
-    for ((root, path), kind) in classify_domains(&typed, types, position_limit)? {
-        let Some(root) = roots.get(root) else {
-            return Err(ClassifyFailure::Fault(InternalFault::new(
-                STAGE,
-                "domain-root-classified",
-            )));
-        };
-        domains.insert((root.clone(), path), kind);
-    }
-    let (result_bound, narrowed) = match narrow {
-        Some(interval) => (ValueType::Int(interval.clone()), true),
-        None => (node.value_type.clone(), false),
-    };
-    Ok(ValueClaim {
-        site: ClaimSite {
-            location: node.location.clone(),
-            result_bound,
-            narrowed,
-            path_condition,
-        },
-        domains,
-    })
 }
 
 /// The wire id of lowered node `key`.
@@ -605,7 +640,7 @@ pub(crate) fn key_claims(
         let (Some((key, origin)), None) = (applications.next(), applications.next()) else {
             return Err(unkeyable());
         };
-        let bound_type = if site.narrowed {
+        let bound_type = if matches!(site.bound, SiteBound::Narrowed(_)) {
             here.iter()
                 .find(|(narrow, _)| {
                     application(*narrow).is_some_and(|(identity, arguments)| {
@@ -638,7 +673,7 @@ pub(crate) fn key_claims(
                 ClaimExtent::from_domains(domains),
             ),
             result_bound: ResultBound {
-                value_type: site.result_bound,
+                value_type: site.result_bound(),
                 node: wire(bound_type),
             },
             path_condition,
