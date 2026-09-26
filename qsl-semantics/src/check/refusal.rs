@@ -414,6 +414,10 @@ pub enum KeyFault {
     /// number of items sharing it. `Requirements` are never silently
     /// dropped.
     UnkeyableRequirements,
+    /// A claim's extent could not be classified: a checked type names a
+    /// composite the type environment does not hold, or the body reads a
+    /// slot no binder bound (FR-097-AC-2).
+    UnclassifiedExtent(qsl_foundation::InternalFault),
 }
 
 impl KeyFault {
@@ -437,6 +441,7 @@ impl KeyFault {
             Self::NonCanonicalNominal(_) => "nominal-preimage-canonical",
             Self::UncheckedLimitKind(_) => "family-limit-is-a-checking-limit",
             Self::UnkeyableRequirements => "requirements-item-keyed",
+            Self::UnclassifiedExtent(fault) => fault.invariant(),
         }
     }
 }

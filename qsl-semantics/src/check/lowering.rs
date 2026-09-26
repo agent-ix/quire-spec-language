@@ -53,6 +53,7 @@ use quire_exact::{
 };
 
 use super::check::{EnumBinding, Scope};
+use super::claims::BinderSite;
 use super::family::OccurrenceMap;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::node_key::{
@@ -381,6 +382,9 @@ pub(crate) struct Lowered {
     pub(crate) graph: SemanticGraph,
     pub(crate) correspondence: Vec<(NodeKey, DeclarationKey)>,
     pub(crate) functions: Vec<Option<NodeKey>>,
+    /// Each binder's parameter node, by the binding node's location and
+    /// the slot it binds: the roots a claim's extent is keyed by.
+    pub(crate) binders: BTreeMap<BinderSite, NodeKey>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -438,6 +442,10 @@ pub(crate) struct Lowering<'a> {
     content_hash: ContentHash,
     /// Occurrences of drafts, recorded once the drafts are keyed.
     draft_occurrences: Vec<(NodeKey, &'static str, Location)>,
+    /// Each binder's parameter node, by its [`BinderSite`].
+    binders: BTreeMap<BinderSite, NodeKey>,
+    /// Binders whose parameter node is a draft, recorded once it is keyed.
+    draft_binders: Vec<(BinderSite, NodeKey)>,
     /// Each keyed recursion-group member by the key its content would have
     /// outside the group (its body naming the members' keys, `recursion`
     /// `null`): a node built later with that content is the member (FR-092,
@@ -1203,6 +1211,8 @@ impl<'a> Lowering<'a> {
             keys: HashMap::new(),
             content_hash,
             draft_occurrences: Vec::new(),
+            binders: BTreeMap::new(),
+            draft_binders: Vec::new(),
             rebuilt_members: BTreeMap::new(),
             group_of: BTreeMap::new(),
             group_regions: BTreeMap::new(),
@@ -1250,6 +1260,7 @@ impl<'a> Lowering<'a> {
             graph: self.graph,
             correspondence: model::correspondence_entries(self.correspondence),
             functions: self.functions,
+            binders: self.binders,
         }
     }
 
@@ -1259,6 +1270,16 @@ impl<'a> Lowering<'a> {
             self.draft_occurrences.push((key, role, location));
         } else {
             self.occurrences.record(key, role, location);
+        }
+    }
+
+    /// Record `key` as the parameter node of the binder at `site`: a
+    /// draft's waits until it is keyed.
+    fn record_binder(&mut self, site: BinderSite, key: NodeKey) {
+        if self.pending(key) {
+            self.draft_binders.push((site, key));
+        } else {
+            self.binders.insert(site, key);
         }
     }
 
@@ -2143,6 +2164,7 @@ impl<'a> Lowering<'a> {
         let placeholders = std::mem::take(&mut self.placeholders);
         let drafts = std::mem::take(&mut self.drafts);
         let occurrences = std::mem::take(&mut self.draft_occurrences);
+        let draft_binders = std::mem::take(&mut self.draft_binders);
         let unsettled_functions = std::mem::take(&mut self.unsettled_functions);
         let unsettled_composites = std::mem::take(&mut self.unsettled_composites);
         self.composite_placeholders.clear();
@@ -2267,6 +2289,10 @@ impl<'a> Lowering<'a> {
         for (key, role, location) in occurrences {
             let key = resolve(key).map_err(|()| unresolved(&location))?;
             self.occurrences.record(key, role, location);
+        }
+        for (site, key) in draft_binders {
+            let key = resolve(key).map_err(|()| unresolved(&site.binder))?;
+            self.binders.insert(site, key);
         }
         Ok(())
     }
@@ -2399,6 +2425,13 @@ impl<'a> Lowering<'a> {
             let type_key = self.binder_type(value_type, target, function.location)?;
             let key = self.parameter(name, level, type_key, function.location)?;
             self.record(type_key, "type", function.location.clone());
+            self.record_binder(
+                BinderSite {
+                    binder: function.location.clone(),
+                    slot: level,
+                },
+                key,
+            );
             parameters.push(Binder {
                 slot: level,
                 parameter: key,
@@ -2489,6 +2522,13 @@ impl<'a> Lowering<'a> {
         })?;
         let level = binders.scope.len();
         let parameter = self.parameter(&name, level, semantic_type, location)?;
+        self.record_binder(
+            BinderSite {
+                binder: location.clone(),
+                slot,
+            },
+            parameter,
+        );
         binders.scope.push(Binder {
             slot,
             parameter,
@@ -2667,12 +2707,8 @@ impl<'a> Lowering<'a> {
                 return Ok(LowerStep::Lowered(SemanticTerm::reference(key)));
             }
             NodeKind::Coerce(operand, interval) => {
-                // FR-093: an integer whose type the target range contains is
-                // admitted with no node.
-                if let ValueType::Int(source) = &operand.value_type {
-                    if interval.contains(source.lower()) && interval.contains(source.upper()) {
-                        return Ok(LowerStep::Descend(operand, depth + 1));
-                    }
+                if !super::ir::coerce_builds_narrow(&operand.value_type, interval) {
+                    return Ok(LowerStep::Descend(operand, depth + 1));
                 }
                 let member =
                     self.type_argument(&ValueType::Int(interval.clone()), &node.location)?;
@@ -3033,12 +3069,11 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::ConvertScalar(target, operand) => {
-                let target = target.target().unwrap_or(&operand.value_type).clone();
-                if target == operand.value_type {
-                    // FR-093: a conversion to the operand's own type builds
-                    // no node.
+                let Some(target) = super::ir::scalar_conversion_target(target, &operand.value_type)
+                else {
                     return Ok(LowerStep::Descend(operand, depth + 1));
-                }
+                };
+                let target = target.clone();
                 let member = self.type_argument(&target, &node.location)?;
                 let operation = if let ValueType::Quantity(_) = &operand.value_type {
                     // FR-093 `quire.op.quantity.convert`: a quantity's
