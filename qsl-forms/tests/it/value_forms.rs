@@ -752,30 +752,17 @@ fn s2_builds_enum_forms_with_members_in_source_order_and_display_strings() {
     assert_eq!(level.name.name, "Level");
     assert_eq!(level.name.span, span_of(&text, "Level"));
     assert!(level.ordered);
-    let members: Vec<(&str, Span, Option<(&str, Span)>)> = level
-        .members
-        .iter()
-        .map(|member| {
-            (
-                member.case.name.as_str(),
-                member.case.span,
-                member
-                    .display
-                    .as_ref()
-                    .map(|(display, span)| (display.as_str(), *span)),
-            )
-        })
-        .collect();
+    let [low, high] = level.members.as_slice() else {
+        panic!("two members")
+    };
+    assert_eq!(low.case.name, "LOW");
+    assert_eq!(low.case.span, span_of(&text, "LOW"));
+    assert_eq!(low.display, None);
+    assert_eq!(high.case.name, "HIGH");
+    assert_eq!(high.case.span, span_of(&text, "HIGH"));
     assert_eq!(
-        members,
-        [
-            ("LOW", span_of(&text, "LOW"), None),
-            (
-                "HIGH",
-                span_of(&text, "HIGH"),
-                Some(("\"High\"", span_of(&text, "\"High\"")))
-            ),
-        ]
+        high.display,
+        Some(("\"High\"".to_owned(), span_of(&text, "\"High\"")))
     );
 
     let (_, unit) = build("enum Color { RED, BLUE }");
