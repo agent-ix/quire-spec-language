@@ -393,6 +393,9 @@ pub enum NodeKind {
     ImportedCall {
         /// The function, by the library's `package_id` and its node id.
         callee: crate::library::PackageNodeKey,
+        /// The callee's function index in the library's checked graph,
+        /// resolved from `callee.node` once, at check time.
+        function: usize,
         /// The arguments, in parameter order.
         arguments: Vec<Node>,
     },

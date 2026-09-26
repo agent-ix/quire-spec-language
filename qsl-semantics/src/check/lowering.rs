@@ -2935,7 +2935,9 @@ impl<'a> Lowering<'a> {
             }
             // ADR-015 D-5: an imported call is a `quire.op.function.call`
             // application whose callee is the `dependency_reference` term.
-            NodeKind::ImportedCall { callee, arguments } => {
+            NodeKind::ImportedCall {
+                callee, arguments, ..
+            } => {
                 let mut terms = Vec::with_capacity(arguments.len() + 1);
                 terms.push(SemanticTerm::DependencyReference {
                     package: PackageRef(callee.package),

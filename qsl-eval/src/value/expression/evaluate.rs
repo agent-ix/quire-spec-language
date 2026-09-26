@@ -1012,17 +1012,19 @@ impl<'a, 'm> Machine<'a, 'm> {
                 return Ok(());
             }
             // ADR-015 D-5: the callee is a function of an imported library,
-            // found by its node id among the library graph's identities; its
-            // body evaluates against the library's own package.
-            NodeKind::ImportedCall { callee, arguments } => {
+            // at the index check time resolved from its node id; its body
+            // evaluates against the library's own package.
+            NodeKind::ImportedCall {
+                callee,
+                function,
+                arguments,
+            } => {
                 let library = self
                     .graph
                     .scope()
                     .imported_graph(callee.package)
                     .ok_or_else(invariant)?;
-                let callable = library
-                    .function_with_wire_identity(&callee.node)
-                    .ok_or_else(invariant)?;
+                let callable = library.function_state(*function).ok_or_else(invariant)?;
                 let arguments = self.pop_many(arguments.len())?;
                 charge_call(self.meter)?;
                 let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();

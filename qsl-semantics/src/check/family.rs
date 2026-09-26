@@ -736,6 +736,8 @@ pub(crate) enum Application<'a> {
     Imported {
         /// The function, as the import view names it.
         callee: PackageNodeKey,
+        /// The function's index in the library's checked graph.
+        function: usize,
         /// The function's checked signature in the library's graph; every
         /// type in it is package-independent.
         signature: &'a Signature,
@@ -860,7 +862,7 @@ impl<'a> Application<'a> {
                 cause,
             })?;
         let ineligible = || CheckRefusal::ill_typed(location, IllTypedCause::OperatorIneligible);
-        let signature = import
+        let (function, signature) = import
             .graph
             .imported_function(&callee.node)
             .ok_or_else(ineligible)?;
@@ -879,7 +881,11 @@ impl<'a> Application<'a> {
                 IllTypedCause::TypeMismatch,
             ));
         }
-        Ok(Self::Imported { callee, signature })
+        Ok(Self::Imported {
+            callee,
+            function,
+            signature,
+        })
     }
 
     /// The type the argument at `index` is checked against.
@@ -909,8 +915,16 @@ impl<'a> Application<'a> {
                 value_type: signature.result.clone(),
                 location: location.clone(),
             },
-            Self::Imported { callee, signature } => Node {
-                kind: super::ir::NodeKind::ImportedCall { callee, arguments },
+            Self::Imported {
+                callee,
+                function,
+                signature,
+            } => Node {
+                kind: super::ir::NodeKind::ImportedCall {
+                    callee,
+                    function,
+                    arguments,
+                },
                 value_type: signature.result.clone(),
                 location: location.clone(),
             },

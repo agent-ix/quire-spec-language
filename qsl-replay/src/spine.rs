@@ -28,8 +28,8 @@ use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{
-    emit_checked, read_import_view, CheckedPackage, Emission, EmitRefusal, EmittedPackage, Import,
-    ImportViewRefusal, LinkRefusal, OmittedNode,
+    emit_checked, read_import_view, AdmittedPackages, CheckedPackage, Emission, EmitRefusal,
+    EmittedPackage, Import, ImportViewRefusal, LinkRefusal, OmittedNode,
 };
 use qsl_semantics::check::{
     AdmittedImport, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, CheckingLimits,
@@ -750,6 +750,7 @@ pub fn compile(
         active: Vec::new(),
         visited: BTreeMap::new(),
         compiled: BTreeMap::new(),
+        admitted: AdmittedPackages::default(),
     };
     let (package, emission) = resolution.compile_unit(source, path, bytes)?;
     Ok(Compiled {
@@ -779,6 +780,9 @@ struct Resolution<'a> {
     /// once per compile, so the number of library compiles is at most the
     /// number of supplied libraries.
     compiled: BTreeMap<LibraryName, Arc<ResolvedLibrary>>,
+    /// IR's admitted package of each library read so far, which a later
+    /// library's view read takes for its closure instead of reading again.
+    admitted: AdmittedPackages,
 }
 
 impl Resolution<'_> {
@@ -955,16 +959,23 @@ impl Resolution<'_> {
             ));
         }
         // 6. View.
-        let view = read_import_view(&package, identity.clone(), &import.version, self.packages)
-            .map_err(|refusal| {
-                refuse(
-                    ImportRefusal::View {
-                        identity: identity.clone(),
-                        refusal: Box::new(refusal),
-                    },
-                    at_import(),
-                )
-            })?;
+        let view = read_import_view(
+            &package,
+            &emission,
+            identity.clone(),
+            &import.version,
+            self.packages,
+            &mut self.admitted,
+        )
+        .map_err(|refusal| {
+            refuse(
+                ImportRefusal::View {
+                    identity: identity.clone(),
+                    refusal: Box::new(refusal),
+                },
+                at_import(),
+            )
+        })?;
         let library = Arc::new(ResolvedLibrary {
             package: Arc::new(package),
             view,

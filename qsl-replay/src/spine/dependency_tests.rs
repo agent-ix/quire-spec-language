@@ -36,6 +36,22 @@ fn import(identity: &str, version: &str, digest: &str, alias: &str) -> String {
     format!("import \"{identity}\" version \"{version}\" digest \"{digest}\" as {alias};\n")
 }
 
+/// `package`'s import view as `identity` version `1`, read alone.
+fn view_of(
+    package: &qsl_package::CheckedPackage,
+    identity: &str,
+) -> Result<qsl_semantics::library::ImportView, qsl_package::ImportViewRefusal> {
+    let emission = emit_checked(package).expect("the package emits");
+    read_import_view(
+        package,
+        &emission,
+        lib(identity),
+        "1",
+        &BTreeMap::new(),
+        &mut qsl_package::AdmittedPackages::default(),
+    )
+}
+
 /// A digest no source compiles to.
 fn arbitrary() -> String {
     "e".repeat(64)
@@ -144,8 +160,7 @@ fn an_import_binds_the_library_compiled_from_source() {
     // package supplied, pinned at its own `package_id`.
     let emission = emit_checked(&compiled.package).expect("the package emits");
     assert_eq!(emission.package().bytes(), compiled.emitted.bytes());
-    let view = read_import_view(&compiled.package, lib("u"), "1", &BTreeMap::new())
-        .expect("the I2 read admits the importing package");
+    let view = view_of(&compiled.package, "u").expect("the I2 read admits the importing package");
     assert_eq!(view.package(), compiled.emitted.package_id());
 
     // An unimported `test/other` is neither compiled nor recorded: its
@@ -613,8 +628,7 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
         SpineLimits::default(),
     )
     .unwrap();
-    let view =
-        read_import_view(&alone.package, lib("test/geometry"), "1", &BTreeMap::new()).unwrap();
+    let view = view_of(&alone.package, "test/geometry").unwrap();
     let source = unit(&format!(
         "{}{}{H}",
         import("test/geometry", "1", &alone.emitted.package_id().hex(), "g"),
@@ -780,8 +794,7 @@ fn an_imported_call_is_typed_from_the_library_and_lowered_to_a_dependency_refere
     // p's body is the call.
     let p = wire_node(&written, &function_node(&compiled, "p"));
     assert_eq!(p["body"]["members"][1]["value"]["target"], call["node_id"]);
-    read_import_view(&compiled.package, lib("u"), "1", &BTreeMap::new())
-        .expect("the I2 read admits the importing package");
+    view_of(&compiled.package, "u").expect("the I2 read admits the importing package");
 
     // An ill-typed argument.
     let source = unit(&format!(

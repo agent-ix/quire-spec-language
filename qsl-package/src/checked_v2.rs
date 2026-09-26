@@ -119,7 +119,7 @@ use qsl_semantics::library::{
 use qsl_semantics::model::key::hex;
 
 use crate::checked::{CheckedPackage, ResolvedDependency};
-use crate::emit::{emit_checked, EmitRefusal};
+use crate::emit::{emit_checked, Emission, EmitRefusal};
 use qsl_semantics::value::IDENTITY_LIMITS;
 use quire_exact::{Origin, Role};
 
@@ -816,16 +816,18 @@ impl ImportViewRefusal {
     }
 }
 
-/// ADR-015 D-1 step 6: emit `package` and read its v2 bytes through the I2
+/// ADR-015 D-1 step 6: read `package`'s `emission` through the I2
 /// reader, pinned to the one selection `identity`, `version` and the
 /// recomputed `package_id`, into the [`VerifiedPackage`]'s [`ImportView`]
 /// (ADR-011 §4 verified binding). The lock is checked against the
 /// emission's own evidence of the artifacts it compiled against, against
 /// `domain_packages` (FR-056's package input, by `sha256-jcs` digest) for
 /// its `model_selections`, and against the admitted package of every entry
-/// of its `dependency_selections` (QSpec FR-322-AC-36), each read the same
-/// way from the closure `package` holds. The reader's ceilings are its
-/// defaults.
+/// of its `dependency_selections` (QSpec FR-322-AC-36): taken from
+/// `admitted`, by `package_id`, where an earlier read admitted it, and
+/// otherwise read the same way from the closure `package` holds. Every
+/// package this read admits, `package` among them, is added to `admitted`
+/// for the next read. The reader's ceilings are its defaults.
 ///
 /// The artifact evidence is vacuous by construction: it is the emission's
 /// own record of what it compiled against, so it cannot disagree with the
@@ -834,21 +836,33 @@ impl ImportViewRefusal {
 /// against, through the one verified-binding path (ADR-011 §4).
 pub fn read_import_view(
     package: &CheckedPackage,
+    emission: &Emission,
     identity: LibraryName,
     version: &str,
     domain_packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    admitted: &mut AdmittedPackages,
 ) -> Result<ImportView, ImportViewRefusal> {
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
     let mut reader = ClosureReader {
         held,
         domain_packages,
-        admitted: BTreeMap::new(),
+        admitted: std::mem::take(&mut admitted.0),
     };
-    reader
-        .read(package, identity, version)
-        .map(|read| read.package.into_import_view())
+    let read = reader.read_emitted(package, emission, identity, version);
+    admitted.0 = reader.admitted;
+    let read = read?;
+    admitted
+        .0
+        .insert(emission.package().package_id(), Arc::clone(&read.admitted));
+    Ok(read.package.into_import_view())
 }
+
+/// The packages [`read_import_view`] calls have admitted, by `package_id`:
+/// one compile's reads share it, so each package of the closure is read
+/// once.
+#[derive(Debug, Default)]
+pub struct AdmittedPackages(BTreeMap<PackageId, Arc<CheckedPackageV2>>);
 
 /// Supply `evidence` with the admitted package of every entry of
 /// `package`'s `dependency_selections`, each read as [`read_import_view`]
@@ -903,6 +917,18 @@ impl ClosureReader<'_> {
             package: identity.clone(),
             refusal: Some(refusal),
         })?;
+        self.read_emitted(package, &emission, identity, version)
+    }
+
+    /// `package`'s `emission`, read under `identity` and `version`, with
+    /// its closure's admitted packages supplied first.
+    fn read_emitted(
+        &mut self,
+        package: &CheckedPackage,
+        emission: &Emission,
+        identity: LibraryName,
+        version: &str,
+    ) -> Result<V2Read, ImportViewRefusal> {
         if !emission.omitted().is_empty() {
             return Err(ImportViewRefusal::Emission {
                 package: identity,
