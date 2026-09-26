@@ -56,3 +56,5 @@ Disposition pass at `agent-ix/quire-spec-language@bec5791c` (fix commits `e71e60
 | FND-004 | fixed e71e60cc | `CheckedInvariant` becomes `InternalFault` stage `S6a`, invariant `checked-program-invariant`. `CallFailure::Fault` carries the fault's own ids. Both are in `details`, and both have Behavior statements and AC-9/TC-452 cases (`InternalFault::new("S6a", "checked-identity-not-resolved-by-package")` exists at `qsl-eval/src/value/expression/family.rs:195`). |
 
 New finding (low, non-blocking): `SourceRegion` carries only bytes and its `RawSourceRef`. Line and column need the `Source` text, and a location can fall in a supplied library's source, not the program's. FR-100 does not say to resolve the span with the `Source` whose `reference()` equals the region's `RawSourceRef` (the program or a supplied library). State it.
+
+Fixed in 720308d3: FR-100 states that the locus's line and column come from the supplied `Source` (the program's or a library's) whose reference equals the region's, and that a locus naming no supplied source is an internal failure (`spine-run`/`locus-source-supplied`, exit 30), with a Behavior SHALL.

@@ -72,3 +72,5 @@ Disposition pass at `agent-ix/quire-spec-language@bec5791c` (fix commits `e71e60
 | FND-006 | fixed e71e60cc | The exit is `Code::exit_code` of `Code::from_code(code)`, which exists on main (`qsl-foundation/src/diagnostic.rs:277`, `Code::all()` matched by `as_str`). An unmapped code exits 20. |
 
 New finding (low, non-blocking): FR-109:118-121 still maps "every other S6a outcome" to "category `refusal`, `undefined` or `incomplete` by its ADR-013 O-16 category". `CheckedInvariant` is an O-16 refusal, so this overlaps the new internal-failure If statement at :124. Add "other than FR-100's internal failures".
+
+Fixed in 720308d3: FR-109 now maps "every other S6a outcome other than FR-100's internal failures" by FR-100's mapping, so it no longer overlaps the internal-failure If statement.

@@ -49,3 +49,5 @@ Disposition pass at `agent-ix/quire-spec-language@bec5791c` (fix commits `e71e60
 | FND-002 | fixed e71e60cc | Step 4 adds `ForeignUniverse` (record) and `AncestorSteps` (no record, `resource_exhausted`/`ancestor-steps`, exit 22 through `Code::from_code`/`Code::exit_code`), and `TypeMismatch` keeps exit 20 (`ill_typed`). |
 
 New finding (low, non-blocking): TC-452 step 4's `locus` oracle is "a `locus` whose `span` is the region's". No literal `source_digest`, byte, line or column is given, so a renderer that computes line or column wrongly passes. Give the fixture's region literally.
+
+Fixed in 720308d3: TC-452 step 4 compiles a literal 229-byte fixture and expects `locus` exactly `{"source_digest": "sha256:5f2742391e3eaef04bc5dd7141fd639b1913dc821d14bb2f2ca618ad8598ca26", "span": {"start": {"byte": 225, "line": 3, "column": 54}, "end": {"byte": 226, "line": 3, "column": 55}}}`.
