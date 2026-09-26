@@ -422,7 +422,14 @@ fn member_equal_stop(candidate: &Value, member: &Value, meter: &mut Meter) -> Re
             )
             .work(candidate_occ.add(&member_occ)),
     )?;
-    let plan = plan_pairs(candidate, member).map_err(Stop::Refused)?;
+    // `member` is the universe already in force (the collection's), and
+    // `candidate` the value tested against it, so `plan_pairs(member,
+    // candidate)` -- not the reverse -- keeps a `ForeignReference`'s
+    // `required` naming the collection's own universe and `supplied` the
+    // probe's (QSL-281, FR-096's `required`/`supplied` convention;
+    // `plan_pairs` is symmetric, so this does not change the pair count or
+    // result).
+    let plan = plan_pairs(member, candidate).map_err(Stop::Refused)?;
     meter.charge(
         Charge::new(ChargePoint::CollectionMemberTest)
             .exact_size(LimitKind::ValueOccurrences, plan.pairs.clone())

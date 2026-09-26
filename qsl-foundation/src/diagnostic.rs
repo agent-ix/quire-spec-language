@@ -906,12 +906,14 @@ pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
 /// [`RefusalRecord`] raised at `locus`, for the kernel causes the catalog
 /// gives a code and fields: `CardinalityOutOfBound` is
 /// `cardinality_out_of_bound`/`below-minimum` or `above-maximum`, with
-/// `collection`, `bound` (`[minimum, maximum]`) and `count`.
+/// `collection`, `bound` (`[minimum, maximum]`) and `count`; `ForeignReference`
+/// is `foreign_reference`/`foreign-universe`, with `required` and `supplied`
+/// rendered as lowercase hex, exactly as [`quire_exact::UniverseId`]'s own
+/// `Display` renders them (QSL-281).
 ///
 /// `None` for every other kernel cause. `CheckedInvariant` is an
 /// [`InternalFault`], never a refusal record (a record is always category
-/// refusal). `ForeignReference` carries neither universe, so it has no
-/// fields to give. The remaining causes have no catalog code yet.
+/// refusal). The remaining causes have no catalog code yet.
 #[deny(clippy::wildcard_enum_match_arm)]
 pub fn kernel_refusal_record(
     refusal: &quire_exact::Refusal,
@@ -944,6 +946,17 @@ pub fn kernel_refusal_record(
                 locus,
             ))
         }
+        // FR-096's `foreign_reference`/`foreign-universe` key-table row,
+        // exactly as `ModelRefusalCause::ForeignUniverse`'s own
+        // `catalog_fields` arm renders it (QSL-281).
+        Refusal::ForeignReference { required, supplied } => Some(RefusalRecord::new(
+            CatalogCode::new("foreign_reference", "foreign-universe"),
+            BTreeMap::from([
+                ("required", required.to_string()),
+                ("supplied", supplied.to_string()),
+            ]),
+            locus,
+        )),
         Refusal::InexactDecimal
         | Refusal::DecimalOutOfDomain
         | Refusal::DivisionPairOutOfDomain { .. }
@@ -954,7 +967,6 @@ pub fn kernel_refusal_record(
         | Refusal::IeeeNotExact { .. }
         | Refusal::IeeeNanPayloadNotRepresentable
         | Refusal::IeeeRationalOutOfDomain
-        | Refusal::ForeignReference
         | Refusal::CheckedInvariant => None,
     }
 }

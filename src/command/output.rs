@@ -741,6 +741,48 @@ mod tests {
         );
     }
 
+    /// FR-100-AC-9 (TC-452 step 4, QSL-281): a kernel `ForeignReference`
+    /// record renders `foreign_reference`/`foreign-universe` with its
+    /// `required`/`supplied` universes and exits 20, no longer the bare
+    /// `{"kind":"refused"}` a kernel-no-record row renders. Goes through the
+    /// real conversion (`kernel_refusal_record`) rather than a hand-built
+    /// `CallRefusal::Record`, so a `UniverseId::Display` change (uppercase, a
+    /// `0x` prefix, `Debug` spelling) that kept a hand-built record's
+    /// literals green would still be caught here against TC-452's literal
+    /// lowercase hex (SR-680 FND-003).
+    #[test]
+    #[trace("TC-452", "FR-100-AC-9")]
+    fn refused_foreign_reference_renders_record_and_exits_20() {
+        use qsl_replay::spine::CallRefusal;
+        let record = qsl_foundation::diagnostic::kernel_refusal_record(
+            &quire_exact::Refusal::ForeignReference {
+                required: quire_exact::UniverseId::from_digest([0x01; 32]),
+                supplied: quire_exact::UniverseId::from_digest([0x02; 32]),
+            },
+            None,
+        )
+        .expect("foreign_reference has a code");
+        let result = render(CallOutcome::Refused(CallRefusal::Record {
+            code: record.code(),
+            fields: record.fields().clone(),
+            locus: None,
+            location: None,
+        }));
+        assert_eq!(result.exit_code, 20);
+        assert_eq!(
+            result.value.as_value()["outcome"],
+            serde_json::json!({
+                "kind": "refused",
+                "code": "foreign_reference",
+                "cause": "foreign-universe",
+                "fields": {
+                    "required": "01".repeat(32),
+                    "supplied": "02".repeat(32),
+                },
+            })
+        );
+    }
+
     /// FR-100-AC-9 (TC-452 step 4, FND-013): a family refusal with no FR-096
     /// record carries its code and cause but no `fields`/`locus`.
     #[test]
