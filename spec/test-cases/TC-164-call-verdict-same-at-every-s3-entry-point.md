@@ -51,14 +51,8 @@ between positions.
 
 ## Status
 
-No test implements this procedure yet. It replaces TC-164's earlier
-procedure (a compiled-symbol search and an `E0004` compile-fail fixture over
-a composed-checker input enum), which asserted code shape rather than
-behaviour and which ADR-012 §4.3 contradicts: `Expression::Call` is a
-`Value`-owned variant of the one `Expression` enum. The QSL-148 spec lane
-made this change under the
-[testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
-(Peter, 2026-09-22). `synthesized_dispatch_candidate_is_not_callable_by_name`
-(`qsl-eval/tests/it/dispatch_calls.rs`) covers one declaration-body
-`missing-name` refusal through `PackageDeclarations::check`; it does not
-compare the positions. Owner: QSL-148.
+Backed by `a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measure`
+(`qsl-eval/tests/it/call_verdicts.rs`, tagged `TC-164` / `FR-065-AC-5`). It
+replaces TC-164's earlier procedure (a compiled-symbol search and an `E0004`
+compile-fail fixture), which asserted code shape rather than behaviour and
+which ADR-012 §4.3 contradicts. Owner: QSL-148.
