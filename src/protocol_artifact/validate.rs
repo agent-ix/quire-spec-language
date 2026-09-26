@@ -5,6 +5,8 @@ mod control;
 
 use std::collections::BTreeSet;
 
+use qsl_attrs::string_edge;
+
 use super::value_graph::ValueGraph;
 use super::{intake, wire::*, work::Work, Dimension, Error, Invalid, ProtocolNumber, Unsupported};
 
@@ -272,23 +274,17 @@ impl<'a> Graph<'a, '_> {
             .definitions
             .get(index as usize)
             .ok_or(Error::Invalid(Invalid::Reference))?;
-        let name = definition.identity.as_str();
-        let state = matches!(
-            name,
-            "quire.state.core/v1" | "quire.state.queries/v1" | "quire.state.graph/v1"
-        );
-        let temporal = matches!(
-            name,
-            "quire.temporal.event-position.false-extension/v1"
-                | "quire.temporal.fixed-sample.false-extension/v1"
-                | "quire.temporal.timestamped-event.finite-window/v1"
-        );
+        let profile = Profile::classify(definition.identity.as_str());
         let valid = match family {
-            Family::Value => state || temporal || name == "quire.protocol.finite-global/v1",
-            Family::State => state,
-            Family::Predicate => matches!(name, "quire.state.queries/v1" | "quire.state.graph/v1"),
-            Family::Temporal => temporal,
-            Family::Protocol => name == "quire.protocol.finite-global/v1",
+            Family::Value => {
+                profile.is_state()
+                    || profile.is_temporal()
+                    || profile == Profile::ProtocolFiniteGlobal
+            }
+            Family::State => profile.is_state(),
+            Family::Predicate => matches!(profile, Profile::StateQueries | Profile::StateGraph),
+            Family::Temporal => profile.is_temporal(),
+            Family::Protocol => profile == Profile::ProtocolFiniteGlobal,
         };
         if valid {
             Ok(())
@@ -394,6 +390,46 @@ impl<'a> Graph<'a, '_> {
         self.work.charge(Dimension::Entries, 1)?;
         self.dependencies[owner].push(target as usize);
         Ok(())
+    }
+}
+
+/// A definition identity classified once at the intake edge (ADR-012 section
+/// 9): the profile identities the validator recognizes, as a closed enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Profile {
+    StateCore,
+    StateQueries,
+    StateGraph,
+    /// One of the three temporal false-extension / finite-window profiles.
+    Temporal,
+    ProtocolFiniteGlobal,
+    Unrecognized,
+}
+
+impl Profile {
+    #[string_edge]
+    fn classify(identity: &str) -> Self {
+        match identity {
+            "quire.state.core/v1" => Self::StateCore,
+            "quire.state.queries/v1" => Self::StateQueries,
+            "quire.state.graph/v1" => Self::StateGraph,
+            "quire.temporal.event-position.false-extension/v1"
+            | "quire.temporal.fixed-sample.false-extension/v1"
+            | "quire.temporal.timestamped-event.finite-window/v1" => Self::Temporal,
+            "quire.protocol.finite-global/v1" => Self::ProtocolFiniteGlobal,
+            _ => Self::Unrecognized,
+        }
+    }
+
+    fn is_state(self) -> bool {
+        matches!(
+            self,
+            Self::StateCore | Self::StateQueries | Self::StateGraph
+        )
+    }
+
+    fn is_temporal(self) -> bool {
+        self == Self::Temporal
     }
 }
 
@@ -1394,6 +1430,7 @@ fn feature(set: &mut BTreeSet<&'static str>, name: &'static str, work: &mut Work
     Ok(())
 }
 
+#[qsl_attrs::string_edge]
 fn features(package: &Package, work: &mut Work) -> Result {
     let mut families = BTreeSet::new();
     let mut required = BTreeSet::new();

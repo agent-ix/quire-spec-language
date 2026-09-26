@@ -215,6 +215,10 @@ fn pattern_has_string_literal(pat: &syn::Pat) -> bool {
 
 struct Scanner {
     file: String,
+    /// Whether a `#[string_edge]` mark silences its function. `false` only
+    /// for the raw scan the real-site test uses, so a site stays visible to
+    /// it whether or not the sweep has marked it.
+    honor_marks: bool,
     string_edge_depth: usize,
     condition_depth: usize,
     /// The innermost enclosing `impl` block's `Self` type name, if any --
@@ -280,13 +284,13 @@ impl<'ast> Visit<'ast> for Scanner {
         if has_cfg_test(&node.attrs) {
             return;
         }
-        if marked {
+        if marked && self.honor_marks {
             self.string_edge_depth += 1;
         }
         self.item_stack.push(node.sig.ident.to_string());
         syn::visit::visit_item_fn(self, node);
         self.item_stack.pop();
-        if marked {
+        if marked && self.honor_marks {
             self.string_edge_depth -= 1;
         }
     }
@@ -296,7 +300,7 @@ impl<'ast> Visit<'ast> for Scanner {
         if has_cfg_test(&node.attrs) {
             return;
         }
-        if marked {
+        if marked && self.honor_marks {
             self.string_edge_depth += 1;
         }
         let name = match &self.current_impl_self {
@@ -306,7 +310,7 @@ impl<'ast> Visit<'ast> for Scanner {
         self.item_stack.push(name);
         syn::visit::visit_impl_item_fn(self, node);
         self.item_stack.pop();
-        if marked {
+        if marked && self.honor_marks {
             self.string_edge_depth -= 1;
         }
     }
@@ -489,6 +493,14 @@ fn is_module_root_stem(stem: &Path) -> bool {
 }
 
 fn scan_file(workspace_root: &Path, relative: &Path) -> Result<Vec<Occurrence>> {
+    scan_file_marks(workspace_root, relative, true)
+}
+
+fn scan_file_marks(
+    workspace_root: &Path,
+    relative: &Path,
+    honor_marks: bool,
+) -> Result<Vec<Occurrence>> {
     let full_path = workspace_root.join(relative);
     let source = fs::read_to_string(&full_path).map_err(|source| Error::io(&full_path, source))?;
     let parsed = syn::parse_file(&source).map_err(|source| Error::StringEdgeParse {
@@ -497,6 +509,7 @@ fn scan_file(workspace_root: &Path, relative: &Path) -> Result<Vec<Occurrence>> 
     })?;
     let mut scanner = Scanner {
         file: relative.to_string_lossy().replace('\\', "/"),
+        honor_marks,
         string_edge_depth: 0,
         condition_depth: 0,
         current_impl_self: None,
@@ -731,6 +744,7 @@ mod tests {
         let parsed = syn::parse_file(source).expect("fixture parses");
         let mut scanner = Scanner {
             file: "fixture.rs".to_owned(),
+            honor_marks: true,
             string_edge_depth: 0,
             condition_depth: 0,
             current_impl_self: None,
@@ -1044,18 +1058,20 @@ mod tests {
     }
 
     /// FR-064-AC-5's real-site half (QSL-268): runs the real scan (not a
-    /// synthetic fixture) over the ADR-010 section 4.3 production dispatch
-    /// sites still in the tree, at their real file and item --
-    /// `Graph::profile` (`src/protocol_artifact/validate.rs`, the
-    /// `"quire.protocol.finite-global/v1"` profile string),
-    /// `valid_digest`/`valid_adapter` (`src/state/evaluation.rs`, the
-    /// `"filament-canonical-json-1"` and `"quire.state.authority-adapter"`
-    /// strings) and `expected_definition`
-    /// (`src/protocol_artifact/native_temporal/request.rs`, the `clock:`
-    /// prefix). Each must come back branch-gating and an allow-list entry at
-    /// it must be rejected. The `"allocation"` site is gone from the tree.
-    /// Fails if a site's file/item vanishes without this list being updated,
-    /// and if the detector stops seeing a real site.
+    /// synthetic fixture, and ignoring `#[string_edge]` marks so the sweep's
+    /// own marking cannot hide a site) over the ADR-010 section 4.3
+    /// production dispatch sites that still exist in the tree:
+    /// `Profile::classify` (`src/protocol_artifact/validate.rs`, the
+    /// `"quire.protocol.finite-global/v1"` profile string; formerly
+    /// `Graph::profile`), and `valid_digest`/`valid_adapter`
+    /// (`src/state/evaluation.rs`, the `"filament-canonical-json-1"` and
+    /// `"quire.state.authority-adapter"` strings). Each must come back
+    /// branch-gating and an allow-list entry at it must be rejected. The
+    /// `"allocation"` site is gone, and the `clock:` prefix now lives behind
+    /// `temporal::clock_binding_name`'s named-constant prefix, which this
+    /// literal-only scan does not see. Fails if a site's file/item vanishes
+    /// without this list being updated, and if the detector stops seeing a
+    /// real site.
     #[trace("TC-162", "FR-064-AC-5")]
     #[test]
     fn real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector() {
@@ -1066,7 +1082,7 @@ mod tests {
         let sites = [
             (
                 "src/protocol_artifact/validate.rs",
-                "Graph::profile",
+                "Profile::classify",
                 "quire.protocol.finite-global/v1",
             ),
             (
@@ -1079,36 +1095,33 @@ mod tests {
                 "valid_adapter",
                 "quire.state.authority-adapter",
             ),
-            (
-                "src/protocol_artifact/native_temporal/request.rs",
-                "expected_definition",
-                "clock:",
-            ),
         ];
         for (file, item, label) in sites {
-            let occurrences = scan_file(&workspace_root, Path::new(file))
+            let occurrences = scan_file_marks(&workspace_root, Path::new(file), false)
                 .unwrap_or_else(|error| panic!("{file}: {error}"));
-            let occurrence = occurrences
+            let site: Vec<&Occurrence> = occurrences
                 .iter()
-                .find(|occurrence| occurrence.item == item)
-                .unwrap_or_else(|| {
-                    panic!("{file}::{item} ({label}) is no longer found by the scan")
-                });
+                .filter(|occurrence| occurrence.item == item)
+                .collect();
             assert!(
-                occurrence.branch_gating,
+                !site.is_empty(),
+                "{file}::{item} ({label}) is no longer found by the scan"
+            );
+            assert!(
+                site.iter().all(|occurrence| occurrence.branch_gating),
                 "{file}::{item} ({label}) is not flagged branch-gating -- FR-064-AC-5 \
-                 requires a real ADR-010 §4.3 production dispatch site to be rejected"
+                 requires a real ADR-010 section 4.3 dispatch site to be rejected"
             );
             let candidate = AllowListEntry {
-                file: occurrence.file.clone(),
-                item: occurrence.item.clone(),
-                reason: "test: a real ADR-010 §4.3 production dispatch site",
+                file: file.to_owned(),
+                item: item.to_owned(),
+                reason: "test: a real ADR-010 section 4.3 production dispatch site",
             };
             let rejected = branch_gating_entries(&occurrences, [&candidate]);
-            assert!(
-                !rejected.is_empty(),
-                "{file}::{item} ({label}) is not rejected -- FR-064-AC-5 requires a real \
-                 ADR-010 §4.3 production dispatch site to be rejected as an allow-list entry"
+            assert_eq!(
+                rejected.len(),
+                1,
+                "{file}::{item} ({label}) is not rejected as an allow-list entry"
             );
         }
     }

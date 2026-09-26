@@ -10,6 +10,7 @@ use crate::protocol_artifact::{self as artifact, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report, Unsupported};
 use qsl_foundation::ByteDigest;
 
+#[qsl_attrs::string_edge]
 fn headers(
     package: &wire::Package,
     expected: &artifact::Expected<'_>,

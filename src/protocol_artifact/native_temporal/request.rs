@@ -835,7 +835,7 @@ fn expected_definition(
     let clock = declaration
         .bindings
         .get(usize::try_from(clock_index).map_err(|_| invalid("definition.clock"))?)
-        .and_then(|binding| binding.name.strip_prefix("clock:"))
+        .and_then(|binding| crate::temporal::clock_binding_name(&binding.name))
         .ok_or_else(|| invalid("definition.clock"))?;
     Ok((
         definition.identity.clone(),

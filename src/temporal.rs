@@ -49,6 +49,14 @@ pub use trace::{
 /// The `clock:` prefix the emitter gives a temporal clock binding requirement.
 const CLOCK_PREFIX: &str = "clock:";
 
+/// The clock name a temporal clock binding requirement carries, or `None`
+/// when `binding` is not a clock binding name: the one reader of the
+/// emitter's `clock:` spelling (ADR-012 section 9 edge).
+#[qsl_attrs::string_edge]
+pub(crate) fn clock_binding_name(binding: &str) -> Option<&str> {
+    binding.strip_prefix(CLOCK_PREFIX)
+}
+
 /// Evaluate one admitted temporal declaration against one caller-supplied trace.
 ///
 /// The outer error is a whole-declaration stop: a binding refusal, an
@@ -390,7 +398,7 @@ fn run(
         .bindings
         .get(usize::try_from(*clock).unwrap_or(usize::MAX))
         .ok_or(Refusal::Reference { subject })?;
-    if binding.name.strip_prefix(CLOCK_PREFIX) != Some(trace.clock.name.as_str()) {
+    if clock_binding_name(&binding.name) != Some(trace.clock.name.as_str()) {
         return Err(Refusal::Binding {
             dimension: Dimension::Clock,
             subject,
@@ -586,10 +594,8 @@ fn authenticate_v2(
         .bindings
         .get(usize::try_from(*clock).unwrap_or(usize::MAX))
         .ok_or(Refusal::Reference { subject })?;
-    let clock_name = clock_binding
-        .name
-        .strip_prefix(CLOCK_PREFIX)
-        .ok_or(Refusal::Reference { subject })?;
+    let clock_name =
+        clock_binding_name(&clock_binding.name).ok_or(Refusal::Reference { subject })?;
     if trace.clock.name != clock_name {
         return Err(Refusal::Binding {
             dimension: Dimension::Clock,

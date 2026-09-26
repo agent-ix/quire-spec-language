@@ -2474,6 +2474,7 @@ fn declaration_root_type(declaration: &w::Declaration, handle: &w::Handle) -> Re
         .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))
 }
 
+#[qsl_attrs::string_edge]
 fn valid_digest(value: &CanonicalDigest) -> bool {
     value.algorithm == "sha256"
         && value.domain == "filament-canonical-json-1"
@@ -2777,6 +2778,7 @@ fn discovery_push(work: &mut Work, pending: &mut Vec<w::Handle>, handle: &w::Han
     Ok(())
 }
 
+#[qsl_attrs::string_edge]
 fn valid_adapter(value: &w::ArtifactRef) -> bool {
     value.ref_version == "ix.artifact-ref/3-draft"
         && value.kind == w::ArtifactKind::Binding

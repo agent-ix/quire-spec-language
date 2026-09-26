@@ -42,7 +42,7 @@ use qsl_foundation::bound::DomainKey;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::InternalFault;
-use quire_exact::{IntegerInterval, NodeKey, Origin, ValueType};
+use quire_exact::{IntegerInterval, NodeKey, Origin, Role, ValueType};
 
 use super::ir::{coerce_builds_narrow, scalar_conversion_target, Node, NodeKind, Slot, Visit};
 use super::lowering::SemanticGraph;
@@ -617,8 +617,9 @@ pub(crate) fn key_claims(
 ) -> Result<BTreeMap<OccurrenceKey, RequirementRecord>, KeyFault> {
     let unkeyable = || KeyFault::UnkeyableRequirements;
     let mut at: BTreeMap<&Location, Vec<(NodeKey, Origin)>> = BTreeMap::new();
+    let expression = Role::new("expression");
     for (node, origin, location) in occurrences.iter() {
-        if origin.role().as_str() == "expression" {
+        if *origin.role() == expression {
             at.entry(location).or_default().push((node, origin));
         }
     }

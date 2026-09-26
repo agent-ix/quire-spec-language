@@ -161,6 +161,7 @@ impl<'model> MappedPackage<'model> {
 /// The caller selects and verifies the original document/digest/region before
 /// constructing `mapping`. This function neither extracts Markdown nor changes
 /// the adapter's availability metadata. A language tag alone grants no success.
+#[qsl_attrs::string_edge]
 pub fn compile<'model>(
     mapping: SourceMap,
     language: &str,

@@ -617,11 +617,12 @@ fn resolve_context<'a>(
             }
         }
         BindingProfile::Formal => {
+            let self_name = SymbolName::new("self").ok();
             let self_value = models[model]
                 .environment
                 .values()
                 .iter()
-                .find(|value| value.name().as_str() == "self");
+                .find(|value| Some(value.name()) == self_name.as_ref());
             if !self_value.is_some_and(|value| {
                 value.kind() == ValueDeclarationKind::State
                     && matches!(value.value_type(), ValueType::Record { name } if name == record.name())

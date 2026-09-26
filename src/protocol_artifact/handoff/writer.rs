@@ -858,6 +858,7 @@ struct OperationSelection {
 }
 
 impl OperationSelection {
+    #[qsl_attrs::string_edge]
     fn new(model: &NativeModel) -> Result<Self, Error> {
         let [operation] = model.roles().operations.as_slice() else {
             return Err(Error::OperationCount {

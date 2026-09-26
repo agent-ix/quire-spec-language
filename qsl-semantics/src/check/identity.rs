@@ -146,6 +146,7 @@ impl CheckedClauseKind {
     /// `wire`, or `None` when `wire` names none of them: backward totality
     /// is over exactly this enum's own closed wire vocabulary, not an open
     /// string set (FR-088-AC-4).
+    #[qsl_attrs::string_edge]
     pub fn from_wire_operation_identity(wire: &str) -> Option<Self> {
         match wire {
             "quire.op.claim.clause" => Some(Self::Claim),
