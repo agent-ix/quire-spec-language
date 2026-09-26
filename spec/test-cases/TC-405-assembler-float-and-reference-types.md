@@ -52,4 +52,4 @@ Tag the tests `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, and step 4's
 
 ## Status
 
-Step 4 is backed by `qsl-replay` `spine::tests::an_import_no_dependency_input_supplies_refuses` (QSL-255 part b). Steps 1 and 3 are backed by `qsl-semantics` `check::assemble` tests: `floating_and_reference_types_are_refused`. Step 2 is not: `qsl-cst` still requires `[mode]` on `Float32` and `Float64` (FR-091-AC-23).
+Step 4 is backed by `qsl-replay` `spine::tests::an_import_no_dependency_input_supplies_refuses` (QSL-255 part b). Steps 1 and 3 are backed by `qsl-semantics` `check::assemble` tests: `floating_and_reference_types_are_refused`. Step 2 is backed by that test (the assembler's `exact` error for a bare `Float64`) and by `qsl-forms` `a_bare_float_type_is_admitted_and_builds_with_no_rounding_mode` (bare `Float64` and `Float32`, no rounding mode on the type form).

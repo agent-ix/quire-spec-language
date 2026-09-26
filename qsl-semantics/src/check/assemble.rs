@@ -933,20 +933,26 @@ impl PackageDeclarations {
                 });
             }
         }
-        let profiles: BTreeSet<&str> = selections
-            .profiles
-            .iter()
-            .map(|profile| profile.alias.as_str())
-            .collect();
-        for function in &unit.functions {
+        let mut function_selections = BTreeMap::new();
+        for (index, function) in unit.functions.iter().enumerate() {
             if let Some(using) = function.using() {
-                if !profiles.contains(using.alias.as_str()) {
-                    errors.push(AssemblyError {
+                // A duplicate alias is already refused above, so the first
+                // profile named `alias` is the only one that can be chosen
+                // when the unit assembles.
+                match selections
+                    .profiles
+                    .iter()
+                    .find(|profile| profile.alias == using.alias)
+                {
+                    Some(profile) => {
+                        function_selections.insert(index, profile.clone());
+                    }
+                    None => errors.push(AssemblyError {
                         cause: AssemblyCause::UndeclaredAlias {
                             alias: using.alias.clone(),
                         },
                         span: using.span,
-                    });
+                    }),
                 }
             }
         }
@@ -1203,6 +1209,7 @@ impl PackageDeclarations {
             package.resolved_signatures.insert(index, signature);
         }
         package.functions = unit.functions;
+        package.function_selections = function_selections;
         package.declared_type_spans = declared_type_spans;
         package.imports = qualified;
         Ok(package)
