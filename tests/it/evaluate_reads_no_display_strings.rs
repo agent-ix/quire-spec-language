@@ -69,7 +69,7 @@ impl<'ast> Visit<'ast> for Scan {
         }
     }
     fn visit_impl_item_fn(&mut self, item: &'ast syn::ImplItemFn) {
-        let wanted = self.only_fn.map_or(true, |name| item.sig.ident == name);
+        let wanted = self.only_fn.is_none_or(|name| item.sig.ident == name);
         if wanted && !is_cfg_test(&item.attrs) {
             syn::visit::visit_impl_item_fn(self, item);
         }
