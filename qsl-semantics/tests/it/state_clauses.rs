@@ -2906,6 +2906,42 @@ fn tc465_row25_an_incomplete_population_no_reference_names_still_admits() {
     assert_tc465_refused(result, "invalid_runtime_input", "wrong-role-mapping");
 }
 
+/// FR-106 check 7's own last sentence ("admission SHALL skip the dangling
+/// check over an incomplete population",
+/// `FR-106-admit-snapshots-and-invocations.md:216`), SR-750 FND-001 round 2:
+/// `archive` (a genuine second, declared population, `tc465_document_with_
+/// archive_population`) is `complete: false` and holds `a1`, whose `parent`
+/// names a key (`missing`) absent from `archive` itself -- nothing else
+/// requires `archive`, so this must admit, not refuse `dangling_reference`.
+/// Before the fix (`ObjectEnvironment::new`, unconditionally closed),
+/// `finish_populations` re-refused this after `check_population_closure`
+/// had already, correctly, let it through.
+#[trace("TC-465", "FR-106-AC-4")]
+#[test]
+fn a_dangling_reference_into_an_incomplete_population_still_admits() {
+    let document = tc465_document_with_archive_population();
+    let archive = "ix://example/config-version/archive";
+    let sub = "ix://example/config-version/Sub";
+    let result = run_tc465_current(
+        &document,
+        move |value| {
+            value["populations"].as_array_mut().unwrap().push(json!({
+                "population": archive,
+                "complete": false,
+                "objects": [{
+                    "key": "a1", "type": sub,
+                    "fields": {
+                        "versionNumber": {"integer": "1"},
+                        "parent": {"present": {"reference": {"population": archive, "key": "missing"}}},
+                    },
+                }],
+            }));
+        },
+        None,
+    );
+    result.expect("a dangling reference into an incomplete population admits");
+}
+
 /// Row 26 (check 11.3): with `attemptUpdate` modifying `[versionNumber]`
 /// only, post sets `child.parent` absent -- refuses naming `child` and
 /// `parent`.

@@ -1185,8 +1185,16 @@ pub(super) fn finish_populations(
     types: &TypeEnvironment,
     values: PopulationValues<'_>,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
+    // `check_population_closure` (check 8) already ran, over the same
+    // populations, before this is ever called (`admit_populations`'s own
+    // call order): every dangling reference still standing here, if any,
+    // already passed that check because it names an incomplete population
+    // (FR-106 check 7's own "skip the dangling check over an incomplete
+    // population", SR-750 FND-001 round 2) -- so this construction must
+    // not re-refuse it.
     let environment =
-        ObjectEnvironment::new(types, values.objects).map_err(map_environment_refusal)?;
+        ObjectEnvironment::new_tolerating_incomplete_population_dangling(types, values.objects)
+            .map_err(map_environment_refusal)?;
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,

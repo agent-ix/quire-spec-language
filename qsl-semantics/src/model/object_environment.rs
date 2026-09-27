@@ -97,6 +97,34 @@ impl ObjectEnvironment {
         types: &TypeEnvironment,
         objects: impl IntoIterator<Item = (ObjectReference, Vec<(&'n str, FieldValue)>)>,
     ) -> Result<Self, ObjectEnvironmentRefusal> {
+        Self::admit(types, objects, false)
+    }
+
+    /// [`Self::new`], but never refuses [`ObjectEnvironmentCause::DanglingReference`]
+    /// (SR-750 FND-001, round 2): for `document::finish_populations` alone,
+    /// called only after `check_population_closure` has already verified
+    /// every dangling reference still standing, if any, names an
+    /// *incomplete* population (FR-106 check 7's own "admission SHALL skip
+    /// the dangling check over an incomplete population",
+    /// `FR-106-admit-snapshots-and-invocations.md:216`). A reference is not
+    /// itself tagged with the population name it was read under (`model`
+    /// discards that once a raw field becomes a typed `Value::Reference`,
+    /// `document.rs`'s `admit_scalar`), so this constructor cannot itself
+    /// tell a genuinely broken reference from a tolerated one -- it relies
+    /// on the caller having already run `check_population_closure` first,
+    /// which does have that information from the wire.
+    pub(crate) fn new_tolerating_incomplete_population_dangling<'n>(
+        types: &TypeEnvironment,
+        objects: impl IntoIterator<Item = (ObjectReference, Vec<(&'n str, FieldValue)>)>,
+    ) -> Result<Self, ObjectEnvironmentRefusal> {
+        Self::admit(types, objects, true)
+    }
+
+    fn admit<'n>(
+        types: &TypeEnvironment,
+        objects: impl IntoIterator<Item = (ObjectReference, Vec<(&'n str, FieldValue)>)>,
+        tolerate_dangling: bool,
+    ) -> Result<Self, ObjectEnvironmentRefusal> {
         let mut admitted = BTreeMap::new();
         for (reference, attributes) in objects {
             let refuse = |cause| ObjectEnvironmentRefusal {
@@ -117,8 +145,10 @@ impl ObjectEnvironment {
             objects: admitted,
             populations: BTreeMap::new(),
         };
-        for (owner, slots) in &environment.objects {
-            environment.check_closed(owner, slots)?;
+        if !tolerate_dangling {
+            for (owner, slots) in &environment.objects {
+                environment.check_closed(owner, slots)?;
+            }
         }
         Ok(environment)
     }
