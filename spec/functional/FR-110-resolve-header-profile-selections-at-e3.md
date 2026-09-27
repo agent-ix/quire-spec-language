@@ -183,7 +183,4 @@ which this requirement refuses as `revision-mismatch`. The updates:
   assembler and emitter unit tests) keep the placeholder. It also rewrote
   the `CatalogEntry::digest` doc (`value/definition.rs`), which
   said no reader verifies the digest; FR-110 reads the `root` digest.
-- **Dependency on the A05 lane (QSL-273, QSL-271).** FR-108's corpus unit
-  (`FR-108:51`) and TC-452 step 1's source (`TC-452:40`, and its byte
-  count) spell `version "1"`. Those rows need the `root` revision value
-  before FR-110 lands; this PR does not edit them.
+- **Dependency on the A05 lane (QSL-273, QSL-271).** QSL-271 (#481) moved `FR-108:51` and TC-452 step 4 to the `root` row.

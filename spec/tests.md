@@ -175,21 +175,21 @@ operational validation remains outside this audit-only plan.
 | TC-389 | A refused model query reaches the caller with the ModelRefusal's own catalog code, not a kernel refusal | Integration | P1 | FR-090-AC-8 | ✅ Passed locally |
 | TC-390 | FamilyOutcome, FamilyResult and EvalOutcome live once in the check core, no lower layer names them, and the check core names no family cause | Unit | P1 | FR-090-AC-9 | ✅ Passed locally |
 | TC-391 | An unresolved or mismatched population argument is refused at admission, and is an InternalFault inside S6a | Unit | P1 | FR-090-AC-10 | ✅ Passed locally |
-| TC-392 | S2 returns one Value form per declaration, in source order, with its span and the unit edition | Unit | P1 | FR-091-AC-1 | 🚧 Planned; QSL-141 |
-| TC-393 | The forms FunctionDeclaration carries its name, using alias, type forms, measure and body | Unit | P1 | FR-091-AC-2 | 🚧 Planned; QSL-141 |
-| TC-394 | Each Value expression construct maps to its Expression variant, with grouping from the CST | Unit | P1 | FR-091-AC-3 | 🚧 Planned; QSL-141 |
+| TC-392 | S2 returns one Value form per declaration, in source order, with its span and the unit edition | Unit | P1 | FR-091-AC-1 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
+| TC-393 | The forms FunctionDeclaration carries its name, using alias, type forms, measure and body | Unit | P1 | FR-091-AC-2 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
+| TC-394 | Each Value expression construct maps to its Expression variant, with grouping from the CST | Unit | P1 | FR-091-AC-3 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-395 | S2 refuses an inadmissible source and a unit holding a declaration with no dispatch entry | Unit | P1 | FR-091-AC-4, FR-091-AC-5, FR-091-AC-6 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
-| TC-396 | S2 refuses unrepresented constructs, and the check stage refuses another family's construct with that family's cause | Integration | P1 | FR-091-AC-7, FR-091-AC-8 | 🚧 Planned; QSL-141 |
-| TC-397 | S2 bounds expression depth by its explicit limit, independently of S1 | Unit | P1 | FR-091-AC-9 | 🚧 Planned; QSL-141 |
-| TC-398 | The Value form builder depends only on layer 2, layer 1, F and K, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-11 | 🚧 Partial: step 1's crate edges (`tests/it/family_outcome_layering.rs`) and step 2 over the existing forms types (`qsl-forms/tests/it/identity_free_forms.rs`) pass locally; step 3's `_`-arm scan passes locally (`identity_free_forms.rs`); step 1's family-module edges planned, QSL-141 |
-| TC-399 | Source compiled through S1, S2 and the assembler checks and evaluates a called function | Integration | P1 | FR-091-AC-12, FR-091-AC-13 | 🚧 Planned; QSL-141 |
-| TC-400 | The assembler refuses unresolved and ambiguous names, ill-formed bounds and alias cycles, reporting every error | Unit | P1 | FR-091-AC-14, FR-091-AC-15, FR-091-AC-16, FR-091-AC-17 | 🚧 Planned; QSL-141 |
-| TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-18 | 🚧 Planned; QSL-141; source owner from FR-001's `RawSourceRef` (QSL-233) |
-| TC-402 | The assembler lives in the check core and its non-test code has no edge to qsl-cst | Unit | P1 | FR-091-AC-20 | 🚧 Planned; QSL-141 |
-| TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | 🚧 Planned; QSL-141 |
+| TC-396 | S2 refuses unrepresented constructs, and the check stage refuses another family's construct with that family's cause | Integration | P1 | FR-091-AC-7, FR-091-AC-8 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`, `qsl-semantics/src/check/assemble/tests.rs`) |
+| TC-397 | S2 bounds expression depth by its explicit limit, independently of S1 | Unit | P1 | FR-091-AC-9 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
+| TC-398 | The Value form builder depends only on layer 2, layer 1, F and K, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-11 | ✅ Passed locally: step 1's crate edges (`tests/it/family_outcome_layering.rs`) and step 2 over the existing forms types (`qsl-forms/tests/it/identity_free_forms.rs`) pass locally; step 3's `_`-arm scan passes locally (`identity_free_forms.rs`); step 1's family-module edges pass locally (`identity_free_forms.rs`) |
+| TC-399 | Source compiled through S1, S2 and the assembler checks and evaluates a called function | Integration | P1 | FR-091-AC-12, FR-091-AC-13 | ✅ Passed locally (`qsl-eval/tests/it/source_call.rs`, `qsl-semantics/src/check/assemble/tests.rs`) |
+| TC-400 | The assembler refuses unresolved and ambiguous names, ill-formed bounds and alias cycles, reporting every error | Unit | P1 | FR-091-AC-14, FR-091-AC-15, FR-091-AC-16, FR-091-AC-17 | ✅ Passed locally (`qsl-semantics/src/check/assemble/tests.rs`) |
+| TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-18 | 🚧 Partial: passes locally (`qsl-semantics/src/check/assemble/tests.rs`); source owner from FR-001's `RawSourceRef` (QSL-233) |
+| TC-402 | The assembler lives in the check core and its non-test code has no edge to qsl-cst | Unit | P1 | FR-091-AC-20 | ✅ Passed locally (`qsl-semantics/src/check/assemble/tests.rs`) |
+| TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | ✅ Passed locally |
 | TC-405 | The assembler admits floating types and refuses unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | ✅ Passed locally; QSL-141, QSL-280 |
-| TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Planned; QSL-141; `stage_limit_exceeded` code needs QSL-160; the enum, dimension and unit causes pass locally; the topology cause STD-112 |
+| TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Partial: S2 and assembler causes pass locally (`qsl-forms/tests/it/value_forms.rs`, `qsl-semantics/src/check/assemble/tests.rs`); `stage_limit_exceeded` code needs QSL-160; the enum, dimension and unit causes pass locally; the topology cause STD-112 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | ✅ Passed locally |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | ✅ Passed locally |
 | TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | ✅ Passed locally; QSL-131 V3; steps 2-6 via retagged tests, step 7 new |
@@ -559,9 +559,9 @@ the ruling on FR-090-OQ-2.
 carries ADR-011 §2.1 to §2.3 (E2, E3, E9), §3 and §6.1, ADR-012 §1, §3 and
 §4.3, and ADR-013 O-11, O-17, R-07, T-4 and T-5 for the `Value` family's S2
 production and the forms-to-`PackageDeclarations` assembler in the layer-3
-`check` core. TC-392 to TC-403 and TC-406 are `🚧 Planned`
-under QSL-141 (TC-405 and TC-412 pass locally), except TC-398's crate edges and its step 2 over the existing
-forms types, and TC-395's steps 1 to 3, which pass locally (`🚧 Partial`). TC-398 and TC-402 use the resolved-import and definition-scan
+`check` core. TC-392 to TC-400, TC-402 and TC-403 pass locally
+(QSL-141; with TC-405, TC-412 and TC-398's three steps). TC-401 and TC-406 are `🚧 Partial`: their remaining clauses
+are noted on their rows. TC-398 and TC-402 use the resolved-import and definition-scan
 approach of TC-256, TC-170 and TC-390. TC-399 is the end-to-end case from
 source to `CheckedPackage::call`. TC-480 and TC-481 back the `enum`,
 `ordered enum` and `predicate` declarations (FR-091-AC-25 to AC-30,
