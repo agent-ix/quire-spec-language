@@ -466,14 +466,15 @@ impl CheckedPackageEvaluation for CheckedPackage {
         let mut bindings = Vec::with_capacity(declaration.parameters().len());
         bindings.push(Value::Reference(observations.self_object.clone()));
         let mut remaining = declaration.parameters().get(1..).unwrap_or(&[]).iter();
-        if let Some((name, _)) = remaining.clone().next() {
-            if name == "result" {
-                remaining.next();
-                let result = observations.result.clone().ok_or_else(|| {
-                    CallFailure::Fault(InternalFault::new("S6a", "postcondition-result-missing"))
-                })?;
-                bindings.push(result);
-            }
+        // FR-104 "Behavior": slot 1 is `result` exactly when the checker's
+        // own typed `binds_result` says so (QSL-278, FR-064's string-edge
+        // rule) -- never decided here by comparing a parameter's name.
+        if declaration.binds_result() {
+            remaining.next();
+            let result = observations.result.clone().ok_or_else(|| {
+                CallFailure::Fault(InternalFault::new("S6a", "postcondition-result-missing"))
+            })?;
+            bindings.push(result);
         }
         for (parameter, _) in remaining {
             let value = observations

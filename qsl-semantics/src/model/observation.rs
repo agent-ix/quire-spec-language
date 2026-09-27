@@ -320,7 +320,9 @@ struct RawRef {
 }
 
 /// Read one FR-106 value form from `json`, or `None` when it is not one of
-/// the six tagged shapes.
+/// the six tagged shapes: a wire-reading edge (ADR-012 §9), converting the
+/// value's tag to a closed [`RawValue`] variant once, here.
+#[qsl_attrs::string_edge]
 fn read_raw_value(json: &serde_json::Value) -> Option<RawValue> {
     let object = json.as_object()?;
     if object.len() != 1 {
@@ -466,7 +468,7 @@ pub fn admit_current_snapshot(
     let snapshot = read
         .as_snapshot()
         .ok_or_else(|| fault("expected-snapshot-document"))?;
-    if snapshot.observation != "current" {
+    if snapshot.observation != document::ObservationRole::Current {
         return Err(refuse(AdmissionRecord::new(
             "wrong_snapshot",
             "wrong-observation",
@@ -586,7 +588,7 @@ fn admit_invariant(
         .ok_or_else(|| fault("expected-snapshot-document"))?;
 
     // Check 3: observation role and anchor.
-    if snapshot.observation != "current" {
+    if snapshot.observation != document::ObservationRole::Current {
         return Err(refuse(AdmissionRecord::new(
             "wrong_snapshot",
             "wrong-observation",
@@ -710,7 +712,9 @@ fn admit_operation(
     let post_snapshot = post_read
         .as_snapshot()
         .ok_or_else(|| fault("expected-snapshot-document"))?;
-    if pre_snapshot.observation != "pre" || post_snapshot.observation != "post" {
+    if pre_snapshot.observation != document::ObservationRole::Pre
+        || post_snapshot.observation != document::ObservationRole::Post
+    {
         return Err(refuse(AdmissionRecord::new(
             "wrong_snapshot",
             "wrong-observation",

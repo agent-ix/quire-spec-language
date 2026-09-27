@@ -954,3 +954,103 @@ fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetic
         other => panic!("expected Admit(Refused(unknown-member)), got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// FR-106 check 4: the `model` member's own reader (`document::read_model`)
+// refuses a missing or malformed member rather than silently defaulting to
+// an empty string.
+// ---------------------------------------------------------------------------
+
+/// A snapshot document naming `label`, with `model` set to the raw JSON
+/// `model_json` verbatim -- for exercising `read_model`'s own defect
+/// reporting, never a well-formed `model` header.
+fn snapshot_bytes_with_model(label: &DocumentRef, model_json: &str) -> Vec<u8> {
+    format!(
+        r#"{{
+            "format": "quire.state.snapshot/v1",
+            "identity": {{"authority": "{}", "identity": "{}", "revision_namespace": "{}", "revision": "{}"}},
+            "observation": "current",
+            "model": {model_json},
+            "populations": []
+        }}"#,
+        label.authority, label.identity, label.revision_namespace, label.revision
+    )
+    .into_bytes()
+}
+
+/// FR-106 check 4 (`read_model`): a `model` member missing `digest`
+/// refuses `invalid_runtime_input`/`missing-member` naming `digest`, not a
+/// silent `""` that would later misreport `wrong-model-selection`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn run_clause_refuses_a_model_with_a_missing_digest() {
+    let label = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "snap".to_owned(),
+        revision_namespace: "ns".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    };
+    let bytes =
+        snapshot_bytes_with_model(&label, r#"{"identity": "test/nodes", "version": "1.0.0"}"#);
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = no_cycle_selection(label, "a");
+
+    let mut request = request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, bytes);
+    let report = run_clause(request).expect("a well-formed request always reports");
+    match report.disposition {
+        ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
+            assert_eq!(record.code, "invalid_runtime_input");
+            assert_eq!(record.cause, "missing-member");
+            assert_eq!(
+                record.fields.get("field").map(String::as_str),
+                Some("digest")
+            );
+        }
+        other => panic!("expected Admit(Refused(missing-member/digest)), got {other:?}"),
+    }
+}
+
+/// FR-106 check 4 (`read_model`): a `model.digest` not spelled with the
+/// exact `sha256-jcs:` prefix refuses `invalid_runtime_input`/
+/// `wrong-value-kind` naming `digest` -- `strip_prefix`, not
+/// `trim_start_matches`, so a wrong prefix is a refusal, never a silent
+/// pass-through of the whole unstripped string.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn run_clause_refuses_a_model_digest_with_the_wrong_prefix() {
+    let label = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "snap".to_owned(),
+        revision_namespace: "ns".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    };
+    let model_digest = model_digest_hex();
+    let bytes = snapshot_bytes_with_model(
+        &label,
+        &format!(
+            r#"{{"identity": "test/nodes", "version": "1.0.0", "digest": "sha256:{model_digest}"}}"#
+        ),
+    );
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = no_cycle_selection(label, "a");
+
+    let mut request = request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, bytes);
+    let report = run_clause(request).expect("a well-formed request always reports");
+    match report.disposition {
+        ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
+            assert_eq!(record.code, "invalid_runtime_input");
+            assert_eq!(record.cause, "wrong-value-kind");
+            assert_eq!(
+                record.fields.get("field").map(String::as_str),
+                Some("digest")
+            );
+        }
+        other => panic!("expected Admit(Refused(wrong-value-kind/digest)), got {other:?}"),
+    }
+}

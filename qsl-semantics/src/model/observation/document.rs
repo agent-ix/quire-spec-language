@@ -70,9 +70,23 @@ pub(super) struct RawPopulation {
     pub(super) objects: Vec<RawObject>,
 }
 
+/// The snapshot's own `observation` member (FR-106 "Document forms"): a
+/// wire-reading edge (ADR-012 §9, mirroring [`super::AnchorKind`]'s own
+/// pattern) converts it once, at read (`read_snapshot_body`), so no caller
+/// compares `SnapshotDocument::observation` against a string literal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ObservationRole {
+    /// `current`.
+    Current,
+    /// `pre`.
+    Pre,
+    /// `post`.
+    Post,
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct SnapshotDocument {
-    pub(super) observation: String,
+    pub(super) observation: ObservationRole,
     pub(super) anchor: Option<DocAnchor>,
     pub(super) model: ModelHeader,
     pub(super) populations: Vec<RawPopulation>,
@@ -302,28 +316,56 @@ pub(super) fn read_document(
     })
 }
 
+/// Reads the document's own `model` member into a [`ModelHeader`]: a
+/// wire-reading edge (ADR-012 §9), converting `identity`/`version`/`digest`
+/// once, here, into the typed header [`check_model`] compares against the
+/// package's own model selection. A missing `identity`/`version`/`digest`
+/// member refuses `invalid_runtime_input`/`missing-member` at that member
+/// (check 1.5's own cause, generalized to a nested member); `digest` not
+/// spelled with the exact `sha256-jcs:` prefix refuses
+/// `invalid_runtime_input`/`wrong-value-kind` at `digest` -- `strip_prefix`,
+/// not `trim_start_matches`, so a wrong prefix refuses rather than silently
+/// keeping the whole unstripped string. Before this fix, a missing or
+/// malformed member silently became `""` (`unwrap_or_default`), which
+/// [`check_model`] would then merely fail to match against any package's
+/// model selection, misreporting `wrong-model-selection` for what is
+/// actually a missing- or malformed-member document defect.
+#[qsl_attrs::string_edge]
 fn read_model(object: &[(String, OrderedJson)]) -> Result<ModelHeader, AdmissionFailure> {
     let model = object
         .member("model")
         .and_then(|value| value.as_object())
         .ok_or_else(|| fault("model-member-not-an-object"))?;
+    let missing_member = |field: &'static str| {
+        refuse(admission_record("invalid_runtime_input", "missing-member").with("field", field))
+    };
+    let identity = model
+        .member("identity")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| missing_member("identity"))?
+        .to_owned();
+    let version = model
+        .member("version")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| missing_member("version"))?
+        .to_owned();
+    let digest_raw = model
+        .member("digest")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| missing_member("digest"))?;
+    let digest = digest_raw
+        .strip_prefix("sha256-jcs:")
+        .ok_or_else(|| {
+            refuse(
+                admission_record("invalid_runtime_input", "wrong-value-kind")
+                    .with("field", "digest"),
+            )
+        })?
+        .to_owned();
     Ok(ModelHeader {
-        identity: model
-            .member("identity")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default()
-            .to_owned(),
-        version: model
-            .member("version")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default()
-            .to_owned(),
-        digest: model
-            .member("digest")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default()
-            .trim_start_matches("sha256-jcs:")
-            .to_owned(),
+        identity,
+        version,
+        digest,
     })
 }
 
@@ -335,6 +377,9 @@ fn read_object_ref(value: &OrderedJson) -> Option<SelectedObject> {
     })
 }
 
+/// Reads a `{identity: {...}, digest: "sha256-jcs:<hex>"}` document
+/// reference: a wire-reading edge (ADR-012 §9), same as [`read_model`].
+#[qsl_attrs::string_edge]
 fn read_document_ref(value: &OrderedJson) -> Option<DocumentRef> {
     let object = value.as_object()?;
     let identity = object.member("identity")?.as_object()?;
@@ -368,15 +413,31 @@ fn hex_bytes(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// Reads the snapshot's own body (`observation`, `anchor`, `populations`),
+/// converting `observation` to [`ObservationRole`] once, here (a
+/// wire-reading edge, ADR-012 §9): an unrecognized value refuses
+/// `wrong_snapshot`/`wrong-observation`, the same cause every caller of
+/// this document already reports for the "wrong role for this call" case,
+/// since an unrecognized spelling is exactly that, one level earlier.
+#[qsl_attrs::string_edge]
 fn read_snapshot_body(
     object: &[(String, OrderedJson)],
     model: ModelHeader,
 ) -> Result<SnapshotDocument, AdmissionFailure> {
-    let observation = object
+    let observation = match object
         .member("observation")
         .and_then(|value| value.as_str())
-        .unwrap_or_default()
-        .to_owned();
+    {
+        Some("current") => ObservationRole::Current,
+        Some("pre") => ObservationRole::Pre,
+        Some("post") => ObservationRole::Post,
+        _ => {
+            return Err(refuse(AdmissionRecord::new(
+                "wrong_snapshot",
+                "wrong-observation",
+            )))
+        }
+    };
     let anchor = match object.member("anchor") {
         Some(value) => {
             let object = value

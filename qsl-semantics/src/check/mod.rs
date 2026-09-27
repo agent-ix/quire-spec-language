@@ -1268,6 +1268,7 @@ impl PackageDeclarations {
                     identity: lowered.key,
                     claim,
                     spans: form.spans,
+                    has_result: typed.has_result,
                 })
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;

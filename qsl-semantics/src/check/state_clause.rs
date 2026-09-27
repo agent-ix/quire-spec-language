@@ -181,6 +181,14 @@ pub struct TypedStateClause {
     /// context's first.
     pub(crate) population_types: Vec<EffectiveId>,
     pub(crate) claims: Vec<ClauseClaim>,
+    /// Whether slot 1 is `result` (FR-104 "Behavior": a postcondition of an
+    /// operation with a result binds it there; nothing else does). Carried
+    /// as its own typed field, not re-derived by name from `parameters` at
+    /// the S6a seam (QSL-278, FR-064's string-edge rule: dispatch on a
+    /// parameter's name, not on a typed field the checker already knows,
+    /// is exactly the kind of comparison a `#[string_edge]` reader marks,
+    /// never an interior evaluator decision).
+    pub(crate) has_result: bool,
 }
 
 /// The `ProtocolClause` family's state clause production (ADR-012 §15.2,
@@ -352,6 +360,7 @@ fn check_clause(
         nodes_used: nodes,
         population_types,
         claims,
+        has_result,
     })
 }
 
@@ -371,6 +380,7 @@ pub struct CheckedStateClause {
     pub(crate) identity: NodeKey,
     pub(crate) claim: Origin,
     pub(crate) spans: DeclarationSpans,
+    pub(crate) has_result: bool,
 }
 
 impl CheckedStateClause {
@@ -398,6 +408,15 @@ impl CheckedStateClause {
     /// each with its type, in slot order.
     pub fn parameters(&self) -> &[(String, ValueType)] {
         &self.parameters
+    }
+
+    /// Whether slot 1 is `result` (a postcondition of an operation with a
+    /// declared result; never true for an invariant or a precondition, or
+    /// a postcondition of an operation with none). FR-104 "Behavior": the
+    /// evaluator (S6a) reads this typed field to decide whether to bind
+    /// `result`, instead of comparing a parameter's name.
+    pub fn binds_result(&self) -> bool {
+        self.has_result
     }
 
     /// The checked Boolean body.
