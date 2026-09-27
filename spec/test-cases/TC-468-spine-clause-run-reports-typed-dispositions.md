@@ -13,7 +13,7 @@ relationships:
 Verify `qsl_replay::spine::run_clause` over one case per stage and category,
 its provenance, its FR-100-aligned function selection and its exit codes.
 
-Scope: FR-109-AC-1 to FR-109-AC-5.
+Scope: FR-109-AC-1 to FR-109-AC-6.
 
 ## Test Procedure
 
@@ -35,6 +35,11 @@ Build `ClauseRunRequest`s from FR-108's fixtures, in memory.
    constructs other than `Completed`, pass it through `run_clause`'s mapping
    and through FR-100's, and compare; FR-100's internal failures (the kernel
    `CheckedInvariant` and a `CallFailure::Fault`) among them.
+6. With feature `quire-extraction`: extract a Markdown document whose one
+   selected fence holds the step 1 unit through `qsl_source::extract`, and
+   run healthy-parent, violating-parent and missing-model with that
+   extracted source as the unit; then healthy-parent with the same unit
+   extracted from an `ix:formal` fence.
 
 Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
 
@@ -60,6 +65,13 @@ Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
   `internal-failure`, the fault's stage and invariant (for
   `CheckedInvariant`, `S6a` and `checked-program-invariant`), no `outcome`
   member, and FR-100's internal-failure exit status.
+- Step 6: `success`, exit 0, the `package_id` of compiling the extracted
+  body alone, the body's identity and digest as the source and the
+  original document's identity and digest as the extraction; `violation`,
+  exit 10; `compile` with the extraction still in provenance; `compile`,
+  `refusal`, `unknown_language`, exit 20, no `package_id`, the extraction
+  still in provenance. Step 1's
+  program-source report carries no extraction.
 
 ## Status
 
