@@ -502,6 +502,48 @@ mod tests {
         }
     }
 
+    /// TC-428 (FR-096-AC-15): `not x` over `x: Boolean`, called through the S6a
+    /// seam with an Integer argument that admission would have refused, breaks
+    /// the checked-program invariant. The kernel `CheckedInvariant` stop is an
+    /// `Err(InternalFault)` naming `S6a`/`checked-program-invariant`, never an
+    /// `Ok` evaluation carrying a refusal.
+    #[trace("FR-096-AC-15", "TC-428")]
+    #[test]
+    fn checked_invariant_is_an_internal_fault_at_s6a() {
+        let boolean = || {
+            TypeForm::builtin(
+                qsl_forms::BuiltinType::Boolean,
+                qsl_foundation::Span { start: 0, end: 0 },
+            )
+        };
+        let graph = PackageDeclarations {
+            functions: vec![FunctionDeclaration::new(
+                "flip",
+                vec![("x".to_owned(), boolean())],
+                boolean(),
+                None,
+                Expression::Not(Box::new(Expression::Name("x".to_owned()))),
+            )],
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        }
+        .check(CheckingLimits::default())
+        .expect("flip(x: Boolean): Boolean = not x checks cleanly");
+        let flip = graph.function_identity("flip").expect("flip is declared");
+        let package = qsl_package::CheckedPackage::link(graph);
+        let objects = ObjectEnvironment::default();
+        let mut env = family::EvaluationEnv::new(
+            &package,
+            &objects,
+            vec![Value::Integer(Integer::from(3_i64))],
+        );
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let fault = qsl_semantics::check::ValueFunctionFamily::evaluate(&flip, &mut env, &mut meter)
+            .expect_err("a checked-program invariant break is an internal fault");
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.category(), Category::InternalFailure);
+        assert_eq!(fault.invariant(), "checked-program-invariant");
+    }
+
     /// TC-385 step 2: an exhaustive `match` with no `_` arm over a
     /// `FamilyOutcome<Value>`, naming exactly `Evaluated` and
     /// `FamilyEvaluated`. A third variant fails this to compile (`E0004`).

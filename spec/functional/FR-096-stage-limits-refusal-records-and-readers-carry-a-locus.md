@@ -128,7 +128,10 @@ code is its kind's.
 
 Every ceiling of a stage's own limits type in compiler stages S2 to S4, the
 I2 reader and a family `check` is a stage limit and SHALL be reported as
-`LimitExceeded`, never as `resource_exhausted`. A ceiling of an
+`LimitExceeded`, never as `resource_exhausted`. A `CheckingLimits` stop
+raised while package checking (`PackageDeclarations::check`) is a
+`CheckRefusal` with code `stage_limit_exceeded` carrying the locus this
+FR gives its row; it is never `resource_exhausted`. A ceiling of an
 accounting-contract limits type (`ModelNormalizationLimitsV1`,
 `PopulationAdmissionLimitsV1`, quire-specification FR-150) is the caller's
 meter wherever it is read and keeps `resource_exhausted`
@@ -340,6 +343,7 @@ name.
 | FR-096-AC-12 | `Code::RuntimeInvariant`, the code of `InternalFault` (T-4, O-16 internal-failure category), resolves to FR-301 exit status 30 (tool failure) through `Code::exit_code`, and every other `Code` resolves to 20, 21 or 22. A native `run` whose evaluation refuses with `runtime_invariant` exits 30. A report holding a `runtime_invariant` diagnostic beside invalid, unsupported or incomplete ones exits 30. | Test (TC-470) |
 | FR-096-AC-13 | A kernel `DivisionPairOutOfDomain` for consumer domain `Int[0, 9]` builds a record with `expected` `Int[0, 9]` and cause `quotient-outside-domain` when only the quotient is outside it, `remainder-outside-domain` when only the remainder is, and `both-outside-domain` when both are. | Test (TC-428) |
 | FR-096-AC-14 | With `type Small = Int[0, 3]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 3]>[0, 2]` holding `2, 2` returns `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))`, located at the `sum` node, with no refusal record and no charge after `integer-arithmetic.arithmetic`; it is not `Outcome::Refused(Refusal::IntegerOutOfDomain)`. The same `sum` for `q` holding `1, 2` completes with `3`. `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 9]>[0, 2]` holding `5, 0` returns the same undefined outcome, located at the summand node, with no addition. | Test (TC-500) |
+| FR-096-AC-15 | An S6a evaluation of `not x` for `x: Boolean`, called through the seam with an Integer argument that admission would have refused, stops on a kernel `CheckedInvariant`. `Machine::run` returns `Err(InternalFault)` naming stage `S6a` and invariant `checked-program-invariant` (category internal failure, code `runtime_invariant`); it returns no `Evaluation` and builds no refusal record. | Test (TC-428) |
 
 ## Dependencies
 
@@ -430,14 +434,16 @@ Implemented under QSL-245:
   locus (AC-6). The caller passes the graph the evaluation ran.
 - `kernel_refusal_record` maps the kernel `CardinalityOutOfBound` to
   `cardinality_out_of_bound` with its fields.
-- `DeclarationRegions::limit_exceeded` gives a `CheckingLimits` stop
-  (`Typer`'s node count and depth, and a declaration's input bytes and work)
-  as a `LimitExceeded` with its region, tested for each. It has no production
-  caller yet: package checking still returns the `CheckRefusal`.
+- Package checking reports a `CheckingLimits` stop (`Typer`'s node count and
+  depth, and a declaration's input bytes and work) as a `CheckRefusal` with
+  code `stage_limit_exceeded`; the region comes from
+  `DeclarationRegions::refusal_region`, tested for each stop.
+- A kernel `CheckedInvariant` is an `InternalFault` from `Machine::run`
+  (AC-15, TC-428), named `S6a`/`checked-program-invariant`.
 
 Implemented under QSL-282:
 
-- `Code::exit_code` maps `runtime_invariant` to 30 (QSpec FR-301 tool failure; ADR-013 T-4 internal failure), and a report combining diagnostics ranks 30 first (AC-12). The kernel `CheckedInvariant` to `InternalFault` conversion remains unbuilt.
+- `Code::exit_code` maps `runtime_invariant` to 30 (QSpec FR-301 tool failure; ADR-013 T-4 internal failure), and a report combining diagnostics ranks 30 first (AC-12).
 
 Implemented under QSL-281:
 
@@ -477,9 +483,6 @@ STD-110, merged):
 
 Not built, independent of the catalog revision:
 
-- A kernel `CheckedInvariant` builds no record, and its conversion to an
-  `InternalFault` is not built: the evaluator still returns it as a
-  refusal.
 - The key table has no row for the other `ModelQueryRefusal` causes
   (including `type-mismatch`) or for `qsl-route`'s `BoundRefusal`; they build
   no record.
