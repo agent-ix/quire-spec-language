@@ -1,0 +1,53 @@
+---
+id: TC-515
+title: "The replay facade replays a frame counterexample and keeps its identities"
+type: TC
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-116
+    type: verifies
+---
+# TC-515: The replay facade replays a frame counterexample and keeps its identities
+
+## Description
+
+Verify replay of a `WitnessEnvelope<FrameCounterexample>`: an agreeing
+replay reproduces, a disagreeing one is inconclusive, and a stale identity
+refuses before admission.
+
+Scope: FR-116-AC-1 to FR-116-AC-5.
+
+## Test Procedure
+
+Compile FR-108's ConfigVersion unit; build envelopes by hand for
+`Config::ConfigVersion::attemptUpdate`, taking the anchor, frame and
+occurrence identities from the compiled package, with the unit's source,
+the domain package and the invocation documents in the byte provision.
+
+1. forbidden-parent-change with `change` (`child`, `parent`).
+2. changed-version with `change` (`child`, `versionNumber`);
+   forbidden-parent-change with `change` (`child`, `versionNumber`); an
+   invocation whose `created` lists `child`.
+3. forbidden-parent-change with the frame identity taken from a package
+   whose `attemptUpdate` frame also modifies `parent`; with a source edit
+   that changes the `package_id`; with `operation` naming `missing`.
+4. forbidden-parent-change with its pre snapshot removed from the provision;
+   with its invocation bytes edited under the same digest.
+5. Step 1's envelope twice.
+
+Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
+
+## Expected Results
+
+- Step 1: `reproduced-with-evaluated-witness`; the result holds the source
+  digest, `package_id`, the payload's anchor, frame and occurrence
+  identities, the three document identities and digests, and both changes.
+- Step 2: `inconclusive`, `Verdicts`; `inconclusive`, `Verdicts` holding
+  both changes; `inconclusive`, `NoValue`.
+- Step 3: `stale_dependency`/`revision-mismatch` naming both frame
+  identities, with no admission; FR-098's stale `package_id` refusal;
+  `missing_declaration`/`missing-name`.
+- Step 4: a `ReplayRefusal` holding `unavailable_observation`; a
+  `ReplayRefusal` holding `stale_dependency`/`byte-digest-mismatch`. Neither
+  settles a result.
+- Step 5: equal results. `FrameCounterexample: FamilyPayload` compiles, and
+  the envelope has no string-keyed field.

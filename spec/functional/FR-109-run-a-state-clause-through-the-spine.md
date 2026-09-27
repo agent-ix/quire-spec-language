@@ -52,7 +52,8 @@ A `ClauseRunRequest`:
 - FR-056's package input (domain packages by `sha256-jcs` digest) and
   FR-099's dependency input;
 - the snapshot and invocation provisions (FR-106);
-- a selection: `Clause(ClauseSelection)` (FR-106), or `Function { name,
+- a selection: `Clause(ClauseSelection)` (FR-106), `Frame { operation,
+  invocation }` (FR-115), or `Function { name,
   arguments, snapshot }`. `name` follows FR-100's `function` rule.
   `arguments` are FR-100's `{parameter, value}` pairs, one per parameter, in
   any order, whose `value` is FR-100's canonical integer, or

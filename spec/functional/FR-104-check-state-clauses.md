@@ -49,7 +49,8 @@ and per frame (ADR-012 §2, §15.7; FR-057).
   observation, its node identity and its `claim` occurrence (ADR-013 O-07,
   O-09), recorded in the `CheckedGraph` under its declared name.
 - One `Requirements` record per clause, and one per frame of an operation
-  that at least one `pre` or `post` clause of the unit names.
+  that at least one `pre` or `post` clause, or protocol attempt (FR-114),
+  of the unit names.
 - Or a refusal with a family cause and catalog code, or
   `StageFailure::Limit`.
 
@@ -174,9 +175,11 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   `operation-contract` for each clause, keyed by its `claim` occurrence
   (ADR-012 §13.5).
 - The hook SHALL return one `operation-contract` record for each frame of an
-  operation that a `pre` or `post` clause of the unit names, keyed by one
+  operation that a `pre` or `post` clause or a protocol attempt (FR-114) of
+  the unit names, keyed by one
   `generated` occurrence of the frame node (FR-105): the checker SHALL mint
-  one occurrence per distinct operation the unit's clauses name, in
+  one occurrence per distinct operation the unit's clauses and attempts
+  name, in
   ascending (declaring type `DeclarationKey`, operation name as UTF-8 bytes)
   order over those operations, before lowering any clause; every clause
   naming the same operation shares its occurrence. Two operations are two
@@ -185,8 +188,8 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   is per operation identity, not per frame-node identity, so two operations
   never merge into one record and neither raises a fault. The ordinal SHALL
   NOT depend on source order: reversing the unit's clauses SHALL NOT change
-  which operation a given key names. An operation no clause names gets no
-  record.
+  which operation a given key names. An operation no clause and no attempt
+  names gets no record.
 - Each record's extent SHALL follow ADR-014 §4 as FR-097 classifies it, over
   the clause's `self`, `result` and parameter types and the populations the
   clause ranges over: the context's population (every object of which the

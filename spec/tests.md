@@ -255,6 +255,12 @@ operational validation remains outside this audit-only plan.
 | TC-482 | S2 builds dimension and unit forms | Unit | P1 | FR-091-AC-31 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-483 | The assembler admits source dimensions and units into a UnitGraph and refuses each source error | Unit | P1 | FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35 | 🚧 Partial: AC-32 to AC-34 and AC-35's errors pass locally (`qsl-semantics` `check::assemble` tests); AC-35's catalog code awaits STD-112 |
 | TC-500 | A sum seed or running total outside its domain is a located undefined outcome | Unit | P1 | FR-096-AC-14 | ✅ Passing locally (QSL-245): `Undefined::SumOutOfDomain` at the `sum` node for a running total and at the summand node for a seed, no charge after the failed decision |
+| TC-510 | S2 builds protocol scoped anchor forms with their scope and segments | Unit | P1 | FR-112-AC-1, FR-112-AC-2, FR-112-AC-3 | 🚧 Planned; QSL-296 |
+| TC-511 | S3 resolves scoped anchors through nested scopes and refuses a missing anchor or member | Unit | P1 | FR-113-AC-1, FR-113-AC-2, FR-113-AC-3 | 🚧 Planned; QSL-296 |
+| TC-512 | S3 refuses ambiguous anchors and shadowing binders, in builder order | Unit | P1 | FR-113-AC-4, FR-113-AC-5, FR-113-AC-6 | 🚧 Planned; QSL-296 |
+| TC-513 | S3 binds a protocol attempt to its operation's one anchor and frame | Integration | P1 | FR-114-AC-1, FR-114-AC-2, FR-114-AC-3, FR-114-AC-4 | 🚧 Planned; QSL-296; emitted-node assertions pending STD-111 |
+| TC-514 | The spine run entry checks an invocation against its operation frame | Integration | P1 | FR-115-AC-1, FR-115-AC-2, FR-115-AC-3, FR-115-AC-4, FR-115-AC-5 | 🚧 Planned; QSL-296 |
+| TC-515 | The replay facade replays a frame counterexample and keeps its identities | Integration | P1 | FR-116-AC-1, FR-116-AC-2, FR-116-AC-3, FR-116-AC-4, FR-116-AC-5 | 🚧 Planned; QSL-296 |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -627,3 +633,15 @@ and FR-108-AC-6 are pending STD-111, the QSpec wire changes; nothing else
 waits on it. TC-469's native parity step retires when M-6c retires the
 `0-draft` native path (ADR-012 §15.8); its check against the independent
 expected dispositions stays.
+
+## Protocol frames and scoped anchors (FR-112 to FR-116) coverage
+
+FR-112 to FR-116 carry ADR-012 §12.2 under QSL-296 (QSL-21a): S2 scoped
+anchor forms (FR-112), S3 anchor resolution through nested scopes with the
+missing, ambiguous and shadowing refusals (FR-113), a protocol attempt bound
+to its operation's one FR-105 frame node (FR-114), the `Frame` run selection
+and its `frame_violation` (FR-115), and frame counterexample replay (FR-116).
+TC-510 to TC-515 back every AC and are all `🚧 Planned`. TC-513's emitted-node
+assertions wait on STD-111, as TC-462's do. FR-116's decode of a Kani frame
+witness waits on agent-ix/quire-contract-ir#109 and
+agent-ix/quire-contract-codegen#49; TC-515 drives a hand-built envelope.
