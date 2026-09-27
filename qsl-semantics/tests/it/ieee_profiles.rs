@@ -437,6 +437,7 @@ fn f09_f14_strict_exact_refuses_with_would_be_flags_and_no_bits() {
             RoundingMode::Exact
         ),
         Outcome::Refused(Refusal::IeeeNotExact {
+            target: IeeeWidth::Binary32,
             would_be: flags(&[IeeeFlag::Inexact])
         })
     );
@@ -459,6 +460,7 @@ fn f09_f14_strict_exact_refuses_with_would_be_flags_and_no_bits() {
     assert_eq!(
         eval(overflow, RoundingMode::Exact),
         Outcome::Refused(Refusal::IeeeNotExact {
+            target: IeeeWidth::Binary32,
             would_be: overflow_flags
         })
     );
@@ -819,6 +821,7 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
             RoundingMode::Exact
         ),
         Outcome::Refused(Refusal::IeeeNotExact {
+            target: IeeeWidth::Binary32,
             would_be: flags(&[IeeeFlag::Inexact])
         })
     );
@@ -870,10 +873,10 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
         )),
         (0xffc0_0005, IeeeFlags::EMPTY)
     );
-    assert_eq!(
+    assert!(matches!(
         convert(f64v(0x7ff8_0100_0000_0000), IeeeWidth::Binary32, even),
-        Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable)
-    );
+        Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable { .. })
+    ));
 
     let every = every_finite_ieee();
     let to_exact = |value| to_rational(value, &every, &mut Meter::new(UNLIMITED));
@@ -913,6 +916,7 @@ fn explicit_width_and_exact_conversions_report_loss_or_refuse() {
     assert_eq!(
         from_exact(int(1), int(3), IeeeWidth::Binary32, RoundingMode::Exact),
         Outcome::Refused(Refusal::IeeeNotExact {
+            target: IeeeWidth::Binary32,
             would_be: flags(&[IeeeFlag::Inexact])
         })
     );
@@ -1519,7 +1523,7 @@ fn check_vector(spec: Spec, operation: OOp, operands: &[u64], mode: RoundingMode
         }
         (
             Expected::NotExact(would_be),
-            Outcome::Refused(Refusal::IeeeNotExact { would_be: got }),
+            Outcome::Refused(Refusal::IeeeNotExact { would_be: got, .. }),
         ) => {
             assert_eq!(*would_be, got, "{context}");
             &FINITE_CHARGES[..3]
@@ -1838,6 +1842,7 @@ fn f22_strict_exact_refuses_after_round_and_before_retention() {
     assert_eq!(
         eval_with(f09, RoundingMode::Exact, &mut meter),
         Outcome::Refused(Refusal::IeeeNotExact {
+            target: IeeeWidth::Binary32,
             would_be: flags(&[IeeeFlag::Inexact])
         })
     );
@@ -1887,6 +1892,7 @@ fn f23_strict_exact_would_be_flags_follow_nearest_even() {
     assert_eq!(
         eval(f23, RoundingMode::Exact),
         Outcome::Refused(Refusal::IeeeNotExact {
+            target: IeeeWidth::Binary32,
             would_be: flags(&[IeeeFlag::Overflow, IeeeFlag::Inexact])
         })
     );
@@ -2014,10 +2020,10 @@ fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
 
     let wide_payload = f64v(0x7ff8_0000_0040_0000);
     let mut meter = Meter::new(limits(64, 1, 1, 0));
-    assert_eq!(
+    assert!(matches!(
         convert_ieee_width(wide_payload, IeeeWidth::Binary32, even, &mut meter),
-        Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable)
-    );
+        Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable { .. })
+    ));
     assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
     assert_eq!(
         convert_ieee_width(
@@ -2035,22 +2041,26 @@ fn f25_nan_width_conversion_keeps_sign_and_payload_or_refuses() {
         ))
     );
     assert_eq!(
-        Refusal::IeeeNanPayloadNotRepresentable.code(),
+        Refusal::IeeeNanPayloadNotRepresentable {
+            target: IeeeWidth::Binary32,
+            source: IeeeWidth::Binary64,
+        }
+        .code(),
         Some("ieee_nan_payload_not_representable")
     );
 
     // A signaling source is refused before the NaN is consumed, so no
     // `invalid` flag exists to report.
     let mut meter = Meter::new(limits(64, 1, 1, 0));
-    assert_eq!(
+    assert!(matches!(
         convert_ieee_width(
             f64v(0x7ff0_0000_0040_0000),
             IeeeWidth::Binary32,
             even,
             &mut meter
         ),
-        Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable)
-    );
+        Outcome::Refused(Refusal::IeeeNanPayloadNotRepresentable { .. })
+    ));
     assert_eq!(meter.admitted_charges(), [ChargePoint::IeeeOperands]);
 }
 
@@ -2227,15 +2237,14 @@ fn f27_ieee_to_rational_sizes_maxparts_and_admits_membership_before_retention() 
 
     let integers = rational_type(&int(0), &int(1), &int(1), &int(1));
     let mut meter = Meter::new(limits(32, 1, 2, 0));
-    assert_eq!(
-        to_rational(f32v(0x3f00_0000), &integers, &mut meter),
-        Outcome::Refused(Refusal::IeeeRationalOutOfDomain)
+    let Outcome::Refused(refusal) = to_rational(f32v(0x3f00_0000), &integers, &mut meter) else {
+        panic!("a half is outside Rational[0, 1; 1, 1]");
+    };
+    assert!(
+        matches!(&refusal, Refusal::IeeeRationalOutOfDomain { target } if **target == integers)
     );
     assert_eq!(meter.admitted_charges(), &TO_EXACT_CHARGES[..2]);
-    assert_eq!(
-        Refusal::IeeeRationalOutOfDomain.code(),
-        Some("ieee_rational_out_of_domain")
-    );
+    assert_eq!(refusal.code(), Some("ieee_rational_out_of_domain"));
     assert_eq!(
         to_rational(
             f32v(0x3f00_0000),
@@ -2306,7 +2315,10 @@ fn f29_strict_exact_near_extremes_reports_only_inexact() {
         );
         assert_eq!(
             eval(operation, RoundingMode::Exact),
-            Outcome::Refused(Refusal::IeeeNotExact { would_be: inexact }),
+            Outcome::Refused(Refusal::IeeeNotExact {
+                target: IeeeWidth::Binary32,
+                would_be: inexact,
+            }),
             "{operation:?}"
         );
     }
@@ -2378,7 +2390,10 @@ fn f31_narrowing_conversion_rounds_overflows_and_underflows_once() {
     let mut meter = Meter::new(limits(64, 1, 3, 1));
     assert_eq!(
         narrow(tenth, RoundingMode::Exact, &mut meter),
-        Outcome::Refused(Refusal::IeeeNotExact { would_be: inexact })
+        Outcome::Refused(Refusal::IeeeNotExact {
+            target: IeeeWidth::Binary32,
+            would_be: inexact,
+        })
     );
     assert_eq!(meter.admitted_charges(), &FINITE_CHARGES[..3]);
     assert_eq!(

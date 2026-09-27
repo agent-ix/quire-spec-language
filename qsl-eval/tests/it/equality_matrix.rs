@@ -1168,7 +1168,14 @@ fn e20_nested_construction_dispositions_propagate_in_declaration_order() {
     let env = record_environment();
     let stopped: [Outcome<Value>; 3] = [
         Outcome::Undefined(Undefined::DivisionByZero),
-        Outcome::Refused(Refusal::InexactDecimal),
+        Outcome::Refused(Refusal::InexactDecimal {
+            target: quire_exact::InexactTarget::Integer(Box::new(
+                quire_exact::IntegerInterval::spanning(
+                    quire_exact::Integer::zero(),
+                    quire_exact::Integer::one(),
+                ),
+            )),
+        }),
         Outcome::Incomplete(Incomplete {
             limit_kind: LimitKind::WorkUnits,
             limit: 0,
@@ -2039,7 +2046,7 @@ fn x01_rational_arithmetic_evaluates_and_its_range_and_divisor_are_obligations()
     );
     assert!(matches!(
         evaluation,
-        quire_exact::Outcome::Refused(quire_exact::Refusal::RationalOutOfDomain)
+        quire_exact::Outcome::Refused(quire_exact::Refusal::RationalOutOfDomain { .. })
     ));
     assert_eq!(
         refused(check_in(
@@ -2522,7 +2529,7 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
     );
     assert!(matches!(
         refused,
-        quire_exact::Outcome::Refused(quire_exact::Refusal::IntegerOutOfDomain)
+        quire_exact::Outcome::Refused(quire_exact::Refusal::IntegerOutOfDomain { .. })
     ));
     assert!(meter.admitted_charges().is_empty());
 

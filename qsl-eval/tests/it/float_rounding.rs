@@ -121,7 +121,7 @@ fn the_evaluator_applies_the_rounding_mode_the_float_type_carries() {
     }
     // A bare `Float64` is strict `exact`: an inexact sum is refused.
     match add("Float64", ONE, THREE_QUARTER_ULP) {
-        Outcome::Refused(Refusal::IeeeNotExact { would_be }) => {
+        Outcome::Refused(Refusal::IeeeNotExact { would_be, .. }) => {
             assert!(would_be.contains(IeeeFlag::Inexact));
         }
         other => panic!("strict exact refuses an inexact sum, not {other:?}"),

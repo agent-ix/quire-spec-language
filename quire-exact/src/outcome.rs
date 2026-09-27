@@ -408,9 +408,21 @@ mod tests {
                 "decimal_out_of_domain",
                 "outside-domain",
             ),
-            (pair(false, true), "division_pair_out_of_domain", "quotient-outside-domain"),
-            (pair(true, false), "division_pair_out_of_domain", "remainder-outside-domain"),
-            (pair(false, false), "division_pair_out_of_domain", "both-outside-domain"),
+            (
+                pair(false, true),
+                "division_pair_out_of_domain",
+                "quotient-outside-domain",
+            ),
+            (
+                pair(true, false),
+                "division_pair_out_of_domain",
+                "remainder-outside-domain",
+            ),
+            (
+                pair(false, false),
+                "division_pair_out_of_domain",
+                "both-outside-domain",
+            ),
             (
                 Refusal::ModuloOutOfDomain { domain: interval() },
                 "modulo_out_of_domain",

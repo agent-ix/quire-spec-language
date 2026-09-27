@@ -1006,7 +1006,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
     assert_eq!(charges, vec![ChargePoint::IeeeOperands]);
     assert!(matches!(
         convert(0x4034_0000_0000_0000).0,
-        Outcome::Refused(Refusal::IeeeRationalOutOfDomain)
+        Outcome::Refused(Refusal::IeeeRationalOutOfDomain { .. })
     ));
     assert_eq!(
         format!("{:?}", convert(0x3FE0_0000_0000_0000).0),
@@ -1452,7 +1452,10 @@ fn s6a_returns_kernel_outcomes_unchanged_in_evaluated() {
     let (twenty, location, losses) =
         call_evaluated(&package, "f", float(0x4034_0000_0000_0000), UNLIMITED);
     assert!(
-        matches!(twenty, Outcome::Refused(Refusal::IeeeRationalOutOfDomain)),
+        matches!(
+            twenty,
+            Outcome::Refused(Refusal::IeeeRationalOutOfDomain { .. })
+        ),
         "{twenty:?}"
     );
     assert!(location.is_some());

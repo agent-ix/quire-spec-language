@@ -933,10 +933,7 @@ pub fn kernel_refusal_record(
     let code = CatalogCode::new(refusal.code()?, refusal.cause()?);
     let fields = match refusal {
         Refusal::CardinalityOutOfBound {
-            kind,
-            bound,
-            count,
-            ..
+            kind, bound, count, ..
         } => {
             let collection = match kind {
                 CollectionKind::Sequence => "sequence",
@@ -967,8 +964,7 @@ pub fn kernel_refusal_record(
         Refusal::DecimalOutOfDomain { target } => {
             BTreeMap::from([("expected", spell_decimal(target))])
         }
-        Refusal::DivisionPairOutOfDomain { domain, .. }
-        | Refusal::ModuloOutOfDomain { domain } => {
+        Refusal::DivisionPairOutOfDomain { domain, .. } | Refusal::ModuloOutOfDomain { domain } => {
             BTreeMap::from([("expected", spell_int(domain))])
         }
         Refusal::IntegerOutOfDomain { target } => BTreeMap::from([("expected", spell_int(target))]),
@@ -981,8 +977,7 @@ pub fn kernel_refusal_record(
                 target.profile().as_str()
             ),
         )]),
-        Refusal::RationalOutOfDomain { target }
-        | Refusal::IeeeRationalOutOfDomain { target } => {
+        Refusal::RationalOutOfDomain { target } | Refusal::IeeeRationalOutOfDomain { target } => {
             BTreeMap::from([("expected", spell_rational(target))])
         }
         Refusal::IeeeNotExact { target, would_be } => BTreeMap::from([

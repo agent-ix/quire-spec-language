@@ -131,7 +131,7 @@ fn t04_t05_profile_length_domains_admit_exact_bounds_and_refuse_one_over() {
     assert_eq!(one_scalar.length(), 1);
     assert!(matches!(
         admit(E_ACUTE, &text_type(1, 1, BinaryUtf8)),
-        Outcome::Refused(Refusal::TextLengthOutOfDomain)
+        Outcome::Refused(Refusal::TextLengthOutOfDomain { .. })
     ));
     assert_eq!(
         admit(E_ACUTE, &text_type(2, 2, BinaryUtf8))
@@ -150,7 +150,7 @@ fn t04_t05_profile_length_domains_admit_exact_bounds_and_refuse_one_over() {
     );
     assert!(matches!(
         admit("a", &text_type(0, 0, Nfc)),
-        Outcome::Refused(Refusal::TextLengthOutOfDomain)
+        Outcome::Refused(Refusal::TextLengthOutOfDomain { .. })
     ));
     assert_eq!(
         admit("a", &text_type(1, 1, Nfc))
@@ -926,12 +926,12 @@ fn generated_text_profiles_match_the_unicode_17_oracle() {
                 assert_eq!(exact.length(), length);
                 assert!(matches!(
                     admit(text, &text_type(length + 1, length + 1, profile)),
-                    Outcome::Refused(Refusal::TextLengthOutOfDomain)
+                    Outcome::Refused(Refusal::TextLengthOutOfDomain { .. })
                 ));
                 if length > 0 {
                     assert!(matches!(
                         admit(text, &text_type(0, length - 1, profile)),
-                        Outcome::Refused(Refusal::TextLengthOutOfDomain)
+                        Outcome::Refused(Refusal::TextLengthOutOfDomain { .. })
                     ));
                 }
                 exact
@@ -1084,7 +1084,7 @@ fn t13_scalar_length_is_measured_after_normalization() {
         assert!(
             matches!(
                 admit(E_COMBINING, &text_type(1, 1, profile)),
-                Outcome::Refused(Refusal::TextLengthOutOfDomain)
+                Outcome::Refused(Refusal::TextLengthOutOfDomain { .. })
             ),
             "{profile:?}"
         );
@@ -1199,7 +1199,7 @@ fn t16_length_refusal_follows_the_last_charge_that_measures_the_length() {
         assert!(
             matches!(
                 admit_text(&runtime(text), &bound, &mut meter),
-                Outcome::Refused(Refusal::TextLengthOutOfDomain)
+                Outcome::Refused(Refusal::TextLengthOutOfDomain { .. })
             ),
             "{profile:?}"
         );

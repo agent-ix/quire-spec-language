@@ -3583,13 +3583,11 @@ fn a_kernel_refusal_builds_a_record_only_where_the_catalog_has_a_code() {
             .collect::<Vec<_>>(),
         [("bound", "[1, 2]"), ("collection", "set"), ("count", "3")]
     );
-    for refusal in [
-        Refusal::InexactDecimal,
-        Refusal::IntegerOutOfDomain,
-        Refusal::CheckedInvariant,
-    ] {
-        assert_eq!(evaluation(refusal).refusal_record(package.graph()), None);
-    }
+    // `CheckedInvariant` is an internal fault, never a refusal record.
+    assert_eq!(
+        evaluation(Refusal::CheckedInvariant).refusal_record(package.graph()),
+        None
+    );
 }
 
 /// TC-428 (FR-096-AC-8, QSL-281): the kernel `ForeignReference` variant now

@@ -236,6 +236,9 @@ fn div_04_div_06_mathematical_and_signed_64_domains() {
                 &mut meter
             ),
             Outcome::Refused(Refusal::DivisionPairOutOfDomain {
+                domain: Box::new(IntegerInterval::signed_twos_complement(
+                    NonZeroU32::new(64).unwrap()
+                )),
                 quotient_admitted: false,
                 remainder_admitted: true,
             })
@@ -249,6 +252,7 @@ fn div_04_div_06_mathematical_and_signed_64_domains() {
                 Outcome::Refused(Refusal::DivisionPairOutOfDomain {
                     quotient_admitted: false,
                     remainder_admitted: true,
+                    ..
                 })
             ));
         }
@@ -445,10 +449,10 @@ fn div_12_mod_domain_refusal_precedes_the_retain_charge() {
         ..DIV_10
     };
     let mut meter = Meter::new(limits);
-    assert_eq!(
+    assert!(matches!(
         mod_10(&unit_interval, &mut meter),
-        Outcome::Refused(Refusal::ModuloOutOfDomain)
-    );
+        Outcome::Refused(Refusal::ModuloOutOfDomain { .. })
+    ));
     assert_eq!(
         meter.admitted_charges(),
         [
@@ -588,7 +592,10 @@ fn generated_pairs_match_the_law_oracle_domains_and_every_denial() {
                 if euclidean.abs() <= 5 {
                     assert_eq!(euclid.completed().map(|r| int(&r)), Some(euclidean));
                 } else {
-                    assert_eq!(euclid, Outcome::Refused(Refusal::ModuloOutOfDomain));
+                    assert!(matches!(
+                        euclid,
+                        Outcome::Refused(Refusal::ModuloOutOfDomain { .. })
+                    ));
                 }
 
                 let in_bounds = |value: i128| value.abs() <= 5;
@@ -606,6 +613,7 @@ fn generated_pairs_match_the_law_oracle_domains_and_every_denial() {
                     Outcome::Refused(Refusal::DivisionPairOutOfDomain {
                         quotient_admitted,
                         remainder_admitted,
+                        ..
                     }) => {
                         assert_eq!(
                             (quotient_admitted, remainder_admitted),

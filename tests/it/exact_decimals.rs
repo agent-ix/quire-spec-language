@@ -118,13 +118,13 @@ fn d03_every_mode_rounds_both_signed_halves_with_a_typed_loss() {
     ];
     let target = |mode| wide(0, mode);
     for coefficient in [25, -25] {
-        assert_eq!(
+        assert!(matches!(
             run(
                 DecimalOperation::Round(&dec(coefficient, 1)),
                 &target(RoundingMode::Exact)
             ),
-            Outcome::Refused(Refusal::InexactDecimal)
-        );
+            Outcome::Refused(Refusal::InexactDecimal { .. })
+        ));
     }
     for (mode, positive, negative) in table {
         for (coefficient, expected, exact_numerator) in [(25, positive, 5), (-25, negative, -5)] {
@@ -151,13 +151,13 @@ fn d03_every_mode_rounds_both_signed_halves_with_a_typed_loss() {
 #[test]
 fn d05_recurring_quotient_refuses_exact_and_records_nearest_even_loss() {
     let (one, three) = (dec(1, 0), dec(3, 0));
-    assert_eq!(
+    assert!(matches!(
         run(
             DecimalOperation::Divide(&one, &three),
             &wide(2, RoundingMode::Exact)
         ),
-        Outcome::Refused(Refusal::InexactDecimal)
-    );
+        Outcome::Refused(Refusal::InexactDecimal { .. })
+    ));
     let result = completed(run(
         DecimalOperation::Divide(&one, &three),
         &wide(2, RoundingMode::NearestEven),
@@ -187,13 +187,13 @@ fn d06_d08_zero_divisors_are_undefined_and_domains_refuse() {
             );
         }
     }
-    assert_eq!(
+    assert!(matches!(
         run(
             DecimalOperation::Round(&dec(25, 1)),
             &target(-2, 2, 0, RoundingMode::NearestAway)
         ),
-        Outcome::Refused(Refusal::DecimalOutOfDomain)
-    );
+        Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
+    ));
     let admit = |coefficient| {
         run(
             DecimalOperation::Round(&dec(coefficient, 0)),
@@ -207,10 +207,10 @@ fn d06_d08_zero_divisors_are_undefined_and_domains_refuse() {
         );
     }
     for outside in [-3, 3] {
-        assert_eq!(
+        assert!(matches!(
             admit(outside),
-            Outcome::Refused(Refusal::DecimalOutOfDomain)
-        );
+            Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
+        ));
     }
 }
 
@@ -397,13 +397,13 @@ fn d12_a_rounded_coefficient_outside_the_domain_is_never_re_rounded() {
         (int(loss.exact_numerator()), int(&loss.exact_denominator())),
         (1, 3)
     );
-    assert_eq!(
+    assert!(matches!(
         run(
             DecimalOperation::Divide(&one, &three),
             &target(-10, 10, 2, RoundingMode::NearestEven)
         ),
-        Outcome::Refused(Refusal::DecimalOutOfDomain)
-    );
+        Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
+    ));
 }
 
 const D13: ScalarLimits = ScalarLimits {
@@ -486,7 +486,10 @@ fn d14_strict_exact_refuses_before_rounding() {
         (outcome, meter.admitted_charges().to_vec())
     };
     let (outcome, charges) = run(3);
-    assert_eq!(outcome, Outcome::Refused(Refusal::InexactDecimal));
+    assert!(matches!(
+        outcome,
+        Outcome::Refused(Refusal::InexactDecimal { .. })
+    ));
     assert_eq!(
         charges,
         [
@@ -545,7 +548,10 @@ fn d16_membership_refusal_follows_rounding_and_precedes_retention() {
         (outcome, meter.admitted_charges().to_vec())
     };
     let (outcome, charges) = run(limits);
-    assert_eq!(outcome, Outcome::Refused(Refusal::DecimalOutOfDomain));
+    assert!(matches!(
+        outcome,
+        Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
+    ));
     assert_eq!(
         charges,
         [
@@ -793,33 +799,33 @@ fn working_scales_above_the_target_never_materialize_the_excess_power() {
         ChargePoint::DecimalArithmetic,
     ];
     let mut meter = Meter::new(UNLIMITED);
-    assert_eq!(
+    assert!(matches!(
         evaluate_decimal(
             DecimalOperation::Round(&dec(1, u32::MAX)),
             &target(0, 10, 0, RoundingMode::Exact),
             &mut meter
         ),
-        Outcome::Refused(Refusal::InexactDecimal)
-    );
+        Outcome::Refused(Refusal::InexactDecimal { .. })
+    ));
     assert_eq!(meter.admitted_charges(), arithmetic);
 
     // Working scale 2 × u32::MAX: -6 × 10^-8589934590.
     let (left, right) = (dec(3, u32::MAX), dec(-2, u32::MAX));
     let product = DecimalOperation::Multiply(&left, &right);
     let mut meter = Meter::new(TIGHT);
-    assert_eq!(
+    assert!(matches!(
         evaluate_decimal(product, &target(0, 10, 0, RoundingMode::Exact), &mut meter),
-        Outcome::Refused(Refusal::InexactDecimal)
-    );
+        Outcome::Refused(Refusal::InexactDecimal { .. })
+    ));
     assert_eq!(meter.admitted_charges(), arithmetic);
-    assert_eq!(
+    assert!(matches!(
         evaluate_decimal(
             product,
             &target(0, 10, 0, RoundingMode::TowardNegative),
             &mut Meter::new(TIGHT)
         ),
-        Outcome::Refused(Refusal::DecimalOutOfDomain)
-    );
+        Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
+    ));
     let mut meter = Meter::new(TIGHT);
     assert_eq!(
         evaluate_decimal(
@@ -1157,12 +1163,13 @@ fn generated_operations_match_the_exact_rational_oracle_and_every_denial() {
                                 Expected::Undefined,
                                 Outcome::Undefined(Undefined::DivisionByZero),
                             ) => checked[0] += 1,
-                            (Expected::Inexact, Outcome::Refused(Refusal::InexactDecimal)) => {
-                                checked[1] += 1
-                            }
+                            (
+                                Expected::Inexact,
+                                Outcome::Refused(Refusal::InexactDecimal { .. }),
+                            ) => checked[1] += 1,
                             (
                                 Expected::OutOfDomain,
-                                Outcome::Refused(Refusal::DecimalOutOfDomain),
+                                Outcome::Refused(Refusal::DecimalOutOfDomain { .. }),
                             ) => checked[2] += 1,
                             (Expected::Value { value, loss }, Outcome::Completed(result)) => {
                                 checked[3] += 1;

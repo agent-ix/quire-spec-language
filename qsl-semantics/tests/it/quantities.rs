@@ -931,15 +931,15 @@ fn u07_lossy_decimal_conversion_reports_or_refuses() {
     let f = fixture();
     let inch = f.quantity(whole(1), f.inch);
     let mut meter = unlimited();
-    assert_eq!(
+    assert!(matches!(
         converted(
             f.at(&inch),
             &f.unit(f.m),
             &decimal_type(-1000, 1000, 2, RoundingMode::Exact),
             &mut meter
         ),
-        Outcome::Refused(Refusal::InexactDecimal)
-    );
+        Outcome::Refused(Refusal::InexactDecimal { .. })
+    ));
     assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
     let Outcome::Completed(conversion) = convert_quantity(
         f.at(&inch),
@@ -981,15 +981,15 @@ fn u08_target_domain_endpoints_admit_and_one_over_refuses() {
     }
     for value in [-3, 3] {
         let mut meter = unlimited();
-        assert_eq!(
+        assert!(matches!(
             converted(
                 f.at(&f.quantity(whole(value), f.m)),
                 &f.unit(f.m),
                 &target,
                 &mut meter
             ),
-            Outcome::Refused(Refusal::DecimalOutOfDomain)
-        );
+            Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
+        ));
         assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
         assert!(!meter
             .admitted_charges()
@@ -1418,15 +1418,15 @@ fn huge_target_scale_is_decided_before_materializing_the_coefficient() {
         assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
     }
     let mut meter = Meter::new(limits);
-    assert_eq!(
+    assert!(matches!(
         converted(
             f.at(&third),
             &f.unit(f.m),
             &wide_decimal(scale, RoundingMode::Exact),
             &mut meter
         ),
-        Outcome::Refused(Refusal::InexactDecimal)
-    );
+        Outcome::Refused(Refusal::InexactDecimal { .. })
+    ));
     assert!(!meter
         .admitted_charges()
         .contains(&ChargePoint::UnitTargetDomain));
@@ -1776,28 +1776,28 @@ fn u16_strict_rounding_refuses_before_the_target_domain() {
     let f = fixture();
     let inch = f.quantity(whole(1), f.inch);
     let mut meter = limits(15, 5, 1, 1, 6, 1);
-    assert_eq!(
+    assert!(matches!(
         converted(
             f.at(&inch),
             &f.unit(f.m),
             &decimal_type(-1000, 1000, 2, RoundingMode::Exact),
             &mut meter
         ),
-        Outcome::Refused(Refusal::InexactDecimal)
-    );
+        Outcome::Refused(Refusal::InexactDecimal { .. })
+    ));
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 4);
     assert!(!meter
         .admitted_charges()
         .contains(&ChargePoint::UnitTargetDomain));
-    assert_eq!(
+    assert!(matches!(
         converted(
             f.at(&inch),
             &f.unit(f.m),
             &decimal_type(-1000, 1000, 2, RoundingMode::Exact),
             &mut limits(15, 5, 1, 1, 4, 1)
         ),
-        Outcome::Refused(Refusal::InexactDecimal)
-    );
+        Outcome::Refused(Refusal::InexactDecimal { .. })
+    ));
     let nearest = decimal_type(-1000, 1000, 2, RoundingMode::NearestEven);
     let mut meter = limits(15, 5, 1, 1, 6, 1);
     let Outcome::Completed(ConvertedValue::Decimal(result)) =
@@ -1827,10 +1827,10 @@ fn u17_membership_refuses_after_the_target_domain() {
     let three = f.quantity(whole(3), f.m);
     let target = decimal_type(-2, 2, 0, RoundingMode::Exact);
     let mut meter = limits(2, 1, 0, 1, 2, 0);
-    assert_eq!(
+    assert!(matches!(
         converted(f.at(&three), &f.unit(f.m), &target, &mut meter),
-        Outcome::Refused(Refusal::DecimalOutOfDomain)
-    );
+        Outcome::Refused(Refusal::DecimalOutOfDomain { .. })
+    ));
     assert_eq!(
         meter.admitted_charges(),
         [ChargePoint::UnitIdentityRead, ChargePoint::UnitTargetDomain]
@@ -2323,10 +2323,10 @@ fn u29_integer_target_charges_integer_bits_only() {
         )
     };
     let mut meter = limits(15, 0, 1, 1, 4, 1);
-    assert_eq!(
+    assert!(matches!(
         run(&inch, RoundingMode::Exact, &mut meter),
-        Outcome::Refused(Refusal::InexactDecimal)
-    );
+        Outcome::Refused(Refusal::InexactDecimal { .. })
+    ));
     assert_eq!(
         meter.admitted_charges(),
         [
@@ -2354,10 +2354,10 @@ fn u29_integer_target_charges_integer_bits_only() {
     assert_eq!(value.value(), &int(0));
     let three = f.quantity(whole(3), f.m);
     let mut meter = limits(2, 0, 0, 1, 2, 0);
-    assert_eq!(
+    assert!(matches!(
         run(&three, RoundingMode::Exact, &mut meter),
-        Outcome::Refused(Refusal::IntegerOutOfDomain)
-    );
+        Outcome::Refused(Refusal::IntegerOutOfDomain { .. })
+    ));
     assert_eq!(
         meter.admitted_charges(),
         [ChargePoint::UnitIdentityRead, ChargePoint::UnitTargetDomain]
@@ -2384,10 +2384,18 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
         converted(f.at(&centimetres), &f.unit(f.m), target, meter)
     };
     let mut meter = unlimited();
-    assert_eq!(
-        run(&integer_target(-10, 10, RoundingMode::Exact), &mut meter),
-        Outcome::Refused(Refusal::InexactDecimal)
-    );
+    // FR-096: an integer target's refusal names the declared `Int[-10, 10]`,
+    // not the scale-zero placement type.
+    let Outcome::Refused(Refusal::InexactDecimal { target }) =
+        run(&integer_target(-10, 10, RoundingMode::Exact), &mut meter)
+    else {
+        panic!("strict exact refuses 2.5 m at an integer target");
+    };
+    assert!(matches!(
+        target,
+        quire_exact::InexactTarget::Integer(interval)
+            if *interval == IntegerInterval::spanning(Integer::from(-10_i64), Integer::from(10_i64))
+    ));
     assert!(!meter
         .admitted_charges()
         .contains(&ChargePoint::UnitTargetDomain));
@@ -2424,15 +2432,15 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
 
     let exact_three = f.quantity(whole(300), f.cm);
     let mut meter = unlimited();
-    assert_eq!(
+    assert!(matches!(
         converted(
             f.at(&exact_three),
             &f.unit(f.m),
             &integer_target(-2, 2, RoundingMode::Exact),
             &mut meter
         ),
-        Outcome::Refused(Refusal::IntegerOutOfDomain)
-    );
+        Outcome::Refused(Refusal::IntegerOutOfDomain { .. })
+    ));
     assert_eq!(
         meter.admitted_charges().last(),
         Some(&ChargePoint::UnitTargetDomain)
