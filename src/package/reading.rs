@@ -386,6 +386,7 @@ fn authority(
     Ok(())
 }
 
+#[qsl_attrs::string_edge]
 pub(super) fn read<'model>(
     bytes: &[u8],
     expected: NativePackageRef,

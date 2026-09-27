@@ -369,6 +369,7 @@ pub(super) fn validate(
 /// package FR-056 admitted at linking, selects that package's document
 /// dependency, and carries only exports of that package, each located at
 /// the whole document. Returns its export targets.
+#[qsl_attrs::string_edge]
 fn domain_model<'a>(
     model: &w::Model,
     artifact: &w::ArtifactRef,

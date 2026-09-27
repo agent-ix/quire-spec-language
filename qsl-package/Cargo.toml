@@ -12,6 +12,10 @@ description = "ADR-011 §6.1 layer 4: the S4 checked-package typestate, the quir
 # `tests/it/family_outcome_layering.rs` (TC-390) asserts that this table
 # names no other workspace crate.
 [dependencies]
+# ADR-012 section 9 / FR-064: the `#[string_edge]` marker attribute, exempt
+# from the layer table below (it is a zero-cost marker `xtask string-edge`
+# reads, not a semantic dependency).
+qsl-attrs = { path = "../qsl-attrs" }
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-semantics = { path = "../qsl-semantics" }
 # K: the I2 reader keys the v2 source map by the kernel occurrence `Origin`

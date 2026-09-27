@@ -33,6 +33,7 @@ pub const TIMESTAMPED_WINDOW: &str = "quire.temporal.timestamped-event.finite-wi
 impl Profile {
     /// Resolve an exact registered identity. An unknown or similarly spelled
     /// identity yields `None`; no nearest-compatible profile is selected.
+    #[qsl_attrs::string_edge]
     pub fn from_identity(identity: &str) -> Option<Self> {
         match identity {
             EVENT_POSITION => Some(Self::EventPosition),

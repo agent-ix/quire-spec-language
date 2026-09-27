@@ -909,7 +909,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             .get(owner as usize)
             .and_then(|declaration| declaration.bindings.get(index as usize))
             .ok_or_else(|| Stop::Refused(Refusal::SurplusBinding(handle.clone())))?;
-        if offered.observation_contract_revision != OBSERVATION_CONTRACT_REVISION
+        if !is_current_observation_contract_revision(&offered.observation_contract_revision)
             || !valid_identity(&offered.static_selection.document_identity)
             || !valid_identity(&offered.static_selection.model_identity)
             || !valid_identity(&offered.static_selection.profile_identity)
@@ -2475,6 +2475,14 @@ fn valid_observation_digest(value: &ObservationDigest) -> bool {
 
 fn valid_identity(value: &str) -> bool {
     !value.is_empty() && value.len() <= 4096
+}
+
+/// The one reader of an offered `AuthorityEvidence`'s wire observation-contract
+/// revision (ADR-012 section 9): admits it only against the one currently
+/// supported [`OBSERVATION_CONTRACT_REVISION`].
+#[qsl_attrs::string_edge]
+fn is_current_observation_contract_revision(revision: &str) -> bool {
+    revision == OBSERVATION_CONTRACT_REVISION
 }
 
 struct RequiredInputs {

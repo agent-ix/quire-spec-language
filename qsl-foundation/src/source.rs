@@ -339,6 +339,7 @@ impl Source {
     /// refuse with no region and without hashing the bytes; invalid UTF-8,
     /// a BOM and NUL refuse at a region under the `RawSourceRef` of the
     /// offered bytes. An admitted source carries its `RawSourceRef`.
+    #[qsl_attrs::string_edge]
     pub fn read_typed(
         identity: SourceIdentity,
         path: impl Into<String>,

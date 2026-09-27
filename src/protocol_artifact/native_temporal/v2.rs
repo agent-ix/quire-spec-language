@@ -416,6 +416,7 @@ fn finish_request(wire: RequestWire, limits: Limits, usage: &mut Usage) -> Resul
     })
 }
 
+#[qsl_attrs::string_edge]
 fn admit_request(
     wire: RequestWire,
     subject: &ValidatedTemporalSubject,
@@ -604,6 +605,7 @@ pub fn evaluate(
 }
 
 /// Strictly reads canonical v2 results, including the request and correction trigger binding.
+#[qsl_attrs::string_edge]
 pub fn read_result(
     bytes: &[u8],
     request: &ValidatedRequest,

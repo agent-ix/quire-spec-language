@@ -75,7 +75,7 @@ use quire_contract_ir::{
     CheckedPackageEvidence, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2,
     CheckedRevision, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
     CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRegion,
-    NominalIdentityPreimage, NominalOwner, CHECKED_PACKAGE_V2, DOMAIN_PACKAGE_DIGEST,
+    NominalIdentityPreimage, NominalOwner, ValueForm, CHECKED_PACKAGE_V2, DOMAIN_PACKAGE_DIGEST,
     PACKAGE_DOMAIN_V2,
 };
 use serde::Serialize;
@@ -94,9 +94,6 @@ use qsl_semantics::value::{
 use quire_exact::{NodeKey, Origin, NODE_KEY_DOMAIN};
 
 use super::{CheckedPackage, EmittedPackage};
-
-/// The `value` form whose node never carries a `declaration` (FR-322).
-const ENUM_VALUE_FORM: &str = "enum_value";
 
 /// The FR-322 graph schema version every node carries.
 const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
@@ -393,8 +390,10 @@ impl<'g> Candidate<'g> {
                 | CheckedNodeTag::State
                 | CheckedNodeTag::Temporal
                 | CheckedNodeTag::Correspondence
-        ) || (self.tag == CheckedNodeTag::Value
-            && self.node.semantic_form() == ENUM_VALUE_FORM);
+        ) || matches!(
+            CheckedNodeKind::decode(self.tag, self.node.semantic_form()),
+            Some(CheckedNodeKind::Value(ValueForm::EnumValue))
+        );
         let declared = !forced_absent
             && self
                 .occurrences

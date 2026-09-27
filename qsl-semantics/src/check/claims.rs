@@ -73,13 +73,41 @@ const SCALAR_FAMILIES: [&str; 8] = [
     "quire.op.enum.",
 ];
 
+/// The role a lowered application's operation identity plays in claim
+/// classification (ADR-012 section 9): resolved once from the emitted
+/// identity string, never re-derived by comparing it a second time. Every
+/// reader of a lowered application's narrow/scalar role reads this closed
+/// classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OperationRole {
+    /// The narrowing conversion itself: never a claim of its own.
+    Narrow,
+    /// A scalar operation-family application: a claim site.
+    Scalar,
+    /// Neither: not a claim site.
+    Other,
+}
+
+/// The one reader of a lowered application's operation identity that
+/// resolves it to a closed [`OperationRole`] (ADR-012 section 9).
+#[qsl_attrs::string_edge]
+fn operation_role(identity: &str) -> OperationRole {
+    if identity == NARROW {
+        OperationRole::Narrow
+    } else if SCALAR_FAMILIES
+        .iter()
+        .any(|family| identity.starts_with(family))
+    {
+        OperationRole::Scalar
+    } else {
+        OperationRole::Other
+    }
+}
+
 /// Whether a lowered application of `identity` is a scalar operation
 /// application.
 fn is_scalar_identity(identity: &str) -> bool {
-    identity != NARROW
-        && SCALAR_FAMILIES
-            .iter()
-            .any(|family| identity.starts_with(family))
+    operation_role(identity) == OperationRole::Scalar
 }
 
 /// A binder of a checked body: the node that binds it, by location, and the
@@ -661,7 +689,7 @@ pub(crate) fn key_claims(
             here.iter()
                 .find(|(narrow, _)| {
                     application(*narrow).is_some_and(|(identity, arguments)| {
-                        identity == NARROW
+                        operation_role(identity) == OperationRole::Narrow
                             && matches!(arguments, [SemanticTerm::Reference { target }] if target.0 == *key)
                     })
                 })

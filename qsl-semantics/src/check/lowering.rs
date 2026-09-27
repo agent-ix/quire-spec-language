@@ -238,14 +238,14 @@ impl SemanticNode {
         let SemanticTerm::Aggregate { members } = &self.content.body else {
             return None;
         };
-        let SemanticTerm::Aggregate { members } =
-            members.iter().find_map(|member| match member {
-                SemanticTerm::Binding { name, value } if name == FUNCTION_PARAMETERS => {
-                    Some(value.as_ref())
-                }
-                _ => None,
-            })?
-        else {
+        // FR-092 "Function nodes": the parameters binding is first among a
+        // function node's members (`lowering`'s own emitter always pushes it
+        // before `body`/`decreases`), so this reads it positionally rather
+        // than re-deriving the role by comparing the binding's name.
+        let SemanticTerm::Binding { value, .. } = members.first()? else {
+            return None;
+        };
+        let SemanticTerm::Aggregate { members } = value.as_ref() else {
             return None;
         };
         members

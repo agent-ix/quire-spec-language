@@ -307,6 +307,7 @@ fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
 /// `counterexamples`/`accounting` member is read if `contract_version` or
 /// `capability_vocabulary` mismatch, or if the encoded size is over the
 /// configured reader bound (FR-069-AC-2, FR-069-AC-4).
+#[qsl_attrs::string_edge]
 pub fn read_backend_provider_envelope(
     source: &BackendProviderSource,
 ) -> Result<Vec<ProofResultEnvelope>, ProofResultRefusal> {

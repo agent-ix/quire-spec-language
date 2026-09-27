@@ -121,25 +121,34 @@ than accept it into the allow-list.
 
 ## Status
 
-**Partial.** `#[string_edge]` and `xtask string-edge` are built, `string-edge`
-is a prerequisite of `make ci` (the lint gate), and `cargo xtask string-edge`
-reports no unmarked, unlisted occurrence over the whole workspace. Every
-occurrence the scan finds is either a `#[string_edge]`-marked edge (an intake
-reader, a typed wire reader, CLI argument parsing, or a source scanner doing
-its one total conversion) or was converted onto a closed enum or typed
-identity (QSL-145). The allow-list is empty.
+**Implemented.** `#[string_edge]` and `xtask string-edge` are built,
+`string-edge` is a prerequisite of `make ci` (the lint gate), and `cargo
+xtask string-edge` reports no unmarked, unlisted occurrence over the whole
+workspace. The detector resolves both a string literal and a comparison,
+method call or `match` arm against a named same-crate `const NAME: &str`
+(the string-value clause, QSL-287): `const NAME: &str` at module, `impl` and
+trait scope, matched by its last path segment. Every occurrence the scan
+finds is either a `#[string_edge]`-marked edge (an intake reader, a typed
+wire reader, CLI argument parsing, or a source scanner doing its one total
+conversion) or was converted onto a closed enum or typed identity (QSL-145,
+QSL-287). The allow-list is empty.
 
-**Not yet built: the string-value clause (owner: [QSL-287](https://linear.app/agent-ix/issue/QSL-287)).** Behavior asks the scan to report
-a comparison between a string and "another `&str`/`String` value". The scan
-reads string *literals* only. A comparison against a named `const NAME: &str`
-or between two string bindings is not reported, so a clean scan does not show
-that no named-constant dispatch remains. Known unresolved instances are
-`identity == NARROW` in `qsl-semantics/src/check/claims.rs`, `name ==
-FUNCTION_PARAMETERS` in `qsl-semantics/src/check/lowering.rs` and
-`semantic_form() == ENUM_VALUE_FORM` in `qsl-package/src/emit.rs`. A detector
-that resolves same-crate `const NAME: &str` operands is preserved on branch
-`task/145-268-string-edge-consts`; landing it requires converting or marking
-the sites it reports first.
+QSL-287's re-measurement against a clean scan found 53 named-constant
+occurrences across roughly 35 functions the literal-only scan could not see.
+Wire, contract-version and format checks (the large majority) are marked
+`#[string_edge]`, each a genuine one-shot admission edge. Five sites needed a
+real typed conversion rather than a mark, because the same fact was
+re-derived by comparing the identity string a second time, or a wire enum
+already existed to decode into instead of comparing forms directly:
+`qsl-semantics/src/check/claims.rs`'s `identity == NARROW` (both sites) now
+resolve through one closed `OperationRole` classifier; `qsl-semantics/src/
+check/lowering.rs`'s `name == FUNCTION_PARAMETERS` reads the parameters
+binding positionally (it is always the function node's first member, by
+construction, not merely by name); and `qsl-package/src/emit.rs`'s
+`semantic_form() == ENUM_VALUE_FORM` decodes through IR's existing
+`CheckedNodeKind::decode`/`ValueForm::EnumValue`, the same closed vocabulary
+`form_is_supported` already uses one line above it, rather than comparing
+the wire form string a second time.
 
 Detector scope (QSL-268): a comparison is branch-gating when it feeds an
 `if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`
@@ -155,21 +164,27 @@ chain, is a match arm's own value, or is a `strip_prefix` call.
 - FR-064-AC-4: backed
   (`a_non_empty_report_exits_non_zero_a_clean_scan_exits_zero`).
 - FR-064-AC-5: backed for the sites in the tree. The two-entry and
-  five-site-shape halves are synthetic fixtures tagged `FR-064-AC-5`. The
-  real-site half is
+  five-site-shape halves are synthetic fixtures tagged `FR-064-AC-5`, and
+  `named_string_consts_are_resolved_like_literals` covers the string-value
+  clause's own synthetic shapes (a module const, an assoc const, a method
+  call and a match arm). The real-site half is
   `real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`,
   which scans the real files with marks ignored and asserts the ADR-010 §4.3
   dispatch strings still compared in the tree are branch-gating and rejected
   as allow-list entries: `CanonicalizationDomain::from_str`
   (`"filament-canonical-json-1"`), `AdapterArtifact::try_from`
-  (`"quire.state.authority-adapter"`) and `clock_binding_name` (`"clock:"`).
-  The `"quire.protocol.finite-global/v1"` profile is registry data matched by
-  the registry table, and the `"allocation"` site is gone from the tree.
+  (`"quire.state.authority-adapter"`) and `clock_binding_name` (`"clock:"`);
+  the same test also covers a real named-constant site QSL-287's
+  re-measurement found (`operation_role`'s `identity == NARROW`,
+  `qsl-semantics/src/check/claims.rs`), proving the const-resolving detector,
+  not only the literal one, finds it. The `"quire.protocol.finite-global/v1"`
+  profile is registry data matched by the registry table, and the
+  `"allocation"` site is gone from the tree.
   `combinator_terms_arm_values_and_prefix_gates_are_branch_gating` covers the
   widened shapes.
 - FR-064-AC-6: backed (`the_real_makefile_wires_string_edge_into_ci`,
   `a_failed_prerequisite_fails_the_aggregate_target`; the gate itself is
   `make ci`).
 
-Six of six acceptance criteria are backed; the Behavior clause on
-string-value comparisons is not built (above).
+Six of six acceptance criteria are backed, and the Behavior clause on
+string-value comparisons is built (above).

@@ -259,6 +259,7 @@ pub(crate) fn sample<S: TransitionSystem>(
     clippy::too_many_arguments,
     reason = "FR-101 pins this exact signature; the parameters are the request's own fields, not an accretion of unrelated flags"
 )]
+#[qsl_attrs::string_edge]
 pub fn sample_request<S: TransitionSystem>(
     system: &S,
     domains: &[(WireNodeId, &ValueType)],

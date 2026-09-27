@@ -844,6 +844,7 @@ fn expected_definition(
     ))
 }
 
+#[qsl_attrs::string_edge]
 fn validate_wire(
     wire: &Wire,
     subject: &ValidatedTemporalSubject,

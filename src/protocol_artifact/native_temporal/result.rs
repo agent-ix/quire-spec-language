@@ -854,6 +854,7 @@ pub fn evaluate(
 }
 
 /// Strictly reads by re-evaluating the exact request and relation before byte comparison.
+#[qsl_attrs::string_edge]
 pub fn read(
     bytes: &[u8],
     request: &ValidatedRequest,
