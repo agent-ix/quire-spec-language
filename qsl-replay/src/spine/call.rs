@@ -286,15 +286,15 @@ pub fn run(
 }
 
 /// The selected function: its S6a name and declared parameters.
-struct Selected<'a> {
-    name: qsl_eval::value::QualifiedName,
-    parameters: &'a [(String, ValueType)],
+pub(crate) struct Selected<'a> {
+    pub(crate) name: qsl_eval::value::QualifiedName,
+    pub(crate) parameters: &'a [(String, ValueType)],
 }
 
 /// Resolve `function` by one-segment name lookup in `package`'s
 /// declarations (OQ-5, as `qsl_replay::replay` does), refusing shapes FR-100
 /// names before ever looking one up.
-fn select<'a>(
+pub(crate) fn select<'a>(
     package: &'a CheckedPackage,
     function: &str,
 ) -> Result<Selected<'a>, Box<RunRefusal>> {
@@ -330,7 +330,7 @@ fn select<'a>(
 }
 
 /// An ASCII identifier: a letter or `_`, then letters, digits or `_`.
-fn is_identifier(segment: &str) -> bool {
+pub(crate) fn is_identifier(segment: &str) -> bool {
     let mut bytes = segment.bytes();
     match bytes.next() {
         Some(byte) if byte.is_ascii_alphabetic() || byte == b'_' => {}
@@ -344,7 +344,7 @@ fn is_identifier(segment: &str) -> bool {
 /// is converted -- FND-010: binding order is checked in full before any
 /// value's kind is), then convert each bound value to its parameter's
 /// declared type, ordered by declared parameter position.
-fn bind_arguments(
+pub(crate) fn bind_arguments(
     parameters: &[(String, ValueType)],
     arguments: &[CallArgument],
 ) -> Result<Vec<Value>, Box<RunRefusal>> {
@@ -395,7 +395,7 @@ fn bind_arguments(
 /// type (FR-098's rule): an integer for an integer type, `0`/`1` for
 /// `Boolean`. Any other value, or a parameter of a kind neither `Boolean`
 /// nor an integer type, refuses `WrongValueKind` before the call.
-fn argument_value(
+pub(crate) fn argument_value(
     position: usize,
     value: i64,
     value_type: &ValueType,
@@ -424,7 +424,7 @@ fn argument_value(
 
 /// `CheckedPackage::call`'s admission failure, converted with no `qsl_eval`
 /// path in the conversion's own signature (only in this function body).
-fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box<RunRefusal> {
+pub(crate) fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box<RunRefusal> {
     use qsl_eval::value::{CallFailure, InputRefusal};
     match failure {
         CallFailure::Input(InputRefusal::WrongValueKind { parameter }) => {
@@ -460,7 +460,10 @@ fn kernel_undefined_reason(reason: Undefined) -> &'static str {
 /// reference equals the region's (FR-100). Every other locus shape, and a
 /// region matching no supplied source, is an internal failure ("a locus
 /// naming no supplied source is an internal failure", FR-100).
-fn resolve_locus(locus: &Locus, sources: &[Source]) -> Result<CallLocus, Box<RunRefusal>> {
+pub(crate) fn resolve_locus(
+    locus: &Locus,
+    sources: &[Source],
+) -> Result<CallLocus, Box<RunRefusal>> {
     let unresolved = || {
         Box::new(RunRefusal::Fault(InternalFault::new(
             "spine-run",
@@ -526,7 +529,7 @@ fn convert_refusal(
 /// FR-063 seam: adding a `FamilyOutcome` variant with no arm here fails
 /// `--cfg seam_probe` with `E0004`.
 #[deny(clippy::wildcard_enum_match_arm)]
-fn convert_outcome(
+pub(crate) fn convert_outcome(
     evaluation: qsl_eval::value::Evaluation,
     graph: &CheckedGraph,
     sources: &[Source],

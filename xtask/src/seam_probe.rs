@@ -203,12 +203,22 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             item: "evaluate_declaration".to_owned(),
         },
         SeamLocation {
-            file: "qsl-eval/src/value/expression/s6a.rs".to_owned(),
+            file: "qsl-eval/src/value/expression/s6a/mod.rs".to_owned(),
             item: "S6aFamilyKind::family".to_owned(),
         },
         SeamLocation {
             file: "qsl-eval/src/value/expression/family.rs".to_owned(),
             item: "ValueFunctionFamily::evaluate".to_owned(),
+        },
+        // QSL-278 (FR-107, FR-090 lines 44-45): `ProtocolClause`'s own
+        // per-family S6a evaluator, the same seam shape as
+        // `ValueFunctionFamily::evaluate` immediately above -- the S6a
+        // family kind's "one variant per family that implements
+        // `ReferenceEvaluation`" rule growing by one family, not a new
+        // kind of seam.
+        SeamLocation {
+            file: "qsl-eval/src/value/expression/s6a/protocol_clause.rs".to_owned(),
+            item: "ProtocolClauseFamily::evaluate".to_owned(),
         },
         SeamLocation {
             file: "qsl-semantics/src/check/check/typing.rs".to_owned(),

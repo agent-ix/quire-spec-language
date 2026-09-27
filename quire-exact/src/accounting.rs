@@ -273,11 +273,23 @@ pub enum ChargePoint {
     /// (`check` never returns `Incomplete`, ADR-012 §2's structured-outcome
     /// row).
     DeclarationCheck,
+    /// `graph.expand` (FR-107, QSL-278): one node enqueued by a `reaches`
+    /// walk, its source included.
+    GraphExpand,
+    /// `graph.edge` (FR-107): one edge target visited by a `reaches` walk.
+    GraphEdge,
+    /// `graph.result-retain` (FR-107): a `reaches` walk's Boolean result.
+    GraphResultRetain,
+    /// `model.deref` (FR-107): one `deref(...)` of a model reference.
+    ModelDeref,
+    /// `model.navigate` (FR-107): one model attribute field read
+    /// (`self.f`/`deref(r).f`).
+    ModelNavigate,
 }
 
 impl ChargePoint {
     /// Every named point, grouped by family in normative order.
-    pub const ALL: [Self; 57] = [
+    pub const ALL: [Self; 62] = [
         Self::DecimalOperands,
         Self::DecimalScaleExpansion,
         Self::DecimalArithmetic,
@@ -335,6 +347,11 @@ impl ChargePoint {
         Self::PopulationVisit,
         Self::DispatchSelect,
         Self::DeclarationCheck,
+        Self::GraphExpand,
+        Self::GraphEdge,
+        Self::GraphResultRetain,
+        Self::ModelDeref,
+        Self::ModelNavigate,
     ];
 
     /// Normative identifier.
@@ -397,6 +414,11 @@ impl ChargePoint {
             Self::PopulationVisit => "population.visit",
             Self::DispatchSelect => "dispatch.select",
             Self::DeclarationCheck => "declaration.check",
+            Self::GraphExpand => "graph.expand",
+            Self::GraphEdge => "graph.edge",
+            Self::GraphResultRetain => "graph.result-retain",
+            Self::ModelDeref => "model.deref",
+            Self::ModelNavigate => "model.navigate",
         }
     }
 

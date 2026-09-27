@@ -1624,12 +1624,16 @@ impl<'a> Typer<'a> {
 
     /// `deref(r).f` over the typed reference `r`, read at
     /// `operand_location` (the `deref(r)` operand's own location).
+    /// `derefed` is whether the source wrote an explicit `deref(...)`
+    /// (`self.f`/`r.f` inside a state clause never does; SR-750 FND-008
+    /// round 2).
     fn attribute(
         &self,
         reference: Node,
         field: &str,
         operand_location: &Location,
         location: &Location,
+        derefed: bool,
     ) -> Result<Node, CheckRefusal> {
         let ValueType::Reference(key) = reference.value_type else {
             return Err(mismatch(operand_location));
@@ -1653,6 +1657,7 @@ impl<'a> Typer<'a> {
                 field: attribute.identity(),
                 reference: Box::new(reference),
                 optional,
+                derefed,
             },
             value_type,
             location,

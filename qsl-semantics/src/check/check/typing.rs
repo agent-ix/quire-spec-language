@@ -1368,7 +1368,7 @@ impl<'a> Typer<'a> {
                     && matches!(typed.value_type, ValueType::Reference(_)) =>
             {
                 let operand_location = location.child(0);
-                self.attribute(typed, field, &operand_location, &location)
+                self.attribute(typed, field, &operand_location, &location, false)
                     .map(Step::Typed)
             }
             Frame::Field(field, location) => self.field(typed, field, &location).map(Step::Typed),
@@ -1393,7 +1393,13 @@ impl<'a> Typer<'a> {
                 }
             }
             Frame::Attribute(frame) => self
-                .attribute(typed, frame.field, &frame.operand_location, &frame.location)
+                .attribute(
+                    typed,
+                    frame.field,
+                    &frame.operand_location,
+                    &frame.location,
+                    true,
+                )
                 .map(Step::Typed),
             Frame::Application(mut frame) => {
                 frame.typed.push(typed);

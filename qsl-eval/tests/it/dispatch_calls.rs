@@ -164,6 +164,7 @@ fn objects(receiver_type: EffectiveId, identity: &str) -> ObjectEnvironment {
     ObjectEnvironment::new(
         &types,
         [(receiver_reference(receiver_type, identity), vec![])],
+        &[],
     )
     .unwrap()
 }
@@ -626,7 +627,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
     .check(CheckingLimits::default())
     .expect("a single clause-kind function with no dispatch table checks cleanly");
     let package = CheckedPackage::link(graph);
-    let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
+    let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let refusal = package
         .call(
@@ -1901,6 +1902,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
             (receiver_reference(a_type, "a1"), vec![]),
             (receiver_reference(b_type, "b1"), vec![]),
         ],
+        &[],
     )
     .unwrap();
 

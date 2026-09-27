@@ -905,6 +905,7 @@ mod checked {
                     Vec::new(),
                 )
             }),
+            &[],
         )
         .unwrap();
         let parameters = [("hs", ValueType::collection(holders)), ("h1", holder_type)];
@@ -993,6 +994,7 @@ mod checked {
                     Vec::new(),
                 )
             }),
+            &[],
         )
         .unwrap();
         let parameters = [

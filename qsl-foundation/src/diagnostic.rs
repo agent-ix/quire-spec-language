@@ -1161,6 +1161,16 @@ mod foundation_tests {
         SourceIdentity, Span, SyntaxLimit, CATALOG_CATEGORIES,
     };
 
+    /// `Code::from_code` is the typed reverse lookup of `Code::as_str`,
+    /// round-tripping every code, and `None` for an unrecognized spelling.
+    #[test]
+    fn from_code_round_trips_every_code_and_refuses_an_unknown_one() {
+        for code in Code::all() {
+            assert_eq!(Code::from_code(code.as_str()), Some(*code));
+        }
+        assert_eq!(Code::from_code("not_a_real_code"), None);
+    }
+
     /// FR-001-AC-11: the native `Diagnostic` of `Source::read` carries
     /// `blank-label` with its label, or `empty-path`, on
     /// `invalid_source_identity`.

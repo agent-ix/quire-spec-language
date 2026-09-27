@@ -629,7 +629,7 @@ pub enum ModelRefusalCause {
     },
     /// FR-046/FR-151: an invocation creates an object outside its
     /// operation's declared `creates` frame. One of four distinct
-    /// `crate::model::population::enforce_frame` conditions sharing the
+    /// `crate::model::population::decide_frame` conditions sharing the
     /// catalogued `Code::FrameViolation`/`unauthorized-change` cause tag
     /// (`native-diagnostics.md`); kept as its own variant, like every other
     /// cause in this enum, so a caller distinguishes it by match arm rather
@@ -686,7 +686,7 @@ pub enum ModelRefusalCause {
         identity: String,
     },
     /// FR-046: an invocation's caller-supplied delta disagrees with the
-    /// complete created/deleted sets `enforce_frame` computed from the pre
+    /// complete created/deleted sets `decide_frame` computed from the pre
     /// and post populations. `Code::PopulationDeltaMismatch`/
     /// `delta-disagreement`.
     DeclaredDeltaMismatch {

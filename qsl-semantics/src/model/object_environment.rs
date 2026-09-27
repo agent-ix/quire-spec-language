@@ -24,7 +24,7 @@
 //! `model`, above the `value::declaration` registry it reads, instead of
 //! importing `model` upward from `semantic_value`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::model::population::PopulationBinding;
@@ -93,9 +93,17 @@ pub struct ObjectEnvironment {
 impl ObjectEnvironment {
     /// Admit `objects` as `(reference, attributes)` pairs against the model
     /// object types of `types`. An omitted `?` attribute is `absent`.
+    ///
+    /// Every reference any attribute holds must name an object of the
+    /// environment, except a reference in `tolerated_dangling`: the exact
+    /// targets a caller has already decided may dangle. FR-106 admission
+    /// passes the references its check 8 skipped, because they name an
+    /// incomplete population nothing requires; every other caller passes
+    /// `&[]`.
     pub fn new<'n>(
         types: &TypeEnvironment,
         objects: impl IntoIterator<Item = (ObjectReference, Vec<(&'n str, FieldValue)>)>,
+        tolerated_dangling: &[ObjectReference],
     ) -> Result<Self, ObjectEnvironmentRefusal> {
         let mut admitted = BTreeMap::new();
         for (reference, attributes) in objects {
@@ -117,8 +125,9 @@ impl ObjectEnvironment {
             objects: admitted,
             populations: BTreeMap::new(),
         };
+        let tolerated: BTreeSet<&ObjectReference> = tolerated_dangling.iter().collect();
         for (owner, slots) in &environment.objects {
-            environment.check_closed(owner, slots)?;
+            environment.check_closed(owner, slots, &tolerated)?;
         }
         Ok(environment)
     }
@@ -168,7 +177,30 @@ impl ObjectEnvironment {
         self.populations.get(&population_id).map(Arc::as_ref)
     }
 
-    /// Whether the referenced object is in the environment.
+    /// The environment's own reference whose universe is `universe` and
+    /// declared key is `object`, whatever its most-specific type is (FR-109:
+    /// a `Function` selection's object argument names an object by
+    /// population and key alone, with no declared type of its own to
+    /// narrow the search). `None` when no admitted object matches, or more
+    /// than one does (an object identity is unique within one universe, so
+    /// more than one match is a broken admission invariant, not a real
+    /// ambiguity).
+    pub fn find(
+        &self,
+        universe: quire_exact::UniverseId,
+        object: &str,
+    ) -> Option<&ObjectReference> {
+        let mut found = self.objects.keys().filter(|reference| {
+            reference.universe() == universe && reference.object().as_str() == object
+        });
+        let first = found.next()?;
+        match found.next() {
+            None => Some(first),
+            Some(_) => None,
+        }
+    }
+
+    /// Whether `reference` names an object of the environment.
     pub fn contains(&self, reference: &ObjectReference) -> bool {
         self.objects.contains_key(reference)
     }
@@ -195,11 +227,14 @@ impl ObjectEnvironment {
         &self,
         owner: &ObjectReference,
         slots: &[FieldValue],
+        tolerated: &BTreeSet<&ObjectReference>,
     ) -> Result<(), ObjectEnvironmentRefusal> {
         let mut pending: Vec<&Value> = present(slots).collect();
         while let Some(value) = pending.pop() {
             match value {
-                Value::Reference(reference) if !self.objects.contains_key(reference) => {
+                Value::Reference(reference)
+                    if !self.objects.contains_key(reference) && !tolerated.contains(reference) =>
+                {
                     return Err(ObjectEnvironmentRefusal {
                         object: Box::new(owner.clone()),
                         cause: ObjectEnvironmentCause::DanglingReference(Box::new(

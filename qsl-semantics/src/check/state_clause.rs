@@ -124,7 +124,14 @@ impl StateClauseDeclaration {
 }
 
 /// The read-only declarations a state clause checks against.
-pub(crate) struct ClauseDeclarations<'a> {
+///
+/// The type itself stays `pub`: it is `FamilyContract::Declarations`
+/// (`family/contract.rs`), a trait `qsl-eval` and `qsl-package` also
+/// implement/consume, so E0446 ("private in public") refuses a
+/// `pub(crate)` type here. Its fields are `pub(crate)` (SR-750 FND-012):
+/// only `check::mod`'s own state-clause checking constructs or reads one,
+/// never a caller outside `qsl-semantics`.
+pub struct ClauseDeclarations<'a> {
     pub(crate) scope: &'a Scope,
     pub(crate) signatures: &'a Signatures,
     pub(crate) dispatch_tables: &'a [DispatchTable],
@@ -148,8 +155,13 @@ pub struct PopulationDomain {
 }
 
 /// What an `operation-contract` claim is about.
+///
+/// `pub`, not narrowed: an enum's own variants cannot carry a narrower
+/// visibility than the enum itself, and this enum is `ClauseClaim::subject`
+/// (below)'s field type, which must stay reachable wherever `ClauseClaim`
+/// is (SR-750 FND-012).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ClaimSubject {
+pub enum ClaimSubject {
     /// The clause itself, keyed by its `claim` occurrence.
     Clause,
     /// The frame of the operation a `pre` or `post` clause names, keyed by
@@ -159,8 +171,11 @@ pub(crate) enum ClaimSubject {
 
 /// One `operation-contract` claim of a checked state clause, before
 /// lowering keys it (ADR-012 §13.5).
+///
+/// The type itself stays `pub` (`FamilyContract::Claim`, same reasoning as
+/// [`ClauseDeclarations`]); its own field is `pub(crate)` (SR-750 FND-012).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ClauseClaim {
+pub struct ClauseClaim {
     pub(crate) subject: ClaimSubject,
     /// The population domains the item ranges over.
     pub(crate) populations: Vec<PopulationDomain>,
@@ -169,23 +184,31 @@ pub(crate) struct ClauseClaim {
 /// A state clause checked by [`ProtocolClauseFamily::check`], before
 /// lowering keys it.
 #[derive(Debug)]
-pub(crate) struct TypedStateClause {
+pub struct TypedStateClause {
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) body: Node,
     pub(crate) slots: usize,
     pub(crate) slot_names: Vec<String>,
     pub(crate) observations: Observations,
     pub(crate) formed_units: crate::value::quantity::UnitTable,
-    pub(crate) nodes_used: u64,
+    pub nodes_used: u64,
     /// The object types whose population domains the claims name, the
     /// context's first.
     pub(crate) population_types: Vec<EffectiveId>,
     pub(crate) claims: Vec<ClauseClaim>,
+    /// Whether slot 1 is `result` (FR-104 "Behavior": a postcondition of an
+    /// operation with a result binds it there; nothing else does). Carried
+    /// as its own typed field, not re-derived by name from `parameters` at
+    /// the S6a seam (QSL-278, FR-064's string-edge rule: dispatch on a
+    /// parameter's name, not on a typed field the checker already knows,
+    /// is exactly the kind of comparison a `#[string_edge]` reader marks,
+    /// never an interior evaluator decision).
+    pub(crate) has_result: bool,
 }
 
 /// The `ProtocolClause` family's state clause production (ADR-012 §15.2,
 /// FR-104).
-pub(crate) struct ProtocolClauseFamily;
+pub struct ProtocolClauseFamily;
 
 /// The one population with no maximum that covers `object`, by conformance
 /// (FR-104, FR-084's `allInstances<T>`: a member type or a proper supertype
@@ -352,6 +375,7 @@ fn check_clause(
         nodes_used: nodes,
         population_types,
         claims,
+        has_result,
     })
 }
 
@@ -371,6 +395,7 @@ pub struct CheckedStateClause {
     pub(crate) identity: NodeKey,
     pub(crate) claim: Origin,
     pub(crate) spans: DeclarationSpans,
+    pub(crate) has_result: bool,
 }
 
 impl CheckedStateClause {
@@ -398,6 +423,15 @@ impl CheckedStateClause {
     /// each with its type, in slot order.
     pub fn parameters(&self) -> &[(String, ValueType)] {
         &self.parameters
+    }
+
+    /// Whether slot 1 is `result` (a postcondition of an operation with a
+    /// declared result; never true for an invariant or a precondition, or
+    /// a postcondition of an operation with none). FR-104 "Behavior": the
+    /// evaluator (S6a) reads this typed field to decide whether to bind
+    /// `result`, instead of comparing a parameter's name.
+    pub fn binds_result(&self) -> bool {
+        self.has_result
     }
 
     /// The checked Boolean body.

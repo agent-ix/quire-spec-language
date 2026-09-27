@@ -390,6 +390,13 @@ pub enum NodeKind {
         field: FieldRef,
         /// Whether the attribute is optional.
         optional: bool,
+        /// Whether the source wrote an explicit `deref(r).f`, rather than
+        /// `self.f`/`r.f` in a state clause (`check/check/typing.rs`'s
+        /// `Frame::Field`/`Frame::Attribute` split): FR-107's own accounting
+        /// rule charges `model.deref` once per `deref(...)`, never for a
+        /// bare `self.f`/`r.f` read, though both give this same node kind
+        /// (SR-750 FND-008 round 2).
+        derefed: bool,
     },
     /// Whether an `Option` operand holds a value.
     Present(Box<Node>),

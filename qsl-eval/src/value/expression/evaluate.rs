@@ -8,11 +8,12 @@
 //! make no charge.
 
 use std::cmp::Ordering;
+use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
-    StateModelUndefined,
+    ProtocolClauseUnsupported, StateModelUndefined,
 };
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
@@ -23,7 +24,7 @@ use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::population::PopulationBinding;
-use qsl_semantics::value::declaration::{operand_value, CompositeShape};
+use qsl_semantics::value::declaration::{operand_value, CompositeShape, FieldRef};
 use qsl_semantics::value::enumeration::{compare_enum, EnumMemberIndex};
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use qsl_semantics::value::quantity::{
@@ -33,7 +34,7 @@ use qsl_semantics::value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, FieldValue,
-    OptionValue, Value, ValueType,
+    ObjectReference, OptionValue, Value, ValueType,
 };
 use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
@@ -226,6 +227,13 @@ fn charge_element(meter: &mut Meter) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(ChargePoint::CollectionElement))?)
 }
 
+/// One charge at `point`, one work unit, no size or result units
+/// (FR-107: `model.deref`, `model.navigate`, `graph.expand`, `graph.edge`,
+/// `graph.result-retain`).
+fn charge_named(meter: &mut Meter, point: ChargePoint) -> Result<(), Stop> {
+    Ok(meter.charge(Charge::new(point))?)
+}
+
 /// `dispatch.select`: one dispatched `receiver.member(args)` call, sized by
 /// `candidates`, the table's total distinct-candidate count
 /// (`value-accounting.md`: `value_occurrences=c`; `work_units += c`).
@@ -337,6 +345,17 @@ struct Iteration<'a> {
     count: Integer,
 }
 
+/// Which value family a [`Machine`] evaluates (SR-750 FND-011 round 2):
+/// set once by the constructor, never inferred from `reads.is_some()` at
+/// each call to [`Machine::is_protocol_clause`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EvaluationFamily {
+    /// [`Machine::new`]: the `Value` family, no state-clause observations.
+    Value,
+    /// [`Machine::with_pre`]: FR-107's `ProtocolClause` family (S6a).
+    Protocol,
+}
+
 pub(crate) struct Machine<'a, 'm> {
     scope: &'a Scope,
     /// The checked package's functions, read by index where a call runs
@@ -345,6 +364,24 @@ pub(crate) struct Machine<'a, 'm> {
     /// `native-diagnostics.md`).
     graph: &'a CheckedGraph,
     objects: &'a ObjectEnvironment,
+    /// FR-107: a precondition's or postcondition's pre observation, distinct
+    /// from `objects` (the clause's own observation: `current` for an
+    /// invariant, `post` for a postcondition). `None` for the `Value`
+    /// family, which has no state-clause observations at all.
+    pre_objects: Option<&'a ObjectEnvironment>,
+    /// FR-107: every model read's own observation, by its checked
+    /// location (`CheckedStateClause::reads`), consulted only at an
+    /// `Attribute` node to choose `objects` or `pre_objects`. Empty for the
+    /// `Value` family.
+    reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+    /// Which family this `Machine` evaluates (SR-750 FND-011 round 2): set
+    /// once, explicitly, by whichever constructor built it, rather than
+    /// inferred from `reads.is_some()`. [`Self::new`] always builds
+    /// [`EvaluationFamily::Value`]; [`Self::with_pre`] always builds
+    /// [`EvaluationFamily::Protocol`], since every call site of
+    /// `with_pre` (`s6a::protocol_clause` and this module's own tests)
+    /// supplies a `reads` map.
+    family: EvaluationFamily,
     meter: &'m mut Meter,
     dispatch_tables: &'a [DispatchTable],
     values: Vec<Value>,
@@ -379,11 +416,64 @@ impl<'a, 'm> Machine<'a, 'm> {
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
+        Self::build(
+            scope,
+            graph,
+            objects,
+            None,
+            None,
+            meter,
+            dispatch_tables,
+            EvaluationFamily::Value,
+        )
+    }
+
+    /// [`Self::new`], additionally carrying a precondition's or
+    /// postcondition's pre observation and the clause's own model-read
+    /// observations (FR-107): `pre_objects` is consulted at an `Attribute`
+    /// node whose location `reads` maps to `Observation::Pre`. Both are
+    /// `None` for every caller but [`super::protocol_clause`]'s S6a hook,
+    /// which always supplies `reads` (`EvaluationFamily::Protocol`).
+    pub(crate) fn with_pre(
+        scope: &'a Scope,
+        graph: &'a CheckedGraph,
+        objects: &'a ObjectEnvironment,
+        pre_objects: Option<&'a ObjectEnvironment>,
+        reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+        meter: &'m mut Meter,
+        dispatch_tables: &'a [DispatchTable],
+    ) -> Self {
+        Self::build(
+            scope,
+            graph,
+            objects,
+            pre_objects,
+            reads,
+            meter,
+            dispatch_tables,
+            EvaluationFamily::Protocol,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        scope: &'a Scope,
+        graph: &'a CheckedGraph,
+        objects: &'a ObjectEnvironment,
+        pre_objects: Option<&'a ObjectEnvironment>,
+        reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+        meter: &'m mut Meter,
+        dispatch_tables: &'a [DispatchTable],
+        family: EvaluationFamily,
+    ) -> Self {
         let enum_members = scope.enum_member_index();
         Self {
             scope,
             graph,
             objects,
+            pre_objects,
+            reads,
+            family,
             meter,
             dispatch_tables,
             values: Vec::new(),
@@ -834,10 +924,17 @@ impl<'a, 'm> Machine<'a, 'm> {
             | NodeKind::If { .. }
             | NodeKind::Connective(..)
             | NodeKind::Pre(_) => return Err(invariant()),
-            // FR-104: `reaches` checks only inside a state clause, and no
-            // function body this evaluator runs is one; FR-107 (QSL-278)
-            // evaluates state clauses.
-            NodeKind::Reaches { .. } => return Err(invariant()),
+            // FR-107 (QSL-278): `reaches(source, target, edge)`, checked
+            // only inside a state clause.
+            NodeKind::Reaches { edge, .. } => {
+                let Value::Reference(target) = self.pop()? else {
+                    return Err(invariant());
+                };
+                let Value::Reference(source) = self.pop()? else {
+                    return Err(invariant());
+                };
+                Value::Boolean(self.evaluate_reaches(node, &source, &target, edge)?)
+            }
             // FR-063: no arm for the probe variant under `--cfg seam_probe`
             // alone (`E0004`, this seam's evidence). The arm below exists
             // only in the probe's build of the crates above `qsl-eval`
@@ -1020,13 +1117,32 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Self::project(slot, *optional, node.value_type())?
             }
             NodeKind::Attribute {
-                field, optional, ..
+                field,
+                optional,
+                derefed,
+                ..
             } => {
                 let Value::Reference(reference) = self.pop()? else {
                     return Err(invariant());
                 };
+                // FR-107's own model.deref/model.navigate charges are an
+                // S6a accounting rule (`value-accounting.md`, cited by
+                // FR-107's Behavior section), never a `Value`-family one:
+                // this `Attribute` arm is shared by both families, and
+                // charging it unconditionally would add charge units to
+                // every `Value`-family attribute read that had none before
+                // FR-107 (SR-750 FND-008). `model.deref` charges once per
+                // explicit `deref(...)` in the source, never for a bare
+                // `self.f`/`r.f` read that types identically (SR-750
+                // FND-008 round 2, `derefed`, `check/ir.rs`'s own doc).
+                if self.is_protocol_clause() {
+                    if *derefed {
+                        charge_named(self.meter, ChargePoint::ModelDeref)?;
+                    }
+                    charge_named(self.meter, ChargePoint::ModelNavigate)?;
+                }
                 let slot = self
-                    .objects
+                    .objects_for(node)?
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(invariant)?;
                 Self::project(slot, *optional, node.value_type())?
@@ -1249,6 +1365,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 retain_scalar(Value::Boolean(found), self.meter)?
             }
             NodeKind::AllInstances { population } => {
+                if self.is_protocol_clause() {
+                    return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                        ProtocolClauseUnsupported::AllInstances,
+                    ))));
+                }
                 let Value::Population(population_id) = self.pop()? else {
                     return Err(invariant());
                 };
@@ -1267,6 +1388,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 absence,
                 population,
             } => {
+                if self.is_protocol_clause() {
+                    return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                        ProtocolClauseUnsupported::Lookup,
+                    ))));
+                }
                 let reference_value = self.pop()?;
                 let Value::Population(population_id) = self.pop()? else {
                     return Err(invariant());
@@ -1382,6 +1508,153 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         self.values.push(value);
         Ok(())
+    }
+
+    /// FR-107: the `ObjectEnvironment` a model read at `node` observes --
+    /// `pre_objects` when `reads` maps `node`'s location to
+    /// `Observation::Pre` and a pre environment is carried, `objects`
+    /// (the clause's own `current`/`post` observation) otherwise. Always
+    /// `objects` for the `Value` family, which carries neither `reads` nor
+    /// `pre_objects`.
+    ///
+    /// **A `pre` read reached with no pre observation refuses, never falls
+    /// back silently** (`FR-107-evaluate-state-clauses-at-s6a.md:102-105`:
+    /// "If a `pre(e)` is reached in a postcondition whose observations
+    /// carry no pre observation, then the evaluator SHALL return
+    /// `FamilyResult::Refused` with `wrong_snapshot`/`wrong-anchor`").
+    /// Admission makes this unreachable for a well-formed selection; the
+    /// arm exists so the case has a typed result, the same rationale
+    /// `select_anchor` above already documents for the population-read
+    /// case (SR-750 FND-013).
+    fn objects_for(&self, node: &Node) -> Result<&'a ObjectEnvironment, Halt> {
+        match self.reads {
+            Some(reads)
+                if reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre) =>
+            {
+                self.pre_objects.ok_or_else(|| {
+                    Halt::Family(FamilyResult::Refused(Box::new(
+                        ProtocolClauseSnapshot::WrongAnchor {
+                            required: "pre",
+                            supplied: "post",
+                        },
+                    )))
+                })
+            }
+            _ => Ok(self.objects),
+        }
+    }
+
+    /// Whether this `Machine` is running a `ProtocolClause` (FR-107):
+    /// `self.family` is set once, explicitly, by whichever constructor
+    /// built it (SR-750 FND-011 round 2), never inferred per-call from
+    /// `self.reads.is_some()`. Consulted only to refuse
+    /// `allInstances`/`lookup` (see [`ProtocolClauseUnsupported`]'s doc):
+    /// FR-104 admits either into a checked clause body, but FR-107
+    /// specifies no evaluation for them.
+    fn is_protocol_clause(&self) -> bool {
+        self.family == EvaluationFamily::Protocol
+    }
+
+    /// FR-107: `reaches(source, target, edge)`, evaluated as
+    /// `value-accounting.md`'s "Model and graph evaluation" paragraph
+    /// states: charge `graph.expand` for `source` and enqueue it; for each
+    /// dequeued node and each target `t` of `edge`, in the edge's own
+    /// order, charge one `graph.edge`, return `true` when `t` is `target`,
+    /// and otherwise charge `graph.expand` for an undiscovered `t` and
+    /// enqueue it; an empty queue gives `false`; then charge
+    /// `graph.result-retain`.
+    fn evaluate_reaches(
+        &mut self,
+        node: &'a Node,
+        source: &ObjectReference,
+        target: &ObjectReference,
+        edge: &FieldRef,
+    ) -> Result<bool, Halt> {
+        charge_named(self.meter, ChargePoint::GraphExpand)?;
+        let mut discovered: BTreeSet<ObjectReference> = BTreeSet::new();
+        discovered.insert(source.clone());
+        let mut queue: VecDeque<ObjectReference> = VecDeque::new();
+        queue.push_back(source.clone());
+        let mut found = false;
+        'walk: while let Some(current) = queue.pop_front() {
+            for next in self.edge_targets(node, &current, edge)? {
+                charge_named(self.meter, ChargePoint::GraphEdge)?;
+                if next == *target {
+                    found = true;
+                    break 'walk;
+                }
+                if discovered.insert(next.clone()) {
+                    charge_named(self.meter, ChargePoint::GraphExpand)?;
+                    queue.push_back(next);
+                }
+            }
+        }
+        charge_named(self.meter, ChargePoint::GraphResultRetain)?;
+        Ok(found)
+    }
+
+    /// The targets `edge` names on `current`, in the edge's own order: one
+    /// for a required `Reference<T>` field, zero or one for an optional
+    /// one, and each element in sequence order for a required sequence of
+    /// `Reference<T>` (FR-104's own restriction on `edge`'s declared kind,
+    /// `check.rs`'s `reaches` eligibility check).
+    ///
+    /// A field's presence (`Presence::Required`/`Presence::Optional`) is a
+    /// declaration-level property distinct from its `value_type()`
+    /// (`FieldDeclaration` keeps them as two fields, not one wrapping the
+    /// other, `model::intake::read_field_member`): an optional
+    /// `Reference<T>` field's `value_type()` is the bare
+    /// `ValueType::Reference(_)`, never `ValueType::Option(_)` -- that
+    /// variant names a genuinely `Option`-typed *value* (e.g. a checked
+    /// `NodeKind::Attribute` read's own synthesized static type), not model
+    /// field presence, and `reaches`'s own S3 eligibility check never
+    /// admits one. This reads `presence()` to decide whether an absent slot
+    /// is a valid zero-target read or a broken invariant.
+    fn edge_targets(
+        &self,
+        node: &'a Node,
+        current: &ObjectReference,
+        edge: &FieldRef,
+    ) -> Result<Vec<ObjectReference>, Halt> {
+        let declared = self
+            .scope
+            .types()
+            .attributes(current.object_type())
+            .ok_or_else(invariant)?;
+        let attribute = declared
+            .iter()
+            .find(|attribute| attribute.stands_for(edge))
+            .ok_or_else(invariant)?;
+        let field = attribute.field();
+        let slot = self
+            .objects_for(node)?
+            .attribute(self.scope.types(), current, edge)
+            .ok_or_else(invariant)?;
+        match field.value_type() {
+            ValueType::Reference(_) => match (slot, field.presence()) {
+                (FieldValue::Present(Value::Reference(reference)), _) => {
+                    Ok(vec![reference.clone()])
+                }
+                (FieldValue::Absent | FieldValue::Null, quire_exact::Presence::Optional) => {
+                    Ok(Vec::new())
+                }
+                _ => Err(invariant()),
+            },
+            ValueType::Collection(collection) if collection.kind() == CollectionKind::Sequence => {
+                match slot {
+                    FieldValue::Present(Value::Collection(collection)) => collection
+                        .elements()
+                        .iter()
+                        .map(|element| match element {
+                            Value::Reference(reference) => Ok(reference.clone()),
+                            _ => Err(invariant()),
+                        })
+                        .collect(),
+                    _ => Err(invariant()),
+                }
+            }
+            _ => Err(invariant()),
+        }
     }
 
     fn project(slot: &FieldValue, optional: bool, value_type: &ValueType) -> Result<Value, Halt> {
@@ -1667,7 +1940,7 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_foundation::diagnostic::Category;
-    use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+    use qsl_semantics::check::{CheckMode, CheckingLimits, PackageDeclarations};
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::dispatch::GeneralizationClosure;
     use qsl_semantics::model::domain_package::{
@@ -1860,6 +2133,397 @@ mod tests {
         assert_eq!(
             fault.invariant(),
             "population-argument-maximum-mismatch-past-admission"
+        );
+    }
+
+    /// FR-107 (QSL-278): `allInstances<T>(p)` reached while evaluating a
+    /// `ProtocolClause` (`Machine::with_pre`'s `reads: Some(_)`, the one
+    /// signal `Machine::is_protocol_clause` reads) refuses
+    /// `unknown_required_feature`/`unsupported-feature`, never an
+    /// `InternalFault` and never `Halt`ing through `resolve_population`.
+    ///
+    /// No admitted `StateClauseDeclaration` can actually reach this node:
+    /// `ValueTypeRef` (`model::domain_package`), the only vocabulary a
+    /// domain-package operation's parameter or result may draw from, has no
+    /// `Population` variant, and `qsl-cst`'s grammar parses no `Population<
+    /// T>[N]` type reference either -- a state clause's `self`, `result`
+    /// and operation parameters can never carry a `Value::Population`
+    /// (see [`ProtocolClauseUnsupported`]'s own doc). This test reuses
+    /// [`population_function_package`]'s already-checked `allInstances`
+    /// node (legal for a plain `Value` function, FR-153) and runs it
+    /// directly through `Machine::with_pre` with a protocol-clause-shaped
+    /// `reads` map, to exercise the guard itself rather than leave it
+    /// unreachable from every test.
+    #[trace("TC-467")]
+    #[test]
+    fn all_instances_under_a_protocol_clause_refuses_unsupported_construct() {
+        let (package, _identity) = population_function_package();
+        let graph = package.graph();
+        let expression = graph
+            .check_expression(
+                vec![("p".to_owned(), ValueType::Population(Some(3)))],
+                &Expression::AllInstances {
+                    target: TypeForm::name("M::A", SPAN),
+                    population: Box::new(Expression::Name("p".to_owned())),
+                },
+                None,
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .expect("allInstances<M::A>(p) checks as a standalone expression");
+        let objects = ObjectEnvironment::default();
+        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
+            std::collections::BTreeMap::new();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let arguments = vec![Value::Population(PopulationId::from_digest([9; 32]))];
+        let evaluation = Machine::with_pre(
+            graph.scope(),
+            graph,
+            &objects,
+            None,
+            Some(&reads),
+            &mut meter,
+            graph.dispatch_tables(),
+        )
+        .run(expression.root(), expression.slots(), arguments)
+        .expect("a family-owned refusal is `Ok(FamilyEvaluated)`, never an `Err`");
+        match evaluation.outcome {
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
+                let code = cause.catalog_code();
+                assert_eq!(code.code(), "unknown_required_feature");
+                assert_eq!(code.cause(), "unsupported-feature");
+                assert_eq!(
+                    cause.catalog_fields(),
+                    Some(std::collections::BTreeMap::from([(
+                        "construct",
+                        "allInstances".to_owned()
+                    )]))
+                );
+            }
+            other => panic!("expected FamilyEvaluated(Refused(_)), got {other:?}"),
+        }
+    }
+
+    /// TC-467: `lookup<M::A>(p, r) absent Refused` under a
+    /// protocol clause refuses `unknown_required_feature`/
+    /// `unsupported-feature` naming `lookup`, the same guard as
+    /// [`all_instances_under_a_protocol_clause_refuses_unsupported_construct`],
+    /// checked directly as a standalone expression (no domain-package
+    /// operation parameter or result can carry a `Value::Reference` bound to
+    /// a population read either, so this, too, is unreachable from any
+    /// admitted `ProtocolClause`, but the guard is exercised here rather
+    /// than left untested).
+    #[trace("TC-467")]
+    #[test]
+    fn lookup_under_a_protocol_clause_refuses_unsupported_construct() {
+        use qsl_foundation::absence::AbsenceMode;
+
+        let (package, _identity) = population_function_package();
+        let graph = package.graph();
+        // `M::A`'s own effective id, re-derived the same way
+        // `population_function_package` does (it does not expose its own).
+        let a = match normalize(
+            &domain_package("bundle.qsl174-ac10-seam"),
+            ModelNormalizationLimits::UNLIMITED,
+        ) {
+            NormalizeOutcome::Completed(view) => view
+                .type_identities()
+                .get(&DeclarationKey::fixture("model.A"))
+                .copied()
+                .expect("model.A has a type-level effective declaration"),
+            other => panic!("expected a completed effective view, got {other:?}"),
+        };
+        let expression = graph
+            .check_expression(
+                vec![
+                    ("p".to_owned(), ValueType::Population(Some(3))),
+                    ("r".to_owned(), ValueType::Reference(a)),
+                ],
+                &Expression::Lookup {
+                    target: TypeForm::name("M::A", SPAN),
+                    population: Box::new(Expression::Name("p".to_owned())),
+                    reference: Box::new(Expression::Name("r".to_owned())),
+                    absence: AbsenceMode::Refused,
+                },
+                None,
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .expect("lookup<M::A>(p, r) absent Refused checks as a standalone expression");
+        let objects = ObjectEnvironment::default();
+        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
+            std::collections::BTreeMap::new();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let arguments = vec![
+            Value::Population(PopulationId::from_digest([9; 32])),
+            Value::Reference(ObjectReference::new(
+                quire_exact::UniverseId::from_digest([9; 32]),
+                a,
+                quire_exact::ObjectId::new("root".to_owned()).expect("non-empty key"),
+            )),
+        ];
+        let evaluation = Machine::with_pre(
+            graph.scope(),
+            graph,
+            &objects,
+            None,
+            Some(&reads),
+            &mut meter,
+            graph.dispatch_tables(),
+        )
+        .run(expression.root(), expression.slots(), arguments)
+        .expect("a family-owned refusal is `Ok(FamilyEvaluated)`, never an `Err`");
+        match evaluation.outcome {
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
+                let code = cause.catalog_code();
+                assert_eq!(code.code(), "unknown_required_feature");
+                assert_eq!(code.cause(), "unsupported-feature");
+                assert_eq!(
+                    cause.catalog_fields(),
+                    Some(std::collections::BTreeMap::from([(
+                        "construct",
+                        "lookup".to_owned()
+                    )]))
+                );
+            }
+            other => panic!("expected FamilyEvaluated(Refused(_)), got {other:?}"),
+        }
+    }
+
+    /// SR-750 FND-013 (FR-107-evaluate-state-clauses-at-s6a.md:102-105): a
+    /// `pre` read reached with no pre observation refuses `wrong_snapshot`/
+    /// `wrong-anchor`, never silently falling back to `objects`
+    /// (`self.objects`). Admission makes this unreachable for a
+    /// well-formed selection (a `reads` entry marking a location `Pre`
+    /// always comes with an attached `pre_objects`); this test bypasses
+    /// admission the same way the two tests above do, to exercise the
+    /// guard itself.
+    #[trace("TC-467")]
+    #[test]
+    fn a_pre_read_with_no_pre_observation_refuses_wrong_anchor() {
+        let a_with_field = qsl_semantics::model::domain_package::DomainPackage::new(
+            qsl_semantics::model::domain_package::DomainPackageRef::fixture("bundle.qsl278-fnd013"),
+            vec![
+                qsl_semantics::model::domain_package::DomainPackageRecord::ObjectType(
+                    qsl_semantics::model::domain_package::ObjectTypeRecord {
+                        key: DeclarationKey::fixture("model.A"),
+                        interface_features: None,
+                        abstract_type: false,
+                        supertypes: Vec::new(),
+                    },
+                ),
+            ],
+        );
+        let view = match normalize(&a_with_field, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("expected a completed effective view, got {other:?}"),
+        };
+        let a = view
+            .type_identities()
+            .get(&DeclarationKey::fixture("model.A"))
+            .copied()
+            .expect("model.A has a type-level effective declaration");
+        let types = qsl_semantics::value::declaration::TypeEnvironment::new(
+            [],
+            [
+                qsl_semantics::value::declaration::ObjectTypeDeclaration::new(
+                    a,
+                    "M::A",
+                    vec![qsl_semantics::value::declaration::FieldDeclaration::new(
+                        "x",
+                        quire_exact::ValueType::Integer,
+                        quire_exact::Presence::Required,
+                    )],
+                ),
+            ],
+        )
+        .expect("one object type with one field admits cleanly");
+        let model = qsl_semantics::check::AdmittedModel::new(&a_with_field, &view)
+            .expect("the view is the domain package's own");
+        let graph = PackageDeclarations {
+            types,
+            models: vec![model],
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        }
+        .check(CheckingLimits::default())
+        .expect("one type with one field checks cleanly");
+
+        let expression = graph
+            .check_expression(
+                vec![("r".to_owned(), ValueType::Reference(a))],
+                &Expression::Field {
+                    operand: Box::new(Expression::Deref(Box::new(Expression::Name(
+                        "r".to_owned(),
+                    )))),
+                    field: "x".to_owned(),
+                },
+                None,
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .expect("deref(r).x checks as a standalone expression");
+        // `reads` marks the Attribute node's own location `Pre`, but
+        // `pre_objects` (below) is `None` -- exactly the caller-input
+        // defect `objects_for` must now refuse rather than silently read
+        // `objects` (the post/current environment) for.
+        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
+            std::collections::BTreeMap::from([(
+                expression.root().location().clone(),
+                qsl_semantics::check::Observation::Pre,
+            )]);
+        let objects = ObjectEnvironment::default();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let arguments = vec![Value::Reference(ObjectReference::new(
+            quire_exact::UniverseId::from_digest([9; 32]),
+            a,
+            quire_exact::ObjectId::new("a1".to_owned()).expect("non-empty key"),
+        ))];
+        let evaluation = Machine::with_pre(
+            graph.scope(),
+            &graph,
+            &objects,
+            None,
+            Some(&reads),
+            &mut meter,
+            graph.dispatch_tables(),
+        )
+        .run(expression.root(), expression.slots(), arguments)
+        .expect("a family-owned refusal is `Ok(FamilyEvaluated)`, never an `Err`");
+        match evaluation.outcome {
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
+                let code = cause.catalog_code();
+                assert_eq!(code.code(), "wrong_snapshot");
+                assert_eq!(code.cause(), "wrong-anchor");
+            }
+            other => panic!("expected FamilyEvaluated(Refused(_)), got {other:?}"),
+        }
+    }
+
+    /// SR-750 FND-008 round 2 (`FR-107-evaluate-state-clauses-at-s6a.md:92-93`,
+    /// "charge `model.deref` for each `deref(...)` and `model.navigate` for
+    /// each field read"): a protocol-clause `deref(r).x` charges both
+    /// `ModelDeref` and `ModelNavigate`, in that order -- confirmed by
+    /// running it (this fails against the code before this fix, which
+    /// charged `ModelNavigate` alone for every `Attribute` read regardless
+    /// of an explicit `deref(...)`).
+    #[trace("TC-467")]
+    #[test]
+    fn a_protocol_clause_deref_charges_model_deref_then_model_navigate() {
+        let a_with_field = qsl_semantics::model::domain_package::DomainPackage::new(
+            qsl_semantics::model::domain_package::DomainPackageRef::fixture("bundle.qsl278-fnd008"),
+            vec![
+                qsl_semantics::model::domain_package::DomainPackageRecord::ObjectType(
+                    qsl_semantics::model::domain_package::ObjectTypeRecord {
+                        key: DeclarationKey::fixture("model.A"),
+                        interface_features: None,
+                        abstract_type: false,
+                        supertypes: Vec::new(),
+                    },
+                ),
+            ],
+        );
+        let view = match normalize(&a_with_field, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("expected a completed effective view, got {other:?}"),
+        };
+        let a = view
+            .type_identities()
+            .get(&DeclarationKey::fixture("model.A"))
+            .copied()
+            .expect("model.A has a type-level effective declaration");
+        let types = qsl_semantics::value::declaration::TypeEnvironment::new(
+            [],
+            [
+                qsl_semantics::value::declaration::ObjectTypeDeclaration::new(
+                    a,
+                    "M::A",
+                    vec![qsl_semantics::value::declaration::FieldDeclaration::new(
+                        "x",
+                        quire_exact::ValueType::Integer,
+                        quire_exact::Presence::Required,
+                    )],
+                ),
+            ],
+        )
+        .expect("one object type with one field admits cleanly");
+        let model = qsl_semantics::check::AdmittedModel::new(&a_with_field, &view)
+            .expect("the view is the domain package's own");
+        let graph = PackageDeclarations {
+            types,
+            models: vec![model],
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        }
+        .check(CheckingLimits::default())
+        .expect("one type with one field checks cleanly");
+
+        let expression = graph
+            .check_expression(
+                vec![("r".to_owned(), ValueType::Reference(a))],
+                &Expression::Field {
+                    operand: Box::new(Expression::Deref(Box::new(Expression::Name(
+                        "r".to_owned(),
+                    )))),
+                    field: "x".to_owned(),
+                },
+                None,
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .expect("deref(r).x checks as a standalone expression");
+        // Marking this location `Current` (never `Pre`) makes `reads.is_some()`
+        // true (`is_protocol_clause`) while `objects_for` reads `objects`
+        // itself, no `pre_objects` needed.
+        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
+            std::collections::BTreeMap::from([(
+                expression.root().location().clone(),
+                qsl_semantics::check::Observation::Current,
+            )]);
+        let reference = ObjectReference::new(
+            quire_exact::UniverseId::from_digest([9; 32]),
+            a,
+            quire_exact::ObjectId::new("a1".to_owned()).expect("non-empty key"),
+        );
+        let objects = ObjectEnvironment::new(
+            graph.scope().types(),
+            [(
+                reference.clone(),
+                vec![(
+                    "x",
+                    quire_exact::FieldValue::Present(Value::Integer(7_i64.into())),
+                )],
+            )],
+            &[],
+        )
+        .expect("one object with its one required field admits cleanly");
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let arguments = vec![Value::Reference(reference)];
+        let evaluation = Machine::with_pre(
+            graph.scope(),
+            &graph,
+            &objects,
+            None,
+            Some(&reads),
+            &mut meter,
+            graph.dispatch_tables(),
+        )
+        .run(expression.root(), expression.slots(), arguments)
+        .expect("deref(r).x over an admitted object completes");
+        match evaluation.outcome {
+            FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(value))) => {
+                assert_eq!(value, quire_exact::Integer::from(7_i64));
+            }
+            other => panic!("expected Evaluated(Completed(Integer(_))), got {other:?}"),
+        }
+        let charges: Vec<_> = meter
+            .admitted_charges()
+            .iter()
+            .copied()
+            .filter(|point| matches!(point, ChargePoint::ModelDeref | ChargePoint::ModelNavigate))
+            .collect();
+        assert_eq!(
+            charges,
+            [ChargePoint::ModelDeref, ChargePoint::ModelNavigate],
+            "deref(r).x charges model.deref once, then model.navigate once"
         );
     }
 }

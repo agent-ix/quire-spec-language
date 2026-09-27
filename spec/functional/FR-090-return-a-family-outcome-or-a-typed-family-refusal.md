@@ -528,7 +528,7 @@ repointed every caller onto `quire_exact::{Outcome, Refusal, Undefined}`
 directly.
 
 The S6a family kind is `S6aFamilyKind { Value }`
-(`qsl-eval/src/value/expression/s6a.rs`, layer 5, beside the `ReferenceEvaluation`
+(`qsl-eval/src/value/expression/s6a/mod.rs`, layer 5, beside the `ReferenceEvaluation`
 trait since QSL-181): `Value` is the family that implements
 `ReferenceEvaluation`. The S6a seam
 `evaluate_declaration` (`qsl-eval/src/value/expression/mod.rs`) matches it with one

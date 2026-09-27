@@ -163,3 +163,7 @@ selection, admission or evaluation result is a report.
   native-run/1 `1-draft` route refuses `selection`, `snapshots` and
   `invocations` today, and the CLI form is a follow-up (the QSL-273 PR's
   open questions).
+
+## Status
+
+The I3 extracted-source input and its provenance fields (the extraction's original identity and digest) are pending QSL-295.

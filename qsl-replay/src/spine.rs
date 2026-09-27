@@ -46,6 +46,12 @@ pub use call::{
     RunRefusal, DEFAULT_WORK_UNITS,
 };
 
+mod clause;
+pub use clause::{
+    run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
+    ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunStage,
+};
+
 /// Why spine [`compile`] produced no checked package. Each
 /// variant is the stage that refused, with its typed cause and, where the
 /// stage records one, the region of the unit it concerns.

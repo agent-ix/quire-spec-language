@@ -16,6 +16,14 @@ use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::family::{EvalOutcome, FamilyContract, FamilyKind};
 use quire_exact::Meter;
 
+/// FR-107 (QSL-278): `ProtocolClause`'s own `ReferenceEvaluation` half,
+/// nested here since it implements this module's own trait (TC-170's own
+/// `value::expression::mod.rs` module-set invariant only allows
+/// `causes`/`evaluate`/`family`/`s6a` at that level, so a family's S6a
+/// impl beside a sibling family's (`family.rs`'s own `ValueFunctionFamily`
+/// impl) instead nests under `s6a`).
+pub(crate) mod protocol_clause;
+
 /// ADR-012 §2's `ReferenceEvaluation`: the `evaluate` hook every family
 /// implements except `Relation` (which has no native evaluation: S6a's input
 /// type admits no `Relation`, ADR-012 §2 and FR-090-AC-4, so no S6a arm or
@@ -94,6 +102,9 @@ macro_rules! s6a_family_kinds {
 s6a_family_kinds! {
     /// `Value`, through `ValueFunctionFamily`'s `evaluate` hook.
     Value,
+    /// `ProtocolClause` (FR-107, QSL-278), through
+    /// `ProtocolClauseFamily`'s `evaluate` hook.
+    ProtocolClause,
 }
 
 impl S6aFamilyKind {
@@ -110,6 +121,7 @@ impl S6aFamilyKind {
     pub(crate) const fn family(self) -> FamilyKind {
         match self {
             Self::Value => FamilyKind::Value,
+            Self::ProtocolClause => FamilyKind::ProtocolClause,
             // FR-063: no arm for `Self::__SeamProbe` -- under
             // `--cfg seam_probe` this match is deliberately non-exhaustive
             // (`E0004`). Do not add a catch-all to make it compile.

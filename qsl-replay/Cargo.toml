@@ -34,6 +34,16 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 # `no_shipped_dependency_enables_test_support`, in the root crate, covers
 # every workspace crate), so it never reaches the production lib.
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
+# QSL-278: the ordered charge log (`Meter::admitted_charges`) FR-107-AC-3's
+# `reaches` charge-sequence test asserts. A production meter keeps a count
+# only; only this dev-dependency enables `test-support`.
+quire-exact = { path = "../quire-exact", features = ["test-support"] }
+# QSL-278: FR-106's snapshot/invocation `DocumentRef.digest` is the
+# document's own `sha256-jcs` digest (FR-056's digest-first rule); the test
+# fixture computes it the same way `model::observation`'s own
+# `document_digest` does, over the one RFC 8785 implementation, rather than
+# guessing or duplicating that logic.
+quire-canonical = { workspace = true }
 
 [lints.rust]
 unsafe_code = "forbid"
