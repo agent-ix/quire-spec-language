@@ -24,6 +24,44 @@
 //! Matching by name alone let a grant on one type's field authorize a
 //! same-named field on any unrelated type; this closes that gap while
 //! keeping the wire boundary's own name-only field identity.
+//!
+//! **Still open (SR-750 FND-007 round 2, disclosed, not attempted here):**
+//! FR-106's own check 11 text says to run this through
+//! `crate::model::population::admit_invocation`/`enforce_frame`
+//! (`population.rs:1259`), rather than reimplementing it. Investigated and
+//! not done, for three concrete reasons found while building the bridge:
+//!
+//! 1. `population::PopulationMember.field_values` (`population.rs:466-483`)
+//!    is FCD FR-121's own runtime population-document shape: `Vec<String>`
+//!    "named objects" for a *reference*-valued field's subsetting check
+//!    only ("This rung's only consumer" is `binding.subset-value`). It has
+//!    no native representation for a *scalar* field value, where FR-106
+//!    check 11.3 needs "every declared field, scalar and reference alike"
+//!    compared. Reusing it would mean lossily string-encoding every scalar
+//!    kind (`Boolean`, `Integer`, `Rational`, `Decimal`, `Float`,
+//!    `Quantity`, `Text`, `Enum`) into that same `Vec<String>` shape, an
+//!    encoding this module cannot verify is loss-free for every kind
+//!    without much wider testing than this fix round's own scope.
+//! 2. `InvocationContext::subtype_closure: GeneralizationClosure`
+//!    (`population.rs:1164-1176`) is not a property `ModelView`/
+//!    `EffectiveView` exposes at admission time: it is a check-time,
+//!    dispatch-linking artifact (`check/checked_dispatch.rs`'s own
+//!    `ancestor_closure`/`root.closure`, computed per operation during S3
+//!    override resolution). This module would have to assume `Closed`
+//!    unconditionally for every package FR-106 ever admits, a claim this
+//!    fix round cannot verify against every package shape.
+//! 3. `admit_invocation` returns only the admitted `PopulationBinding`, never
+//!    the `(created, deleted): (Vec<ObjectReference>, Vec<ObjectReference>)`
+//!    pair `AdmittedObservations` itself needs (FR-106's own check 10/11
+//!    output). Deriving that pair from `PopulationBinding::members()`'s pre/
+//!    post difference is a second, independent computation this module
+//!    would still own regardless of how much of the frame decision itself
+//!    delegates -- "delete your copy" cannot fully happen either way.
+//!
+//! This module's own algorithm already matches `enforce_frame`'s documented
+//! behavior and order exactly (both functions' own doc comments describe
+//! the identical four-step sequence); what is open is the *call*, not the
+//! *decision*.
 
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -1786,6 +1786,105 @@ fn tc465_document_with_note_type() -> Vec<u8> {
     serde_json::to_vec(&envelope).expect("valid JSON")
 }
 
+/// [`tc465_document_with`]'s `attemptUpdate` modifying `[versionNumber]`
+/// only, plus an independent object type `Tag` (no supertype relation to
+/// `ConfigVersion`) that declares its *own* field also named
+/// `versionNumber` -- same display name, unrelated declaring type. `Tag` is
+/// declared a member of `config_history` too (SR-750 FND-007 round 2's own
+/// cross-type test: a grant on `ConfigVersion::versionNumber` must never
+/// authorize a write to `Tag::versionNumber`, a same-named field of an
+/// unrelated type).
+fn tc465_document_with_tag_type_sharing_a_field_name() -> Vec<u8> {
+    let document = tc465_document_with(attempt_update_modifies_version_number());
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let tag = "ix://example/config-version/Tag";
+    let tag_version_number = format!("{tag}/versionNumber");
+    envelope["types"].as_array_mut().unwrap().push(json!({
+        "identity": tag,
+        "displayName": tag,
+        "kind": {"module": "example/config-version", "name": "object_type"},
+        "roles": [],
+        "origin": {
+            "generated": {
+                "generatorIdentity": tag,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [tag],
+            }
+        },
+        "constraints": [],
+        "extensions": [],
+        "unknownPolicy": "reject",
+        "supertypes": [],
+        "fields": [{
+            "identity": tag_version_number,
+            "name": "versionNumber",
+            "typeRef": "ix://quire/native/Integer",
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "origin": {
+                "generated": {
+                    "generatorIdentity": tag_version_number.clone(),
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [tag_version_number],
+                }
+            },
+        }],
+        "operations": [],
+    }));
+    envelope["populations"][0]["members"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!(tag));
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// SR-750 FND-007 round 2: a grant on `ConfigVersion::versionNumber` (the
+/// invocation's own `attemptUpdate` modifies exactly that field) never
+/// authorizes a write to `Tag::versionNumber` -- a same-named field of an
+/// unrelated type, present as a surviving object across the same
+/// invocation's pre and post.
+#[trace("TC-465", "FR-106-AC-5")]
+#[test]
+fn a_same_named_field_of_an_unrelated_type_is_never_authorized() {
+    let document = tc465_document_with_tag_type_sharing_a_field_name();
+    let tag = "ix://example/config-version/Tag";
+    let population = "ix://example/config-version/config_history";
+    let result = run_tc465_invocation(
+        &document,
+        move |value| {
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "key": "t1", "type": tag,
+                    "fields": {"versionNumber": {"integer": "1"}},
+                }));
+        },
+        move |value| {
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "key": "t1", "type": tag,
+                    "fields": {"versionNumber": {"integer": "2"}},
+                }));
+        },
+        |_| {},
+    );
+    let record = assert_tc465_refused(result, "frame_violation", "unauthorized-change");
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some(population)
+    );
+    assert_eq!(record.fields.get("object").map(String::as_str), Some("t1"));
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("versionNumber")
+    );
+}
+
 /// [`tc465_document`], with an extra object type `Sub` (`supertypes:
 /// [ConfigVersion]`, no fields/operations of its own), declared as
 /// `config_history`'s own second member type (row 39: `Sub` "is a member
