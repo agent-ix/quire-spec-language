@@ -46,3 +46,9 @@ Round 2, reviewed at `74c7154ca4adf8621a49968635579410f471102e` (fix commit `74c
 | FND-002 | fixed | 74c7154c: `tc_452_step_5_sum_over_pos_is_sum_out_of_domain_or_completes` (qsl-replay/src/spine/call/tests.rs:793) is traced `TC-452`/`FR-100-AC-10`. It checks `sum<Pos>` for `Pos = Int[1, 9]` under `CheckMode::Kernel` and evaluates it for real: the empty `q` and `[9, 9]` each give `SumOutOfDomain` at the `sum` node, which `convert_outcome` maps to `sum-out-of-domain`; `[4]` completes `"4"`. The render and exit 20 compose with `undefined_kernel_reasons_render_and_exit_20` (src/command/output.rs:678). Not going through `spine::run` is correct: see FND-004. The `qsl-semantics` `test-support` dev-dependency follows the workspace pattern (qsl-eval, qsl-package and the root crate do the same) and is guarded by `no_shipped_dependency_enables_test_support`, which passes. |
 | FND-003 | fixed | 74c7154c: TC-452 Status now says step 4's records and step 5 passed under QSL-245 and QSL-292 (spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md:172-176) |
 | FND-004 | open | New in round 2, low, not blocking: a one-sentence FR-100 clarification. |
+
+Round 3, reviewed at `5e12b1d1eb1db3f3ee5f0f775eb6e6514177e479`. The change is spec text only; `quire validate` on FR-100 is clean.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | 5e12b1d1: FR-100:207-211 now states that `run` never yields `sum-out-of-domain`, that linked checking refuses with `unproved-range` (FR-096), that the row keeps the mapping total, and that only a `CheckMode::Kernel` expression evaluated at S6a reaches it (FR-100-AC-10). This matches `Definedness`/`prefix_sums` in qsl-semantics/src/check/facts.rs. |
