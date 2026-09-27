@@ -15,11 +15,15 @@ use quire_exact::{IllTyped, IllTypedCause};
 /// §12.2 Check row). `region::DeclarationRegions::refusal_region` reads
 /// this span directly rather than through a `Location`'s path: a protocol
 /// has no expression tree for a path to walk.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ProtocolAnchorCause {
     /// FR-113 "Refusals": no scope declares the anchor's first segment, or
     /// a later segment names nothing its previous target declares.
     Missing {
+        /// The anchor's segments exactly as written (FR-113 "Refusals":
+        /// "retaining the segments, the scope, and the first segment that
+        /// failed").
+        segments: Vec<String>,
         /// The segment that failed to resolve.
         segment: String,
         /// The anchor's own lexical scope (outermost first, empty at the
@@ -62,61 +66,17 @@ pub enum ProtocolAnchorCause {
         /// The anchor's reference span.
         span: Span,
     },
-}
-
-// `Span` derives no `Hash` (it is a plain byte range, not a key type), so
-// `ProtocolAnchorCause` hashes its spans as `(start, end)` pairs by hand
-// rather than deriving `Hash`: `CheckCause` derives `Hash`, so every variant
-// it boxes must provide one.
-impl std::hash::Hash for ProtocolAnchorCause {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        fn hash_span<H: std::hash::Hasher>(span: Span, state: &mut H) {
-            span.start.hash(state);
-            span.end.hash(state);
-        }
-        match self {
-            Self::Missing {
-                segment,
-                scope,
-                span,
-            } => {
-                0u8.hash(state);
-                segment.hash(state);
-                scope.hash(state);
-                hash_span(*span, state);
-            }
-            Self::Ambiguous { name, loci, span } => {
-                1u8.hash(state);
-                name.hash(state);
-                for locus in loci {
-                    hash_span(*locus, state);
-                }
-                hash_span(*span, state);
-            }
-            Self::WrongKind {
-                site,
-                admitted,
-                actual,
-                span,
-            } => {
-                2u8.hash(state);
-                site.hash(state);
-                admitted.hash(state);
-                actual.hash(state);
-                hash_span(*span, state);
-            }
-            Self::ChannelMismatch {
-                receive_channel,
-                send_channel,
-                span,
-            } => {
-                3u8.hash(state);
-                receive_channel.hash(state);
-                send_channel.hash(state);
-                hash_span(*span, state);
-            }
-        }
-    }
+    /// A protocol declaration whose anchors all resolve, but whose other
+    /// content (types, roles, operation names, binder types, block bodies)
+    /// has no checker yet, and which nothing emits (QSL-299): kept refused
+    /// rather than silently accepted with no diagnostic (QSL-306 tracks
+    /// completing protocol checking and emission).
+    Unimplemented {
+        /// The declared protocol name.
+        name: String,
+        /// The protocol's declared name span.
+        span: Span,
+    },
 }
 
 impl ProtocolAnchorCause {
@@ -127,7 +87,8 @@ impl ProtocolAnchorCause {
             Self::Missing { span, .. }
             | Self::Ambiguous { span, .. }
             | Self::WrongKind { span, .. }
-            | Self::ChannelMismatch { span, .. } => *span,
+            | Self::ChannelMismatch { span, .. }
+            | Self::Unimplemented { span, .. } => *span,
         }
     }
 
@@ -137,6 +98,7 @@ impl ProtocolAnchorCause {
             Self::Missing { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => Code::IllTyped,
+            Self::Unimplemented { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -148,6 +110,7 @@ impl ProtocolAnchorCause {
             Self::Missing { .. } => "missing-name",
             Self::Ambiguous { .. } => "ambiguous-name",
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => "type-mismatch",
+            Self::Unimplemented { .. } => "not-yet-implemented",
         }
     }
 }

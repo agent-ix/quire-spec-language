@@ -148,7 +148,7 @@ pub struct Position {
 }
 
 /// Half-open original UTF-8 bytes. Coordinates are derived only when requested.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize)]
 pub struct Span {
     /// Inclusive starting byte offset.
     pub start: usize,

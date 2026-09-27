@@ -452,6 +452,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `receive` via `{receive_channel}` names a `send` via \
                      `{send_channel}`"
                 ),
+                ProtocolAnchorCause::Unimplemented { name, .. } => format!(
+                    "{message}: `protocol {name}` resolves but is not checked or emitted yet \
+                     (QSL-306)"
+                ),
             };
         }
         _ => {}
@@ -1194,6 +1198,53 @@ mod tests {
         let end = usize::try_from(region.end()).unwrap();
         assert_eq!(&UNIT[start..end], "true");
         assert_eq!(start, UNIT.rfind("true").unwrap());
+    }
+
+    /// SR-761/SR-762 FND-001: a protocol whose anchors resolve, but whose
+    /// other content is garbage (an undeclared model type, an ill-typed
+    /// body), still refuses through the whole `compile` pipeline rather
+    /// than silently succeeding with the protocol just missing from the
+    /// emitted package -- the defect QSL-297's SR-753 FND-002 already fixed
+    /// once, reintroduced when `AssemblyCause::UnimplementedProtocol` was
+    /// replaced. FR-113 checks anchor resolution only; nothing else checks
+    /// a protocol's content yet, and nothing emits it (QSL-306).
+    #[trace("FR-113")]
+    #[test]
+    fn a_protocol_with_unchecked_garbage_content_does_not_compile_silently() {
+        let unit = "language \"ix:native\" edition \"1-draft\";\n\
+            profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+            \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+            function f using v(): Boolean pure { true }\n\
+            protocol Flow using v over (input: Nope::Input) on origin {\n\
+            role R on Nope::Actor;\n\
+            run sequence Main {\n\
+            attempt Tried by R on Nope::Actor::op contracts [] as (tried: Undeclared) \
+            { 1 + true };\n\
+            effect Applied of Tried as (applied: Undeclared) { true };\n\
+            }\n\
+            finish End as (outcome: Boolean) { true };\n\
+            }\n";
+        let refusal = compile(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .expect_err("a protocol with unchecked content must not compile to a package");
+        match refusal.as_ref() {
+            CompileRefusal::Check { refusals, .. } => {
+                assert!(
+                    refusals.iter().any(|refusal| matches!(
+                        refusal.cause,
+                        qsl_semantics::check::CheckCause::ProtocolAnchor(_)
+                    )),
+                    "{refusals:?}"
+                );
+            }
+            other => panic!("a Check refusal, got {other:?}"),
+        }
     }
 
     /// The unit `header` declares, compiled through spine `compile`.

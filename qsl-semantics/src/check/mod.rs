@@ -1040,7 +1040,15 @@ impl PackageDeclarations {
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
         for protocol in &self.protocols {
             match protocol_clause::check(protocol) {
-                Ok(checked) => checked_protocols.push(checked),
+                Ok(checked) => {
+                    // FR-113 checks only anchor resolution; the rest of a
+                    // protocol's content and its emission (QSL-299) have no
+                    // checker yet (QSL-306), so a protocol that resolves is
+                    // still refused rather than silently compiled with
+                    // unchecked content and dropped from the package.
+                    refusals.push(protocol_clause::unimplemented(protocol));
+                    checked_protocols.push(checked);
+                }
                 Err(protocol_refusals) => refusals.extend(protocol_refusals),
             }
         }
