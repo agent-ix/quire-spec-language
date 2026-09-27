@@ -2453,3 +2453,59 @@ fn tc465_row42_two_blank_labels_names_the_first_in_order() {
         Some("revision_namespace")
     );
 }
+
+/// SR-750 FND-005: pre has a check-8 (dangling reference) defect and post
+/// has a check-6 (wrong-value-kind) defect. FR-106's own numbered order
+/// puts check 6 before check 8, and admission now runs check 6 on both
+/// snapshots before check 7 on either, and check 7 on both before check 8
+/// on either (never fully finishing one snapshot's checks 6-8 before the
+/// other's check 6) -- so post's check-6 defect must be the one reported,
+/// not pre's check-8 one.
+#[trace("TC-465", "FR-106-AC-7")]
+#[test]
+fn tc465_check_order_reports_the_earlier_numbered_check_across_pre_and_post() {
+    let document = tc465_document();
+    let result = run_tc465_invocation(
+        &document,
+        |value| {
+            // Check 8 (dangling): `child.parent` names an object absent
+            // from the (complete) `config_history` population.
+            value["populations"][0]["objects"][0]["fields"]["parent"] = json!({
+                "present": {"reference": {
+                    "population": "ix://example/config-version/config_history",
+                    "key": "missing",
+                }}
+            });
+        },
+        |value| {
+            // Check 6 (wrong-value-kind): `versionNumber` is a boolean.
+            value["populations"][0]["objects"][0]["fields"]["versionNumber"] =
+                json!({"boolean": true});
+        },
+        |_| {},
+    );
+    assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
+}
+
+/// SR-750 FND-006: a precondition does not require `self` in the post
+/// snapshot. `root` (self) is absent from post and declared deleted, but
+/// `attemptUpdate`'s frame (`frame_test_document`, modifies
+/// `[versionNumber]` only) grants no `deletes` -- before this fix, check 9
+/// ran against post for a precondition too and would have refused
+/// `wrong-role-mapping` (self unresolved in post) before check 11 ever
+/// ran; after this fix, check 9 never resolves `self` against post for a
+/// precondition, so check 11's own frame violation (the unauthorized
+/// deletion) is the one reported instead.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn precondition_does_not_require_self_in_the_post_snapshot() {
+    let pre = [("root", 1, None), ("child", 1, None)];
+    let post = [("child", 1, None)];
+    let result = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &[], &["root"]);
+    assert_frame_refused(
+        result,
+        "frame_violation",
+        "unauthorized-change",
+        Some("root"),
+    );
+}

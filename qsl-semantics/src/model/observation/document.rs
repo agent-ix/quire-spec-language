@@ -888,23 +888,28 @@ fn collect_references(raw: &RawValue, into: &mut Vec<(String, String)>) {
     }
 }
 
-/// FR-106 checks 6 to 8: admit every population's every object's every
-/// field, in document order, then completeness (7) then closure (8).
-/// `types` is the checked package's own effective attribute set
-/// (`CheckedGraph::scope().types()`); `views` are the re-derived domain
+/// Check 6's own admitted output, carried between checks 6, 7 and 8: an
+/// invocation's pre and post snapshots each get their own [`PopulationValues`]
+/// from [`admit_population_values`], so a caller can run check 6 on both,
+/// then check 7 on both, then check 8 on both -- FR-106's own numbered-check
+/// order, across two documents, never fully finishing one document's checks
+/// 6 to 8 before starting the other's check 6 (SR-750 FND-005).
+pub(super) struct PopulationValues<'t> {
+    objects: Vec<(ObjectReference, Vec<(&'t str, FieldValue)>)>,
+    pub(super) completeness: BTreeMap<String, bool>,
+    pub(super) keys_by_population: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// FR-106 check 6: admit every population's every object's every field, in
+/// document order. `types` is the checked package's own effective attribute
+/// set (`CheckedGraph::scope().types()`); `views` are the re-derived domain
 /// package views (population declarations and identity strings, `EffectiveId`
-/// conformance). `self_population` is the population holding `self` for
-/// this particular observation, when this observation must resolve `self`
-/// at all (FR-106 check 9: always for the current snapshot and an
-/// invocation's pre snapshot; only for a postcondition's post snapshot) --
-/// `None` skips check 7's unconditional self-population requirement,
-/// never skipping it entirely.
-pub(super) fn admit_populations(
+/// conformance).
+pub(super) fn admit_population_values<'t>(
     views: &[ModelView],
-    types: &TypeEnvironment,
+    types: &'t TypeEnvironment,
     populations: &[RawPopulation],
-    self_population: Option<&str>,
-) -> Result<AdmittedEnvironment, AdmissionFailure> {
+) -> Result<PopulationValues<'t>, AdmissionFailure> {
     let mut objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
     let mut completeness = BTreeMap::new();
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -1020,7 +1025,38 @@ pub(super) fn admit_populations(
         }
     }
 
-    // Check 7: a required population -- the population holding `self`, and,
+    Ok(PopulationValues {
+        objects,
+        completeness,
+        keys_by_population,
+    })
+}
+
+/// FR-106 check 7: a required population -- the population holding `self`,
+/// and, repeatedly, every population a reference field of any object of a
+/// required population names -- must be complete (FR-106's own recursive
+/// definition). `self_population` is the population holding `self` for this
+/// particular observation, when this observation must resolve `self` at all
+/// (FR-106 check 9: always for the current snapshot and an invocation's pre
+/// snapshot; only for a postcondition's post snapshot) -- `None` skips this
+/// check's unconditional self-population requirement, never skipping it
+/// entirely.
+pub(super) fn check_population_completeness(
+    populations: &[RawPopulation],
+    completeness: &BTreeMap<String, bool>,
+    self_population: Option<&str>,
+) -> Result<(), AdmissionFailure> {
+    // Built from the wire-declared `reference.population` (SR-750 FND-001):
+    // a dangling reference (whose target admission never admits into a
+    // typed object) still makes its named population required, or check 8
+    // could never see it, and it still makes `self`'s own population
+    // required even when `self` is never itself the target of any
+    // reference (SR-750 FND-001, "self's population is never required at
+    // all").
+    let mut required: BTreeSet<String> = BTreeSet::new();
+    if let Some(name) = self_population {
+        required.insert(name.to_owned());
+    }
     // repeatedly, every population a reference field of any object of a
     // required population names -- must be complete (FR-106's own
     // recursive definition). Built from the wire-declared
@@ -1077,11 +1113,18 @@ pub(super) fn admit_populations(
             ));
         }
     }
+    Ok(())
+}
 
-    // Check 8: closure, skipped over an incomplete population, over every
-    // reference value of every object in document walk order (not gated by
-    // "required": FR-106's own text names no such restriction for this
-    // check, only for check 7's completeness requirement).
+/// FR-106 check 8: closure, skipped over an incomplete population, over
+/// every reference value of every object in document walk order (not gated
+/// by "required": FR-106's own text names no such restriction for this
+/// check, only for check 7's completeness requirement).
+pub(super) fn check_population_closure(
+    populations: &[RawPopulation],
+    completeness: &BTreeMap<String, bool>,
+    keys_by_population: &BTreeMap<String, BTreeSet<String>>,
+) -> Result<(), AdmissionFailure> {
     for entry in populations {
         for object in &entry.objects {
             for (_, raw) in &object.fields {
@@ -1109,13 +1152,45 @@ pub(super) fn admit_populations(
             }
         }
     }
+    Ok(())
+}
 
-    let environment = ObjectEnvironment::new(types, objects).map_err(map_environment_refusal)?;
-
+/// Builds the final [`AdmittedEnvironment`] from `values`, once checks 6, 7
+/// and 8 have all passed for this observation.
+pub(super) fn finish_populations(
+    types: &TypeEnvironment,
+    values: PopulationValues<'_>,
+) -> Result<AdmittedEnvironment, AdmissionFailure> {
+    let environment =
+        ObjectEnvironment::new(types, values.objects).map_err(map_environment_refusal)?;
     Ok(AdmittedEnvironment {
         environment,
-        completeness,
+        completeness: values.completeness,
     })
+}
+
+/// FR-106 checks 6 to 8 over one observation (a single document, not a
+/// pre/post pair): admits every population's every object's every field
+/// (check 6), then completeness (7), then closure (8), in that order. An
+/// invocation's pre and post snapshots instead call
+/// [`admit_population_values`], [`check_population_completeness`] and
+/// [`check_population_closure`] directly, so the two documents' checks
+/// interleave by check number rather than one document finishing all of
+/// 6-8 before the other starts check 6 (SR-750 FND-005).
+pub(super) fn admit_populations(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    populations: &[RawPopulation],
+    self_population: Option<&str>,
+) -> Result<AdmittedEnvironment, AdmissionFailure> {
+    let values = admit_population_values(views, types, populations)?;
+    check_population_completeness(populations, &values.completeness, self_population)?;
+    check_population_closure(
+        populations,
+        &values.completeness,
+        &values.keys_by_population,
+    )?;
+    finish_populations(types, values)
 }
 
 fn map_environment_refusal(

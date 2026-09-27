@@ -721,6 +721,10 @@ fn admit_operation(
     selected: &DocumentRef,
     limits: ObservationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
+    // Check 1: read every selected document -- the invocation, then its
+    // pre and post snapshots, in that order -- before any of checks 2 to 5
+    // read any of their content (SR-750 FND-005: this must not interleave
+    // with check 4/5, which is what admission did before this fix).
     let read = read_document(
         DocumentKind::Invocation,
         provisions.invocations,
@@ -730,18 +734,6 @@ fn admit_operation(
     let invocation = read
         .as_invocation()
         .ok_or_else(|| fault("expected-invocation-document"))?;
-
-    check_model(views, &invocation.model)?;
-
-    let operation = operation.ok_or_else(|| fault("clause-declares-no-operation"))?;
-    if invocation.context != context_name || invocation.operation != operation.declaration.name() {
-        return Err(refuse(AdmissionRecord::new(
-            "wrong_snapshot",
-            "wrong-invocation",
-        )));
-    }
-
-    // Read the pre and post snapshots.
     let pre_read = read_document(
         DocumentKind::Snapshot,
         provisions.snapshots,
@@ -760,6 +752,9 @@ fn admit_operation(
     let post_snapshot = post_read
         .as_snapshot()
         .ok_or_else(|| fault("expected-snapshot-document"))?;
+
+    // Check 3: observation role (pre/post's own anchor is not applicable
+    // to an invocation's snapshots).
     if pre_snapshot.observation != document::ObservationRole::Pre
         || post_snapshot.observation != document::ObservationRole::Post
     {
@@ -768,31 +763,59 @@ fn admit_operation(
             "wrong-observation",
         )));
     }
+
+    // Check 4: model, for each document in the order it was read.
+    check_model(views, &invocation.model)?;
     check_model(views, &pre_snapshot.model)?;
     check_model(views, &post_snapshot.model)?;
 
+    // Check 5: operation.
+    let operation = operation.ok_or_else(|| fault("clause-declares-no-operation"))?;
+    if invocation.context != context_name || invocation.operation != operation.declaration.name() {
+        return Err(refuse(AdmissionRecord::new(
+            "wrong_snapshot",
+            "wrong-invocation",
+        )));
+    }
+
+    // Checks 6 to 8: pre's own check 6, then post's, then pre's check 7,
+    // then post's, then pre's check 8, then post's -- never fully
+    // finishing one snapshot's checks 6 to 8 before starting the other's
+    // check 6 (SR-750 FND-005).
     let self_object = &invocation.self_object;
     // FR-106 check 9: `self` is required in the current snapshot and an
     // invocation's pre snapshot always, but in the post snapshot only for
     // a postcondition (SR-750 FND-006) -- a precondition of an operation
     // that deletes `self` must not wrongly refuse `wrong-role-mapping`
     // over `self`'s absence from post.
-    let pre_admitted = document::admit_populations(
-        views,
-        types,
-        &pre_snapshot.populations,
-        Some(&self_object.population),
-    )?;
     let post_self_population = match kind {
         StateClauseKind::Postcondition => Some(self_object.population.as_str()),
         StateClauseKind::Invariant | StateClauseKind::Precondition => None,
     };
-    let post_admitted = document::admit_populations(
-        views,
-        types,
+    let pre_values = document::admit_population_values(views, types, &pre_snapshot.populations)?;
+    let post_values = document::admit_population_values(views, types, &post_snapshot.populations)?;
+    document::check_population_completeness(
+        &pre_snapshot.populations,
+        &pre_values.completeness,
+        Some(&self_object.population),
+    )?;
+    document::check_population_completeness(
         &post_snapshot.populations,
+        &post_values.completeness,
         post_self_population,
     )?;
+    document::check_population_closure(
+        &pre_snapshot.populations,
+        &pre_values.completeness,
+        &pre_values.keys_by_population,
+    )?;
+    document::check_population_closure(
+        &post_snapshot.populations,
+        &post_values.completeness,
+        &post_values.keys_by_population,
+    )?;
+    let pre_admitted = document::finish_populations(types, pre_values)?;
+    let post_admitted = document::finish_populations(types, post_values)?;
 
     let self_reference = document::resolve_self(
         context_view,
