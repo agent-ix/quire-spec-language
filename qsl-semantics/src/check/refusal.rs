@@ -34,6 +34,15 @@ pub enum Origin {
         /// The declared name.
         name: String,
     },
+    /// The body of the named state clause (FR-104), at this zero-based
+    /// index among the unit's state clauses in source order. The clause's
+    /// `claim` occurrence is located at its root.
+    StateClause {
+        /// The declared clause name.
+        clause: String,
+        /// The clause's index among the package's state clauses.
+        index: usize,
+    },
 }
 
 /// A located expression: its declaration and the child-index path from that
@@ -201,6 +210,17 @@ impl TryFrom<LimitKind> for CheckingLimitKind {
 /// postcondition it did admit, evaluated at runtime
 /// (`evaluate.rs`'s `select_anchor`) over a population value with no
 /// attached pre binding.
+///
+/// FR-104 adds a second checking-time `wrong_snapshot`/`wrong-anchor`
+/// refusal -- `result` named anywhere but an admitting postcondition -- but
+/// it is not a third variant of this enum: [`super::refusal::CheckCause`]'s
+/// own [`super::refusal::CheckCause::UnanchoredResult`] carries the payload
+/// FR-104-AC-2 needs (the clause kind and the operation), which this type
+/// cannot hold without widening every runtime consumer of the FR-090
+/// evaluation-cause contract. The two share one catalog cause
+/// (`wrong-anchor`) and nothing else: `UnanchoredResult` is `check`'s own
+/// checking-time path to it, [`Self::WrongAnchor`] stays the runtime-only
+/// path, and this enum's two-cause closure is otherwise unchanged.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum WrongSnapshotCause {
     /// A postcondition's `pre(...)` evaluated over a `Value::Population`
@@ -279,6 +299,20 @@ pub enum CheckCause {
         name: String,
         /// Every declaring locus.
         loci: Vec<Location>,
+    },
+    /// `ill_typed` / `non-boolean-root` (FR-104): a state clause body whose
+    /// type is not `Boolean`, at the body.
+    NonBooleanRoot,
+    /// `wrong_snapshot` / `wrong-anchor` (FR-104): `result` written anywhere
+    /// but a postcondition of an operation that declares a result. Names the
+    /// state clause kind and the operation it was written under: both are
+    /// `None` outside a state clause, and the operation is `None` in an
+    /// invariant.
+    UnanchoredResult {
+        /// The state clause kind, or `None` outside a state clause.
+        clause: Option<qsl_forms::StateClauseKind>,
+        /// The operation the clause names, or `None` when it names none.
+        operation: Option<String>,
     },
     /// `undefined_expression` with the cause of its obligation.
     Unproved(Obligation),
@@ -556,8 +590,8 @@ impl CheckCause {
     #[deny(clippy::match_wildcard_for_single_variants)]
     pub fn code(&self) -> Code {
         match self {
-            Self::IllTyped(_) => Code::IllTyped,
-            Self::WrongSnapshot(_) => Code::WrongSnapshot,
+            Self::IllTyped(_) | Self::NonBooleanRoot => Code::IllTyped,
+            Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
             Self::MissingName(_) => Code::MissingDeclaration,
             Self::AmbiguousName { .. } => Code::AmbiguousDeclaration,
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
@@ -590,6 +624,8 @@ impl CheckCause {
         match self {
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
+            Self::NonBooleanRoot => Some("non-boolean-root"),
+            Self::UnanchoredResult { .. } => Some("wrong-anchor"),
             Self::MissingName(_) => Some("missing-name"),
             Self::AmbiguousName { .. } => Some("ambiguous-name"),
             Self::Unproved(Obligation::Nonzero) => Some("unproved-nonzero"),

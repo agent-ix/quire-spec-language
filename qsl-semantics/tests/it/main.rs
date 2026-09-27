@@ -28,5 +28,6 @@ mod model_population;
 #[cfg(feature = "test-support")]
 mod model_systems;
 mod quantities;
+mod state_clauses;
 #[cfg(feature = "test-support")]
 mod type_environment_model;

@@ -368,9 +368,23 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::ModelType { alias, node } => {
             format!("the domain package of `model {alias}` has no effective type for `{node}`")
         }
-        AssemblyCause::UnsupportedStateClause { name } => {
-            format!("the state clause `{name}` has no checker yet (FR-104, QSL-277)")
+        AssemblyCause::UnresolvedOperation { context, operation } => {
+            format!("`{context}` has no operation `{operation}`")
         }
+        AssemblyCause::AmbiguousOperation { context, operation } => {
+            format!("`{context}` inherits more than one operation `{operation}`")
+        }
+        AssemblyCause::AmbiguousPopulation {
+            context,
+            populations,
+        } => format!(
+            "`{context}` is a member type of more than one population: {}",
+            populations
+                .iter()
+                .map(|population| population.node.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     };
     with_more(message, refusal.errors.len())
 }
@@ -387,6 +401,22 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
     match &first.cause {
         CheckCause::MissingName(name) | CheckCause::AmbiguousName { name, .. } => {
             message = format!("{message}: `{name}`");
+        }
+        // FR-104-AC-2: name the clause kind and, when the clause names one,
+        // the operation `result` was written under.
+        CheckCause::UnanchoredResult { clause, operation } => {
+            let clause = match clause {
+                Some(qsl_forms::StateClauseKind::Invariant) => "an invariant",
+                Some(qsl_forms::StateClauseKind::Precondition) => "a precondition",
+                Some(qsl_forms::StateClauseKind::Postcondition) => {
+                    "a postcondition of an operation with no result"
+                }
+                None => "no state clause",
+            };
+            message = match operation {
+                Some(operation) => format!("{message}: {clause} of `{operation}`"),
+                None => format!("{message}: {clause}"),
+            };
         }
         _ => {}
     }

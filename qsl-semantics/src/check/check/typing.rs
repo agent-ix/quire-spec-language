@@ -133,6 +133,7 @@ enum Frame<'e, 'r> {
     Accumulate(Box<AccumulateFrame<'e>>),
     Tally(Box<TallyFrame<'e>>),
     Contains(Box<ContainsFrame<'e>>),
+    Reaches(Box<ReachesFrame<'e>>),
     Lookup(Box<LookupFrame<'e>>),
     Dispatch(Box<DispatchFrame<'e>>),
     DispatchArguments(Box<DispatchArgumentsFrame<'e, 'r>>),
@@ -362,6 +363,14 @@ struct ContainsFrame<'e> {
     location: Location,
     /// The typed collection and its element type, once typed.
     collection: Option<(Node, ValueType)>,
+}
+
+/// `reaches(source, target, edge)` (FR-104): the source is typed first,
+/// then the target.
+struct ReachesFrame<'e> {
+    edge: &'e str,
+    location: Location,
+    pair: Pair<'e, Node>,
 }
 
 /// `lookup<T>(p, r) absent m`.
@@ -718,7 +727,14 @@ impl<'a> Typer<'a> {
                 // doc for exactly which forms count and why a bare `Name`
                 // (a parameter, or a `let` bound outside this very
                 // `pre(...)`) never does.
-                if !contains_pre_eligible_read(operand) {
+                // FR-104: a state clause's `pre(e)` also reads `self` and
+                // fields through `self` or a parameter reference.
+                let eligible = if self.in_state_clause() {
+                    self.state_pre_eligible(operand)
+                } else {
+                    contains_pre_eligible_read(operand)
+                };
+                if !eligible {
                     return Err(refuse(
                         &location,
                         CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
@@ -740,44 +756,29 @@ impl<'a> Typer<'a> {
                 let goal = Goal::Infer(operand, hint, location.child(0));
                 return Ok(Self::unary(Unary::Pre, goal, location, frames));
             }
-            Expression::SelfRef | Expression::Result => {
-                // FR-102 (QSL-273) builds `self`/`result` as expressions
-                // everywhere the grammar admits them, and checks nothing
-                // about where they may appear (FR-102-AC-3): "S3 does
-                // (FR-104)". No declaration this checker admits today
-                // supplies a state clause's own observation -- `check::
-                // assemble`'s `Unit::new` does not yet keep a
-                // `DeclarationForm::StateClause` at all (FR-104, QSL-277,
-                // wires the anchor this needs) -- so every clause kind
-                // reachable here refuses them, the same
-                // `wrong_snapshot`/`forbidden-pre-read` `Pre` above already
-                // gives "written where the checked declaration does not
-                // admit it at all", which this cause's own doc already
-                // names `self` and `result` beside (`WrongSnapshotCause::
-                // ForbiddenPreRead`'s doc, `refusal.rs`).
-                return Err(refuse(
-                    &location,
-                    CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
-                ));
-            }
-            Expression::Reaches { .. } => {
-                // FR-102 builds `reaches` as an expression everywhere the
-                // grammar admits it; ADR-012 §15.2 assigns its "where it may
-                // appear" check to `StateModel`, not yet wired ("the `Value`
-                // evaluator therefore never meets a `reaches` node"). No
-                // family-`Cause` exists for it yet (FR-104/FR-106,
-                // QSL-277/QSL-278, add the real one alongside the state
-                // clause anchor), so this refuses with the same generic
-                // "the grammar admits it further than this stage supports"
-                // signal FR-103 uses for a domain package's own
-                // not-yet-supported frame entries (`unknown_required_
-                // feature`/`unsupported-feature`).
-                return Err(refuse(
-                    &location,
-                    CheckCause::UnsupportedFeature {
-                        loci: vec![location.clone()],
-                    },
-                ));
+            // FR-104: `self` and `result` read the state clause's own
+            // bindings; outside a state clause `self` names nothing
+            // (`missing-name`) and `result` has no anchor (`wrong-anchor`).
+            Expression::SelfRef => self.self_reference(&location)?,
+            Expression::Result => self.operation_result(&location)?,
+            Expression::Reaches {
+                source,
+                target,
+                edge,
+                ..
+            } => {
+                // FR-104 (ADR-012 §15.2): only a state clause has an
+                // observation to traverse.
+                if !self.in_state_clause() {
+                    return Err(ineligible(&location));
+                }
+                let source_location = location.child(0);
+                frames.push(Frame::Reaches(Box::new(ReachesFrame {
+                    edge,
+                    location,
+                    pair: Pair::First(target, source_location.clone()),
+                })));
+                return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
             }
             Expression::Call { name, arguments } => {
                 let application = Application::resolve(self, name, arguments.len(), &location)?;
@@ -1360,7 +1361,37 @@ impl<'a> Typer<'a> {
             Frame::Connective(frame) => Ok(Self::accept_connective(frame, typed, frames)),
             Frame::Peer(frame) => self.accept_peer(frame, typed, frames),
             Frame::Unary(frame) => self.accept_unary(*frame, typed).map(Step::Typed),
+            // FR-104: in a state clause, a field read through a reference
+            // (`self.f`, `s.f`) is the `Attribute` node `deref(r).f` gives.
+            Frame::Field(field, location)
+                if self.in_state_clause()
+                    && matches!(typed.value_type, ValueType::Reference(_)) =>
+            {
+                let operand_location = location.child(0);
+                self.attribute(typed, field, &operand_location, &location)
+                    .map(Step::Typed)
+            }
             Frame::Field(field, location) => self.field(typed, field, &location).map(Step::Typed),
+            Frame::Reaches(frame) => {
+                let ReachesFrame {
+                    edge,
+                    location,
+                    pair,
+                } = *frame;
+                match pair {
+                    Pair::First(target, target_location) => {
+                        frames.push(Frame::Reaches(Box::new(ReachesFrame {
+                            edge,
+                            location,
+                            pair: Pair::Second(typed),
+                        })));
+                        Ok(Step::Descend(Goal::Infer(target, None, target_location)))
+                    }
+                    Pair::Second(source) => self
+                        .reaches(source, typed, edge, &location)
+                        .map(Step::Typed),
+                }
+            }
             Frame::Attribute(frame) => self
                 .attribute(typed, frame.field, &frame.operand_location, &frame.location)
                 .map(Step::Typed),

@@ -691,6 +691,9 @@ code or code/cause:
 | decimal-scale limit | `stage_limit_exceeded`/`work-budget-exceeded` |
 | unit-graph topology | `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12) |
 | S2 nesting-depth limit | `stage_limit_exceeded`/`nesting-depth-exceeded` |
+| unresolved state clause operation (FR-104) | `missing_declaration`/`missing-name` |
+| ambiguous state clause operation (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
+| ambiguous state clause population (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
 
 The floating-type row: no catalog code names a well-formed type that the
 producer does not represent. `unsupported_construct` is the wrong code,

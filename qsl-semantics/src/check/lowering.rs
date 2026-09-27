@@ -49,7 +49,8 @@ fn content_hash(content: &NodeContent) -> u64 {
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
-    Identifier, Integer, Meter, NodeKey, OrderingOperator, Presence, TextProfile, Value, ValueType,
+    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, Presence,
+    TextProfile, Value, ValueType,
 };
 
 use super::check::{EnumBinding, Scope};
@@ -75,9 +76,11 @@ use crate::value::member::Member;
 use crate::value::quantity::UnitTable;
 
 mod model;
+mod state;
 mod wire;
 
 pub use model::{AdmittedModel, ForeignView, ModelClause};
+pub(crate) use state::{AnchorInput, LoweredClause, StateClauseInput};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
 /// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no
@@ -472,6 +475,15 @@ pub(crate) struct Lowering<'a> {
     /// Whether a text type is reachable from each composite a text-leaf
     /// walk asked about.
     text_reach: BTreeMap<NodeKey, bool>,
+    /// FR-104: the `Origin` recording one occurrence of a named operation's
+    /// `frame` node, by the operation's own identity (its declaring type
+    /// and name), not by the frame node's key. Two operations whose frame
+    /// content happens to coincide (equal `modifies`/`creates`/`deletes`)
+    /// still key one node, but this map gives each its own occurrence, so
+    /// each keeps its own `operation-contract` record (FR-104-AC-5). The
+    /// first clause naming an operation, in source order, mints the
+    /// occurrence; every later clause naming the same operation shares it.
+    frame_origins: BTreeMap<(EffectiveId, String), OccurrenceOrigin>,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -1225,6 +1237,7 @@ impl<'a> Lowering<'a> {
             node_limit: u64::MAX,
             node_budget: u64::MAX,
             text_reach: BTreeMap::new(),
+            frame_origins: BTreeMap::new(),
         }
     }
 
@@ -1277,6 +1290,41 @@ impl<'a> Lowering<'a> {
         } else {
             self.occurrences.record(key, role, location);
         }
+    }
+
+    /// The `Origin` of one `generated` occurrence of `frame`, the operation
+    /// `(declaring, name)`'s frame node (FR-104 "Requirements", FR-104-AC-5;
+    /// FR-105's `frame` row): the first call for a given operation mints it,
+    /// and every later call naming the same operation returns the same
+    /// `Origin`, in the caller's own dedup key -- never the frame node's
+    /// key, since two unrelated operations can key one equal-content frame
+    /// node and must still keep two records. [`Lowering::register_frame_occurrences`]
+    /// calls this for every operation the unit's clauses name, in ascending
+    /// (declaring `DeclarationKey`, name) order, before any clause is
+    /// lowered, so the ordinal an operation's occurrence gets never depends
+    /// on which clause names it first (SR-736 FND-008): a later, per-clause
+    /// call only ever hits the cache below. State clauses are lowered after
+    /// every function, so a frame node is never a pending draft in
+    /// practice; that case is an internal fault, not a silent fallback.
+    fn frame_occurrence(
+        &mut self,
+        declaring: EffectiveId,
+        name: &str,
+        frame: NodeKey,
+        location: &Location,
+    ) -> Result<OccurrenceOrigin, CheckRefusal> {
+        let key = (declaring, name.to_owned());
+        if let Some(origin) = self.frame_origins.get(&key) {
+            return Ok(origin.clone());
+        }
+        if self.pending(frame) {
+            return Err(fault(location, KeyFault::UnresolvedDraft));
+        }
+        let origin = self
+            .occurrences
+            .record(frame, OccurrenceRole::Generated, location.clone());
+        self.frame_origins.insert(key, origin.clone());
+        Ok(origin)
     }
 
     /// Record `key` as the parameter node of the binder at `site`: a
@@ -3291,6 +3339,35 @@ impl<'a> Lowering<'a> {
                     Operands::Two(population, reference),
                 )
             }
+            NodeKind::Reaches {
+                source,
+                target,
+                edge,
+            } => {
+                // FR-105 (pending STD-111's spelling): the edge is named as
+                // an attribute read names its field, by the operands'
+                // static object type's model node and the field's name.
+                let object = self.referenced_object(&source.value_type, &node.location)?;
+                let name = Identifier::new(edge.name.clone()).map_err(|_| {
+                    refuse(
+                        &node.location,
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                    )
+                })?;
+                (
+                    Keyed::Application(
+                        Operator::Reaches,
+                        Operation {
+                            member: Some(Member::Field {
+                                declaration: object,
+                                name,
+                            }),
+                            ..plain("quire.op.model.reaches_field")
+                        },
+                    ),
+                    Operands::Two(source, target),
+                )
+            }
             NodeKind::Dispatch {
                 receiver,
                 operation,
@@ -3889,10 +3966,11 @@ fn enclosing_declarations(
 ) -> BTreeMap<NodeKey, Location> {
     let mut anchors: BTreeMap<NodeKey, Location> = BTreeMap::new();
     for (key, _, location) in occurrences.iter() {
-        // Only a function body or measure resolves to a region (FR-096).
+        // Only a function body or measure, or a state clause body (FR-104),
+        // resolves to a region (FR-096).
         if !matches!(
             location.origin,
-            Origin::Body { .. } | Origin::Measure { .. }
+            Origin::Body { .. } | Origin::Measure { .. } | Origin::StateClause { .. }
         ) {
             continue;
         }
