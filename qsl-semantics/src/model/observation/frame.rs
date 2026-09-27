@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-106 check 11: the frame and delta check.
 //!
-//! Two matching choices, not simplifications, cited against FR-106's own
+//! One matching choice, not a simplification, cited against FR-106's own
 //! text (`spec/functional/FR-106-admit-snapshots-and-invocations.md:249-260`):
 //!
 //! - **11.1's retype refusal is exact-type, by design.** "a surviving
@@ -10,24 +10,20 @@
 //!   retype is *never* authorized, so comparing `producer_identity` strings
 //!   directly (never conformance) is what the line says, not a narrowing of
 //!   it.
-//! - **11.3's `modifies` grant is matched by field display name.** The wire
-//!   document has no `DeclarationKey`, only `"fields" ... keyed by member
-//!   name` (FR-106 "Document forms", `fields is keyed by member name`), so
-//!   any match here is necessarily name-based at the wire boundary. A
-//!   population's `member_types` (FR-103 Outputs) share one supertype
-//!   lineage by construction, and `TypeEnvironment`'s own effective-
-//!   attribute set already collapses a redefined field under its base
-//!   field's *display name* ("its own fields plus every ancestor's, less
-//!   each field another field of the set redefines",
-//!   `qsl-semantics/src/value/declaration.rs:765-770`) -- i.e. the rest of
-//!   this crate already treats "same display name within one type lineage"
-//!   as "the same logical field" for redefinition purposes. Matching
-//!   `modifies` by name is that same rule, not a departure from it. Neither
-//!   TC-464 nor TC-465 exercises a redefined `modifies` member, so this is
-//!   untested but not, on the above reading, incorrect; a package that
-//!   later needs FR-082's own producer-key-precise `redefinition_reaches`
-//!   here (`qsl-semantics/src/model/index.rs:261`) should add that test
-//!   first.
+//!
+//! **11.3's `modifies` grant is matched by field display name, scoped to the
+//! surviving object's own declaring type (SR-750 FND-007).** The wire
+//! document has no `DeclarationKey`, only `"fields" ... keyed by member
+//! name` (FR-106 "Document forms", `fields is keyed by member name`), so a
+//! grant is matched at the wire boundary by resolving the *object's own*
+//! most-specific type (`find_declaration`, the same resolution 11.1 already
+//! does) and checking that some `effect.modifies` entry's owning type the
+//! object's type conforms to, and whose own last path segment equals the
+//! field's display name -- never a bare name compared across every type in
+//! the package regardless of which one the surviving object actually is.
+//! Matching by name alone let a grant on one type's field authorize a
+//! same-named field on any unrelated type; this closes that gap while
+//! keeping the wire boundary's own name-only field identity.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -37,9 +33,43 @@ use super::document::{find_declaration, raw_field, RawPopulation, RawTypeIdentit
 use super::helpers::{admission_record, object_reference};
 use super::{refuse, AdmissionFailure, ModelView, SelectedObject};
 use crate::model::domain_package::OperationEffect;
+use crate::model::key::DeclarationKey;
 
-fn field_name_of(key: &crate::model::key::DeclarationKey) -> &str {
+fn field_name_of(key: &DeclarationKey) -> &str {
     key.node.rsplit('/').next().unwrap_or(&key.node)
+}
+
+/// `key`'s owning type: `key`'s own `node` with its last `/`-separated
+/// segment (the field's display name) removed.
+fn owner_of(key: &DeclarationKey) -> DeclarationKey {
+    let owner_node = key
+        .node
+        .rsplit_once('/')
+        .map_or(key.node.as_str(), |(owner, _)| owner);
+    DeclarationKey {
+        package: key.package.clone(),
+        node: owner_node.to_owned(),
+    }
+}
+
+/// Whether `effect.modifies` authorizes a write to `field` on an object
+/// whose most-specific type is `object_type`: some `modifies` entry names
+/// `field` (by display name) on a type `object_type` conforms to (SR-750
+/// FND-007) -- not merely a same-named field on an unrelated type.
+fn field_write_authorized(
+    modifies: &[DeclarationKey],
+    field: &str,
+    object_type: &DeclarationKey,
+    view: &ModelView,
+) -> bool {
+    modifies.iter().any(|key| {
+        field_name_of(key) == field
+            && view
+                .view
+                .model_index()
+                .conforms(object_type, &owner_of(key), 64)
+                .unwrap_or(false)
+    })
 }
 
 struct PopulationSide<'a> {
@@ -75,10 +105,15 @@ pub(super) fn enforce(
     declared_created: &[SelectedObject],
     declared_deleted: &[SelectedObject],
 ) -> Result<(Vec<ObjectReference>, Vec<ObjectReference>), AdmissionFailure> {
-    let modifies: BTreeSet<&str> = effect.modifies.iter().map(field_name_of).collect();
     let creates: BTreeSet<&str> = effect.creates.iter().map(|key| key.node.as_str()).collect();
     let deletes: BTreeSet<&str> = effect.deletes.iter().map(|key| key.node.as_str()).collect();
 
+    // Every population this invocation could possibly need to check: the
+    // pre snapshot's own, then any post-only one, then any population
+    // `declared_created`/`declared_deleted` names that neither snapshot
+    // lists at all (SR-750 FND-007) -- an invocation cannot escape 11.4's
+    // delta-disagreement check just by naming a population no snapshot
+    // has any objects in.
     let mut order: Vec<String> = pre_populations
         .iter()
         .map(|population| population.population.clone())
@@ -86,6 +121,11 @@ pub(super) fn enforce(
     for population in post_populations {
         if !order.contains(&population.population) {
             order.push(population.population.clone());
+        }
+    }
+    for object in declared_created.iter().chain(declared_deleted) {
+        if !order.contains(&object.population) {
+            order.push(object.population.clone());
         }
     }
 
@@ -139,6 +179,18 @@ pub(super) fn enforce(
                 if !post_side.producer_identity.contains_key(key) {
                     continue;
                 }
+                // A field's own `modifies` grant is scoped to this
+                // object's own most-specific type (SR-750 FND-007): a
+                // same-named field of an unrelated type is never
+                // authorized by it.
+                let Some((object_view, object_type)) =
+                    find_declaration(views, pre_object.type_identity.as_str())
+                else {
+                    return Err(refuse(admission_record(
+                        "invalid_runtime_input",
+                        "wrong-role-mapping",
+                    )));
+                };
                 let empty: &[(String, super::RawValue)] = &[];
                 let post_fields = post_side.keys.get(key).copied().unwrap_or(empty);
                 let field_names: BTreeSet<&str> = pre_object
@@ -148,7 +200,7 @@ pub(super) fn enforce(
                     .chain(post_fields.iter().map(|(name, _)| name.as_str()))
                     .collect();
                 for field in field_names {
-                    if modifies.contains(field) {
+                    if field_write_authorized(&effect.modifies, field, &object_type, object_view) {
                         continue;
                     }
                     let pre_value = raw_field(&pre_object.fields, field);

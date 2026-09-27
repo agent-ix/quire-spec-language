@@ -2509,3 +2509,22 @@ fn precondition_does_not_require_self_in_the_post_snapshot() {
         Some("root"),
     );
 }
+
+/// SR-750 FND-007: `created`/`deleted` naming a population neither the pre
+/// nor the post snapshot lists at all must still be checked for
+/// delta-disagreement -- an invocation cannot escape check 11.4 just by
+/// naming a population no snapshot has any objects in.
+#[trace("TC-465", "FR-106-AC-5")]
+#[test]
+fn undeclared_population_in_created_still_refuses_delta_disagreement() {
+    let document = tc465_document();
+    let result = run_tc465_invocation(
+        &document,
+        |_| {},
+        |_| {},
+        |value| {
+            value["created"] = json!([{"population": "ix://example/config-version/no-such-population", "key": "ghost"}]);
+        },
+    );
+    assert_tc465_refused(result, "population_delta_mismatch", "delta-disagreement");
+}
