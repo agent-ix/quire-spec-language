@@ -356,24 +356,29 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     // moved out below to be matched by variant.
     let selection_for_provenance = request.selection.clone();
     // `model_selections` is only known once compile has produced a package
-    // graph; every pre-compile disposition reports it empty (FR-109's own
-    // provenance still names the selection and the documents it asked for).
-    let report =
-        |package_id,
-         disposition,
-         model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>| {
-            ClauseRunReport {
-                source_digest: source_digest.clone(),
-                package_id,
-                disposition,
-                provenance: ClauseRunProvenance {
-                    model_selections,
-                    selection: selection_for_provenance.clone(),
-                    documents: selection_documents.clone(),
-                },
-                usage: ClauseRunUsage::default(),
-            }
-        };
+    // graph; every pre-compile disposition reports it empty. `documents` is
+    // FR-109's "every snapshot and invocation admission read" (`FR-109-run-
+    // a-state-clause-through-the-spine.md:81-84`), never merely named by
+    // the selection: every call site below passes `Vec::new()` until an
+    // admission call has actually run, and `selection_documents.clone()`
+    // from then on (FR-109-AC-2's own "no snapshot in its provenance" for
+    // a compile-stage refusal).
+    let report = |package_id,
+                  disposition,
+                  model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
+                  documents: Vec<DocumentRef>| {
+        ClauseRunReport {
+            source_digest: source_digest.clone(),
+            package_id,
+            disposition,
+            provenance: ClauseRunProvenance {
+                model_selections,
+                selection: selection_for_provenance.clone(),
+                documents,
+            },
+            usage: ClauseRunUsage::default(),
+        }
+    };
 
     let compiled = match compile(
         request.source.clone(),
@@ -389,6 +394,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                 None,
                 ClauseDisposition::Compile(refusal),
                 Vec::new(),
+                Vec::new(),
             ))
         }
     };
@@ -403,6 +409,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                     actual: package_id,
                 },
                 model_selections,
+                Vec::new(),
             ));
         }
     }
@@ -424,6 +431,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                         name: selection.name,
                     },
                     model_selections,
+                    Vec::new(),
                 ));
             };
             let provisions = Provisions {
@@ -461,6 +469,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                         Some(package_id),
                         ClauseDisposition::Admit(failure),
                         model_selections,
+                        selection_documents.clone(),
                     ))
                 }
             };
@@ -472,6 +481,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                         name: selection.name,
                     },
                     model_selections,
+                    selection_documents.clone(),
                 ));
             };
             let mut meter = Meter::new(request.accounting);
@@ -514,7 +524,12 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                     ClauseDisposition::EvaluateFault(fault)
                 }
             };
-            let mut result = report(Some(package_id), disposition, model_selections);
+            let mut result = report(
+                Some(package_id),
+                disposition,
+                model_selections,
+                selection_documents.clone(),
+            );
             result.usage = ClauseRunUsage::from_meter(&meter);
             Ok(result)
         }
@@ -561,6 +576,10 @@ fn run_function(
     selection_documents: Vec<DocumentRef>,
 ) -> Result<ClauseRunReport, ClauseRunRefusal> {
     use qsl_eval::value::CheckedPackageEvaluation;
+    // Empty until `admit_current_snapshot` (below) actually reads
+    // `selection_documents`' one snapshot; FR-109's own provenance is what
+    // admission read, never merely what the selection named (FR-109-AC-2).
+    let documents_read = std::cell::RefCell::new(Vec::<DocumentRef>::new());
     let report = |disposition| ClauseRunReport {
         source_digest: source_digest.to_owned(),
         package_id: Some(package_id),
@@ -568,7 +587,7 @@ fn run_function(
         provenance: ClauseRunProvenance {
             model_selections: model_selections.clone(),
             selection: selection.clone(),
-            documents: selection_documents.clone(),
+            documents: documents_read.borrow().clone(),
         },
         usage: ClauseRunUsage::default(),
     };
@@ -599,6 +618,10 @@ fn run_function(
         }));
     }
 
+    // Admission is about to read `selection_documents`' one snapshot,
+    // whichever way it resolves -- set before the call, so both the
+    // success and failure paths report it (FR-109-AC-2).
+    *documents_read.borrow_mut() = selection_documents;
     let environment = match admit_current_snapshot(
         package.graph().model_selections(),
         package.graph().scope().types(),
