@@ -173,12 +173,10 @@ required population, in the observations the clause reads.
       order.
    7. If a label of the document's identity is empty or consists only of
       Unicode `White_Space` scalars, then admission SHALL refuse
-      `invalid_source_identity`/`blank-label`, with field `label` naming the
-      first blank label in the order `authority`, `identity`,
-      `revision_namespace`, `revision`. The labels are checked first, in that
-      order. `empty-path` applies only when every label is non-blank and the
-      source path is empty; a snapshot or invocation identity is its four
-      labels, so this check reports `blank-label`.
+      `invalid_source_identity`/`blank-label`. Within this check, the labels
+      are checked in the order `authority`, `identity`,
+      `revision_namespace`, `revision`, and field `label` names the first
+      blank one.
    8. If the four labels differ from the selection's, then admission SHALL
       refuse `stale_dependency`/`revision-mismatch`, naming both.
 2. Selection form check. If `Current` selects a precondition or postcondition,

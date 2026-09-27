@@ -189,14 +189,20 @@ kernel undefined reason, so FR-100 spells them in kebab case:
 | `Undefined::IeeeNotFinite` | `ieee-not-finite` |
 | `Undefined::EmptyReduction` | `empty-reduction` |
 | `Undefined::NoneValue` | `none-value` |
-| `Undefined::SumOutOfDomain` | `sum-out-of-domain` |
+| `Undefined::SumOutOfDomain` | `sum-out-of-domain`: a `sum<N>` seed or running total outside `N`'s domain, including the seed `0` of an empty `sum` |
 
 `sum-out-of-domain` is a `sum<N>` seed or running total that is not a member
-of `N`'s domain. By QSpec FR-145 it is a located undefined outcome, at the
-seed summand or at the addition whose total leaves the domain, since a
-running total is not the expression's result. It makes no later charge and
-exposes no total. A final total outside `N`'s domain is the same outcome,
-because the final total is the last running total.
+of `N`'s domain. By QSpec FR-145 it is a located undefined outcome, since a
+running total is not the expression's result. A failing seed summand is
+located at the summand's node, and a failing addition's running total at
+the `sum` node (FR-096). It makes no later charge and exposes no total. The
+final total is the last running total, so a final total outside `N`'s domain
+is the same outcome.
+
+An empty `sum` (`n = 0`) has the seed `0` as its only running total. When
+`N`'s domain does not admit `0`, the outcome is `sum-out-of-domain`, located
+at the `sum` node. QSpec FR-145 step 1 requires `N`'s domain to admit `0` and
+states no outcome when it does not; QSL fixes that outcome this way.
 
 ### Internal failure at S6a
 
@@ -329,6 +335,7 @@ exit 30.
 | FR-100-AC-7 | `qsl_replay::spine::run` called directly over each AC-1, AC-4, AC-5 and AC-6 input returns the same `package_id`, outcome category, value, code, reason, counter, and parameter name or position the CLI renders. The root crate names `qsl-eval` in no dependency table (TC-390). | Test (TC-452) |
 | FR-100-AC-8 | No public item of `qsl_replay::spine`, and no `qsl_replay` re-export, names a `qsl_eval` path; a `pub use` of a `qsl_eval` item from `qsl_replay`, or a `qsl_eval` type in `spine::run`'s signature, fails the check. | Test (TC-452) |
 | FR-100-AC-9 | The outcome mapping converts a constructed `Outcome::Completed` of each value kind, `Outcome::Refused` of each of the thirteen kernel refusals, `Outcome::Undefined` of each of the five kernel reasons, `Outcome::Incomplete`, `FamilyResult::Refused` with and without an FR-096 key-table row, `FamilyResult::Undefined` of each family reason, and a `CallFailure::Fault` into the `outcome` member and exit status the mapping tables state: each of the twelve kernel refusals other than `CheckedInvariant` renders its record's code, cause, fields (JSON strings) and locus, as the kernel-record table states, exit 20; a family cause with a record renders the same members; a family cause without a record renders its `catalog_code()` with no `fields`, exiting by that code (`AncestorSteps`, `resource_exhausted`, exits 22); and `CheckedInvariant` and `CallFailure::Fault` are `runtime_invariant` command errors with their stage and invariant in `details`, at the internal-failure exit status. | Test (TC-452) |
+| FR-100-AC-10 | With `type Pos = Int[1, 9]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Pos>(x in q: x)` for an empty `q` of `Sequence<Int[1, 9]>[0, 2]` returns `Outcome::Undefined(Undefined::SumOutOfDomain)` located at the `sum` node, and the outcome mapping renders it `{"kind": "undefined", "reason": "sum-out-of-domain"}`, exit 20. The same `sum` for `q` holding `4` completes with `4`. | Test (TC-452) |
 
 ## Dependencies
 

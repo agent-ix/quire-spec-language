@@ -18,7 +18,7 @@ catches CLI-only run behavior (ADR-011 §5: no behavior is reachable only
 through the CLI), a layer-5 type leaking through `qsl_replay`, and an
 outcome kind rendered with the wrong spelling or exit status.
 
-Scope: FR-100-AC-7 to FR-100-AC-9.
+Scope: FR-100-AC-7 to FR-100-AC-10.
 
 ## Test Procedure
 
@@ -52,8 +52,21 @@ Scope: FR-100-AC-7 to FR-100-AC-9.
      bytes of `0x01` and `supplied` the universe of 32 bytes of `0x02`
      (QSL-281);
    - `Outcome::Refused` of each of the other eleven kernel refusals, with
-     `DivisionPairOutOfDomain` once for each of its three failing flag
-     pairs and `IeeeNotExact` with would-be flags `overflow` and `inexact`;
+     these payloads:
+     - `InexactDecimal` with target domain `Decimal[0, 100; 0, 2]`;
+     - `DecimalOutOfDomain` with target domain `Decimal[0, 100; 0, 2]`;
+     - `DivisionPairOutOfDomain` with consumer domain `Int[0, 9]`, once for
+       each of its three failing flag pairs;
+     - `ModuloOutOfDomain` with consumer domain `Int[0, 9]`;
+     - `TextLengthOutOfDomain` with bounds and profile `Text[1, 8; binary-utf8]`;
+     - `IntegerOutOfDomain` with target domain `Int[0, 9]`;
+     - `RationalOutOfDomain` with result domain `Rational[-5, 5; 1, 12]`;
+     - `IeeeNotExact` with target width `binary64` and would-be flags
+       `overflow` and `inexact`;
+     - `IeeeNanPayloadNotRepresentable` with target width `binary32` and
+       source width `binary64`;
+     - `IeeeRationalOutOfDomain` with target domain `Rational[-5, 5; 1, 12]`;
+     - `CheckedInvariant`;
    - `Outcome::Undefined` of each of the five kernel reasons;
    - `Outcome::Incomplete` at `work_units`;
    - `FamilyResult::Refused` of `ModelRefusalCause::AbsentKey` with
@@ -67,10 +80,15 @@ Scope: FR-100-AC-7 to FR-100-AC-9.
      `absent-key`;
    - a `CallFailure::Fault` of `InternalFault::new("S6a",
      "checked-identity-not-resolved-by-package")`.
+5. With `type Pos = Int[1, 9]` checked under `CheckMode::Kernel`, evaluate
+   `sum<Pos>(x in q: x)` through S6a for `q` of `Sequence<Int[1, 9]>[0, 2]`,
+   once empty and once holding `4`, and convert each outcome with the
+   outcome mapping.
 
 Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
-`#[trace("TC-452", "FR-100-AC-8")]` (step 3) and
-`#[trace("TC-452", "FR-100-AC-9")]` (step 4).
+`#[trace("TC-452", "FR-100-AC-8")]` (step 3),
+`#[trace("TC-452", "FR-100-AC-9")]` (step 4) and
+`#[trace("TC-452", "FR-100-AC-10")]` (step 5).
 
 ## Expected Results
 
@@ -99,12 +117,31 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
     `foreign-universe`, `fields` exactly `{"required": R, "supplied": S}`,
     where `R` is `"01"` repeated 32 times and `S` is `"02"` repeated 32 times
     (`"0101…01"` and `"0202…02"`, 64 characters each, QSL-281); exit 20.
-  - Each of the other ten kernel refusals but `CheckedInvariant`: the
-    `code`, `cause` and field names FR-100's kernel-record table gives it,
-    each field a JSON string in the catalog's spelling, with `locus`; exit
-    20. `DivisionPairOutOfDomain` renders `quotient-outside-domain`,
-    `remainder-outside-domain` and `both-outside-domain` for its three flag
-    pairs, and `IeeeNotExact` renders `flags` `"overflow,inexact"`.
+  - Each of the other ten kernel refusals renders its `code` and `cause`
+    and exactly this `fields` object, with `locus`; exit 20:
+    - `InexactDecimal`: `inexact_decimal`, `nonzero-discarded-digit`,
+      `{"expected": "Decimal[0, 100; 0, 2]"}`;
+    - `DecimalOutOfDomain`: `decimal_out_of_domain`, `outside-domain`,
+      `{"expected": "Decimal[0, 100; 0, 2]"}`;
+    - `DivisionPairOutOfDomain`: `division_pair_out_of_domain`, with cause
+      `quotient-outside-domain`, `remainder-outside-domain` and
+      `both-outside-domain` for its three flag pairs, each
+      `{"expected": "Int[0, 9]"}`;
+    - `ModuloOutOfDomain`: `modulo_out_of_domain`, `outside-domain`,
+      `{"expected": "Int[0, 9]"}`;
+    - `TextLengthOutOfDomain`: `text_length_out_of_domain`,
+      `outside-domain`, `{"expected": "Text[1, 8; binary-utf8]"}`;
+    - `IntegerOutOfDomain`: `integer_out_of_domain`, `outside-domain`,
+      `{"expected": "Int[0, 9]"}`;
+    - `RationalOutOfDomain`: `rational_out_of_domain`, `outside-domain`,
+      `{"expected": "Rational[-5, 5; 1, 12]"}`;
+    - `IeeeNotExact`: `ieee_not_exact`, `rounding-required`,
+      `{"expected": "binary64", "flags": "overflow,inexact"}`;
+    - `IeeeNanPayloadNotRepresentable`:
+      `ieee_nan_payload_not_representable`, `payload-exceeds-target`,
+      `{"expected": "binary32", "actual": "binary64"}`;
+    - `IeeeRationalOutOfDomain`: `ieee_rational_out_of_domain`,
+      `outside-domain`, `{"expected": "Rational[-5, 5; 1, 12]"}`.
   - `CheckedInvariant`: no `spine-run-result/1` document; a
     `runtime_invariant` command error at stage `call` with `details`
     `{"stage": "S6a", "invariant": "checked-program-invariant"}`, at
@@ -125,10 +162,14 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
     `call` with `details` `{"stage": "S6a", "invariant":
     "checked-identity-not-resolved-by-package"}`, at the internal-failure
     exit status.
+- Step 5: the empty `q` gives `Outcome::Undefined(Undefined::SumOutOfDomain)`
+  with `Evaluation.location` at the `sum` node, rendered
+  `{"kind": "undefined", "reason": "sum-out-of-domain"}`, exit 20. `q`
+  holding `4` completes with integer `"4"`, exit 0.
 
 ## Status
 
 Passed locally under QSL-271. Step 4's `ForeignReference` row updated under
 QSL-281, now that the kernel variant carries both universes. Step 4's ten
-revision-`1-draft.8` kernel records and the `sum-out-of-domain` reason are
+revision-`1-draft.8` kernel records and step 5's `sum-out-of-domain` reason are
 specified under QSL-291 and not yet implemented.
