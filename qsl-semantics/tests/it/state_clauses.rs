@@ -1477,6 +1477,213 @@ fn attempt_update_refuses_a_declared_delta_mismatch() {
 }
 
 // ---------------------------------------------------------------------------
+// TC-464 (FR-106-AC-1, AC-2, AC-6; SR-751 FND-004): positive read and
+// admission of FR-106's documents, digest stability, and that admission
+// reads nothing ambient. Reuses TC-465's own ConfigVersion package and
+// healthy-parent/changed-version fixtures (defined below in this file).
+// ---------------------------------------------------------------------------
+
+/// Step 1 (FR-106-AC-1): the healthy-parent snapshot admits one current
+/// observation: `config_history` complete, `root.versionNumber` 1,
+/// `root.parent` absent, `child.versionNumber` 2, `child.parent` present
+/// naming `root`, `self` is `child`, and the snapshot's identity and digest
+/// are retained.
+#[trace("TC-464", "FR-106-AC-1")]
+#[test]
+fn tc464_step1_healthy_parent_admits_one_current_observation() {
+    let document = tc465_document();
+    let observations =
+        run_tc465_current(&document, |_| {}, None).expect("the healthy-parent snapshot admits");
+    let current = observations
+        .current
+        .expect("an invariant admits a current observation");
+    assert_eq!(current.identity.identity, "current-snap");
+    assert_ne!(current.identity.digest, [0; 32], "the digest is retained");
+    assert_eq!(
+        current
+            .populations
+            .get("ix://example/config-version/config_history"),
+        Some(&true),
+        "config_history is admitted complete"
+    );
+    assert_eq!(observations.self_object.object().as_str(), "child");
+    let rendered = format!("{:?}", current.environment);
+    assert!(
+        rendered.contains(r#"Integer(1)"#) && rendered.contains(r#"Integer(2)"#),
+        "root's and child's versionNumber (1, 2) are both admitted: {rendered}"
+    );
+    assert!(
+        rendered.contains("Absent"),
+        "root.parent is admitted absent: {rendered}"
+    );
+    assert!(
+        rendered.contains(r#"object: ObjectId("root")"#),
+        "child.parent names root: {rendered}"
+    );
+}
+
+/// Step 2 (FR-106-AC-1): the same snapshot, re-serialized with other
+/// whitespace and reversed member order, admits with the same digest and
+/// an equal admitted value.
+#[trace("TC-464", "FR-106-AC-1")]
+#[test]
+fn tc464_step2_a_reserialized_snapshot_gives_the_same_digest_and_an_equal_value() {
+    let document = tc465_document();
+    let model_digest_hex = tc465_model_digest_hex(&document);
+    let label = frame_label("current-snap");
+    let canonical = tc465_healthy_parent(&label, &model_digest_hex);
+
+    // Reversed top-level member order and different (pretty) whitespace --
+    // still the same RFC 8785 canonical bytes, so the same digest.
+    let object = canonical.as_object().expect("an object");
+    let mut reversed = serde_json::Map::new();
+    for (key, value) in object.iter().rev() {
+        reversed.insert(key.clone(), value.clone());
+    }
+    let reserialized =
+        serde_json::to_string_pretty(&serde_json::Value::Object(reversed)).expect("valid JSON");
+
+    let canonical_bytes = canonical.to_string().into_bytes();
+    let canonical_digest = frame_document_digest(&canonical_bytes);
+    let reserialized_bytes = reserialized.into_bytes();
+    let reserialized_digest = frame_document_digest(&reserialized_bytes);
+    assert_eq!(
+        canonical_digest, reserialized_digest,
+        "reordering members and changing whitespace does not change the RFC 8785 digest"
+    );
+
+    let selected = qsl_semantics::model::observation::DocumentRef {
+        digest: canonical_digest,
+        ..label.clone()
+    };
+    let mut snapshots_a = BTreeMap::new();
+    snapshots_a.insert(canonical_digest, canonical_bytes);
+    let mut snapshots_b = BTreeMap::new();
+    snapshots_b.insert(reserialized_digest, reserialized_bytes);
+
+    let selection = || qsl_semantics::model::observation::ClauseSelectionInput::Current {
+        snapshot: selected.clone(),
+        anchor: qsl_semantics::model::observation::SelectedAnchor {
+            kind: qsl_semantics::model::observation::AnchorKind::Handler,
+            name: "validate".to_owned(),
+        },
+        self_object: qsl_semantics::model::observation::SelectedObject {
+            population: "ix://example/config-version/config_history".to_owned(),
+            key: "child".to_owned(),
+        },
+    };
+    let from_canonical = run_tc465(
+        &document,
+        "ParentOrder",
+        selection(),
+        snapshots_a,
+        BTreeMap::new(),
+    )
+    .expect("the canonical bytes admit");
+    let from_reserialized = run_tc465(
+        &document,
+        "ParentOrder",
+        selection(),
+        snapshots_b,
+        BTreeMap::new(),
+    )
+    .expect("the re-serialized bytes admit");
+    assert_eq!(
+        format!("{from_canonical:?}"),
+        format!("{from_reserialized:?}"),
+        "an equal admitted value, whatever whitespace or member order the bytes used"
+    );
+}
+
+/// Step 3 (FR-106-AC-2): the changed-version invocation admits for
+/// `VersionUnchanged`, with distinct pre and post observations, `self`
+/// `child` in both, `result` true, no parameters, and empty created and
+/// deleted.
+#[trace("TC-464", "FR-106-AC-2")]
+#[test]
+fn tc464_step3_changed_version_invocation_admits_a_full_observation_set() {
+    let document = tc465_document();
+    let observations = run_tc465_invocation(&document, |_| {}, |_| {}, |_| {})
+        .expect("the changed-version invocation admits");
+    let pre = observations
+        .pre
+        .expect("a postcondition admits a pre observation");
+    let post = observations
+        .post
+        .expect("a postcondition admits a post observation");
+    assert_ne!(
+        format!("{pre:?}"),
+        format!("{post:?}"),
+        "pre and post are distinct observations"
+    );
+    assert_eq!(observations.self_object.object().as_str(), "child");
+    assert!(observations.parameters.is_empty(), "no parameters");
+    assert!(observations.created.is_empty(), "empty created");
+    assert!(observations.deleted.is_empty(), "empty deleted");
+    assert!(
+        matches!(observations.result, Some(quire_exact::Value::Boolean(true))),
+        "result is true: {:?}",
+        observations.result
+    );
+    let pre_rendered = format!("{:?}", pre.environment);
+    let post_rendered = format!("{:?}", post.environment);
+    assert!(
+        pre_rendered.contains("Integer(2)"),
+        "pre's child.versionNumber is 2: {pre_rendered}"
+    );
+    assert!(
+        post_rendered.contains("Integer(3)"),
+        "post's child.versionNumber is 3: {post_rendered}"
+    );
+}
+
+/// Step 4 (FR-106-AC-6): repeating steps 1 and 3 in a process whose
+/// working directory is an empty temporary directory gives equal results --
+/// admission reads nothing ambient (its provisions are in-memory maps).
+/// Serialized against every other test in this binary via a lock, since
+/// `std::env::set_current_dir` is process-wide state.
+#[trace("TC-464", "FR-106-AC-6")]
+#[test]
+fn tc464_step4_admission_reads_nothing_ambient() {
+    static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = CWD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let original_cwd = std::env::current_dir().expect("a current directory exists");
+    let document = tc465_document();
+    let before_current = run_tc465_current(&document, |_| {}, None)
+        .expect("the healthy-parent snapshot admits outside the temp dir");
+    let before_invocation = run_tc465_invocation(&document, |_| {}, |_| {}, |_| {})
+        .expect("the changed-version invocation admits outside the temp dir");
+
+    let empty_dir = tempfile::tempdir().expect("an empty temporary directory");
+    std::env::set_current_dir(empty_dir.path()).expect("chdir into the empty temp dir");
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let after_current = run_tc465_current(&document, |_| {}, None)
+            .expect("the healthy-parent snapshot admits inside the empty temp dir");
+        let after_invocation = run_tc465_invocation(&document, |_| {}, |_| {}, |_| {})
+            .expect("the changed-version invocation admits inside the empty temp dir");
+        (after_current, after_invocation)
+    }));
+    std::env::set_current_dir(&original_cwd).expect("restore the original working directory");
+    let (after_current, after_invocation) = result.unwrap_or_else(|payload| {
+        std::panic::resume_unwind(payload);
+    });
+
+    assert_eq!(
+        format!("{before_current:?}"),
+        format!("{after_current:?}"),
+        "an empty working directory admits the same current observation"
+    );
+    assert_eq!(
+        format!("{before_invocation:?}"),
+        format!("{after_invocation:?}"),
+        "an empty working directory admits the same invocation observation"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // TC-465 (FR-106-AC-3, AC-4, AC-5, AC-7; SR-751 FND-001): admission refuses
 // each input defect. Shared package: `ConfigVersion` (`versionNumber`,
 // `parent`), `attemptUpdate` (modifies `[versionNumber, parent]` unless a
