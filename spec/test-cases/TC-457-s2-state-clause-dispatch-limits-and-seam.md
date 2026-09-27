@@ -22,7 +22,9 @@ Scope: FR-102-AC-4, FR-102-AC-5, FR-102-AC-6.
 2. Build a unit whose only declaration begins `temporal` (a spelling no
    family claims).
 3. Let `d` be `FormsLimits`' nesting-depth limit. Build an invariant whose
-   body is `d` nested parentheses around `true`, then `d + 1`.
+   body is `d` nested `not`s around `true`, then `d + 1` (a bare `(e)` is a
+   transparent pass-through and adds no depth, so parentheses cannot bound
+   this).
 4. Run `xtask seam-probe` with the `seam-probe` feature.
 
 Tag the tests `#[trace("TC-457", "FR-102-AC-n")]`. The existing
@@ -35,8 +37,8 @@ moves from `invariant` to `temporal`.
 - Step 2: `FormsCause::NoDispatchEntry { spelling: "temporal" }`.
 - Step 3: depth `d` builds; depth `d + 1` gives `StageFailure::Limit` with
   `nesting-depth-exceeded` at the body.
-- Step 4: the E0004 locations equal the checked-in S2 list, which now names
-  the `protocol_clause::state_clause` entry.
+- Step 4: the E0004 locations equal the checked-in S2 list, unchanged: a
+  state clause has no match over a probed enum, so it adds no new location.
 
 ## Status
 

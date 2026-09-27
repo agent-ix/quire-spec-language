@@ -6,8 +6,8 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, DeclarationForm, Expression, FormsCause, FormsFailure, FormsLimits, ParsedUnit,
-    StateClauseForm, StateClauseKind,
+    build_unit, DeclarationForm, Expression, ExpressionSpans, FormsCause, FormsFailure,
+    FormsLimits, ParsedUnit, SpanId, StateClauseForm, StateClauseKind,
 };
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::{SourceIdentity, Span};
@@ -54,6 +54,47 @@ fn refusal(declarations: &str) -> (String, FormsCause, Option<Span>) {
     match build_unit(&parsed, FormsLimits::default()) {
         Err(FormsFailure::Refused(refusal)) => (text, refusal.cause, refusal.span),
         other => panic!("{declarations}: a refusal, not {other:?}"),
+    }
+}
+
+/// SR-722 FND-007 (TC-456 step 1): every node of an expression tree's own
+/// spans, not just the root and one child, slices the source to text that
+/// parses back as one whole expression on its own -- built the same way
+/// `build`'s own caller builds a state clause body, so this needs no
+/// separate parse harness and no `show()`-style rendering that would have
+/// to recognize every production this fixture's body uses (`present`,
+/// `deref`, `value`, `implies`, `<`, none of which `show` itself matches
+/// explicitly). `spans.fits(expr)` is a build-time invariant this crate
+/// already checks (`DeclarationSpans::fit`), so walking `expr.children()`
+/// and `spans.child(id, index)` in lockstep never runs out of either side.
+fn assert_every_span_slice_reparses(
+    text: &str,
+    spans: &ExpressionSpans,
+    id: SpanId,
+    expr: &Expression,
+) {
+    let span = spans
+        .span(id)
+        .unwrap_or_else(|| panic!("{expr:?}: every visited span node has a span"));
+    let slice = &text[span.start..span.end];
+    let (reparsed_text, reparsed_unit) = build(&format!(
+        "invariant Z using v on Config::ConfigVersion at current {{ {slice} }}"
+    ));
+    let reparsed_form = state_clause(reparsed_unit.forms()[0].form());
+    let reparsed_spans = &reparsed_form.spans.body;
+    let root_span = reparsed_spans
+        .span(reparsed_spans.root())
+        .expect("the reparsed body has a root span");
+    assert_eq!(
+        &reparsed_text[root_span.start..root_span.end],
+        slice,
+        "{slice:?} does not parse back as one whole expression on its own"
+    );
+    for (index, child_expr) in expr.children().into_iter().enumerate() {
+        let child_id = spans
+            .child(id, index)
+            .unwrap_or_else(|| panic!("{expr:?}: child {index} has no span (spans.fits failed)"));
+        assert_every_span_slice_reparses(text, spans, child_id, child_expr);
     }
 }
 
@@ -128,6 +169,9 @@ fn an_invariant_builds_one_state_clause_form_with_no_operation() {
         .expect("the implies' left operand span");
     assert_eq!(left, present_call_span);
     assert_eq!(&text[left.start..left.end], "present(self.parent)");
+
+    // Every node, not just the root and its left child (SR-722 FND-007).
+    assert_every_span_slice_reparses(&text, spans, spans.root(), &form.body);
 }
 
 #[trace("TC-456", "FR-102-AC-2")]

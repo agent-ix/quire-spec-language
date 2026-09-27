@@ -1050,6 +1050,107 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
     assert_eq!(refusal.cause.as_str(), "duplicate-identity");
 }
 
+/// SR-722 FND-008: FCD makes `operations` optional on every construct kind
+/// (its own `Member::Operations` default presence), and FCD's own `frames`
+/// rule walks every type's operations regardless of its meaning -- but only
+/// `read_object_type` ever queues a `PendingFrame`; `read_component` (a
+/// systems part) has no `OperationMemberRecord` shape for one at all.
+/// `validate_with_semantic_ir` no longer surfaces FCD's own
+/// `UNRESOLVED_FRAME_PATH` diagnostic (FR-103, SR-722 FND-003's own fix),
+/// so a part carrying an operation whose `modifies` names nothing must
+/// still refuse -- `read_component`'s own new `operations` guard, not FCD's
+/// frame-path rule, is what catches it.
+#[test]
+fn a_systems_part_carrying_an_operation_with_a_broken_frame_refuses() {
+    let package_identity = "acme/orders";
+    let sys = format!("ix://{package_identity}/Sys");
+    let pump = format!("ix://{package_identity}/Pump");
+    let sys_pump = format!("ix://{package_identity}/SysPump");
+    let broken_operation = serde_json::json!({
+        "identity": format!("{sys_pump}/run"),
+        "name": "run",
+        "params": [],
+        "pre": [],
+        "post": [],
+        "origin": {
+            "generated": {
+                "generatorIdentity": format!("{sys_pump}/run"),
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [format!("{sys_pump}/run")],
+            }
+        },
+        "frame": {
+            "modifies": [format!("ix://{package_identity}/nope")],
+            "creates": [],
+            "deletes": [],
+        },
+    });
+    let document = wire_envelope(
+        package_identity,
+        serde_json::json!([
+            wire_construct(
+                package_identity,
+                "object_type",
+                meaning::OBJECT_TYPE,
+                serde_json::json!({}),
+            ),
+            wire_construct(
+                package_identity,
+                "part",
+                meaning::SYSTEMS_PART,
+                serde_json::json!({
+                    "declaredType": "required",
+                    "fields": "forbidden",
+                    "multiplicity": "required",
+                    "operations": "optional",
+                    "owner": "required",
+                }),
+            ),
+        ]),
+        serde_json::json!([
+            wire_type(
+                &sys,
+                serde_json::json!({"module": package_identity, "name": "object_type"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &pump,
+                serde_json::json!({"module": package_identity, "name": "object_type"}),
+                serde_json::json!({"supertypes": [], "fields": [], "operations": []}),
+            ),
+            wire_type(
+                &sys_pump,
+                serde_json::json!({"module": package_identity, "name": "part"}),
+                serde_json::json!({
+                    "owner": sys,
+                    "declaredType": pump,
+                    "multiplicity": multiplicity_one(1, Some(1)),
+                    "operations": [broken_operation],
+                }),
+            ),
+        ]),
+    )
+    .to_string()
+    .into_bytes();
+
+    let digest: [u8; 32] = Sha256::digest(&document).into();
+    let mut bytes_by_digest = BTreeMap::new();
+    bytes_by_digest.insert(digest, document.clone());
+    let offered = DomainPackageRef {
+        identity: package_identity.to_owned(),
+        version: "1.0.0".to_owned(),
+        digest,
+    };
+    let (_, admitted_document) = admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes_by_digest)
+        .expect("a matching selection admits");
+
+    let refusals = read_records(package_identity, &admitted_document)
+        .expect_err("a systems part carrying an operation refuses, broken frame or not");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(refusals[0].code.as_str(), "unsupported_construct");
+    assert_eq!(refusals[0].cause.as_str(), "declaration-form");
+}
+
 /// Write `contents` (a `(relative path, bytes)` list) under a fresh tempdir
 /// and return it.
 fn write_bundle(contents: &[(&str, &str)]) -> tempfile::TempDir {

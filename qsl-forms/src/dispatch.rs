@@ -627,6 +627,7 @@ mod tests {
         // `compile_fail` doctest on `ParsedForm` itself.
     }
 
+    #[trace("TC-457", "FR-102-AC-4")]
     #[test]
     fn dispatch_entry_is_a_single_thin_call() {
         let source = include_str!("dispatch.rs");

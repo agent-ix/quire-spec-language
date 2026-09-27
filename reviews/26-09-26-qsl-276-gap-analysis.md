@@ -50,3 +50,17 @@ deferred.
 | FND-005 | low | FR-102-AC-6 (TC-457 step 4) has no traced test. Its wording, that the S2 seam list "now includes the `protocol_clause` production entry", cannot hold by design: `state_clause` has no match over a probed enum, so no new E0004 location arises, and the PR says the seam probe passes unchanged. `dispatch_entry_is_a_single_thin_call` also lacks a `TC-457`/`FR-102-AC-4` tag. Fix: amend FR-102-AC-6 and TC-457 step 4 to "the checked-in list is unchanged", and tag the thin-call test. | spec/functional/FR-102-build-state-clause-forms.md; spec/test-cases/TC-457-s2-state-clause-dispatch-limits-and-seam.md; qsl-forms/src/dispatch.rs:630-631 |
 | FND-006 | low | TC-457 step 3 prescribes `d` nested parentheses, but a bare `(e)` is transparent and adds no depth. The test correctly uses `not` instead. Fix: amend TC-457 step 3 to nested `not`. | spec/test-cases/TC-457-s2-state-clause-dispatch-limits-and-seam.md; qsl-forms/tests/it/protocol_clause_forms.rs:199-229 |
 | FND-007 | low | FR-103 Behavior says that "the operation is visible on a subtype through FR-081's effective view, as a field is". `ObjectTypeDeclaration::operations` returns only the type's own operations, and no effective-view code or test covers inherited operations. No AC names this, and nothing reads operations yet. Deferred to QSL-277 (FR-104 is the first reader of `M::T::op`) unless it is added here. | qsl-semantics/src/value/declaration.rs:485-490 |
+
+## Dispositions
+
+Round 2, reviewed at 960490173a2601bf8fd9e76b9ccf344242b18002.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3b94b129: FR-103-AC-1/AC-3 and TC-458 mark the bound-scalar half **Unverified**, citing QSL-289 (Backlog, "FR-056: read quire.meaning.model.value-type/v1 bound scalars"). The test module doc cites QSL-289. |
+| FND-002 | deferred | QSL-279 owns the FR-108 fixture, and should repoint the TC-458 tests at it when it lands. |
+| FND-003 | fixed | 3b94b129: FR-103-AC-3 and TC-458 step 3 are amended to `note: Decimal` refusing `unsupported_construct`/`declaration-form` at the parameter, at I1. The test matches. |
+| FND-004 | deferred | QSL-290 (Backlog): `ix://quire/native/Text` has no FCD name. |
+| FND-005 | still-open | FR-102-AC-6 and TC-457 step 4 are unchanged at 96049017, and `dispatch_entry_is_a_single_thin_call` (qsl-forms/src/dispatch.rs:630-631) is still untagged. |
+| FND-006 | still-open | TC-457 step 3 still prescribes nested parentheses at 96049017. |
+| FND-007 | deferred | QSL-277 (FR-104 is the first reader of operations through the effective view). |

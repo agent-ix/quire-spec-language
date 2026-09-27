@@ -57,3 +57,28 @@ Reviewer ran `cargo test -p qsl-forms -p qsl-semantics --test it` at
 - Visibility: the `value` helpers widen to `pub(crate)` only, with no public API leak. `OperationDeclaration` is public with accessor methods, matching `FieldDeclaration`.
 - Determinism: `classification` is a `HashMap` used only for lookups, and the output order follows the `pending` and entry order, so it is deterministic.
 - Idioms: see FND-006.
+
+## Round 2 findings
+
+These are new at 96049017 (fix round 3b94b129 plus the fmt commit 96049017).
+They were found by code reading. The reviewer ran `cargo test -p qsl-forms -p
+qsl-semantics -p qsl-replay` in the worktree's own target dir: all passed.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | The `UNRESOLVED_FRAME_PATH` filter lets an unresolved frame through on any type node whose QSL reader never reads `operations`. FCD makes `operations` optional on every construct kind (`Member::Operations` defaults to `Presence::Optional`, vocabulary.rs:179-187 at 033e228), and FCD's `frames` walks every type's operations. But only `read_object_type` queues a `PendingFrame`. `read_component`, `read_endpoint`, `read_connection` and `read_allocation` ignore `operations` entirely. So a systems part carrying an operation with `modifies: ["ix://.../nope"]` was refused before the fix round and now admits, with the operation silently dropped. Fix: have those four readers refuse a non-empty `operations` (`unsupported_at`), or drop only the diagnostics whose pointer lies under an operation QSL queued. Add a test with a part carrying a broken frame. | qsl-semantics/src/model/intake.rs:926; qsl-semantics/src/model/intake.rs:1723-1740; qsl-semantics/src/model/intake.rs:1742-1775; qsl-semantics/src/model/intake.rs:1776; qsl-semantics/src/model/intake.rs:1927-1941 |
+| FND-009 | medium | Nothing tests the new `UnsupportedStateClause` refusal (grep: no test references it). The fix for FND-001, a high wrong-result finding, is unguarded: going back to a silent drop would keep every gate green. Fix: a test that assembles a unit holding an `invariant` beside a checking function and asserts `unknown_required_feature`/`unsupported-feature` at the clause's declaration span. | qsl-semantics/src/check/assemble.rs:1133-1141 |
+
+## Dispositions
+
+Round 2, reviewed at 960490173a2601bf8fd9e76b9ccf344242b18002.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3b94b129: `AssemblyCause::UnsupportedStateClause` refuses each clause at its declaration span (assemble.rs:258, 453-459, 1133-1141; qsl-replay spine.rs:371). No test guards it; see FND-009. |
+| FND-002 | fixed | 3b94b129: two genuinely reordered documents (the `AuditLog` type before and after `ConfigVersion`, a cross-type frame entry), with the assembled declarations of both types compared (model_operations.rs:798-951). |
+| FND-003 | fixed | 3b94b129: FCD `UNRESOLVED_FRAME_PATH` is filtered (intake.rs:926), and the AC-2 tests assert `missing_declaration`/`missing-name` and TC-458's exact fifth case. For object and interface types every filtered diagnostic still ends in a refusal: QSL accepts only `Field` (modifies) or `ObjectType` (creates/deletes), both a subset of what FCD resolves. The filter opens a hole elsewhere; see FND-008. |
+| FND-004 | fixed | 3b94b129: `ModelRefusalCause::FrameEntryMalformed` carries the entry, and all four AC-2 cause tests assert node and entry (the missing case also asserts the span). |
+| FND-005 | fixed | 3b94b129: the stale "an operation" lists are removed (assemble.rs:240-245, 502-510). |
+| FND-006 | fixed | 3b94b129: the closure is now `fn resolve_frame` (intake.rs:2198). A miss is a `debug_assert!` rather than a refusal, so a release build still skips silently. Accepted, because the miss is unreachable by construction. |
+| FND-007 | still-open | `qsl-forms/tests/it/protocol_clause_forms.rs` is unchanged at 96049017; the FR-102-AC-1 test still checks two spans. |

@@ -1727,6 +1727,24 @@ fn read_component(
     ctx: &NodeCtx<'_>,
     node: &str,
 ) -> Result<ComponentRecord, ModelRefusal> {
+    // FR-103/SR-722 FND-008: FCD makes `operations` optional on every
+    // construct kind (its own `Member::Operations` default), but this
+    // reader (and `read_endpoint`/`read_connection`/`read_allocation`
+    // alike) has no `OperationMemberRecord` shape for a systems part, so a
+    // non-empty `operations` here would otherwise be silently dropped
+    // (never queued, never resolved, never refused) once
+    // `validate_with_semantic_ir` stops surfacing FCD's own
+    // `UNRESOLVED_FRAME_PATH` diagnostic for an unresolved frame on it.
+    // Refuse it explicitly instead, the same way [`read_record_value_type`]
+    // already refuses an operation on a record value type.
+    if let Some(operation) = ctx.array_field("operations")?.first() {
+        let operation_at = format!("{}.operations[0]", ctx.at);
+        return Err(unsupported_at(
+            operation,
+            &operation_at,
+            format!("{}:operations", meaning::SYSTEMS_PART),
+        ));
+    }
     let owner = ctx.str_field("owner")?;
     let value_type = ctx.str_field("declaredType")?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
@@ -1746,6 +1764,15 @@ fn read_endpoint(
     ctx: &NodeCtx<'_>,
     node: &str,
 ) -> Result<EndpointRecord, ModelRefusal> {
+    // See [`read_component`]'s own comment (SR-722 FND-008).
+    if let Some(operation) = ctx.array_field("operations")?.first() {
+        let operation_at = format!("{}.operations[0]", ctx.at);
+        return Err(unsupported_at(
+            operation,
+            &operation_at,
+            format!("{}:operations", meaning::SYSTEMS_PORT),
+        ));
+    }
     let owner = ctx.str_field("owner")?;
     let value_type = ctx.str_field("interfaceType")?;
     let multiplicity = ctx.multiplicity("multiplicity")?;
@@ -1781,6 +1808,15 @@ fn read_connection(
     ctx: &NodeCtx<'_>,
     node: &str,
 ) -> Result<RelationshipRecord, ModelRefusal> {
+    // See [`read_component`]'s own comment (SR-722 FND-008).
+    if let Some(operation) = ctx.array_field("operations")?.first() {
+        let operation_at = format!("{}.operations[0]", ctx.at);
+        return Err(unsupported_at(
+            operation,
+            &operation_at,
+            format!("{}:operations", meaning::SYSTEMS_CONNECTION),
+        ));
+    }
     let source_end = ctx
         .value
         .get("sourceEnd")
@@ -1933,6 +1969,15 @@ fn read_allocation(
     ctx: &NodeCtx<'_>,
     node: &str,
 ) -> Result<AllocationRecord, ModelRefusal> {
+    // See [`read_component`]'s own comment (SR-722 FND-008).
+    if let Some(operation) = ctx.array_field("operations")?.first() {
+        let operation_at = format!("{}.operations[0]", ctx.at);
+        return Err(unsupported_at(
+            operation,
+            &operation_at,
+            format!("{}:operations", meaning::SYSTEMS_ALLOCATION),
+        ));
+    }
     // model-complete.md:335: an Allocation names a source element and a
     // target element, and nothing else -- no multiplicity, no direction.
     let source = ctx.str_field("sourceElement")?;
