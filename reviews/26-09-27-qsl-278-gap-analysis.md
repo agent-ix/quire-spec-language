@@ -86,3 +86,9 @@ code at that head. The caller's qsl-278-ci-r10.log shows the tests passing
 | FND-005 | fixed 9ad0a69d: each general outcome kind runs through `convert_outcome` and is checked for category, truth and exit code against FR-100's values. FR-100's own exit mapping lives in the root crate (src/command/output.rs), which `qsl-replay` cannot call, so fixed expected values are the right form. |
 | FND-007 | fixed ee698492. |
 | FND-008 | accepted-no-change (3385268d). The citation holds. `evaluate_clause`'s three `CallFailure::Fault` constructions (qsl-eval/src/value/expression/mod.rs:455-458, 473-475, 484-486) are unreachable through `run_clause`: admission always sets `pre` and `post` for an invocation, refuses a `null` result where `binds_result()`, and admits every declared parameter (check 10). The `CallFailure::Fault` to `EvaluateFault` mapping is inline in `run_clause`, so only the constructed form can reach it without a real clause. Optionally, extract that mapping into a function and feed it a real `CallFailure::Fault` from `evaluate_clause` over hand-built observations (its fields are `pub`). |
+
+### Round 4 (reviewed bec2d93cbd63b50e93fa9c3ceed4738381d5b95e)
+
+| ID | Disposition |
+| --- | --- |
+| FND-002 | deferred: QSL-295 (filed, blocked by QSL-278), per the coordinator's ruling. The FR-109 Status section (5f1dacea) records that the I3 extracted-source input and its provenance fields are pending QSL-295. Provenance and admission usage were fixed in b54aa4f2 (round 3). |
