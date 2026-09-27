@@ -344,6 +344,8 @@ pub struct CheckedGraph {
     /// FR-096: the span of each declared type's name read from the unit, by
     /// its declared name, so an `Origin::TypeDeclaration` resolves.
     type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096-AC-1: the embedding map the spans resolve through, if any.
+    embedding: Option<std::sync::Arc<qsl_foundation::source_map::SourceMap>>,
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
     /// selection, ascending by identity.
     model_selections: Vec<DomainPackageRef>,
@@ -741,6 +743,7 @@ impl PackageDeclarations {
         }
         let source = self.source;
         let type_spans = self.declared_type_spans;
+        let embedding = self.embedding;
         let form_spans = self
             .functions
             .iter()
@@ -1295,6 +1298,7 @@ impl PackageDeclarations {
             effective_limits: limits,
             form_spans,
             type_spans,
+            embedding,
             model_selections,
             state_clauses,
         })

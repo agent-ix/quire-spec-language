@@ -30,6 +30,9 @@ Scope: FR-096-AC-1.
    `d`, with no layout deletions, and resolve the four locations again.
 4. Resolve a location in an FR-151 synthesized function and a location with
    `Origin::Expression`.
+5. Embed the unit's body in a document whose C-21 map splits one of the
+   four locations' spans into more than one document region (a layout
+   deletion the map admits), and resolve that location.
 
 Tag the tests `#[trace("TC-426", "FR-096-AC-1")]`.
 
@@ -39,9 +42,22 @@ Tag the tests `#[trace("TC-426", "FR-096-AC-1")]`.
   under `r`, and the same four regions from the checked package.
 - Step 3: the same four spans shifted by `k`, each under `d`.
 - Step 4: no region for either.
+- Step 5: no region -- the position was read from the unit, but its
+  embedded span names no single region of the document.
 
 ## Status
 
-Steps 2 and 4 are backed by `qsl-semantics` `check::region` tests (QSL-239).
-Step 3 (a body embedded in a document, C-21) is not: package declarations
-carry the unit's `RawSourceRef` only, not the embedding's source map.
+Passed locally. Steps 2 and 4 are backed by `qsl-semantics` `check::region`
+tests (QSL-239). Step 3 (a body embedded in a document, C-21) is backed by
+`an_embedded_body_resolves_its_locations_under_the_document_shifted`
+(QSL-293): `PackageDeclarations::embedding` carries the body's `SourceMap`,
+compared against the map's own body identity (never the caller's) before
+it is trusted, and the declarations, the regions taken from them and the
+checked package resolve each location under the document's `RawSourceRef`,
+shifted by `k`. A span the map splits (layout deletions) resolves to no
+single region -- FR-096's fourth no-region case, added and backed directly
+against the resolver (`a_span_the_embedding_splits_has_no_region`); no
+production caller builds a multi-segment map today. No production caller
+sets `embedding` yet either, so a real embedded-document unit still
+resolves under its own body reference until `qsl-source`'s document map is
+wired to the assembler (QSL-294).

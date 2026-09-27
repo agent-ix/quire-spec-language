@@ -245,10 +245,12 @@ pub(super) enum SpineOrigin {
 }
 
 /// FR-100's `outcome` member. `Refused`'s members follow the refusal
-/// table's three rows exactly, by which of `code`/`cause`/`fields`/`locus`
-/// are present: a record row carries all four (plus `location` when known);
-/// a family-no-record row carries `code`/`cause` and `location` alone; a
-/// kernel-no-record row carries only `location`, when known.
+/// table's two rows exactly, by which of `fields`/`locus` are present:
+/// `code` and `cause` are on every refused outcome (FR-100's refusal table
+/// gives both members to a record row and a family-no-record row alike; no
+/// row omits either), a record row also carries `fields`/`locus` (plus
+/// `location` when known), and a family-no-record row carries `location`
+/// alone besides `code`/`cause`.
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(super) enum SpineOutcome {
@@ -256,10 +258,8 @@ pub(super) enum SpineOutcome {
         value: SpineValue,
     },
     Refused {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        code: Option<&'static str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        cause: Option<&'static str>,
+        code: &'static str,
+        cause: &'static str,
         #[serde(skip_serializing_if = "Option::is_none")]
         fields: Option<std::collections::BTreeMap<&'static str, String>>,
         #[serde(skip_serializing_if = "Option::is_none")]

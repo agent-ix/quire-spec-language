@@ -314,6 +314,13 @@ pub struct PackageDeclarations {
     /// assembler fills it). A type declared by hand has none, and its
     /// `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096-AC-1, ADR-013 C-21: the map of a body embedded in a document.
+    /// The spans above are body offsets; with a map, each region resolves
+    /// under the document's `RawSourceRef`, shifted by the body's offset in
+    /// the document. `None` for a unit that is its own document. `Arc`
+    /// so `regions()` shares one map rather than cloning the document and
+    /// body text on every call.
+    pub embedding: Option<std::sync::Arc<qsl_foundation::source_map::SourceMap>>,
     /// The `UnitGraph` the assembler admitted over the unit's dimension and
     /// unit declarations (FR-091). Empty when the unit declares none.
     pub units: crate::value::unit::UnitGraph,
@@ -353,6 +360,7 @@ impl PackageDeclarations {
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
+            embedding: None,
             units: crate::value::unit::UnitGraph::default(),
             nominal_spans: BTreeMap::new(),
             imports: BTreeMap::new(),

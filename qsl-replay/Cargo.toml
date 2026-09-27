@@ -24,6 +24,16 @@ thiserror = "=2.0.20"
 [dev-dependencies]
 serde_json = "=1.0.151"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+# `qsl-semantics`' test-only fixtures (`check::fixture_source`,
+# `PackageDeclarations`, `CheckMode::Kernel`'s `check_expression`) for
+# `spine::call`'s own tests (TC-452 step 5, FR-100-AC-10): a standalone
+# `sum` checked under `CheckMode::Kernel`, which a real compiled program
+# can never reach (QSpec FR-145 refuses an unproved linked `sum` at
+# checking). Resolver 2 turns `test-support` on only when a test target is
+# built (`tests/it/family_outcome_layering.rs`'s
+# `no_shipped_dependency_enables_test_support`, in the root crate, covers
+# every workspace crate), so it never reaches the production lib.
+qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 
 [lints.rust]
 unsafe_code = "forbid"
