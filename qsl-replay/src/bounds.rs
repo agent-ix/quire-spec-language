@@ -65,6 +65,8 @@ impl BoundExceeded {
 
 #[cfg(test)]
 mod tests {
+    use ix_trace_rs::trace;
+
     use super::*;
 
     #[test]
@@ -81,6 +83,7 @@ mod tests {
     /// QSL-236: `BoundExceeded` reports `stage_limit_exceeded/
     /// input-bytes-exceeded`, carrying the bound (`MAX_ENCODED_BYTES`) and
     /// the actual encoded size.
+    #[trace("TC-428", "FR-096-AC-7")]
     #[test]
     fn reports_stage_limit_exceeded_input_bytes() {
         use qsl_foundation::diagnostic::{CatalogCode, CatalogCoded};

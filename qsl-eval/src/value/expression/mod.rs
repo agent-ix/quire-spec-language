@@ -537,8 +537,9 @@ mod tests {
             vec![Value::Integer(Integer::from(3_i64))],
         );
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let fault = qsl_semantics::check::ValueFunctionFamily::evaluate(&flip, &mut env, &mut meter)
-            .expect_err("a checked-program invariant break is an internal fault");
+        let fault =
+            qsl_semantics::check::ValueFunctionFamily::evaluate(&flip, &mut env, &mut meter)
+                .expect_err("a checked-program invariant break is an internal fault");
         assert_eq!(fault.stage(), "S6a");
         assert_eq!(fault.category(), Category::InternalFailure);
         assert_eq!(fault.invariant(), "checked-program-invariant");

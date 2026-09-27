@@ -2615,12 +2615,26 @@ fn pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor() {
         SCALAR_UNLIMITED,
         &population_environment(&scenario),
     );
-    let code = refused_catalog_code(outcome);
+    let FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) = outcome.outcome else {
+        panic!("expected FamilyOutcome::FamilyEvaluated(Refused(_))");
+    };
+    let code = cause.catalog_code();
     assert_eq!(
         (code.code(), code.cause()),
         ("wrong_snapshot", "wrong-anchor"),
         "expected a family-owned Refused(wrong_snapshot/wrong-anchor) for a pre(..) anchor with \
          no admitted pre binding"
+    );
+    // SR-670 FND-004: the evaluator site spells the anchor it required
+    // (`pre`) and the one the binding was admitted with (`post`); a swap
+    // would still be `wrong-anchor`.
+    let fields = cause.catalog_fields().expect("a key-table row");
+    assert_eq!(
+        fields.into_iter().collect::<Vec<_>>(),
+        [
+            ("required", "pre".to_owned()),
+            ("supplied", "post".to_owned())
+        ]
     );
 }
 
