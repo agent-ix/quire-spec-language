@@ -17,6 +17,21 @@ use std::collections::BTreeSet;
 /// A local slot of one function frame or checked expression.
 pub type Slot = usize;
 
+/// The state a model read in a state clause observes (FR-104
+/// "Observations of reads"): `current` in an invariant, `pre` in a
+/// precondition and `post` in a postcondition, except inside `pre(e)`,
+/// where reads of `self` and reads through references obtained inside `e`
+/// observe `pre`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Observation {
+    /// An invariant's `at current` state.
+    Current,
+    /// The operation's pre-state.
+    Pre,
+    /// The operation's post-state.
+    Post,
+}
+
 /// One typed node.
 ///
 /// Only `check` builds or edits a `Node`: its fields are private to `check`,
@@ -503,6 +518,20 @@ pub enum NodeKind {
     /// underneath it reading the invocation pre population. Identity-typed:
     /// this node's `value_type` is always exactly its operand's.
     Pre(Box<Node>),
+    /// `reaches(source, target, edge)` (FR-104, ADR-012 §15.2): whether
+    /// `target` is reachable from `source` by following `edge`, in the state
+    /// clause's own observation. Checked only inside a state clause, with
+    /// both operands `Reference<T>` of one object type `T` and `edge` a
+    /// field of `T` typed `Reference<T>`, `Option<Reference<T>>` or a
+    /// sequence of `Reference<T>`.
+    Reaches {
+        /// The source reference.
+        source: Box<Node>,
+        /// The target reference.
+        target: Box<Node>,
+        /// The edge field, in `T`'s effective attribute set.
+        edge: FieldRef,
+    },
     /// FR-063/S3 (QSL-143): exists only so `--cfg seam_probe` makes every
     /// match over `NodeKind` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -567,7 +596,12 @@ impl Node {
             | NodeKind::Order(_, _, left, right)
             | NodeKind::Equality(_, _, left, right)
             | NodeKind::Connective(_, left, right)
-            | NodeKind::Contains(left, right) => vec![left, right],
+            | NodeKind::Contains(left, right)
+            | NodeKind::Reaches {
+                source: left,
+                target: right,
+                ..
+            } => vec![left, right],
             NodeKind::Call { arguments, .. }
             | NodeKind::ImportedCall { arguments, .. }
             | NodeKind::Tuple { arguments, .. } => arguments.iter().collect(),

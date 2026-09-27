@@ -834,6 +834,10 @@ impl<'a, 'm> Machine<'a, 'm> {
             | NodeKind::If { .. }
             | NodeKind::Connective(..)
             | NodeKind::Pre(_) => return Err(invariant()),
+            // FR-104: `reaches` checks only inside a state clause, and no
+            // function body this evaluator runs is one; FR-107 (QSL-278)
+            // evaluates state clauses.
+            NodeKind::Reaches { .. } => return Err(invariant()),
             // FR-063: no arm for the probe variant under `--cfg seam_probe`
             // alone (`E0004`, this seam's evidence). The arm below exists
             // only in the probe's build of the crates above `qsl-eval`

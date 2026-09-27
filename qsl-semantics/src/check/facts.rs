@@ -13,20 +13,27 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use super::check::DispatchOperation;
-use super::ir::{Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, Slot, Visit};
+use super::ir::{
+    Arithmetic, Connective, DispatchTable, Node, NodeKind, Observation, OrderedKind, Slot, Visit,
+};
+use super::observation::Observations;
 use super::refusal::{
     CheckCause, CheckRefusal, InvalidDispatchDeclaration, Location, Obligation, ProvedInterval,
 };
-use crate::value::declaration::EqualityOperator;
+use crate::value::declaration::{EqualityOperator, FieldRef};
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{Integer, IntegerInterval};
 
 /// One step of a stable path.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum Step {
     Field(usize),
     Value,
+    /// A model attribute read in a state clause (FR-104), with the
+    /// observation it reads at: a fact about one observation of a path
+    /// never discharges an obligation at another.
+    Attribute(FieldRef, Observation),
 }
 
 /// A parameter, `let` or binder root followed by field projections and
@@ -381,6 +388,11 @@ pub(crate) struct Definedness<'a> {
     parameters: usize,
     dispatch_tables: &'a [DispatchTable],
     dispatch_operations: &'a [DispatchOperation],
+    /// A state clause's model reads and their observations (FR-104), or
+    /// `None` outside a state clause. Only a state clause extends stable
+    /// paths through model attribute reads and `pre(e)`, each attribute
+    /// step keyed by its observation.
+    observations: Option<&'a Observations>,
 }
 
 impl<'a> Definedness<'a> {
@@ -394,7 +406,15 @@ impl<'a> Definedness<'a> {
             parameters,
             dispatch_tables,
             dispatch_operations,
+            observations: None,
         }
+    }
+
+    /// Check a state clause body whose model reads observe `observations`
+    /// (FR-104 "Definedness facts").
+    pub(crate) fn with_observations(mut self, observations: &'a Observations) -> Self {
+        self.observations = Some(observations);
+        self
     }
 
     /// Check every obligation on a path that can execute.
@@ -420,6 +440,21 @@ impl<'a> Definedness<'a> {
                 }
                 path.steps.push(Step::Value);
                 Some(path)
+            }
+            // FR-104: in a state clause a stable path also takes the steps
+            // `deref(value(p)).f` and `self.f` take, each keyed by the
+            // observation it reads at; `pre(e)` retags no step itself, since
+            // the reads under it already carry `pre`.
+            NodeKind::Attribute {
+                reference, field, ..
+            } => {
+                let observation = self.observations?.of_read(&node.location)?;
+                let mut path = self.stable_path(reference, facts)?;
+                path.steps.push(Step::Attribute(field.clone(), observation));
+                Some(path)
+            }
+            NodeKind::Pre(operand) if self.observations.is_some() => {
+                self.stable_path(operand, facts)
             }
             _ => None,
         }
@@ -565,6 +600,12 @@ impl<'a> Definedness<'a> {
             NodeKind::Not(operand) => {
                 let (when_true, when_false) = self.outcomes(operand, facts);
                 (when_false, when_true)
+            }
+            // FR-104: `pre(c)` holds exactly when `c` holds at `pre`; the
+            // facts `c` establishes are keyed by the observations its own
+            // reads carry.
+            NodeKind::Pre(operand) if self.observations.is_some() => {
+                self.outcomes(operand, facts)
             }
             NodeKind::Present(operand) => match self.stable_path(operand, facts) {
                 Some(path) => {

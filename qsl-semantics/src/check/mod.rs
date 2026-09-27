@@ -89,9 +89,11 @@ pub(crate) mod imports;
 mod ir;
 mod lowering;
 mod node_key;
+mod observation;
 mod profile;
 mod refusal;
 mod region;
+mod state_clause;
 mod termination;
 mod type_form;
 
@@ -150,7 +152,9 @@ pub use family::fixtures::{
     empty_scope, fixture_source, limits, measure_resolved, root_location, scope_with,
     SCALAR_LIMITS_UNLIMITED,
 };
-pub use ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
+pub use ir::{
+    Arithmetic, Connective, Node, NodeKind, Observation, OrderedKind, RecordSlot, Slot, Visit,
+};
 
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, TopologyFault,
@@ -168,6 +172,7 @@ pub use checked_dispatch::{
 };
 pub use field_refinement::check_field_refinement_obligation;
 pub use region::DeclarationRegions;
+pub use state_clause::{CheckedStateClause, ClauseOperation, StateClauseDeclaration};
 pub use type_form::TypeFormFault;
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
@@ -342,6 +347,8 @@ pub struct CheckedGraph {
     /// ADR-011 §2.4 `model_selections`: each admitted domain package's
     /// selection, ascending by identity.
     model_selections: Vec<DomainPackageRef>,
+    /// FR-104: every checked state clause, in declaration order.
+    state_clauses: Vec<CheckedStateClause>,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -428,6 +435,26 @@ pub struct CallableFunction<'a> {
     pub parameters: &'a [(String, ValueType)],
     /// The declared result type.
     pub result: &'a ValueType,
+}
+
+/// A family `check`'s stage limit as a checking refusal's cause (QSL-236,
+/// L6): `CheckingLimitKind::try_from(LimitKind)` is the named reverse of
+/// `foundation_kind`, and a kind no checking limit names is a fault in the
+/// family, not in the input.
+fn limit_cause(limit: &qsl_foundation::diagnostic::LimitExceeded) -> CheckCause {
+    match CheckingLimitKind::try_from(limit.kind()) {
+        Ok(kind) => CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+            stage: CheckingStage::Typing,
+            kind,
+            limit: limit.configured_bound(),
+            actual: limit.actual(),
+            region: match limit.locus() {
+                Some(Locus::Region(region)) => Some(region.clone()),
+                Some(Locus::Occurrence(_) | Locus::Artifact { .. }) | None => None,
+            },
+        })),
+        Err(kind) => CheckCause::InternalFault(Box::new(KeyFault::UncheckedLimitKind(kind))),
+    }
 }
 
 fn root(origin: Origin) -> Location {
@@ -550,31 +577,51 @@ impl PackageDeclarations {
                 index,
             })
         };
+        let clause_location = |index: usize, name: &str| {
+            root(Origin::StateClause {
+                clause: name.to_owned(),
+                index,
+            })
+        };
         let mut refusals = Vec::new();
-        // QSL-205: one pass groups every declaration index by name, so the
+        // QSL-205: one pass groups every declaration by name, so the
         // duplicate check is a map lookup per declaration, not a pairwise
-        // comparison. Each group's indices stay in declaration order.
-        let mut by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+        // comparison. Each group's declarations stay in declaration order,
+        // functions first. FR-104/FR-109: state clauses and functions share
+        // one selection namespace, so a clause named like another clause or
+        // a function refuses at every declaration of the name.
+        let mut by_name: BTreeMap<&str, Vec<Location>> = BTreeMap::new();
         for (index, function) in self.functions.iter().enumerate() {
             by_name
                 .entry(function.name.as_str())
                 .or_default()
-                .push(index);
+                .push(body_location(index, &function.name));
         }
-        for (index, function) in self.functions.iter().enumerate() {
-            let group = by_name
-                .get(function.name.as_str())
-                .map_or(&[][..], Vec::as_slice);
-            if group.len() > 1 {
-                let loci: Vec<Location> = group
+        for (index, clause) in self.state_clauses.iter().enumerate() {
+            by_name
+                .entry(clause.name.as_str())
+                .or_default()
+                .push(clause_location(index, &clause.name));
+        }
+        let declarations = self
+            .functions
+            .iter()
+            .enumerate()
+            .map(|(index, function)| (function.name.as_str(), body_location(index, &function.name)))
+            .chain(
+                self.state_clauses
                     .iter()
-                    .map(|&other| body_location(other, &function.name))
-                    .collect();
+                    .enumerate()
+                    .map(|(index, clause)| (clause.name.as_str(), clause_location(index, &clause.name))),
+            );
+        for (name, location) in declarations {
+            let loci = by_name.get(name).map_or(&[][..], Vec::as_slice);
+            if loci.len() > 1 {
                 refusals.push(CheckRefusal {
-                    location: body_location(index, &function.name),
+                    location,
                     cause: CheckCause::AmbiguousName {
-                        name: function.name.clone(),
-                        loci,
+                        name: name.to_owned(),
+                        loci: loci.to_vec(),
                     },
                 });
             }
@@ -912,30 +959,57 @@ impl PackageDeclarations {
                     drafts.push((signatures.as_slice()[index].clone(), checked.body, kind));
                 }
                 Err(StageFailure::Limit(limit)) => {
-                    // QSL-236 (L6): `CheckingLimitKind::try_from(LimitKind)`
-                    // is the named reverse of `foundation_kind`; a kind no
-                    // checking limit names is a fault in the family, not
-                    // in the input.
-                    let cause = match CheckingLimitKind::try_from(limit.kind()) {
-                        Ok(kind) => CheckCause::ResourceExhausted(Box::new(StageLimitCause {
-                            stage: CheckingStage::Typing,
-                            kind,
-                            limit: limit.configured_bound(),
-                            actual: limit.actual(),
-                            region: match limit.locus() {
-                                Some(Locus::Region(region)) => Some(region.clone()),
-                                Some(Locus::Occurrence(_) | Locus::Artifact { .. }) | None => None,
-                            },
-                        })),
-                        Err(kind) => {
-                            CheckCause::InternalFault(Box::new(KeyFault::UncheckedLimitKind(kind)))
-                        }
-                    };
                     refusals.push(CheckRefusal {
                         location: location.clone(),
-                        cause,
+                        cause: limit_cause(&limit),
                     });
                 }
+                Err(StageFailure::Refused(refusal)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
+        // FR-104: each state clause, checked through the `ProtocolClause`
+        // family's own contract once every function signature is known (a
+        // clause body may call a function), against the same package-wide
+        // node total and contract meter.
+        let state_clause_forms = self.state_clauses;
+        let mut typed_clauses = Vec::with_capacity(state_clause_forms.len());
+        for (index, clause) in state_clause_forms.iter().enumerate() {
+            let location = clause_location(index, &clause.name);
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match state_clause::ProtocolClauseFamily::check(clause, &mut contract_cx) {
+                Ok(staged) => {
+                    let checked = staged.into_value();
+                    nodes_used = checked.nodes_used;
+                    typed_clauses.push(checked);
+                }
+                Err(StageFailure::Limit(limit)) => refusals.push(CheckRefusal {
+                    location,
+                    cause: limit_cause(&limit),
+                }),
                 Err(StageFailure::Refused(refusal)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
@@ -997,6 +1071,9 @@ impl PackageDeclarations {
         for (_, body, _) in &mut drafts {
             units.extend(std::mem::take(&mut body.formed_units));
         }
+        for clause in &mut typed_clauses {
+            units.extend(std::mem::take(&mut clause.formed_units));
+        }
         let mut lowering = lowering::Lowering::new(
             &scope,
             &owner,
@@ -1035,6 +1112,32 @@ impl PackageDeclarations {
                 .collect();
             refusals.extend(lowering.function_group(group, &inputs));
         }
+        // FR-104: each state clause after every function it may call,
+        // minting its node identity and recording its `claim` occurrence.
+        let mut lowered_clauses = Vec::with_capacity(typed_clauses.len());
+        for (index, (form, typed)) in state_clause_forms.iter().zip(&typed_clauses).enumerate() {
+            let location = clause_location(index, &form.name);
+            let input = lowering::StateClauseInput {
+                kind: form.kind,
+                location: &location,
+                context: form.context,
+                anchor: form
+                    .operation
+                    .as_ref()
+                    .map(|operation| lowering::AnchorInput {
+                        declaring: operation.declaring,
+                        operation: &operation.declaration,
+                    }),
+                parameters: &typed.parameters,
+                body: &typed.body,
+                body_slots: &typed.slot_names,
+                population_types: &typed.population_types,
+            };
+            match lowering.state_clause(&input) {
+                Ok(lowered) => lowered_clauses.push(lowered),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
@@ -1070,13 +1173,82 @@ impl PackageDeclarations {
         // keyed by the `expression` occurrence recorded at the site's own
         // location (ADR-013 O-07). A claim that cannot be keyed is a fault,
         // never an omission.
-        let requirements = claims::key_claims(claims, &occurrences, &semantic_graph, &binders)
+        let mut requirements = claims::key_claims(claims, &occurrences, &semantic_graph, &binders)
             .map_err(|fault| {
                 vec![CheckRefusal {
                     location: root(Origin::Expression),
                     cause: CheckCause::InternalFault(Box::new(fault)),
                 }]
             })?;
+        // FR-104 "Requirements": one `operation-contract` record per clause,
+        // keyed by its `claim` occurrence, and one per frame of an operation
+        // a `pre` or `post` clause names, keyed by the frame node's own
+        // occurrence.
+        let state_clauses = state_clause_forms
+            .into_iter()
+            .zip(typed_clauses)
+            .zip(lowered_clauses)
+            .enumerate()
+            .map(|(index, ((form, typed), lowered))| {
+                let location = clause_location(index, &form.name);
+                let unkeyable = || {
+                    vec![CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                    }]
+                };
+                let claim = occurrences
+                    .iter_role(family::OccurrenceRole::Claim)
+                    .find(|(node, _, at)| *node == lowered.key && **at == location)
+                    .map(|(_, origin, _)| origin)
+                    .ok_or_else(unkeyable)?;
+                let claims = state_clause::ProtocolClauseFamily::requirements(&typed);
+                let keyed = state_clause::clause_records(
+                    &typed,
+                    &claims,
+                    &form,
+                    &lowered,
+                    scope.types(),
+                    limits.nodes(),
+                    &location,
+                )
+                .map_err(|refusal| vec![refusal])?;
+                for state_clause::KeyedClaim { node, record } in keyed {
+                    let origin = if node == lowered.key {
+                        claim.clone()
+                    } else {
+                        occurrences
+                            .iter_role(family::OccurrenceRole::Generated)
+                            .find(|(generated, _, _)| *generated == node)
+                            .map(|(_, origin, _)| origin)
+                            .ok_or_else(unkeyable)?
+                    };
+                    match requirements.entry(OccurrenceKey::new(claims::wire(node), origin)) {
+                        std::collections::btree_map::Entry::Vacant(slot) => {
+                            slot.insert(record);
+                        }
+                        // Every clause naming one operation keys the same
+                        // frame record; any other collision is a fault.
+                        std::collections::btree_map::Entry::Occupied(existing)
+                            if node != lowered.key && *existing.get() == record => {}
+                        std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                    }
+                }
+                Ok(CheckedStateClause {
+                    name: form.name,
+                    kind: form.kind,
+                    context: form.context,
+                    operation: form.operation,
+                    parameters: typed.parameters,
+                    body: typed.body,
+                    slots: typed.slots,
+                    observations: typed.observations,
+                    identity: lowered.key,
+                    claim,
+                    spans: form.spans,
+                })
+            })
+            .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
         let functions = CheckedFunctions::new(
             drafts
                 .into_iter()
@@ -1107,6 +1279,7 @@ impl PackageDeclarations {
             form_spans,
             type_spans,
             model_selections,
+            state_clauses,
         })
     }
 }
@@ -1258,6 +1431,18 @@ impl CheckedGraph {
             slots,
             effective_limits: limits,
         })
+    }
+
+    /// FR-104: the checked state clause declared `name`. Clauses and
+    /// functions share one namespace, so a name names at most one
+    /// declaration of either.
+    pub fn state_clause(&self, name: &str) -> Option<&CheckedStateClause> {
+        self.state_clauses.iter().find(|clause| clause.name == name)
+    }
+
+    /// FR-104: every checked state clause, in declaration order.
+    pub fn state_clauses(&self) -> &[CheckedStateClause] {
+        &self.state_clauses
     }
 
     /// The first function named `name`, with its signature.

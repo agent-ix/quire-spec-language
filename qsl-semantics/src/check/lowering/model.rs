@@ -108,6 +108,36 @@ impl AdmittedModel {
     pub fn selection(&self) -> &DomainPackageRef {
         &self.selection
     }
+
+    /// The record `key` names in this package.
+    pub(super) fn record(&self, key: &DeclarationKey) -> Option<&DomainPackageRecord> {
+        self.records.get(key)
+    }
+
+    /// FR-104: every population declaration of this package whose member
+    /// types include the object type `target`, each with its ordinal among
+    /// the package's population declarations in ascending `DeclarationKey`
+    /// order (its own `Ord`: `package`, then `node`). The ordinal is stable
+    /// within this package's digest only. A domain package population
+    /// declares no maximum (the Semantic IR `population` record has no such
+    /// member), so each one is an unbounded `Population(None)` domain.
+    pub(crate) fn populations_of(&self, target: EffectiveId) -> Vec<(usize, &DeclarationKey)> {
+        let Some(member) = self.types.get(&target) else {
+            return Vec::new();
+        };
+        // `records` is a `BTreeMap` keyed by `DeclarationKey`, so its
+        // population records iterate in ascending key order.
+        self.records
+            .values()
+            .filter_map(|record| match record {
+                DomainPackageRecord::Population(population) => Some(population),
+                _ => None,
+            })
+            .enumerate()
+            .filter(|(_, population)| population.member_types.contains(member))
+            .map(|(ordinal, population)| (ordinal, &population.key))
+            .collect()
+    }
 }
 
 /// A clause function's FR-094 owner and clause kind: the declaration whose

@@ -31,7 +31,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, Expression,
-    FunctionDeclaration, ParsedUnit, RecordFieldForm, TypeForm, TypeFormHead, UnitForm,
+    FunctionDeclaration, ParsedUnit, RecordFieldForm, StateClauseForm, TypeForm, TypeFormHead,
+    UnitForm,
 };
 use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded, StageFailure};
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -42,6 +43,7 @@ use quire_exact::{
 };
 
 use super::check::{EnumBinding, PackageDeclarations, ResolvedSignature};
+use super::state_clause::{population_of, ClauseOperation, StateClauseDeclaration};
 use super::lowering::{strongly_connected, AdmittedModel};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::type_form::{
@@ -61,7 +63,8 @@ use crate::model::intake::{member_identity_name, type_identity_segment, Selected
 use crate::model::key::DeclarationKey;
 use crate::value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
-    InvalidDeclaration, ObjectTypeDeclaration, OperationDeclaration, TypeEnvironment,
+    InvalidDeclaration, ObjectTypeDeclaration, OperationDeclaration, OperationLookup,
+    TypeEnvironment,
 };
 use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
 use crate::value::semantic_node::{InvalidSemanticGraph, OwnerSelection};
@@ -248,16 +251,31 @@ pub enum AssemblyCause {
         /// The record's IR node identity.
         node: String,
     },
-    /// A state clause (`invariant`/`pre`/`post`) declared in the `1-draft`
-    /// unit. FR-102 (QSL-273) builds the form at S2; FR-104 (QSL-277) is
-    /// the ticket that checks it (context, anchor, observation-keyed facts,
-    /// body typing) and declares it on the assembled package. Until then
-    /// the assembler refuses it here rather than silently dropping it, so
-    /// a unit holding one never checks and emits as if the clause said
-    /// nothing.
-    UnsupportedStateClause {
-        /// The clause's declared name.
-        name: String,
+    /// A `pre` or `post` state clause's operation names no operation of its
+    /// context type's effective view (FR-104, FR-103).
+    UnresolvedOperation {
+        /// The context type as written, `M::T`.
+        context: String,
+        /// The operation name as written.
+        operation: String,
+    },
+    /// A `pre` or `post` state clause's operation names operations of
+    /// several of its context type's ancestors, none more derived than the
+    /// others (FR-103's effective view).
+    AmbiguousOperation {
+        /// The context type as written, `M::T`.
+        context: String,
+        /// The operation name as written.
+        operation: String,
+    },
+    /// A state clause's context type (or the type declaring its operation)
+    /// is a member type of two or more populations with no maximum, so its
+    /// extent cannot name exactly one (FR-104 "Requirements").
+    AmbiguousPopulation {
+        /// The context type as written, `M::T`.
+        context: String,
+        /// The populations, in ascending `DeclarationKey` order.
+        populations: Vec<DeclarationKey>,
     },
 }
 
@@ -265,15 +283,17 @@ impl AssemblyCause {
     /// This cause's catalog code (FR-091 "Catalog codes").
     pub fn code(&self) -> Code {
         match self {
-            Self::UnresolvedTypeName { .. } | Self::UndeclaredAlias { .. } => {
-                Code::MissingDeclaration
-            }
+            Self::UnresolvedTypeName { .. }
+            | Self::UndeclaredAlias { .. }
+            | Self::UnresolvedOperation { .. } => Code::MissingDeclaration,
             Self::UnadmittedModel { .. } | Self::UnsuppliedImport { .. } => Code::MissingImport,
             Self::ModelType { .. } => Code::RuntimeInvariant,
             Self::AmbiguousTypeName { .. }
             | Self::DuplicateAlias { .. }
             | Self::DuplicateEnumMember { .. }
-            | Self::DuplicateQuantityName { .. } => Code::AmbiguousDeclaration,
+            | Self::DuplicateQuantityName { .. }
+            | Self::AmbiguousOperation { .. }
+            | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
             Self::QuantityCycle { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
@@ -281,9 +301,9 @@ impl AssemblyCause {
             // FR-091-OQ-12: STD-112 has not published the topology causes.
             Self::UnitGraphTopology { .. } => Code::InvalidPackage,
             Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
-            Self::FloatingType { .. }
-            | Self::UnsupportedModelMember { .. }
-            | Self::UnsupportedStateClause { .. } => Code::UnknownRequiredFeature,
+            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
+                Code::UnknownRequiredFeature
+            }
             Self::AliasCycle { .. } => Code::InvalidPackage,
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
                 DeclarationCause::DuplicateMember(_) => Code::AmbiguousDeclaration,
@@ -309,11 +329,13 @@ impl AssemblyCause {
     /// ADR-013 O-17).
     pub fn catalog_code(&self) -> CatalogCode {
         let cause = match self {
-            Self::UnresolvedTypeName { .. } => "missing-name",
+            Self::UnresolvedTypeName { .. } | Self::UnresolvedOperation { .. } => "missing-name",
             Self::AmbiguousTypeName { .. }
             | Self::DuplicateAlias { .. }
             | Self::DuplicateEnumMember { .. }
-            | Self::DuplicateQuantityName { .. } => "ambiguous-name",
+            | Self::DuplicateQuantityName { .. }
+            | Self::AmbiguousOperation { .. }
+            | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
             Self::QuantityCycle { .. } => "definition-cycle",
             Self::ZeroDenominator => "unproved-nonzero",
@@ -323,9 +345,9 @@ impl AssemblyCause {
             Self::UnitGraphTopology { .. } => "unit-graph-topology",
             Self::IllFormedBounds(_) => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
-            Self::FloatingType { .. }
-            | Self::UnsupportedModelMember { .. }
-            | Self::UnsupportedStateClause { .. } => "unsupported-feature",
+            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
+                "unsupported-feature"
+            }
             Self::AliasCycle { .. } => "definition-cycle",
             Self::UndeclaredAlias { .. }
             | Self::UnadmittedModel { .. }
@@ -400,10 +422,9 @@ struct Unit {
     functions: Vec<FunctionDeclaration>,
     /// Each declared type name's declarations, with the span of each name.
     declared: BTreeMap<String, Vec<(Declared, Span)>>,
-    /// Each state clause's declared name and declaration span, refused as
-    /// [`AssemblyCause::UnsupportedStateClause`] by the caller (FR-104,
-    /// QSL-277, is not built yet).
-    state_clauses: Vec<(String, Span)>,
+    /// State clause declarations in declaration order (FR-102), resolved
+    /// by the caller into `StateClauseDeclaration`s (FR-104).
+    state_clauses: Vec<StateClauseForm>,
 }
 
 impl Unit {
@@ -445,18 +466,7 @@ impl Unit {
                     unit.declare(&enumeration.name, Declared::Enum);
                     unit.enums.push(enumeration);
                 }
-                // FR-102 (QSL-273) builds the form; FR-104 (QSL-277) is the
-                // ticket that checks it (context, anchor, observation-keyed
-                // facts, body typing) and declares it on the assembled
-                // package. Nothing downstream of this assembler reads a
-                // state clause yet, so `assemble_with_limits` refuses each
-                // one as `AssemblyCause::UnsupportedStateClause` rather than
-                // silently dropping it -- a checked, emittable package must
-                // never say nothing about a clause the unit declared.
-                DeclarationForm::StateClause(clause) => {
-                    unit.state_clauses
-                        .push((clause.name.name, clause.spans.declaration));
-                }
+                DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
             }
         }
         unit
@@ -804,9 +814,13 @@ fn signature_type_forms(function: &FunctionDeclaration) -> Vec<&TypeForm> {
 /// types of `fold<A>`, `reduce<A>`, `count<N>` and `sum<N>` as name forms
 /// over the name's own span.
 fn body_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
+    expression_type_forms([function.measure.as_ref(), Some(&function.body)].into_iter().flatten())
+}
+
+/// Every type form written inside `roots`, in source order.
+fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) -> Vec<TypeForm> {
     let mut forms = Vec::new();
-    let roots = [function.measure.as_ref(), Some(&function.body)];
-    for root in roots.into_iter().flatten() {
+    for root in roots {
         let mut stack = vec![root];
         while let Some(expression) = stack.pop() {
             match expression {
@@ -1129,17 +1143,6 @@ impl PackageDeclarations {
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
 
-        // FR-102/FR-104: a state clause builds at S2 but has no checker or
-        // declaration yet (QSL-277 owns FR-104). Refuse it here, at its own
-        // declaration span, rather than admitting a package that silently
-        // says nothing about a clause the unit declared.
-        for (name, span) in &unit.state_clauses {
-            errors.push(AssemblyError {
-                cause: AssemblyCause::UnsupportedStateClause { name: name.clone() },
-                span: *span,
-            });
-        }
-
         // Each `model` declaration's admitted domain package, and its
         // object types by name.
         let mut admitted = Vec::with_capacity(selections.models.len());
@@ -1327,6 +1330,11 @@ impl PackageDeclarations {
                 check_names(&unit, &object_names, &qualified, form, &mut errors);
             }
             for form in body_type_forms(function) {
+                check_names(&unit, &object_names, &qualified, &form, &mut errors);
+            }
+        }
+        for clause in &unit.state_clauses {
+            for form in expression_type_forms([&clause.body]) {
                 check_names(&unit, &object_names, &qualified, &form, &mut errors);
             }
         }
@@ -1524,6 +1532,13 @@ impl PackageDeclarations {
         let mut type_spans = object_spans;
         type_spans.extend(declared_type_spans.clone());
         let types = admit_types(declarations, &object_types, &type_spans)?;
+        let state_clauses = state_clauses(
+            unit.state_clauses,
+            &selections.profiles,
+            &object_names,
+            &types,
+            &admitted,
+        )?;
 
         let mut package = PackageDeclarations::new(source);
         package.types = types;
@@ -1544,9 +1559,123 @@ impl PackageDeclarations {
         }
         package.functions = unit.functions;
         package.function_selections = function_selections;
+        package.state_clauses = state_clauses;
         package.declared_type_spans = declared_type_spans;
         package.imports = qualified;
         Ok(package)
+    }
+}
+
+/// FR-104 "Resolution": each state clause's `using` alias resolved to one
+/// of the unit's profile selections, as a function's is (FR-091); its
+/// context `M::T` to an object type of an admitted domain package; a `pre`
+/// or `post` clause's operation to one of `M::T`'s effective view (FR-103);
+/// and the population its extent names, which must be exactly one for its
+/// context type and for the type declaring its operation. Each unresolved
+/// name refuses at its span, the ambiguous population at the clause's
+/// context.
+fn state_clauses(
+    forms: Vec<StateClauseForm>,
+    profiles: &[qsl_foundation::selection::ProfileSelection],
+    object_names: &BTreeMap<String, EffectiveId>,
+    types: &TypeEnvironment,
+    models: &[AdmittedModel],
+) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
+    let mut errors = Vec::new();
+    let mut clauses = Vec::with_capacity(forms.len());
+    for form in forms {
+        let error = |cause, span| AssemblyError { cause, span };
+        let selection = profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        if selection.is_none() {
+            errors.push(error(
+                AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                form.profile.span,
+            ));
+        }
+        let context = object_names.get(&form.context.name).copied();
+        let Some(context) = context else {
+            errors.push(error(
+                AssemblyCause::UnresolvedTypeName {
+                    name: form.context.name.clone(),
+                },
+                form.context.span,
+            ));
+            continue;
+        };
+        let operation = match &form.operation {
+            None => None,
+            Some(operation) => match types.operation(context, &operation.name) {
+                OperationLookup::Declared {
+                    declaring,
+                    operation,
+                } => Some(ClauseOperation {
+                    declaring,
+                    declaration: operation.clone(),
+                }),
+                OperationLookup::Missing => {
+                    errors.push(error(
+                        AssemblyCause::UnresolvedOperation {
+                            context: form.context.name.clone(),
+                            operation: operation.name.clone(),
+                        },
+                        operation.span,
+                    ));
+                    continue;
+                }
+                OperationLookup::Ambiguous(_) => {
+                    errors.push(error(
+                        AssemblyCause::AmbiguousOperation {
+                            context: form.context.name.clone(),
+                            operation: operation.name.clone(),
+                        },
+                        operation.span,
+                    ));
+                    continue;
+                }
+            },
+        };
+        let mut objects = vec![context];
+        objects.extend(
+            operation
+                .as_ref()
+                .map(|operation| operation.declaring)
+                .filter(|declaring| *declaring != context),
+        );
+        if let Some(populations) = objects
+            .into_iter()
+            .find_map(|object| population_of(models, object).err())
+        {
+            errors.push(error(
+                AssemblyCause::AmbiguousPopulation {
+                    context: form.context.name.clone(),
+                    populations,
+                },
+                form.context.span,
+            ));
+            continue;
+        }
+        let Some(selection) = selection else {
+            continue;
+        };
+        clauses.push(StateClauseDeclaration {
+            kind: form.kind,
+            name: form.name.name,
+            selection,
+            context,
+            operation,
+            body: form.body,
+            spans: form.spans,
+        });
+    }
+    if errors.is_empty() {
+        Ok(clauses)
+    } else {
+        refuse(errors)
     }
 }
 

@@ -1,0 +1,587 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-104: the `ProtocolClause` family's S3 check of a state clause
+//! (ADR-012 §2, §15.7), and its `requirements` hook.
+//!
+//! The FR-091 assembler resolves a [`StateClauseForm`]'s profile alias, its
+//! context type `M::T` and, for a `pre` or `post` clause, its operation in
+//! `M::T`'s effective view (FR-103), and refuses an unresolved name at its
+//! span, into a [`StateClauseDeclaration`]. [`ProtocolClauseFamily::check`]
+//! then types the body as a Boolean under its clause kind, with `self`,
+//! `result` and the operation's parameters bound, gives every model read
+//! its observation ([`Observations`]) and runs the static definedness check
+//! over observation-keyed facts. [`PackageDeclarations::check`] lowers each
+//! checked clause after every function (a clause body may call one), which
+//! mints its node identity and records its `claim` occurrence, and keys one
+//! `operation-contract` record per clause and one per frame of an operation
+//! a `pre` or `post` clause names.
+//!
+//! [`StateClauseForm`]: qsl_forms::StateClauseForm
+//! [`PackageDeclarations::check`]: super::PackageDeclarations::check
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use qsl_forms::{ClauseKind, DeclarationSpans, Expression, StateClauseKind};
+use qsl_foundation::bound::DomainKey;
+use qsl_foundation::diagnostic::{Staged, StageFailure};
+use qsl_foundation::selection::ProfileSelection;
+use quire_exact::{EffectiveId, NodeKey, Origin, ValueType};
+
+use super::check::{bind_parameters, Signatures, StateContext, Typer};
+use super::claims::{wire, RequirementRecord};
+use super::facts::Definedness;
+use super::ir::{DispatchTable, Node, NodeKind, Observation};
+use super::lowering::{AdmittedModel, LoweredClause};
+use super::observation::Observations;
+use super::refusal::{CheckCause, CheckRefusal, KeyFault, Location};
+use super::{CheckingLimits, Capability, Scope};
+use crate::family::{
+    classify_domains, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure, DomainKind,
+    FamilyContract, Requirements,
+};
+use crate::model::key::DeclarationKey;
+use crate::value::declaration::{OperationDeclaration, TypeEnvironment};
+
+/// The operation a `pre` or `post` clause names, resolved in its context
+/// type's effective view (FR-103).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClauseOperation {
+    /// The object type that declares the operation: the context type, or
+    /// the ancestor the context type inherits it from.
+    pub declaring: EffectiveId,
+    /// The operation.
+    pub declaration: OperationDeclaration,
+}
+
+/// One state clause the FR-091 assembler admitted (FR-104 "Inputs"): every
+/// name of its header resolved, its body as S2 built it.
+#[derive(Clone, Debug)]
+pub struct StateClauseDeclaration {
+    /// Invariant, precondition or postcondition.
+    pub kind: StateClauseKind,
+    /// The declared clause name.
+    pub name: String,
+    /// The profile selection the clause's `using` alias resolved to.
+    pub selection: ProfileSelection,
+    /// The context object type `M::T`, by its effective identity.
+    pub context: EffectiveId,
+    /// The operation a `pre` or `post` clause names; `None` for an
+    /// invariant.
+    pub operation: Option<ClauseOperation>,
+    /// The body.
+    pub body: Expression,
+    /// The form's spans: the declaration's, and one per body node.
+    pub spans: DeclarationSpans,
+}
+
+impl StateClauseDeclaration {
+    /// The clause kind as the typer reads it: `pre(e)` is legal only in a
+    /// postcondition.
+    fn clause_kind(&self) -> ClauseKind {
+        match self.kind {
+            StateClauseKind::Invariant => ClauseKind::Invariant,
+            StateClauseKind::Precondition => ClauseKind::Precondition,
+            StateClauseKind::Postcondition => ClauseKind::Postcondition,
+        }
+    }
+
+    /// The observation the clause's own reads take (FR-104).
+    fn observation(&self) -> Observation {
+        match self.kind {
+            StateClauseKind::Invariant => Observation::Current,
+            StateClauseKind::Precondition => Observation::Pre,
+            StateClauseKind::Postcondition => Observation::Post,
+        }
+    }
+
+    /// `self`, then `result` in a postcondition of an operation that
+    /// declares one, then the operation's parameters of a `pre` or `post`
+    /// clause, each typed as FR-103 declares it: the slots the body is
+    /// typed over, in order. An invariant binds `self` alone.
+    fn parameters(&self) -> (Vec<(String, ValueType)>, bool) {
+        let mut parameters = vec![("self".to_owned(), ValueType::Reference(self.context))];
+        let Some(operation) = &self.operation else {
+            return (parameters, false);
+        };
+        let result = match (self.kind, operation.declaration.result()) {
+            (StateClauseKind::Postcondition, Some(result)) => {
+                parameters.push(("result".to_owned(), result.clone()));
+                true
+            }
+            _ => false,
+        };
+        parameters.extend(operation.declaration.parameters().iter().cloned());
+        (parameters, result)
+    }
+}
+
+/// The read-only declarations a state clause checks against.
+pub(crate) struct ClauseDeclarations<'a> {
+    pub(crate) scope: &'a Scope,
+    pub(crate) signatures: &'a Signatures,
+    pub(crate) dispatch_tables: &'a [DispatchTable],
+    pub(crate) models: &'a [AdmittedModel],
+    pub(crate) checking_limits: CheckingLimits,
+    /// The clause body's root location.
+    pub(crate) location: &'a Location,
+    /// The package's running expression-node total before this clause.
+    pub(crate) nodes_used: u64,
+}
+
+/// One population domain of a requested item (FR-104 "Requirements"): the
+/// population's member object type and its ordinal among its package's
+/// population declarations in ascending `DeclarationKey` order.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct PopulationDomain {
+    pub(crate) object: EffectiveId,
+    pub(crate) ordinal: usize,
+}
+
+/// What an `operation-contract` claim is about.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimSubject {
+    /// The clause itself, keyed by its `claim` occurrence.
+    Clause,
+    /// The frame of the operation a `pre` or `post` clause names, keyed by
+    /// the frame node's own occurrence.
+    Frame,
+}
+
+/// One `operation-contract` claim of a checked state clause, before
+/// lowering keys it (ADR-012 §13.5).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClauseClaim {
+    pub(crate) subject: ClaimSubject,
+    /// The population domains the item ranges over.
+    pub(crate) populations: Vec<PopulationDomain>,
+}
+
+/// A state clause checked by [`ProtocolClauseFamily::check`], before
+/// lowering keys it.
+#[derive(Debug)]
+pub(crate) struct TypedStateClause {
+    pub(crate) parameters: Vec<(String, ValueType)>,
+    pub(crate) body: Node,
+    pub(crate) slots: usize,
+    pub(crate) slot_names: Vec<String>,
+    pub(crate) observations: Observations,
+    pub(crate) formed_units: crate::value::quantity::UnitTable,
+    pub(crate) nodes_used: u64,
+    /// The object types whose population domains the claims name, the
+    /// context's first.
+    pub(crate) population_types: Vec<EffectiveId>,
+    pub(crate) claims: Vec<ClauseClaim>,
+}
+
+/// The `ProtocolClause` family's state clause production (ADR-012 §15.2,
+/// FR-104).
+pub(crate) struct ProtocolClauseFamily;
+
+/// The one population with no maximum whose member types include
+/// `object` (FR-104, FR-084): `Ok(None)` when none does, and the
+/// populations' keys in ascending `DeclarationKey` order when several do.
+/// A domain package population declares no maximum, so every one counts.
+pub(crate) fn population_of(
+    models: &[AdmittedModel],
+    object: EffectiveId,
+) -> Result<Option<PopulationDomain>, Vec<DeclarationKey>> {
+    let found: Vec<(usize, &DeclarationKey)> = models
+        .iter()
+        .flat_map(|model| model.populations_of(object))
+        .collect();
+    match found.as_slice() {
+        [] => Ok(None),
+        [(ordinal, _)] => Ok(Some(PopulationDomain {
+            object,
+            ordinal: *ordinal,
+        })),
+        many => {
+            let mut keys: Vec<DeclarationKey> = many.iter().map(|(_, key)| (*key).clone()).collect();
+            keys.sort();
+            Err(keys)
+        }
+    }
+}
+
+/// The ambiguous-population refusal at `location`: `object`'s population
+/// cannot be named exactly once (FR-104 "Requirements").
+fn ambiguous_population(
+    scope: &Scope,
+    object: EffectiveId,
+    populations: &[DeclarationKey],
+    location: &Location,
+) -> CheckRefusal {
+    let name = scope
+        .types()
+        .object_type(object)
+        .map_or_else(String::new, |declaration| declaration.name().to_owned());
+    let populations: Vec<&str> = populations.iter().map(|key| key.node.as_str()).collect();
+    CheckRefusal {
+        location: location.clone(),
+        cause: CheckCause::AmbiguousName {
+            name: format!("{name} ({})", populations.join(", ")),
+            loci: vec![location.clone()],
+        },
+    }
+}
+
+impl FamilyContract for ProtocolClauseFamily {
+    type Form = StateClauseDeclaration;
+    type Checked = TypedStateClause;
+    type Cause = CheckRefusal;
+    type Declarations<'a> = ClauseDeclarations<'a>;
+    type Claim = ClauseClaim;
+
+    fn check<'a>(
+        form: &StateClauseDeclaration,
+        cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+    ) -> CheckOutcome<TypedStateClause, CheckRefusal> {
+        let declarations = cx.declarations();
+        check_clause(form, declarations)
+            .map(Staged::new)
+            .map_err(StageFailure::Refused)
+    }
+
+    fn requirements(checked: &TypedStateClause) -> Vec<ClauseClaim> {
+        checked.claims.clone()
+    }
+}
+
+/// Type `form`'s body as a Boolean under its clause kind, give each model
+/// read its observation, and check its definedness (FR-104 "Typing",
+/// "Observations of reads", "Definedness facts").
+fn check_clause(
+    form: &StateClauseDeclaration,
+    input: &ClauseDeclarations<'_>,
+) -> Result<TypedStateClause, CheckRefusal> {
+    let location = input.location;
+    let mut nodes = input.nodes_used;
+    let (parameters, has_result) = form.parameters();
+    let mut typer = Typer::new(
+        input.scope,
+        input.signatures,
+        input.checking_limits,
+        &mut nodes,
+        form.clause_kind(),
+    );
+    bind_parameters(&mut typer, &parameters, location)?;
+    typer.enter_state_clause(StateContext {
+        kind: form.kind,
+        operation: form
+            .operation
+            .as_ref()
+            .map(|operation| operation.declaration.name().to_owned()),
+        self_slot: 0,
+        result_slot: has_result.then_some(1),
+    });
+    let body = typer.infer(&form.body, Some(&ValueType::Boolean), location)?;
+    if body.value_type() != &ValueType::Boolean {
+        return Err(CheckRefusal {
+            location: location.clone(),
+            cause: CheckCause::NonBooleanRoot,
+        });
+    }
+    let slots = typer.slots();
+    let slot_names = typer.slot_names().to_vec();
+    let formed_units = typer.into_formed_units();
+    let observations = Observations::of(&body, form.observation(), parameters.len());
+    Definedness::new(
+        parameters.len(),
+        input.dispatch_tables,
+        &input.scope.dispatch_operations,
+    )
+    .with_observations(&observations)
+    .check(&body)?;
+
+    // The populations the clause ranges over: its context's, then each one
+    // a `reaches` walks (FR-104 "Requirements").
+    let mut clause_populations = BTreeSet::new();
+    let context = population_of(input.models, form.context)
+        .map_err(|keys| ambiguous_population(input.scope, form.context, &keys, location))?;
+    clause_populations.extend(context);
+    for node in body.descendants() {
+        if let NodeKind::Reaches { source, .. } = node.kind() {
+            if let ValueType::Reference(object) = source.value_type() {
+                let walked = population_of(input.models, *object).map_err(|keys| {
+                    ambiguous_population(input.scope, *object, &keys, node.location())
+                })?;
+                clause_populations.extend(walked);
+            }
+        }
+    }
+    let mut claims = vec![ClauseClaim {
+        subject: ClaimSubject::Clause,
+        populations: clause_populations.into_iter().collect(),
+    }];
+    if let Some(operation) = &form.operation {
+        let frame = population_of(input.models, operation.declaring).map_err(|keys| {
+            ambiguous_population(input.scope, operation.declaring, &keys, location)
+        })?;
+        claims.push(ClauseClaim {
+            subject: ClaimSubject::Frame,
+            populations: frame.into_iter().collect(),
+        });
+    }
+    let population_types = claims
+        .iter()
+        .flat_map(|claim| claim.populations.iter().map(|domain| domain.object))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    Ok(TypedStateClause {
+        parameters,
+        body,
+        slots,
+        slot_names,
+        observations,
+        formed_units,
+        nodes_used: nodes,
+        population_types,
+        claims,
+    })
+}
+
+/// One state clause S3 checked (FR-104 "Outputs"): its kind, context,
+/// operation, checked Boolean body with each model read's observation, its
+/// node identity and its `claim` occurrence.
+#[derive(Debug)]
+pub struct CheckedStateClause {
+    pub(crate) name: String,
+    pub(crate) kind: StateClauseKind,
+    pub(crate) context: EffectiveId,
+    pub(crate) operation: Option<ClauseOperation>,
+    pub(crate) parameters: Vec<(String, ValueType)>,
+    pub(crate) body: Node,
+    pub(crate) slots: usize,
+    pub(crate) observations: Observations,
+    pub(crate) identity: NodeKey,
+    pub(crate) claim: Origin,
+    pub(crate) spans: DeclarationSpans,
+}
+
+impl CheckedStateClause {
+    /// The declared name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Invariant, precondition or postcondition.
+    pub fn kind(&self) -> StateClauseKind {
+        self.kind
+    }
+
+    /// The context object type `M::T`, by its effective identity.
+    pub fn context(&self) -> EffectiveId {
+        self.context
+    }
+
+    /// The operation a `pre` or `post` clause names.
+    pub fn operation(&self) -> Option<&ClauseOperation> {
+        self.operation.as_ref()
+    }
+
+    /// `self`, then `result` when bound, then the operation's parameters,
+    /// each with its type, in slot order.
+    pub fn parameters(&self) -> &[(String, ValueType)] {
+        &self.parameters
+    }
+
+    /// The checked Boolean body.
+    pub fn body(&self) -> &Node {
+        &self.body
+    }
+
+    /// The evaluation slot count.
+    pub fn slots(&self) -> usize {
+        self.slots
+    }
+
+    /// Every model read of the body and the observation it reads at, by
+    /// the read's location.
+    pub fn reads(&self) -> impl Iterator<Item = (&Location, Observation)> {
+        self.observations.iter()
+    }
+
+    /// The clause's node identity: its `state_clause` node's key. Two
+    /// clauses of equal kind, anchor and body share it (FR-104-AC-6).
+    pub fn identity(&self) -> NodeKey {
+        self.identity
+    }
+
+    /// The clause's `claim` occurrence of its node (ADR-013 O-07).
+    pub fn claim(&self) -> &Origin {
+        &self.claim
+    }
+}
+
+/// The `operation-contract` requirement record of one claim (FR-104
+/// "Requirements"): its extent over the item's `roots` (each a checked
+/// parameter node's key and type, the domains of whose type positions
+/// ADR-014 §4 classifies, FR-097) and its population domains, each keyed
+/// by its member object type's model node and its ordinal. The record's
+/// result is the clause's `Boolean`.
+fn record(
+    roots: &[(NodeKey, &ValueType)],
+    root_prefix: Option<NodeKey>,
+    populations: &[(PopulationDomain, NodeKey)],
+    boolean: NodeKey,
+    types: &TypeEnvironment,
+    position_limit: u64,
+) -> Result<RequirementRecord, ClassifyFailure> {
+    let root_types: Vec<&ValueType> = roots.iter().map(|(_, value_type)| *value_type).collect();
+    let mut domains = BTreeMap::new();
+    for ((root, path), kind) in classify_domains(&root_types, types, position_limit)? {
+        let Some((node, _)) = roots.get(root) else {
+            return Err(ClassifyFailure::Fault(qsl_foundation::InternalFault::new(
+                "check.requirements",
+                "domain-root-classified",
+            )));
+        };
+        let key = match root_prefix {
+            // A frame has no parameter node of its own: its roots' domains
+            // are keyed by the frame node, each under its root's position.
+            Some(frame) => {
+                let position = u32::try_from(root).map_err(|_| {
+                    ClassifyFailure::Fault(qsl_foundation::InternalFault::new(
+                        "check.requirements",
+                        "type-position-index-past-u32",
+                    ))
+                })?;
+                let mut prefixed = vec![position];
+                prefixed.extend(path);
+                DomainKey::new(wire(frame), prefixed)
+            }
+            None => DomainKey::new(wire(*node), path),
+        };
+        domains.insert(key, kind);
+    }
+    for (domain, object) in populations {
+        let ordinal = u32::try_from(domain.ordinal).map_err(|_| {
+            ClassifyFailure::Fault(qsl_foundation::InternalFault::new(
+                "check.requirements",
+                "population-ordinal-past-u32",
+            ))
+        })?;
+        domains.insert(
+            DomainKey::new(wire(*object), vec![ordinal]),
+            DomainKind::Population,
+        );
+    }
+    Ok(RequirementRecord::unguarded(
+        Requirements::new(
+            Capability::OperationContract,
+            ClaimExtent::from_domains(domains),
+        ),
+        ValueType::Boolean,
+        wire(boolean),
+    ))
+}
+
+/// A lowered state clause's claims, each with the node whose occurrence
+/// keys its record: the clause's own `state_clause` node, or its
+/// operation's `frame` node.
+pub(crate) struct KeyedClaim {
+    pub(crate) node: NodeKey,
+    pub(crate) record: RequirementRecord,
+}
+
+/// The records of `clause`'s claims, once `lowered` has keyed its nodes.
+pub(crate) fn clause_records(
+    clause: &TypedStateClause,
+    claims: &[ClauseClaim],
+    form: &StateClauseDeclaration,
+    lowered: &LoweredClause,
+    types: &TypeEnvironment,
+    position_limit: u64,
+    location: &Location,
+) -> Result<Vec<KeyedClaim>, CheckRefusal> {
+    let object_of = |object: EffectiveId| {
+        clause
+            .population_types
+            .iter()
+            .position(|named| *named == object)
+            .and_then(|at| lowered.population_objects.get(at).copied())
+    };
+    let unkeyable = || CheckRefusal {
+        location: location.clone(),
+        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+    };
+    let classify = |failure: ClassifyFailure| match failure {
+        ClassifyFailure::Limit(exceeded) => CheckRefusal {
+            location: location.clone(),
+            cause: CheckCause::ResourceExhausted(Box::new(super::refusal::StageLimitCause {
+                stage: super::refusal::CheckingStage::Typing,
+                kind: super::refusal::CheckingLimitKind::Nodes,
+                limit: exceeded.configured_bound(),
+                actual: exceeded.actual(),
+                region: None,
+            })),
+        },
+        ClassifyFailure::Fault(fault) => CheckRefusal {
+            location: location.clone(),
+            cause: CheckCause::InternalFault(Box::new(KeyFault::UnclassifiedExtent(fault))),
+        },
+    };
+    let mut keyed = Vec::with_capacity(claims.len());
+    for claim in claims {
+        let populations: Vec<(PopulationDomain, NodeKey)> = claim
+            .populations
+            .iter()
+            .map(|domain| object_of(domain.object).map(|object| (*domain, object)))
+            .collect::<Option<_>>()
+            .ok_or_else(unkeyable)?;
+        match claim.subject {
+            ClaimSubject::Clause => {
+                let roots: Vec<(NodeKey, &ValueType)> = lowered
+                    .parameters
+                    .iter()
+                    .copied()
+                    .zip(clause.parameters.iter().map(|(_, value_type)| value_type))
+                    .collect();
+                let record = record(
+                    &roots,
+                    None,
+                    &populations,
+                    lowered.boolean,
+                    types,
+                    position_limit,
+                )
+                .map_err(classify)?;
+                keyed.push(KeyedClaim {
+                    node: lowered.key,
+                    record,
+                });
+            }
+            ClaimSubject::Frame => {
+                let (Some(frame), Some(operation)) = (lowered.frame, &form.operation) else {
+                    return Err(unkeyable());
+                };
+                // The frame's own roots: the declaring type's `self`, the
+                // operation's result and its parameters.
+                let receiver = ValueType::Reference(operation.declaring);
+                let mut roots: Vec<(NodeKey, &ValueType)> = vec![(frame, &receiver)];
+                roots.extend(operation.declaration.result().map(|result| (frame, result)));
+                roots.extend(
+                    operation
+                        .declaration
+                        .parameters()
+                        .iter()
+                        .map(|(_, value_type)| (frame, value_type)),
+                );
+                let record = record(
+                    &roots,
+                    Some(frame),
+                    &populations,
+                    lowered.boolean,
+                    types,
+                    position_limit,
+                )
+                .map_err(classify)?;
+                keyed.push(KeyedClaim {
+                    node: frame,
+                    record,
+                });
+            }
+        }
+    }
+    Ok(keyed)
+}

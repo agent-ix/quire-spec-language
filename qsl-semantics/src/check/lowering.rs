@@ -75,9 +75,11 @@ use crate::value::member::Member;
 use crate::value::quantity::UnitTable;
 
 mod model;
+mod state;
 mod wire;
 
 pub use model::{AdmittedModel, ForeignView, ModelClause};
+pub(crate) use state::{AnchorInput, LoweredClause, StateClauseInput};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
 /// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no
@@ -3291,6 +3293,35 @@ impl<'a> Lowering<'a> {
                     Operands::Two(population, reference),
                 )
             }
+            NodeKind::Reaches {
+                source,
+                target,
+                edge,
+            } => {
+                // FR-105 (pending STD-111's spelling): the edge is named as
+                // an attribute read names its field, by the operands'
+                // static object type's model node and the field's name.
+                let object = self.referenced_object(&source.value_type, &node.location)?;
+                let name = Identifier::new(edge.name.clone()).map_err(|_| {
+                    refuse(
+                        &node.location,
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                    )
+                })?;
+                (
+                    Keyed::Application(
+                        Operator::Reaches,
+                        Operation {
+                            member: Some(Member::Field {
+                                declaration: object,
+                                name,
+                            }),
+                            ..plain("quire.op.model.reaches_field")
+                        },
+                    ),
+                    Operands::Two(source, target),
+                )
+            }
             NodeKind::Dispatch {
                 receiver,
                 operation,
@@ -3889,10 +3920,11 @@ fn enclosing_declarations(
 ) -> BTreeMap<NodeKey, Location> {
     let mut anchors: BTreeMap<NodeKey, Location> = BTreeMap::new();
     for (key, _, location) in occurrences.iter() {
-        // Only a function body or measure resolves to a region (FR-096).
+        // Only a function body or measure, or a state clause body (FR-104),
+        // resolves to a region (FR-096).
         if !matches!(
             location.origin,
-            Origin::Body { .. } | Origin::Measure { .. }
+            Origin::Body { .. } | Origin::Measure { .. } | Origin::StateClause { .. }
         ) {
             continue;
         }

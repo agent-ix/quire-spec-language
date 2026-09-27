@@ -368,9 +368,23 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::ModelType { alias, node } => {
             format!("the domain package of `model {alias}` has no effective type for `{node}`")
         }
-        AssemblyCause::UnsupportedStateClause { name } => {
-            format!("the state clause `{name}` has no checker yet (FR-104, QSL-277)")
+        AssemblyCause::UnresolvedOperation { context, operation } => {
+            format!("`{context}` has no operation `{operation}`")
         }
+        AssemblyCause::AmbiguousOperation { context, operation } => {
+            format!("`{context}` inherits more than one operation `{operation}`")
+        }
+        AssemblyCause::AmbiguousPopulation {
+            context,
+            populations,
+        } => format!(
+            "`{context}` is a member type of more than one population: {}",
+            populations
+                .iter()
+                .map(|population| population.node.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     };
     with_more(message, refusal.errors.len())
 }

@@ -359,6 +359,12 @@ fn spine_origin(origin: &qsl_semantics::check::Origin) -> types::SpineOrigin {
         qsl_semantics::check::Origin::TypeDeclaration { name } => {
             types::SpineOrigin::TypeDeclaration { name: name.clone() }
         }
+        qsl_semantics::check::Origin::StateClause { clause, index } => {
+            types::SpineOrigin::StateClause {
+                clause: clause.clone(),
+                index: *index,
+            }
+        }
     }
 }
 
@@ -850,6 +856,13 @@ mod tests {
                     name: "Point".to_owned(),
                 },
                 serde_json::json!({"kind": "type-declaration", "name": "Point"}),
+            ),
+            (
+                Origin::StateClause {
+                    clause: "ParentOrder".to_owned(),
+                    index: 0,
+                },
+                serde_json::json!({"kind": "state-clause", "clause": "ParentOrder", "index": 0}),
             ),
         ];
         for (origin, expected) in cases {
