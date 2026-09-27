@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::source::Source;
+use qsl_foundation::{ByteDigest, SourceIdentity};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
@@ -72,14 +73,81 @@ pub enum ClauseRunSelection {
     },
 }
 
+/// FR-109 Inputs' unit: the program source, or an I3 extracted source.
+#[derive(Debug)]
+pub enum ClauseRunSource {
+    /// The unit's source bytes and its four FR-001 labels.
+    Program {
+        /// The unit's four FR-001 labels.
+        identity: SourceIdentity,
+        /// The source's display path; only displayed, never opened.
+        path: String,
+        /// The unit's source bytes.
+        bytes: Vec<u8>,
+    },
+    /// An I3 extracted source (ADR-011 I3, `qsl-source`): the verified body
+    /// `qsl_source::extract` returned. Its body, with the body's own
+    /// identity and path, is the unit `compile` reads; its original
+    /// document's identity and digest are reported as
+    /// [`ClauseRunProvenance::extraction`].
+    #[cfg(feature = "quire-extraction")]
+    Extracted(qsl_source::ExtractedSource),
+}
+
+/// The unit a [`ClauseRunSource`] compiles, borrowed from it, and the
+/// extraction's original document when I3 was used.
+struct Unit<'a> {
+    identity: &'a SourceIdentity,
+    path: &'a str,
+    bytes: &'a [u8],
+    extraction: Option<ExtractionOrigin>,
+}
+
+impl ClauseRunSource {
+    fn unit(&self) -> Unit<'_> {
+        match self {
+            Self::Program {
+                identity,
+                path,
+                bytes,
+            } => Unit {
+                identity,
+                path,
+                bytes,
+                extraction: None,
+            },
+            #[cfg(feature = "quire-extraction")]
+            Self::Extracted(extracted) => {
+                let map = extracted.map();
+                let body = map.body();
+                Unit {
+                    identity: body.identity(),
+                    path: body.path(),
+                    bytes: body.text().as_bytes(),
+                    extraction: Some(ExtractionOrigin {
+                        identity: map.original().identity().clone(),
+                        digest: map.original().digest(),
+                    }),
+                }
+            }
+        }
+    }
+}
+
+/// FR-109 Outputs: the I3 extraction's original document, "the
+/// extraction's original identity and digest when I3 was used".
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExtractionOrigin {
+    /// The original document's four FR-001 labels.
+    pub identity: SourceIdentity,
+    /// The original document's byte digest.
+    pub digest: ByteDigest,
+}
+
 /// FR-109 Inputs: one clause-run request.
 pub struct ClauseRunRequest {
-    /// The unit's source identity.
-    pub source: qsl_foundation::SourceIdentity,
-    /// The source's display path.
-    pub path: String,
-    /// The unit's source bytes.
-    pub bytes: Vec<u8>,
+    /// The unit: program source bytes, or an I3 extracted source.
+    pub source: ClauseRunSource,
     /// FR-056's package input.
     pub packages: BTreeMap<[u8; 32], Vec<u8>>,
     /// FR-099's dependency input.
@@ -218,24 +286,18 @@ impl ClauseDisposition {
     }
 }
 
-/// FR-109 Outputs' provenance: the selections and every admitted document's
-/// identity and digest.
-///
-/// **No I3 field (SR-751 FND-002 round 2, disclosed, not attempted here).**
-/// FR-109 Inputs' alternative source form -- "an I3 extracted source
-/// (ADR-011 I3, `qsl-source`, feature `quire-extraction`) with its original
-/// document identity" -- has no support anywhere in `qsl-replay` today, not
-/// only in `run_clause`: `qsl-replay`'s own `Cargo.toml` depends on neither
-/// `qsl-source` nor the `quire-extraction` feature, and FR-100's own
-/// `spine::run`/`spine::compile` (which `run_clause` reuses by reference,
-/// this requirement's own Description) take plain source bytes with no I3
-/// variant either. Adding an I3-carrying `ClauseRunRequest` field here
-/// alone, while `compile` still has nothing to do with it, would be a
-/// field nothing reads -- the real fix is a spine-wide I3 input path
-/// (a new optional `qsl-source` dependency, an alternative `compile`
-/// input, and this provenance field), pending QSL-295 (FR-109 Status).
+/// FR-109 Outputs' provenance: the compiled unit's identity, the I3
+/// extraction's original document when one was used, the selections and
+/// every admitted document's identity and digest. The unit's byte digest is
+/// [`ClauseRunReport::source_digest`].
 #[derive(Clone, Debug)]
 pub struct ClauseRunProvenance {
+    /// The compiled unit's four FR-001 labels: the program source's, or an
+    /// I3 extracted body's own.
+    pub source: SourceIdentity,
+    /// The I3 extraction's original document, when the unit is an I3
+    /// extracted source; `None` for a program source.
+    pub extraction: Option<ExtractionOrigin>,
     /// Every model selection the compiled package resolved.
     pub model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
     /// The selection as given.
@@ -298,7 +360,8 @@ impl ClauseRunUsage {
 /// digest and, where compile reached it, the compiled `package_id`.
 #[derive(Debug)]
 pub struct ClauseRunReport {
-    /// The source's `sha256:` digest.
+    /// The compiled unit's `sha256:` digest: the program source's bytes, or
+    /// an I3 extracted body's.
     pub source_digest: String,
     /// The compiled `package_id`, when compile completed.
     pub package_id: Option<PackageId>,
@@ -363,12 +426,26 @@ fn evaluate_exit_code(outcome: &CallOutcome) -> u8 {
     }
 }
 
+/// What every report of one [`run_clause`] call carries about its unit:
+/// its byte digest, its identity and, for an I3 source, the original
+/// document.
+struct UnitProvenance {
+    digest: String,
+    source: SourceIdentity,
+    extraction: Option<ExtractionOrigin>,
+}
+
 /// FR-109: `qsl_replay::spine::run_clause`.
 pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRunRefusal> {
-    if request.bytes.is_empty() {
+    let unit = request.source.unit();
+    if unit.bytes.is_empty() {
         return Err(ClauseRunRefusal::EmptySource);
     }
-    let source_digest = qsl_foundation::ByteDigest::of(&request.bytes).to_string();
+    let unit_provenance = UnitProvenance {
+        digest: ByteDigest::of(unit.bytes).to_string(),
+        source: unit.identity.clone(),
+        extraction: unit.extraction,
+    };
     let selection_documents = selection_documents(&request.selection);
     // Cloned once, up front, so `report` can hold the selection by value
     // without borrowing `request.selection` -- `request.selection` itself is
@@ -387,10 +464,12 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                   model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
                   documents: Vec<DocumentRef>| {
         ClauseRunReport {
-            source_digest: source_digest.clone(),
+            source_digest: unit_provenance.digest.clone(),
             package_id,
             disposition,
             provenance: ClauseRunProvenance {
+                source: unit_provenance.source.clone(),
+                extraction: unit_provenance.extraction.clone(),
                 model_selections,
                 selection: selection_for_provenance.clone(),
                 documents,
@@ -400,9 +479,9 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     };
 
     let compiled = match compile(
-        request.source.clone(),
-        &request.path,
-        &request.bytes,
+        unit.identity.clone(),
+        unit.path,
+        unit.bytes,
         &request.packages,
         &request.dependencies,
         request.limits,
@@ -581,7 +660,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             name,
             arguments,
             snapshot,
-            &source_digest,
+            &unit_provenance,
             &sources,
             model_selections,
             request.selection.clone(),
@@ -602,7 +681,7 @@ fn run_function(
     name: &str,
     arguments: &[ClauseArgument],
     snapshot: &DocumentRef,
-    source_digest: &str,
+    unit: &UnitProvenance,
     sources: &[Source],
     model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
     selection: ClauseRunSelection,
@@ -614,10 +693,12 @@ fn run_function(
     // admission read, never merely what the selection named (FR-109-AC-2).
     let documents_read = std::cell::RefCell::new(Vec::<DocumentRef>::new());
     let report = |disposition| ClauseRunReport {
-        source_digest: source_digest.to_owned(),
+        source_digest: unit.digest.clone(),
         package_id: Some(package_id),
         disposition,
         provenance: ClauseRunProvenance {
+            source: unit.source.clone(),
+            extraction: unit.extraction.clone(),
             model_selections: model_selections.clone(),
             selection: selection.clone(),
             documents: documents_read.borrow().clone(),

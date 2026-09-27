@@ -10,6 +10,13 @@ description = "ADR-011 §6.1 layer 6: the CG-facing replay facade -- the TK-01 r
 # ADR-011 §6.1 layer 6 `replay` depends on "layers 1 to 5, F, K": the spine
 # recompile (S1 `qsl-cst`, S2 `qsl-forms`, I1 and S3 `qsl-semantics`, S4
 # `qsl-package`) and the S6a call (`qsl-eval`) of the TK-01 executor (QSL-5).
+[features]
+default = []
+# ADR-011 §6.1 layer-6 row: "I3 under feature `quire-extraction`". FR-109's
+# `run_clause` accepts an I3 extracted source (`qsl_source::ExtractedSource`)
+# as its unit only with this feature (QSL-295).
+quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
+
 [dependencies]
 qsl-attrs = { path = "../qsl-attrs" }
 qsl-cst = { path = "../qsl-cst" }
@@ -18,6 +25,7 @@ qsl-forms = { path = "../qsl-forms" }
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-package = { path = "../qsl-package" }
 qsl-semantics = { path = "../qsl-semantics" }
+qsl-source = { path = "../qsl-source", optional = true }
 quire-exact = { path = "../quire-exact" }
 thiserror = "=2.0.20"
 

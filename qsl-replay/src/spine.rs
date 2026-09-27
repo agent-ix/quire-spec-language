@@ -48,8 +48,9 @@ pub use call::{
 
 mod clause;
 pub use clause::{
-    run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
-    ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunStage,
+    run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunProvenance,
+    ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
+    ClauseRunStage, ExtractionOrigin,
 };
 
 /// Why spine [`compile`] produced no checked package. Each

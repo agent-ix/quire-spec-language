@@ -33,7 +33,7 @@ use serde_json::json;
 
 use super::{
     run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
-    ClauseRunRequest, ClauseRunSelection, ClauseRunStage,
+    ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
 };
 use crate::spine::{compile, default_accounting, Compiled, DependencyInput, SpineLimits};
 
@@ -668,9 +668,11 @@ fn model_digest_hex() -> String {
 fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
     let (unit, packages) = unit_and_packages();
     ClauseRunRequest {
-        source: source(),
-        path: "clause-run.native".to_owned(),
-        bytes: unit.into_bytes(),
+        source: ClauseRunSource::Program {
+            identity: source(),
+            path: "clause-run.native".to_owned(),
+            bytes: unit.into_bytes(),
+        },
         packages,
         dependencies: DependencyInput::default(),
         snapshots: BTreeMap::new(),
@@ -711,11 +713,13 @@ fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, Docume
 /// digest, `package_id`, model selection, selection and the one snapshot's
 /// identity and digest in their provenance
 /// (`FR-109-run-a-state-clause-through-the-spine.md:149,81-84`).
-#[trace("TC-468", "FR-109-AC-1")]
+#[trace("TC-468", "FR-109-AC-1", "FR-109-AC-6")]
 #[test]
 fn run_clause_evaluates_a_clause_selection() {
     let (request, label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
-    let expected_digest = qsl_foundation::ByteDigest::of(&request.bytes).to_string();
+    // `request` compiles exactly this unit text (`request`'s own builder).
+    let (unit, _) = unit_and_packages();
+    let expected_digest = qsl_foundation::ByteDigest::of(unit.as_bytes()).to_string();
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -748,6 +752,8 @@ fn run_clause_evaluates_a_clause_selection() {
         other => panic!("expected the Clause selection back, got {other:?}"),
     }
     assert_eq!(report.provenance.documents, [label]);
+    assert_eq!(report.provenance.source, source());
+    assert_eq!(report.provenance.extraction, None, "no I3 source was used");
 }
 
 /// TC-468 (FR-109-AC-1): the violating-parent case (a cycle) reports
@@ -1051,7 +1057,11 @@ fn run_clause_refuses_an_empty_source() {
             digest: [0; 32],
         },
     });
-    request.bytes = Vec::new();
+    request.source = ClauseRunSource::Program {
+        identity: source(),
+        path: "clause-run.native".to_owned(),
+        bytes: Vec::new(),
+    };
     assert!(matches!(
         run_clause(request),
         Err(ClauseRunRefusal::EmptySource)
@@ -1576,9 +1586,11 @@ fn config_version_model_digest_hex() -> String {
 fn config_version_request(selection: ClauseRunSelection) -> ClauseRunRequest {
     let (unit, packages) = config_version_unit_and_packages();
     ClauseRunRequest {
-        source: source(),
-        path: "clause-run-config-version.native".to_owned(),
-        bytes: unit.into_bytes(),
+        source: ClauseRunSource::Program {
+            identity: source(),
+            path: "clause-run-config-version.native".to_owned(),
+            bytes: unit.into_bytes(),
+        },
         packages,
         dependencies: DependencyInput::default(),
         snapshots: BTreeMap::new(),
@@ -2335,6 +2347,8 @@ fn report_for(disposition: ClauseDisposition) -> super::ClauseRunReport {
         package_id: None,
         disposition,
         provenance: super::ClauseRunProvenance {
+            source: source(),
+            extraction: None,
             model_selections: Vec::new(),
             selection: ClauseRunSelection::Function {
                 name: String::new(),
@@ -2375,4 +2389,139 @@ fn tc466_step1_parent_order_over_admitted_snapshots() {
         )),
         "violating-parent: root 5, child 2 -- child.versionNumber is not > root's"
     );
+}
+
+// ---------------------------------------------------------------------------
+// FR-109-AC-6: an I3 extracted source (QSL-295).
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "quire-extraction")]
+mod extracted {
+    use super::*;
+    use crate::spine::ExtractionOrigin;
+    use qsl_foundation::{ByteDigest, Source, SourceIdentity};
+
+    const QUIRE_PACKAGE: &str = "example/clause-run";
+
+    fn original_identity() -> SourceIdentity {
+        SourceIdentity::new("agent-ix", "ix://example/clause-run/spec", "git", "7")
+    }
+
+    fn body_identity() -> SourceIdentity {
+        SourceIdentity::new("agent-ix", "clause-run-body", "git", "7")
+    }
+
+    /// The authored Markdown document whose one `ix:native` fence under the
+    /// `no_cycle` heading is the `NoCycle` unit, plus an unselected fence.
+    fn original_text() -> String {
+        let (unit, _) = unit_and_packages();
+        format!(
+            "# Clause run document\n\n## Invariants\n\n### no_cycle\n```ix:native\n{unit}```\n\n\
+             ### unselected\n```ix:native\nopaque body remains unparsed\n```\n"
+        )
+    }
+
+    /// `qsl_source::extract`'s verified body of the `no_cycle` fence.
+    fn extracted() -> qsl_source::ExtractedSource {
+        let text = original_text();
+        let original = Source::read(original_identity(), "rules.md", text.as_bytes(), text.len())
+            .expect("the fixture document reads");
+        let context = qsl_source::clause_context(QUIRE_PACKAGE, &original)
+            .expect("the clause-only Quire context validates");
+        qsl_source::extract(
+            original,
+            &context,
+            qsl_source::Selection {
+                clause_id: "no_cycle".to_owned(),
+                package: QUIRE_PACKAGE.to_owned(),
+                body: body_identity(),
+            },
+            qsl_source::Limits::default(),
+        )
+        .expect("the no_cycle fence extracts")
+    }
+
+    fn expected_origin() -> ExtractionOrigin {
+        ExtractionOrigin {
+            identity: original_identity(),
+            digest: ByteDigest::of(original_text().as_bytes()),
+        }
+    }
+
+    /// TC-468 step 6 (FR-109-AC-6): the healthy-parent request whose unit
+    /// is an I3 extracted source compiles the extracted body and reports
+    /// `success` as the program source does; its provenance names the
+    /// body's identity and digest as the source, and the original
+    /// document's identity and digest as the extraction.
+    #[trace("TC-468", "FR-109-AC-6")]
+    #[test]
+    fn run_clause_compiles_an_extracted_body_and_reports_its_original() {
+        let (mut request, label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+        let (unit, packages) = unit_and_packages();
+        let extracted = extracted();
+        let body = extracted.map().body();
+        let body_digest = body.digest();
+        assert_eq!(
+            body.text(),
+            unit.trim_end_matches('\n'),
+            "the extracted body is the fenced unit"
+        );
+        // The package the extracted body compiles to on its own: the unit
+        // `run_clause` compiled is that body, not the original document.
+        let body_package_id = compile(
+            body.identity().clone(),
+            body.path(),
+            body.text().as_bytes(),
+            &packages,
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .expect("the extracted body compiles")
+        .emitted
+        .package_id();
+        request.source = ClauseRunSource::Extracted(extracted);
+        let report = run_clause(request).expect("a well-formed request always reports");
+
+        assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
+        assert_eq!(report.disposition.truth(), Some(true));
+        assert_eq!(report.exit_code(), 0);
+        assert_eq!(report.source_digest, body_digest.to_string());
+        assert_eq!(report.provenance.source, body_identity());
+        assert_eq!(report.provenance.extraction, Some(expected_origin()));
+        assert_ne!(
+            report
+                .provenance
+                .extraction
+                .as_ref()
+                .map(|origin| origin.digest),
+            Some(body_digest),
+            "the original's digest is the document's, not the body's"
+        );
+        assert_eq!(report.provenance.documents, [label]);
+        assert_eq!(report.package_id, Some(body_package_id));
+    }
+
+    /// TC-468 step 6 (FR-109-AC-6): a violating-parent I3 request reports
+    /// `violation`, and a compile refusal over an I3 source (no domain
+    /// package supplied) still reports the extraction's original.
+    #[trace("TC-468", "FR-109-AC-6")]
+    #[test]
+    fn run_clause_reports_the_extraction_original_on_violation_and_compile_refusal() {
+        let (mut violating, _) = no_cycle_request(&[("a", Some("b")), ("b", Some("a"))]);
+        violating.source = ClauseRunSource::Extracted(extracted());
+        let report = run_clause(violating).expect("a well-formed request always reports");
+        assert_eq!(report.disposition.truth(), Some(false));
+        assert_eq!(report.exit_code(), 10);
+        assert_eq!(report.provenance.extraction, Some(expected_origin()));
+
+        let (mut missing, _) = no_cycle_request(&[("a", None)]);
+        missing.source = ClauseRunSource::Extracted(extracted());
+        missing.packages = BTreeMap::new();
+        let report = run_clause(missing).expect("a well-formed request always reports");
+        assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
+        assert_eq!(report.package_id, None);
+        assert_eq!(report.provenance.source, body_identity());
+        assert_eq!(report.provenance.extraction, Some(expected_origin()));
+        assert!(report.provenance.documents.is_empty());
+    }
 }

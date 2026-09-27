@@ -20,8 +20,9 @@ default-run = "quire-spec"
 [features]
 default = []
 # ADR-011 §7.3 X-4 (QSL-179): the I3 adapter crate `qsl-source` owns the
-# quire-rs dependency; this feature builds it with its own `quire-extraction`.
-quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
+# quire-rs dependency; this feature builds it with its own `quire-extraction`,
+# and turns on `qsl-replay`'s, so FR-109's `run_clause` accepts an I3 source.
+quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction", "qsl-replay/quire-extraction"]
 # QSL-251: `protocol_artifact::handoff::{write_v1, write_v2}`, the complete
 # compiled-protocol handoff producer a downstream crate calls in-process. It
 # embeds the authored `examples/protocol-handoff/` recipe inputs, so the
