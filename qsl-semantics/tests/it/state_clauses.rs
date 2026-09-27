@@ -1928,6 +1928,129 @@ fn a_same_named_field_of_an_unrelated_type_is_never_authorized() {
     );
 }
 
+/// SR-750 FND-007 round 3: check 11 authorizes a creation by conformance
+/// to a `creates` grant, as `enforce_frame` does. `attemptUpdate` creates
+/// `ConfigVersion`; the post snapshot adds `s1` of type `Sub` (a subtype
+/// of `ConfigVersion`, a member of `config_history`), declared in
+/// `created`. This admits, with `s1` created as a `Sub`.
+#[trace("TC-465", "FR-106-AC-5")]
+#[test]
+fn a_creation_of_a_subtype_of_a_creates_grant_admits() {
+    let config_version = "ix://example/config-version/ConfigVersion";
+    let document = add_sub_type(
+        tc465_document_with(operation(
+            "attemptUpdate",
+            json!([]),
+            Some("ix://quire/native/Boolean"),
+            json!({
+                "modifies": [config_version_identity("versionNumber")],
+                "creates": [config_version],
+                "deletes": [],
+            }),
+        )),
+        &["ix://example/config-version/config_history"],
+    );
+    let population = "ix://example/config-version/config_history";
+    let sub = "ix://example/config-version/Sub";
+    let result = run_tc465_invocation(
+        &document,
+        |_| {},
+        move |value| {
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "key": "s1", "type": sub,
+                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}},
+                }));
+        },
+        move |value| {
+            value["created"] = json!([{"population": population, "key": "s1"}]);
+        },
+    );
+    let admitted = result.unwrap_or_else(|failure| panic!("expected admission, got {failure:?}"));
+    assert_eq!(admitted.created.len(), 1);
+    assert_eq!(admitted.created[0].object().as_str(), "s1");
+    let post = admitted.post.as_ref().expect("post observation");
+    assert!(post.environment.contains(&admitted.created[0]));
+}
+
+/// SR-750 FND-007 round 3: check 11 authorizes a field write through the
+/// field's `redefines` chain, as `enforce_frame` does, never by display
+/// name. `Sub` declares `version`, which redefines
+/// `ConfigVersion::versionNumber`; `attemptUpdate` modifies only
+/// `versionNumber`. A surviving `Sub` object whose `version` changes is
+/// covered by that grant, so this admits.
+#[trace("TC-465", "FR-106-AC-5")]
+#[test]
+fn a_write_to_a_field_that_redefines_a_modifies_grant_admits() {
+    let document = tc465_document_with_sub_redefining_version_number();
+    let sub = "ix://example/config-version/Sub";
+    let sub_object = move |version: &str| {
+        json!({
+            "key": "s1", "type": sub,
+            "fields": {"version": {"integer": version}, "parent": {"absent": {}}},
+        })
+    };
+    let result = run_tc465_invocation(
+        &document,
+        move |value| {
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .push(sub_object("1"));
+        },
+        move |value| {
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .push(sub_object("2"));
+        },
+        |_| {},
+    );
+    if let Err(failure) = result {
+        panic!("expected admission, got {failure:?}");
+    }
+}
+
+/// [`tc465_document_with`]'s `attemptUpdate` modifying `[versionNumber]`
+/// only, plus `Sub` (a subtype of `ConfigVersion` and a member of
+/// `config_history`) declaring `version`, which redefines
+/// `ConfigVersion::versionNumber` under another name.
+fn tc465_document_with_sub_redefining_version_number() -> Vec<u8> {
+    let document = add_sub_type(
+        tc465_document_with(attempt_update_modifies_version_number()),
+        &["ix://example/config-version/config_history"],
+    );
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let sub = "ix://example/config-version/Sub";
+    let version = format!("{sub}/version");
+    let sub_type = envelope["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["identity"] == sub)
+        .expect("Sub is declared");
+    sub_type["fields"] = json!([{
+        "identity": version,
+        "name": "version",
+        "typeRef": "ix://quire/native/Integer",
+        "presence": "required",
+        "nullable": false,
+        "defaultKind": "none",
+        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+        "redefines": config_version_identity("versionNumber"),
+        "origin": {
+            "generated": {
+                "generatorIdentity": version.clone(),
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [version],
+            }
+        },
+    }]);
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
 /// [`tc465_document`], with an extra object type `Sub` (`supertypes:
 /// [ConfigVersion]`, no fields/operations of its own), declared as
 /// `config_history`'s own second member type (row 39: `Sub` "is a member

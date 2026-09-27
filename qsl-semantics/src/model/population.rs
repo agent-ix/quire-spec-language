@@ -1272,7 +1272,7 @@ pub fn admit_invocation(
         AdmissionOutcome::Admitted(binding) => binding,
         other => return other,
     };
-    match enforce_frame(&pre, &post, pre_document, post_document, declared) {
+    match enforce_frame(&pre, pre_document, post_document, declared) {
         Ok(()) => AdmissionOutcome::Admitted(post.with_pre_anchor(pre)),
         Err(refusal) => AdmissionOutcome::Refused(refusal),
     }
@@ -1353,69 +1353,110 @@ fn field_write_covered(
     index.redefinition_reaches(field, |candidate| effect.modifies.contains(candidate))
 }
 
-/// Enforces `declared.effect`'s frame against `pre`/`post`'s created and
-/// deleted identities and their surviving members' declared field values,
-/// then compares the computed created/deleted sets against
-/// `declared.declared_created`/`declared_deleted` (FR-046's caller-supplied
-/// delta). `pre`, `post` are the two admitted bindings; `pre_document`,
-/// `post_document` are the raw documents they were admitted from (needed
-/// here only for their `field_values`, which [`PopulationBinding`] does not
-/// retain).
+/// One object as [`decide_frame`] reads it: its declared identity, its
+/// most-specific type, and its declared field values keyed by the field's
+/// own [`DeclarationKey`]. `V` is the caller's own field-value form (a
+/// runtime population document's reference identities here, a wire value at
+/// FR-106 admission); [`decide_frame`] only ever compares two `V`s through
+/// the caller's `values_equal`.
+pub(crate) struct FrameObject<'a, V> {
+    /// The object's declared identity.
+    pub(crate) object: &'a str,
+    /// The object's most-specific type.
+    pub(crate) type_identity: DeclarationKey,
+    /// The object's declared field values.
+    pub(crate) fields: BTreeMap<DeclarationKey, V>,
+}
+
+/// [`decide_frame`]'s inputs other than the two object lists: the model the
+/// types and fields resolve in, the operation's frame, and the invocation's
+/// declared delta for this population.
+pub(crate) struct FrameDecision<'e> {
+    /// The model index types and fields resolve in.
+    pub(crate) index: &'e ModelIndex,
+    /// The conformance walk's `ancestor_steps` ceiling.
+    pub(crate) ancestor_steps: u64,
+    /// The operation's authored frame.
+    pub(crate) effect: &'e OperationEffect,
+    /// The invocation's own declared created identities.
+    pub(crate) declared_created: &'e [String],
+    /// The invocation's own declared deleted identities.
+    pub(crate) declared_deleted: &'e [String],
+}
+
+/// [`decide_frame`]'s result: the computed created and deleted identities.
+#[derive(Debug, Default)]
+pub(crate) struct FrameDelta {
+    /// Identities in post and not in pre.
+    pub(crate) created: BTreeSet<String>,
+    /// Identities in pre and not in post.
+    pub(crate) deleted: BTreeSet<String>,
+}
+
+/// Whether `type_identity` conforms to some grant in `grants`.
+fn granted(
+    frame: &FrameDecision<'_>,
+    grants: &[DeclarationKey],
+    type_identity: &DeclarationKey,
+) -> Result<bool, ModelRefusal> {
+    for grant in grants {
+        if frame
+            .index
+            .conforms(type_identity, grant, frame.ancestor_steps)?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The one frame and delta decision (FR-046/FR-151, FR-106 check 11) over
+/// one population's `pre` and `post` objects, both in document order. Both
+/// [`enforce_frame`] and FR-106 admission (`model::observation::frame`)
+/// call it, each building [`FrameObject`]s from its own input.
 ///
-/// Created/deleted classification is by *object identity* (the declared
-/// object identity alone), never by [`ReferenceKey`] (which also carries the
-/// most-specific type): an object present under the same identity in both
-/// `pre` and `post` but with a *different* most-specific type is a type
-/// change, decided before either classification runs, immediately below.
-/// FR-151's effect vocabulary grants exactly three kinds of authorized
-/// change -- `modifies`, `creates`, `deletes` -- and none of them is a
-/// retype; FR-143's own "Object references" clause additionally treats the
-/// most-specific type as part of a reference's snapshot-supplied identity
-/// triple, alongside the universe and declared object identity, never a
-/// mutable per-object attribute. A type change therefore has no
-/// authorization path under any declared frame and always refuses
-/// `FrameViolation`/`unauthorized-change`, regardless of whether `creates`/
-/// `deletes` grants happen to cover both the pre and post type -- silently
-/// admitting it as an unrelated delete-plus-create would hide exactly the
-/// violation this check exists to catch.
-fn enforce_frame(
-    pre: &PopulationBinding,
-    post: &PopulationBinding,
-    pre_document: &PopulationDocument,
-    post_document: &PopulationDocument,
-    declared: &InvocationDelta<'_>,
-) -> Result<(), ModelRefusal> {
-    let index = &*pre.index;
-    let pre_by_object: BTreeMap<&str, (&ReferenceKey, &DeclarationKey)> = pre
-        .members()
-        .iter()
-        .map(|(key, type_identity)| (key.object.as_str(), (key, type_identity)))
-        .collect();
-    let post_by_object: BTreeMap<&str, (&ReferenceKey, &DeclarationKey)> = post
-        .members()
-        .iter()
-        .map(|(key, type_identity)| (key.object.as_str(), (key, type_identity)))
-        .collect();
+/// The first violation, in this order, is returned:
+///
+/// 1. `post`'s objects in ascending identity order: an object absent from
+///    `pre` whose type conforms to no `creates` grant
+///    ([`ModelRefusalCause::FrameCreateOutsideGrant`]), or a surviving
+///    object whose most-specific type differs
+///    ([`ModelRefusalCause::FrameTypeChanged`]).
+/// 2. `pre`'s objects absent from `post`, ascending identity order, whose
+///    type conforms to no `deletes` grant
+///    ([`ModelRefusalCause::FrameDeleteOutsideGrant`]).
+/// 3. surviving objects in `pre` document order, fields in ascending
+///    [`DeclarationKey`] order: a changed field (`values_equal` false) that
+///    reaches no `modifies` entry through its `redefines` chain
+///    ([`ModelRefusalCause::FrameFieldWriteOutsideGrant`]).
+/// 4. the declared delta against the computed one ([`check_declared_delta`]).
+///
+/// Created/deleted classification is by *object identity* alone, never by
+/// type: an object present under the same identity in both `pre` and `post`
+/// with a different most-specific type is a retype, and no frame authorizes
+/// one -- FR-151's effect vocabulary grants `modifies`, `creates` and
+/// `deletes` only, and FR-143 treats the most-specific type as part of a
+/// reference's identity, never a mutable attribute.
+pub(crate) fn decide_frame<V>(
+    frame: &FrameDecision<'_>,
+    pre: &[FrameObject<'_, V>],
+    post: &[FrameObject<'_, V>],
+    values_equal: impl Fn(&DeclarationKey, Option<&V>, Option<&V>) -> bool,
+) -> Result<FrameDelta, ModelRefusal> {
+    let pre_by_object: BTreeMap<&str, &FrameObject<'_, V>> =
+        pre.iter().map(|object| (object.object, object)).collect();
+    let post_by_object: BTreeMap<&str, &FrameObject<'_, V>> =
+        post.iter().map(|object| (object.object, object)).collect();
+    let mut delta = FrameDelta::default();
 
-    let mut computed_created: BTreeSet<String> = BTreeSet::new();
-    let mut computed_deleted: BTreeSet<String> = BTreeSet::new();
-
-    for (object, (_, post_type)) in &post_by_object {
-        let Some((_, pre_type)) = pre_by_object.get(object) else {
-            // Created: absent from `pre`. Its most-specific type must
-            // conform to a declared `creates` grant.
-            let mut allowed = false;
-            for grant in &declared.effect.creates {
-                if post.index.conforms(post_type, grant, post.ancestor_steps)? {
-                    allowed = true;
-                    break;
-                }
-            }
-            if !allowed {
+    for (object, post_object) in &post_by_object {
+        let post_type = &post_object.type_identity;
+        let Some(pre_object) = pre_by_object.get(object) else {
+            if !granted(frame, &frame.effect.creates, post_type)? {
                 return Err(frame_violation(
                     ModelRefusalCause::FrameCreateOutsideGrant {
                         object: (*object).to_owned(),
-                        type_name: (*post_type).clone(),
+                        type_name: post_type.clone(),
                     },
                     format!(
                         "invocation creates object {object} of type {}, outside the operation's \
@@ -1424,15 +1465,16 @@ fn enforce_frame(
                     ),
                 ));
             }
-            computed_created.insert((*object).to_owned());
+            delta.created.insert((*object).to_owned());
             continue;
         };
-        if *pre_type != *post_type {
+        let pre_type = &pre_object.type_identity;
+        if pre_type != post_type {
             return Err(frame_violation(
                 ModelRefusalCause::FrameTypeChanged {
                     object: (*object).to_owned(),
-                    pre_type: (*pre_type).clone(),
-                    post_type: (*post_type).clone(),
+                    pre_type: pre_type.clone(),
+                    post_type: post_type.clone(),
                 },
                 format!(
                     "invocation changes object {object}'s most-specific type from {} to {} \
@@ -1444,24 +1486,16 @@ fn enforce_frame(
         }
     }
 
-    for (object, (_, pre_type)) in &pre_by_object {
+    for (object, pre_object) in &pre_by_object {
         if post_by_object.contains_key(object) {
-            continue; // Survivor or type change; already decided above.
+            continue; // Survivor or retype; already decided above.
         }
-        // Deleted: absent from `post`. Its pre most-specific type must
-        // conform to a declared `deletes` grant.
-        let mut allowed = false;
-        for grant in &declared.effect.deletes {
-            if pre.index.conforms(pre_type, grant, pre.ancestor_steps)? {
-                allowed = true;
-                break;
-            }
-        }
-        if !allowed {
+        let pre_type = &pre_object.type_identity;
+        if !granted(frame, &frame.effect.deletes, pre_type)? {
             return Err(frame_violation(
                 ModelRefusalCause::FrameDeleteOutsideGrant {
                     object: (*object).to_owned(),
-                    type_name: (*pre_type).clone(),
+                    type_name: pre_type.clone(),
                 },
                 format!(
                     "invocation deletes object {object} of type {}, outside the operation's \
@@ -1470,68 +1504,117 @@ fn enforce_frame(
                 ),
             ));
         }
-        computed_deleted.insert((*object).to_owned());
+        delta.deleted.insert((*object).to_owned());
     }
 
-    // Field writes: members present in both documents under the same
-    // identity and the same most-specific type (survivors; a type change
-    // already refused above).
-    let post_members_by_object: HashMap<&str, &PopulationMember> = post_document
-        .members
-        .iter()
-        .map(|member| (member.object.as_str(), member))
-        .collect();
-    for pre_member in &pre_document.members {
-        let Some(&post_member) = post_members_by_object.get(pre_member.object.as_str()) else {
+    for pre_object in pre {
+        let Some(post_object) = post_by_object.get(pre_object.object) else {
             continue; // Deleted; already decided above.
         };
-        let mut fields: BTreeSet<&DeclarationKey> = BTreeSet::new();
-        fields.extend(pre_member.field_values.iter().map(|entry| &entry.field));
-        fields.extend(post_member.field_values.iter().map(|entry| &entry.field));
+        let fields: BTreeSet<&DeclarationKey> = pre_object
+            .fields
+            .keys()
+            .chain(post_object.fields.keys())
+            .collect();
         for field in fields {
-            let pre_values = values_of(pre_member, field);
-            let post_values = values_of(post_member, field);
-            if field_values_equal(index, field, pre_values, post_values) {
+            if values_equal(
+                field,
+                pre_object.fields.get(field),
+                post_object.fields.get(field),
+            ) {
                 continue;
             }
-            if field_write_covered(index, declared.effect, field) {
+            if field_write_covered(frame.index, frame.effect, field) {
                 continue;
             }
             return Err(frame_violation(
                 ModelRefusalCause::FrameFieldWriteOutsideGrant {
-                    object: pre_member.object.clone(),
+                    object: pre_object.object.to_owned(),
                     field: field.clone(),
                 },
                 format!(
                     "invocation changes object {}'s field {}, outside the operation's declared \
                      modifies frame",
-                    pre_member.object, field.node
+                    pre_object.object, field.node
                 ),
             ));
         }
     }
 
-    check_declared_delta(&computed_created, &computed_deleted, declared)
+    check_declared_delta(&delta, frame.declared_created, frame.declared_deleted)?;
+    Ok(delta)
 }
 
-/// FR-046's "caller-supplied lists must match": decides `declared`'s own
-/// created/deleted identity lists internally consistent (no duplicate within
-/// either list, no identity in both), then compares them against the
-/// complete computed sets [`enforce_frame`] derived from `pre`/`post`. Any
-/// disagreement is `Code::PopulationDeltaMismatch`/cause
-/// `delta-disagreement` -- mirroring the native runtime's own
-/// `declared_deltas`/`inspect_frames` (see `admit_invocation`'s own
-/// "Native duplication" doc).
-fn check_declared_delta(
-    computed_created: &BTreeSet<String>,
-    computed_deleted: &BTreeSet<String>,
+/// Enforces `declared.effect`'s frame and delta over `pre_document`/
+/// `post_document` (the documents `pre`/`post` were admitted from, read for
+/// their `field_values`, which [`PopulationBinding`] does not retain),
+/// through [`decide_frame`].
+fn enforce_frame(
+    pre: &PopulationBinding,
+    pre_document: &PopulationDocument,
+    post_document: &PopulationDocument,
     declared: &InvocationDelta<'_>,
 ) -> Result<(), ModelRefusal> {
+    let index = &*pre.index;
+    let frame = FrameDecision {
+        index,
+        ancestor_steps: pre.ancestor_steps,
+        effect: declared.effect,
+        declared_created: declared.declared_created,
+        declared_deleted: declared.declared_deleted,
+    };
+    decide_frame(
+        &frame,
+        &frame_objects(pre_document),
+        &frame_objects(post_document),
+        |field, pre_values, post_values| {
+            field_values_equal(
+                index,
+                field,
+                pre_values.copied().unwrap_or(&[]),
+                post_values.copied().unwrap_or(&[]),
+            )
+        },
+    )
+    .map(|_| ())
+}
+
+/// `document`'s members as [`decide_frame`] reads them, in document order.
+fn frame_objects(document: &PopulationDocument) -> Vec<FrameObject<'_, &[String]>> {
+    document
+        .members
+        .iter()
+        .map(|member| FrameObject {
+            object: member.object.as_str(),
+            type_identity: member.type_identity.clone(),
+            fields: member
+                .field_values
+                .iter()
+                .map(|entry| (entry.field.clone(), entry.values.as_slice()))
+                .collect(),
+        })
+        .collect()
+}
+
+/// FR-046's "caller-supplied lists must match": decides the declared
+/// created/deleted identity lists internally consistent (no duplicate within
+/// either list, no identity in both), then compares them against the
+/// complete computed sets [`decide_frame`] derived. Any disagreement is
+/// `Code::PopulationDeltaMismatch`/cause `delta-disagreement` -- mirroring
+/// the native runtime's own `declared_deltas`/`inspect_frames` (see
+/// `admit_invocation`'s own "Native duplication" doc).
+fn check_declared_delta(
+    computed: &FrameDelta,
+    declared_created_list: &[String],
+    declared_deleted_list: &[String],
+) -> Result<(), ModelRefusal> {
+    let computed_created = &computed.created;
+    let computed_deleted = &computed.deleted;
     let mut declared_created = BTreeSet::new();
     let mut declared_deleted = BTreeSet::new();
     for (declared_list, identities) in [
-        (declared.declared_created, &mut declared_created),
-        (declared.declared_deleted, &mut declared_deleted),
+        (declared_created_list, &mut declared_created),
+        (declared_deleted_list, &mut declared_deleted),
     ] {
         for identity in declared_list {
             if !identities.insert(identity.clone()) {

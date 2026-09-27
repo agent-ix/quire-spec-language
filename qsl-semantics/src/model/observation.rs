@@ -636,6 +636,7 @@ pub fn admit_observations(
             provisions,
             invocation,
             limits,
+            model_limits.ancestor_steps,
         ),
     }
 }
@@ -804,6 +805,7 @@ fn admit_operation(
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
     limits: ObservationLimits,
+    ancestor_steps: u64,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     // Check 1: read every selected document -- the invocation, then its
     // pre and post snapshots, in that order -- before any of checks 2 to 5
@@ -931,9 +933,15 @@ fn admit_operation(
     )?;
 
     // Check 11: frame and delta.
-    let (created, deleted) = frame::enforce(
+    let frame_context = frame::FrameContext {
         views,
-        operation.declaration.effect(),
+        types,
+        context_view,
+        ancestor_steps,
+        effect: operation.declaration.effect(),
+    };
+    let (created, deleted) = frame::enforce(
+        &frame_context,
         &pre_snapshot.populations,
         &post_snapshot.populations,
         &invocation.created,
