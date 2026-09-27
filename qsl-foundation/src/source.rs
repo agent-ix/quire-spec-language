@@ -672,8 +672,7 @@ mod tests {
     fn label_order_precedes_the_path() {
         let cause = |identity, path: &str| {
             Source::read_typed(identity, path, b"b", MAX_SOURCE_BYTES)
-                .err()
-                .expect("refused")
+                .expect_err("refused")
                 .cause
         };
         assert_eq!(
@@ -694,8 +693,7 @@ mod tests {
         );
         assert_eq!(
             Source::read_typed(labels("a", "u", "git", "1"), "", b"b", MAX_SOURCE_BYTES)
-                .err()
-                .unwrap()
+                .unwrap_err()
                 .error
                 .region,
             None

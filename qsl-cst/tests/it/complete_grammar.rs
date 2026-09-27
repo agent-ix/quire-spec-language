@@ -648,9 +648,7 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
 #[test]
 fn the_reader_reports_blank_label_before_empty_path() {
     let read = |identity: SourceIdentity, path: &str| {
-        *qsl_cst::diagnostic::read_source(identity, path, b"b", 1024)
-            .err()
-            .expect("a refused source")
+        *qsl_cst::diagnostic::read_source(identity, path, b"b", 1024).expect_err("a refused source")
     };
     let labels = |authority: &str, identity: &str| SourceIdentity {
         authority: authority.into(),
