@@ -6,22 +6,20 @@
 //!
 //! **Scope of what this scan can detect.** This is a syntax-only scan (no
 //! type inference): it reports an equality/ordering comparison where at
-//! least one operand is a string *literal* (`x == "foo"`) or a named
-//! `const NAME: &str` declared in the same crate (`x == NAME`), a `match`
-//! whose arm patterns include a string literal or such a const, and a
-//! `starts_with`/`ends_with`/`contains`/`eq_ignore_ascii_case`/
-//! `strip_prefix`/`trim_start_matches` method call with such an operand.
-//! Named consts are resolved by name within one crate (`Self::NAME` and
-//! `module::NAME` resolve by their last segment), so a const shadowed by a
-//! same-named non-string item can be over-reported, never hidden.
+//! least one operand is a string *literal* (`x == "foo"`), a `match` whose
+//! scrutinee has at least one string-literal arm pattern (`"foo" => ...`),
+//! and a `starts_with`/`ends_with`/`contains`/`eq_ignore_ascii_case`/
+//! `strip_prefix`/`trim_start_matches` method call with a string-literal
+//! argument.
 //!
-//! It does not detect a comparison between two `&str` bindings with no
-//! literal or named const on either side (`x == y`, both variables): that
-//! needs a real type checker, not an AST walk, to know either side is a
-//! string at all. Two of ADR-010 §4.3's named sites are compared against
-//! literals and the others through typed conversions, so the named sites are
-//! covered; this is not a claim of completeness against every possible
-//! `&str` comparison in the crate.
+//! It does **not** detect a comparison against a named `const NAME: &str`
+//! (`x == NAME`) or between two `&str` bindings with no literal on either
+//! side: both need a real type checker, not an AST walk, to know either
+//! side is a string at all. FR-064's Behavior asks for those forms too; that
+//! clause is not yet built (see FR-064 Status). A mark or a typed conversion
+//! that hides a literal behind a named constant therefore leaves the scan
+//! blind to it, so a reader must not take a clean scan as proof that no
+//! named-constant dispatch remains.
 //!
 //! **Test code.** The scan skips a `tests/` directory, a `#[cfg(test)]`
 //! item, and a file declared by `#[cfg(test)] mod name;` (with the files
@@ -199,10 +197,8 @@ fn is_prefix_gate_method(method: &syn::Ident) -> bool {
     PREFIX_GATE_METHODS.contains(&method.to_string().as_str())
 }
 
-struct Scanner<'c> {
+struct Scanner {
     file: String,
-    /// Names of the `const NAME: &str` items of the crate being scanned.
-    string_consts: &'c BTreeSet<String>,
     /// Whether a `#[string_edge]` mark silences its function. `false` only
     /// for the raw scan the real-site test uses, so a site stays visible to
     /// it whether or not the sweep has marked it.
@@ -222,15 +218,10 @@ struct Scanner<'c> {
     occurrences: Vec<Occurrence>,
 }
 
-impl Scanner<'_> {
-    /// Whether `expr` is a string literal or a named string const.
+impl Scanner {
+    /// Whether `expr` is a string literal.
     fn is_string_operand(&self, expr: &syn::Expr) -> bool {
         is_string_lit(expr)
-            || matches!(expr, syn::Expr::Path(path)
-            if path.qself.is_none()
-                && path.path.segments.last().is_some_and(|segment| {
-                    self.string_consts.contains(&segment.ident.to_string())
-                }))
     }
 
     /// Whether `expr` is a comparison with a string operand.
@@ -240,21 +231,13 @@ impl Scanner<'_> {
                 && (self.is_string_operand(&binary.left) || self.is_string_operand(&binary.right)))
     }
 
-    /// Whether `pat` is a string literal pattern or a named string const.
+    /// Whether `pat` is a string literal pattern.
     fn pattern_has_string_operand(&self, pat: &syn::Pat) -> bool {
         match pat {
             syn::Pat::Lit(syn::PatLit {
                 lit: syn::Lit::Str(_),
                 ..
             }) => true,
-            syn::Pat::Ident(ident) => {
-                ident.subpat.is_none() && self.string_consts.contains(&ident.ident.to_string())
-            }
-            syn::Pat::Path(path) => path
-                .path
-                .segments
-                .last()
-                .is_some_and(|segment| self.string_consts.contains(&segment.ident.to_string())),
             syn::Pat::Or(pat_or) => pat_or
                 .cases
                 .iter()
@@ -298,7 +281,7 @@ impl Scanner<'_> {
     }
 }
 
-impl<'ast> Visit<'ast> for Scanner<'_> {
+impl<'ast> Visit<'ast> for Scanner {
     fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
         let previous = self
             .current_impl_self
@@ -521,53 +504,13 @@ fn is_module_root_stem(stem: &Path) -> bool {
     matches!(stem.to_str(), Some("mod" | "lib" | "main"))
 }
 
-/// The names of every `const NAME: &str` item (module-level, associated or
-/// trait) outside `#[cfg(test)]` code in `files`.
-fn collect_string_consts(files: &[syn::File]) -> BTreeSet<String> {
-    struct Consts(BTreeSet<String>);
-    fn is_str_ref(ty: &syn::Type) -> bool {
-        matches!(ty, syn::Type::Reference(reference)
-            if matches!(&*reference.elem, syn::Type::Path(path) if path.path.is_ident("str")))
-    }
-    impl<'ast> Visit<'ast> for Consts {
-        fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
-            if !has_cfg_test(&node.attrs) {
-                syn::visit::visit_item_mod(self, node);
-            }
-        }
-        fn visit_item_const(&mut self, node: &'ast syn::ItemConst) {
-            if is_str_ref(&node.ty) && !has_cfg_test(&node.attrs) {
-                self.0.insert(node.ident.to_string());
-            }
-        }
-        fn visit_impl_item_const(&mut self, node: &'ast syn::ImplItemConst) {
-            if is_str_ref(&node.ty) && !has_cfg_test(&node.attrs) {
-                self.0.insert(node.ident.to_string());
-            }
-        }
-        fn visit_trait_item_const(&mut self, node: &'ast syn::TraitItemConst) {
-            if is_str_ref(&node.ty) && !has_cfg_test(&node.attrs) {
-                self.0.insert(node.ident.to_string());
-            }
-        }
-    }
-    let mut consts = Consts(BTreeSet::new());
-    for file in files {
-        consts.visit_file(file);
-    }
-    consts.0
-}
-
-/// Scan the parsed `files` of one crate against that crate's named string
-/// consts. `honor_marks == false` ignores `#[string_edge]` marks.
+/// Scan the parsed `files` of one crate. `honor_marks == false` ignores
+/// `#[string_edge]` marks.
 fn scan_parsed(files: &[(String, syn::File)], honor_marks: bool) -> Vec<Occurrence> {
-    let parsed: Vec<syn::File> = files.iter().map(|(_, file)| file.clone()).collect();
-    let string_consts = collect_string_consts(&parsed);
     let mut occurrences = Vec::new();
     for (relative, file) in files {
         let mut scanner = Scanner {
             file: relative.clone(),
-            string_consts: &string_consts,
             honor_marks,
             string_edge_depth: 0,
             condition_depth: 0,
@@ -1245,35 +1188,6 @@ mod tests {
                 "src/real.rs"
             ]
         );
-    }
-
-    /// FR-064's Behavior ("a string ... and another `&str`/`String` value"):
-    /// a comparison, method call or `match` arm against a named `const NAME:
-    /// &str` of the same crate is reported like a literal one; a const of
-    /// another type is not.
-    #[trace("TC-162", "FR-064-AC-1")]
-    #[test]
-    fn named_string_consts_are_resolved_like_literals() {
-        let occurrences = scan_source(
-            r#"
-            const NARROW: &str = "narrow";
-            struct T;
-            impl T { const KIND: &'static str = "kind"; }
-            const LIMIT: usize = 3;
-            fn eq(v: &str) -> bool { v == NARROW }
-            fn assoc(v: &str) -> bool { v != Self::KIND }
-            fn method(v: &str) -> bool { v.starts_with(NARROW) }
-            fn arm(v: &str) -> u8 { match v { NARROW => 1, _ => 0 } }
-            fn not_a_string(n: usize) -> bool { n == LIMIT }
-            "#,
-        );
-        for item in ["eq", "assoc", "method", "arm"] {
-            assert!(
-                occurrences.iter().any(|o| o.item == item),
-                "{item} must be reported"
-            );
-        }
-        assert!(!occurrences.iter().any(|o| o.item == "not_a_string"));
     }
 
     /// FR-064-AC-6: the real `Makefile` names `string-edge` as a prerequisite
