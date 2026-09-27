@@ -553,7 +553,7 @@ mod tests {
     use quire_exact::{Integer, Origin, Value};
 
     use super::*;
-    use crate::check::family::OccurrenceMap;
+    use crate::check::family::{OccurrenceMap, OccurrenceRole};
 
     fn node_key(fill: u8) -> NodeKey {
         let mut bytes = [0_u8; 32];
@@ -743,8 +743,8 @@ mod tests {
     fn clause_occurrence_keys_disambiguate_structurally_identical_clauses() {
         let clause_node = node_key(9);
         let mut occurrences: OccurrenceMap<()> = OccurrenceMap::default();
-        let first = occurrences.record(clause_node, "clause", ());
-        let second = occurrences.record(clause_node, "clause", ());
+        let first = occurrences.record(clause_node, OccurrenceRole::Claim, ());
+        let second = occurrences.record(clause_node, OccurrenceRole::Claim, ());
 
         // Step 3: equal node ids (both occurrences of the one clause),
         // distinct occurrence keys.

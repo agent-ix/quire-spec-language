@@ -595,13 +595,13 @@ fn tc_160_an_unpaired_site_or_application_faults_instead_of_dropping() {
     let binders = BTreeMap::new();
 
     let mut paired = OccurrenceMap::default();
-    paired.record(add, "expression", site.clone());
+    paired.record(add, OccurrenceRole::Expression, site.clone());
     let records = key_claims(vec![claim_at(site.clone())], &paired, graph, &binders)
         .expect("the site pairs with its occurrence");
     assert_eq!(records.keys().collect::<Vec<_>>(), [&key]);
 
     let mut generated = OccurrenceMap::default();
-    generated.record(add, "generated", site.clone());
+    generated.record(add, OccurrenceRole::Generated, site.clone());
     assert_eq!(
         key_claims(vec![claim_at(site.clone())], &generated, graph, &binders),
         Err(KeyFault::UnkeyableRequirements)
@@ -630,8 +630,8 @@ fn tc_160_two_sites_of_one_node_pair_by_location_not_order() {
     let add = NodeKey::from_digest(*checked.occurrence("1 + 1", 0, Some(ADD)).node().as_bytes());
     let (first, second) = (body(0, &[0]), body(0, &[1]));
     let mut occurrences = OccurrenceMap::default();
-    let first_origin = occurrences.record(add, "expression", first.clone());
-    let second_origin = occurrences.record(add, "expression", second.clone());
+    let first_origin = occurrences.record(add, OccurrenceRole::Expression, first.clone());
+    let second_origin = occurrences.record(add, OccurrenceRole::Expression, second.clone());
     let binders = BTreeMap::new();
     for claims in [
         vec![claim_at(first.clone()), claim_at(second.clone())],

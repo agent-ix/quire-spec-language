@@ -149,6 +149,8 @@ pub(super) struct Lowered {
     pub package: w::Package,
     /// Per wire model: the native model's schema, `None` for a domain package.
     pub model_schema: Vec<Option<NativeModel>>,
+    /// Per wire definition: the compiler-registered definition it resolves to.
+    pub registered: Vec<R>,
 }
 
 pub(super) fn lower(
@@ -601,6 +603,7 @@ pub(super) fn lower(
     Ok(Lowered {
         package,
         model_schema,
+        registered: meta.registered,
     })
 }
 fn decimal(value: u64, work: &mut Work) -> Result<String, Error> {

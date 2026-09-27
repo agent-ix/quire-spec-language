@@ -7,10 +7,12 @@ mod work;
 
 pub use evaluation::{evaluate, evaluate_v2};
 pub use input::{
-    AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, CanonicalDigest,
-    ContextualSlot, ContextualValue, ContextualValueKind, EvaluationOutcome, EvaluationReport,
-    EvaluationRequest, FieldInput, FieldValue, InputSlot, MissingInput, ObjectInput, ObjectKey,
-    ObservationDigest, ObservationIdentity, ObservationKey, PopulationInput, Refusal, StateView,
-    StaticAuthority, Value, ValueKind, ValuePathSegment, OBSERVATION_CONTRACT_REVISION,
+    AdapterArtifact, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput,
+    CanonicalDigest, CanonicalizationDomain, ContextualSlot, ContextualValue, ContextualValueKind,
+    EvaluationOutcome, EvaluationReport, EvaluationRequest, FieldInput, FieldValue, InputSlot,
+    InvalidAdapterArtifact, MissingInput, ObjectInput, ObjectKey, ObservationDigest,
+    ObservationIdentity, ObservationKey, PopulationInput, Refusal, StateView, StaticAuthority,
+    UnsupportedCanonicalizationDomain, Value, ValueKind, ValuePathSegment,
+    OBSERVATION_CONTRACT_REVISION,
 };
 pub use work::{Dimension, Exhaustion, ExhaustionCause, Limits, Usage, ACCOUNTING_VERSION};

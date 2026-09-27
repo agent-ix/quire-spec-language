@@ -64,9 +64,14 @@ pub struct AdmittedPackage {
     // artifact identity. Compiler emission has no published identity yet.
     pub(super) artifact: Option<ArtifactRef>,
     pub(crate) model_schema: Vec<Option<crate::native_model::NativeModel>>,
+    pub(crate) clocks: super::ClockNames,
 }
 
 impl AdmittedPackage {
+    pub(crate) fn clock_names(&self) -> &super::ClockNames {
+        &self.clocks
+    }
+
     /// Read-only admitted version-2 package.
     pub fn package(&self) -> &wire::Package {
         &self.package

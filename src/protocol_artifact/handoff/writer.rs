@@ -852,20 +852,26 @@ struct UnitInput {
     mapping: CheckBindings,
 }
 
+/// Whether `operation` is the one `Workflow.apply` operation the handoff
+/// names, read once from the model's declared identities.
+#[qsl_attrs::string_edge]
+fn is_workflow_apply(operation: &crate::native_model::OperationRole) -> bool {
+    operation.context.as_str() == "Workflow" && operation.name.as_str() == "apply"
+}
+
 struct OperationSelection {
     anchor: ir::AnchorName,
     export: w::ExportRef,
 }
 
 impl OperationSelection {
-    #[qsl_attrs::string_edge]
     fn new(model: &NativeModel) -> Result<Self, Error> {
         let [operation] = model.roles().operations.as_slice() else {
             return Err(Error::OperationCount {
                 count: model.roles().operations.len(),
             });
         };
-        if operation.context.as_str() != "Workflow" || operation.name.as_str() != "apply" {
+        if !is_workflow_apply(operation) {
             return Err(Error::OperationIdentity {
                 context: operation.context.clone(),
                 name: operation.name.clone(),

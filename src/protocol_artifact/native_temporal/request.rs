@@ -830,12 +830,11 @@ fn expected_definition(
         .definitions
         .get(usize::try_from(declaration.profile).map_err(|_| invalid("definition.profile"))?)
         .ok_or_else(|| invalid("definition.profile"))?;
-    let (clock_index, configuration) =
-        subject.clock().ok_or_else(|| invalid("definition.clock"))?;
-    let clock = declaration
-        .bindings
-        .get(usize::try_from(clock_index).map_err(|_| invalid("definition.clock"))?)
-        .and_then(|binding| crate::temporal::clock_binding_name(&binding.name))
+    let (_, configuration) = subject.clock().ok_or_else(|| invalid("definition.clock"))?;
+    let clock = subject
+        .package()
+        .clock_names()
+        .get(usize::try_from(subject.declaration()).map_err(|_| invalid("subject.declaration"))?)
         .ok_or_else(|| invalid("definition.clock"))?;
     Ok((
         definition.identity.clone(),

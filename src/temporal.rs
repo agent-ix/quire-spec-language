@@ -26,7 +26,7 @@ mod trace;
 
 use std::collections::BTreeMap;
 
-use crate::protocol_artifact::{v2, wire as w, AdmittedPackage};
+use crate::protocol_artifact::{v2, wire as w, AdmittedPackage, ClockNames};
 
 use activation::{Outcome, Shape};
 use formula::{Evaluator, Tri};
@@ -46,17 +46,6 @@ pub use trace::{
     CaptureInput, ClockBinding, Eviction, Evidence, OrderKey, Position, Trace, Trigger,
 };
 
-/// The `clock:` prefix the emitter gives a temporal clock binding requirement.
-const CLOCK_PREFIX: &str = "clock:";
-
-/// The clock name a temporal clock binding requirement carries, or `None`
-/// when `binding` is not a clock binding name: the one reader of the
-/// emitter's `clock:` spelling (ADR-012 section 9 edge).
-#[qsl_attrs::string_edge]
-pub(crate) fn clock_binding_name(binding: &str) -> Option<&str> {
-    binding.strip_prefix(CLOCK_PREFIX)
-}
-
 /// Evaluate one admitted temporal declaration against one caller-supplied trace.
 ///
 /// The outer error is a whole-declaration stop: a binding refusal, an
@@ -72,6 +61,7 @@ pub fn evaluate(
     let mut work = budget::Work::new(limits);
     let result = run(
         package.package(),
+        package.clock_names(),
         declaration,
         trace,
         trace.watermark,
@@ -107,6 +97,7 @@ pub fn evaluate_with_progress(
     let result = match ledger.record(Binding::of(declaration, trace), Progress::of(trace)) {
         Ok(retained) => run(
             package.package(),
+            package.clock_names(),
             declaration,
             trace,
             retained.watermark,
@@ -162,6 +153,7 @@ pub fn evaluate_v2(
         authenticated = Some(binding);
         run(
             package.inherited(),
+            package.clock_names(),
             declaration,
             trace,
             trace.watermark,
@@ -194,6 +186,7 @@ pub fn evaluate_with_progress_v2(
             .and_then(|retained| {
                 run(
                     package.inherited(),
+                    package.clock_names(),
                     declaration,
                     trace,
                     retained.watermark,
@@ -358,6 +351,7 @@ fn select(
 
 fn run(
     package: &w::Package,
+    clocks: &ClockNames,
     declaration: usize,
     trace: &Trace,
     watermark: i64,
@@ -367,7 +361,6 @@ fn run(
     work.subject = subject;
     let selected = select(package, declaration, subject)?;
     let w::Body::Temporal {
-        clock,
         activation,
         captures,
         root,
@@ -393,12 +386,10 @@ fn run(
         }
         .into());
     }
-    let binding = selected
-        .declaration
-        .bindings
-        .get(usize::try_from(*clock).unwrap_or(usize::MAX))
+    let clock_name = clocks
+        .get(declaration)
         .ok_or(Refusal::Reference { subject })?;
-    if clock_binding_name(&binding.name) != Some(trace.clock.name.as_str()) {
+    if clock_name != trace.clock.name {
         return Err(Refusal::Binding {
             dimension: Dimension::Clock,
             subject,
@@ -586,16 +577,10 @@ fn authenticate_v2(
         }
         .into());
     }
-    let w::Body::Temporal { clock, .. } = selected.body else {
-        return Err(Refusal::Reference { subject }.into());
-    };
-    let clock_binding = selected
-        .declaration
-        .bindings
-        .get(usize::try_from(*clock).unwrap_or(usize::MAX))
+    let clock_name = package
+        .clock_names()
+        .get(declaration)
         .ok_or(Refusal::Reference { subject })?;
-    let clock_name =
-        clock_binding_name(&clock_binding.name).ok_or(Refusal::Reference { subject })?;
     if trace.clock.name != clock_name {
         return Err(Refusal::Binding {
             dimension: Dimension::Clock,
