@@ -233,7 +233,7 @@ impl ClauseDisposition {
 /// alone, while `compile` still has nothing to do with it, would be a
 /// field nothing reads -- the real fix is a spine-wide I3 input path
 /// (a new optional `qsl-source` dependency, an alternative `compile`
-/// input, and this provenance field), which is out of this PR's scope.
+/// input, and this provenance field), pending QSL-295 (FR-109 Status).
 #[derive(Clone, Debug)]
 pub struct ClauseRunProvenance {
     /// Every model selection the compiled package resolved.
