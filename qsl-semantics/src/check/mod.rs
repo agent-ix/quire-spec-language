@@ -1114,6 +1114,24 @@ impl PackageDeclarations {
                 .collect();
             refusals.extend(lowering.function_group(group, &inputs));
         }
+        // FR-104 "Requirements" (SR-736 FND-008): mint every named
+        // operation's frame occurrence up front, in ascending (declaring,
+        // name) order, before any clause is lowered, so its ordinal never
+        // depends on which clause names it first.
+        let anchors: Vec<lowering::AnchorInput<'_>> = state_clause_forms
+            .iter()
+            .filter_map(|form| {
+                form.operation
+                    .as_ref()
+                    .map(|operation| lowering::AnchorInput {
+                        declaring: operation.declaring,
+                        operation: &operation.declaration,
+                    })
+            })
+            .collect();
+        if let Err(refusal) = lowering.register_frame_occurrences(&anchors) {
+            refusals.push(refusal);
+        }
         // FR-104: each state clause after every function it may call,
         // minting its node identity and recording its `claim` occurrence.
         let mut lowered_clauses = Vec::with_capacity(typed_clauses.len());

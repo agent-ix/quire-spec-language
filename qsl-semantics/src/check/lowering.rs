@@ -1292,16 +1292,20 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    /// The `Origin` of one occurrence of `frame`, the operation
-    /// `(declaring, name)`'s frame node (FR-104 "Requirements",
-    /// FR-104-AC-5): the first call for a given operation mints it, and
-    /// every later call naming the same operation returns the same
+    /// The `Origin` of one `generated` occurrence of `frame`, the operation
+    /// `(declaring, name)`'s frame node (FR-104 "Requirements", FR-104-AC-5;
+    /// FR-105's `frame` row): the first call for a given operation mints it,
+    /// and every later call naming the same operation returns the same
     /// `Origin`, in the caller's own dedup key -- never the frame node's
-    /// key, since two unrelated operations can key one equal-content
-    /// frame node and must still keep two records. State clauses are
-    /// lowered after every function, so a frame node is never a pending
-    /// draft in practice; that case is an internal fault, not a silent
-    /// fallback.
+    /// key, since two unrelated operations can key one equal-content frame
+    /// node and must still keep two records. [`Lowering::register_frame_occurrences`]
+    /// calls this for every operation the unit's clauses name, in ascending
+    /// (declaring `DeclarationKey`, name) order, before any clause is
+    /// lowered, so the ordinal an operation's occurrence gets never depends
+    /// on which clause names it first (SR-736 FND-008): a later, per-clause
+    /// call only ever hits the cache below. State clauses are lowered after
+    /// every function, so a frame node is never a pending draft in
+    /// practice; that case is an internal fault, not a silent fallback.
     fn frame_occurrence(
         &mut self,
         declaring: EffectiveId,
@@ -1318,7 +1322,7 @@ impl<'a> Lowering<'a> {
         }
         let origin = self
             .occurrences
-            .record(frame, OccurrenceRole::Anchor, location.clone());
+            .record(frame, OccurrenceRole::Generated, location.clone());
         self.frame_origins.insert(key, origin.clone());
         Ok(origin)
     }

@@ -11,16 +11,18 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::StateClauseKind;
+use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, CheckingLimits, NodeKind, Observation,
-    WrongSnapshotCause,
+    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, CheckingLimits, NodeKind,
+    Observation, WrongSnapshotCause,
 };
+use qsl_semantics::family::{ClaimExtent, DomainKind};
 use quire_exact::ValueType;
 
 use crate::model_operations::{
     admit_and_assemble_with_body, ambiguous_operation_document, archive_population,
-    config_version_document, config_version_document_with_operations,
+    config_unit_with_body, config_version_document, config_version_document_with_operations,
     config_version_document_with_population, config_version_identity, empty_frame, operation,
     operation_parameter, subtype_document,
 };
@@ -107,6 +109,17 @@ fn check_refusals(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<Check
     let declarations = admit_and_assemble_with_body(document, body)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
     declarations.check(CheckingLimits::default())
+}
+
+/// Like [`check`], but keeps every assembly-stage refusal's raw
+/// [`AssemblyError`] (SR-737 FND-002): its typed `AssemblyCause` payload
+/// (e.g. `AmbiguousPopulation`'s `context`/`populations`) and its exact
+/// `span`, rather than `check`'s packed catalog-code tuple.
+fn assembly_refusals(document: &[u8], body: &str) -> Vec<AssemblyError> {
+    admit_and_assemble_with_body(document, body)
+        .err()
+        .expect("assembly refused")
+        .errors
 }
 
 /// Every node of `root`'s subtree, root included. `Node::descendants` is
@@ -283,7 +296,8 @@ fn result_outside_a_postcondition_refuses_wrong_anchor() {
             )
         );
 
-        // FR-104-AC-2: the refusal names the clause kind and the operation.
+        // FR-104-AC-2: the refusal names the clause kind and the operation,
+        // at `result`, the whole body here, so the locus is the root.
         let refusals = check_refusals(&document, body).expect_err("check-stage refusal");
         assert_eq!(refusals.len(), 1);
         assert_eq!(
@@ -292,6 +306,12 @@ fn result_outside_a_postcondition_refuses_wrong_anchor() {
                 clause: expected_kind,
                 operation: expected_operation.map(str::to_owned),
             }
+        );
+        assert_eq!(
+            refusals[0].location.path,
+            Vec::<usize>::new(),
+            "{:?}",
+            refusals[0].location
         );
     }
 }
@@ -499,8 +519,9 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     assert_eq!(refusals[0], (Code::IllTyped, Some("non-boolean-root")));
     let located = check_refusals(&document, row3).expect_err("row 3 refuses");
     assert_eq!(located.len(), 1);
-    assert!(
-        located[0].location.path.is_empty(),
+    assert_eq!(
+        located[0].location.path,
+        Vec::<usize>::new(),
         "at the body: {:?}",
         located[0].location
     );
@@ -522,9 +543,11 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     );
     let located = check_refusals(&document, row5).expect_err("row 5 refuses");
     assert_eq!(located.len(), 1);
-    assert!(
-        !located[0].location.path.is_empty(),
-        "at the pre, not the body root: {:?}",
+    // `= 1`'s left child (index 0) is the `pre`.
+    assert_eq!(
+        located[0].location.path,
+        vec![0],
+        "{:?}",
         located[0].location
     );
 
@@ -542,8 +565,9 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     );
     let located = check_refusals(&document, row6).expect_err("row 6 refuses");
     assert_eq!(located.len(), 1);
-    assert!(
-        located[0].location.path.is_empty(),
+    assert_eq!(
+        located[0].location.path,
+        Vec::<usize>::new(),
         "the pre is the body root here: {:?}",
         located[0].location
     );
@@ -558,8 +582,9 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     assert_eq!(refusals[0], (Code::IllTyped, Some("operator-ineligible")));
     let located = check_refusals(&document, row7).expect_err("row 7 refuses");
     assert_eq!(located.len(), 1);
-    assert!(
-        located[0].location.path.is_empty(),
+    assert_eq!(
+        located[0].location.path,
+        Vec::<usize>::new(),
         "at the reaches, which is the body root here: {:?}",
         located[0].location
     );
@@ -577,9 +602,13 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     );
     let located = check_refusals(&document, row8).expect_err("row 8 refuses");
     assert_eq!(located.len(), 1);
-    assert!(
-        !located[0].location.path.is_empty(),
-        "at value(self.parent), not the body root: {:?}",
+    // `<`'s left child (0) is the `Attribute`, whose reference operand (0)
+    // is `deref(value(self.parent))`, whose own operand (0) is
+    // `value(self.parent)`.
+    assert_eq!(
+        located[0].location.path,
+        vec![0, 0, 0],
+        "{:?}",
         located[0].location
     );
 
@@ -604,15 +633,57 @@ fn one_requirement_record_per_clause_and_frame() {
     );
     let body = format!("{PARENT_ORDER}{NO_CYCLE}{VERSION_UNCHANGED}");
 
-    // Step 1: four records.
+    // Step 1: four records -- one extent, one domain, one `DomainKey`, and
+    // one occurrence key apiece (SR-737 FND-002).
     let graph = check(&document, &body).expect("the unit checks");
     assert_eq!(graph.requirements().len(), 4);
-    for record in graph.requirements().values() {
+    let mut domain_keys: Vec<DomainKey> = Vec::new();
+    let mut roles: Vec<(String, u64)> = Vec::new();
+    for (key, record) in graph.requirements() {
         assert_eq!(
             record.requirements().kind(),
             qsl_semantics::check::Capability::OperationContract
         );
+        let ClaimExtent::Unbounded(domains) = record.requirements().extent() else {
+            panic!("every record names config_history's unbounded population");
+        };
+        assert_eq!(
+            domains.len(),
+            1,
+            "one population domain, no other unbounded position"
+        );
+        let (domain_key, kind) = domains.iter().next().expect("one domain");
+        assert_eq!(
+            kind,
+            DomainKind::Population,
+            "the one domain is a population"
+        );
+        assert_eq!(
+            kind.finite_kind(),
+            Some(qsl_foundation::bound::FiniteBoundKind::Cardinality),
+            "a population domain is boundable by Cardinality"
+        );
+        domain_keys.push(domain_key.clone());
+        roles.push((
+            key.origin().role().as_str().to_owned(),
+            key.origin().ordinal(),
+        ));
     }
+    for domain_key in &domain_keys[1..] {
+        assert_eq!(
+            domain_key, &domain_keys[0],
+            "one population (config_history), one equal DomainKey across every record"
+        );
+    }
+    roles.sort();
+    let claims = roles.iter().filter(|(role, _)| role == "claim").count();
+    let generated = roles.iter().filter(|(role, _)| role == "generated").count();
+    assert_eq!(
+        (claims, generated),
+        (3, 1),
+        "three clauses' own claim occurrences, and attemptUpdate's one generated frame \
+         occurrence: {roles:?}"
+    );
 
     // Step 2: without `VersionUnchanged`, two records, no frame record.
     let without = format!("{PARENT_ORDER}{NO_CYCLE}");
@@ -702,12 +773,32 @@ fn two_no_maximum_populations_of_one_type_refuse_ambiguous_name() {
         archive_population(),
     );
     let body = format!("{PARENT_ORDER}{NO_CYCLE}{VERSION_UNCHANGED}");
-    let refusals = check(&document, &body).expect_err("two no-maximum populations refuse");
-    assert_eq!(refusals.len(), 3, "one refusal per clause");
-    for refusal in &refusals {
+    let (unit, _) = config_unit_with_body(&document, &body);
+    let errors = assembly_refusals(&document, &body);
+    assert_eq!(errors.len(), 3, "one refusal per clause");
+    for error in &errors {
+        assert_eq!(error.cause.code(), Code::AmbiguousDeclaration);
+        let AssemblyCause::AmbiguousPopulation {
+            context,
+            populations,
+        } = &error.cause
+        else {
+            panic!("expected AmbiguousPopulation, got {:?}", error.cause);
+        };
+        assert_eq!(context, "Config::ConfigVersion");
+        let names: Vec<&str> = populations
+            .iter()
+            .map(|key| key.node.rsplit('/').next().expect("a node identity"))
+            .collect();
         assert_eq!(
-            *refusal,
-            (Code::AmbiguousDeclaration, Some("ambiguous-name"))
+            names,
+            vec!["archive", "config_history"],
+            "the two populations, in ascending DeclarationKey order"
+        );
+        assert_eq!(
+            &unit[error.span.start..error.span.end],
+            "Config::ConfigVersion",
+            "the span is the clause's `on` context"
         );
     }
 }
@@ -768,6 +859,64 @@ fn two_operations_with_equal_frames_each_keep_their_own_frame_record() {
     );
 }
 
+/// SR-736 FND-008: the frame occurrence ordinal is minted from the
+/// operations' own identity (ascending `DeclarationKey`, then operation
+/// name as UTF-8 bytes), over every operation the unit's clauses name --
+/// never from which clause happens to name an operation first. Checking
+/// two operations with equal (empty) frames, then reversing the clauses
+/// that name them, gives the very same occurrence key -> record mapping in
+/// both orders: not merely the same set of keys (which reordering alone
+/// could not disturb), but the same record at each key.
+#[trace("TC-461", "FR-104-AC-6")]
+#[test]
+fn frame_occurrence_ordinal_is_independent_of_clause_order() {
+    let document = config_version_document_with_operations(vec![
+        operation(
+            "isStable",
+            json!([]),
+            Some("ix://quire/native/Boolean"),
+            empty_frame(),
+        ),
+        operation(
+            "versionTotal",
+            json!([]),
+            Some("ix://quire/native/Integer"),
+            empty_frame(),
+        ),
+    ]);
+    let forward = "post A using v on Config::ConfigVersion::isStable { result }\n\
+        post B using v on Config::ConfigVersion::versionTotal { true }\n";
+    let reverse = "post B using v on Config::ConfigVersion::versionTotal { true }\n\
+        post A using v on Config::ConfigVersion::isStable { result }\n";
+    let forward_graph = check(&document, forward).expect("forward order checks");
+    let reverse_graph = check(&document, reverse).expect("reverse order checks");
+
+    assert_eq!(
+        forward_graph.requirements(),
+        reverse_graph.requirements(),
+        "the same occurrence key names the same record in both clause orders"
+    );
+
+    let generated: Vec<u64> = forward_graph
+        .requirements()
+        .keys()
+        .filter(|key| key.origin().role().as_str() == "generated")
+        .map(|key| key.origin().ordinal())
+        .collect();
+    assert_eq!(
+        generated.len(),
+        2,
+        "one frame occurrence per operation, role `generated` (SR-736 FND-009)"
+    );
+    let mut ordinals = generated;
+    ordinals.sort_unstable();
+    assert_eq!(
+        ordinals,
+        vec![0, 1],
+        "the two operations' frame ordinals are 0 and 1, whichever clause names them first"
+    );
+}
+
 /// SR-736 FND-002: a clause over a subtype still names its supertype's
 /// unbounded population, by conformance (FR-084's `allInstances<T>`), not
 /// exact identity; a clause over a type no population covers gets no
@@ -802,6 +951,48 @@ fn population_coverage_is_by_conformance_and_absent_when_none_covers() {
         record.requirements().extent().to_wire(),
         "bounded",
         "no population covers Left, so the clause names no population domain"
+    );
+}
+
+/// SR-736 FND-010: a population's `DomainKey` names the object-type node of
+/// the population's own declared member type that covers the clause's
+/// context, never the clause's own (possibly proper-subtype) context type.
+/// `config_history` declares exactly one member, `ConfigVersion`; an
+/// invariant over `Sub` (a proper subtype, covered only by conformance) and
+/// one over `ConfigVersion` itself therefore key `config_history`'s domain
+/// identically.
+#[trace("TC-461", "FR-104-AC-5")]
+#[test]
+fn population_domain_key_is_the_populations_own_member_type() {
+    let subtype = subtype_document(attempt_update_modifies_version_number());
+    let body = "invariant SubInvariant using v on Config::Sub at current { true }\n\
+        invariant ConfigVersionInvariant using v on Config::ConfigVersion at current { true }\n";
+    let graph = check(&subtype, body).expect("both invariants check");
+    assert_eq!(
+        graph.requirements().len(),
+        2,
+        "one record per clause, neither names an operation"
+    );
+
+    let mut domain_keys: Vec<DomainKey> = Vec::new();
+    for record in graph.requirements().values() {
+        let ClaimExtent::Unbounded(domains) = record.requirements().extent() else {
+            panic!("both clauses name config_history's unbounded population");
+        };
+        assert_eq!(
+            domains.len(),
+            1,
+            "config_history's population is the clause's only unbounded domain"
+        );
+        let (key, kind) = domains.iter().next().expect("one domain");
+        assert_eq!(kind, DomainKind::Population);
+        domain_keys.push(key.clone());
+    }
+    assert_eq!(
+        domain_keys[0], domain_keys[1],
+        "Sub's and ConfigVersion's clauses key config_history's population identically: \
+         the DomainKey names config_history's own declared member type (ConfigVersion), \
+         never Sub itself"
     );
 }
 

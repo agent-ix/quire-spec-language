@@ -120,19 +120,22 @@ impl AdmittedModel {
     /// conformance, not exact identity -- a clause over a subtype still
     /// ranges over its supertype's population). Each is paired with its
     /// ordinal among the package's population declarations in ascending
-    /// `DeclarationKey` order (its own `Ord`: `package`, then `node`). The
-    /// ordinal is stable within this package's digest only. A domain
-    /// package population declares no maximum (the Semantic IR `population`
-    /// record has no such member), so each one is an unbounded
-    /// `Population(None)` domain.
+    /// `DeclarationKey` order (its own `Ord`: `package`, then `node`), and
+    /// the `EffectiveId` of the *covering member type itself* -- the
+    /// population's own declared member, never `target` (SR-736 FND-010): a
+    /// domain key names one population by one node regardless of which
+    /// subtype a clause's context happens to be. The ordinal is stable
+    /// within this package's digest only. A domain package population
+    /// declares no maximum (the Semantic IR `population` record has no such
+    /// member), so each one is an unbounded `Population(None)` domain.
     pub(crate) fn populations_of(
         &self,
         target: EffectiveId,
         conforms: impl Fn(EffectiveId, EffectiveId) -> bool,
-    ) -> Vec<(usize, &DeclarationKey)> {
-        let covers = |member: &DeclarationKey| {
-            self.types.iter().any(|(id, declared)| {
-                declared == member && (*id == target || conforms(target, *id))
+    ) -> Vec<(usize, &DeclarationKey, EffectiveId)> {
+        let covering_member = |member: &DeclarationKey| {
+            self.types.iter().find_map(|(id, declared)| {
+                (declared == member && (*id == target || conforms(target, *id))).then_some(*id)
             })
         };
         // `records` is a `BTreeMap` keyed by `DeclarationKey`, so its
@@ -144,8 +147,13 @@ impl AdmittedModel {
                 _ => None,
             })
             .enumerate()
-            .filter(|(_, population)| population.member_types.iter().any(covers))
-            .map(|(ordinal, population)| (ordinal, &population.key))
+            .filter_map(|(ordinal, population)| {
+                population
+                    .member_types
+                    .iter()
+                    .find_map(covering_member)
+                    .map(|member| (ordinal, &population.key, member))
+            })
             .collect()
     }
 }
@@ -254,13 +262,24 @@ impl<'a> Lowering<'a> {
         target: EffectiveId,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let declaration = self
-            .models
+        let declaration = self.declaration_key_of(target, location)?;
+        self.model_node(&declaration, location)
+    }
+
+    /// The `DeclarationKey` `target` names in its admitted domain package
+    /// (FR-104 "Requirements", SR-736 FND-008): its own `Ord` (`package`,
+    /// then `node`, each as UTF-8 bytes) is the ascending order a frame
+    /// occurrence's ordinal follows, independent of clause or source order.
+    pub(super) fn declaration_key_of(
+        &self,
+        target: EffectiveId,
+        location: &Location,
+    ) -> Result<DeclarationKey, CheckRefusal> {
+        self.models
             .iter()
             .find_map(|model| model.types.get(&target))
             .cloned()
-            .ok_or_else(|| fault(location, KeyFault::UnknownEffectiveId(target)))?;
-        self.model_node(&declaration, location)
+            .ok_or_else(|| fault(location, KeyFault::UnknownEffectiveId(target)))
     }
 
     /// The model node of the object type a `Reference<T>`-typed value

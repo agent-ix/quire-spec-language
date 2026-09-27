@@ -79,3 +79,31 @@ findings are small.
 
 Only targeted tests were run, as the brief asked. The full gates were not
 run.
+
+## Dispositions
+
+Round 2, checked against ab6a987c (fix commit, rebased on origin/main
+2df75ab6) on 2026-09-26. Probes were run in a detached scratch worktree at
+ab6a987c, since removed. `cargo clippy -p qsl-semantics -p qsl-replay
+--all-targets -D warnings` is clean, and the 24 `state_clauses` and
+`model_operations` tests pass. The rebase kept #490's `evaluate.rs` and
+`output.rs` intact: `git diff origin/main HEAD` on those files shows only
+this PR's additions (the `Reaches` arm and the `StateClause` origin).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed ab6a987c | Each frame record is keyed by (frame node, an occurrence minted once per operation identity (declaring, name)), in `Lowering::frame_occurrence` (lowering.rs:1305-1324, lowering/state.rs:218-219). Both probes are now tests, and each gives 4 records (state_clauses.rs:723-770). The `Occupied(_)` fault is now unreachable. Clause keys are (state_clause node, claim ordinal), unique per clause. Frame keys are unique per operation. Clauses that name one operation build equal records, because roots, `frame_population` and the Boolean node all come from the operation. A probe with `post` clauses on `ConfigVersion::attemptUpdate` and on the inherited `Sub::attemptUpdate` gives 3 records and no fault. The ordinal is order-dependent, which is recorded as a new finding, FND-008. |
+| FND-002 | fixed ab6a987c | `populations_of` covers by `conforms` (lowering/model.rs:117-150). FR-104 states conformance and the no-population case. Tested at state_clauses.rs:778-810. See the new FND-010 on domain keying. |
+| FND-003 | fixed ab6a987c | Only the assembler resolves the context and frame populations (assemble.rs:1646-1690), carried on `StateClauseDeclaration.{context,frame}_population`. The S3 copies are deleted. The `reaches`-target resolution stays in S3, as ruled. It still refuses at the `reaches` locus and packs the names with `format!`; that part is accepted under the ruling. |
+| FND-004 | fixed ab6a987c | `clause_records` uses `limit_cause` (state_clause.rs:534-546). The clause path reuses `classify_extent`. Only the frame path, which has a prefix, walks `classify_domains`. |
+| FND-005 | fixed ab6a987c | The `WrongSnapshotCause` doc now names `UnanchoredResult` as the checking-time path to `wrong-anchor` (refusal.rs:213-223). |
+| FND-006 | fixed ab6a987c | FR-104 Resolution states the hiding and ambiguity rule. Inheritance and ambiguity are tested (state_clauses.rs:815-840). |
+| FND-007 | fixed ab6a987c | The spine renders the clause kind and operation (spine.rs:405-421). The payload is asserted at the cause level (state_clauses.rs:286-296). The spine arm itself has no test; this is minor and not reopened. |
+
+### New findings (round 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | The frame-occurrence ordinal is minted in source order ("the first clause naming that operation ... mints it"), so the key for an operation's frame record depends on clause order. A probe used `isStable(): Boolean` and `versionTotal(): Integer` with empty frames, then reversed the two clauses. The key sets are equal, but key-to-record is not: the two operations swap ordinals 0 and 1. The same key now names a different operation's record. This breaks FR-104-AC-6's intent (record keys stable under reordering), and the existing AC-6 test compares key sets only, so it cannot see this. Fix: mint each frame's ordinals in a deterministic operation order, for example ascending (declaring `EffectiveId`, name) over the unit's named operations that share the node. Alternatively, key the frame record by the per-operation `operation_anchor` node. Then amend FR-104's "first clause ... in source order" sentence and add a reorder test that compares key-to-record. | qsl-semantics/src/check/lowering.rs:1295-1324; spec/functional/FR-104-check-state-clauses.md:176-184; qsl-semantics/tests/it/state_clauses.rs:626-657 |
+| FND-009 | low | The frame occurrence is recorded with `OccurrenceRole::Anchor`. FR-105's Outputs row gives a `frame` node the occurrence `generated`, 0, and `anchor` is the role of the `operation_anchor` node. The frame node now carries `anchor` occurrences that FR-105 does not list, which will show up when S4 emits occurrences (QSL-279). Record this in FR-105 and FR-104, or use a role FR-105 names. | qsl-semantics/src/check/lowering.rs:1319-1321; spec/functional/FR-105-emit-state-clause-operation-anchor-and-frame-nodes.md:67 |
+| FND-010 | low | With conformance, one population gets a different `DomainKey` depending on the clause's context. Probe: an invariant on `Sub` keys `config_history` by the `Sub` node, and an invariant on `ConfigVersion` keys it by the `ConfigVersion` node, both with path `[0]`. FR-104 keys by "the population's member type `T` (the clause's context type ...)", which no longer fixes one node. A `Cardinality` bound on `config_history` must then match two keys. Fix: key by the population's declared member type, so one population is one domain key, or state the per-context keying in FR-104. | qsl-semantics/src/check/state_clause.rs:193-216; spec/functional/FR-104-check-state-clauses.md:192-203 |

@@ -137,8 +137,10 @@ pub(crate) struct ClauseDeclarations<'a> {
 }
 
 /// One population domain of a requested item (FR-104 "Requirements"): the
-/// population's member object type and its ordinal among its package's
-/// population declarations in ascending `DeclarationKey` order.
+/// population's own declared member object type (never the clause's
+/// context, which may be one of its proper subtypes, SR-736 FND-010) and
+/// its ordinal among its package's population declarations in ascending
+/// `DeclarationKey` order.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct PopulationDomain {
     pub(crate) object: EffectiveId,
@@ -195,19 +197,22 @@ pub(crate) fn population_of(
     object: EffectiveId,
     types: &TypeEnvironment,
 ) -> Result<Option<PopulationDomain>, Vec<DeclarationKey>> {
-    let found: Vec<(usize, &DeclarationKey)> = models
+    let found: Vec<(usize, &DeclarationKey, EffectiveId)> = models
         .iter()
         .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
         .collect();
     match found.as_slice() {
         [] => Ok(None),
-        [(ordinal, _)] => Ok(Some(PopulationDomain {
-            object,
+        // The domain names the population's own covering member type, not
+        // `object` (SR-736 FND-010): `Sub` and `ConfigVersion` clauses over
+        // `config_history` key the same `PopulationDomain`.
+        [(ordinal, _, member)] => Ok(Some(PopulationDomain {
+            object: *member,
             ordinal: *ordinal,
         })),
         many => {
             let mut keys: Vec<DeclarationKey> =
-                many.iter().map(|(_, key)| (*key).clone()).collect();
+                many.iter().map(|(_, key, _)| (*key).clone()).collect();
             keys.sort();
             Err(keys)
         }

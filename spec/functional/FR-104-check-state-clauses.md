@@ -175,13 +175,18 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   (ADR-012 §13.5).
 - The hook SHALL return one `operation-contract` record for each frame of an
   operation that a `pre` or `post` clause of the unit names, keyed by one
-  occurrence of the frame node: the first clause naming that operation, in
-  source order, mints it, and every later clause naming the same operation
-  shares it. Two operations are two occurrences even when their frame nodes
-  coincide (equal `modifies`/`creates`/`deletes` and declaring type, FR-105):
-  the occurrence is per operation identity, not per frame-node identity, so
-  two operations never merge into one record and neither raises a fault.
-  An operation no clause names gets no record.
+  `generated` occurrence of the frame node (FR-105): the checker SHALL mint
+  one occurrence per distinct operation the unit's clauses name, in
+  ascending (declaring type `DeclarationKey`, operation name as UTF-8 bytes)
+  order over those operations, before lowering any clause; every clause
+  naming the same operation shares its occurrence. Two operations are two
+  occurrences even when their frame nodes coincide (equal
+  `modifies`/`creates`/`deletes` and declaring type, FR-105): the occurrence
+  is per operation identity, not per frame-node identity, so two operations
+  never merge into one record and neither raises a fault. The ordinal SHALL
+  NOT depend on source order: reversing the unit's clauses SHALL NOT change
+  which operation a given key names. An operation no clause names gets no
+  record.
 - Each record's extent SHALL follow ADR-014 §4 as FR-097 classifies it, over
   the clause's `self`, `result` and parameter types and the populations the
   clause ranges over: the context's population (every object of which the
@@ -189,10 +194,13 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   population declaration never has a maximum (QSpec FR-153's own record has
   none), so each one is always an unbounded `Population(None)` domain,
   boundable by `Cardinality`.
-- The checker SHALL key a population domain as
-  `DomainKey{node, path}` with `node` the `model`/`object_type` node of the
-  population's member type `T` (the clause's context type, or a `reaches`
-  edge's target type) and `path` the one-element list naming the population:
+- The checker SHALL key a population domain as `DomainKey{node, path}` with
+  `node` the `model`/`object_type` node of the population's own declared
+  member type that covers the clause's context type `T` (or a `reaches`
+  edge's target type) -- never a node of `T` itself when `T` is a proper
+  subtype of that member (SR-736 FND-010): a clause over `T` and one over a
+  subtype of `T`, both covered by the same population, key that population's
+  domain identically. `path` is the one-element list naming the population:
   its ordinal among the package's population declarations in ascending
   `DeclarationKey` order (its own `Ord`: `package`, then `node`, each as
   UTF-8 bytes, `qsl-semantics/src/model/key.rs:80-84`). The ordinal is stable
@@ -218,7 +226,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-104-AC-1 | Over the ConfigVersion package (FR-103-AC-1), `ParentOrder` (`present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber`), `NoCycle` (`not reaches(self, self, parent)`) and `post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = pre(self.versionNumber) }` each check, with kind `Invariant`, `Invariant` and `Postcondition`; `self` is `Reference<Config::ConfigVersion>`, `self.versionNumber` is `Int[0, 1000]` and `self.parent` is `Option<Reference<Config::ConfigVersion>>`. `ParentOrder`'s reads are all `current`; in `VersionUnchanged` the left read is `post` and the right `pre`. | Test (TC-459) |
+| FR-104-AC-1 | Over the ConfigVersion package (FR-103-AC-1), `ParentOrder` (`present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber`), `NoCycle` (`not reaches(self, self, parent)`) and `post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = pre(self.versionNumber) }` each check, with kind `Invariant`, `Invariant` and `Postcondition`; `self` is `Reference<Config::ConfigVersion>`, `self.versionNumber` is `Int[0, 1000]` and `self.parent` is `Option<Reference<Config::ConfigVersion>>`. `ParentOrder`'s reads are all `current`; in `VersionUnchanged` the left read is `post` and the right `pre`. **Unverified**: the `self.versionNumber: Int[0, 1000]` half depends on FR-056's `value-type/v1` scalar reader, which does not exist yet (QSL-289); QSL-277's own tests substitute a native `Integer` field and verify everything else this AC states, as FR-103-AC-1's tests already do. | Test (TC-459) |
 | FR-104-AC-2 | `post R using v on Config::ConfigVersion::attemptUpdate { result }` checks with `result: Boolean`. `result` in an invariant, and in a `pre` clause of `attemptUpdate`, each refuse `wrong_snapshot`/`wrong-anchor` at `result`. | Test (TC-459) |
 | FR-104-AC-3 | `on Config::Missing` and `on Config::ConfigVersion::missing` refuse `missing_declaration`/`missing-name` at the missing name; an invariant body `self.versionNumber` refuses `ill_typed`/`non-boolean-root`; a second clause named `ParentOrder`, and a function named `ParentOrder` beside the clause, each refuse `ambiguous_declaration`/`ambiguous-name` at both declarations. | Test (TC-460) |
 | FR-104-AC-4 | `pre(self.versionNumber)` in an invariant refuses `wrong_snapshot`/`forbidden-pre-read`; `pre(result)` in a postcondition refuses `wrong_snapshot`/`forbidden-pre-read`; `reaches(self, self, versionNumber)` refuses `ill_typed`/`operator-ineligible`; `reaches(x, y, parent)` in a function body refuses `ill_typed`/`operator-ineligible`; an unguarded `deref(value(self.parent)).versionNumber < 5` refuses `undefined_expression`/`unproved-presence` at the `value`. | Test (TC-460) |

@@ -19,9 +19,11 @@
 //! enters no key. FR-105 (QSL-279) replaces these bodies with the STD-111
 //! spellings when it emits them.
 
+use std::collections::BTreeMap;
+
 use quire_exact::{EffectiveId, NodeKey, Origin, ValueType};
 
-use super::{fault, Binder, Binders, Lowering};
+use super::{fault, generated_location, Binder, Binders, Lowering};
 use crate::check::claims::BinderSite;
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::Node;
@@ -181,6 +183,37 @@ impl Lowering<'_> {
         anchor: &AnchorInput<'_>,
         location: &Location,
     ) -> Result<(NodeKey, NodeKey, Origin), CheckRefusal> {
+        let (declaring, frame) = self.frame_node(anchor, location)?;
+        let frame_origin =
+            self.frame_occurrence(anchor.declaring, anchor.operation.name(), frame, location)?;
+        let operation = self.text_literal(anchor.operation.name(), location)?;
+        let anchor = self.insert(
+            location,
+            NodeTag::State,
+            "operation_anchor",
+            Some(declaring),
+            None,
+            SemanticTerm::Aggregate {
+                members: vec![
+                    SemanticTerm::binding("context", SemanticTerm::reference(declaring)),
+                    SemanticTerm::binding("operation", operation),
+                    SemanticTerm::binding("frame", SemanticTerm::reference(frame)),
+                ],
+            },
+        )?;
+        Ok((anchor, frame, frame_origin))
+    }
+
+    /// `anchor`'s declaring object type node and its `frame` node: content-
+    /// addressed over its `modifies`/`creates`/`deletes` and its declaring
+    /// type (FR-105), so any clause naming this operation gets the same
+    /// pair back, and calling this ahead of a specific clause (from
+    /// [`Lowering::register_frame_occurrences`]) costs nothing extra.
+    fn frame_node(
+        &mut self,
+        anchor: &AnchorInput<'_>,
+        location: &Location,
+    ) -> Result<(NodeKey, NodeKey), CheckRefusal> {
         let declaring = self.object_node(anchor.declaring, location)?;
         let effect = anchor.operation.effect();
         let mut modifies = Vec::with_capacity(effect.modifies.len());
@@ -215,24 +248,41 @@ impl Lowering<'_> {
                 ],
             },
         )?;
-        let frame_origin =
-            self.frame_occurrence(anchor.declaring, anchor.operation.name(), frame, location)?;
-        let operation = self.text_literal(anchor.operation.name(), location)?;
-        let anchor = self.insert(
-            location,
-            NodeTag::State,
-            "operation_anchor",
-            Some(declaring),
-            None,
-            SemanticTerm::Aggregate {
-                members: vec![
-                    SemanticTerm::binding("context", SemanticTerm::reference(declaring)),
-                    SemanticTerm::binding("operation", operation),
-                    SemanticTerm::binding("frame", SemanticTerm::reference(frame)),
-                ],
-            },
-        )?;
-        Ok((anchor, frame, frame_origin))
+        Ok((declaring, frame))
+    }
+
+    /// Mint every named operation's frame occurrence up front, in ascending
+    /// (declaring `DeclarationKey`, operation name as UTF-8 bytes) order
+    /// over the distinct operations `operations` names -- never in source
+    /// order, so the ordinal an operation's frame record gets does not
+    /// depend on which clause of the unit names it first (FR-104
+    /// "Requirements", SR-736 FND-008). Two operations sharing one frame
+    /// node (equal `modifies`/`creates`/`deletes` and declaring type) still
+    /// get two occurrences of it, ordered this way. Call this once, before
+    /// lowering any clause.
+    pub(crate) fn register_frame_occurrences(
+        &mut self,
+        operations: &[AnchorInput<'_>],
+    ) -> Result<(), CheckRefusal> {
+        let location = generated_location();
+        let mut distinct: BTreeMap<(EffectiveId, String), &AnchorInput<'_>> = BTreeMap::new();
+        for anchor in operations {
+            distinct
+                .entry((anchor.declaring, anchor.operation.name().to_owned()))
+                .or_insert(anchor);
+        }
+        let mut ordered: Vec<(DeclarationKey, String, &AnchorInput<'_>)> =
+            Vec::with_capacity(distinct.len());
+        for ((declaring, name), anchor) in distinct {
+            let key = self.declaration_key_of(declaring, &location)?;
+            ordered.push((key, name, anchor));
+        }
+        ordered.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        for (_, name, anchor) in ordered {
+            let (_, frame) = self.frame_node(anchor, &location)?;
+            self.frame_occurrence(anchor.declaring, &name, frame, &location)?;
+        }
+        Ok(())
     }
 
     /// A frame `modifies` entry: the field member `field`'s declaring

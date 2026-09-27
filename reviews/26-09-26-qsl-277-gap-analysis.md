@@ -59,3 +59,16 @@ The coder's four spec questions:
 Request changes. AC-7 and AC-8 are fully backed. AC-1 and AC-5 are
 materially under-tested, and the AC-5 spec needs amending (FND-003). All of
 these can be fixed inside this PR. Code defects are in SR-736.
+
+## Dispositions
+
+Round 2, checked against ab6a987c on 2026-09-26.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed ab6a987c | The test now asserts `Attribute` nodes of `Integer` and `Option<Reference<ConfigVersion>>`, a `Pre` over an `Attribute`, `NoCycle`'s `Reaches` node, and all-`current` reads (state_clauses.rs:163-219). Still open, low: the FR-104-AC-1 row (FR-104:221) has no "Unverified: `Int[0, 1000]` pending QSL-289" note like FR-103-AC-1's, and spec/tests.md:241 marks TC-459 "Passed locally" without qualification. |
+| FND-002 | still-open | `one_requirement_record_per_clause_and_frame` is unchanged (state_clauses.rs:598-621). It checks the count and capability kind only. The new tests check only `to_wire()` "unbounded"/"bounded". Nothing asserts exactly one domain, kind `Population`, `DomainKey{ConfigVersion node, [config_history ordinal]}`, or that the clause and frame records are keyed by the `claim` and frame occurrences. Step 5 does not assert the names `archive`/`config_history` or the `on` span. |
+| FND-003 | fixed ab6a987c | FR-104 "Requirements", AC-5 and TC-461 step 5 now say every domain-package population is unbounded. The bounded-`archive` branch is removed. |
+| FND-004 | still-open (low) | This is partly addressed. Rows 3, 5, 6, 7 and 8 assert that the path is empty or non-empty, and rows 4 and 9 assert two distinct loci. That does not meet the finding. A refusal moved to the wrong subexpression, for example `deref(...)` instead of `value(self.parent)` in row 8, or the `=` operand instead of the `pre` in row 5, still passes a non-empty-path check. Asserting the exact `location.path` (a `Vec` of child indices) is one line per row and needs no mapping from nodes to source, so "disproportionate" does not apply. The `result` locus (AC-2) and the assembler spans for rows 2 and 4-at-`on` are also still unasserted in the integration tests. Non-blocking. |
+| FND-005 | fixed ab6a987c | Claim role and ordinals 0 and 1 are asserted (state_clauses.rs:680-685). |
+| FND-006 | fixed ab6a987c | The FR-104 Description and Dependencies are updated, the FR-091 catalog has three new rows, TC-459 to TC-461, spec/tests.md and spec/spec.md statuses are updated, and the trace tags now name FR-104-AC-3 and AC-4. |
