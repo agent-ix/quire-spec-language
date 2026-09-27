@@ -93,9 +93,11 @@ declaration the assembler built from the unit, it SHALL resolve to a
 A declaration as a whole SHALL be located at its form's span (FR-091-AC-1),
 mapped the same way.
 
-A location SHALL resolve to no region in exactly three cases. In each, the
-tree holding the position was not read from the unit, so no region of the
-unit names it:
+A location SHALL resolve to no region in exactly four cases. In the first
+three, the tree holding the position was not read from the unit, so no
+region of the unit names it; in the fourth, the position was read from the
+unit, but its span does not map to a single region of the document it is
+embedded in:
 
 1. A position in a function that the `model` bridge synthesized for FR-151
    dispatch (a function not callable by name). It is built from a
@@ -165,7 +167,7 @@ Each producer's locus is the position at which its charge failed:
 
 `LimitExceeded`'s locus SHALL be absent in exactly these cases:
 
-1. The position resolves to no region (the three cases above).
+1. The position resolves to no region (the four cases above).
 2. The I2 reader's own artifact byte ceiling. The reader refuses without
    hashing the oversized bytes, which is the ceiling's purpose, and a digest
    over them is the only name the artifact has.
@@ -329,7 +331,7 @@ name.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-096-AC-1 | For function `0` with body `if a then b else c + d` and measure `n`, under a unit reference `r`: location (`Body{0}`, `[]`) resolves to the region of the `If` node's span, (`Body{0}`, `[2]`) to the span of `c + d`, (`Body{0}`, `[2, 1]`) to the span of `d`, and (`Measure{0}`, `[]`) to the span of `n`. Each region is under `r`. The checked package of those declarations resolves the same four locations to the same four regions. When the unit is a body embedded at byte offset `k` of a document with reference `d`, with no layout deletions, the same locations resolve under `d` to the same spans shifted by `k`. A location in an FR-151 synthesized function and a location with `Origin::Expression` resolve to no region. | Test (TC-426) |
+| FR-096-AC-1 | For function `0` with body `if a then b else c + d` and measure `n`, under a unit reference `r`: location (`Body{0}`, `[]`) resolves to the region of the `If` node's span, (`Body{0}`, `[2]`) to the span of `c + d`, (`Body{0}`, `[2, 1]`) to the span of `d`, and (`Measure{0}`, `[]`) to the span of `n`. Each region is under `r`. The checked package of those declarations resolves the same four locations to the same four regions. When the unit is a body embedded at byte offset `k` of a document with reference `d`, with no layout deletions, the same locations resolve under `d` to the same spans shifted by `k`. When the embedding's map splits one of those spans into more than one document region (a layout deletion), the location resolves to no region. A location in an FR-151 synthesized function and a location with `Origin::Expression` resolve to no region. | Test (TC-426) |
 | FR-096-AC-2 | `LimitKind`'s `catalog_code()` gives `stage_limit_exceeded` with causes `input-bytes-exceeded`, `nesting-depth-exceeded`, `token-count-exceeded`, `node-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`, `diagnostic-count-exceeded` and `work-budget-exceeded` for its eight variants, and a `LimitExceeded` gives its kind's code. | Test (TC-427) |
 | FR-096-AC-3 | With S2 nesting-depth bound `L = 8`, S2 over a body of `not`×8 `a` returns a limit with kind nesting depth, bound 8, actual 9, and `Locus::Region` over the span of the node at depth 9, under the unit's `RawSourceRef`. | Test (TC-427) |
 | FR-096-AC-4 | A declaration whose preimage input bytes exceed a configured bound `B` returns `StageFailure::Limit` with kind input bytes, bound `B`, actual equal to the measured bytes, and `Locus::Region` over the declaration's span. The same limit reached for an FR-151 synthesized function carries no locus. | Test (TC-427) |
