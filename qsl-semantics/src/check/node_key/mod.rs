@@ -375,7 +375,7 @@ pub enum SemanticTerm {
     /// nested inside another term -- but carried as one more closed variant
     /// here because [`SemanticNode::body`](super::SemanticNode::body) has
     /// exactly one field for a node's body, whichever shape it holds. It
-    /// contains no `application`, so [`node_key`] always keys a frame node
+    /// contains no `application`, so `node_key` always keys a frame node
     /// through the FR-092 structural preimage, never the application one.
     Frame {
         /// Every field or relationship the operation may write, ascending
@@ -396,7 +396,7 @@ pub enum SemanticTerm {
 /// bare relationship entry (`{kind: "relationship", declaration}`); QSL's
 /// checker records no relationship modifies yet (FR-104's own scope is field
 /// effects only), so this type carries only the field form its one producer
-/// ([`super::super::lowering::Lowering::frame_node`]) ever builds -- adding
+/// (the checker's own `frame_node` lowering step) ever builds -- adding
 /// relationship modifies later is a new constructor here, not a wire-shape
 /// change.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
