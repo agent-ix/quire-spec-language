@@ -32,3 +32,12 @@ the new rows are specified and not implemented.
 
 Approve with changes. Fix FND-001 in this PR. FND-002 is deferred to a code
 follow-up ticket under QSL-291's parent.
+
+## Dispositions
+
+Round 2, reviewed at a62cb0d00170598b9c66ad346d3ae274ac36314d.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a62cb0d0: TC-452 step 4 gives each of the ten refusals a concrete payload and step 4's expected results give each exact `fields` object |
+| FND-002 | deferred | QSL-292, a code ticket blocked by QSL-291 |

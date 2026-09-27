@@ -56,3 +56,22 @@ Matches confirmed:
 
 Approve with changes. Fix FND-001 and FND-002 in this PR; FND-003 is a
 one-word fix. FND-004 is a recommendation for the owner.
+
+## Dispositions
+
+Round 2, reviewed at a62cb0d00170598b9c66ad346d3ae274ac36314d (fix commit
+a62cb0d0 on b9da7cd4, rebased onto origin/main dc6cf925). The author's gate
+log `qsl-291-ci-r2.log` starts with the head sha and ends `exit=0`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a62cb0d0: FR-100:202-205 makes an empty `sum` whose `N` does not admit `0` `sum-out-of-domain` at the `sum` node (owner ruling); FR-100-AC-10 and TC-452 step 5 test it |
+| FND-002 | fixed | a62cb0d0: FR-106:174-179 scopes the label order "within this check" and drops the `empty-path` sentence |
+| FND-003 | fixed | a62cb0d0: FR-100:194-200 locates a failing seed at the summand's node and a failing addition at the `sum` node, matching FR-096:268-270, FR-096-AC-14 and TC-500 steps 1 and 3 |
+| FND-004 | accepted-no-change | Owner ruling: the `undefined` outcome keeps rendering only `reason`, as before this PR |
+
+Round-2 note (new, low, non-blocking): FR-096 on main still says FR-100's
+table "does not list it today" (FR-096:284-285) and that FR-100 has no
+`sum-out-of-domain` row (FR-096:481-482); this PR makes both stale. FR-096
+also states no `n = 0` outcome, which FR-100:202-205 now fixes. The FR-096
+owner can correct both in the next FR-096 edit or in QSL-292.
