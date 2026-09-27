@@ -128,15 +128,17 @@ code is its kind's.
 
 Every ceiling of a stage's own limits type in compiler stages S2 to S4, the
 I2 reader and a family `check`'s own per-declaration precheck (the row
-"S3, a family `check`, for a declaration as a whole" below) is a stage
-limit and SHALL be reported as `LimitExceeded`, never as `resource_exhausted`.
-A package-level `CheckingLimits` stop -- `Typer`'s nesting depth and
-package-wide node count, lowering's own work charge, and package checking's
-own declaration-level precheck (`PackageDeclarations::check`, the other S3
-rows below) -- is a stage limit by the same rule, but is reported as a
-`CheckRefusal` with code `stage_limit_exceeded`, carrying the locus this FR
-gives its row; it is never a standalone `LimitExceeded` value and never
-`resource_exhausted`. A ceiling of an
+"S3, a family `check`, for a declaration as a whole" below, including a
+declaration's preimage input bytes) is a stage limit and SHALL be reported
+as `LimitExceeded`, never as `resource_exhausted`. `PackageDeclarations::
+check` re-reports that same `LimitExceeded` as a `CheckRefusal` with code
+`stage_limit_exceeded` for its own caller -- one producer, one path, not a
+second ceiling. A package-level `CheckingLimits` stop with no `LimitExceeded`
+producer of its own -- `Typer`'s nesting depth and package-wide node count,
+and lowering's own work charge (the other S3 rows below) -- is a stage limit
+by the same rule, but is reported directly as a `CheckRefusal` with code
+`stage_limit_exceeded`, carrying the locus this FR gives its row; it is
+never `resource_exhausted`. A ceiling of an
 accounting-contract limits type (`ModelNormalizationLimitsV1`,
 `PopulationAdmissionLimitsV1`, quire-specification FR-150) is the caller's
 meter wherever it is read and keeps `resource_exhausted`
@@ -166,7 +168,6 @@ Each producer's locus is the position at which its charge failed:
 | S3, a family `check`, for a declaration as a whole | the contract's nesting entry, and the declaration's preimage input bytes, node count and work charge | `Locus::Region` over that declaration's span |
 | S3, `Typer` and lowering, under `CheckingLimits` | nesting depth, and the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `check::Location`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
 | S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `check::Location` |
-| S3, package checking's declaration-level precheck, under `CheckingLimits` | a declaration's input bytes (NFR-011) | `Locus::Region` over the declaration being charged |
 | I2 reader, IR's reported limits | IR's `Bytes`, `Depth`, `Nodes`, `Edges`, `Occurrences`, `Diagnostics` and `Work` as input bytes, nesting depth, node count, edge count, occurrence count, diagnostic count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
 
 `LimitExceeded`'s locus SHALL be absent in exactly these cases:

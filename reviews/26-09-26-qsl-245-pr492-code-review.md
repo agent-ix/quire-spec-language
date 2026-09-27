@@ -30,3 +30,69 @@ Ticket: QSL-245. PR: quire-spec-language#492. Code review with the Rust lane (ru
 | FND-002 | low | Two docs are stale now that `CheckedInvariant` is `Err`. `Machine::run`'s "`Err(InternalFault)` (FR-090-AC-10)" paragraph still names only `resolve_population` faults. `CheckedPackageEvaluation::call` still says the kernel outcome is returned "unchanged". | qsl-eval/src/value/expression/evaluate.rs:423-432; qsl-eval/src/value/expression/mod.rs:289-296 |
 | FND-003 | low | The doc on `a_checking_limit_stop_is_located_at_its_node` says node count is located at "the node whose entry failed the charge". The node-count case asserts the whole declaration text. That case is the family's per-declaration `check_node_count` (actual 7 is the preimage count, family.rs:1470), not `Typer`'s package-wide count, whose actual would be bound+1 = 3. | qsl-semantics/src/check/region.rs:411-418, 440-446 |
 | FND-004 | low | `a_lowering_stop_is_located_by_its_location` hard-codes `declared + 36` with no derivation. A cost-table change would silently move the stop to a different node, or past the end of lowering. Derive it, or say in a comment what the 36 units are. | qsl-semantics/src/check/region.rs:489 |
+
+## Dispositions
+
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-745 pr=quire-spec-language#492 reviewed=d5cf7b9487eec13c3f08d469cb239a582b54796d base=caa1520a4393c132583accda17aa9f8c01c14949 date=2026-09-26 -->
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d5cf7b94 — `stopped` doc now cites FR-096-AC-15 |
+| FND-002 | fixed | d5cf7b94 — `Machine::run` and `CheckedPackageEvaluation::call`/`evaluate` docs name the CheckedInvariant `Err` path |
+| FND-003 | fixed | d5cf7b94 — region test doc separates the family precheck (declaration span) from `Typer`'s per-node stops |
+| FND-004 | fixed | d5cf7b94 — `declared + 36` replaced by `budget_located_at_c_plus_d(declared)`, a bounded scan over real `check` runs |
+
+Verified at d5cf7b94 by reading `git diff caa1520a..d5cf7b94`. FND-004: the scan is a real derivation. It runs `unit.check` for each budget in `declared+1 .. declared+1000` and returns the first whose single refusal resolves to the `c + d` text; if the cost model moves the stop off that node the scan panics instead of passing. The test loop then asserts kind `WorkBudget`, `region: None`, `location == body([2])` and region equality independently of the scan predicate. Re-ran in a scratch worktree: all 5 `check::region` tests pass.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+  - fnd: FND-001
+    outcome: fixed
+    fix_sha: d5cf7b94
+    after_excerpt: |-
+      /// Converts a stop to an `Evaluation`. A kernel `CheckedInvariant` is an
+      /// S6a invariant break, an `InternalFault` and never a refusal record
+      /// (FR-096-AC-15, observed through
+      /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`]).
+  - fnd: FND-002
+    outcome: fixed
+    fix_sha: d5cf7b94
+    after_excerpt: |-
+      /// **`Err(InternalFault)` (FR-090-AC-10, FR-096-AC-15).** Two distinct
+      /// invariant breaks return `Err` from here, never `Ok(Evaluation {
+      /// outcome: Outcome::Refused(_), .. })`: [`Self::resolve_population`] ...
+      /// and a kernel `Stop::Refused(Refusal::CheckedInvariant)`, which `Self::stopped`
+      /// itself turns into `Err(InternalFault)` rather than an `Outcome`
+      /// (FR-096-AC-15).
+      [mod.rs] ... except a kernel `Refusal::CheckedInvariant`, which never reaches
+      this `Ok` arm at all (FR-096-AC-15)
+  - fnd: FND-003
+    outcome: fixed
+    fix_sha: d5cf7b94
+    after_excerpt: |-
+      /// at a specific source text. Depth is located at the node whose entry
+      /// failed the charge (`Typer`'s own per-node check); node count, input
+      /// bytes and work budget are the family's own per-declaration precheck
+      /// (`check_node_count`/`check_input_bytes`/`ValueFunctionFamily::check`'s
+      /// own work charge), fired before `Typer` starts, and located at the
+      /// whole declaration's span.
+  - fnd: FND-004
+    outcome: fixed
+    fix_sha: d5cf7b94
+    after_excerpt: |-
+      fn budget_located_at_c_plus_d(declared: u64) -> u64 {
+          for budget in (declared + 1)..(declared + 1000) {
+              ... unit.check(CheckingLimits::default().with_work_budget(budget)) ...
+              if text(&region) == "c + d" { return budget; }
+          }
+          panic!("no budget in range locates the lowering stop at c + d");
+      }
+      ...
+          (c_plus_d, &[2][..], "c + d"),
+```
+
++++
+
+
