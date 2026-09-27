@@ -1205,7 +1205,7 @@ fn frame_snapshot_bytes(
                 Some(parent_key) => {
                     json!({"present": {"reference": {"population": population, "key": parent_key}}})
                 }
-                None => json!({"absent": null}),
+                None => json!({"absent": {}}),
             };
             json!({
                 "key": key,
@@ -2008,7 +2008,7 @@ fn tc465_healthy_parent(
             "complete": true,
             "objects": [
                 {"key": "root", "type": config_version,
-                 "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}}},
+                 "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}}},
                 {"key": "child", "type": config_version,
                  "fields": {"versionNumber": {"integer": "2"},
                             "parent": {"present": {"reference": {"population": population, "key": "root"}}}}},
@@ -2034,7 +2034,7 @@ fn tc465_pre_snapshot(
             "complete": true,
             "objects": [
                 {"key": "child", "type": config_version,
-                 "fields": {"versionNumber": {"integer": "2"}, "parent": {"absent": null}}},
+                 "fields": {"versionNumber": {"integer": "2"}, "parent": {"absent": {}}}},
             ],
         }],
     })
@@ -2057,7 +2057,7 @@ fn tc465_post_snapshot(
             "complete": true,
             "objects": [
                 {"key": "child", "type": config_version,
-                 "fields": {"versionNumber": {"integer": "3"}, "parent": {"absent": null}}},
+                 "fields": {"versionNumber": {"integer": "3"}, "parent": {"absent": {}}}},
             ],
         }],
     })
@@ -2328,7 +2328,7 @@ fn tc465_healthy_parent_observed(
             "complete": true,
             "objects": [
                 {"key": "root", "type": config_version,
-                 "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}}},
+                 "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}}},
                 {"key": "child", "type": config_version,
                  "fields": {"versionNumber": {"integer": "2"},
                             "parent": {"present": {"reference": {"population": population, "key": "root"}}}}},
@@ -2547,7 +2547,7 @@ fn tc465_row3_deeply_nested_value_refuses_nesting_depth_exceeded() {
     let result = run_tc465_current(
         &document,
         |value| {
-            let mut nested = json!({"absent": null});
+            let mut nested = json!({"absent": {}});
             for _ in 0..65 {
                 nested = json!({"present": nested});
             }
@@ -2838,6 +2838,28 @@ fn an_empty_object_key_refuses_invalid_value() {
     );
     let record = assert_tc465_refused(result, "invalid_runtime_input", "invalid-value");
     assert_eq!(record.fields.get("field").map(String::as_str), Some("key"));
+}
+
+/// SR-750 FND-013 round 2: FR-106 line 107 spells the `absent` tag's
+/// payload `{}`; a non-empty payload (`5`, not an object at all) is not
+/// this shape and refuses `wrong-value-kind` at the field, rather than
+/// being accepted the way any payload used to be.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn an_absent_tag_with_a_non_empty_payload_refuses_wrong_value_kind() {
+    let document = tc465_document();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            value["populations"][0]["objects"][0]["fields"]["parent"] = json!({"absent": 5});
+        },
+        None,
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("parent")
+    );
 }
 
 /// Row 14 (check 5): invocation `operation` `other`.
@@ -3236,7 +3258,7 @@ fn tc465_row31_an_unauthorized_deletion_beats_a_field_change_in_the_same_populat
                 .unwrap()
                 .push(json!({
                     "key": "root", "type": "ix://example/config-version/ConfigVersion",
-                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}},
+                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}},
                 }));
         },
         |value| {
@@ -3306,7 +3328,7 @@ fn tc465_row39_a_retype_beats_an_unauthorized_deletion() {
                 .unwrap()
                 .push(json!({
                     "key": "root", "type": "ix://example/config-version/ConfigVersion",
-                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}},
+                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}},
                 }));
         },
         |value| {
@@ -3344,7 +3366,7 @@ fn tc465_row40_population_order_checks_archive_before_config_history() {
         "complete": true,
         "objects": [{
             "key": "a1", "type": sub,
-            "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}},
+            "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}},
         }],
     });
     // `a1.parent` targets `config_history`'s `child` (exact type
@@ -3417,7 +3439,7 @@ fn tc465_row41_a_population_only_in_post_admits_its_pre_side_as_empty() {
                 "complete": true,
                 "objects": [{
                     "key": "a1", "type": sub,
-                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}},
+                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}},
                 }],
             }));
         },

@@ -251,7 +251,7 @@ fn snapshot_bytes(
                 Some(next_key) => {
                     json!({"present": {"reference": {"population": population, "key": next_key}}})
                 }
-                None => json!({"absent": null}),
+                None => json!({"absent": {}}),
             };
             json!({
                 "key": key,
@@ -1603,7 +1603,7 @@ fn config_version_snapshot(
     let config_version = config_version_type();
     let mut objects = vec![json!({
         "key": "root", "type": config_version,
-        "fields": {"versionNumber": {"integer": root_version.to_string()}, "parent": {"absent": null}},
+        "fields": {"versionNumber": {"integer": root_version.to_string()}, "parent": {"absent": {}}},
     })];
     if let Some(child_version) = child_version {
         objects.push(json!({

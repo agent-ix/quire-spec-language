@@ -334,7 +334,16 @@ fn read_raw_value(json: &serde_json::Value) -> Option<RawValue> {
     match tag.as_str() {
         "boolean" => Some(RawValue::Boolean(payload.as_bool()?)),
         "integer" => Some(RawValue::Integer(payload.as_str()?.to_owned())),
-        "absent" => Some(RawValue::Absent),
+        // FR-106 line 107 spells this tag's payload `{}`, not any value
+        // (SR-750 FND-013): an object with any member, or a non-object
+        // payload, is not this shape at all.
+        "absent" => {
+            if payload.as_object().is_some_and(serde_json::Map::is_empty) {
+                Some(RawValue::Absent)
+            } else {
+                None
+            }
+        }
         "present" => Some(RawValue::Present(Box::new(read_raw_value(payload)?))),
         "reference" => {
             let population = payload.get("population")?.as_str()?.to_owned();
