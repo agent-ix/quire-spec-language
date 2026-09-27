@@ -49,9 +49,20 @@ path, the bytes or another label: a path is a locator, not an identity
 (QSpec FR-004), and a revision namespace is never inferred from the shape of
 its value.
 
-The source shall refuse with `invalid_source_identity` when the authority,
-identity, revision namespace or revision value is empty or only whitespace,
-or when the path is empty.
+A label is blank when it is empty or consists only of Unicode `White_Space`
+scalars. Admission checks the labels first, in the order `authority`,
+`identity`, `revision_namespace`, `revision`:
+
+- When a label is blank, the source shall refuse with
+  `invalid_source_identity`, cause `blank-label`, and field `label` naming
+  the first blank label in that order, spelled exactly `authority`,
+  `identity`, `revision_namespace` or `revision`.
+- When every label is non-blank and the path is empty, the source shall
+  refuse with `invalid_source_identity`, cause `empty-path`, and no field.
+
+These are the two causes `quire.native.diagnostics/v1` revision `1-draft.8`
+(QSpec STD-110) closes `invalid_source_identity` to. Neither names a source
+region.
 
 ### Where an S0 refusal is located
 
@@ -134,8 +145,8 @@ identity gives every source-owned declaration a different key.
   O-26). It passes that reference's four labels as the source identity, the
   reference's identity as the path, and the provided bytes as the source. A
   reference whose label is only whitespace, which QSpec's `Nonempty` admits,
-  refuses the replay with `invalid_source_identity` at S1, before any form
-  is built. It requires the recomputed
+  refuses the replay with `invalid_source_identity`/`blank-label`, naming
+  that label, at S1, before any form is built. It requires the recomputed
   `quire.source.bytes/v1` digest to equal the reference's digest, as
   ADR-013 C-13 requires. The recompiled package therefore names each source
   exactly as the proving run did, which keeps its declaration keys and its
@@ -162,7 +173,8 @@ revision namespace and value part of every immutable key
 | FR-001-AC-3 | Invalid UTF-8 receives a source diagnostic. | Test |
 | FR-001-AC-4 | Input beyond the selected byte ceiling receives resource_exhausted naming that ceiling, whether the ceiling is below or above the 1 MiB default. | Test |
 | FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire`, revision namespace `git`, revision value `3f2a` and bytes `b` carries a `RawSourceRef` whose authority, identity, revision namespace and value read exactly those labels and whose digest is the `quire.source.bytes/v1` digest of `b`. Admitting the same bytes under revision value `3f2b` gives a `RawSourceRef` that differs only in the revision value. | Test (TC-424) |
-| FR-001-AC-6 | Admission refuses with `invalid_source_identity`, and admits nothing, when exactly one of the authority, identity, revision namespace or revision value is empty, and again when it is a single space. | Test (TC-424) |
+| FR-001-AC-6 | Admission refuses with `invalid_source_identity`, cause `blank-label`, and admits nothing, when exactly one of the authority, identity, revision namespace or revision value is empty, again when it is a single space, and again when it is U+3000 IDEOGRAPHIC SPACE; field `label` is `authority`, `identity`, `revision_namespace` or `revision` respectively. A label that is U+200B ZERO WIDTH SPACE, which is not `White_Space`, is not blank. | Test (TC-424) |
+| FR-001-AC-11 | With both the revision namespace and the authority blank, admission refuses `invalid_source_identity`/`blank-label` with `label` `authority`. With the identity blank and the path empty, it refuses `blank-label` with `label` `identity`, not `empty-path`. With all four labels non-blank and the path empty, it refuses `invalid_source_identity`/`empty-path` with no field. | Test (TC-424) |
 | FR-001-AC-7 | Package declarations holding one record `Point` with field `x: Int[0, 9]`, checked under the source reference of bytes `b` admitted as authority `a`, identity `u`, revision (`git`, `1`), and again under the reference of bytes `b'` admitted as `a`, `u`, (`git`, `2`), give `Point` the same node key. Checked under the reference of `b` admitted as authority `c`, identity `u`, revision (`git`, `1`), they give `Point` a different key, and under the reference of `b` admitted as authority `a`, identity `v`, revision (`git`, `1`), a third key. | Test (TC-424) |
 | FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`, `git`, `1`) refuse with the region `[1, 1)` under the `RawSourceRef` of those three bytes, and bytes `ab\0c` with the region `[2, 3)` under theirs. | Test (TC-424) |
 | FR-001-AC-10 | Admission with an empty revision namespace, admission of five bytes under a four-byte ceiling, and verified intake of bytes whose digest differs from the selected one each refuse with no region, not a region at byte 0. | Test (TC-424) |
@@ -179,7 +191,22 @@ revision namespace and value part of every immutable key
 - QSpec FR-004: a path or display label is a locator, and a key includes the
   revision namespace and value. QSpec FR-322 `RawSourceRef`, `Revision`,
   `SourceOwner` and `PackageLock.sources`.
+- `quire.native.diagnostics/v1` revision `1-draft.8` (QSpec STD-110,
+  `proposals/quire-v1/definitions/native-diagnostics.md`, cited by
+  reference): the `invalid_source_identity` row, its causes `blank-label`
+  and `empty-path`, and the `label` payload spelling; QSpec FR-272-AC-12.
 - [Detailed contract or implementation evidence](../../qsl-foundation/src/source.rs) supplies the scoped context.
+
+## Open Questions
+
+- **FR-001-OQ-1 (open):** the complete-V1 host causes `EditPredecessor` (an
+  edit names a different predecessor), `ForeignNode` (a CST node belongs to
+  another parsed source) and `RequestRevision` (a request is bound to
+  another revision) emit `invalid_source_identity` today
+  (`qsl-cst/src/diagnostic.rs` `HostCause`). They are not FR-001 refusals,
+  and revision `1-draft.8` closes that code's causes to `blank-label` and
+  `empty-path`, so neither cause fits them. They need a catalog code before
+  QSL claims revision `1-draft.8`.
 
 ## Status
 
@@ -192,3 +219,10 @@ column, and `PackageDeclarations::new` takes the unit's `RawSourceRef`. The
 native-v1 `Diagnostic` still renders a region-less refusal at byte 0 (the
 debt recorded above). The replay executor's recompilation under the
 reference's labels is ADR-013 TK-01's.
+
+Not built against catalog revision `1-draft.8` (QSL-245): the refusal
+carries one cause, `SourceReadCause::UnnamedSource`, for a blank label and
+an empty path alike, with no `blank-label`/`empty-path` cause and no `label`
+field; `Source::read_typed` tests the labels and the path in one condition
+(`qsl-foundation/src/source.rs`). So AC-6's cause and field and AC-11
+are planned; AC-6's refusal code is backed.

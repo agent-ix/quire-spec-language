@@ -207,14 +207,14 @@ operational validation remains outside this audit-only plan.
 | TC-421 | The package source map carries the wire's source map, and a location resolves or refuses by cause | Integration | P1 | FR-095-AC-3, FR-095-AC-4 | ✅ Passed locally; step 4 (QSpec positive fixtures) under `make conformance` |
 | TC-422 | Each Locus variant resolves to regions by its own rule, and the artifact pointer is RFC 6901 | Unit | P1 | FR-095-AC-5, FR-095-AC-6 | ✅ Passed locally |
 | TC-423 | The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result | Unit | P1 | NFR-011-M-1 (node refusal: step 1), NFR-011-M-2 (step 3), NFR-011-M-3 (byte refusal before work: step 4), NFR-011-M-4 (work refusal: step 5; enum package admitted: step 4) | 🚧 Partly passed: ceilings bind and are recorded locally (QSL-214); the `stage_limit_exceeded` outcome is pending S-5b (QSL-160) |
-| TC-424 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7, FR-001-AC-8, FR-001-AC-9, FR-001-AC-10 | ✅ Passed locally; QSL-233 (S-4b) |
-| TC-425 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | ✅ Passed locally; QSL-233 (S-4b) |
+| TC-424 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7, FR-001-AC-8, FR-001-AC-9, FR-001-AC-10, FR-001-AC-11 | 🚧 Partial; QSL-233 (S-4b): steps 1 to 5 pass locally for the `invalid_source_identity` code; the catalog `1-draft.8` `blank-label` cause and `label` field (step 2, with its U+3000 and U+200B cases) and step 6 (FR-001-AC-11, label order and `empty-path`) are planned, QSL-245 |
+| TC-425 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | 🚧 Partial; QSL-233 (S-4b) passes locally for the `invalid_source_identity` code; step 3's catalog `1-draft.8` `blank-label` cause and `label` field are planned, QSL-245 |
 | TC-426 | A check location resolves to the region of the unit it was read from, or to none | Unit | P1 | FR-096-AC-1 | 🚧 Partial; steps 2 and 4 pass locally (`qsl-semantics/src/check/region.rs`, QSL-239); step 3 (a body embedded in a document, C-21) is not built |
 | TC-427 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5 | ✅ Passed locally; QSL-160 (S-5b) |
-| TC-428 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8 | 🚧 Partial; QSL-245: AC-6 and AC-7 pass locally; AC-8 is NOT fully backed: only `CardinalityOutOfBound` maps, and `InexactDecimal`, `DecimalOutOfDomain`, `DivisionPairOutOfDomain`, `ModuloOutOfDomain`, `TextLengthOutOfDomain`, `IntegerOutOfDomain`, `RationalOutOfDomain` and `IeeeNotExact` await catalog revision `1-draft.8` (STD-110), as do the two IEEE codes QSpec FR-148 names that the catalog omits; a kernel `CheckedInvariant` builds no record and its internal-fault conversion is not built |
+| TC-428 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13 | 🚧 Partial; QSL-245: AC-6 and AC-7 pass locally; AC-8 passes for `CardinalityOutOfBound` and `ForeignReference` only; the ten kernel value refusals catalog `1-draft.8` (STD-110) codes, and AC-13, are planned: their variants carry no target domain or width and `kernel_refusal_record` builds no record for them; a kernel `CheckedInvariant` builds no record and its internal-fault conversion is not built |
 | TC-429 | The I2 reader locates its version refusal and its limits in the artifact | Integration | P1 | FR-096-AC-9, FR-096-AC-10 | ✅ Passed locally; QSL-160 (S-5b), on IR-281 |
-| TC-430 | Native run and compile requests and their outputs carry the four source labels | Integration | P1 | FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 | 🚧 Partial; QSL-233 (S-4b): steps 2 to 5 pass locally; step 1 passes with the model source's revision value `draft:1`, not `1`, because the program's model import pins the model artifact that binds it |
-| TC-431 | Runtime input artifacts carry the four labels, and two-label bytes refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | ✅ Passed locally; QSL-233 (S-4b) |
+| TC-430 | Native run and compile requests and their outputs carry the four source labels | Integration | P1 | FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 | 🚧 Partial; QSL-233 (S-4b): steps 2 to 5 pass locally; step 1 passes with the model source's revision value `draft:1`, not `1`, because the program's model import pins the model artifact that binds it; step 2's catalog `1-draft.8` `blank-label` cause and `label` field are planned, QSL-245 |
+| TC-431 | Runtime input artifacts carry the four labels, and two-label bytes refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | 🚧 Partial; QSL-233 (S-4b) passes locally for the `invalid_source_identity` code; step 2's catalog `1-draft.8` `blank-label` cause and `label` field are planned, QSL-245 |
 | TC-432 | A family check's stage limit names its kind, bound and actual counter, and the counter is where the limit stops | Unit | P1 | FR-062-AC-12 | ✅ Passed locally (QSL-160 part 1) |
 | TC-434 | Model limits have finite defaults, and normalization work stops at the limit | Unit | P1 | NFR-012 (defaults and recording: steps 1 and 2; bounded work: steps 3 and 4; meter memory: step 5; shared paths: step 6; ancestor-steps order: step 7) | ✅ Passed locally (QSL-216, QSL-218, QSL-222) |
 | TC-436 | Proof-bound and interval-key constructors refuse empty ranges, and domain keys order by node then path | Unit | P1 | FR-097-AC-1 | ✅ Passed locally (QSL-140) |
@@ -254,6 +254,7 @@ operational validation remains outside this audit-only plan.
 | TC-481 | The assembler admits source enums and predicates, which check and lowering then use | Integration | P1 | FR-091-AC-27, FR-091-AC-28, FR-091-AC-29, FR-091-AC-30, FR-092-AC-13 | ✅ Passed locally (`qsl-semantics` `check::assemble` tests, `qsl-eval/tests/it/source_call.rs`) |
 | TC-482 | S2 builds dimension and unit forms | Unit | P1 | FR-091-AC-31 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-483 | The assembler admits source dimensions and units into a UnitGraph and refuses each source error | Unit | P1 | FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35 | 🚧 Partial: AC-32 to AC-34 and AC-35's errors pass locally (`qsl-semantics` `check::assemble` tests); AC-35's catalog code awaits STD-112 |
+| TC-500 | A sum seed or running total outside its domain is a located undefined outcome | Unit | P1 | FR-096-AC-14 | 🚧 Planned; QSL-245: S6a's `sum` refuses `IntegerOutOfDomain`, and `quire_exact::Undefined` has no `SumOutOfDomain` |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -268,7 +269,9 @@ caller-named `RawSourceRef` (TC-424) and
 limits, refusal records and the I2 reader's loci are slice S-5b (QSL-160,
 [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md),
 TC-426 to TC-429). TC-427, TC-429 and TC-378 pass; TC-428 (refusal
-record fields at S6a) remains.
+record fields at S6a, including the ten kernel value refusals catalog
+revision `1-draft.8` codes) and TC-500 (a `sum` running total outside its
+domain is undefined) remain.
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 

@@ -37,7 +37,8 @@ Tag the tests `#[trace("TC-431", "FR-018-AC-8")]` and
 
 - Step 1: the bytes name the four labels; the two snapshots differ in bytes
   and digest.
-- Step 2: each refuses with `invalid_source_identity`.
+- Step 2: each refuses with `invalid_source_identity`, cause `blank-label`;
+  field `label` is `authority`, then `revision_namespace`.
 - Step 3: the artifact's reference retains the four labels, and the schema
   accepts the bytes.
 - Step 4: each refuses at the envelope stage with `invalid_runtime_input`,
@@ -46,4 +47,6 @@ Tag the tests `#[trace("TC-431", "FR-018-AC-8")]` and
 
 ## Status
 
-Passed locally. ADR-013 §7 slice S-4b (QSL-233).
+Partial. Passed locally under ADR-013 §7 slice S-4b (QSL-233) for the
+`invalid_source_identity` code. Step 2's `blank-label` cause and `label`
+field (catalog revision `1-draft.8`, FR-001) are planned (QSL-245).

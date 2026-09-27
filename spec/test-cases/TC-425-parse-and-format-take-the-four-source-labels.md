@@ -35,9 +35,12 @@ Tag the tests `#[trace("TC-425", "FR-010-AC-11")]`.
   `specs/a.quire`, revision namespace `git`, value `3f2a` and the file's
   `quire.source.bytes/v1` digest.
 - Step 2: both exit 20.
-- Step 3: exit 20 with `invalid_source_identity`, not a file error.
+- Step 3: exit 20 with `invalid_source_identity`, cause `blank-label`,
+  `label` `revision_namespace`, not a file error.
 - Step 4: exit 0, then exit 20.
 
 ## Status
 
-Passed locally. ADR-013 §7 slice S-4b (QSL-233).
+Partial. Passed locally under ADR-013 §7 slice S-4b (QSL-233) for the
+`invalid_source_identity` code. Step 3's `blank-label` cause and `label`
+field (catalog revision `1-draft.8`, FR-001) are planned (QSL-245).

@@ -53,7 +53,7 @@ can select an exact digest. Limits and accounting follow
 | FR-018-AC-5 | Structural checks include unused nodes and preserve invalid model-dependent shapes for validation rather than manufacturing a successful runtime judgment. | Test |
 | FR-018-AC-6 | Byte, node, entry and depth limits admit exact work and refuse before the next unit, including zero/lowered ceilings and attempts to raise hard ceilings. | Test |
 | FR-018-AC-7 | Construction failures identify the actual draft path/labels and leave caller-retained input unchanged without a fabricated native source span. | Test |
-| FR-018-AC-8 | A snapshot constructed under (`agent-ix`, `s`, `git`, `1`) emits native-state-input/1 bytes naming all four labels, and its reference retains them; constructing it with an empty or blank authority or revision namespace refuses with `invalid_source_identity`, the code an empty identity or revision label refuses with today (FR-018-AC-4). Two snapshots that differ only in revision namespace have different bytes and digests. | Test (TC-431) |
+| FR-018-AC-8 | A snapshot constructed under (`agent-ix`, `s`, `git`, `1`) emits native-state-input/1 bytes naming all four labels, and its reference retains them; constructing it with an empty authority refuses with `invalid_source_identity`/`blank-label` and field `label` `authority`, and with a whitespace-only revision namespace (authority non-blank) with `invalid_source_identity`/`blank-label` and `label` `revision_namespace`, checking the labels in FR-001's order; an empty identity or revision label refuses with the same code (FR-018-AC-4). Two snapshots that differ only in revision namespace have different bytes and digests. | Test (TC-431) |
 
 ## Dependencies
 
@@ -63,7 +63,7 @@ can select an exact digest. Limits and accounting follow
 
 ## Status
 
-FR-018-AC-8 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-431.
+FR-018-AC-8 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-431. Its `invalid_source_identity` code is backed; the `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are planned (QSL-245).
 
 Qualified construction API at c8fa41f, reviewed in SR-096. TC-055–057 pass with
 21 public API tests and a role-separation compile-fail doctest. Model-aware
