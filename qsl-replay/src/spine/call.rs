@@ -456,6 +456,7 @@ fn kernel_undefined_reason(reason: Undefined) -> &'static str {
         Undefined::IeeeNotFinite => "ieee-not-finite",
         Undefined::EmptyReduction => "empty-reduction",
         Undefined::NoneValue => "none-value",
+        Undefined::SumOutOfDomain => "sum-out-of-domain",
     }
 }
 

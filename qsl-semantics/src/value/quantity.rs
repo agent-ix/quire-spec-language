@@ -15,7 +15,7 @@ use quire_exact::{
     UnitId,
 };
 use quire_exact::{ComparisonOperator, IllTyped, IllTypedCause};
-use quire_exact::{Outcome, Refusal, Undefined};
+use quire_exact::{InexactTarget, Outcome, Refusal, Undefined};
 
 /// The unit of a quantity: an admitted declared unit or a compound unit
 /// produced by multiplication, division or power.
@@ -685,9 +685,13 @@ fn convert(
             ConvertedValue::Decimal(admitted.retain())
         }
         Target::Integer { placement, domain } => {
-            let out_of_domain = || Stop::Refused(Refusal::IntegerOutOfDomain);
+            let out_of_domain = || {
+                Stop::Refused(Refusal::IntegerOutOfDomain {
+                    target: Box::new((*domain).clone()),
+                })
+            };
             // The scale-zero placement's membership is the integer domain.
-            let (coefficient, loss) = place(&exact, placement, Retained::Integer, meter)?
+            let (coefficient, loss) = place(&exact, placement, Retained::Integer(domain), meter)?
                 .admit()
                 .map_err(|_| out_of_domain())?
                 .into_integer()
@@ -708,11 +712,12 @@ fn convert(
 /// The representation a placed coefficient is retained as, which selects the
 /// size amounts of its `unit.target-domain` charge.
 #[derive(Clone, Copy)]
-enum Retained {
+enum Retained<'a> {
     /// A decimal: `integer_bits` and `decimal_digits` of the coefficient.
     Decimal,
-    /// An integer: `integer_bits` of the rounded integer only.
-    Integer,
+    /// An integer of the declared domain: `integer_bits` of the rounded
+    /// integer only.
+    Integer(&'a IntegerInterval),
 }
 
 /// Place `exact` at the decimal target's scale and charge
@@ -721,10 +726,20 @@ enum Retained {
 fn place(
     exact: &Rational,
     decimal: &DecimalType,
-    retained: Retained,
+    retained: Retained<'_>,
     meter: &mut Meter,
 ) -> Result<Placed, Stop> {
-    let placement = decimal.placement(exact).map_err(refused)?;
+    // An integer target's strict-`exact` refusal names the declared
+    // `Int[..]`, not the scale-zero placement type (FR-096).
+    let refuse = |refusal: Refusal| match (refusal, retained) {
+        (Refusal::InexactDecimal { .. }, Retained::Integer(domain)) => {
+            Stop::Refused(Refusal::InexactDecimal {
+                target: InexactTarget::Integer(Box::new(domain.clone())),
+            })
+        }
+        (refusal, _) => refused(refusal),
+    };
+    let placement = decimal.placement(exact).map_err(refuse)?;
     // Sized from the reduced exact numerator `a`, before placement
     // materializes any coefficient.
     let numerator = exact.numerator();
@@ -736,9 +751,9 @@ fn place(
                 .exact_size(LimitKind::IntegerBits, sbits(numerator, scale))
                 .exact_size(LimitKind::DecimalDigits, sdigits(numerator, scale))
         }
-        Retained::Integer => charge.size(LimitKind::IntegerBits, numerator.magnitude_bits()),
+        Retained::Integer(_) => charge.size(LimitKind::IntegerBits, numerator.magnitude_bits()),
     })?;
-    placement.materialize().map_err(refused)
+    placement.materialize().map_err(refuse)
 }
 
 /// The top-level equality and ordering schedule: both root paths, left then

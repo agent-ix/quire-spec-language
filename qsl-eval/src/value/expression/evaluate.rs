@@ -141,6 +141,9 @@ fn comparison(operator: OrderingOperator) -> ComparisonOperator {
 enum Halt {
     /// An ordinary evaluator stop, to be converted to an `Outcome` as usual.
     Stop(Stop),
+    /// An evaluator stop located at a node other than the current task's
+    /// (a `sum` seed is located at its summand, not at the `sum` node).
+    Located(Stop, Location),
     /// A family-owned evaluation-time refusal or undefined result.
     Family(FamilyResult),
     /// An S6a invariant break: never converted to an `Outcome`.
@@ -459,6 +462,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                         losses: Vec::new(),
                     }),
                     Halt::Stop(stop) => Ok(Self::stopped(stop, located.location())),
+                    // An imported call site still locates at that call.
+                    Halt::Located(stop, location) => Ok(Self::stopped(
+                        stop,
+                        self.imported
+                            .first()
+                            .map_or(&location, |call| call.location()),
+                    )),
                 };
             }
         }
@@ -828,7 +838,10 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Coerce(_, target) => {
                 let value = self.pop_integer()?;
                 if !target.contains(&value) {
-                    return Err(Stop::Refused(Refusal::IntegerOutOfDomain).into());
+                    return Err(Stop::Refused(Refusal::IntegerOutOfDomain {
+                        target: Box::new(target.clone()),
+                    })
+                    .into());
                 }
                 Value::Integer(value)
             }
@@ -1472,7 +1485,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 .cloned()
                 .ok_or_else(invariant)?;
             let stop_early = match node.kind() {
-                NodeKind::Query { visit, .. } => match (visit, result) {
+                NodeKind::Query { visit, body, .. } => match (visit, result) {
                     (Visit::Map, value) => {
                         iteration.results.push(value);
                         false
@@ -1486,15 +1499,38 @@ impl<'a, 'm> Machine<'a, 'm> {
                     (Visit::Forall, Value::Boolean(holds)) => !holds,
                     (Visit::Exists, Value::Boolean(holds)) => holds,
                     (Visit::Sum, Value::Integer(summand)) => {
+                        // FR-096: a seed or running total outside `N`'s domain
+                        // leaves the fold with no value in `N`: undefined,
+                        // never refused, and no charge follows the decision.
+                        let domain = sum_domain(node.value_type());
                         iteration.accumulator =
                             Some(Value::Integer(match iteration.accumulator.take() {
-                                None => summand,
+                                None => {
+                                    if domain.is_some_and(|domain| !domain.contains(&summand)) {
+                                        return Err(Halt::Located(
+                                            Stop::Undefined(Undefined::SumOutOfDomain),
+                                            body.location().clone(),
+                                        ));
+                                    }
+                                    summand
+                                }
                                 Some(Value::Integer(total)) => {
-                                    outcome_into_stop(evaluate_integer_arithmetic(
+                                    match outcome_into_stop(evaluate_integer_arithmetic(
                                         IntegerArithmetic::Add(&total, &summand),
-                                        sum_domain(node.value_type()),
+                                        domain,
                                         self.meter,
-                                    ))?
+                                    )) {
+                                        // Only the running total's membership
+                                        // decision can refuse this addition.
+                                        Err(Stop::Refused(Refusal::IntegerOutOfDomain {
+                                            ..
+                                        })) => {
+                                            return Err(
+                                                Stop::Undefined(Undefined::SumOutOfDomain).into()
+                                            )
+                                        }
+                                        other => other?,
+                                    }
                                 }
                                 Some(_) => return Err(invariant()),
                             }));
@@ -1573,21 +1609,30 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Visit::Forall => retain_scalar(Value::Boolean(true), self.meter)?,
                 Visit::Exists => retain_scalar(Value::Boolean(false), self.meter)?,
                 Visit::Sum => {
+                    // Every non-empty total was decided as a running total; only
+                    // the empty sum's seed `0` is still undecided (FR-145).
                     let total = match iteration.accumulator {
-                        None => Integer::zero(),
+                        None => {
+                            let zero = Integer::zero();
+                            if sum_domain(node.value_type())
+                                .is_some_and(|domain| !domain.contains(&zero))
+                            {
+                                return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
+                            }
+                            zero
+                        }
                         Some(Value::Integer(total)) => total,
                         Some(_) => return Err(invariant()),
                     };
-                    if sum_domain(node.value_type()).is_some_and(|domain| !domain.contains(&total))
-                    {
-                        return Err(Stop::Refused(Refusal::IntegerOutOfDomain).into());
-                    }
                     retain_scalar(Value::Integer(total), self.meter)?
                 }
                 Visit::Count => {
                     if let ValueType::Int(domain) = node.value_type() {
                         if !domain.contains(&iteration.count) {
-                            return Err(Stop::Refused(Refusal::IntegerOutOfDomain).into());
+                            return Err(Stop::Refused(Refusal::IntegerOutOfDomain {
+                                target: Box::new(domain.clone()),
+                            })
+                            .into());
                         }
                     }
                     retain_scalar(Value::Integer(iteration.count), self.meter)?
