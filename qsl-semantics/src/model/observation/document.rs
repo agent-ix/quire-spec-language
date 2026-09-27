@@ -204,12 +204,20 @@ pub(super) fn read_document(
     // digested raw, and so refuse here.
     check_document_digest(bytes, selected.digest)?;
     let digest = selected.digest;
-    let Some(value) = parsed else {
-        return Err(fault("provisioned-bytes-not-json-after-digest-match"));
+    // Bytes that matched the expected digest raw (never parsed as JSON at
+    // all) or that parsed but are not a JSON object trivially hold none of
+    // check 1.5's required members -- `format` is the first named, in both
+    // documents' own member order -- so this is that same refusal, never an
+    // `AdmissionFailure::Fault`: FR-106 settles every input defect at
+    // admission (SR-750 FND-004), and this input is untrusted, not an
+    // internal invariant.
+    let missing_format = || {
+        refuse(admission_record("invalid_runtime_input", "missing-member").with("field", "format"))
     };
-    let object = value
-        .as_object()
-        .ok_or_else(|| fault("document-not-a-json-object"))?;
+    let Some(value) = parsed else {
+        return Err(missing_format());
+    };
+    let object = value.as_object().ok_or_else(missing_format)?;
 
     // 1.4: format.
     let expected_format = match kind {
@@ -269,19 +277,28 @@ pub(super) fn read_document(
     let identity_member = object
         .member("identity")
         .and_then(|value| value.as_object())
-        .ok_or_else(|| fault("identity-member-not-an-object"))?;
-    let label = |name: &str| {
+        .ok_or_else(|| {
+            refuse(
+                admission_record("invalid_runtime_input", "wrong-value-kind")
+                    .with("field", "identity"),
+            )
+        })?;
+    let label = |name: &'static str| {
         identity_member
             .member(name)
             .and_then(|value| value.as_str())
-            .unwrap_or_default()
-            .to_owned()
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                refuse(
+                    admission_record("invalid_runtime_input", "missing-member").with("field", name),
+                )
+            })
     };
     let document_identity = DocumentRef {
-        authority: label("authority"),
-        identity: label("identity"),
-        revision_namespace: label("revision_namespace"),
-        revision: label("revision"),
+        authority: label("authority")?,
+        identity: label("identity")?,
+        revision_namespace: label("revision_namespace")?,
+        revision: label("revision")?,
         digest,
     };
     if let Some(blank_label) = first_blank_label(&document_identity) {
@@ -364,32 +381,71 @@ fn read_model(object: &[(String, OrderedJson)]) -> Result<ModelHeader, Admission
     })
 }
 
-fn read_object_ref(value: &OrderedJson) -> Option<SelectedObject> {
-    let object = value.as_object()?;
-    Some(SelectedObject {
-        population: object.member("population")?.as_str()?.to_owned(),
-        key: object.member("key")?.as_str()?.to_owned(),
-    })
+fn wrong_kind(field: impl Into<String>) -> AdmissionFailure {
+    refuse(admission_record("invalid_runtime_input", "wrong-value-kind").with("field", field))
+}
+
+fn missing_member(field: impl Into<String>) -> AdmissionFailure {
+    refuse(admission_record("invalid_runtime_input", "missing-member").with("field", field))
+}
+
+/// Reads a `{population, key}` object reference at `field`: a document
+/// defect (a missing or wrong-kind member) is `invalid_runtime_input`,
+/// never `AdmissionFailure::Fault` (SR-750 FND-004).
+fn read_object_ref(
+    value: &OrderedJson,
+    field: &'static str,
+) -> Result<SelectedObject, AdmissionFailure> {
+    let object = value.as_object().ok_or_else(|| wrong_kind(field))?;
+    let population = object
+        .member("population")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| missing_member(field))?
+        .to_owned();
+    let key = object
+        .member("key")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| missing_member(field))?
+        .to_owned();
+    Ok(SelectedObject { population, key })
 }
 
 /// Reads a `{identity: {...}, digest: "sha256-jcs:<hex>"}` document
-/// reference: a wire-reading edge (ADR-012 §9), same as [`read_model`].
+/// reference at `field`: a wire-reading edge (ADR-012 §9), same as
+/// [`read_model`]. `strip_prefix`, not `trim_start_matches` (SR-750
+/// FND-003): a digest with no `sha256-jcs:` prefix, or a doubled one,
+/// refuses rather than being silently accepted or kept whole.
 #[qsl_attrs::string_edge]
-fn read_document_ref(value: &OrderedJson) -> Option<DocumentRef> {
-    let object = value.as_object()?;
-    let identity = object.member("identity")?.as_object()?;
-    let label = |name: &str| identity.member(name)?.as_str().map(str::to_owned);
-    let digest_hex = object
-        .member("digest")?
-        .as_str()?
-        .trim_start_matches("sha256-jcs:");
-    let bytes = hex_bytes(digest_hex)?;
+fn read_document_ref(
+    value: &OrderedJson,
+    field: &'static str,
+) -> Result<DocumentRef, AdmissionFailure> {
+    let object = value.as_object().ok_or_else(|| wrong_kind(field))?;
+    let identity = object
+        .member("identity")
+        .and_then(|value| value.as_object())
+        .ok_or_else(|| missing_member(field))?;
+    let label = |name: &'static str| {
+        identity
+            .member(name)
+            .and_then(|value| value.as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| missing_member(field))
+    };
+    let digest_raw = object
+        .member("digest")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| missing_member(field))?;
+    let digest_hex = digest_raw
+        .strip_prefix("sha256-jcs:")
+        .ok_or_else(|| wrong_kind(field))?;
+    let bytes = hex_bytes(digest_hex).ok_or_else(|| wrong_kind(field))?;
     if bytes.len() != 32 {
-        return None;
+        return Err(wrong_kind(field));
     }
     let mut digest = [0u8; 32];
     digest.copy_from_slice(&bytes);
-    Some(DocumentRef {
+    Ok(DocumentRef {
         authority: label("authority")?,
         identity: label("identity")?,
         revision_namespace: label("revision_namespace")?,
@@ -398,13 +454,26 @@ fn read_document_ref(value: &OrderedJson) -> Option<DocumentRef> {
     })
 }
 
+/// Decodes `text` as ASCII hex, or `None` for anything else -- including
+/// non-ASCII text, where byte-index slicing would otherwise panic on a
+/// char boundary (an untrusted digest such as `"sha256-jcs:aé…"`, reached
+/// after the invocation's own digest check passes). Checked one byte at a
+/// time over `text.as_bytes()`, never `&text[at..at + 2]` (which slices by
+/// byte offset but assumes every two offsets fall on a char boundary).
 fn hex_bytes(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) {
+    let bytes = text.as_bytes();
+    if !bytes.len().is_multiple_of(2) || !bytes.iter().all(u8::is_ascii_hexdigit) {
         return None;
     }
-    (0..text.len())
-        .step_by(2)
-        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).ok())
+    bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16)?;
+            let low = (pair[1] as char).to_digit(16)?;
+            Some((high * 16 + low) as u8)
+        })
         .collect()
 }
 
@@ -435,18 +504,16 @@ fn read_snapshot_body(
     };
     let anchor = match object.member("anchor") {
         Some(value) => {
-            let object = value
-                .as_object()
-                .ok_or_else(|| fault("anchor-member-not-an-object"))?;
+            let object = value.as_object().ok_or_else(|| wrong_kind("anchor"))?;
             let kind = match object.member("kind").and_then(|value| value.as_str()) {
                 Some("initialization") => super::AnchorKind::Initialization,
                 Some("handler") => super::AnchorKind::Handler,
-                _ => return Err(fault("unrecognized-anchor-kind")),
+                _ => return Err(wrong_kind("anchor")),
             };
             let name = object
                 .member("name")
                 .and_then(|value| value.as_str())
-                .unwrap_or_default()
+                .ok_or_else(|| missing_member("anchor"))?
                 .to_owned();
             Some(DocAnchor { kind, name })
         }
@@ -467,50 +534,48 @@ fn read_populations(
     let items = object
         .member("populations")
         .and_then(|value| value.as_array())
-        .ok_or_else(|| fault("populations-member-not-an-array"))?;
+        .ok_or_else(|| wrong_kind("populations"))?;
     let mut populations = Vec::with_capacity(items.len());
     for item in items {
-        let entry = item
-            .as_object()
-            .ok_or_else(|| fault("population-entry-not-an-object"))?;
+        let entry = item.as_object().ok_or_else(|| wrong_kind("populations"))?;
         let population = entry
             .member("population")
             .and_then(|value| value.as_str())
-            .unwrap_or_default()
+            .ok_or_else(|| missing_member("population"))?
             .to_owned();
         let complete = entry
             .member("complete")
             .and_then(|value| value.as_bool())
-            .unwrap_or(false);
+            .ok_or_else(|| missing_member("complete"))?;
         let object_items = entry
             .member("objects")
             .and_then(|value| value.as_array())
-            .ok_or_else(|| fault("objects-member-not-an-array"))?;
+            .ok_or_else(|| wrong_kind("objects"))?;
         let mut objects = Vec::with_capacity(object_items.len());
         for object_item in object_items {
             let object_entry = object_item
                 .as_object()
-                .ok_or_else(|| fault("object-entry-not-an-object"))?;
+                .ok_or_else(|| wrong_kind("objects"))?;
             let key = object_entry
                 .member("key")
                 .and_then(|value| value.as_str())
-                .unwrap_or_default()
+                .ok_or_else(|| missing_member("key"))?
                 .to_owned();
             let type_identity = RawTypeIdentity(
                 object_entry
                     .member("type")
                     .and_then(|value| value.as_str())
-                    .unwrap_or_default()
+                    .ok_or_else(|| missing_member("type"))?
                     .to_owned(),
             );
             let field_items = object_entry
                 .member("fields")
                 .and_then(|value| value.as_object())
-                .ok_or_else(|| fault("fields-member-not-an-object"))?;
+                .ok_or_else(|| wrong_kind("fields"))?;
             let mut fields = Vec::with_capacity(field_items.len());
             for (name, value) in field_items {
                 let raw = read_raw_value(&value.clone().into_value())
-                    .ok_or_else(|| fault("field-value-not-a-recognized-form"))?;
+                    .ok_or_else(|| wrong_kind(name.clone()))?;
                 fields.push((name.clone(), raw));
             }
             objects.push(RawObject {
@@ -535,56 +600,55 @@ fn read_invocation_body(
     let context = object
         .member("context")
         .and_then(|value| value.as_str())
-        .unwrap_or_default()
+        .ok_or_else(|| missing_member("context"))?
         .to_owned();
     let operation = object
         .member("operation")
         .and_then(|value| value.as_str())
-        .unwrap_or_default()
+        .ok_or_else(|| missing_member("operation"))?
         .to_owned();
     let self_object = object
         .member("self")
-        .and_then(read_object_ref)
-        .ok_or_else(|| fault("self-member-not-an-object-ref"))?;
+        .ok_or_else(|| missing_member("self"))
+        .and_then(|value| read_object_ref(value, "self"))?;
     let pre = object
         .member("pre")
-        .and_then(read_document_ref)
-        .ok_or_else(|| fault("pre-member-not-a-document-ref"))?;
+        .ok_or_else(|| missing_member("pre"))
+        .and_then(|value| read_document_ref(value, "pre"))?;
     let post = object
         .member("post")
-        .and_then(read_document_ref)
-        .ok_or_else(|| fault("post-member-not-a-document-ref"))?;
+        .ok_or_else(|| missing_member("post"))
+        .and_then(|value| read_document_ref(value, "post"))?;
     let parameter_items = object
         .member("parameters")
         .and_then(|value| value.as_object())
-        .ok_or_else(|| fault("parameters-member-not-an-object"))?;
+        .ok_or_else(|| wrong_kind("parameters"))?;
     let mut parameters = Vec::with_capacity(parameter_items.len());
     for (name, value) in parameter_items {
-        let raw = read_raw_value(&value.clone().into_value())
-            .ok_or_else(|| fault("parameter-value-not-a-recognized-form"))?;
+        let raw =
+            read_raw_value(&value.clone().into_value()).ok_or_else(|| wrong_kind(name.clone()))?;
         parameters.push((name.clone(), raw));
     }
     let result = match object.member("result") {
         Some(OrderedJson::Null) => ResultValue::Null,
         Some(value) => ResultValue::Value(
-            read_raw_value(&value.clone().into_value())
-                .ok_or_else(|| fault("result-value-not-a-recognized-form"))?,
+            read_raw_value(&value.clone().into_value()).ok_or_else(|| wrong_kind("result"))?,
         ),
-        None => return Err(fault("result-member-absent")),
+        None => return Err(missing_member("result")),
     };
     let created = object
         .member("created")
         .and_then(|value| value.as_array())
-        .ok_or_else(|| fault("created-member-not-an-array"))?
+        .ok_or_else(|| wrong_kind("created"))?
         .iter()
-        .map(|item| read_object_ref(item).ok_or_else(|| fault("created-entry-not-an-object-ref")))
+        .map(|item| read_object_ref(item, "created"))
         .collect::<Result<Vec<_>, _>>()?;
     let deleted = object
         .member("deleted")
         .and_then(|value| value.as_array())
-        .ok_or_else(|| fault("deleted-member-not-an-array"))?
+        .ok_or_else(|| wrong_kind("deleted"))?
         .iter()
-        .map(|item| read_object_ref(item).ok_or_else(|| fault("deleted-entry-not-an-object-ref")))
+        .map(|item| read_object_ref(item, "deleted"))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(InvocationDocument {
         model,
@@ -806,21 +870,44 @@ fn admit_object_field(
     }
 }
 
+/// Every `(population, key)` a reference value inside `raw` names,
+/// recursively (a reference can sit under `present` or inside a
+/// `sequence`), appended to `into` in the value's own walk order.
+fn collect_references(raw: &RawValue, into: &mut Vec<(String, String)>) {
+    match raw {
+        RawValue::Reference(reference) => {
+            into.push((reference.population.clone(), reference.key.clone()))
+        }
+        RawValue::Present(inner) => collect_references(inner, into),
+        RawValue::Sequence(items) => {
+            for item in items {
+                collect_references(item, into);
+            }
+        }
+        RawValue::Boolean(_) | RawValue::Integer(_) | RawValue::Absent => {}
+    }
+}
+
 /// FR-106 checks 6 to 8: admit every population's every object's every
 /// field, in document order, then completeness (7) then closure (8).
 /// `types` is the checked package's own effective attribute set
 /// (`CheckedGraph::scope().types()`); `views` are the re-derived domain
 /// package views (population declarations and identity strings, `EffectiveId`
-/// conformance).
+/// conformance). `self_population` is the population holding `self` for
+/// this particular observation, when this observation must resolve `self`
+/// at all (FR-106 check 9: always for the current snapshot and an
+/// invocation's pre snapshot; only for a postcondition's post snapshot) --
+/// `None` skips check 7's unconditional self-population requirement,
+/// never skipping it entirely.
 pub(super) fn admit_populations(
     views: &[ModelView],
     types: &TypeEnvironment,
     populations: &[RawPopulation],
+    self_population: Option<&str>,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
     let mut objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
     let mut completeness = BTreeMap::new();
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let mut population_of: BTreeMap<ObjectReference, String> = BTreeMap::new();
 
     for entry in populations {
         completeness.insert(entry.population.clone(), entry.complete);
@@ -929,51 +1016,94 @@ pub(super) fn admit_populations(
 
             let reference = object_reference(views, effective_type, &object.key)
                 .map_err(|_| fault("empty-object-identity"))?;
-            population_of.insert(reference.clone(), entry.population.clone());
             objects.push((reference, attributes));
         }
     }
 
-    // Check 7: a required population -- the one holding `self`, and every
-    // population any reference field names -- must be complete. `self`'s
-    // own population is checked by the caller (check 9 runs after this).
+    // Check 7: a required population -- the population holding `self`, and,
+    // repeatedly, every population a reference field of any object of a
+    // required population names -- must be complete (FR-106's own
+    // recursive definition). Built from the wire-declared
+    // `reference.population` (SR-750 FND-001): a dangling reference (whose
+    // target this call never admits into `objects`) still makes its named
+    // population required, or check 8 below could never see it, and it
+    // still makes `self`'s own population required even when `self` is
+    // never itself the target of any reference (SR-750 FND-001, "self's
+    // population is never required at all").
     let mut required: BTreeSet<String> = BTreeSet::new();
-    for (_, attributes) in &objects {
-        for (_, value) in attributes {
-            if let FieldValue::Present(Value::Reference(reference)) = value {
-                if let Some(name) = population_of.get(reference) {
-                    required.insert(name.clone());
+    if let Some(name) = self_population {
+        required.insert(name.to_owned());
+    }
+    loop {
+        let mut grew = false;
+        for name in required.clone() {
+            let Some(entry) = populations.iter().find(|entry| entry.population == name) else {
+                continue;
+            };
+            for object in &entry.objects {
+                for (_, raw) in &object.fields {
+                    let mut refs = Vec::new();
+                    collect_references(raw, &mut refs);
+                    for (population, _) in refs {
+                        if required.insert(population) {
+                            grew = true;
+                        }
+                    }
                 }
             }
         }
+        if !grew {
+            break;
+        }
     }
-    for name in &required {
-        if completeness.get(name).copied() != Some(true) {
+    // Report the first required-but-incomplete population, in the
+    // document's own population order; `self`'s population, when the
+    // document never lists it, is checked last (there is no document-order
+    // position for a population the document never names).
+    let mut walk_order: Vec<&str> = populations
+        .iter()
+        .map(|entry| entry.population.as_str())
+        .collect();
+    if let Some(name) = self_population {
+        if !walk_order.contains(&name) {
+            walk_order.push(name);
+        }
+    }
+    for name in walk_order {
+        if required.contains(name) && completeness.get(name).copied() != Some(true) {
             return Err(incomplete(
                 admission_record("incomplete_population", "incomplete-scope")
-                    .with("population", name.clone()),
+                    .with("population", name.to_owned()),
             ));
         }
     }
 
-    // Check 8: closure, skipped over an incomplete population.
-    for (_, attributes) in &objects {
-        for (_, value) in attributes {
-            if let FieldValue::Present(Value::Reference(target)) = value {
-                let Some(name) = population_of.get(target) else {
-                    continue;
-                };
-                if completeness.get(name).copied() != Some(true) {
-                    continue;
-                }
-                if !objects.iter().any(|(reference, _)| reference == target) {
+    // Check 8: closure, skipped over an incomplete population, over every
+    // reference value of every object in document walk order (not gated by
+    // "required": FR-106's own text names no such restriction for this
+    // check, only for check 7's completeness requirement).
+    for entry in populations {
+        for object in &entry.objects {
+            for (_, raw) in &object.fields {
+                let mut refs = Vec::new();
+                collect_references(raw, &mut refs);
+                for (population, key) in refs {
+                    if completeness.get(&population).copied() != Some(true) {
+                        continue;
+                    }
+                    let known = keys_by_population
+                        .get(&population)
+                        .is_some_and(|keys| keys.contains(&key));
+                    if known {
+                        continue;
+                    }
                     return Err(refuse(
                         admission_record(
                             "dangling_reference",
                             "absent-target-in-complete-population",
                         )
-                        .with("population", name.clone())
-                        .with("object", target.object().as_str().to_owned()),
+                        .with("population", population)
+                        .with("object", key),
                     ));
                 }
             }
@@ -1099,4 +1229,82 @@ pub(super) fn admit_parameters_and_result(
         }
     };
     Ok((admitted, result_value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::RawRef;
+    use super::*;
+
+    /// SR-750 FND-002: a non-ASCII digest string must refuse, never panic
+    /// on a byte-index char-boundary slice. `read_document_ref` is
+    /// `hex_bytes`'s one caller reachable with untrusted input (a `pre`/
+    /// `post` document reference's own digest).
+    #[test]
+    fn a_non_ascii_digest_refuses_rather_than_panics() {
+        let value: OrderedJson = serde_json::from_value(serde_json::json!({
+            "identity": {
+                "authority": "a",
+                "identity": "b",
+                "revision_namespace": "c",
+                "revision": "d",
+            },
+            "digest": "sha256-jcs:aé00000000000000000000000000000000000000000000000000000000000",
+        }))
+        .expect("test fixture is JSON");
+        let result = read_document_ref(&value, "pre");
+        assert!(
+            matches!(result, Err(AdmissionFailure::Refused(_))),
+            "expected Err(Refused(..)), got {result:?}"
+        );
+    }
+
+    /// `hex_bytes` decodes a well-formed 32-byte digest.
+    #[test]
+    fn hex_bytes_decodes_a_well_formed_digest() {
+        let hex = "00".repeat(32);
+        let bytes = hex_bytes(&hex).expect("32 zero bytes decode");
+        assert_eq!(bytes, vec![0u8; 32]);
+    }
+
+    /// `hex_bytes` refuses an odd-length string before ever indexing it.
+    #[test]
+    fn hex_bytes_refuses_an_odd_length_string() {
+        assert_eq!(hex_bytes("abc"), None);
+    }
+
+    /// `collect_references` finds a reference nested under `present` and
+    /// inside a `sequence`, in walk order.
+    #[test]
+    fn collect_references_walks_present_and_sequence() {
+        let raw = RawValue::Sequence(vec![
+            RawValue::Present(Box::new(RawValue::Reference(RawRef {
+                population: "p1".to_owned(),
+                key: "k1".to_owned(),
+            }))),
+            RawValue::Reference(RawRef {
+                population: "p2".to_owned(),
+                key: "k2".to_owned(),
+            }),
+        ]);
+        let mut found = Vec::new();
+        collect_references(&raw, &mut found);
+        assert_eq!(
+            found,
+            vec![
+                ("p1".to_owned(), "k1".to_owned()),
+                ("p2".to_owned(), "k2".to_owned()),
+            ]
+        );
+    }
+
+    /// `collect_references` finds nothing under a scalar or absent value.
+    #[test]
+    fn collect_references_finds_nothing_in_a_scalar() {
+        let mut found = Vec::new();
+        collect_references(&RawValue::Boolean(true), &mut found);
+        collect_references(&RawValue::Absent, &mut found);
+        collect_references(&RawValue::Integer("1".to_owned()), &mut found);
+        assert!(found.is_empty());
+    }
 }

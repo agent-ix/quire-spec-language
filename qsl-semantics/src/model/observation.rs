@@ -501,7 +501,7 @@ pub fn admit_current_snapshot(
         )));
     }
     check_model(&views, &snapshot.model)?;
-    let admitted = document::admit_populations(&views, types, &snapshot.populations)?;
+    let admitted = document::admit_populations(&views, types, &snapshot.populations, None)?;
     Ok(admitted.environment)
 }
 
@@ -587,6 +587,7 @@ pub fn admit_observations(
             context_view,
             &context_name,
             clause.identity,
+            clause.kind,
             clause.operation.as_ref(),
             provisions,
             invocation,
@@ -658,7 +659,12 @@ fn admit_invariant(
     check_model(views, &snapshot.model)?;
 
     // Check 6-8: populations and values, completeness, closure.
-    let environment = document::admit_populations(views, types, &snapshot.populations)?;
+    let environment = document::admit_populations(
+        views,
+        types,
+        &snapshot.populations,
+        Some(&self_object.population),
+    )?;
 
     // Check 9: self.
     let self_reference = document::resolve_self(
@@ -709,6 +715,7 @@ fn admit_operation(
     context_view: &ModelView,
     context_name: &str,
     clause_identity: quire_exact::NodeKey,
+    kind: StateClauseKind,
     operation: Option<&OperationFacts>,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
@@ -764,22 +771,43 @@ fn admit_operation(
     check_model(views, &pre_snapshot.model)?;
     check_model(views, &post_snapshot.model)?;
 
-    let pre_admitted = document::admit_populations(views, types, &pre_snapshot.populations)?;
-    let post_admitted = document::admit_populations(views, types, &post_snapshot.populations)?;
-
     let self_object = &invocation.self_object;
+    // FR-106 check 9: `self` is required in the current snapshot and an
+    // invocation's pre snapshot always, but in the post snapshot only for
+    // a postcondition (SR-750 FND-006) -- a precondition of an operation
+    // that deletes `self` must not wrongly refuse `wrong-role-mapping`
+    // over `self`'s absence from post.
+    let pre_admitted = document::admit_populations(
+        views,
+        types,
+        &pre_snapshot.populations,
+        Some(&self_object.population),
+    )?;
+    let post_self_population = match kind {
+        StateClauseKind::Postcondition => Some(self_object.population.as_str()),
+        StateClauseKind::Invariant | StateClauseKind::Precondition => None,
+    };
+    let post_admitted = document::admit_populations(
+        views,
+        types,
+        &post_snapshot.populations,
+        post_self_population,
+    )?;
+
     let self_reference = document::resolve_self(
         context_view,
         context_name,
         &pre_admitted.environment,
         self_object,
     )?;
-    let _ = document::resolve_self(
-        context_view,
-        context_name,
-        &post_admitted.environment,
-        self_object,
-    )?;
+    if kind == StateClauseKind::Postcondition {
+        let _ = document::resolve_self(
+            context_view,
+            context_name,
+            &post_admitted.environment,
+            self_object,
+        )?;
+    }
 
     // Check 10: parameters and result.
     let (parameters, result) = document::admit_parameters_and_result(
