@@ -279,10 +279,9 @@ family reasons `absent-key` and `precondition-false`, so it builds no
 `UndefinedRecord`. Like the other kernel undefined reasons, it reaches the
 consumer as `FamilyOutcome::Evaluated(Outcome::Undefined(_))` with
 `Evaluation.location`. QSL's kernel reason spelling for it is
-`sum-out-of-domain`. The owner of
-[FR-100](FR-100-run-a-named-function-through-the-spine.md) adds that
-spelling to FR-100's kernel undefined-reason table, which does not list it
-today (planned, QSL-245).
+`sum-out-of-domain`, the row in
+[FR-100](FR-100-run-a-named-function-through-the-spine.md)'s kernel
+undefined-reason table, which owns the spelling (FR-100-AC-10).
 
 A linked `sum` whose prefixes are not all proved members is refused at
 checking (QSpec FR-145, `undefined_expression`/`unproved-range`), so only a
@@ -468,9 +467,10 @@ STD-110, merged):
   `Undefined::SumOutOfDomain` located at the summand (seed) or the `sum`
   node (addition), charges nothing after the failed decision, and makes no
   final-total decision for a non-empty sum. An empty `sum` whose `N` does
-  not admit `0` is the same undefined outcome at the `sum` node. FR-100's
-  kernel undefined-reason table has no `sum-out-of-domain` row yet (planned,
-  FR-100's owner); `qsl-replay` spells it `sum-out-of-domain`.
+  not admit `0` is the same undefined outcome at the `sum` node: `sum<Int[1, 3]>`
+  over an empty sequence checks under `CheckMode::Kernel` and reaches it
+  (FR-100-AC-10). FR-100's kernel undefined-reason table owns the
+  `sum-out-of-domain` spelling, and `qsl-replay` renders it.
 - The build claims catalog revision `1-draft.8` (the definition lock, the
   checked-package emitter's diagnostics catalog and the native Diagnostics
   registration), and conformance passes against QSpec's `1-draft.8`.

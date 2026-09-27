@@ -16,7 +16,7 @@ use super::{CatalogCode, CatalogCoded, Locus};
 /// ADR-013 T-4's closed limit kind: one variant per
 /// `stage_limit_exceeded` cause of `quire.native.diagnostics/v1` revision
 /// `1-draft.8`. The catalog row names which S1 or I2 limit carries each of
-/// the four `1-draft.8` kinds.
+/// the four `1-draft.7` kinds.
 ///
 /// Distinct from `quire_exact::LimitKind`, which names the evaluation
 /// meter's counters.

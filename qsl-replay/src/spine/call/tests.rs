@@ -551,12 +551,13 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
             if fault.stage() == "S6a" && fault.invariant() == "checked-program-invariant"
     ));
 
-    // Kernel undefined: each of the four reasons.
+    // Kernel undefined: each of the five reasons.
     for (reason, spelling) in [
         (Undefined::DivisionByZero, "division-by-zero"),
         (Undefined::IeeeNotFinite, "ieee-not-finite"),
         (Undefined::EmptyReduction, "empty-reduction"),
         (Undefined::NoneValue, "none-value"),
+        (Undefined::SumOutOfDomain, "sum-out-of-domain"),
     ] {
         match convert(FamilyOutcome::Evaluated(Outcome::Undefined(reason))).unwrap() {
             CallOutcome::Undefined { reason } => assert_eq!(reason, spelling),

@@ -17,6 +17,7 @@ mod evaluation_ignores_display_strings;
 mod finite_simulation;
 mod float_rounding;
 mod inherited_attributes;
+mod kernel_refusal_payloads;
 mod model_reference_queries;
 mod source_call;
 mod total_functions;

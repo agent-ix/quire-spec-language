@@ -148,6 +148,7 @@ fn aliases() -> Vec<(String, ValueType)> {
         ("Flag".to_owned(), ValueType::Boolean),
         ("Tiny".to_owned(), int_type(0, 5)),
         ("Three".to_owned(), int_type(0, 3)),
+        ("Positive".to_owned(), int_type(1, 3)),
     ]
 }
 
@@ -1399,4 +1400,109 @@ fn tc_500_a_seed_outside_the_domain_is_undefined_at_the_summand_node() {
             | ChargePoint::IntegerArithmeticArithmetic
             | ChargePoint::IntegerArithmeticResultRetain
     )));
+}
+
+fn count(result_type: &str, source: &str, predicate: Expression) -> Expression {
+    Expression::Count {
+        result_type_span: qsl_foundation::Span { start: 0, end: 0 },
+        result_type: result_type.to_owned(),
+        binder: "x".to_owned(),
+        source: Box::new(name(source)),
+        predicate: Box::new(predicate),
+    }
+}
+
+/// The `Int[..]` domain a real kernel evaluation's `IntegerOutOfDomain`
+/// refusal names, or a failed test.
+fn refused_domain(outcome: &Outcome<Value>) -> IntegerInterval {
+    match outcome {
+        Outcome::Refused(Refusal::IntegerOutOfDomain { target }) => (**target).clone(),
+        other => panic!("an IntegerOutOfDomain refusal, not {other:?}"),
+    }
+}
+
+/// TC-428 (FR-096-AC-8): a `Coerce` into `Int[0, 3]` refuses with that
+/// declared domain, and `count<Three>` past `3` refuses with its own.
+#[trace("TC-428", "FR-096-AC-8")]
+#[test]
+fn coerce_and_count_refusals_carry_the_declared_domain() {
+    let package = plain();
+    let three = IntegerInterval::spanning(Integer::from(0_i64), Integer::from(3_i64));
+
+    let parameters = [("a", ValueType::Integer)];
+    let checked = check_as(&package, &parameters, &name("a"), Some(&int_type(0, 3))).unwrap();
+    let coerced = evaluate_checked(
+        &package,
+        &checked,
+        vec![int(7)],
+        UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    assert_eq!(refused_domain(&coerced.outcome), three);
+
+    // AC-8: the record built from that S6a `Evaluation` renders the domain.
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![int(7)],
+            &ObjectEnvironment::default(),
+            &mut Meter::new(UNLIMITED),
+        )
+        .unwrap();
+    let record = evaluation
+        .refusal_record(package.graph())
+        .expect("integer_out_of_domain has a record");
+    assert_eq!(
+        (record.code().code(), record.code().cause()),
+        ("integer_out_of_domain", "outside-domain")
+    );
+    assert_eq!(
+        record.fields().get("expected").map(String::as_str),
+        Some("Int[0, 3]")
+    );
+
+    let source = of(CollectionKind::Sequence, ValueType::Boolean, 0, 5);
+    let counted = run(
+        &package,
+        &[("q", source.clone())],
+        &count("Three", "q", name("x")),
+        vec![collection(&source, vec![Value::Boolean(true); 5])],
+        UNLIMITED,
+    );
+    assert_eq!(refused_domain(&counted.outcome), three);
+}
+
+/// TC-500 / FR-100-AC-10: `sum<Int[1, 3]>` over an empty sequence checks
+/// under `CheckMode::Kernel` and the seed `0` is outside `N`: undefined at
+/// the `sum` node, with no addition and no retain charged.
+#[trace("TC-500", "FR-096-AC-14")]
+#[test]
+fn tc_500_an_empty_sum_whose_domain_excludes_zero_is_undefined_at_the_sum_node() {
+    let package = plain();
+    let source = of(CollectionKind::Sequence, int_type(1, 3), 0, 2);
+    let parameters = [("q", source.clone())];
+    let checked = check(&package, &parameters, &sum("Positive", "q", name("x"))).unwrap();
+    let mut meter = Meter::new(UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![collection(&source, ints(&[]))],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .unwrap();
+    assert!(matches!(
+        evaluation.outcome,
+        FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))
+    ));
+    assert_eq!(
+        evaluation.location.as_ref(),
+        Some(checked.root().location())
+    );
+    assert!(!meter
+        .admitted_charges()
+        .contains(&ChargePoint::CollectionResultRetain));
+    assert!(!meter
+        .admitted_charges()
+        .contains(&ChargePoint::IntegerArithmeticArithmetic));
 }

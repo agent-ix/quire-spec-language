@@ -2356,7 +2356,8 @@ fn u29_integer_target_charges_integer_bits_only() {
     let mut meter = limits(2, 0, 0, 1, 2, 0);
     assert!(matches!(
         run(&three, RoundingMode::Exact, &mut meter),
-        Outcome::Refused(Refusal::IntegerOutOfDomain { .. })
+        Outcome::Refused(Refusal::IntegerOutOfDomain { target })
+            if *target == IntegerInterval::spanning(int(-2), int(2))
     ));
     assert_eq!(
         meter.admitted_charges(),
@@ -2439,7 +2440,8 @@ fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
             &integer_target(-2, 2, RoundingMode::Exact),
             &mut meter
         ),
-        Outcome::Refused(Refusal::IntegerOutOfDomain { .. })
+        Outcome::Refused(Refusal::IntegerOutOfDomain { target })
+            if *target == IntegerInterval::spanning(int(-2), int(2))
     ));
     assert_eq!(
         meter.admitted_charges().last(),

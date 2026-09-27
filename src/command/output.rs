@@ -685,6 +685,7 @@ mod tests {
             "ieee-not-finite",
             "empty-reduction",
             "none-value",
+            "sum-out-of-domain",
         ] {
             assert_undefined_renders(reason);
         }
