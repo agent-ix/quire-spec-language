@@ -273,6 +273,15 @@ membership decision: for an integer `N`, an addition fails after
 This holds whatever `N`'s numeric family is. The final total is a running
 total, so S6a makes no separate `integer_out_of_domain` decision on it.
 
+`Undefined::SumOutOfDomain` names no catalog undefined reason: the
+`quire.native.diagnostics/v1` "Undefined reasons" table admits only the
+family reasons `absent-key` and `precondition-false`, so it builds no
+`UndefinedRecord`. Like the other kernel undefined reasons, it reaches the
+consumer as `FamilyOutcome::Evaluated(Outcome::Undefined(_))` with
+`Evaluation.location`, and renders by QSL's own kernel reason spelling,
+`sum-out-of-domain`, in the table that spells the kernel undefined reasons
+([FR-100](FR-100-run-a-named-function-through-the-spine.md)).
+
 A linked `sum` whose prefixes are not all proved members is refused at
 checking (QSpec FR-145, `undefined_expression`/`unproved-range`), so only a
 `sum` checked under `CheckMode::Kernel` meets this outcome.
@@ -322,7 +331,7 @@ name.
 | FR-096-AC-4 | A declaration whose preimage input bytes exceed a configured bound `B` returns `StageFailure::Limit` with kind input bytes, bound `B`, actual equal to the measured bytes, and `Locus::Region` over the declaration's span. The same limit reached for an FR-151 synthesized function carries no locus. | Test (TC-427) |
 | FR-096-AC-5 | A declaration whose work charge is denied by a work budget `W` returns `StageFailure::Limit` with kind work budget, bound `W`, actual equal to the spend the denied charge would have reached, and `Locus::Region` over the declaration's span. | Test (TC-427) |
 | FR-096-AC-6 | A family refusal of `lookup<T>(p, r) absent refused` with no member for `r` builds a `RefusalRecord` with code `invalid_runtime_input`/`absent-key`, category refusal, fields `binding` and `key` naming the population binding and the requested key, and `Locus::Region` over the span of the `lookup` expression. An `Evaluation` whose `location` is `None` builds a record with no locus. | Test (TC-428) |
-| FR-096-AC-7 | For each cause in the key table, `catalog_fields()` holds exactly the keys the table lists for it. | Test (TC-428) |
+| FR-096-AC-7 | For each `CatalogCoded` cause in the key table (every row but the twelve kernel `Refusal` rows, which `kernel_refusal_record` maps and AC-8 checks), `catalog_fields()` holds exactly the keys the table lists for it. | Test (TC-428) |
 | FR-096-AC-8 | For each of the twelve kernel causes in the key table, a `RefusalRecord` built from an S6a `Evaluation` whose outcome is that kernel `Refused` carries the table's code and cause, category refusal, exactly the table's field keys and the evaluation's resolved locus, and `Refusal::code()` and `Refusal::cause()` return the same code and cause. The fields are spelled exactly: `IntegerOutOfDomain` for target `Int[-5, 9]` gives `expected` `Int[-5, 9]`; `DecimalOutOfDomain` for `Decimal[-100, 100; 0, 2]` gives `expected` `Decimal[-100, 100; 0, 2]`; `RationalOutOfDomain` for `Rational[-9, 9; 1, 9]` gives `expected` `Rational[-9, 9; 1, 9]`; `TextLengthOutOfDomain` for `Text[1, 8; nfc]` gives `expected` `Text[1, 8; nfc]`; `InexactDecimal` for an integer target `Int[0, 9]` gives `expected` `Int[0, 9]`; `IeeeNotExact` for a `binary32` result whose `nearest-even` flags are inexact and overflow gives `expected` `binary32` and `flags` `overflow,inexact`; `IeeeNanPayloadNotRepresentable` for a `binary64` to `binary32` conversion gives `expected` `binary32` and `actual` `binary64`. A kernel `CheckedInvariant` builds no record. | Test (TC-428) |
 | FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. A refusal IR reports at a value, such as a `package_id` digest domain, is located at `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer of that value. | Test (TC-429) |
 | FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. The same holds for IR's depth, edge, occurrence, diagnostic and work limits, each with its own kind. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test (TC-429) |
@@ -372,9 +381,14 @@ name.
 - **FR-096-OQ-2 (open):** `inexact_decimal`'s `expected` is the target's
   declared domain. Revision `1-draft.8` spells a domain only with both
   bounds, so it gives no spelling for an unbounded `Integer` target of a
-  unit conversion under strict `exact`. QSpec owns the ruling. The kernel's
-  `InexactDecimal` raise sites today place into a `DecimalType` target,
-  which has both bounds.
+  unit conversion under strict `exact`. QSpec owns the ruling. QSL cannot
+  reach that case today: `QuantityTarget::Integer` always carries a
+  two-bounded `IntegerInterval` (`qsl-semantics/src/value/quantity.rs`,
+  `convert_quantity`), and the kernel's `InexactDecimal` raise sites place
+  into a `DecimalType` target, which has both bounds. An integer target is
+  placed as a temporary `DecimalType` `Decimal[lo, hi; 0, 0]`; its record
+  SHALL still render the declared `Int[lo, hi]`, not that placement, which
+  FR-096-AC-8's `InexactDecimal` example checks.
 
 ## Status
 
@@ -437,7 +451,9 @@ Implemented under QSL-281:
 Specified against catalog revision `1-draft.8` (QSpec STD-110, merged) and
 not built (QSL-245):
 
-- AC-8 is backed for `CardinalityOutOfBound` and `ForeignReference` only.
+- AC-8 is backed for `CardinalityOutOfBound` only. `ForeignReference`
+  builds its record with its code, fields and locus, but
+  `Refusal::cause()` returns `None` for it, not `foreign-universe`.
   Revision `1-draft.8` gives the other ten kernel causes their codes, causes
   and fields (the key table), but the code does not build them:
   `kernel_refusal_record` builds no record for `InexactDecimal`,
@@ -450,7 +466,11 @@ not built (QSL-245):
   `Refusal::code()` returns `None` for the first eight, and
   `Refusal::cause()` returns `None` for every cause but
   `CardinalityOutOfBound` (`quire-exact/src/outcome.rs`). The code still
-  claims revision `1-draft.7`.
+  claims revision `1-draft.7`. The `quire-exact/src/outcome.rs` test
+  tagged `TC-318`, and its doc comment saying `CardinalityOutOfBound` is the
+  only refusal with a code, are stale: no TC-318 artifact exists, and the
+  coder building AC-8 retags that test `TC-428`/`FR-096-AC-8` and corrects
+  the comment.
 - AC-13 is not built: no record gives `DivisionPairOutOfDomain` a cause.
 - AC-14 is not built: S6a's `sum` refuses a running total outside an `Int`
   domain with `Refusal::IntegerOutOfDomain`, checks the final total rather

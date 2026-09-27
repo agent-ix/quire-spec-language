@@ -23,7 +23,8 @@ Scope: FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13.
 1. Evaluate `lookup<T>(p, r) absent refused` with no member for `r`, and
    build the record from the `FamilyResult::Refused` cause.
 2. Build a record from an `Evaluation` whose `location` is `None`.
-3. For each cause in FR-096's key table, read `catalog_fields()`.
+3. For each `CatalogCoded` cause in FR-096's key table (every row but the
+   kernel `Refusal` rows, which step 4 covers), read `catalog_fields()`.
 4. For each of the twelve kernel causes in FR-096's key table, build a
    record from an `Evaluation` whose outcome is that kernel `Refused`, and
    read the cause's `Refusal::code()` and `Refusal::cause()`. Use the targets
@@ -58,8 +59,9 @@ Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
 ## Status
 
 Partial (QSL-245). Steps 1 to 3 pass locally (FR-096-AC-6, FR-096-AC-7).
-Step 4 (FR-096-AC-8) passes for `CardinalityOutOfBound` and
-`ForeignReference` (QSL-281); `CheckedInvariant` builds no record, and its
+Step 4 (FR-096-AC-8) passes for `CardinalityOutOfBound` only.
+`ForeignReference` (QSL-281) builds its record, but `Refusal::cause()`
+returns `None` for it, not `foreign-universe`; `CheckedInvariant` builds no record, and its
 conversion to an internal fault is not built. Step 4 for the ten kernel
 value refusals that catalog revision `1-draft.8` (QSpec STD-110) codes, and
 step 5 (FR-096-AC-13), are planned: the variants do not yet carry their

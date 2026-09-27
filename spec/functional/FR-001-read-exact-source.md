@@ -64,6 +64,21 @@ These are the two causes `quire.native.diagnostics/v1` revision `1-draft.8`
 (QSpec STD-110) closes `invalid_source_identity` to. Neither names a source
 region.
 
+### Edit and binding refusals are not source-identity refusals
+
+Three complete-V1 host refusals concern a source already admitted, not the
+labels it was admitted under: an incremental edit whose revision is not the
+exact predecessor's or that changes the authority, identity or revision
+namespace (`EditPredecessor`), a CST node rendered against a parsed source it
+does not belong to (`ForeignNode`), and an editor request bound to another
+document revision (`RequestRevision`). They SHALL refuse with
+`invalid_source_map`, the retained host code for an invalid correspondence,
+source binding or queried range, whose causes revision `1-draft.8` does not
+close, keeping their host cause. They SHALL name no region: byte 0 cannot
+stand in for a location (the catalog's common structured context). They
+never use `invalid_source_identity`, whose causes are the two above.
+(QSL team-lead ruling, 2026-09-26, on the review of PR #487.)
+
 ### Where an S0 refusal is located
 
 An S0 refusal names its position by a `SourceRegion` when one exists, and by
@@ -175,6 +190,7 @@ revision namespace and value part of every immutable key
 | FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire`, revision namespace `git`, revision value `3f2a` and bytes `b` carries a `RawSourceRef` whose authority, identity, revision namespace and value read exactly those labels and whose digest is the `quire.source.bytes/v1` digest of `b`. Admitting the same bytes under revision value `3f2b` gives a `RawSourceRef` that differs only in the revision value. | Test (TC-424) |
 | FR-001-AC-6 | Admission refuses with `invalid_source_identity`, cause `blank-label`, and admits nothing, when exactly one of the authority, identity, revision namespace or revision value is empty, again when it is a single space, and again when it is U+3000 IDEOGRAPHIC SPACE; field `label` is `authority`, `identity`, `revision_namespace` or `revision` respectively. A label that is U+200B ZERO WIDTH SPACE, which is not `White_Space`, is not blank. | Test (TC-424) |
 | FR-001-AC-11 | With both the revision namespace and the authority blank, admission refuses `invalid_source_identity`/`blank-label` with `label` `authority`. With the identity blank and the path empty, it refuses `blank-label` with `label` `identity`, not `empty-path`. With all four labels non-blank and the path empty, it refuses `invalid_source_identity`/`empty-path` with no field. | Test (TC-424) |
+| FR-001-AC-12 | An incremental edit whose expected revision is not the source's revision, rendering a CST node against a parsed source it does not belong to, and an editor request bound to another document revision each refuse with `invalid_source_map`, keeping the host cause `EditPredecessor`, `ForeignNode` or `RequestRevision` respectively, and name no region; none refuses with `invalid_source_identity`. | Test (TC-424) |
 | FR-001-AC-7 | Package declarations holding one record `Point` with field `x: Int[0, 9]`, checked under the source reference of bytes `b` admitted as authority `a`, identity `u`, revision (`git`, `1`), and again under the reference of bytes `b'` admitted as `a`, `u`, (`git`, `2`), give `Point` the same node key. Checked under the reference of `b` admitted as authority `c`, identity `u`, revision (`git`, `1`), they give `Point` a different key, and under the reference of `b` admitted as authority `a`, identity `v`, revision (`git`, `1`), a third key. | Test (TC-424) |
 | FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`, `git`, `1`) refuse with the region `[1, 1)` under the `RawSourceRef` of those three bytes, and bytes `ab\0c` with the region `[2, 3)` under theirs. | Test (TC-424) |
 | FR-001-AC-10 | Admission with an empty revision namespace, admission of five bytes under a four-byte ceiling, and verified intake of bytes whose digest differs from the selected one each refuse with no region, not a region at byte 0. | Test (TC-424) |
@@ -197,17 +213,6 @@ revision namespace and value part of every immutable key
   and `empty-path`, and the `label` payload spelling; QSpec FR-272-AC-12.
 - [Detailed contract or implementation evidence](../../qsl-foundation/src/source.rs) supplies the scoped context.
 
-## Open Questions
-
-- **FR-001-OQ-1 (open):** the complete-V1 host causes `EditPredecessor` (an
-  edit names a different predecessor), `ForeignNode` (a CST node belongs to
-  another parsed source) and `RequestRevision` (a request is bound to
-  another revision) emit `invalid_source_identity` today
-  (`qsl-cst/src/diagnostic.rs` `HostCause`). They are not FR-001 refusals,
-  and revision `1-draft.8` closes that code's causes to `blank-label` and
-  `empty-path`, so neither cause fits them. They need a catalog code before
-  QSL claims revision `1-draft.8`.
-
 ## Status
 
 Draft. AC-1 to AC-4 describe the existing reader. AC-5 to AC-10 are
@@ -224,5 +229,9 @@ Not built against catalog revision `1-draft.8` (QSL-245): the refusal
 carries one cause, `SourceReadCause::UnnamedSource`, for a blank label and
 an empty path alike, with no `blank-label`/`empty-path` cause and no `label`
 field; `Source::read_typed` tests the labels and the path in one condition
-(`qsl-foundation/src/source.rs`). So AC-6's cause and field and AC-11
-are planned; AC-6's refusal code is backed.
+(`qsl-foundation/src/source.rs`). So AC-6's cause and field, AC-11 and AC-12
+are planned; AC-6's refusal code is backed. The three edit and binding host causes
+still refuse with `invalid_source_identity` at byte 0
+(`qsl-cst/src/diagnostic.rs` `HostCause`, `qsl-cst/src/cst.rs`
+`render_node`, `src/complete/edit.rs`, `src/complete/editor.rs`); their move
+to `invalid_source_map` with no region is planned (QSL-245).

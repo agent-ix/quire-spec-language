@@ -16,7 +16,7 @@ label, and a declaration's key depends on the authority and identity but
 not on the revision. This catches a defaulted or path-derived label, and a
 revision that leaks into a node key.
 
-Scope: FR-001-AC-5 to FR-001-AC-11.
+Scope: FR-001-AC-5 to FR-001-AC-12.
 
 ## Test Procedure
 
@@ -38,6 +38,9 @@ Scope: FR-001-AC-5 to FR-001-AC-11.
 6. Admit `b` with the revision namespace and the authority blank; with the
    identity blank and an empty path; and with all four labels non-blank and
    an empty path.
+7. Apply an incremental edit whose expected revision is not the source's
+   revision; render a CST node against a parsed source it does not belong
+   to; and run an editor request bound to another document revision.
 
 Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 
@@ -61,10 +64,13 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 - Step 6: `blank-label` with `label` `authority`; `blank-label` with `label`
   `identity`, not `empty-path`; `invalid_source_identity`/`empty-path` with
   no field.
+- Step 7: each refuses with `invalid_source_map`, host cause
+  `EditPredecessor`, `ForeignNode` and `RequestRevision` respectively, and
+  no region; none is `invalid_source_identity`.
 
 ## Status
 
 Partial. Steps 1 to 5 pass locally under ADR-013 §7 slice S-4b (QSL-233)
 for the `invalid_source_identity` code. Step 2's U+3000 and U+200B cases,
-its `blank-label` cause and `label` field, and step 6 (FR-001-AC-11), are
-planned (QSL-245).
+its `blank-label` cause and `label` field, step 6 (FR-001-AC-11) and step 7
+(FR-001-AC-12) are planned (QSL-245).

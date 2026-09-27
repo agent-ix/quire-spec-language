@@ -86,7 +86,8 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `WrongValueKind` (`invalid_runtime_input`) three times, the first two
   before the call and the third at S6a admission; `LimitAboveReader`, a
   stage-`source` and a stage-`check` `stage_limit_exceeded` recompile
-  refusal; a stage-`source` `invalid_source_identity` recompile refusal;
+  refusal; a stage-`source` `invalid_source_identity` recompile refusal
+  with cause `blank-label` and field `label` `authority` (FR-001);
   `NotASource` and `SourceCount(2)`; `NotAPredicate` naming the selection
   and the recompiled package, not an `incomplete` settlement.
 - Step 6: `p(1)` is `f(1) > 3` = `2 > 3` = `false`, agreeing with the
@@ -120,3 +121,7 @@ Passed locally (QSL-5, QSL-257), `qsl-replay/src/execute/tests.rs`, for
 steps 1 to 6. Step 7 (FR-098-AC-6, FR-098-AC-7) passes locally (QSL-255
 part b): `tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one`
 and `tc_444_dependency_entries_refuse_by_the_d4_rules`.
+
+Partial for step 5's whitespace-only authority: the `invalid_source_identity`
+code passes locally; its `blank-label` cause and `label` field (catalog
+revision `1-draft.8`, FR-001) are planned (QSL-245).
