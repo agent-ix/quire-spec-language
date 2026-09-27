@@ -2077,7 +2077,7 @@ mod tests {
     /// FR-107 (QSL-278): `allInstances<T>(p)` reached while evaluating a
     /// `ProtocolClause` (`Machine::with_pre`'s `reads: Some(_)`, the one
     /// signal `Machine::is_protocol_clause` reads) refuses
-    /// `unsupported_construct`/`protocol-clause-population-read`, never an
+    /// `unknown_required_feature`/`unsupported-feature`, never an
     /// `InternalFault` and never `Halt`ing through `resolve_population`.
     ///
     /// No admitted `StateClauseDeclaration` can actually reach this node:
@@ -2128,8 +2128,8 @@ mod tests {
         match evaluation.outcome {
             FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
                 let code = cause.catalog_code();
-                assert_eq!(code.code(), "unsupported_construct");
-                assert_eq!(code.cause(), "protocol-clause-population-read");
+                assert_eq!(code.code(), "unknown_required_feature");
+                assert_eq!(code.cause(), "unsupported-feature");
                 assert_eq!(
                     cause.catalog_fields(),
                     Some(std::collections::BTreeMap::from([(
@@ -2142,9 +2142,9 @@ mod tests {
         }
     }
 
-    /// TC-467 (FR-107-AC-5): `lookup<M::A>(p, r) absent Refused` under a
-    /// protocol clause refuses `unsupported_construct`/
-    /// `protocol-clause-population-read` naming `lookup`, the same guard as
+    /// TC-467: `lookup<M::A>(p, r) absent Refused` under a
+    /// protocol clause refuses `unknown_required_feature`/
+    /// `unsupported-feature` naming `lookup`, the same guard as
     /// [`all_instances_under_a_protocol_clause_refuses_unsupported_construct`],
     /// checked directly as a standalone expression (no domain-package
     /// operation parameter or result can carry a `Value::Reference` bound to
@@ -2214,8 +2214,8 @@ mod tests {
         match evaluation.outcome {
             FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
                 let code = cause.catalog_code();
-                assert_eq!(code.code(), "unsupported_construct");
-                assert_eq!(code.cause(), "protocol-clause-population-read");
+                assert_eq!(code.code(), "unknown_required_feature");
+                assert_eq!(code.cause(), "unsupported-feature");
                 assert_eq!(
                     cause.catalog_fields(),
                     Some(std::collections::BTreeMap::from([(

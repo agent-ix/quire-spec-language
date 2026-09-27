@@ -153,8 +153,14 @@ impl ProtocolClauseUnsupported {
 }
 
 impl CatalogCoded for ProtocolClauseUnsupported {
+    /// `unknown_required_feature`/`unsupported-feature`, naming the
+    /// construct (SR-750 FND-012): the same code/cause pair FR-106's own
+    /// check 6.2 already uses for an unsupported feature at a construct
+    /// (`document.rs`'s set/bag/ordered-set field refusal), not the
+    /// invented `unsupported_construct`/`protocol-clause-population-read`
+    /// pairing this replaces, which named no registered cause.
     fn catalog_code(&self) -> CatalogCode {
-        CatalogCode::new("unsupported_construct", "protocol-clause-population-read")
+        CatalogCode::new("unknown_required_feature", "unsupported-feature")
     }
 
     fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
