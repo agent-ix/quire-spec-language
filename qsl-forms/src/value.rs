@@ -141,7 +141,10 @@ pub(crate) fn production_node<'c>(construct: Construct<'c>) -> Result<&'c CstNod
 }
 
 /// The declared name: the production's first identifier.
-fn declared_name(items: &[Item<'_>], node: &CstNode) -> Result<DeclaredName, FormsFailure> {
+pub(crate) fn declared_name(
+    items: &[Item<'_>],
+    node: &CstNode,
+) -> Result<DeclaredName, FormsFailure> {
     let token = tokens_of(items, TokenKind::Identifier)
         .first()
         .copied()

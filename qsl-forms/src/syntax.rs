@@ -1125,6 +1125,92 @@ pub struct StateClauseForm {
     pub spans: DeclarationSpans,
 }
 
+/// One segment of a `NodeReference`, exactly as written: its text and the
+/// span of that segment alone (FR-112 "Outputs"). `Main::Applied` has two
+/// segments, `Tried` has one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnchorSegment {
+    /// The segment's text, unjoined from its neighbors.
+    pub text: String,
+    /// The span of this segment alone.
+    pub span: Span,
+}
+
+/// A protocol node reference's segments in source order, with the span of
+/// the whole reference (FR-112 "Outputs"). S2 keeps the segments exactly as
+/// written: it does not join them into one qualified string, drop a
+/// segment, or read a segment as a display name.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnchorForm {
+    /// The reference's segments, in source order.
+    pub segments: Vec<AnchorSegment>,
+    /// The span of the whole reference.
+    pub span: Span,
+}
+
+/// One named control that lexically encloses a scoped anchor's reference
+/// (FR-112 "Outputs"): a `sequence`, `choice`, `parallel`, `branch`,
+/// `case` or `repeat`'s own declared name, with the span of that name.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScopeName {
+    /// The enclosing control's declared name.
+    pub name: String,
+    /// The span of that name's identifier.
+    pub span: Span,
+}
+
+/// Which reference position a [`ScopedAnchorForm`] fills (FR-112
+/// "Outputs").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnchorSite {
+    /// The `NodeReference` after `of` in a `receive` event node.
+    ReceiveOf,
+    /// The `NodeReference` after `of` in an `effect` event node.
+    EffectOf,
+    /// The `NodeReference` after `for` in an `event` node.
+    EventFor,
+    /// The `NodeReference` after `after` in an `await` control.
+    AwaitAfter,
+    /// The `NodeReference` after `for` in a `compensate` declaration.
+    CompensateFor,
+    /// The `NodeReference` after `commit` in a `compensate` declaration,
+    /// when it is not `never`.
+    CompensateCommit,
+}
+
+/// One protocol node reference and the lexical control scope it is written
+/// in (FR-112, ADR-012 §12.2 Form row). A scoped anchor is a clause of its
+/// construct with its own refusal causes (FR-113), so it is a typed
+/// subnode, not a string kept inside the construct's form. It is
+/// represented only inside S2 and S3: it has no `CheckedClauseKind`
+/// variant and no checked-package/v2 node. S2 records the reference and
+/// where it was written; it resolves nothing (FR-113 is S3's job).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScopedAnchorForm {
+    /// Which reference position this anchor fills.
+    pub site: AnchorSite,
+    /// The reference itself, as written.
+    pub anchor: AnchorForm,
+    /// The names of the named controls that enclose the reference,
+    /// outermost first, from the protocol's `run` control to the innermost
+    /// enclosing control. Empty for a reference in a protocol-level
+    /// requirement (a `compensate` declaration).
+    pub scope: Vec<ScopeName>,
+}
+
+/// `protocol Name using p over (params) activation { ... run Control
+/// Finish }` (FR-112 "Outputs", ADR-012 §12.2). S2 builds only the scoped
+/// anchors: the declaration's roles, channels, requirements and control
+/// tree beyond the anchors they hold are not read at this stage.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtocolDeclarationForm {
+    /// The declared protocol name.
+    pub name: DeclaredName,
+    /// Every scoped anchor the declaration holds, in source order of their
+    /// references (FR-112-AC-1).
+    pub scoped_anchors: Vec<ScopedAnchorForm>,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -1147,6 +1233,8 @@ pub enum DeclarationForm {
     /// An `invariant`, `pre` or `post` state clause, boxed for the same
     /// reason as [`Self::Function`] (FR-102).
     StateClause(Box<StateClauseForm>),
+    /// A `protocol` declaration (FR-112).
+    Protocol(ProtocolDeclarationForm),
 }
 
 #[cfg(test)]

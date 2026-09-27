@@ -467,6 +467,11 @@ impl Unit {
                     unit.enums.push(enumeration);
                 }
                 DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
+                // A protocol declaration's scoped-anchor resolution through
+                // nested control scopes is FR-113 (QSL-298, the S3
+                // `ProtocolClause` checker); this stage does not assemble
+                // it yet.
+                DeclarationForm::Protocol(_) => {}
             }
         }
         unit
