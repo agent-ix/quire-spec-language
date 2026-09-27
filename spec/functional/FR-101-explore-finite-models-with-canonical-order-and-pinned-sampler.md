@@ -43,7 +43,11 @@ FR-013-AC-1), the recording of an invariant-violating successor
 (FR-181-AC-4's last clause) or the refusal of evaluator effects
 (FR-181-AC-6); QSL-274 owns those. A `TransitionSystem` implementation
 supplies the successor relation; the engine orders, keys, explores and
-samples it.
+samples it. [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)
+amends this requirement's `TransitionSystem`: `successors` returns an
+`Expansion` with the expanded state's findings or an `ExpansionStop`, and
+exploration, sampling and replay carry those findings and the
+`Outcome::Stopped` outcome as FR-120 states.
 
 ## Inputs
 
