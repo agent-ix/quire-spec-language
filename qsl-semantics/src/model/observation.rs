@@ -500,7 +500,7 @@ pub fn admit_current_snapshot(
             "wrong-observation",
         )));
     }
-    check_model(&views, &snapshot.model)?;
+    check_model_any(&views, &snapshot.model)?;
     let admitted = document::admit_populations(&views, types, &snapshot.populations, None, limits)?;
     Ok(admitted.environment)
 }
@@ -657,7 +657,7 @@ fn admit_invariant(
     }
 
     // Check 4: model.
-    check_model(views, &snapshot.model)?;
+    check_model(context_view, &snapshot.model)?;
 
     // Check 6-8: populations and values, completeness, closure.
     let environment = document::admit_populations(
@@ -695,7 +695,39 @@ fn admit_invariant(
     })
 }
 
-fn check_model(views: &[ModelView], model: &document::ModelHeader) -> Result<(), AdmissionFailure> {
+/// FR-106 check 4: `model` must match `context_view`'s own package model
+/// selection -- "the package's model selection for the clause's alias"
+/// (`FR-106-admit-snapshots-and-invocations.md:191-193`), never merely some
+/// alias of the unit (SR-750 FND-012: matching against every view in
+/// `views` would wrongly admit a document bound to a different alias's
+/// model in a multi-alias unit).
+fn check_model(
+    context_view: &ModelView,
+    model: &document::ModelHeader,
+) -> Result<(), AdmissionFailure> {
+    let selection = &context_view.view.model_selection();
+    let matches = selection.identity == model.identity
+        && selection.version == model.version
+        && hex(&selection.digest) == model.digest;
+    if matches {
+        Ok(())
+    } else {
+        Err(refuse(AdmissionRecord::new(
+            "invalid_model_binding",
+            "wrong-model-selection",
+        )))
+    }
+}
+
+/// [`check_model`], over every view in `views`: FR-109's `Function`
+/// selection (`admit_current_snapshot`) carries no clause alias of its own
+/// to scope this check to -- a bare `Function` selection is not `on
+/// Alias::Type::op`-shaped -- so it stays scoped to the unit's whole model
+/// selection set, as before.
+fn check_model_any(
+    views: &[ModelView],
+    model: &document::ModelHeader,
+) -> Result<(), AdmissionFailure> {
     let matches = views.iter().any(|view| {
         let selection = &view.view.model_selection();
         selection.identity == model.identity
@@ -769,9 +801,9 @@ fn admit_operation(
     }
 
     // Check 4: model, for each document in the order it was read.
-    check_model(views, &invocation.model)?;
-    check_model(views, &pre_snapshot.model)?;
-    check_model(views, &post_snapshot.model)?;
+    check_model(context_view, &invocation.model)?;
+    check_model(context_view, &pre_snapshot.model)?;
+    check_model(context_view, &post_snapshot.model)?;
 
     // Check 5: operation.
     let operation = operation.ok_or_else(|| fault("clause-declares-no-operation"))?;
