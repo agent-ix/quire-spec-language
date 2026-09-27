@@ -20,18 +20,19 @@ lint gate fails when the tool does. Scope: FR-064-AC-1 through FR-064-AC-6.
 **Status (QSL-145, QSL-268).** `xtask string-edge` is clean over the whole
 workspace and `string-edge` is a prerequisite of `make ci` (step 7, backed
 by `the_real_makefile_wires_string_edge_into_ci` and
-`a_failed_prerequisite_fails_the_aggregate_target`). The scan skips
-file-level test modules (`tests/`, `tests.rs`, `*_tests.rs`, and files
-declared by `#[cfg(test)] mod x;`). The detector treats a comparison that is
-a term of a `&&`/`||` chain, a match arm's own value, or a `strip_prefix`
-call as branch-gating. Step 6's real-site half runs the raw scan (marks
-ignored) over the ADR-010 §4.3 sites still in the tree --
-`Profile::classify`, `valid_digest`, `valid_adapter` -- and asserts each is
+`a_failed_prerequisite_fails_the_aggregate_target`). The scan skips a
+`tests/` directory, `#[cfg(test)]` items and files declared by
+`#[cfg(test)] mod x;`, never a file by name alone. The detector treats a
+comparison that is a term of a `&&`/`||` chain, a match arm's own value, or a
+`strip_prefix` call as branch-gating. Step 6's real-site half runs the raw
+scan (marks ignored) over the ADR-010 §4.3 dispatch strings still compared
+in the tree -- `CanonicalizationDomain::from_str`,
+`AdapterArtifact::try_from`, `clock_binding_name` -- and asserts each is
 branch-gating and rejected as an allow-list entry
 (`real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`,
-`FR-064-AC-5`). The `"allocation"` site is gone from the tree, and the
-`clock:` prefix is read through the named-constant `temporal::
-clock_binding_name`, which this literal-only scan does not see.
+`FR-064-AC-5`). The scan reads string literals only; a comparison against a
+named `const NAME: &str` or another string value is not detected (FR-064
+Status).
 
 **Correction: steps 2 and 6 (PR #262 review, finding F11).** An earlier
 draft of `xtask/src/string_edge.rs` checked the allow-list only through
@@ -67,9 +68,11 @@ exercises the real add-then-remove-reappears sequence through it.
    unmarked function; run `xtask string-edge` against it.
 2. Add an allow-list entry naming the unmarked occurrence's file and line;
    re-run the scan. Remove the entry and re-run again.
-3. Move the unmarked occurrence from step 1 into a `#[cfg(test)]` module and
-   into a file under a `tests/` directory (two separate fixtures); run the
-   scan against each.
+3. Move the unmarked occurrence from step 1 into a `#[cfg(test)]` module,
+   into a file under a `tests/` directory and into a file declared by
+   `#[cfg(test)] mod x;` (separate fixtures); run the scan against each.
+   Separately, a file named `tests.rs` or `*_tests.rs` that is not declared
+   `#[cfg(test)]` is scanned.
 4. Run the scan against the empty-report fixture from step 2 (with the
    allow-list entry present) and against the non-empty-report fixture (entry
    removed); capture both exit codes.
@@ -83,10 +86,15 @@ exercises the real add-then-remove-reappears sequence through it.
    `clock:` prefix), construct a fixture occurrence shaped like that site
    (a string comparison whose result selects one of two branches) and an
    allow-list entry naming it; submit each to `xtask string-edge` in turn.
-7. Confirm whether any real `Makefile` target invokes `xtask string-edge`
-   as part of a gate (QSL-155's correction to this criterion's original
-   "stub the gate's target list" text: a grep-shaped check over the real
-   file, not a stub of an abstraction that does not exist). Separately, on
+   Then run the real scan with `#[string_edge]` marks ignored over the
+   workspace, and for each ADR-010 §4.3 dispatch string still compared in
+   the tree (`CanonicalizationDomain::from_str`, `AdapterArtifact::try_from`,
+   `clock_binding_name`) submit an allow-list entry at its real file and
+   item.
+7. Confirm that the real `Makefile`'s `ci` target lists `string-edge` as a
+   prerequisite and that `string-edge`'s recipe runs `cargo xtask
+   string-edge` (a grep-shaped check over the real file, not a stub of an
+   abstraction that does not exist; QSL-155). Separately, on
    a minimal fixture `Makefile` of an aggregate-target/prerequisite shape,
    confirm a failed prerequisite fails the aggregate target and a
    succeeding one does not (the same mechanism FR-063-AC-5/TC-161 step 7
@@ -99,18 +107,19 @@ exercises the real add-then-remove-reappears sequence through it.
 - Step 2: with the allow-list entry present, the report omits the
   occurrence; with the entry removed, the report includes it again, with no
   source change.
-- Step 3: neither the `#[cfg(test)]`-module occurrence nor the
-  `tests/`-directory occurrence is reported, marked or not, allow-listed or
-  not.
+- Step 3: none of the `#[cfg(test)]`-module, `tests/`-directory or
+  `#[cfg(test)] mod x;`-file occurrences is reported, marked or not,
+  allow-listed or not; an undeclared `tests.rs`/`*_tests.rs` file is scanned.
 - Step 4: the empty-report run exits zero; the non-empty-report run exits
   non-zero.
 - Step 5: the branch-gating entry is rejected, naming its file and line; the
   display-only entry is accepted.
 - Step 6: each of the five constructed entries is rejected; none of the five
-  is accepted into the allow-list under any submitted reason text. Separately
-  (QSL-150's real-site investigation, above): none of the four real sites
-  still present in the tree is rejected today, since none is flagged
-  branch-gating by the structural detector.
-- Step 7: no real `Makefile` target invokes `xtask string-edge` yet
-  (QSL-145's own gap); the fixture `Makefile` fails its aggregate target
-  exactly when the prerequisite's recipe fails, and not otherwise.
+  is accepted into the allow-list under any submitted reason text. In the
+  real scan, each of the three named sites above is flagged branch-gating and
+  an allow-list entry at it is rejected. The `"allocation"` site is gone from
+  the tree and the profile string is now only registry data
+  (`RegisteredDefinition::identity`), so neither is a real site.
+- Step 7: `ci` lists `string-edge` and its recipe runs `cargo xtask
+  string-edge`; the fixture `Makefile` fails its aggregate target exactly
+  when the prerequisite's recipe fails, and not otherwise.

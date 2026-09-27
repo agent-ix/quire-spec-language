@@ -26,8 +26,9 @@ enforced by a running check rather than by convention alone.
 
 ## Inputs
 
-- The QSL crates' source (non-test code; `#[cfg(test)]` modules and files
-  under a `tests/` directory are out of scope for the scan).
+- The QSL crates' source (non-test code; `#[cfg(test)]` items, files declared
+  by `#[cfg(test)] mod x;` and files under a `tests/` directory are out of
+  scope for the scan; a file is never out of scope by its name alone).
 - The `#[string_edge]` tool attribute applied to an edge function.
 - A checked-in allow-list of string comparisons that compare a user-supplied
   value and select no behaviour on its content.
@@ -120,19 +121,29 @@ than accept it into the allow-list.
 
 ## Status
 
-Implemented and gated. `#[string_edge]` and `xtask string-edge` are complete,
-`string-edge` is a prerequisite of `make ci` (the lint gate), and
-`cargo xtask string-edge` reports no unmarked, unlisted occurrence over the
-whole workspace. Every remaining occurrence is either a `#[string_edge]`-marked
-edge (an intake reader, a typed wire reader, CLI argument parsing, or a source
-scanner doing its one total conversion) or was converted onto a closed enum or
-typed identity (QSL-145). The allow-list is empty.
+**Partial.** `#[string_edge]` and `xtask string-edge` are built, `string-edge`
+is a prerequisite of `make ci` (the lint gate), and `cargo xtask string-edge`
+reports no unmarked, unlisted occurrence over the whole workspace. Every
+occurrence the scan finds is either a `#[string_edge]`-marked edge (an intake
+reader, a typed wire reader, CLI argument parsing, or a source scanner doing
+its one total conversion) or was converted onto a closed enum or typed
+identity (QSL-145). The allow-list is empty.
+
+**Not yet built: the string-value clause.** Behavior asks the scan to report
+a comparison between a string and "another `&str`/`String` value". The scan
+reads string *literals* only. A comparison against a named `const NAME: &str`
+or between two string bindings is not reported, so a clean scan does not show
+that no named-constant dispatch remains. Known unresolved instances are
+`identity == NARROW` in `qsl-semantics/src/check/claims.rs`, `name ==
+FUNCTION_PARAMETERS` in `qsl-semantics/src/check/lowering.rs` and
+`semantic_form() == ENUM_VALUE_FORM` in `qsl-package/src/emit.rs`. A detector
+that resolves same-crate `const NAME: &str` operands is preserved on branch
+`task/145-268-string-edge-consts`; landing it requires converting or marking
+the sites it reports first.
 
 Detector scope (QSL-268): a comparison is branch-gating when it feeds an
 `if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`
-chain, is a match arm's own value, or is a `strip_prefix` call. The scan
-skips `tests/` directories, `tests.rs`, `*_tests.rs`, and files declared by
-`#[cfg(test)] mod x;`.
+chain, is a match arm's own value, or is a `strip_prefix` call.
 
 **By Acceptance Criterion, with the tracking tags in
 `xtask/src/string_edge.rs` (all `TC-162`):**
@@ -140,21 +151,25 @@ skips `tests/` directories, `tests.rs`, `*_tests.rs`, and files declared by
 - FR-064-AC-2: backed
   (`allow_listed_occurrence_is_silent_removing_the_entry_reports_it_again`).
 - FR-064-AC-3: backed (`cfg_test_module_is_not_scanned`,
-  `file_level_test_modules_are_not_scanned`).
+  `file_level_test_modules_are_skipped_only_when_declared_cfg_test`).
 - FR-064-AC-4: backed
   (`a_non_empty_report_exits_non_zero_a_clean_scan_exits_zero`).
-- FR-064-AC-5: backed. The two-fixture and five-site-shape halves are
-  exercised by synthetic fixtures; the real-site half is
+- FR-064-AC-5: backed for the sites in the tree. The two-entry and
+  five-site-shape halves are synthetic fixtures tagged `FR-064-AC-5`. The
+  real-site half is
   `real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`,
-  which scans the real files with marks ignored and asserts every ADR-010
-  §4.3 site still in the tree (`Profile::classify`, `valid_digest`,
-  `valid_adapter`) is branch-gating and rejected as an allow-list entry, and
+  which scans the real files with marks ignored and asserts the ADR-010 §4.3
+  dispatch strings still compared in the tree are branch-gating and rejected
+  as allow-list entries: `CanonicalizationDomain::from_str`
+  (`"filament-canonical-json-1"`), `AdapterArtifact::try_from`
+  (`"quire.state.authority-adapter"`) and `clock_binding_name` (`"clock:"`).
+  The `"quire.protocol.finite-global/v1"` profile is registry data matched by
+  the registry table, and the `"allocation"` site is gone from the tree.
   `combinator_terms_arm_values_and_prefix_gates_are_branch_gating` covers the
-  widened shapes. The `"allocation"` site is gone from the tree; the `clock:`
-  prefix is read through the named-constant `temporal::clock_binding_name`
-  edge.
+  widened shapes.
 - FR-064-AC-6: backed (`the_real_makefile_wires_string_edge_into_ci`,
   `a_failed_prerequisite_fails_the_aggregate_target`; the gate itself is
   `make ci`).
 
-All six ACs are backed.
+Six of six acceptance criteria are backed; the Behavior clause on
+string-value comparisons is not built (above).
