@@ -2702,6 +2702,45 @@ fn tc465_row13_wrong_model_digest_refuses_wrong_model_selection() {
     assert_tc465_refused(result, "invalid_model_binding", "wrong-model-selection");
 }
 
+/// SR-750 FND-004 round 2: `"model": "x"` (a string, not an object) refuses
+/// `invalid_runtime_input`/`wrong-value-kind` at `model`, never
+/// `AdmissionFailure::Fault` -- untrusted input, settled at admission.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn a_model_member_that_is_not_an_object_refuses_wrong_value_kind() {
+    let document = tc465_document();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            value["model"] = json!("x");
+        },
+        None,
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("model")
+    );
+}
+
+/// SR-750 FND-004 round 2: an object keyed `""` refuses
+/// `invalid_runtime_input`/`invalid-value` at `key`, never
+/// `AdmissionFailure::Fault`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn an_empty_object_key_refuses_invalid_value() {
+    let document = tc465_document();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            value["populations"][0]["objects"][0]["key"] = json!("");
+        },
+        None,
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "invalid-value");
+    assert_eq!(record.fields.get("field").map(String::as_str), Some("key"));
+}
+
 /// Row 14 (check 5): invocation `operation` `other`.
 #[trace("TC-465", "FR-106-AC-3")]
 #[test]

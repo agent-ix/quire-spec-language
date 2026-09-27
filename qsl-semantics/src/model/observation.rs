@@ -942,12 +942,18 @@ fn population_universe(
 mod helpers {
     use super::*;
 
+    /// An empty `key` is untrusted input, not an internal invariant (SR-750
+    /// FND-004 round 2): FR-106 settles it at admission, `invalid_runtime_
+    /// input`/`invalid-value` naming `key`, the same cause check 6.5 uses
+    /// for any other malformed value.
     pub(crate) fn object_reference(
         views: &[ModelView],
         type_identity: EffectiveId,
         key: &str,
     ) -> Result<ObjectReference, AdmissionFailure> {
-        let object = ObjectId::new(key.to_owned()).map_err(|_| fault("empty-object-identity"))?;
+        let object = ObjectId::new(key.to_owned()).map_err(|_| {
+            refuse(admission_record("invalid_runtime_input", "invalid-value").with("field", "key"))
+        })?;
         let universe = population_universe(views, type_identity)?;
         Ok(ObjectReference::new(universe, type_identity, object))
     }

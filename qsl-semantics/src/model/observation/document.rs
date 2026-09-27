@@ -347,8 +347,9 @@ pub(super) fn read_document(
 fn read_model(object: &[(String, OrderedJson)]) -> Result<ModelHeader, AdmissionFailure> {
     let model = object
         .member("model")
-        .and_then(|value| value.as_object())
-        .ok_or_else(|| fault("model-member-not-an-object"))?;
+        .ok_or_else(|| missing_member("model"))?
+        .as_object()
+        .ok_or_else(|| wrong_kind("model"))?;
     let missing_member = |field: &'static str| {
         refuse(admission_record("invalid_runtime_input", "missing-member").with("field", field))
     };
@@ -1043,8 +1044,10 @@ pub(super) fn admit_population_values<'t>(
                 }
             }
 
-            let reference = object_reference(views, effective_type, &object.key)
-                .map_err(|_| fault("empty-object-identity"))?;
+            // `object_reference` already refuses an empty key with FR-106's
+            // own `invalid-value` (SR-750 FND-004 round 2): propagated
+            // directly, never re-mapped to a `Fault`.
+            let reference = object_reference(views, effective_type, &object.key)?;
             objects.push((reference, attributes));
         }
     }
