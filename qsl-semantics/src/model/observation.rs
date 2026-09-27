@@ -273,9 +273,42 @@ pub struct Observation {
     pub populations: BTreeMap<String, bool>,
 }
 
+/// The amount [`ObservationLimits`]' four document-shape ceilings actually
+/// consumed, across every document one [`admit_observations`] or
+/// [`admit_current_snapshot`] call successfully read (FR-109 Outputs'
+/// "the admission work", distinct from `quire_exact::LimitKind`, which
+/// counts `quire-exact`'s own value-family scalar charges: admission has
+/// no analogue of `integer_bits`/`work_units`, so reusing that enum would
+/// misreport kinds admission never touches, SR-751 FND-002 round 2).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct AdmissionUsage {
+    /// The sum of every admitted document's byte length.
+    pub document_bytes: u64,
+    /// The greatest nesting depth any one admitted document reached.
+    pub nesting_depth: u32,
+    /// The sum of every admitted document's admitted object count.
+    pub objects: u64,
+    /// The sum of every admitted document's admitted field-value count.
+    pub values: u64,
+}
+
+impl AdmissionUsage {
+    fn merged_with(self, other: Self) -> Self {
+        Self {
+            document_bytes: self.document_bytes + other.document_bytes,
+            nesting_depth: self.nesting_depth.max(other.nesting_depth),
+            objects: self.objects + other.objects,
+            values: self.values + other.values,
+        }
+    }
+}
+
 /// FR-106 Outputs: one typed observation set admitted for S6a.
 #[derive(Clone, Debug)]
 pub struct AdmittedObservations {
+    /// FR-109 Outputs' admission usage, summed over every document this
+    /// call actually read (`current` alone, or `pre` and/or `post`).
+    pub usage: AdmissionUsage,
     /// The node identity of the state clause these observations were
     /// admitted for (FR-107's `ObservationsMismatch` check).
     pub clause: quire_exact::NodeKey,
@@ -497,7 +530,7 @@ pub fn admit_current_snapshot(
     provision: &BTreeMap<[u8; 32], Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
-) -> Result<ObjectEnvironment, AdmissionFailure> {
+) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
     let views = model_views(model_selections, packages, model_limits)?;
     let read = read_document(DocumentKind::Snapshot, provision, selected, limits)?;
     let snapshot = read
@@ -511,7 +544,8 @@ pub fn admit_current_snapshot(
     }
     check_model_any(&views, &snapshot.model)?;
     let admitted = document::admit_populations(&views, types, &snapshot.populations, None, limits)?;
-    Ok(admitted.environment)
+    let usage = read.usage.merged_with(admitted.usage);
+    Ok((admitted.environment, usage))
 }
 
 /// FR-109's `Function` selection: `type_identity`'s own [`UniverseId`],
@@ -687,7 +721,9 @@ fn admit_invariant(
         self_object,
     )?;
 
+    let usage = read.usage.merged_with(environment.usage);
     Ok(AdmittedObservations {
+        usage,
         clause,
         current: Some(Observation {
             identity: read.identity,
@@ -901,7 +937,14 @@ fn admit_operation(
         &invocation.deleted,
     )?;
 
+    let usage = read
+        .usage
+        .merged_with(pre_read.usage)
+        .merged_with(post_read.usage)
+        .merged_with(pre_admitted.usage)
+        .merged_with(post_admitted.usage);
     Ok(AdmittedObservations {
+        usage,
         clause: clause_identity,
         current: None,
         pre: Some(Observation {

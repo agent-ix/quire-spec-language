@@ -121,6 +121,9 @@ enum Body {
 
 pub(super) struct ReadDocument {
     pub(super) identity: DocumentRef,
+    /// FR-109 Outputs' admission usage: this document's own byte length
+    /// and nesting depth (SR-751 FND-002 round 2).
+    pub(super) usage: super::AdmissionUsage,
     body: Body,
 }
 
@@ -191,15 +194,15 @@ pub(super) fn read_document(
             "input-bytes-exceeded",
         )));
     }
+    let document_bytes = bytes.len() as u64;
     let parsed: Option<OrderedJson> = serde_json::from_slice(bytes).ok();
     // 1.2: nesting depth (only meaningful once parsed).
-    if let Some(value) = &parsed {
-        if value.depth() > limits.nesting_depth {
-            return Err(refuse(admission_record(
-                "stage_limit_exceeded",
-                "nesting-depth-exceeded",
-            )));
-        }
+    let nesting_depth = parsed.as_ref().map_or(0, OrderedJson::depth);
+    if nesting_depth > limits.nesting_depth {
+        return Err(refuse(admission_record(
+            "stage_limit_exceeded",
+            "nesting-depth-exceeded",
+        )));
     }
     // 1.3: digest, before any member is read. Bytes that do not parse are
     // digested raw, and so refuse here.
@@ -324,6 +327,12 @@ pub(super) fn read_document(
     };
     Ok(ReadDocument {
         identity: document_identity,
+        usage: super::AdmissionUsage {
+            document_bytes,
+            nesting_depth,
+            objects: 0,
+            values: 0,
+        },
         body,
     })
 }
@@ -720,6 +729,11 @@ fn find_population<'v>(
 pub(super) struct AdmittedEnvironment {
     pub(super) environment: ObjectEnvironment,
     pub(super) completeness: BTreeMap<String, bool>,
+    /// FR-109 Outputs' admission usage: this document's own admitted
+    /// object and field-value counts (SR-751 FND-002 round 2); the
+    /// caller merges in `ReadDocument::usage`'s byte length and nesting
+    /// depth, which this check-6-to-8 pass never sees.
+    pub(super) usage: super::AdmissionUsage,
 }
 
 /// A model object-type field's raw kind test, keyed off `value_type` alone
@@ -899,6 +913,10 @@ pub(super) struct PopulationValues<'t> {
     objects: Vec<(ObjectReference, Vec<(&'t str, FieldValue)>)>,
     pub(super) completeness: BTreeMap<String, bool>,
     pub(super) keys_by_population: BTreeMap<String, BTreeSet<String>>,
+    /// FR-109 Outputs' admission usage: this document's own admitted
+    /// object and field-value counts (SR-751 FND-002 round 2).
+    pub(super) objects_admitted: u64,
+    pub(super) values_admitted: u64,
 }
 
 /// FR-106 check 6: admit every population's every object's every field, in
@@ -1074,6 +1092,8 @@ pub(super) fn admit_population_values<'t>(
         objects,
         completeness,
         keys_by_population,
+        objects_admitted: object_count,
+        values_admitted: value_count,
     })
 }
 
@@ -1200,12 +1220,19 @@ pub(super) fn finish_populations(
     // (FR-106 check 7's own "skip the dangling check over an incomplete
     // population", SR-750 FND-001 round 2) -- so this construction must
     // not re-refuse it.
+    let usage = super::AdmissionUsage {
+        document_bytes: 0,
+        nesting_depth: 0,
+        objects: values.objects_admitted,
+        values: values.values_admitted,
+    };
     let environment =
         ObjectEnvironment::new_tolerating_incomplete_population_dangling(types, values.objects)
             .map_err(map_environment_refusal)?;
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
+        usage,
     })
 }
 

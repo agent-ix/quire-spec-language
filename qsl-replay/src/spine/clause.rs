@@ -220,6 +220,20 @@ impl ClauseDisposition {
 
 /// FR-109 Outputs' provenance: the selections and every admitted document's
 /// identity and digest.
+///
+/// **No I3 field (SR-751 FND-002 round 2, disclosed, not attempted here).**
+/// FR-109 Inputs' alternative source form -- "an I3 extracted source
+/// (ADR-011 I3, `qsl-source`, feature `quire-extraction`) with its original
+/// document identity" -- has no support anywhere in `qsl-replay` today, not
+/// only in `run_clause`: `qsl-replay`'s own `Cargo.toml` depends on neither
+/// `qsl-source` nor the `quire-extraction` feature, and FR-100's own
+/// `spine::run`/`spine::compile` (which `run_clause` reuses by reference,
+/// this requirement's own Description) take plain source bytes with no I3
+/// variant either. Adding an I3-carrying `ClauseRunRequest` field here
+/// alone, while `compile` still has nothing to do with it, would be a
+/// field nothing reads -- the real fix is a spine-wide I3 input path
+/// (a new optional `qsl-source` dependency, an alternative `compile`
+/// input, and this provenance field), which is out of this PR's scope.
 #[derive(Clone, Debug)]
 pub struct ClauseRunProvenance {
     /// Every model selection the compiled package resolved.
@@ -246,16 +260,18 @@ pub struct ClauseRunProvenance {
 /// property AC-5 needs (equal reports on a repeated run) without adding
 /// growing state to a production report.
 ///
-/// Admission work is not yet tracked by a meter of its own
-/// (`ObservationLimits` are plain ceilings, not `quire_exact`-style charges);
-/// `admission_consumed` is left empty until one exists. This is a disclosed
-/// gap, not silently pretended complete.
+/// Admission work is tracked by `ObservationLimits`' own four
+/// document-shape ceilings, not `quire_exact`'s `LimitKind` (admission has
+/// no analogue of `integer_bits`/`work_units`): `admission_consumed` is
+/// `qsl_semantics::model::observation::AdmissionUsage`, the amount those
+/// four ceilings actually consumed across every document admission read
+/// (SR-751 FND-002 round 2), never pretended complete by reusing a
+/// `LimitKind` that would misreport zeroes for kinds admission never
+/// touches.
 #[derive(Clone, Debug, Default)]
 pub struct ClauseRunUsage {
-    /// The admission work consumed, one `(kind, consumed)` pair per limit
-    /// kind that admission itself meters. Empty until admission has its own
-    /// meter (see the doc comment above).
-    pub admission_consumed: Vec<(quire_exact::LimitKind, u64)>,
+    /// The admission work consumed.
+    pub admission_consumed: qsl_semantics::model::observation::AdmissionUsage,
     /// How many charges the evaluation meter admitted in total.
     pub evaluation_admissions: u64,
     /// The evaluation meter's consumed total, one pair per `LimitKind::ALL`.
@@ -263,9 +279,12 @@ pub struct ClauseRunUsage {
 }
 
 impl ClauseRunUsage {
-    fn from_meter(meter: &Meter) -> Self {
+    fn from_meter(
+        meter: &Meter,
+        admission_consumed: qsl_semantics::model::observation::AdmissionUsage,
+    ) -> Self {
         Self {
-            admission_consumed: Vec::new(),
+            admission_consumed,
             evaluation_admissions: meter.admission_count(),
             evaluation_consumed: quire_exact::LimitKind::ALL
                 .iter()
@@ -487,6 +506,20 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                     ))
                 }
             };
+            // FR-109 Outputs' provenance is "the identity and digest of
+            // every snapshot and invocation admission read" -- for a
+            // precondition/postcondition, that is the invocation plus its
+            // pre and/or post snapshot, in the read order FR-106 check 1
+            // itself states ("the invocation and then its pre and post
+            // snapshots"), not merely the one document the selection named
+            // (SR-751 FND-002 round 2).
+            let mut admitted_documents = selection_documents.clone();
+            if let Some(pre) = &observations.pre {
+                admitted_documents.push(pre.identity.clone());
+            }
+            if let Some(post) = &observations.post {
+                admitted_documents.push(post.identity.clone());
+            }
             use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
             let Ok(qualified) = QualifiedName::unqualified(&selection.name) else {
                 return Ok(report(
@@ -542,9 +575,9 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                 Some(package_id),
                 disposition,
                 model_selections,
-                selection_documents.clone(),
+                admitted_documents,
             );
-            result.usage = ClauseRunUsage::from_meter(&meter);
+            result.usage = ClauseRunUsage::from_meter(&meter, observations.usage);
             Ok(result)
         }
         ClauseRunSelection::Function {
@@ -636,7 +669,7 @@ fn run_function(
     // whichever way it resolves -- set before the call, so both the
     // success and failure paths report it (FR-109-AC-2).
     *documents_read.borrow_mut() = selection_documents;
-    let environment = match admit_current_snapshot(
+    let (environment, admission_usage) = match admit_current_snapshot(
         package.graph().model_selections(),
         package.graph().scope().types(),
         packages,
@@ -645,7 +678,7 @@ fn run_function(
         snapshot,
         observation_limits,
     ) {
-        Ok(environment) => environment,
+        Ok(admitted) => admitted,
         Err(failure) => return Ok(report(ClauseDisposition::Admit(failure))),
     };
 
@@ -741,7 +774,7 @@ fn run_function(
         },
     };
     let mut result = report(disposition);
-    result.usage = ClauseRunUsage::from_meter(&meter);
+    result.usage = ClauseRunUsage::from_meter(&meter, admission_usage);
     Ok(result)
 }
 

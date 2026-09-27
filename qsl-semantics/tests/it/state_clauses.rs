@@ -1588,9 +1588,21 @@ fn tc464_step2_a_reserialized_snapshot_gives_the_same_digest_and_an_equal_value(
         BTreeMap::new(),
     )
     .expect("the re-serialized bytes admit");
+    // `usage.document_bytes` (SR-751 FND-002 round 2) is deliberately
+    // excluded here: it is the raw byte length actually consumed, which
+    // legitimately differs between two representations of the same
+    // canonical value (reordered members, pretty-printed whitespace) --
+    // "an equal admitted value" is about the clause, observations and
+    // environment this step's own name and trace describe, not about
+    // admission's resource usage.
+    let strip_usage =
+        |mut observations: qsl_semantics::model::observation::AdmittedObservations| {
+            observations.usage = qsl_semantics::model::observation::AdmissionUsage::default();
+            observations
+        };
     assert_eq!(
-        format!("{from_canonical:?}"),
-        format!("{from_reserialized:?}"),
+        format!("{:?}", strip_usage(from_canonical)),
+        format!("{:?}", strip_usage(from_reserialized)),
         "an equal admitted value, whatever whitespace or member order the bytes used"
     );
 }
@@ -1634,6 +1646,37 @@ fn tc464_step3_changed_version_invocation_admits_a_full_observation_set() {
     assert!(
         post_rendered.contains("Integer(3)"),
         "post's child.versionNumber is 3: {post_rendered}"
+    );
+}
+
+/// SR-751 FND-002 round 2: `AdmittedObservations::usage` (FR-109 Outputs'
+/// admission-work half of usage) is not left empty for a real,
+/// successful admission -- it reports the real byte length, nesting
+/// depth and object/value counts this invocation's pre and post
+/// snapshots (and the invocation document itself) actually consumed, not
+/// a hardcoded zero.
+#[trace("TC-464", "FR-106-AC-2")]
+#[test]
+fn tc464_admission_usage_reports_the_real_documents_consumed() {
+    let document = tc465_document();
+    let observations = run_tc465_invocation(&document, |_| {}, |_| {}, |_| {})
+        .expect("the changed-version invocation admits");
+    let usage = observations.usage;
+    assert!(
+        usage.document_bytes > 0,
+        "the sum of every admitted document's byte length is nonzero"
+    );
+    assert!(
+        usage.nesting_depth > 0,
+        "a real document has some nesting depth"
+    );
+    assert!(
+        usage.objects > 0,
+        "pre and post each admit at least one object"
+    );
+    assert!(
+        usage.values > 0,
+        "pre and post each admit at least one field value"
     );
 }
 

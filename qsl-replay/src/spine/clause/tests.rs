@@ -329,6 +329,7 @@ fn no_cycle_observations(
     self_object: ObjectReference,
 ) -> AdmittedObservations {
     AdmittedObservations {
+        usage: qsl_semantics::model::observation::AdmissionUsage::default(),
         clause: clause_identity,
         current: Some(Observation {
             identity: DocumentRef {
