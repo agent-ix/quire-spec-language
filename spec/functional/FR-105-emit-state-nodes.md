@@ -63,7 +63,7 @@ source map (FR-095).
 | Node | `semantic_type` | `body` | Occurrences |
 | --- | --- | --- | --- |
 | `state`/`state_clause` | the `Boolean` scalar type node | an application of `quire.op.state.clause` whose `member` is `{kind: "state_clause", clause: <kind>}` and whose arguments are, in order: `aggregate` of the parameter references (`self`, then `result` when present, then the operation's parameters in declared order), a `reference` to the anchor, and the condition term | one `claim` occurrence per declaration that checks to this node, ordinals 0, 1, ... in source order |
-| `state`/`operation_anchor` | the declaring `model`/`object_type` node | `aggregate[ binding("context", reference(declaring object_type)), binding("operation", literal(text, "<operation name>")), binding("frame", reference(frame)) ]` | one `anchor` occurrence per clause that names the operation, ordinals in source order |
+| `state`/`operation_anchor` | the declaring `model`/`object_type` node | `aggregate[ binding("context", reference(declaring object_type)), binding("operation", literal(text, "<operation name>")), binding("frame", reference(frame)) ]` | one `anchor` occurrence per clause or protocol attempt (FR-114) that names the operation, ordinals in source order |
 | `state`/`frame` | the declaring `model`/`object_type` node | QSpec FR-340's frame term, with each `modifies` entry an (object type node, field name) pair as STD-111 spells it, and each `creates`/`deletes` entry an `object_type` node | `generated`, one occurrence per named operation, ordinals by ascending (declaring `DeclarationKey`, operation name as UTF-8 bytes) over the unit's named operations, never by source order (FR-104 "Requirements", SR-736 FND-008/FND-009): two operations whose frame node holds equal content still get two occurrences, ordered this way |
 
 - `<kind>` is `invariant`, `precondition` or `postcondition`. The anchor is
@@ -93,7 +93,8 @@ source map (FR-095).
   with two `claim` occurrences, never two nodes with one id.
 - S4 SHALL emit one `operation_anchor` and one `frame` per (declaring object
   type, operation name), however many clauses name the operation and from
-  whichever subtype they name it, and none for an operation no clause names.
+  whichever subtype they name it, and none for an operation no clause and no
+  protocol attempt (FR-114) names.
   An operation inherited from `M::Base` and named as `M::Sub::op` anchors at
   `M::Base`.
 - The checker SHALL add `Invariant`, `Precondition` and `Postcondition` to

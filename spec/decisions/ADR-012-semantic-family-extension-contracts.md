@@ -485,7 +485,7 @@ cross-clause check only when every clause that check reads was checked
 successfully. A construct with any refusal emits no checked node (AD-016
 arrow 1, "Rejected item → substitute? No").
 
-The diagram shows the operation builder that §12.2 uses. It is illustrative.
+The diagram shows an operation builder. It is illustrative.
 The admitted clause sequences are the grammar's (QSpec FR-340 and the
 operation clause grammar). Every state reached after `Header` may finish.
 
@@ -950,35 +950,49 @@ unchanged.
 
 ### 12.2 Add a scoped frame clause to a protocol operation
 
-Normative input: QSpec FR-340 (frame body) and agent-ix/quire-specification#101
-and agent-ix/quire-specification#106. The frame obligation's kind is
-`operation-contract`, an existing kind, per FR-057 (QSL PR #237, merged; §13.3
-Q2).
+Normative input: QSpec FR-340 (frame body), FR-013 (frame enforcement),
+`choreography-surface.md` (the `attempt` row and scoped references) and
+agent-ix/quire-specification#101 and agent-ix/quire-specification#106. The
+frame obligation's kind is `operation-contract`, an existing kind, per FR-057
+(QSL PR #237, merged; §13.3 Q2).
+
+A protocol operation is an `attempt ... on M::T::op` event node. Its frame is
+the frame of the operation it attempts, which enters only through the domain
+package's `Operation.frame` at I1 (FR-103); QSL source has no frame
+production. A scoped anchor is a protocol node reference with the lexical
+control scope it is written in. It is represented only inside S2 and S3: it
+has no checked clause kind and no v2 node. FR-112 to FR-116 are the
+requirements.
+
+Amended 2026-09-27 by QSL-296 (QSL-21a), recording the team-leader rulings
+on PR #497: the source `frame` production and `FrameForm`, the `Frame` and
+`ScopedAnchor` checked clause kinds, the v2 scoped anchor node and the
+`finish` check of postcondition writes are not part of this change set. A
+(`state`, `frame`) node decodes to no clause kind (FR-088-AC-4, FR-105).
 
 | Stage | Change | Module or path | Seam forced |
 |---|---|---|---|
-| Clause kind | add `Frame` and `ScopedAnchor` to the canonical checked clause kind (ADR-013 O-10), with the total v2, IR and CG conversions and the IR → RT conversion total with refusal | `check` core (QSL); `IR:crates/quire-contract-model/src/identity.rs` (`ClauseKind`); `RT:src/observation.rs`; `CG:src/kani_obligations.rs`, `CG:src/harness.rs` | S5 in QSL, IR, RT and CG |
-| Clause-kind matches in other families | a compile-forced arm for `Frame` and `ScopedAnchor` in the `TemporalTrace` control-to-temporal mapping and in the `Relation` premise match. Each arm maps the clause to no temporal event and no refinement premise, by hand. | `check::temporal_trace`, `check::relation` | S5 |
-| QSpec wire | v2 spellings of the `Frame` and `ScopedAnchor` clause kinds and of the scoped anchor node. v2 is prerelease: QSpec revises its node-kind set in place with no version bump, and a v2 reader refuses an unknown node kind explicitly with a named code (owner ruling) | `QSpec:proposals/checked-package-v2/schema.json` and its fixtures | none in QSL |
-| Parse | `ProtocolClause` productions for `frame` with `modifies`, `creates`, `deletes`, and for the scoped anchor | `token`; `forms` core; `forms::protocol_clause` | S2 |
-| Form | `FrameForm { modifies, creates, deletes }`, each a list of reference forms; `ScopedAnchorForm { scope, anchor }` | `forms::protocol_clause` | S2 |
-| Check | builder transitions into `Anchored` and `Framed` (§4.2): each anchor checked by its own scope function; each frame member resolved to node identities and checked against FR-340 eligibility on its own; `finish` checks that postcondition writes fall inside `modifies` | `check::protocol_clause` | S1, S4 |
-| Diagnostics | FR-340 frame and anchor cause codes | `QSpec:proposals/quire-v1/definitions/native-diagnostics.md` | S4 |
-| Checked node | `Frame` and `ScopedAnchor` checked clause subnodes of the operation node | `check` core | S3 |
-| Requirements | the frame obligation records `operation-contract`, the kind FR-057 assigns it (§13.3 Q2). That kind exists, so the capability vocabulary is unchanged | `check::protocol_clause` | none; S7 is unchanged |
-| Evaluate | runtime frame check, `frame_violation`/`unauthorized-change` | `value::expression::protocol_clause` | S3 |
-| Package | v2 `state`/`frame` node (FR-340) and the scoped anchor node | `package` (v2 emitter, `ProtocolClause` arm) | S1, S3, S5 |
+| Clause kind | none. The frame is the operation's `state`/`frame` node, which decodes to no clause kind (FR-088-AC-4, FR-105) | none | none |
+| QSpec wire | none beyond STD-111's `state`/`operation_anchor` and `state`/`frame` body rules (FR-105). A scoped anchor has no wire form | `QSpec:proposals/checked-package-v2/schema.json` (STD-111) | none in QSL |
+| Parse | none. The CST already parses the protocol productions and their `NodeReference`s | `qsl-cst` | none |
+| Form | `ScopedAnchorForm { scope, anchor }`, one per protocol node reference (FR-112) | `forms::protocol_clause` | S2 |
+| Check | each scoped anchor resolved through its nested control scopes by its own scope function, with its missing, ambiguous, shadowing, wrong-kind and wrong-channel refusals (FR-113); each `attempt` bound to its operation's one anchor and frame node and its `contracts` list checked against that anchor (FR-114) | `check::protocol_clause` | S1, S4 |
+| Diagnostics | the existing catalog codes (`missing_declaration`, `ambiguous_declaration`, `ill_typed`, `wrong_snapshot`, `frame_violation`, `population_delta_mismatch`) | `QSpec:proposals/quire-v1/definitions/native-diagnostics.md` | none |
+| Checked node | the checked attempt holds the identity of its operation's anchor and frame nodes; resolved anchors are held by their targets' identities | `check` core | S3 |
+| Requirements | the frame obligation records `operation-contract`, one per operation that a clause or an attempt names (FR-104, FR-114). That kind exists, so the capability vocabulary is unchanged | `check::protocol_clause` | none; S7 is unchanged |
+| Evaluate | runtime frame check over an admitted invocation: a change outside the frame is a violation verdict carrying the evaluated frame witness (FR-115) | `value::expression::protocol_clause` | S3 |
+| Package | the operation's `state`/`operation_anchor` and `state`/`frame` nodes, one per operation (FR-105); no scoped anchor node | `package` (v2 emitter, `ProtocolClause` arm) | S1, S3, S5 |
 | IR, CG | explicit `unsupported` arms until agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49 land (AD-016 "Frames and unbounded constructs") | `IR:crates/quire-contract-model/src/checked_package/v2/lower.rs`; `CG:src/kani_obligations.rs` | S6 |
-| Witness, replay | none while the item settles `unsupported`. When agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49 land: the frame witness bindings, built by CG over the IR-owned `WitnessBinding` type (AD-016), and frame counterexample replay through the `ProtocolClause` `evaluate` arm via the ADR-011 layer-6 `replay` facade (#218) | `IR:src/kani/witness.rs` (`WitnessBinding`); CG binding construction; `value::expression::protocol_clause` | S8 |
+| Witness, replay | the `ProtocolClause` `FrameCounterexample` payload on the FR-070 envelope, replayed through the `ProtocolClause` `evaluate` arm via the ADR-011 layer-6 `replay` facade (FR-116). The decode from the frame witness bindings CG builds over the IR-owned `WitnessBinding` type (AD-016) waits on agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49 | `qsl-replay`; `IR:src/kani/witness.rs` (`WitnessBinding`); `value::expression::protocol_clause` | S8 |
 
-Tests: frame member eligibility, one refusal per FR-340 cause; anchor scope
-refusal; out-of-order clause refusal from the builder; cross-clause write
-containment; runtime `frame_violation` evaluation; the S5 seam probe showing
-the `TemporalTrace` and `Relation` arms are forced; typed `unsupported` ledger
-test; the backend-absence corpus case for `operation-contract`. The clause
-kind lives in the `check` core, so no `Value` or `SumCase` module changes.
-`TemporalTrace` and `Relation` change only by their compile-forced clause-kind
-arm.
+Tests: scoped anchor forms; anchor resolution through nested scopes; one
+refusal each for a missing anchor, an ambiguous name, a shadowing binder, a
+wrong target kind and a wrong channel; an attempt bound to its operation's
+frame with no second frame node; the frame run's success and violation
+verdicts; stale identity and version refusals; frame counterexample replay;
+typed `unsupported` ledger test; the backend-absence corpus case for
+`operation-contract`. No `Value` or `SumCase` module changes, and
+`TemporalTrace` and `Relation` do not change.
 
 ### 12.3 Add a backend
 
@@ -1368,7 +1382,7 @@ remaining path still imports it.
 |---|---|
 | 1 exact scalar operator | §3 `Value` row (operator-ineligible cause) and §4.3 thin seam: one `Value` family arm per operator, the kernel operation in `quire-exact`, IR `Operator` and RT exact op arms; seam probe at S2 and S3 |
 | 2 sum type and case | §12.1 tests; seam probe at S1–S4 |
-| 3 frame clause | §12.2 tests; S5 seam probes in QSL, IR, RT and CG |
+| 3 frame clause | §12.2 tests; seam probe at S2 and S3 |
 | 5 unbounded proof request | CG `negotiate_*` tests: `requires-bound` with an available bound, `unsupported` (warned) without one, `supported` only for a bounded extent; the bound round trip from IR `KaniOutcome` to the FR-331 record |
 | 6 nested counterexample replay | §8 Witness and Replay rows: the O-25 witness, O-26 request and O-27 result (#231); replay through the family `evaluate` hook keyed by `QualifiedName` |
 | 7 new backend | §12.3 touch set; a metamorphic test that the checked package has the same bytes with and without the new descriptor registered; the ADR-011 layer check that `check` and the family modules (layer 3) do not depend on `route` (layer R) |

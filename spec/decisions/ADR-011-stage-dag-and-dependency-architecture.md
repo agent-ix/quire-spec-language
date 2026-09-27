@@ -863,7 +863,7 @@ Module table:
 | `checking` | SEAM-1 and SEAM-2 | |
 | `formal_source` | SEAM-2 | shared native and composed code |
 | `native_model`, `model_source`, `mapped`, `runtime` | SEAM-1 | `runtime::execute` is not a replay target (AD-016). Native `run` reaches `model_source`, `mapped` and `runtime`, so they retire with it in M-6c (§7.3, ADR-011-OQ-2). `NativeModelProfile` and its ceiling sites retire with SEAM-1. |
-| `lowering` | SEAM-1 | `lowering` as a whole, including `lowering::target`, its `ProjectionTarget` enum and the `--target` argument, is deleted in M-6a once the skeleton spine (§1.1) is green. The backend is chosen only by the `BackendId` argument, resolved in `route` (#185). |
+| `lowering` | SEAM-1 | `lowering` as a whole, including `lowering::target`, its `ProjectionTarget` enum and the `--target` argument, is deleted with the `lower` command in M-6c (owner ruling 2026-09-24). The backend is chosen only by the `BackendId` argument, resolved in `route` (#185). |
 | crate `qsl-source` | I3 | the extraction adapter stops at S0: verified body bytes plus their document `SourceMap`. The native compile join is in `command::extraction` (SEAM-1). `qsl-source` builds the clause-only Quire context (`clause_context`) and re-exports the Quire result and failure types `command` renders; the root crate names no quire-rs dependency. |
 | `package` | 4 `package` | `NativePackage` and the native-linked-package/1 submodules (`intake`, `reading`, `wire`, `encoding`, `features`, `view`) are SEAM-1 and stay in the root crate's module `package` until M-6 deletes them; the v2 emitter and the I2 byte reader are new in M-4. Layer-4 `package`'s content — `CheckedPackage`, `EmittedPackage`, the v2 emitter and the I2 byte reader — is the crate `qsl-package` (X-7, QSL-182), whose crate root is layer-4 `package`. Every rule this ADR states for layer-4 `package` applies to `qsl-package`. |
 | `value` kernel submodules: `numeric`, `integer`, `rational`, `decimal`, `ieee` and `division` (operations), `text`, `collection`, `comparison`, `equality`, `outcome`, `accounting`, `composite` | K `quire-exact` | only the types in the AD-016 Shared-type row as amended by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8), and the operations over them. QSL has no `value::` copy of any of these thirteen: every QSL caller imports the kernel item from `quire_exact`. |
@@ -941,8 +941,8 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 | Edge | Target | Owning change |
 |---|---|---|
 | IR root → QSL (normal and dev, f1700a9) | **Removed** in the IR change that lands predicate and temporal admission over the v2 value, expression and temporal nodes at v2 intake, with #218 and #223 (M-6d). | agent-ix/quire-contract-ir#141; #218, #223 |
-| QSL → CG (dev), QSL → IR historical (dev) | **Removed** with SEAM-4 | M-6a, once the skeleton spine is green |
-| QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6a, once the skeleton spine is green |
+| QSL → CG (dev), QSL → IR historical (dev) | **Removed** with SEAM-4 | M-6c, with `lower` and `lowering` (owner ruling 2026-09-24) |
+| QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6c, with `lower` and `lowering` (owner ruling 2026-09-24) |
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
 | CG → QSL (dev, 21c507e) | **Becomes normal** (AD-016 Owner decision 5), on `qsl-replay` | #217 (AD-016 WP9); the repoint from the root crate to `qsl-replay` is T-14, after X-10 |
 | QSL root → layer crates | **New:** one workspace crate per §6.1 layer (§6.1 crate map). X-2 (`qsl-foundation`) is extracted (QSL-177 PR2); X-3 (`qsl-cst`) is extracted (QSL-178 PR2); X-4 (`qsl-source`) is extracted (QSL-179); X-5 (`qsl-forms`) is extracted (QSL-180); X-6 (`qsl-semantics`) is extracted (QSL-181); X-7 (`qsl-package`) is extracted (QSL-182); X-8 (`qsl-eval`) is extracted (QSL-183); X-9 (`qsl-route`) is extracted (QSL-184); X-10 (`qsl-replay`) is extracted (QSL-185); `located_json` stays in the root crate for now (§7.3 X-2 note). | X-2 to X-10 (QSL-177 to QSL-185) |
@@ -1110,7 +1110,7 @@ The approved crate extractions are X-1 to X-10.
 | Item | Decision |
 |---|---|
 | OBS-001 | S4 `package` owns the checked-package/v2 emitter (M-4). It is the only QSL → IR path. |
-| OBS-002 | IT-010's proof path is SEAM-4, deleted in M-6a once the skeleton spine is green. The skeleton spine is then the proof-and-replay evidence (FB-07, FB-08), and #217 widens it. |
+| OBS-002 | IT-010's proof path is SEAM-4, deleted with `lower` and `lowering` in M-6c. The skeleton spine is then the proof-and-replay evidence (FB-07, FB-08), and #217 widens it. |
 | OBS-007 | S2 `forms` is the only producer of check-stage input from source (SEAM-5, M-3a). `model::checked_dispatch` moves to `check` (M-2). |
 | OBS-008 | One spine (lane C). Lane A retires, lane B converges, lane D joins S6a (§8). The other checked-package producer paths are deleted before #216 (M-6a); each other lane is deleted with its replacement (M-6). |
 | OBS-009 | Name and model binding is a phase of S3. "Linked" means S4 closure over package identities (§1). |
@@ -1184,7 +1184,7 @@ ticket that L1-D1 relaxes. Stage placement matches the relaxed edges:
   DAG.
 - #188, #189, #217 and #223 keep their #185 edge, because their exit criteria
   settle an item through `route` and E7.
-- M-6 adds no #185 edge. M-6a deletes `lowering`, together with
+- M-6 adds no #185 edge. M-6c deletes `lowering`, together with
   `ProjectionTarget` and `--target`; the `BackendId` argument that `route`
   resolves in #185 is the only backend choice.
 
@@ -1268,7 +1268,9 @@ on QSL-193.
   the same placement. It also settles #216's "backend artifact" wording:
   after M-6a, native `run` builds a `NativePackage` in process and writes no
   package bytes and no backend artifact, so no M-6a checked-package producer
-  remains for #216 to find.
+  remains for #216 to find. Amended 2026-09-24: `lower` moved to M-6c and
+  IT-010 imports `lowering`, so `lowering` and IT-010 are deleted in M-6c,
+  not M-6a.
 
 ## Ruling (2026-09-24): CLI `compile` routes by edition
 
@@ -1387,7 +1389,7 @@ sections it names.
 
 | # | Proposed change | Proposed owner and repository |
 |---|---|---|
-| T-1 | M-6a: spine `compile` and spine `run` (§5), `format` retarget, deletion of native `compile`, `lower`, `lowering` and SEAM-4, before #216 (a Layer 2 move that amends #205's layer plan). Native `run` stays until M-6c. | QSL, Layer 2, with QSL-8 (this repo's #240) |
+| T-1 | M-6a: spine `compile` and spine `run` (§5) and the `format` retarget, before #216 (a Layer 2 move that amends #205's layer plan). Native `compile`, `lower`, `lowering`, SEAM-4 and native `run` are deleted in M-6c, with QSL-5 (owner ruling 2026-09-24). | QSL, Layer 2, with QSL-8 (this repo's #240) |
 | T-2 | The skeleton spine (§1.1) as a tracked ticket. QSL #243 lands the layer-6 `replay` facade (ADR-013 TK-01), and agent-ix/quire-contract-codegen#87 lands the replay adapter. Each family's implementation ticket then widens `replay` for that family. | QSL #243 and agent-ix/quire-contract-codegen#87, with QSL M-4 |
 | T-3 | Add the lane deletions M-6c to M-6e, native `run` included, to the exit criteria of the implementation tickets that land each replacement: #217, #120, #121, #164, #170, #175, #187, #188, #189, #191, #192, #198, #214 and #218 | QSL (issue text for those tickets) |
 | T-4 | Ruled 2026-09-19: #216 is evaluated per lane, the producer lane at #216 and the other lanes at #219 and #224 (§7.3). Remaining: amend the issue text. | #205 coordinator, at the #212 consolidation: QSL #216, #219, #224 |
@@ -1422,7 +1424,7 @@ sections it names.
   in `src/exact/`, with a run mutation of each shared helper that fails the
   proof, and a mutation control there.
 - The skeleton spine is the proof-and-replay evidence counted by #205 gates
-  from the M-6a deletion of IT-010, and #217 widens it.
+  from the M-6c deletion of IT-010, and #217 widens it.
 
 ## Alternatives Considered
 

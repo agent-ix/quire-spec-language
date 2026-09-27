@@ -216,6 +216,16 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-111
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-112
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-113
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-114
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-115
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-116
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -523,6 +533,11 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-109](functional/FR-109-run-a-state-clause-through-the-spine.md) | FR | Specified under QSL-273 (A05-3): layer-6 `qsl_replay::spine::run_clause` beside FR-100's `run`, reusing FR-100's argument binding and outcome mapping: compile, select, admit, evaluate, report; not yet implemented -- TC-468 planned |
 | [FR-110](functional/FR-110-resolve-header-profile-selections-at-e3.md) | FR | Specified under QSL-234: E3 resolves header profile selections against the `DefinitionLock` catalog (`root` row exactly, else `unknown_profile` or `stale_dependency`); model selections through I1; the header-selection successor FR-087-AC-7 waits on; implemented under QSL-284, backed by TC-490 |
 | [FR-111](functional/FR-111-link-a-complete-v1-definition-bundle.md) | FR | Specified under QSL-234 (ruling 2026-09-26): layer-3 `library::bundle` links root definitions over a caller-supplied catalog into a complete-V1 bundle (closure, cycle, facets, capabilities, limits, identity), keeping QSpec FR-131-AC-1..3 and FR-339-AC-3 backed; implemented today inside `resolve_source_package`, moved in QSL-269 -- TC-491 planned |
+| [FR-112](functional/FR-112-build-protocol-scoped-anchor-forms.md) | FR | Specified under QSL-296 (QSL-21a, ADR-012 §12.2): S2 `ScopedAnchorForm { scope, anchor }` per protocol node reference; not yet implemented -- TC-510 planned |
+| [FR-113](functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md) | FR | Specified under QSL-296 (QSL-21a): S3 scoped anchor resolution through nested control scopes; `missing_declaration`, `ambiguous_declaration` and `ill_typed` refusals for missing, duplicate, shadowing and wrong-kind names; not yet implemented -- TC-511, TC-512 planned |
+| [FR-114](functional/FR-114-bind-a-protocol-attempt-to-its-operation-frame.md) | FR | Specified under QSL-296 (QSL-21a): a protocol `attempt` binds its operation's one anchor and FR-105 frame node, and its `contracts` list is checked against that anchor; emission half pending STD-111; not yet implemented -- TC-513 planned |
+| [FR-115](functional/FR-115-run-an-operation-frame-over-an-invocation.md) | FR | Specified under QSL-296 (QSL-21a): `run_clause`'s `Frame` selection; a change outside the frame is a violation verdict with its frame witness; stale identity and version refuse before evaluation; not yet implemented -- TC-514 planned |
+| [FR-116](functional/FR-116-replay-a-frame-counterexample.md) | FR | Specified under QSL-296 (QSL-21a): replay of a `WitnessEnvelope<FrameCounterexample>` through the replay facade, keeping anchor, frame and occurrence identity; IR witness decode waits on agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49; not yet implemented -- TC-515 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented under QSL-214 and QSL-215: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented under QSL-216, QSL-218 and QSL-222: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (QSL-17, #222) |
