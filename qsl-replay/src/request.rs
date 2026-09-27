@@ -465,6 +465,7 @@ impl ReplayRequest {
     /// the byte provision or package reference is read at all
     /// (FR-071-AC-4, FR-071-AC-8): no recompilation, package lookup or
     /// byte-provision access is observed before any of these refusals.
+    #[qsl_attrs::string_edge]
     pub fn decode(wire: ReplayRequestWire) -> Result<Self, ReplayRequestRefusal> {
         BoundExceeded::check(measured_encoded_bytes(&wire))?;
         if wire.contract_version != REQUEST_CONTRACT_VERSION {

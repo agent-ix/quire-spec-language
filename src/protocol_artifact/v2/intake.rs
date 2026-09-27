@@ -355,6 +355,25 @@ fn temporal(
         if binding.definition != declaration.profile {
             return Err(Error::V2(Refusal::OfferIndex(BindingIndex::Definition)));
         }
+        let clock_index = match &declaration.body {
+            artifact::wire::Body::Temporal { clock, .. } => *clock,
+            _ => return Err(Error::Invalid(Invalid::Reference)),
+        };
+        let expected_clock_name = usize::try_from(clock_index)
+            .ok()
+            .and_then(|index| declaration.bindings.get(index))
+            .and_then(artifact::clock_binding_name)
+            .ok_or(Error::Invalid(Invalid::Reference))?;
+        // QSL-288: the typed `clock_name` field must agree with the inherited
+        // `v1` binding's legacy `clock:` spelling. `ClockNames::of_v2`
+        // (evaluation and request derivation) reads `clock_name` alone and
+        // never parses the legacy name; this admission check is the one
+        // remaining reader of the `clock:` prefix on the v2 path, run once
+        // here to refuse a producer offering two disagreeing facts rather
+        // than trust the typed field unchecked.
+        if binding.clock_name != expected_clock_name {
+            return Err(Error::V2(Refusal::ClockName));
+        }
         let definition = inherited
             .definitions
             .get(usize::try_from(binding.definition).unwrap_or(usize::MAX))
@@ -506,7 +525,7 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             return Err(Error::Invalid(Invalid::Canonical));
         }
         Ok(AdmittedPackage {
-            clocks: super::super::ClockNames::of(&package.inherited),
+            clocks: super::super::ClockNames::of_v2(&package),
             package,
             digest,
             artifact: Some(artifact::intake::retained_reference(

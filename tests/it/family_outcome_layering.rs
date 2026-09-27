@@ -321,7 +321,12 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         ),
         (
             "qsl-package",
-            &["qsl-foundation", "qsl-semantics", "quire-exact"][..],
+            &[
+                "qsl-attrs",
+                "qsl-foundation",
+                "qsl-semantics",
+                "quire-exact",
+            ][..],
             &["qsl-cst", "qsl-forms"][..],
         ),
         (
@@ -332,6 +337,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         (
             "qsl-eval",
             &[
+                "qsl-attrs",
                 "qsl-foundation",
                 "qsl-package",
                 "qsl-semantics",
@@ -401,12 +407,17 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // the v2 wire contract, `quire-canonical` (ADR-013 §2's one
             // RFC 8785 encoder, for the `package_id` preimage, QSL-194),
             // `serde` (the emitter's wire envelope, QSL-6) and `thiserror`.
-            // `serde_json` and `sha2` are used by its tests only.
+            // `serde_json` and `sha2` are used by its tests only. `qsl-attrs`
+            // (QSL-287, ADR-012 section 9) is the `#[string_edge]` marker
+            // crate, exempt from the layer order below (FR-064): it is a
+            // zero-cost attribute `xtask string-edge` reads, not a semantic
+            // dependency.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(
                 normal,
                 [
+                    "qsl-attrs",
                     "qsl-foundation",
                     "qsl-semantics",
                     "quire-canonical",
@@ -423,12 +434,15 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             // fixed: the four layer crates, `thiserror` for its error types,
             // and `quire-canonical`/`serde` for the FR-101 simulation state
             // key and the pinned sampler's draw preimage (ADR-011 X-8,
-            // QSL-272).
+            // QSL-272). `qsl-attrs` (QSL-287, ADR-012 section 9) is the
+            // `#[string_edge]` marker crate, exempt from the layer order
+            // below (FR-064).
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(
                 normal,
                 [
+                    "qsl-attrs",
                     "qsl-foundation",
                     "qsl-package",
                     "qsl-semantics",

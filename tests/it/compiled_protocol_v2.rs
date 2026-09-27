@@ -136,7 +136,7 @@ fn committed_handoff_checksums_and_interchange_records_are_complete() {
     )
     .expect("decode mutations/manifest.json with the published type");
     assert_eq!(manifest.format, MUTATION_MANIFEST_FORMAT);
-    assert_eq!(manifest.cases.len(), 28);
+    assert_eq!(manifest.cases.len(), 29);
     let manifest_bytes =
         serde_json::to_vec(&manifest).expect("encode published mutation-manifest type");
     assert_eq!(
@@ -3064,8 +3064,10 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // `references`. QSL-64's domain-package `Model` paragraphs in that
             // document (the `Model`, then its populations and operations, then
             // its operations' parameters and result) move `byte_work` by their
-            // length.
-            (4_822, 2_581, 1_173_763, 85_376)
+            // length. QSL-288 added the typed `clock_name` field to each
+            // `temporal_bindings` entry, which moves `entries`, `byte_work`
+            // and `output_bytes` but not `references`.
+            (4_825, 2_581, 1_174_347, 85_462)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),

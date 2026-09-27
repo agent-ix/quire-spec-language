@@ -688,6 +688,7 @@ impl DefinitionLock {
     }
 
     /// Resolve `reference` to a division law by identity and revision.
+    #[qsl_attrs::string_edge]
     fn resolve_division(
         &self,
         reference: &DefinitionReference,
@@ -818,6 +819,7 @@ impl DefinitionLock {
     /// `declarations` lists the qualified identities of user declarations. A
     /// missing, repeated or mismatched profile, or a user declaration bound to a
     /// reserved intrinsic identity, is `refused { code: invalid_package }`.
+    #[qsl_attrs::string_edge]
     pub fn admit_ieee_profile(
         &self,
         retained: &[DefinitionReference],

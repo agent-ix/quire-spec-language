@@ -847,6 +847,14 @@ struct FileEdges {
     inline: Vec<(usize, Vec<String>)>,
 }
 
+/// Whether a path's leading segment resolves inline, without a `use`
+/// binding lookup: a path-relative keyword or the layer-3 crate name this
+/// scanner's own graph names directly.
+#[qsl_attrs::string_edge]
+fn is_inline_resolvable_root(first: &str) -> bool {
+    matches!(first, "crate" | "super" | "self") || first == LAYER3_CRATE
+}
+
 fn file_edges(workspace_root: &Path, file: &str) -> Result<FileEdges> {
     let parsed = parse_file(workspace_root, file)?;
     let current_module = module_segments_of(file);
@@ -870,7 +878,7 @@ fn file_edges(workspace_root: &Path, file: &str) -> Result<FileEdges> {
         let Some((first, rest)) = path.segments.split_first() else {
             continue;
         };
-        if matches!(first.as_str(), "crate" | "super" | "self") || first == LAYER3_CRATE {
+        if is_inline_resolvable_root(first) {
             inline.push((
                 path.line,
                 resolve_relative_path(&path.segments, &current_module),

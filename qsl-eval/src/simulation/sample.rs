@@ -239,6 +239,14 @@ pub(crate) fn sample<S: TransitionSystem>(
     }))
 }
 
+/// Whether `sampler` is the one pinned `quire.simulation.sampler/v1`
+/// `1-draft.1` generator (FR-101). The only site that compares a sampler's
+/// identity/version strings.
+#[qsl_attrs::string_edge]
+fn is_pinned_sampler(sampler: &DefinitionRef) -> bool {
+    sampler.identity() == SAMPLER_IDENTITY && sampler.version() == SAMPLER_REVISION
+}
+
 /// Sample `system`, first refusing a `sampler` other than the pinned
 /// `quire.simulation.sampler/v1` `1-draft.1` generator and an unbounded
 /// `domains` request, before any `TransitionSystem` method is called or any
@@ -269,7 +277,7 @@ pub fn sample_request<S: TransitionSystem>(
     trace: u64,
     max_steps: usize,
 ) -> Result<Trace<S::TransitionId>, NotSimulated> {
-    if sampler.identity() != SAMPLER_IDENTITY || sampler.version() != SAMPLER_REVISION {
+    if !is_pinned_sampler(sampler) {
         return Err(NotSimulated::GeneratorMismatch {
             supplied: sampler.clone(),
         });

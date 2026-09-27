@@ -41,7 +41,7 @@ ClockConfiguration =
  | {kind:"fixed_sample",epoch:Number,period:Number,unit:Name}
  | {kind:"timestamped_event",timestamp_unit:Name}
 
-TemporalBinding = {declaration:U,definition:U,clock:ClockConfiguration}
+TemporalBinding = {declaration:U,definition:U,clock:ClockConfiguration,clock_name:Name}
 
 CompiledProtocolPackageV2 = {
  wire:"quire.compiled-protocol/2",media:"application/vnd.quire.compiled-protocol+json;version=2",
@@ -73,9 +73,17 @@ selected exact profile identity:
 | `quire.temporal.fixed-sample.false-extension/v1` | `fixed_sample`: `epoch`, `period`, `unit` |
 | `quire.temporal.timestamped-event.finite-window/v1` | `timestamped_event`: `timestamp_unit` |
 
+`clock_name` is the declaration's clock name, typed (ADR-012 section 9): the
+same name the inherited version-1 binding carries with a `clock:` prefix in its
+own `name` member, without that prefix. A reader takes `clock_name` directly;
+it never re-derives a clock name by parsing the inherited binding's name.
+Admission refuses a `clock_name` that disagrees with the inherited version-1
+binding's `clock:`-prefixed spelling.
+
 Missing, surplus, duplicate, out-of-order, foreign-owner or out-of-range
 bindings refuse. Definition/profile disagreement, wrong clock tag, invalid exact
-number, empty/oversized name and unavailable original definition bytes also
+number, empty/oversized name, a `clock_name` disagreeing with the inherited
+binding's `clock:` spelling, and unavailable original definition bytes also
 refuse. Unknown selected profiles remain unsupported. No trace, environment or
 installed default supplies a missing field.
 

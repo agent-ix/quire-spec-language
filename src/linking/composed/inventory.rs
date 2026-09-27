@@ -17,15 +17,21 @@ fn bytes(work: &mut Work, values: &[&str]) -> Result<(), Exhaustion> {
     Ok(())
 }
 
+/// Whether an inventory's declared language/edition pair is the one this
+/// linker supports (ADR-012 section 9): the one reader of those two wire
+/// fields.
+#[qsl_attrs::string_edge]
+fn is_supported_selection(language: &str, edition: &str) -> bool {
+    language == crate::syntax::LANGUAGE && edition == crate::syntax::composed::EDITION
+}
+
 pub(super) fn prepare(
     report: &mut NamespaceReport<'_>,
     work: &mut Work,
 ) -> Result<Option<Vec<usize>>, Exhaustion> {
     let inventory = report.inventory;
     bytes(work, &[&inventory.language, &inventory.edition])?;
-    if inventory.language != crate::syntax::LANGUAGE
-        || inventory.edition != crate::syntax::composed::EDITION
-    {
+    if !is_supported_selection(&inventory.language, &inventory.edition) {
         report.issues.push(InventoryIssue::UnsupportedSelection);
     }
     if inventory.units.is_empty() {

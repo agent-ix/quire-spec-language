@@ -1394,6 +1394,7 @@ name = "qsl-eval"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "qsl-attrs",
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
@@ -1436,6 +1437,7 @@ name = "qsl-package"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "qsl-attrs",
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
@@ -1509,6 +1511,7 @@ name = "qsl-source"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "qsl-attrs",
  "qsl-foundation",
  "quire-rs",
  "serde",

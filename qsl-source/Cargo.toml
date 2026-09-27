@@ -13,6 +13,7 @@ default = []
 # names no dependency. This feature is what lets QSL code name quire-rs; the
 # root crate's own `quire-extraction` feature enables it.
 quire-extraction = [
+    "dep:qsl-attrs",
     "dep:qsl-foundation",
     "dep:quire-rs",
     "dep:serde",
@@ -21,6 +22,7 @@ quire-extraction = [
 ]
 
 [dependencies]
+qsl-attrs = { path = "../qsl-attrs", optional = true }
 qsl-foundation = { path = "../qsl-foundation", optional = true }
 quire-rs = { git = "https://github.com/agent-ix/quire-rs", rev = "2823a93bd3797c970c1d389afae9b893dea6f232", optional = true, default-features = false }
 serde = { version = "=1.0.228", features = ["derive"], optional = true }

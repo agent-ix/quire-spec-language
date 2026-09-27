@@ -73,13 +73,47 @@ const SCALAR_FAMILIES: [&str; 8] = [
     "quire.op.enum.",
 ];
 
+/// The role a lowered application's operation identity plays in claim
+/// classification (ADR-012 section 9). This is a classification mark, not a
+/// one-time conversion: [`operation_role`] re-derives it from the identity
+/// string on every call, the way [`is_scalar_identity`] and the narrow
+/// lookup in [`key_claims`] each call it independently. Nothing in
+/// this module resolves it once and threads a stored value; every call
+/// re-runs the same `==`/`starts_with` compares against [`NARROW`] and
+/// [`SCALAR_FAMILIES`] (SR-758 FND-005).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OperationRole {
+    /// The narrowing conversion itself: never a claim of its own.
+    Narrow,
+    /// A scalar operation-family application: a claim site.
+    Scalar,
+    /// Neither: not a claim site.
+    Other,
+}
+
+/// Classifies a lowered application's operation identity into an
+/// [`OperationRole`] (ADR-012 section 9). Marked `#[string_edge]` because it
+/// is the one place these identity strings are compared to decide
+/// narrow/scalar status; it is called once per site, not resolved once for
+/// the whole checked graph.
+#[qsl_attrs::string_edge]
+fn operation_role(identity: &str) -> OperationRole {
+    if identity == NARROW {
+        OperationRole::Narrow
+    } else if SCALAR_FAMILIES
+        .iter()
+        .any(|family| identity.starts_with(family))
+    {
+        OperationRole::Scalar
+    } else {
+        OperationRole::Other
+    }
+}
+
 /// Whether a lowered application of `identity` is a scalar operation
 /// application.
 fn is_scalar_identity(identity: &str) -> bool {
-    identity != NARROW
-        && SCALAR_FAMILIES
-            .iter()
-            .any(|family| identity.starts_with(family))
+    operation_role(identity) == OperationRole::Scalar
 }
 
 /// A binder of a checked body: the node that binds it, by location, and the
@@ -660,8 +694,21 @@ pub(crate) fn key_claims(
         let bound_type = if matches!(site.bound, SiteBound::Narrowed(_)) {
             here.iter()
                 .find(|(narrow, _)| {
+                    // The `operation_role(..) == Narrow` compare is not
+                    // distinguished by any fixture today: every application
+                    // at a shared location whose sole argument is a
+                    // `Reference` to `key` is, in fact, the narrow lowering
+                    // inserted over that key (SR-758 FND-006 mutation-tested
+                    // this and found no fixture that depends on it). It is
+                    // kept because the `Reference`-shape match alone is not
+                    // selective — a future scalar-family member taking one
+                    // `Reference` argument (for example a unary identity or
+                    // cast op) would match that shape too, and without this
+                    // compare `find` would take whichever one is ordered
+                    // first in `here`, silently reporting the wrong result
+                    // bound instead of failing closed.
                     application(*narrow).is_some_and(|(identity, arguments)| {
-                        identity == NARROW
+                        operation_role(identity) == OperationRole::Narrow
                             && matches!(arguments, [SemanticTerm::Reference { target }] if target.0 == *key)
                     })
                 })

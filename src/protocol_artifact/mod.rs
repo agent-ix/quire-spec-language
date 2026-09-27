@@ -80,11 +80,42 @@ impl ClockNames {
     pub(crate) fn get(&self, declaration: usize) -> Option<&str> {
         self.0.get(declaration)?.as_deref()
     }
+
+    /// The typed clock names of every declaration of a version-2 `package`
+    /// (ADR-012 section 9; QSL-288): read directly from the `temporal_bindings`
+    /// delta's typed `clock_name` field, never by re-parsing the inherited
+    /// `clock:` binding-name spelling. `None` for a declaration with no
+    /// temporal binding.
+    pub(crate) fn of_v2(package: &v2::wire::Package) -> Self {
+        Self(
+            package
+                .inherited
+                .declarations
+                .iter()
+                .enumerate()
+                .map(|(index, declaration)| {
+                    if !matches!(declaration.body, wire::Body::Temporal { .. }) {
+                        return None;
+                    }
+                    let declaration_index = u32::try_from(index).ok()?;
+                    package
+                        .temporal_bindings
+                        .iter()
+                        .find(|binding| binding.declaration == declaration_index)
+                        .map(|binding| binding.clock_name.clone())
+                })
+                .collect(),
+        )
+    }
 }
 
-/// The one reader of the emitter's `clock:` binding-name spelling.
+/// The one reader of the emitter's `clock:` binding-name spelling. Version-1
+/// admission has no other source for a declaration's clock name; version-2
+/// admission reads the typed `temporal_bindings.clock_name` field instead
+/// ([`ClockNames::of_v2`]) and uses this only to emit that field and to
+/// verify it agrees with the legacy spelling (QSL-288).
 #[qsl_attrs::string_edge]
-fn clock_binding_name(binding: &wire::BindingRequirement) -> Option<&str> {
+pub(crate) fn clock_binding_name(binding: &wire::BindingRequirement) -> Option<&str> {
     binding.name.strip_prefix("clock:")
 }
 use qsl_foundation::ByteDigest;

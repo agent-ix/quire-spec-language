@@ -560,6 +560,7 @@ impl serde::Serialize for Rfc8785Numbers<'_> {
 /// `sha256-jcs`: check 1 of the table below is exactly the question of
 /// whether the caller's offered digest domain is the one Intake accepts, so
 /// a parameter that already assumed the answer could not state that check.
+#[qsl_attrs::string_edge]
 pub fn admit(
     offered: &DomainPackageRef,
     digest_domain: &str,
@@ -1493,6 +1494,7 @@ impl<'a> NodeCtx<'a> {
 /// `package` (the same Identity-row form `read_type_identity` already
 /// enforces for a declaration's own `identity`), and resolves to
 /// [`ValueTypeRef::Package`].
+#[qsl_attrs::string_edge]
 fn read_value_type_ref(
     package: &str,
     ctx: &NodeCtx<'_>,
@@ -2223,6 +2225,7 @@ fn meaning_index(document: &Value) -> Result<HashMap<(String, String), String>, 
 /// by `kind.name`/`kind.module` directly. Checks report in FR-154's own
 /// order: the node's own identity form first (the object-id check), then
 /// its `kind`/meaning, then the meaning-specific shape.
+#[qsl_attrs::string_edge]
 fn read_type_node(
     package: &str,
     meanings: &HashMap<(String, String), String>,

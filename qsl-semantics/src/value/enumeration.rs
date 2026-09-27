@@ -83,6 +83,7 @@ pub struct EnumDeclarationPreimage {
 
 impl EnumDeclarationPreimage {
     /// Read a preimage object; any schema violation is non-canonical.
+    #[qsl_attrs::string_edge]
     pub fn from_json(value: serde_json::Value) -> Result<Self, InvalidSemanticGraph> {
         let document: DeclarationDocument = serde_json::from_value(value)
             .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))?;
@@ -186,6 +187,7 @@ pub struct EnumMemberPreimage {
 
 impl EnumMemberPreimage {
     /// Read a preimage object; any schema violation is non-canonical.
+    #[qsl_attrs::string_edge]
     pub fn from_json(value: serde_json::Value) -> Result<Self, InvalidSemanticGraph> {
         let document: MemberDocument = serde_json::from_value(value)
             .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))?;

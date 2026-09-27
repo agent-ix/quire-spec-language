@@ -729,6 +729,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
     /// configured bound, if any O-25 member is absent, if
     /// `package_contract_version` is not the one admitted version, or if a
     /// digest names a domain outside the closed FR-201 set.
+    #[qsl_attrs::string_edge]
     pub fn reconstruct(packet: WitnessPacket<P>) -> Result<Self, WitnessRefusal> {
         BoundExceeded::check(measured_encoded_bytes(&packet))?;
 

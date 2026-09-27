@@ -80,6 +80,7 @@ impl PreflightFailure {
     }
 }
 
+#[qsl_attrs::string_edge]
 pub(super) fn check(
     original: &Source,
     context: &SemanticContext,
