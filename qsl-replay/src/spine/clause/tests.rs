@@ -1228,3 +1228,379 @@ fn run_clause_refuses_a_model_digest_with_the_wrong_prefix() {
         other => panic!("expected Admit(Refused(wrong-value-kind/digest)), got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// TC-466 (FR-107-AC-1, AC-2, AC-3; SR-751 FND-003): S6a evaluates state
+// clauses over their observations, `pre` reads and `reaches`, run through
+// `run_clause` end to end -- genuine FR-106 admission (not a hand-built
+// `AdmittedObservations`), over a `ConfigVersion` package distinct from this
+// file's own `test/nodes`/`NoCycle` fixture (this crate has no path back
+// into `qsl-semantics`' own `tests/it` integration binary, so TC-465's
+// ConfigVersion fixture there cannot be reused here; this is a smaller,
+// independently authored equivalent, in this file's own JSON idiom).
+// ---------------------------------------------------------------------------
+
+const CONFIG_VERSION_PACKAGE_IDENTITY: &str = "test/config-version";
+
+fn config_version_type() -> String {
+    format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/ConfigVersion")
+}
+
+fn config_version_population_identity() -> String {
+    format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/config_history")
+}
+
+/// The `test/config-version` domain package: `ConfigVersion` (`versionNumber:
+/// Integer`, `parent: Reference<ConfigVersion>?`), one operation
+/// `attemptUpdate` (`modifies [versionNumber, parent]`, no parameters,
+/// returns `Boolean`), one closed population `config_history`.
+fn config_version_domain_document() -> Vec<u8> {
+    let config_version = config_version_type();
+    let version_number_identity = format!("{config_version}/versionNumber");
+    let parent_identity = format!("{config_version}/parent");
+    let operation_identity = format!("{config_version}/attemptUpdate");
+    let population = config_version_population_identity();
+    let envelope = json!({
+        "contractVersion": "2.0.0",
+        "source": {
+            "identity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
+            "version": "1.0.0",
+            "dialect": "spec-bundle",
+            "digest": PLACEHOLDER_DIGEST,
+        },
+        "package": {
+            "identity": CONFIG_VERSION_PACKAGE_IDENTITY,
+            "version": "1.0.0",
+            "manifestDigest": PLACEHOLDER_DIGEST,
+            "mappingVersions": [],
+            "profileVersions": [],
+            "lockDigest": PLACEHOLDER_DIGEST,
+        },
+        "occurrences": [],
+        "extensions": [],
+        "constructs": [
+            {
+                "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "object_type"},
+                "moduleVersion": "1.0.0",
+                "manifestDigest": PLACEHOLDER_DIGEST,
+                "construct": {
+                    "identity": "none",
+                    "shape": "record",
+                    "members": {},
+                    "meaning": "quire.meaning.model.object-type/v1",
+                },
+            },
+            {
+                "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "population"},
+                "moduleVersion": "1.0.0",
+                "manifestDigest": PLACEHOLDER_DIGEST,
+                "construct": {
+                    "identity": "none",
+                    "shape": "record",
+                    "members": {},
+                    "meaning": "quire.meaning.model.population/v1",
+                },
+            },
+        ],
+        "types": [
+            {
+                "identity": config_version,
+                "displayName": config_version,
+                "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "object_type"},
+                "roles": [],
+                "origin": {
+                    "generated": {
+                        "generatorIdentity": config_version,
+                        "generatorVersion": "1.0.0",
+                        "inputIdentities": [config_version],
+                    }
+                },
+                "constraints": [],
+                "extensions": [],
+                "unknownPolicy": "reject",
+                "supertypes": [],
+                "fields": [
+                    {
+                        "identity": version_number_identity,
+                        "name": "versionNumber",
+                        "typeRef": "ix://quire/native/Integer",
+                        "presence": "required",
+                        "nullable": false,
+                        "defaultKind": "none",
+                        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                        "origin": {
+                            "generated": {
+                                "generatorIdentity": version_number_identity,
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": [version_number_identity],
+                            }
+                        },
+                    },
+                    {
+                        "identity": parent_identity,
+                        "name": "parent",
+                        "typeRef": config_version,
+                        "presence": "optional",
+                        "nullable": false,
+                        "defaultKind": "none",
+                        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                        "origin": {
+                            "generated": {
+                                "generatorIdentity": parent_identity,
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": [parent_identity],
+                            }
+                        },
+                    },
+                ],
+                "operations": [
+                    {
+                        "identity": operation_identity,
+                        "name": "attemptUpdate",
+                        "params": [],
+                        "returns": {
+                            "typeRef": "ix://quire/native/Boolean",
+                            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                            "nullable": false,
+                        },
+                        "pre": [],
+                        "post": [],
+                        "origin": {
+                            "source": {
+                                "sourceIdentity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
+                                "path": "spec.qspec",
+                                "startLine": 1,
+                                "startColumn": 1,
+                            },
+                        },
+                        "frame": {
+                            "modifies": [version_number_identity, parent_identity],
+                            "creates": [],
+                            "deletes": [],
+                        },
+                    },
+                ],
+            },
+        ],
+        "populations": [
+            {
+                "identity": population,
+                "displayName": population,
+                "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "population"},
+                "members": [config_version],
+                "extent": "closed",
+                "origin": {
+                    "generated": {
+                        "generatorIdentity": population,
+                        "generatorVersion": "1.0.0",
+                        "inputIdentities": [population],
+                    }
+                },
+            },
+        ],
+    });
+    envelope.to_string().into_bytes()
+}
+
+/// The unit text selecting [`config_version_domain_document`] as model alias
+/// `Config`, plus `ParentOrder` (invariant).
+///
+/// **Scope note** (disclosed gap, not attempted here): a postcondition of
+/// `attemptUpdate` (`VersionUnchanged`, or a `pre(..)`-reading clause for
+/// TC-466 step 2) cannot be added to this file's fixture. Reaching S5
+/// (`qsl_package::emit::emit_checked`) with any clause that uses the
+/// operation refuses `EmitRefusal::UnlocatedOccurrence` (`qsl-package/src/
+/// emit.rs:142`, "Source regions", emit.rs:35-42): the operation's own
+/// `origin.source` here is a synthetic `{sourceIdentity, path, startLine,
+/// startColumn}` (the same shape `qsl-semantics`' own TC-458 fixture uses,
+/// `model_operations.rs`'s `operation()`), never a byte source S1/S2 ever
+/// actually parsed, and `qsl-semantics`' own `tests/it` suite only checks
+/// through S3/S4 (`PackageDeclarations::check`), never S5, so this gap is
+/// invisible there. Confirmed by removing each new clause one at a time:
+/// `ParentOrder` alone (no clause referencing `attemptUpdate`) compiles
+/// through `run_clause` cleanly; any postcondition of `attemptUpdate`
+/// reaches the same `UnlocatedOccurrence` refusal regardless of its body.
+/// Building a hand-authored domain-package operation that survives full
+/// spine compile through emit needs either a real registered source for
+/// the operation's own occurrence or a spine change; both are outside this
+/// fix round's own findings.
+fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let document = config_version_domain_document();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let digest = hex(digest);
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"{PROFILE_DIGEST}\";\n\
+         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
+         digest \"sha256-jcs:{digest}\";\n\
+         invariant ParentOrder using v on Config::ConfigVersion at current {{ \
+         present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n"
+    );
+    (unit, packages)
+}
+
+fn config_version_model_digest_hex() -> String {
+    let (unit, packages) = config_version_unit_and_packages();
+    let _ = unit;
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    hex(digest)
+}
+
+fn config_version_request(selection: ClauseRunSelection) -> ClauseRunRequest {
+    let (unit, packages) = config_version_unit_and_packages();
+    ClauseRunRequest {
+        source: source(),
+        path: "clause-run-config-version.native".to_owned(),
+        bytes: unit.into_bytes(),
+        packages,
+        dependencies: DependencyInput::default(),
+        snapshots: BTreeMap::new(),
+        invocations: BTreeMap::new(),
+        selection,
+        expected_package_id: None,
+        limits: SpineLimits::default(),
+        observation_limits: ObservationLimits::default(),
+        model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        accounting: default_accounting(1_000_000),
+    }
+}
+
+fn config_version_document_ref(identity: &str) -> DocumentRef {
+    DocumentRef {
+        authority: "test".to_owned(),
+        identity: identity.to_owned(),
+        revision_namespace: "ns".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    }
+}
+
+/// A current snapshot: `root` at `root_version` (no parent), `child` at
+/// `child_version` naming `root` (or, when `root_version` is `None`, a
+/// single `root` object with no parent -- the absent-parent case).
+fn config_version_snapshot(
+    label: &DocumentRef,
+    model_digest_hex: &str,
+    root_version: i64,
+    child_version: Option<i64>,
+) -> Vec<u8> {
+    let population = config_version_population_identity();
+    let config_version = config_version_type();
+    let mut objects = vec![json!({
+        "key": "root", "type": config_version,
+        "fields": {"versionNumber": {"integer": root_version.to_string()}, "parent": {"absent": null}},
+    })];
+    if let Some(child_version) = child_version {
+        objects.push(json!({
+            "key": "child", "type": config_version,
+            "fields": {
+                "versionNumber": {"integer": child_version.to_string()},
+                "parent": {"present": {"reference": {"population": population, "key": "root"}}},
+            },
+        }));
+    }
+    let value = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": label.authority, "identity": label.identity,
+            "revision_namespace": label.revision_namespace, "revision": label.revision,
+        },
+        "observation": "current",
+        "anchor": {"kind": "handler", "name": "validate"},
+        "model": {
+            "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
+            "digest": format!("sha256-jcs:{model_digest_hex}"),
+        },
+        "populations": [{"population": population, "complete": true, "objects": objects}],
+    });
+    value.to_string().into_bytes()
+}
+
+/// A `ClauseSelection` naming `clause_name` at `label`'s current snapshot,
+/// self object `self_key`.
+fn config_version_current_selection(
+    clause_name: &str,
+    label: DocumentRef,
+    self_key: &str,
+) -> ClauseSelection {
+    ClauseSelection {
+        name: clause_name.to_owned(),
+        input: ClauseSelectionInput::Current {
+            snapshot: label,
+            anchor: SelectedAnchor {
+                kind: qsl_semantics::model::observation::AnchorKind::Handler,
+                name: "validate".to_owned(),
+            },
+            self_object: SelectedObject {
+                population: config_version_population_identity(),
+                key: self_key.to_owned(),
+            },
+        },
+    }
+}
+
+/// Runs `clause_name` (an invariant) over one current snapshot, through
+/// `run_clause` end to end (genuine FR-106 admission, then S6a).
+fn run_config_version_current(
+    clause_name: &str,
+    root_version: i64,
+    child_version: Option<i64>,
+    self_key: &str,
+) -> ClauseDisposition {
+    let model_digest_hex = config_version_model_digest_hex();
+    let label = config_version_document_ref("current-snap");
+    let bytes = config_version_snapshot(&label, &model_digest_hex, root_version, child_version);
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = config_version_current_selection(clause_name, label, self_key);
+
+    let mut request = config_version_request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, bytes);
+    run_clause(request)
+        .expect("a well-formed request always reports")
+        .disposition
+}
+
+fn boolean_disposition(disposition: &ClauseDisposition) -> bool {
+    match disposition {
+        ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
+            value,
+        ))) => *value,
+        other => panic!("expected Evaluate(Completed(Boolean(_))), got {other:?}"),
+    }
+}
+
+/// TC-466 step 1 (FR-107-AC-1): `ParentOrder` over admitted current
+/// snapshots -- `Completed(true)` for healthy-parent and absent-parent,
+/// `Completed(false)` for violating-parent.
+#[trace("TC-466", "FR-107-AC-1")]
+#[test]
+fn tc466_step1_parent_order_over_admitted_snapshots() {
+    assert!(
+        boolean_disposition(&run_config_version_current(
+            "ParentOrder",
+            1,
+            Some(2),
+            "child"
+        )),
+        "healthy-parent: root 1, child 2 -- child.versionNumber > root's"
+    );
+    assert!(
+        boolean_disposition(&run_config_version_current("ParentOrder", 1, None, "root")),
+        "absent-parent: root alone, present(self.parent) is false"
+    );
+    assert!(
+        !boolean_disposition(&run_config_version_current(
+            "ParentOrder",
+            5,
+            Some(2),
+            "child"
+        )),
+        "violating-parent: root 5, child 2 -- child.versionNumber is not > root's"
+    );
+}
