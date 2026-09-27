@@ -5,9 +5,15 @@
 //!
 //! **Scope note** (mirrors `model_operations.rs`'s own): `versionNumber` is
 //! typed as native `Integer`, not the bound `Int[0, 1000]` scalar FR-104-AC-1
-//! describes, since the bound-scalar value-type reader is QSL-289's own
-//! scope, not this ticket's (QSL-277). Every assertion below that would
-//! otherwise read `Int[0, 1000]` reads `Integer` instead.
+//! describes. FR-056's `value-type/v1` scalar reader (QSL-289) now exists
+//! and is verified end to end by `model_operations`'s own
+//! `bound_integer_value_type_admits_and_assembles`; the shared
+//! `ConfigVersion` fixture this file's tests use still substitutes the
+//! native `Integer` field, since switching it changes S3's own already-
+//! verified checking behavior for a bounded field -- a separate, larger
+//! follow-up, not this ticket's (QSL-277) or QSL-289's own scope. Every
+//! assertion below that would otherwise read `Int[0, 1000]` reads `Integer`
+//! instead.
 
 use std::collections::BTreeMap;
 
@@ -175,9 +181,11 @@ fn the_configversion_state_clauses_check() {
     assert_eq!(self_type, &ValueType::Reference(parent_order.context()));
 
     // `self.versionNumber` is an `Attribute` node. Its type is `Integer`,
-    // this module's own stand-in for FR-104-AC-1's `Int[0, 1000]`: the
-    // bound-scalar value-type reader is QSL-289's scope, not this
-    // ticket's -- see this file's own header note. `self.parent` is an
+    // this module's own stand-in for FR-104-AC-1's `Int[0, 1000]` -- the
+    // shared `ConfigVersion` fixture still substitutes it (see this file's
+    // own header note); the `value-type/v1` reader itself (QSL-289) exists
+    // and is verified elsewhere (`model_operations`'s
+    // `bound_integer_value_type_admits_and_assembles`). `self.parent` is an
     // `Attribute` node of `Option<Reference<Config::ConfigVersion>>`.
     let attribute_types: Vec<&ValueType> = descendants(parent_order.body())
         .into_iter()
@@ -186,7 +194,8 @@ fn the_configversion_state_clauses_check() {
         .collect();
     assert!(
         attribute_types.contains(&&ValueType::Integer),
-        "self.versionNumber: Integer (QSL-289 unverified: Int[0, 1000]): {attribute_types:?}"
+        "self.versionNumber: Integer (shared ConfigVersion fixture stand-in for Int[0, 1000]): \
+         {attribute_types:?}"
     );
     let parent_type = ValueType::Option(Box::new(ValueType::Reference(parent_order.context())));
     assert!(

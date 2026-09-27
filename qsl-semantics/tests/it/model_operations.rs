@@ -14,21 +14,23 @@
 //! and its own FR-108 fixture file
 //! (`examples/config-version/model.semantic-ir.json`) does not exist yet --
 //! that file and the corpus it belongs to are FR-108/FR-105's own scope
-//! (QSL-279), not FR-102/FR-103's (QSL-276). Separately,
-//! `quire.meaning.model.value-type/v1` (`meaning::VALUE_TYPE`) has no reader
-//! anywhere in this crate: `read_type_node`'s dispatch
-//! (`qsl-semantics/src/model/intake.rs`, the `other if
-//! meaning::ALL.contains(&other)` arm) folds it into the generic
-//! known-but-unsupported bucket, even though `ScalarTypeRecord` and its full
-//! downstream consumption in `model_value_type` already exist. Building that
-//! reader is FR-056's own scope, tracked by **QSL-289**, not FR-102/FR-103's
-//! (QSL-276). Every test below therefore types `versionNumber` (and, where
-//! AC-3 needs a second parameter type, `delta`) as the native `Integer`, not
-//! a bound `Int[0, 1000]` scalar -- this proves everything FR-103 itself
-//! adds (frame resolution, effect classification, operation declaration,
-//! determinism) without depending on the missing scalar-type reader. FR-103
-//! and TC-458 mark the bound-scalar half of AC-1/AC-3 unverified for the
-//! same reason.
+//! (QSL-279), not FR-102/FR-103's (QSL-276).
+//!
+//! `quire.meaning.model.value-type/v1` (`meaning::VALUE_TYPE`) now has a
+//! reader (`read_value_type`, `qsl-semantics/src/model/intake.rs`, QSL-289):
+//! [`bound_integer_value_type_admits_and_assembles`] below exercises it end
+//! to end through this same `admit_unit`/`PackageDeclarations::assemble`
+//! pipeline, over a small dedicated fixture, and is this crate's own real
+//! TC-458 coverage of the bound-scalar shape. The larger `ConfigVersion`
+//! fixture every other test in this file shares still types `versionNumber`
+//! (and, where AC-3 needs a second parameter type, `delta`) as the native
+//! `Integer`, not a bound `Int[0, 1000]` scalar -- not because the reader is
+//! missing, but because a bounded field is checked differently from an
+//! unbounded one downstream (FR-104's S3, FR-107's S6a, FR-108's replay all
+//! gain new bound-arithmetic checks a bounded field makes reachable);
+//! switching that shared fixture over is a separate, larger follow-up
+//! against those FRs' own already-merged test suites, not this file's or
+//! FR-102/FR-103's own scope.
 
 use std::collections::BTreeMap;
 
@@ -39,7 +41,7 @@ use qsl_semantics::model::intake::meaning;
 use qsl_semantics::model::intake::{admit_unit, package_input, UnitIntakeCause};
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::value::declaration::ObjectTypeDeclaration;
-use quire_exact::{Presence, ValueType};
+use quire_exact::{Integer, IntegerInterval, Presence, ValueType};
 use serde_json::{json, Value};
 
 pub(super) const PACKAGE_IDENTITY: &str = "example/config-version";
@@ -883,6 +885,121 @@ fn an_operation_and_its_frame_admit_and_assemble() {
     );
     assert_eq!(operation.effect().creates, Vec::new());
     assert_eq!(operation.effect().deletes, Vec::new());
+}
+
+/// FR-103-AC-1's own bound-scalar half (this module's own scope note): not
+/// the shared `ConfigVersion` fixture every other test in this file uses,
+/// but a small dedicated one -- a package-declared `VersionNumber` value
+/// type, integer `0..=1000`, and an object type `Widget` with one required
+/// field of that type -- proving FR-056's `value-type/v1` scalar reader
+/// (QSL-289) all the way through this file's own `admit_unit`/
+/// `PackageDeclarations::assemble` pipeline: `Widget.num` assembles to
+/// `Int[0, 1000]`, not the native `Integer` this file's other tests
+/// substitute.
+#[trace("TC-458", "FR-103-AC-1")]
+#[test]
+fn bound_integer_value_type_admits_and_assembles() {
+    let version_number = format!("ix://{PACKAGE_IDENTITY}/VersionNumber");
+    let widget = format!("ix://{PACKAGE_IDENTITY}/Widget");
+    // `agent-ix-semantic-ir`'s own `CONSTRAINT_MEMBERS` requires every
+    // constraint's `identity`/`appliesTo`/`diagnosticCode`/`origin` present
+    // (this module's own tests all route through the full
+    // `validate_with_semantic_ir` schema check, not just this reader's own
+    // hand-rolled one), unlike `intake.rs`'s own direct-reader unit tests.
+    // `appliesTo` names the native scalar the value type binds
+    // (`ix://quire/native/Integer`), not `VersionNumber`'s own identity:
+    // `agent-ix-semantic-ir`'s own applicability table (`rules.rs::applies_to`)
+    // only ever resolves a construct-kind node's own `kind`/`shape` to
+    // `"construct"`, never `"scalar"` (no `Shape` variant means "scalar" at
+    // this pinned rev) -- a constraint whose `appliesTo` named `VersionNumber`
+    // itself would refuse `CONSTRAINT_NOT_APPLICABLE` even though this is
+    // exactly the bound `VersionNumber` names. Naming the native scalar
+    // directly is what actually resolves to `Resolved::Native("integer")`,
+    // and is what `VALUE_TYPE`'s own meaning describes: "naming the value
+    // type and its bound native value type".
+    let constraint = |keyword: &str, value: i64| {
+        json!({
+            "identity": format!("{version_number}/constraints/{keyword}"),
+            "keyword": keyword,
+            "operands": {"value": value},
+            "appliesTo": "ix://quire/native/Integer",
+            "diagnosticCode": format!("bound.{keyword}"),
+            "origin": {
+                "generated": {
+                    "generatorIdentity": version_number.clone(),
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [version_number.clone()],
+                }
+            },
+        })
+    };
+    let document = wire_envelope(
+        json!([
+            wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
+            wire_construct("value_type", meaning::VALUE_TYPE, json!({})),
+        ]),
+        json!([
+            wire_type(
+                &version_number,
+                "value_type",
+                json!({
+                    "scalar": "integer",
+                    "constraints": [constraint("min", 0), constraint("max", 1000)],
+                }),
+            ),
+            wire_type(
+                &widget,
+                "object_type",
+                json!({
+                    "supertypes": [],
+                    "operations": [],
+                    "relationships": [],
+                    "fields": [wire_field(
+                        &format!("{widget}/num"),
+                        "num",
+                        &version_number,
+                        "required",
+                        1,
+                    )],
+                }),
+            ),
+        ]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes();
+    let declarations =
+        admit_and_assemble(&document).expect("the bound-scalar fixture admits and assembles");
+
+    let (unit, packages) = config_unit(&document);
+    let built = parse_and_build(&unit);
+    let views = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the package admits");
+    let widget_key = DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: widget.clone(),
+    };
+    let widget_id = views[0].view.type_identities()[&widget_key];
+    let declared = declarations
+        .types
+        .object_type(widget_id)
+        .expect("Widget is declared");
+    let num = declared
+        .attributes()
+        .iter()
+        .find(|field| field.name() == "num")
+        .expect("num is an attribute");
+    assert_eq!(
+        num.value_type(),
+        &ValueType::Int(
+            IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64)).unwrap()
+        )
+    );
+    assert_eq!(num.presence(), Presence::Required);
 }
 
 /// FR-103-AC-2 (TC-458 step 2, part 1): `modifies` naming no declaration of
