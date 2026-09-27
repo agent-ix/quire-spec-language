@@ -2162,6 +2162,104 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     assert_eq!(report_for(disposition_from_call_failure).exit_code(), 30);
 }
 
+/// SR-751 FND-005 round 2: the internal-failure comparison above covers
+/// only two of FR-100-AC-9's enumerated outcome kinds. This covers four
+/// more of the general (non-internal-failure) kinds `convert_outcome`
+/// maps -- `Completed(true)`, `Completed(false)`, a kernel `Undefined`
+/// and a kernel `Incomplete` -- each built as a real
+/// `qsl_eval::value::Evaluation`, run through `super::super::
+/// call::convert_outcome` itself (never a hand-copied expected
+/// `CallOutcome`), and only then checked against
+/// `ClauseDisposition::category`/`exit_code`'s own mapping (FR-301's exit
+/// 0/10, and FR-100-AC-9's 20/22 for `Undefined`/`Incomplete`).
+#[trace("TC-468", "FR-109-AC-5")]
+#[test]
+fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
+    let compiled = compiled();
+    let sources = std::slice::from_ref(&compiled.source);
+    let graph = compiled.package.graph();
+
+    let evaluation = |outcome| qsl_eval::value::Evaluation {
+        outcome,
+        location: None,
+        losses: Vec::new(),
+    };
+
+    // Completed(true): success, exit 0.
+    let mapped = super::super::call::convert_outcome(
+        evaluation(FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(
+            quire_exact::Value::Boolean(true),
+        ))),
+        graph,
+        sources,
+    )
+    .expect("Completed(true) maps to Ok");
+    let disposition = ClauseDisposition::Evaluate(mapped);
+    assert_eq!(
+        disposition.category(),
+        qsl_foundation::diagnostic::Category::Success
+    );
+    assert_eq!(disposition.truth(), Some(true));
+    assert_eq!(report_for(disposition).exit_code(), 0);
+
+    // Completed(false): violation, exit 10.
+    let mapped = super::super::call::convert_outcome(
+        evaluation(FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(
+            quire_exact::Value::Boolean(false),
+        ))),
+        graph,
+        sources,
+    )
+    .expect("Completed(false) maps to Ok");
+    let disposition = ClauseDisposition::Evaluate(mapped);
+    assert_eq!(
+        disposition.category(),
+        qsl_foundation::diagnostic::Category::Violation
+    );
+    assert_eq!(disposition.truth(), Some(false));
+    assert_eq!(report_for(disposition).exit_code(), 10);
+
+    // A kernel `Undefined`: undefined, exit 20.
+    let mapped = super::super::call::convert_outcome(
+        evaluation(FamilyOutcome::Evaluated(quire_exact::Outcome::Undefined(
+            quire_exact::Undefined::DivisionByZero,
+        ))),
+        graph,
+        sources,
+    )
+    .expect("Undefined maps to Ok");
+    let disposition = ClauseDisposition::Evaluate(mapped);
+    assert_eq!(
+        disposition.category(),
+        qsl_foundation::diagnostic::Category::Undefined
+    );
+    assert_eq!(disposition.truth(), None);
+    assert_eq!(report_for(disposition).exit_code(), 20);
+
+    // A kernel `Incomplete`: incomplete, exit 22.
+    let mapped = super::super::call::convert_outcome(
+        evaluation(FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(
+            quire_exact::Incomplete {
+                limit_kind: quire_exact::LimitKind::WorkUnits,
+                limit: 1,
+                consumed: 1,
+                next_charge: 1_i64.into(),
+                charge_point: quire_exact::ChargePoint::DecimalOperands,
+            },
+        ))),
+        graph,
+        sources,
+    )
+    .expect("Incomplete maps to Ok");
+    let disposition = ClauseDisposition::Evaluate(mapped);
+    assert_eq!(
+        disposition.category(),
+        qsl_foundation::diagnostic::Category::Incomplete
+    );
+    assert_eq!(disposition.truth(), None);
+    assert_eq!(report_for(disposition).exit_code(), 22);
+}
+
 /// SR-750 FND-011 round 2: `exit_code`'s `Admit(Refused | Incomplete)` arm
 /// no longer maps a code that fails `Code::parse_str` to a silently
 /// guessed exit status (the old `map_or(20, ..)`). Every real
