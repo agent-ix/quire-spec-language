@@ -23,9 +23,13 @@ Scope: FR-104-AC-5, FR-104-AC-6.
 3. Check the step 1 unit twice, and once with its three clauses in reverse
    order.
 4. Add `invariant ParentOrder2` with `ParentOrder`'s body.
-5. Check the step 1 unit against the fixture package with a second
-   population `archive` over `ConfigVersion`: first declaring a maximum of
-   10, then declaring no maximum.
+5. Check the step 1 unit against the fixture package with a second,
+   unbounded population `archive` over `ConfigVersion` (every domain-package
+   population is unbounded, QSpec FR-153; a population never declares a
+   maximum).
+6. Check two operations of one type with equal frame content (both an
+   empty `modifies`/`creates`/`deletes`), one clause naming each: first with
+   results `Integer` and `Boolean`, then with both `Boolean`.
 
 Tag the tests `#[trace("TC-461", "FR-104-AC-n")]`.
 
@@ -42,11 +46,14 @@ Tag the tests `#[trace("TC-461", "FR-104-AC-n")]`.
 - Step 4: `ParentOrder2` has `ParentOrder`'s node identity; the node carries
   two `claim` occurrences, ordinals 0 (`ParentOrder`) and 1 (`ParentOrder2`);
   the unit has five records, keyed by those two occurrences among others.
-- Step 5: with `archive` bounded, the four records of step 1, unchanged, and
-  no `archive` domain; with `archive` unbounded, each of the three clauses
-  refuses `ambiguous_declaration`/`ambiguous-name` at its `on`, naming
-  `archive` and `config_history`, and no record is returned.
+- Step 5: each of the three clauses refuses `ambiguous_declaration`/
+  `ambiguous-name` at its `on`, naming `archive` and `config_history`, and no
+  record is returned.
+- Step 6: both variants yield four records: one per clause and one per
+  operation's frame, each keyed by that operation's own frame occurrence,
+  never merged and never a fault, whether the two operations' frame records
+  differ (`Integer` vs `Boolean`) or coincide (both `Boolean`).
 
 ## Status
 
-Planned (QSL-273).
+Implemented (QSL-277, PR #491).

@@ -26,27 +26,16 @@ relationships:
 
 ## Description
 
-When S3 receives a `StateClauseForm` (FR-102), the `ProtocolClause` family
-`check` SHALL resolve its profile alias, its context type and, for a `pre` or
-`post` clause, its operation; SHALL type its body as a Boolean under its
-clause kind, with `self`, `result`, the operation's parameters and `pre(e)`
-bound as QSpec's state contract states and every model read qualified by its
-observation; and SHALL produce one checked state clause with its identity, or
-a refusal with a catalog code. Its `requirements` hook SHALL return one
-`operation-contract` record per clause and per frame (ADR-012 §2, §15.7;
-FR-057).
-
-S3 has a clause-kind checker today, `CheckedGraph::check_clause_expression`
-(`qsl-semantics/src/check/mod.rs:1266`), but it takes explicit parameters and
-has no clause context: no receiver, no operation and no `result`
-(`check/check.rs:696-715`). Field access on a model type exists only as
-`deref(r).f` (the `Attribute` node, `check/check/typing.rs:663-677`).
-`pre(e)` accepts only an operand that contains `allInstances`, `lookup` or
-`pre` (`contains_pre_eligible_read`, `check/check.rs:774-788`). The
-definedness walk derives presence facts only for `Local`, `Field` and `Value`
-stable paths (`check/facts.rs:405-426`), so `present(self.parent)` records no
-fact today and `value(self.parent)` refuses `Obligation::Presence`
-(`facts.rs:569-576`, `:887-890`).
+When S2 admits a `StateClauseForm` (FR-102), the FR-091 assembler SHALL
+resolve its profile alias, its context type, for a `pre` or `post` clause its
+operation, and its population domain(s), refusing an unresolved or ambiguous
+name at its span (see "Resolution"). The `ProtocolClause` family `check` then
+SHALL type the body as a Boolean under its clause kind, with `self`, `result`,
+the operation's parameters and `pre(e)` bound as QSpec's state contract states
+and every model read qualified by its observation; and SHALL produce one
+checked state clause with its identity, or a refusal with a catalog code. Its
+`requirements` hook SHALL return one `operation-contract` record per clause
+and per frame (ADR-012 §2, §15.7; FR-057).
 
 ## Inputs
 
@@ -68,14 +57,29 @@ fact today and `value(self.parent)` refuses `Obligation::Presence`
 
 ### Resolution
 
-- The checker SHALL resolve the `using` alias to one of the unit's profile
+The S2 assembler performs every resolution this section describes, exactly
+as it does a function's alias and declarations (FR-091): the `ProtocolClause`
+family `check` reads the resolved context, operation and population domain(s)
+off the assembled declaration rather than re-resolving them. A `reaches`
+target's population is the one exception: its type is unknown before the
+body is typed, so S3 resolves and refuses it (see "Requirements").
+
+- The assembler SHALL resolve the `using` alias to one of the unit's profile
   selections, exactly as it does for a function (FR-091).
 - If `M` names no `model` declaration of the unit, or `T` no object type of
-  its package, then the checker SHALL refuse `missing_declaration`/
+  its package, then the assembler SHALL refuse `missing_declaration`/
   `missing-name` at the name.
 - If a `pre` or `post` clause's `op` names no operation of `M::T`'s effective
-  view (FR-103), then the checker SHALL refuse `missing_declaration`/
+  view (FR-103), then the assembler SHALL refuse `missing_declaration`/
   `missing-name` at `op`.
+- An operation `op` resolves through `M::T`'s ancestry (FR-103, FR-081's
+  effective view, "visible on a subtype through FR-081's effective view, as a
+  field is"): a declaration a more derived type of the view makes hides one
+  an ancestor makes, and the declaring type it keeps may differ from `T`. If
+  `op` names operations of two or more ancestors and neither declaring type
+  is more derived than the other, then the assembler SHALL refuse
+  `ambiguous_declaration`/`ambiguous-name` at `op`, naming those declaring
+  types.
 - If a state clause's name equals the name of another state clause or of a
   function of the unit, then the checker SHALL refuse
   `ambiguous_declaration`/`ambiguous-name` at every declaration of that name,
@@ -170,19 +174,37 @@ fact today and `value(self.parent)` refuses `Obligation::Presence`
   `operation-contract` for each clause, keyed by its `claim` occurrence
   (ADR-012 §13.5).
 - The hook SHALL return one `operation-contract` record for each frame of an
-  operation that a `pre` or `post` clause of the unit names, keyed by the
-  frame node's own occurrence, and none for an operation no clause names.
+  operation that a `pre` or `post` clause of the unit names, keyed by one
+  `generated` occurrence of the frame node (FR-105): the checker SHALL mint
+  one occurrence per distinct operation the unit's clauses name, in
+  ascending (declaring type `DeclarationKey`, operation name as UTF-8 bytes)
+  order over those operations, before lowering any clause; every clause
+  naming the same operation shares its occurrence. Two operations are two
+  occurrences even when their frame nodes coincide (equal
+  `modifies`/`creates`/`deletes` and declaring type, FR-105): the occurrence
+  is per operation identity, not per frame-node identity, so two operations
+  never merge into one record and neither raises a fault. The ordinal SHALL
+  NOT depend on source order: reversing the unit's clauses SHALL NOT change
+  which operation a given key names. An operation no clause names gets no
+  record.
 - Each record's extent SHALL follow ADR-014 §4 as FR-097 classifies it, over
   the clause's `self`, `result` and parameter types and the populations the
   clause ranges over: the context's population (every object of which the
-  clause holds for) and each population a `reaches` walks. Each such
-  population whose declaration has no maximum is an unbounded
-  `Population(None)` domain, boundable by `Cardinality`. A population with a
-  maximum adds no unbounded domain (FR-097-AC-2).
-- The checker SHALL key a population domain as
-  `DomainKey{node, path}` with `node` the `model`/`object_type` node of the
-  population's member type `T` (the clause's context type, or a `reaches`
-  edge's target type) and `path` the one-element list naming the population:
+  clause holds for) and each population a `reaches` walks. A domain-package
+  population declaration never has a maximum (QSpec FR-153's own record has
+  none), so each one is always an unbounded `Population(None)` domain,
+  boundable by `Cardinality`.
+- The checker SHALL key a population domain as `DomainKey{node, path}` with
+  `node` the `model`/`object_type` node of the population's *canonical*
+  member type: the least, in ascending `DeclarationKey` order, of its
+  declared member types -- never a node of the clause's context type `T`
+  itself when `T` is a proper subtype of a member (SR-736 FND-010), and
+  never the particular member that happens to cover `T` when the population
+  declares more than one member type (SR-736 FND-011): a population has
+  exactly one `DomainKey`, whatever member type a clause's context conforms
+  to. A clause over `T` and one over a subtype of `T`, or over any other
+  member type the same population declares, all key that population's
+  domain identically. `path` is the one-element list naming the population:
   its ordinal among the package's population declarations in ascending
   `DeclarationKey` order (its own `Ord`: `package`, then `node`, each as
   UTF-8 bytes, `qsl-semantics/src/model/key.rs:80-84`). The ordinal is stable
@@ -191,10 +213,13 @@ fact today and `value(self.parent)` refuses `Obligation::Presence`
   (FR-094), so its domain is named by the object type plus the population, as
   a model member is (ADR-012 §15.4). A `reaches` over the context population
   adds no second domain.
-- The context population SHALL be the one population with no maximum whose
-  member types include `T` (FR-084). If `T` is a member type of two or more
-  populations with no maximum, then the extent cannot name exactly one
-  population, and the checker SHALL refuse `ambiguous_declaration`/
+- The context population SHALL be the one population with no maximum that
+  covers `T`: `T` itself, or a proper supertype of `T`, is one of its member
+  types, by conformance (FR-084's `allInstances<T>` reads this way, not by
+  exact identity). If no population covers `T`, then the clause's extent
+  names no population domain for it. If `T` conforms to a member type of two
+  or more populations with no maximum, then the extent cannot name exactly
+  one population, and the checker SHALL refuse `ambiguous_declaration`/
   `ambiguous-name` at the clause's `on`, naming those populations in
   ascending `DeclarationKey` order.
 - When `T` is a member type of several populations, the population a run's
@@ -205,11 +230,11 @@ fact today and `value(self.parent)` refuses `Obligation::Presence`
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-104-AC-1 | Over the ConfigVersion package (FR-103-AC-1), `ParentOrder` (`present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber`), `NoCycle` (`not reaches(self, self, parent)`) and `post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = pre(self.versionNumber) }` each check, with kind `Invariant`, `Invariant` and `Postcondition`; `self` is `Reference<Config::ConfigVersion>`, `self.versionNumber` is `Int[0, 1000]` and `self.parent` is `Option<Reference<Config::ConfigVersion>>`. `ParentOrder`'s reads are all `current`; in `VersionUnchanged` the left read is `post` and the right `pre`. | Test (TC-459) |
+| FR-104-AC-1 | Over the ConfigVersion package (FR-103-AC-1), `ParentOrder` (`present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber`), `NoCycle` (`not reaches(self, self, parent)`) and `post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = pre(self.versionNumber) }` each check, with kind `Invariant`, `Invariant` and `Postcondition`; `self` is `Reference<Config::ConfigVersion>`, `self.versionNumber` is `Int[0, 1000]` and `self.parent` is `Option<Reference<Config::ConfigVersion>>`. `ParentOrder`'s reads are all `current`; in `VersionUnchanged` the left read is `post` and the right `pre`. **Unverified**: the `self.versionNumber: Int[0, 1000]` half depends on FR-056's `value-type/v1` scalar reader, which does not exist yet (QSL-289); QSL-277's own tests substitute a native `Integer` field and verify everything else this AC states, as FR-103-AC-1's tests already do. | Test (TC-459) |
 | FR-104-AC-2 | `post R using v on Config::ConfigVersion::attemptUpdate { result }` checks with `result: Boolean`. `result` in an invariant, and in a `pre` clause of `attemptUpdate`, each refuse `wrong_snapshot`/`wrong-anchor` at `result`. | Test (TC-459) |
 | FR-104-AC-3 | `on Config::Missing` and `on Config::ConfigVersion::missing` refuse `missing_declaration`/`missing-name` at the missing name; an invariant body `self.versionNumber` refuses `ill_typed`/`non-boolean-root`; a second clause named `ParentOrder`, and a function named `ParentOrder` beside the clause, each refuse `ambiguous_declaration`/`ambiguous-name` at both declarations. | Test (TC-460) |
 | FR-104-AC-4 | `pre(self.versionNumber)` in an invariant refuses `wrong_snapshot`/`forbidden-pre-read`; `pre(result)` in a postcondition refuses `wrong_snapshot`/`forbidden-pre-read`; `reaches(self, self, versionNumber)` refuses `ill_typed`/`operator-ineligible`; `reaches(x, y, parent)` in a function body refuses `ill_typed`/`operator-ineligible`; an unguarded `deref(value(self.parent)).versionNumber < 5` refuses `undefined_expression`/`unproved-presence` at the `value`. | Test (TC-460) |
-| FR-104-AC-5 | The ConfigVersion unit with `ParentOrder`, `NoCycle` and `VersionUnchanged` yields exactly four `operation-contract` records: one per clause, keyed by its `claim` occurrence, and one for `attemptUpdate`'s frame, keyed by the frame node's occurrence. Each has extent `Unbounded` with one domain, the `config_history` population, of kind population and boundable by `Cardinality`, keyed by the `ConfigVersion` object type node and `config_history`'s declaration ordinal. The same unit without `VersionUnchanged` yields exactly two, with no frame record. Over the package with a second population `archive` of `ConfigVersion` declaring a maximum, the four records are unchanged; with `archive` declaring no maximum, each clause refuses `ambiguous_declaration`/`ambiguous-name` at its `on`, naming `archive` and `config_history`. | Test (TC-461) |
+| FR-104-AC-5 | The ConfigVersion unit with `ParentOrder`, `NoCycle` and `VersionUnchanged` yields exactly four `operation-contract` records: one per clause, keyed by its `claim` occurrence, and one for `attemptUpdate`'s frame, keyed by the frame's own occurrence. Each has extent `Unbounded` with one domain, the `config_history` population, of kind population and boundable by `Cardinality`, keyed by the `ConfigVersion` object type node and `config_history`'s declaration ordinal. The same unit without `VersionUnchanged` yields exactly two, with no frame record. Over the package with a second, unbounded population `archive` of `ConfigVersion`, each clause refuses `ambiguous_declaration`/`ambiguous-name` at its `on`, naming `archive` and `config_history`. Two operations of equal frame content (both an empty `modifies`/`creates`/`deletes`) each still keep their own frame record, whether their own records differ or coincide. | Test (TC-461) |
 | FR-104-AC-6 | Checking the same unit twice, and checking it with its clauses in another order, gives each clause the same node identity and the same requirement record keys. Two clauses with equal kind, anchor and body and different names share a node identity and differ in their `claim` occurrence (ordinals in source order). | Test (TC-461) |
 | FR-104-AC-7 | In postconditions of `attemptUpdate` over a package whose frame modifies `parent`: `present(pre(self.parent)) implies deref(value(self.parent)).versionNumber > 0` refuses `undefined_expression`/`unproved-presence` at `value(self.parent)`; `pre(present(self.parent) implies deref(value(self.parent)).versionNumber > 0)` checks; `let v = self.versionNumber in pre(v) = 1` and `let s = self in pre(s.versionNumber) = 1` each refuse `wrong_snapshot`/`forbidden-pre-read` at the `pre`; `let s = pre(self) in s.versionNumber = 1` checks with its read `pre`. | Test (TC-459) |
 | FR-104-AC-8 | Over a package that adds operation `probe(target: ConfigVersion)` on `ConfigVersion` with no result and an empty frame: the postcondition `deref(target).versionNumber = 1` checks with its read `post`; the precondition `deref(target).versionNumber = 1` checks with its read `pre`; the postcondition `pre(deref(target).versionNumber) = 1` checks with its read `pre`; the postcondition `pre(target) = target` refuses `wrong_snapshot`/`forbidden-pre-read` at the `pre`. | Test (TC-459) |
@@ -221,5 +246,3 @@ fact today and `value(self.parent)` refuses `Obligation::Presence`
   `operation-contract` kind).
 - QSpec `state-contract.md` ("Operation anchors, aliases and captures",
   "Finite graph extension") and FR-153.
-- The code change waits for the other lane's current work in `check/`
-  (QSL-273 ticket text).

@@ -108,6 +108,64 @@ impl AdmittedModel {
     pub fn selection(&self) -> &DomainPackageRef {
         &self.selection
     }
+
+    /// The record `key` names in this package.
+    pub(super) fn record(&self, key: &DeclarationKey) -> Option<&DomainPackageRecord> {
+        self.records.get(key)
+    }
+
+    /// FR-104: every population declaration of this package that covers the
+    /// object type `target`: one of its member types is `target` itself or
+    /// a proper supertype of it, by `conforms` (FR-084's `allInstances<T>`
+    /// conformance, not exact identity -- a clause over a subtype still
+    /// ranges over its supertype's population). Each is paired with its
+    /// ordinal among the package's population declarations in ascending
+    /// `DeclarationKey` order (its own `Ord`: `package`, then `node`), and
+    /// the `EffectiveId` of the population's *canonical* member type: the
+    /// least of its declared member types in ascending `DeclarationKey`
+    /// order, whatever the clause's context (SR-736 FND-010, FND-011). A
+    /// population with several declared member types would otherwise key
+    /// its one domain by a different node per covering member -- one
+    /// canonical node per population, chosen without regard to which member
+    /// actually covers `target`, keeps every clause over any member giving
+    /// the same domain key. The ordinal is stable within this package's
+    /// digest only. A domain package population declares no maximum (the
+    /// Semantic IR `population` record has no such member), so each one is
+    /// an unbounded `Population(None)` domain.
+    pub(crate) fn populations_of(
+        &self,
+        target: EffectiveId,
+        conforms: impl Fn(EffectiveId, EffectiveId) -> bool,
+    ) -> Vec<(usize, &DeclarationKey, EffectiveId)> {
+        let covers = |member: &DeclarationKey| {
+            self.types.iter().any(|(id, declared)| {
+                declared == member && (*id == target || conforms(target, *id))
+            })
+        };
+        // `records` is a `BTreeMap` keyed by `DeclarationKey`, so its
+        // population records iterate in ascending key order.
+        self.records
+            .values()
+            .filter_map(|record| match record {
+                DomainPackageRecord::Population(population) => Some(population),
+                _ => None,
+            })
+            .enumerate()
+            .filter_map(|(ordinal, population)| {
+                if !population.member_types.iter().any(covers) {
+                    return None;
+                }
+                // The canonical member: the least declared member type, by
+                // `DeclarationKey`, regardless of which one covers `target`.
+                let canonical = population.member_types.iter().min()?;
+                let node = self
+                    .types
+                    .iter()
+                    .find_map(|(id, declared)| (declared == canonical).then_some(*id))?;
+                Some((ordinal, &population.key, node))
+            })
+            .collect()
+    }
 }
 
 /// A clause function's FR-094 owner and clause kind: the declaration whose
@@ -214,13 +272,24 @@ impl<'a> Lowering<'a> {
         target: EffectiveId,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let declaration = self
-            .models
+        let declaration = self.declaration_key_of(target, location)?;
+        self.model_node(&declaration, location)
+    }
+
+    /// The `DeclarationKey` `target` names in its admitted domain package
+    /// (FR-104 "Requirements", SR-736 FND-008): its own `Ord` (`package`,
+    /// then `node`, each as UTF-8 bytes) is the ascending order a frame
+    /// occurrence's ordinal follows, independent of clause or source order.
+    pub(super) fn declaration_key_of(
+        &self,
+        target: EffectiveId,
+        location: &Location,
+    ) -> Result<DeclarationKey, CheckRefusal> {
+        self.models
             .iter()
             .find_map(|model| model.types.get(&target))
             .cloned()
-            .ok_or_else(|| fault(location, KeyFault::UnknownEffectiveId(target)))?;
-        self.model_node(&declaration, location)
+            .ok_or_else(|| fault(location, KeyFault::UnknownEffectiveId(target)))
     }
 
     /// The model node of the object type a `Reference<T>`-typed value
