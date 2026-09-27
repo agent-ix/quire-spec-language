@@ -72,3 +72,25 @@ Round 2, checked against ab6a987c on 2026-09-26.
 | FND-004 | still-open (low) | This is partly addressed. Rows 3, 5, 6, 7 and 8 assert that the path is empty or non-empty, and rows 4 and 9 assert two distinct loci. That does not meet the finding. A refusal moved to the wrong subexpression, for example `deref(...)` instead of `value(self.parent)` in row 8, or the `=` operand instead of the `pre` in row 5, still passes a non-empty-path check. Asserting the exact `location.path` (a `Vec` of child indices) is one line per row and needs no mapping from nodes to source, so "disproportionate" does not apply. The `result` locus (AC-2) and the assembler spans for rows 2 and 4-at-`on` are also still unasserted in the integration tests. Non-blocking. |
 | FND-005 | fixed ab6a987c | Claim role and ordinals 0 and 1 are asserted (state_clauses.rs:680-685). |
 | FND-006 | fixed ab6a987c | The FR-104 Description and Dependencies are updated, the FR-091 catalog has three new rows, TC-459 to TC-461, spec/tests.md and spec/spec.md statuses are updated, and the trace tags now name FR-104-AC-3 and AC-4. |
+
+### Round 3 dispositions
+
+Checked against e2e5ffdc on 2026-09-26.
+
+Two of the coder's claims were checked against the tree with `git show
+ab6a987c:<path>`:
+
+- "FND-004 already done in round 1": wrong. At ab6a987c,
+  `state_clauses.rs` had 5 `location.path.is_empty()` checks and no
+  exact-path assertion. The exact paths first appear in 6b144f75.
+- "FR-104-AC-1 and tests.md:241 already carry the QSL-289 note": wrong. At
+  ab6a987c, FR-104 and the TC-459 row of tests.md had no "QSL-289". The note
+  first appears in 6b144f75.
+
+The round-2 dispositions stand as written.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 6b144f75 | The FR-104-AC-1 row now has an "Unverified ... QSL-289" note (FR-104:229). The TC-459 row at tests.md:241 says "AC-1's `Int[0, 1000]` half unverified, QSL-289". |
+| FND-002 | fixed 6b144f75 | Step 1 asserts, for each record, `Unbounded` with exactly one domain of kind `Population` and finite kind `Cardinality`, one `DomainKey` equal across all four records, and occurrence roles of 3 `claim` and 1 `generated` (state_clauses.rs:626-686). Step 5 asserts `AmbiguousPopulation{context: "Config::ConfigVersion", populations: [archive, config_history]}` in order, with a span that slices to `Config::ConfigVersion` (state_clauses.rs:769-803). |
+| FND-004 | fixed 6b144f75 | Exact `location.path` is asserted for `result` (root, :309-314) and for rows 3 `[]`, 5 `[0]`, 6 `[]`, 7 `[]` and 8 `[0, 0, 0]` (:521-613). This meets the finding: a refusal at a wrong subexpression now fails. A trivial leftover remains, which is low and not reopened: the integration test does not assert row 2's `op` span, row 10's path, or the exact loci of rows 4 and 9, which are only checked as distinct. |

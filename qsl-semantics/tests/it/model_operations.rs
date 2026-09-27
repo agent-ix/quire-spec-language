@@ -587,6 +587,79 @@ pub(super) fn subtype_document(operation: Value) -> Vec<u8> {
     .into_bytes()
 }
 
+/// [`subtype_document`]'s own `ConfigVersion` and `Sub`, but `config_history`
+/// declares *both* as its own member types (SR-736 FND-011), not `Sub` by
+/// conformance alone: a population with two or more declared member types
+/// still has one canonical `DomainKey`.
+pub(super) fn subtype_document_with_two_member_population(operation: Value) -> Vec<u8> {
+    let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
+    let sub = format!("ix://{PACKAGE_IDENTITY}/Sub");
+    let constructs = vec![
+        wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
+        wire_construct("population", meaning::POPULATION, json!({})),
+    ];
+    let config_version_type = wire_type(
+        &config_version,
+        "object_type",
+        json!({
+            "supertypes": [],
+            "fields": [
+                wire_field(
+                    &config_version_identity("versionNumber"),
+                    "versionNumber",
+                    "ix://quire/native/Integer",
+                    "required",
+                    1,
+                ),
+                wire_field(
+                    &config_version_identity("parent"),
+                    "parent",
+                    &config_version,
+                    "optional",
+                    1,
+                ),
+            ],
+            "operations": [operation],
+            "relationships": [],
+        }),
+    );
+    let sub_type = wire_type(
+        &sub,
+        "object_type",
+        json!({
+            "supertypes": [config_version],
+            "fields": [],
+            "operations": [],
+            "relationships": [],
+        }),
+    );
+    let population_identity = format!("ix://{PACKAGE_IDENTITY}/config_history");
+    let population = json!({
+        "identity": population_identity.clone(),
+        "displayName": population_identity.clone(),
+        "kind": {"module": PACKAGE_IDENTITY, "name": "population"},
+        "members": [
+            format!("ix://{PACKAGE_IDENTITY}/Sub"),
+            format!("ix://{PACKAGE_IDENTITY}/ConfigVersion"),
+        ],
+        "extent": "closed",
+        "origin": {
+            "generated": {
+                "generatorIdentity": population_identity.clone(),
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [population_identity],
+            }
+        },
+    });
+    wire_envelope(
+        json!(constructs),
+        json!([config_version_type, sub_type]),
+        json!([population]),
+    )
+    .to_string()
+    .into_bytes()
+}
+
 /// Two unrelated object types `Left` and `Right`, each declaring its own
 /// `dup(): Boolean` operation with an empty frame, and `Both`, whose
 /// `supertypes: [Left, Right]` inherits both (SR-736 FND-006): neither

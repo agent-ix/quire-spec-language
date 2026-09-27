@@ -14,8 +14,8 @@ use qsl_forms::StateClauseKind;
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, CheckingLimits, NodeKind,
-    Observation, WrongSnapshotCause,
+    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, CheckingLimits, Location,
+    NodeKind, Observation, Origin, WrongSnapshotCause,
 };
 use qsl_semantics::family::{ClaimExtent, DomainKind};
 use quire_exact::ValueType;
@@ -24,7 +24,7 @@ use crate::model_operations::{
     admit_and_assemble_with_body, ambiguous_operation_document, archive_population,
     config_unit_with_body, config_version_document, config_version_document_with_operations,
     config_version_document_with_population, config_version_identity, empty_frame, operation,
-    operation_parameter, subtype_document,
+    operation_parameter, subtype_document, subtype_document_with_two_member_population,
 };
 use serde_json::json;
 
@@ -467,9 +467,27 @@ fn missing_and_ambiguous_names_refuse_at_their_locus() {
     assert_eq!(refusals.len(), 2);
     let located = check_refusals(&document, &row4).expect_err("row 4 refuses");
     assert_eq!(located.len(), 2);
-    assert_ne!(
-        located[0].location, located[1].location,
-        "each declaration of the ambiguous name is its own locus"
+    assert_eq!(
+        located[0].location,
+        Location {
+            origin: Origin::StateClause {
+                clause: "ParentOrder".to_owned(),
+                index: 0,
+            },
+            path: Vec::new(),
+        },
+        "the first ParentOrder is its own locus"
+    );
+    assert_eq!(
+        located[1].location,
+        Location {
+            origin: Origin::StateClause {
+                clause: "ParentOrder".to_owned(),
+                index: 1,
+            },
+            path: Vec::new(),
+        },
+        "the second ParentOrder is its own locus"
     );
 
     // Row 9: `function ParentOrder` beside the clause refuses
@@ -483,9 +501,27 @@ fn missing_and_ambiguous_names_refuse_at_their_locus() {
     assert_eq!(refusals.len(), 2);
     let located = check_refusals(&document, &row9).expect_err("row 9 refuses");
     assert_eq!(located.len(), 2);
-    assert_ne!(
-        located[0].location, located[1].location,
-        "the clause and the function are each their own locus"
+    assert_eq!(
+        located[0].location,
+        Location {
+            origin: Origin::Body {
+                function: "ParentOrder".to_owned(),
+                index: 0,
+            },
+            path: Vec::new(),
+        },
+        "the function's own declaration is its locus"
+    );
+    assert_eq!(
+        located[1].location,
+        Location {
+            origin: Origin::StateClause {
+                clause: "ParentOrder".to_owned(),
+                index: 0,
+            },
+            path: Vec::new(),
+        },
+        "the clause's own declaration is its locus"
     );
 }
 
@@ -500,13 +536,27 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
         json!([]),
     );
 
-    // Row 2: `on Config::ConfigVersion::missing` refuses missing-name.
+    // Row 2: `on Config::ConfigVersion::missing` refuses missing-name, at
+    // the operation name span (SR-737 FND-004 leftover).
     let row2 = "pre B using v on Config::ConfigVersion::missing { true }\n";
     let refusals = check(&document, row2).expect_err("row 2 refuses");
     assert_eq!(refusals.len(), 1);
     assert_eq!(
         refusals[0],
         (Code::MissingDeclaration, Some("missing-name"))
+    );
+    let (unit, _) = config_unit_with_body(&document, row2);
+    let errors = assembly_refusals(&document, row2);
+    assert_eq!(errors.len(), 1);
+    let AssemblyCause::UnresolvedOperation { context, operation } = &errors[0].cause else {
+        panic!("expected UnresolvedOperation, got {:?}", errors[0].cause);
+    };
+    assert_eq!(context, "Config::ConfigVersion");
+    assert_eq!(operation, "missing");
+    assert_eq!(
+        &unit[errors[0].span.start..errors[0].span.end],
+        "missing",
+        "the assembler's span is the operation name as written, not the whole `on` clause"
     );
 
     // Row 3: a non-Boolean invariant body refuses `non-boolean-root`, at
@@ -611,12 +661,27 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
         located[0].location
     );
 
-    // Row 10: `reaches` in a function body refuses operator-ineligible.
+    // Row 10: `reaches` in a function body refuses operator-ineligible, at
+    // the root: the whole body is the `reaches` call (SR-737 FND-004
+    // leftover).
     let row10 = "function r using v(x: Config::ConfigVersion, y: Config::ConfigVersion): \
         Boolean pure { reaches(x, y, parent) }\n";
     let refusals = check(&document, row10).expect_err("row 10 refuses");
     assert_eq!(refusals.len(), 1);
     assert_eq!(refusals[0], (Code::IllTyped, Some("operator-ineligible")));
+    let located = check_refusals(&document, row10).expect_err("row 10 refuses");
+    assert_eq!(located.len(), 1);
+    assert_eq!(
+        located[0].location,
+        Location {
+            origin: Origin::Body {
+                function: "r".to_owned(),
+                index: 0,
+            },
+            path: Vec::new(),
+        },
+        "the reaches call is the whole function body"
+    );
 }
 
 /// TC-461 / FR-104-AC-5, AC-6: one `operation-contract` requirement per
@@ -992,6 +1057,44 @@ fn population_domain_key_is_the_populations_own_member_type() {
         "Sub's and ConfigVersion's clauses key config_history's population identically: \
          the DomainKey names config_history's own declared member type (ConfigVersion), \
          never Sub itself"
+    );
+}
+
+/// SR-736 FND-011: a population that declares two or more member types
+/// still has exactly one `DomainKey` -- its canonical member (the least of
+/// its declared member types in ascending `DeclarationKey` order), whatever
+/// member type a clause's context conforms to. `config_history` here
+/// declares both `Sub` and `ConfigVersion` as its own members (not `Sub` by
+/// conformance alone, as [`population_domain_key_is_the_populations_own_member_type`]
+/// covers): a clause on each still gives one equal key.
+#[trace("TC-461", "FR-104-AC-5")]
+#[test]
+fn population_with_several_members_has_one_canonical_domain_key() {
+    let document =
+        subtype_document_with_two_member_population(attempt_update_modifies_version_number());
+    let body = "invariant SubInvariant using v on Config::Sub at current { true }\n\
+        invariant ConfigVersionInvariant using v on Config::ConfigVersion at current { true }\n";
+    let graph = check(&document, body).expect("both invariants check");
+    assert_eq!(
+        graph.requirements().len(),
+        2,
+        "one record per clause, neither names an operation"
+    );
+
+    let mut domain_keys: Vec<DomainKey> = Vec::new();
+    for record in graph.requirements().values() {
+        let ClaimExtent::Unbounded(domains) = record.requirements().extent() else {
+            panic!("both clauses name config_history's unbounded population");
+        };
+        assert_eq!(domains.len(), 1, "one population domain per clause");
+        let (key, kind) = domains.iter().next().expect("one domain");
+        assert_eq!(kind, DomainKind::Population);
+        domain_keys.push(key.clone());
+    }
+    assert_eq!(
+        domain_keys[0], domain_keys[1],
+        "config_history declares two member types (Sub, ConfigVersion); a clause on \
+         either still keys its one domain by the same canonical member"
     );
 }
 

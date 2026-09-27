@@ -195,11 +195,15 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   none), so each one is always an unbounded `Population(None)` domain,
   boundable by `Cardinality`.
 - The checker SHALL key a population domain as `DomainKey{node, path}` with
-  `node` the `model`/`object_type` node of the population's own declared
-  member type that covers the clause's context type `T` (or a `reaches`
-  edge's target type) -- never a node of `T` itself when `T` is a proper
-  subtype of that member (SR-736 FND-010): a clause over `T` and one over a
-  subtype of `T`, both covered by the same population, key that population's
+  `node` the `model`/`object_type` node of the population's *canonical*
+  member type: the least, in ascending `DeclarationKey` order, of its
+  declared member types -- never a node of the clause's context type `T`
+  itself when `T` is a proper subtype of a member (SR-736 FND-010), and
+  never the particular member that happens to cover `T` when the population
+  declares more than one member type (SR-736 FND-011): a population has
+  exactly one `DomainKey`, whatever member type a clause's context conforms
+  to. A clause over `T` and one over a subtype of `T`, or over any other
+  member type the same population declares, all key that population's
   domain identically. `path` is the one-element list naming the population:
   its ordinal among the package's population declarations in ascending
   `DeclarationKey` order (its own `Ord`: `package`, then `node`, each as

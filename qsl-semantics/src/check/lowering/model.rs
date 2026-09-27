@@ -121,21 +121,25 @@ impl AdmittedModel {
     /// ranges over its supertype's population). Each is paired with its
     /// ordinal among the package's population declarations in ascending
     /// `DeclarationKey` order (its own `Ord`: `package`, then `node`), and
-    /// the `EffectiveId` of the *covering member type itself* -- the
-    /// population's own declared member, never `target` (SR-736 FND-010): a
-    /// domain key names one population by one node regardless of which
-    /// subtype a clause's context happens to be. The ordinal is stable
-    /// within this package's digest only. A domain package population
-    /// declares no maximum (the Semantic IR `population` record has no such
-    /// member), so each one is an unbounded `Population(None)` domain.
+    /// the `EffectiveId` of the population's *canonical* member type: the
+    /// least of its declared member types in ascending `DeclarationKey`
+    /// order, whatever the clause's context (SR-736 FND-010, FND-011). A
+    /// population with several declared member types would otherwise key
+    /// its one domain by a different node per covering member -- one
+    /// canonical node per population, chosen without regard to which member
+    /// actually covers `target`, keeps every clause over any member giving
+    /// the same domain key. The ordinal is stable within this package's
+    /// digest only. A domain package population declares no maximum (the
+    /// Semantic IR `population` record has no such member), so each one is
+    /// an unbounded `Population(None)` domain.
     pub(crate) fn populations_of(
         &self,
         target: EffectiveId,
         conforms: impl Fn(EffectiveId, EffectiveId) -> bool,
     ) -> Vec<(usize, &DeclarationKey, EffectiveId)> {
-        let covering_member = |member: &DeclarationKey| {
-            self.types.iter().find_map(|(id, declared)| {
-                (declared == member && (*id == target || conforms(target, *id))).then_some(*id)
+        let covers = |member: &DeclarationKey| {
+            self.types.iter().any(|(id, declared)| {
+                declared == member && (*id == target || conforms(target, *id))
             })
         };
         // `records` is a `BTreeMap` keyed by `DeclarationKey`, so its
@@ -148,11 +152,17 @@ impl AdmittedModel {
             })
             .enumerate()
             .filter_map(|(ordinal, population)| {
-                population
-                    .member_types
+                if !population.member_types.iter().any(covers) {
+                    return None;
+                }
+                // The canonical member: the least declared member type, by
+                // `DeclarationKey`, regardless of which one covers `target`.
+                let canonical = population.member_types.iter().min()?;
+                let node = self
+                    .types
                     .iter()
-                    .find_map(covering_member)
-                    .map(|member| (ordinal, &population.key, member))
+                    .find_map(|(id, declared)| (declared == canonical).then_some(*id))?;
+                Some((ordinal, &population.key, node))
             })
             .collect()
     }
