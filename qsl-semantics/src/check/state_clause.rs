@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{ClauseKind, DeclarationSpans, Expression, StateClauseKind};
 use qsl_foundation::bound::DomainKey;
-use qsl_foundation::diagnostic::{Staged, StageFailure};
+use qsl_foundation::diagnostic::{StageFailure, Staged};
 use qsl_foundation::selection::ProfileSelection;
 use quire_exact::{EffectiveId, NodeKey, Origin, ValueType};
 
@@ -33,7 +33,7 @@ use super::ir::{DispatchTable, Node, NodeKind, Observation};
 use super::lowering::{AdmittedModel, LoweredClause};
 use super::observation::Observations;
 use super::refusal::{CheckCause, CheckRefusal, KeyFault, Location};
-use super::{CheckingLimits, Capability, Scope};
+use super::{Capability, CheckingLimits, Scope};
 use crate::family::{
     classify_domains, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure, DomainKind,
     FamilyContract, Requirements,
@@ -195,7 +195,8 @@ pub(crate) fn population_of(
             ordinal: *ordinal,
         })),
         many => {
-            let mut keys: Vec<DeclarationKey> = many.iter().map(|(_, key)| (*key).clone()).collect();
+            let mut keys: Vec<DeclarationKey> =
+                many.iter().map(|(_, key)| (*key).clone()).collect();
             keys.sort();
             Err(keys)
         }

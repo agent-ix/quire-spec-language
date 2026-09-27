@@ -10,9 +10,9 @@
 //! otherwise read `Int[0, 1000]` reads `Integer` instead.
 
 use ix_trace_rs::trace;
-use qsl_semantics::check::{CheckedGraph, CheckingLimits, Observation, WrongSnapshotCause};
-use qsl_foundation::diagnostic::Code;
 use qsl_forms::StateClauseKind;
+use qsl_foundation::diagnostic::Code;
+use qsl_semantics::check::{CheckedGraph, CheckingLimits, Observation, WrongSnapshotCause};
 use quire_exact::ValueType;
 
 use crate::model_operations::{
@@ -117,7 +117,9 @@ fn the_configversion_state_clauses_check() {
     let body = format!("{PARENT_ORDER}{NO_CYCLE}{VERSION_UNCHANGED}");
     let graph = check(&document, &body).expect("the three clauses check");
 
-    let parent_order = graph.state_clause("ParentOrder").expect("ParentOrder checked");
+    let parent_order = graph
+        .state_clause("ParentOrder")
+        .expect("ParentOrder checked");
     assert_eq!(parent_order.kind(), StateClauseKind::Invariant);
     let no_cycle = graph.state_clause("NoCycle").expect("NoCycle checked");
     assert_eq!(no_cycle.kind(), StateClauseKind::Invariant);
@@ -132,10 +134,14 @@ fn the_configversion_state_clauses_check() {
     assert_eq!(self_type, &ValueType::Reference(parent_order.context()));
 
     // `ParentOrder`'s reads are all `current`.
-    let parent_order_reads: Vec<Observation> =
-        parent_order.reads().map(|(_, observation)| observation).collect();
+    let parent_order_reads: Vec<Observation> = parent_order
+        .reads()
+        .map(|(_, observation)| observation)
+        .collect();
     assert!(!parent_order_reads.is_empty());
-    assert!(parent_order_reads.iter().all(|observation| *observation == Observation::Current));
+    assert!(parent_order_reads
+        .iter()
+        .all(|observation| *observation == Observation::Current));
 
     // `VersionUnchanged`'s left read is `post`, its right `pre`.
     let mut version_unchanged_reads: Vec<Observation> = version_unchanged
@@ -143,7 +149,10 @@ fn the_configversion_state_clauses_check() {
         .map(|(_, observation)| observation)
         .collect();
     version_unchanged_reads.sort();
-    assert_eq!(version_unchanged_reads, vec![Observation::Pre, Observation::Post]);
+    assert_eq!(
+        version_unchanged_reads,
+        vec![Observation::Pre, Observation::Post]
+    );
 }
 
 /// TC-459 step 2 / FR-104-AC-2: `post R using v on
@@ -179,7 +188,8 @@ fn result_outside_a_postcondition_refuses_wrong_anchor() {
         "invariant I using v on Config::ConfigVersion at current { result }\n",
         "pre Q using v on Config::ConfigVersion::attemptUpdate { result }\n",
     ] {
-        let refusals = check(&document, body).expect_err("`result` refuses outside a postcondition");
+        let refusals =
+            check(&document, body).expect_err("`result` refuses outside a postcondition");
         assert_eq!(refusals.len(), 1);
         assert_eq!(
             refusals[0],
@@ -218,7 +228,9 @@ fn postconditions_of_an_operation_that_modifies_parent() {
         pre(present(self.parent) implies deref(value(self.parent)).versionNumber > 0) }\n";
     let graph = check(&document, b).expect("(b) checks");
     let clause = graph.state_clause("B").expect("B checked");
-    assert!(clause.reads().all(|(_, observation)| observation == Observation::Pre));
+    assert!(clause
+        .reads()
+        .all(|(_, observation)| observation == Observation::Pre));
 
     // (c), (d) refuse forbidden-pre-read: a bare or let-aliased read has no
     // eligible syntax of its own inside the `pre`.
@@ -253,7 +265,9 @@ fn postconditions_of_an_operation_that_modifies_parent() {
         let s = pre(self) in s.versionNumber = 1 }\n";
     let graph = check(&document, e).expect("(e) checks");
     let clause = graph.state_clause("E").expect("E checked");
-    assert!(clause.reads().all(|(_, observation)| observation == Observation::Pre));
+    assert!(clause
+        .reads()
+        .all(|(_, observation)| observation == Observation::Pre));
 }
 
 /// TC-459 step 5 / FR-104-AC-8, over a package variant that adds
@@ -339,9 +353,7 @@ fn missing_and_ambiguous_names_refuse_at_their_locus() {
 
     // Row 9: `function ParentOrder` beside the clause refuses
     // ambiguous-name at both declarations (FR-109's shared namespace).
-    let row9 = format!(
-        "{PARENT_ORDER}function ParentOrder using v(): Boolean pure {{ true }}\n"
-    );
+    let row9 = format!("{PARENT_ORDER}function ParentOrder using v(): Boolean pure {{ true }}\n");
     let refusals = check(&document, &row9).expect_err("row 9 refuses");
     assert!(refusals
         .iter()
@@ -370,14 +382,10 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     );
 
     // Row 3: a non-Boolean invariant body refuses `non-boolean-root`.
-    let row3 =
-        "invariant C using v on Config::ConfigVersion at current { self.versionNumber }\n";
+    let row3 = "invariant C using v on Config::ConfigVersion at current { self.versionNumber }\n";
     let refusals = check(&document, row3).expect_err("row 3 refuses");
     assert_eq!(refusals.len(), 1);
-    assert_eq!(
-        refusals[0],
-        (Code::IllTyped, Some("non-boolean-root"))
-    );
+    assert_eq!(refusals[0], (Code::IllTyped, Some("non-boolean-root")));
 
     // Row 5: `pre(self.versionNumber)` in an invariant refuses
     // forbidden-pre-read (`pre` is legal only in a postcondition).
@@ -394,8 +402,7 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     );
 
     // Row 6: `pre(result)` in a postcondition refuses forbidden-pre-read.
-    let row6 =
-        "post E using v on Config::ConfigVersion::attemptUpdate { pre(result) }\n";
+    let row6 = "post E using v on Config::ConfigVersion::attemptUpdate { pre(result) }\n";
     let refusals = check(&document, row6).expect_err("row 6 refuses");
     assert_eq!(refusals.len(), 1);
     assert_eq!(
@@ -540,12 +547,17 @@ fn two_clauses_of_equal_kind_anchor_and_body_share_identity() {
 #[trace("TC-461", "FR-104-AC-5")]
 #[test]
 fn two_no_maximum_populations_of_one_type_refuse_ambiguous_name() {
-    let document =
-        config_version_document_with_population(attempt_update_modifies_version_number(), archive_population());
+    let document = config_version_document_with_population(
+        attempt_update_modifies_version_number(),
+        archive_population(),
+    );
     let body = format!("{PARENT_ORDER}{NO_CYCLE}{VERSION_UNCHANGED}");
     let refusals = check(&document, &body).expect_err("two no-maximum populations refuse");
     assert_eq!(refusals.len(), 3, "one refusal per clause");
     for refusal in &refusals {
-        assert_eq!(*refusal, (Code::AmbiguousDeclaration, Some("ambiguous-name")));
+        assert_eq!(
+            *refusal,
+            (Code::AmbiguousDeclaration, Some("ambiguous-name"))
+        );
     }
 }

@@ -604,9 +604,7 @@ impl<'a> Definedness<'a> {
             // FR-104: `pre(c)` holds exactly when `c` holds at `pre`; the
             // facts `c` establishes are keyed by the observations its own
             // reads carry.
-            NodeKind::Pre(operand) if self.observations.is_some() => {
-                self.outcomes(operand, facts)
-            }
+            NodeKind::Pre(operand) if self.observations.is_some() => self.outcomes(operand, facts),
             NodeKind::Present(operand) => match self.stable_path(operand, facts) {
                 Some(path) => {
                     let mut when_true = facts.clone();

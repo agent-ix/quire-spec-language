@@ -334,7 +334,10 @@ fn config_unit(document: &[u8]) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
 
 /// [`config_unit`], with `body` (further declarations, e.g. FR-104's state
 /// clauses) appended in place of the plain `noop` function it writes.
-pub(super) fn config_unit_with_body(document: &[u8], body: &str) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+pub(super) fn config_unit_with_body(
+    document: &[u8],
+    body: &str,
+) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let packages = package_input([document]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
         panic!("one supplied document");

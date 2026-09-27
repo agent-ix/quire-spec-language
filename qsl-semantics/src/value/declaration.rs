@@ -909,9 +909,9 @@ impl TypeEnvironment {
         let nearest: Vec<(EffectiveId, &OperationDeclaration)> = candidates
             .iter()
             .filter(|(declaring, _)| {
-                !candidates.iter().any(|(other, _)| {
-                    other != declaring && self.conforms(*other, *declaring)
-                })
+                !candidates
+                    .iter()
+                    .any(|(other, _)| other != declaring && self.conforms(*other, *declaring))
             })
             .copied()
             .collect();
@@ -921,7 +921,9 @@ impl TypeEnvironment {
                 declaring: *declaring,
                 operation,
             },
-            many => OperationLookup::Ambiguous(many.iter().map(|(declaring, _)| *declaring).collect()),
+            many => {
+                OperationLookup::Ambiguous(many.iter().map(|(declaring, _)| *declaring).collect())
+            }
         }
     }
 

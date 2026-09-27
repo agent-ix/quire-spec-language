@@ -43,9 +43,9 @@ use quire_exact::{
 };
 
 use super::check::{EnumBinding, PackageDeclarations, ResolvedSignature};
-use super::state_clause::{population_of, ClauseOperation, StateClauseDeclaration};
 use super::lowering::{strongly_connected, AdmittedModel};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
+use super::state_clause::{population_of, ClauseOperation, StateClauseDeclaration};
 use super::type_form::{
     parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
@@ -814,7 +814,11 @@ fn signature_type_forms(function: &FunctionDeclaration) -> Vec<&TypeForm> {
 /// types of `fold<A>`, `reduce<A>`, `count<N>` and `sum<N>` as name forms
 /// over the name's own span.
 fn body_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
-    expression_type_forms([function.measure.as_ref(), Some(&function.body)].into_iter().flatten())
+    expression_type_forms(
+        [function.measure.as_ref(), Some(&function.body)]
+            .into_iter()
+            .flatten(),
+    )
 }
 
 /// Every type form written inside `roots`, in source order.

@@ -612,7 +612,9 @@ impl PackageDeclarations {
                 self.state_clauses
                     .iter()
                     .enumerate()
-                    .map(|(index, clause)| (clause.name.as_str(), clause_location(index, &clause.name))),
+                    .map(|(index, clause)| {
+                        (clause.name.as_str(), clause_location(index, &clause.name))
+                    }),
             );
         for (name, location) in declarations {
             let loci = by_name.get(name).map_or(&[][..], Vec::as_slice);

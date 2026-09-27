@@ -53,7 +53,9 @@ impl Observations {
 
     /// Every model read's location and observation, in location order.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&Location, Observation)> {
-        self.reads.iter().map(|(location, observation)| (location, *observation))
+        self.reads
+            .iter()
+            .map(|(location, observation)| (location, *observation))
     }
 }
 
@@ -101,9 +103,7 @@ impl Walk {
                 Some(ambient)
             }
             NodeKind::Pre(operand) => self.node(operand, Observation::Pre),
-            NodeKind::Value(operand) | NodeKind::Coerce(operand, _) => {
-                self.node(operand, ambient)
-            }
+            NodeKind::Value(operand) | NodeKind::Coerce(operand, _) => self.node(operand, ambient),
             NodeKind::Let { slot, value, body } => {
                 let bound = self.node(value, ambient);
                 self.binders.insert(*slot, bound);
