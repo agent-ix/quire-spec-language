@@ -1,21 +1,39 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-106 check 11: the frame and delta check.
 //!
-//! Simplification, disclosed in the PR: a `modifies` grant is matched by
-//! its field's own display name only (the last `/`-separated segment of its
-//! producer [`DeclarationKey`]), not by the redefinition-aware identity the
-//! full effect-inclusion rule uses; and a `creates`/`deletes` grant is
-//! matched by exact producer type identity rather than full conformance.
-//! Neither TC-465 nor TC-464 exercises a redefined `modifies` member or a
-//! `creates`/`deletes` grant naming a proper supertype of the created or
-//! deleted object's own type, so this reads every case FR-106 tests
-//! correctly; a package using either construct needs this widened.
+//! Two matching choices, not simplifications, cited against FR-106's own
+//! text (`spec/functional/FR-106-admit-snapshots-and-invocations.md:249-260`):
+//!
+//! - **11.1's retype refusal is exact-type, by design.** "a surviving
+//!   object whose most-specific type differs between pre and post
+//!   (`FrameTypeChanged`; no frame authorizes a retype)" (line 252) states a
+//!   retype is *never* authorized, so comparing `type_identity` strings
+//!   directly (never conformance) is what the line says, not a narrowing of
+//!   it.
+//! - **11.3's `modifies` grant is matched by field display name.** The wire
+//!   document has no `DeclarationKey`, only `"fields" ... keyed by member
+//!   name` (FR-106 "Document forms", `fields is keyed by member name`), so
+//!   any match here is necessarily name-based at the wire boundary. A
+//!   population's `member_types` (FR-103 Outputs) share one supertype
+//!   lineage by construction, and `TypeEnvironment`'s own effective-
+//!   attribute set already collapses a redefined field under its base
+//!   field's *display name* ("its own fields plus every ancestor's, less
+//!   each field another field of the set redefines",
+//!   `qsl-semantics/src/value/declaration.rs:765-770`) -- i.e. the rest of
+//!   this crate already treats "same display name within one type lineage"
+//!   as "the same logical field" for redefinition purposes. Matching
+//!   `modifies` by name is that same rule, not a departure from it. Neither
+//!   TC-464 nor TC-465 exercises a redefined `modifies` member, so this is
+//!   untested but not, on the above reading, incorrect; a package that
+//!   later needs FR-082's own producer-key-precise `redefinition_reaches`
+//!   here (`qsl-semantics/src/model/index.rs:261`) should add that test
+//!   first.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::ObjectReference;
 
-use super::document::{find_declaration, RawPopulation};
+use super::document::{find_declaration, raw_field, RawPopulation};
 use super::helpers::{admission_record, object_reference};
 use super::{refuse, AdmissionFailure, ModelView, SelectedObject};
 use crate::model::domain_package::OperationEffect;
@@ -25,7 +43,7 @@ fn field_name_of(key: &crate::model::key::DeclarationKey) -> &str {
 }
 
 struct PopulationSide<'a> {
-    keys: BTreeMap<String, &'a BTreeMap<String, super::RawValue>>,
+    keys: BTreeMap<String, &'a [(String, super::RawValue)]>,
     type_identity: BTreeMap<String, &'a str>,
 }
 
@@ -34,7 +52,7 @@ fn side<'a>(populations: &'a [RawPopulation], name: &str) -> PopulationSide<'a> 
     let mut type_identity = BTreeMap::new();
     if let Some(population) = populations.iter().find(|entry| entry.population == name) {
         for object in &population.objects {
-            keys.insert(object.key.clone(), &object.fields);
+            keys.insert(object.key.clone(), object.fields.as_slice());
             type_identity.insert(object.key.clone(), object.type_identity.as_str());
         }
     }
@@ -121,20 +139,20 @@ pub(super) fn enforce(
                 if !post_side.type_identity.contains_key(key) {
                     continue;
                 }
-                let empty = BTreeMap::new();
-                let post_fields = post_side.keys.get(key).copied().unwrap_or(&empty);
+                let empty: &[(String, super::RawValue)] = &[];
+                let post_fields = post_side.keys.get(key).copied().unwrap_or(empty);
                 let field_names: BTreeSet<&str> = pre_object
                     .fields
-                    .keys()
-                    .map(String::as_str)
-                    .chain(post_fields.keys().map(String::as_str))
+                    .iter()
+                    .map(|(name, _)| name.as_str())
+                    .chain(post_fields.iter().map(|(name, _)| name.as_str()))
                     .collect();
                 for field in field_names {
                     if modifies.contains(field) {
                         continue;
                     }
-                    let pre_value = pre_object.fields.get(field);
-                    let post_value = post_fields.get(field);
+                    let pre_value = raw_field(&pre_object.fields, field);
+                    let post_value = raw_field(post_fields, field);
                     if !raw_values_equal(pre_value, post_value) {
                         return Err(refuse(
                             admission_record("frame_violation", "unauthorized-change")

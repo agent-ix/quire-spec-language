@@ -894,3 +894,63 @@ fn run_clause_refuses_an_empty_source() {
         Err(ClauseRunRefusal::EmptySource)
     ));
 }
+
+// ---------------------------------------------------------------------------
+// FR-106 check 1.6: unknown top-level members report document order, not
+// alphabetical order.
+// ---------------------------------------------------------------------------
+
+/// TC-465 (FR-106-AC-2): a snapshot document with two unknown top-level
+/// members, "zzz_unknown" then "aaa_unknown" in the document's own text
+/// order -- the reverse of their alphabetical order -- refuses naming
+/// "zzz_unknown", the document-order-first one, never "aaa_unknown", the
+/// alphabetically-first one. Before `OrderedJson` (this ticket's own fix,
+/// `qsl-semantics/src/model/observation/ordered_json.rs`), `read_document`
+/// walked a `serde_json::Value`'s `BTreeMap`-backed object and would have
+/// named "aaa_unknown" instead.
+#[trace("TC-465", "FR-106-AC-2")]
+#[test]
+fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetical_one() {
+    let model_digest = model_digest_hex();
+    let label = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "snap".to_owned(),
+        revision_namespace: "ns".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    };
+    // Hand-written text, not `serde_json::json!` + `.to_string()`: without
+    // the crate-wide `preserve_order` feature (deliberately off, see
+    // `ordered_json.rs`'s own module doc), `json!`'s `Map` is `BTreeMap`-
+    // backed and would serialize its members alphabetically regardless of
+    // insertion order, destroying the very ordering this test exercises.
+    let bytes = format!(
+        r#"{{
+            "format": "quire.state.snapshot/v1",
+            "identity": {{"authority": "test", "identity": "snap", "revision_namespace": "ns", "revision": "1"}},
+            "observation": "current",
+            "model": {{"identity": "test/nodes", "version": "1.0.0", "digest": "sha256-jcs:{model_digest}"}},
+            "populations": [],
+            "zzz_unknown": true,
+            "aaa_unknown": true
+        }}"#
+    )
+    .into_bytes();
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = no_cycle_selection(label, "a");
+
+    let mut request = request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, bytes);
+    let report = run_clause(request).expect("a well-formed request always reports");
+    match report.disposition {
+        ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
+            assert_eq!(record.cause, "unknown-member");
+            assert_eq!(
+                record.fields.get("field").map(String::as_str),
+                Some("zzz_unknown")
+            );
+        }
+        other => panic!("expected Admit(Refused(unknown-member)), got {other:?}"),
+    }
+}

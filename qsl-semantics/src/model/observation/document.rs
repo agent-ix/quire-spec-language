@@ -8,9 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use quire_exact::{CollectionKind, FieldValue, Integer, ObjectReference, Value};
 
 use super::helpers::{admission_record, object_reference};
+use super::ordered_json::{OrderedJson, OrderedObject};
 use super::{
-    document_digest, fault, incomplete, json_depth, read_raw_value, refuse, AdmissionFailure,
-    AdmissionRecord, DocumentRef, ModelView, ObservationLimits, RawValue, SelectedObject,
+    document_digest, fault, incomplete, read_raw_value, refuse, AdmissionFailure, AdmissionRecord,
+    DocumentRef, ModelView, ObservationLimits, RawValue, SelectedObject,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::{ObjectEnvironment, ObjectEnvironmentCause};
@@ -40,7 +41,10 @@ pub(super) struct DocAnchor {
 pub(super) struct RawObject {
     pub(super) key: String,
     pub(super) type_identity: String,
-    pub(super) fields: BTreeMap<String, RawValue>,
+    /// The object's own `fields` member, in document order (FR-106 check
+    /// 6.4's "unknown-member" detection needs "the first ... in walk
+    /// order").
+    pub(super) fields: Vec<(String, RawValue)>,
 }
 
 #[derive(Clone, Debug)]
@@ -72,7 +76,8 @@ pub(super) struct InvocationDocument {
     pub(super) self_object: SelectedObject,
     pub(super) pre: DocumentRef,
     pub(super) post: DocumentRef,
-    pub(super) parameters: BTreeMap<String, RawValue>,
+    /// The invocation's own `parameters` member, in document order.
+    pub(super) parameters: Vec<(String, RawValue)>,
     pub(super) result: ResultValue,
     pub(super) created: Vec<SelectedObject>,
     pub(super) deleted: Vec<SelectedObject>,
@@ -155,10 +160,10 @@ pub(super) fn read_document(
             "input-bytes-exceeded",
         )));
     }
-    let parsed: Option<serde_json::Value> = serde_json::from_slice(bytes).ok();
+    let parsed: Option<OrderedJson> = serde_json::from_slice(bytes).ok();
     // 1.2: nesting depth (only meaningful once parsed).
     if let Some(value) = &parsed {
-        if json_depth(value) > limits.nesting_depth {
+        if value.depth() > limits.nesting_depth {
             return Err(refuse(admission_record(
                 "stage_limit_exceeded",
                 "nesting-depth-exceeded",
@@ -186,7 +191,7 @@ pub(super) fn read_document(
         DocumentKind::Snapshot => "quire.state.snapshot/v1",
         DocumentKind::Invocation => "quire.state.invocation/v1",
     };
-    if object.get("format").and_then(|value| value.as_str()) != Some(expected_format) {
+    if object.member("format").and_then(|value| value.as_str()) != Some(expected_format) {
         return Err(refuse(admission_record("unknown_wire", "unsupported-wire")));
     }
 
@@ -220,7 +225,7 @@ pub(super) fn read_document(
         DocumentKind::Invocation => always_required,
     };
     for member in always_required {
-        if !object.contains_key(*member) {
+        if !object.contains_key(member) {
             return Err(refuse(
                 admission_record("invalid_runtime_input", "missing-member").with("field", *member),
             ));
@@ -237,12 +242,12 @@ pub(super) fn read_document(
 
     // 1.7/1.8: the document's own four labels.
     let identity_member = object
-        .get("identity")
+        .member("identity")
         .and_then(|value| value.as_object())
         .ok_or_else(|| fault("identity-member-not-an-object"))?;
     let label = |name: &str| {
         identity_member
-            .get(name)
+            .member(name)
             .and_then(|value| value.as_str())
             .unwrap_or_default()
             .to_owned()
@@ -281,26 +286,24 @@ pub(super) fn read_document(
     })
 }
 
-fn read_model(
-    object: &serde_json::Map<String, serde_json::Value>,
-) -> Result<ModelHeader, AdmissionFailure> {
+fn read_model(object: &[(String, OrderedJson)]) -> Result<ModelHeader, AdmissionFailure> {
     let model = object
-        .get("model")
+        .member("model")
         .and_then(|value| value.as_object())
         .ok_or_else(|| fault("model-member-not-an-object"))?;
     Ok(ModelHeader {
         identity: model
-            .get("identity")
+            .member("identity")
             .and_then(|value| value.as_str())
             .unwrap_or_default()
             .to_owned(),
         version: model
-            .get("version")
+            .member("version")
             .and_then(|value| value.as_str())
             .unwrap_or_default()
             .to_owned(),
         digest: model
-            .get("digest")
+            .member("digest")
             .and_then(|value| value.as_str())
             .unwrap_or_default()
             .trim_start_matches("sha256-jcs:")
@@ -308,20 +311,20 @@ fn read_model(
     })
 }
 
-fn read_object_ref(value: &serde_json::Value) -> Option<SelectedObject> {
+fn read_object_ref(value: &OrderedJson) -> Option<SelectedObject> {
     let object = value.as_object()?;
     Some(SelectedObject {
-        population: object.get("population")?.as_str()?.to_owned(),
-        key: object.get("key")?.as_str()?.to_owned(),
+        population: object.member("population")?.as_str()?.to_owned(),
+        key: object.member("key")?.as_str()?.to_owned(),
     })
 }
 
-fn read_document_ref(value: &serde_json::Value) -> Option<DocumentRef> {
+fn read_document_ref(value: &OrderedJson) -> Option<DocumentRef> {
     let object = value.as_object()?;
-    let identity = object.get("identity")?.as_object()?;
-    let label = |name: &str| identity.get(name)?.as_str().map(str::to_owned);
+    let identity = object.member("identity")?.as_object()?;
+    let label = |name: &str| identity.member(name)?.as_str().map(str::to_owned);
     let digest_hex = object
-        .get("digest")?
+        .member("digest")?
         .as_str()?
         .trim_start_matches("sha256-jcs:");
     let bytes = hex_bytes(digest_hex)?;
@@ -350,26 +353,26 @@ fn hex_bytes(text: &str) -> Option<Vec<u8>> {
 }
 
 fn read_snapshot_body(
-    object: &serde_json::Map<String, serde_json::Value>,
+    object: &[(String, OrderedJson)],
     model: ModelHeader,
 ) -> Result<SnapshotDocument, AdmissionFailure> {
     let observation = object
-        .get("observation")
+        .member("observation")
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_owned();
-    let anchor = match object.get("anchor") {
+    let anchor = match object.member("anchor") {
         Some(value) => {
             let object = value
                 .as_object()
                 .ok_or_else(|| fault("anchor-member-not-an-object"))?;
-            let kind = match object.get("kind").and_then(|value| value.as_str()) {
+            let kind = match object.member("kind").and_then(|value| value.as_str()) {
                 Some("initialization") => super::AnchorKind::Initialization,
                 Some("handler") => super::AnchorKind::Handler,
                 _ => return Err(fault("unrecognized-anchor-kind")),
             };
             let name = object
-                .get("name")
+                .member("name")
                 .and_then(|value| value.as_str())
                 .unwrap_or_default()
                 .to_owned();
@@ -387,10 +390,10 @@ fn read_snapshot_body(
 }
 
 fn read_populations(
-    object: &serde_json::Map<String, serde_json::Value>,
+    object: &[(String, OrderedJson)],
 ) -> Result<Vec<RawPopulation>, AdmissionFailure> {
     let items = object
-        .get("populations")
+        .member("populations")
         .and_then(|value| value.as_array())
         .ok_or_else(|| fault("populations-member-not-an-array"))?;
     let mut populations = Vec::with_capacity(items.len());
@@ -399,16 +402,16 @@ fn read_populations(
             .as_object()
             .ok_or_else(|| fault("population-entry-not-an-object"))?;
         let population = entry
-            .get("population")
+            .member("population")
             .and_then(|value| value.as_str())
             .unwrap_or_default()
             .to_owned();
         let complete = entry
-            .get("complete")
+            .member("complete")
             .and_then(|value| value.as_bool())
             .unwrap_or(false);
         let object_items = entry
-            .get("objects")
+            .member("objects")
             .and_then(|value| value.as_array())
             .ok_or_else(|| fault("objects-member-not-an-array"))?;
         let mut objects = Vec::with_capacity(object_items.len());
@@ -417,24 +420,24 @@ fn read_populations(
                 .as_object()
                 .ok_or_else(|| fault("object-entry-not-an-object"))?;
             let key = object_entry
-                .get("key")
+                .member("key")
                 .and_then(|value| value.as_str())
                 .unwrap_or_default()
                 .to_owned();
             let type_identity = object_entry
-                .get("type")
+                .member("type")
                 .and_then(|value| value.as_str())
                 .unwrap_or_default()
                 .to_owned();
             let field_items = object_entry
-                .get("fields")
+                .member("fields")
                 .and_then(|value| value.as_object())
                 .ok_or_else(|| fault("fields-member-not-an-object"))?;
-            let mut fields = BTreeMap::new();
+            let mut fields = Vec::with_capacity(field_items.len());
             for (name, value) in field_items {
-                let raw = read_raw_value(value)
+                let raw = read_raw_value(&value.clone().into_value())
                     .ok_or_else(|| fault("field-value-not-a-recognized-form"))?;
-                fields.insert(name.clone(), raw);
+                fields.push((name.clone(), raw));
             }
             objects.push(RawObject {
                 key,
@@ -452,57 +455,58 @@ fn read_populations(
 }
 
 fn read_invocation_body(
-    object: &serde_json::Map<String, serde_json::Value>,
+    object: &[(String, OrderedJson)],
     model: ModelHeader,
 ) -> Result<InvocationDocument, AdmissionFailure> {
     let context = object
-        .get("context")
+        .member("context")
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_owned();
     let operation = object
-        .get("operation")
+        .member("operation")
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_owned();
     let self_object = object
-        .get("self")
+        .member("self")
         .and_then(read_object_ref)
         .ok_or_else(|| fault("self-member-not-an-object-ref"))?;
     let pre = object
-        .get("pre")
+        .member("pre")
         .and_then(read_document_ref)
         .ok_or_else(|| fault("pre-member-not-a-document-ref"))?;
     let post = object
-        .get("post")
+        .member("post")
         .and_then(read_document_ref)
         .ok_or_else(|| fault("post-member-not-a-document-ref"))?;
     let parameter_items = object
-        .get("parameters")
+        .member("parameters")
         .and_then(|value| value.as_object())
         .ok_or_else(|| fault("parameters-member-not-an-object"))?;
-    let mut parameters = BTreeMap::new();
+    let mut parameters = Vec::with_capacity(parameter_items.len());
     for (name, value) in parameter_items {
-        let raw =
-            read_raw_value(value).ok_or_else(|| fault("parameter-value-not-a-recognized-form"))?;
-        parameters.insert(name.clone(), raw);
+        let raw = read_raw_value(&value.clone().into_value())
+            .ok_or_else(|| fault("parameter-value-not-a-recognized-form"))?;
+        parameters.push((name.clone(), raw));
     }
-    let result = match object.get("result") {
-        Some(serde_json::Value::Null) => ResultValue::Null,
+    let result = match object.member("result") {
+        Some(OrderedJson::Null) => ResultValue::Null,
         Some(value) => ResultValue::Value(
-            read_raw_value(value).ok_or_else(|| fault("result-value-not-a-recognized-form"))?,
+            read_raw_value(&value.clone().into_value())
+                .ok_or_else(|| fault("result-value-not-a-recognized-form"))?,
         ),
         None => return Err(fault("result-member-absent")),
     };
     let created = object
-        .get("created")
+        .member("created")
         .and_then(|value| value.as_array())
         .ok_or_else(|| fault("created-member-not-an-array"))?
         .iter()
         .map(|item| read_object_ref(item).ok_or_else(|| fault("created-entry-not-an-object-ref")))
         .collect::<Result<Vec<_>, _>>()?;
     let deleted = object
-        .get("deleted")
+        .member("deleted")
         .and_then(|value| value.as_array())
         .ok_or_else(|| fault("deleted-member-not-an-array"))?
         .iter()
@@ -583,6 +587,15 @@ pub(super) struct AdmittedEnvironment {
 /// (used for operation parameters and results, whose `(String, ValueType)`
 /// signature carries no separate presence: an optional operation parameter
 /// or result is itself typed `ValueType::Option(_)`).
+/// The first value named `name` in `fields` (document order, first
+/// occurrence for a duplicate key), or `None`.
+pub(super) fn raw_field<'a>(fields: &'a [(String, RawValue)], name: &str) -> Option<&'a RawValue> {
+    fields
+        .iter()
+        .find(|(field, _)| field == name)
+        .map(|(_, value)| value)
+}
+
 fn field_kind_matches(raw: &RawValue, value_type: &quire_exact::ValueType) -> bool {
     matches!(
         (raw, value_type),
@@ -792,7 +805,7 @@ pub(super) fn admit_populations(
                 let name = attribute.field().name();
                 let value_type = attribute.field().value_type();
                 let presence = attribute.field().presence();
-                let Some(raw) = object.fields.get(name) else {
+                let Some(raw) = raw_field(&object.fields, name) else {
                     return Err(refuse(
                         admission_record("invalid_runtime_input", "missing-member")
                             .with("object", object.key.clone())
@@ -816,7 +829,7 @@ pub(super) fn admit_populations(
                     })?;
                 attributes.push((name, field_value));
             }
-            for name in object.fields.keys() {
+            for (name, _) in &object.fields {
                 if !declared
                     .iter()
                     .any(|attribute| attribute.field().name() == name)
@@ -934,12 +947,12 @@ pub(super) type AdmittedParametersAndResult = (Vec<(String, Value)>, Option<Valu
 
 pub(super) fn admit_parameters_and_result(
     operation: &OperationDeclaration,
-    parameters: &BTreeMap<String, RawValue>,
+    parameters: &[(String, RawValue)],
     result: &ResultValue,
 ) -> Result<AdmittedParametersAndResult, AdmissionFailure> {
     let mut admitted = Vec::with_capacity(operation.parameters().len());
     for (name, value_type) in operation.parameters() {
-        let raw = parameters.get(name).ok_or_else(|| {
+        let raw = raw_field(parameters, name).ok_or_else(|| {
             refuse(
                 admission_record("invalid_runtime_input", "missing-member")
                     .with("field", name.clone()),
@@ -955,7 +968,7 @@ pub(super) fn admit_parameters_and_result(
             .map_err(|record| refuse(record.with("field", name.clone())))?;
         admitted.push((name.clone(), value));
     }
-    for name in parameters.keys() {
+    for (name, _) in parameters {
         if !operation
             .parameters()
             .iter()

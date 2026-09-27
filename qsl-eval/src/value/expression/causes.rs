@@ -113,6 +113,55 @@ impl CatalogCoded for ProtocolClauseSnapshot {
     }
 }
 
+/// `ProtocolClause`'s own refusal for a construct FR-104 admits into a
+/// checked clause body but FR-107 does not specify evaluation for.
+///
+/// FR-104 ("Observations of reads") gives `allInstances` and `lookup`, like
+/// every other model read, one observation, so the checker admits either
+/// inside a state clause whose operation declares a `Population<T>[N]`
+/// parameter. FR-107's own "Behavior" section (`FR-107-evaluate-state-
+/// clauses-at-s6a.md:54-109`) states `reaches`, field reads, `self`,
+/// `result`, parameters and `pre(e)` in full, and never once names
+/// `allInstances` or `lookup` -- FR-107 does not cover them. Reusing the
+/// `Value` family's own population machinery
+/// (`Machine::resolve_population`/`select_anchor`) is not an option: it
+/// resolves a `Value::Population` argument's *recorded* `PopulationBinding`
+/// (`ObjectEnvironment::with_population`), and FR-106's own raw value
+/// grammar ("Document forms") has no `population` tag among its six -- a
+/// `Population<T>[N]` operation parameter can never be admitted through an
+/// invocation document, so no such binding is ever recorded for a
+/// `ProtocolClause` evaluation's `ObjectEnvironment`. Reaching either node
+/// while evaluating a `ProtocolClause` therefore refuses here, typed and
+/// tested, rather than falling through to `resolve_population`'s own
+/// internal-fault path (reserved for a broken invariant, ADR-013 T-4, not
+/// this scoped gap).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum ProtocolClauseUnsupported {
+    /// `allInstances<T>(p)`.
+    AllInstances,
+    /// `lookup<T>(p, r) absent m`.
+    Lookup,
+}
+
+impl ProtocolClauseUnsupported {
+    fn construct(self) -> &'static str {
+        match self {
+            Self::AllInstances => "allInstances",
+            Self::Lookup => "lookup",
+        }
+    }
+}
+
+impl CatalogCoded for ProtocolClauseUnsupported {
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("unsupported_construct", "protocol-clause-population-read")
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([("construct", self.construct().to_owned())]))
+    }
+}
+
 /// FR-090-AC-8: the `StateModel` model-query refusal as S6a carries it, in
 /// `FamilyResult::Refused`. Holds the refusal's cause and detail and no
 /// native-v1 `qsl_foundation::diagnostic::Code` (ADR-013 R-09); its catalog

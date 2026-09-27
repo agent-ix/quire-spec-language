@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
-    StateModelUndefined,
+    ProtocolClauseUnsupported, StateModelUndefined,
 };
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
@@ -1295,6 +1295,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 retain_scalar(Value::Boolean(found), self.meter)?
             }
             NodeKind::AllInstances { population } => {
+                if self.is_protocol_clause() {
+                    return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                        ProtocolClauseUnsupported::AllInstances,
+                    ))));
+                }
                 let Value::Population(population_id) = self.pop()? else {
                     return Err(invariant());
                 };
@@ -1313,6 +1318,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                 absence,
                 population,
             } => {
+                if self.is_protocol_clause() {
+                    return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                        ProtocolClauseUnsupported::Lookup,
+                    ))));
+                }
                 let reference_value = self.pop()?;
                 let Value::Population(population_id) = self.pop()? else {
                     return Err(invariant());
@@ -1445,6 +1455,17 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             _ => self.objects,
         }
+    }
+
+    /// Whether this `Machine` is running a `ProtocolClause` (FR-107):
+    /// `self.reads` carries the clause's own model-read observation map for
+    /// that family alone, `None` for every `Value`-family call
+    /// ([`Self::new`]/[`Self::with_pre`]'s own doc). Consulted only to
+    /// refuse `allInstances`/`lookup` (see [`ProtocolClauseUnsupported`]'s
+    /// doc): FR-104 admits either into a checked clause body, but FR-107
+    /// specifies no evaluation for them.
+    fn is_protocol_clause(&self) -> bool {
+        self.reads.is_some()
     }
 
     /// FR-107: `reaches(source, target, edge)`, evaluated as
@@ -1832,7 +1853,7 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_foundation::diagnostic::Category;
-    use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+    use qsl_semantics::check::{CheckMode, CheckingLimits, PackageDeclarations};
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::dispatch::GeneralizationClosure;
     use qsl_semantics::model::domain_package::{
@@ -2026,5 +2047,159 @@ mod tests {
             fault.invariant(),
             "population-argument-maximum-mismatch-past-admission"
         );
+    }
+
+    /// FR-107 (QSL-278): `allInstances<T>(p)` reached while evaluating a
+    /// `ProtocolClause` (`Machine::with_pre`'s `reads: Some(_)`, the one
+    /// signal `Machine::is_protocol_clause` reads) refuses
+    /// `unsupported_construct`/`protocol-clause-population-read`, never an
+    /// `InternalFault` and never `Halt`ing through `resolve_population`.
+    ///
+    /// No admitted `StateClauseDeclaration` can actually reach this node:
+    /// `ValueTypeRef` (`model::domain_package`), the only vocabulary a
+    /// domain-package operation's parameter or result may draw from, has no
+    /// `Population` variant, and `qsl-cst`'s grammar parses no `Population<
+    /// T>[N]` type reference either -- a state clause's `self`, `result`
+    /// and operation parameters can never carry a `Value::Population`
+    /// (see [`ProtocolClauseUnsupported`]'s own doc). This test reuses
+    /// [`population_function_package`]'s already-checked `allInstances`
+    /// node (legal for a plain `Value` function, FR-153) and runs it
+    /// directly through `Machine::with_pre` with a protocol-clause-shaped
+    /// `reads` map, to exercise the guard itself rather than leave it
+    /// unreachable from every test.
+    #[trace("TC-467", "FR-107-AC-5")]
+    #[test]
+    fn all_instances_under_a_protocol_clause_refuses_unsupported_construct() {
+        let (package, _identity) = population_function_package();
+        let graph = package.graph();
+        let expression = graph
+            .check_expression(
+                vec![("p".to_owned(), ValueType::Population(Some(3)))],
+                &Expression::AllInstances {
+                    target: TypeForm::name("M::A", SPAN),
+                    population: Box::new(Expression::Name("p".to_owned())),
+                },
+                None,
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .expect("allInstances<M::A>(p) checks as a standalone expression");
+        let objects = ObjectEnvironment::default();
+        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
+            std::collections::BTreeMap::new();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let arguments = vec![Value::Population(PopulationId::from_digest([9; 32]))];
+        let evaluation = Machine::with_pre(
+            graph.scope(),
+            graph,
+            &objects,
+            None,
+            Some(&reads),
+            &mut meter,
+            graph.dispatch_tables(),
+        )
+        .run(expression.root(), expression.slots(), arguments)
+        .expect("a family-owned refusal is `Ok(FamilyEvaluated)`, never an `Err`");
+        match evaluation.outcome {
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
+                let code = cause.catalog_code();
+                assert_eq!(code.code(), "unsupported_construct");
+                assert_eq!(code.cause(), "protocol-clause-population-read");
+                assert_eq!(
+                    cause.catalog_fields(),
+                    Some(std::collections::BTreeMap::from([(
+                        "construct",
+                        "allInstances".to_owned()
+                    )]))
+                );
+            }
+            other => panic!("expected FamilyEvaluated(Refused(_)), got {other:?}"),
+        }
+    }
+
+    /// TC-467 (FR-107-AC-5): `lookup<M::A>(p, r) absent Refused` under a
+    /// protocol clause refuses `unsupported_construct`/
+    /// `protocol-clause-population-read` naming `lookup`, the same guard as
+    /// [`all_instances_under_a_protocol_clause_refuses_unsupported_construct`],
+    /// checked directly as a standalone expression (no domain-package
+    /// operation parameter or result can carry a `Value::Reference` bound to
+    /// a population read either, so this, too, is unreachable from any
+    /// admitted `ProtocolClause`, but the guard is exercised here rather
+    /// than left untested).
+    #[trace("TC-467", "FR-107-AC-5")]
+    #[test]
+    fn lookup_under_a_protocol_clause_refuses_unsupported_construct() {
+        use qsl_foundation::absence::AbsenceMode;
+
+        let (package, _identity) = population_function_package();
+        let graph = package.graph();
+        // `M::A`'s own effective id, re-derived the same way
+        // `population_function_package` does (it does not expose its own).
+        let a = match normalize(
+            &domain_package("bundle.qsl174-ac10-seam"),
+            ModelNormalizationLimits::UNLIMITED,
+        ) {
+            NormalizeOutcome::Completed(view) => view
+                .type_identities()
+                .get(&DeclarationKey::fixture("model.A"))
+                .copied()
+                .expect("model.A has a type-level effective declaration"),
+            other => panic!("expected a completed effective view, got {other:?}"),
+        };
+        let expression = graph
+            .check_expression(
+                vec![
+                    ("p".to_owned(), ValueType::Population(Some(3))),
+                    ("r".to_owned(), ValueType::Reference(a)),
+                ],
+                &Expression::Lookup {
+                    target: TypeForm::name("M::A", SPAN),
+                    population: Box::new(Expression::Name("p".to_owned())),
+                    reference: Box::new(Expression::Name("r".to_owned())),
+                    absence: AbsenceMode::Refused,
+                },
+                None,
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .expect("lookup<M::A>(p, r) absent Refused checks as a standalone expression");
+        let objects = ObjectEnvironment::default();
+        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
+            std::collections::BTreeMap::new();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let arguments = vec![
+            Value::Population(PopulationId::from_digest([9; 32])),
+            Value::Reference(ObjectReference::new(
+                quire_exact::UniverseId::from_digest([9; 32]),
+                a,
+                quire_exact::ObjectId::new("root".to_owned()).expect("non-empty key"),
+            )),
+        ];
+        let evaluation = Machine::with_pre(
+            graph.scope(),
+            graph,
+            &objects,
+            None,
+            Some(&reads),
+            &mut meter,
+            graph.dispatch_tables(),
+        )
+        .run(expression.root(), expression.slots(), arguments)
+        .expect("a family-owned refusal is `Ok(FamilyEvaluated)`, never an `Err`");
+        match evaluation.outcome {
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
+                let code = cause.catalog_code();
+                assert_eq!(code.code(), "unsupported_construct");
+                assert_eq!(code.cause(), "protocol-clause-population-read");
+                assert_eq!(
+                    cause.catalog_fields(),
+                    Some(std::collections::BTreeMap::from([(
+                        "construct",
+                        "lookup".to_owned()
+                    )]))
+                );
+            }
+            other => panic!("expected FamilyEvaluated(Refused(_)), got {other:?}"),
+        }
     }
 }

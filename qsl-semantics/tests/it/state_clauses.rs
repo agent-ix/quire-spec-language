@@ -9,6 +9,8 @@
 //! scope, not this ticket's (QSL-277). Every assertion below that would
 //! otherwise read `Int[0, 1000]` reads `Integer` instead.
 
+use std::collections::BTreeMap;
+
 use ix_trace_rs::trace;
 use qsl_forms::StateClauseKind;
 use qsl_foundation::bound::DomainKey;
@@ -1124,5 +1126,336 @@ fn operation_visibility_on_subtypes_inherits_or_refuses_ambiguous() {
     assert_eq!(
         refusals[0],
         (Code::AmbiguousDeclaration, Some("ambiguous-name"))
+    );
+}
+
+// ---------------------------------------------------------------------------
+// FR-106 check 11: the frame and delta check, end to end over a precondition
+// and a postcondition on `attemptUpdate` (QSL-278's own gap: check 11 was
+// previously exercised only by `frame.rs`'s own unit tests, never through
+// `admit_observations`'s `Invocation` path). `attemptUpdate`'s frame is
+// `modifies: [versionNumber]` ([`attempt_update_modifies_version_number`]),
+// so `parent` is a field outside `modifies` (check 11.3's own fixture).
+// ---------------------------------------------------------------------------
+
+fn frame_test_document() -> Vec<u8> {
+    config_version_document(
+        attempt_update_modifies_version_number(),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    )
+}
+
+const FRAME_CLAUSES: &str = "pre AttemptUpdatePre using v on Config::ConfigVersion::attemptUpdate \
+    { true }\npost AttemptUpdatePost using v on Config::ConfigVersion::attemptUpdate { true }\n";
+
+fn frame_document_digest(bytes: &[u8]) -> [u8; 32] {
+    let value: serde_json::Value = serde_json::from_slice(bytes).expect("test fixture is JSON");
+    let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
+        .expect("MAX_DEPTH is within MAX_DEPTH");
+    *quire_canonical::sha256(&value, limits)
+        .expect("test fixture is RFC 8785 canonical")
+        .as_bytes()
+}
+
+fn frame_label(identity: &str) -> qsl_semantics::model::observation::DocumentRef {
+    qsl_semantics::model::observation::DocumentRef {
+        authority: "test".to_owned(),
+        identity: identity.to_owned(),
+        revision_namespace: "ns".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    }
+}
+
+fn frame_model_header(model_digest_hex: &str) -> serde_json::Value {
+    json!({
+        "identity": "example/config-version",
+        "version": "1.0.0",
+        "digest": format!("sha256-jcs:{model_digest_hex}"),
+    })
+}
+
+fn frame_identity_json(
+    label: &qsl_semantics::model::observation::DocumentRef,
+) -> serde_json::Value {
+    json!({
+        "authority": label.authority,
+        "identity": label.identity,
+        "revision_namespace": label.revision_namespace,
+        "revision": label.revision,
+    })
+}
+
+/// A `config_history` snapshot: `objects`, each `(key, version_number,
+/// parent_key)` (`parent_key` `None` means `parent` is absent).
+fn frame_snapshot_bytes(
+    label: &qsl_semantics::model::observation::DocumentRef,
+    model_digest_hex: &str,
+    observation: &str,
+    objects: &[(&str, i64, Option<&str>)],
+) -> Vec<u8> {
+    let config_version = "ix://example/config-version/ConfigVersion";
+    let population = "ix://example/config-version/config_history";
+    let objects: Vec<_> = objects
+        .iter()
+        .map(|(key, version_number, parent)| {
+            let parent_field = match parent {
+                Some(parent_key) => {
+                    json!({"present": {"reference": {"population": population, "key": parent_key}}})
+                }
+                None => json!({"absent": null}),
+            };
+            json!({
+                "key": key,
+                "type": config_version,
+                "fields": {
+                    "versionNumber": {"integer": version_number.to_string()},
+                    "parent": parent_field,
+                },
+            })
+        })
+        .collect();
+    let value = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": frame_identity_json(label),
+        "observation": observation,
+        "model": frame_model_header(model_digest_hex),
+        "populations": [
+            {"population": population, "complete": true, "objects": objects},
+        ],
+    });
+    value.to_string().into_bytes()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn frame_invocation_bytes(
+    label: &qsl_semantics::model::observation::DocumentRef,
+    model_digest_hex: &str,
+    pre_ref: &qsl_semantics::model::observation::DocumentRef,
+    post_ref: &qsl_semantics::model::observation::DocumentRef,
+    self_key: &str,
+    created: &[&str],
+    deleted: &[&str],
+) -> Vec<u8> {
+    let population = "ix://example/config-version/config_history";
+    let object_ref = |key: &str| json!({"population": population, "key": key});
+    let value = json!({
+        "format": "quire.state.invocation/v1",
+        "identity": frame_identity_json(label),
+        "model": frame_model_header(model_digest_hex),
+        "context": "ix://example/config-version/ConfigVersion",
+        "operation": "attemptUpdate",
+        "self": {"population": population, "key": self_key},
+        "pre": {
+            "identity": frame_identity_json(pre_ref),
+            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&pre_ref.digest)),
+        },
+        "post": {
+            "identity": frame_identity_json(post_ref),
+            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&post_ref.digest)),
+        },
+        "parameters": {},
+        "result": {"boolean": true},
+        "created": created.iter().map(|key| object_ref(key)).collect::<Vec<_>>(),
+        "deleted": deleted.iter().map(|key| object_ref(key)).collect::<Vec<_>>(),
+    });
+    value.to_string().into_bytes()
+}
+
+/// Runs `clause_name` (`AttemptUpdatePre`/`AttemptUpdatePost`) over an
+/// invocation built from `pre_objects`/`post_objects` ((key, versionNumber,
+/// parent) triples), self object `self_key`, declared `created`/`deleted`.
+#[allow(clippy::too_many_arguments)]
+fn run_frame_clause(
+    clause_name: &str,
+    pre_objects: &[(&str, i64, Option<&str>)],
+    post_objects: &[(&str, i64, Option<&str>)],
+    self_key: &str,
+    created: &[&str],
+    deleted: &[&str],
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    let document = frame_test_document();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let model_digest = qsl_semantics::model::key::hex(digest);
+
+    let declarations = admit_and_assemble_with_body(&document, FRAME_CLAUSES)
+        .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("check refused: {refusals:?}"));
+    let clause = graph.state_clause(clause_name).expect("clause is declared");
+
+    let pre = frame_label("pre-snap");
+    let pre_bytes = frame_snapshot_bytes(&pre, &model_digest, "pre", pre_objects);
+    let pre = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&pre_bytes),
+        ..pre
+    };
+    let post = frame_label("post-snap");
+    let post_bytes = frame_snapshot_bytes(&post, &model_digest, "post", post_objects);
+    let post = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&post_bytes),
+        ..post
+    };
+    let invocation = frame_label("invocation");
+    let invocation_bytes = frame_invocation_bytes(
+        &invocation,
+        &model_digest,
+        &pre,
+        &post,
+        self_key,
+        created,
+        deleted,
+    );
+    let invocation = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&invocation_bytes),
+        ..invocation
+    };
+
+    let mut snapshots = BTreeMap::new();
+    snapshots.insert(pre.digest, pre_bytes);
+    snapshots.insert(post.digest, post_bytes);
+    let mut invocations = BTreeMap::new();
+    invocations.insert(invocation.digest, invocation_bytes);
+    let provisions = qsl_semantics::model::observation::Provisions {
+        snapshots: &snapshots,
+        invocations: &invocations,
+    };
+    let selection = qsl_semantics::model::observation::ClauseSelection {
+        name: clause_name.to_owned(),
+        input: qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
+    };
+    qsl_semantics::model::observation::admit_observations(
+        &graph,
+        clause,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &provisions,
+        &selection,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    )
+}
+
+fn assert_frame_refused(
+    result: Result<
+        qsl_semantics::model::observation::AdmittedObservations,
+        qsl_semantics::model::observation::AdmissionFailure,
+    >,
+    expected_code: &str,
+    expected_cause: &str,
+    expected_object: Option<&str>,
+) {
+    match result {
+        Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
+            assert_eq!(record.code, expected_code);
+            assert_eq!(record.cause, expected_cause);
+            if let Some(expected_object) = expected_object {
+                assert_eq!(
+                    record.fields.get("object").map(String::as_str),
+                    Some(expected_object)
+                );
+            }
+        }
+        other => panic!("expected Err(Refused({expected_code}/{expected_cause})), got {other:?}"),
+    }
+}
+
+/// TC-464 (FR-106 check 11, precondition): `root`'s `versionNumber` changes
+/// from 1 to 2 -- authorized (`attemptUpdate`'s frame `modifies
+/// [versionNumber]`) -- no other defect; admission admits.
+#[trace("TC-464", "FR-106-AC-5")]
+#[test]
+fn attempt_update_precondition_admits_an_authorized_change() {
+    let pre = [("root", 1, None)];
+    let post = [("root", 2, None)];
+    let observations = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &[], &[])
+        .expect("an authorized versionNumber change admits");
+    assert!(observations.pre.is_some());
+    assert!(observations.post.is_some());
+}
+
+/// TC-464 (FR-106 check 11, postcondition): the same authorized change,
+/// admitted for `AttemptUpdatePost` over the same pre/post snapshots.
+#[trace("TC-464", "FR-106-AC-5")]
+#[test]
+fn attempt_update_postcondition_admits_an_authorized_change() {
+    let pre = [("root", 1, None)];
+    let post = [("root", 2, None)];
+    let observations = run_frame_clause("AttemptUpdatePost", &pre, &post, "root", &[], &[])
+        .expect("an authorized versionNumber change admits");
+    assert!(observations.pre.is_some());
+    assert!(observations.post.is_some());
+}
+
+/// FR-106 check 11.1: the post snapshot's `child`, absent from pre, is not
+/// granted by `attemptUpdate`'s (empty) `creates` -- refuses naming `child`.
+#[trace("TC-464", "FR-106-AC-5")]
+#[test]
+fn attempt_update_refuses_an_unauthorized_create() {
+    let pre = [("root", 1, None)];
+    let post = [("root", 1, None), ("child", 1, None)];
+    let result = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &["child"], &[]);
+    assert_frame_refused(
+        result,
+        "frame_violation",
+        "unauthorized-change",
+        Some("child"),
+    );
+}
+
+/// FR-106 check 11.2: the pre snapshot's `child`, absent from post, is not
+/// granted by `attemptUpdate`'s (empty) `deletes` -- refuses naming `child`.
+#[trace("TC-464", "FR-106-AC-5")]
+#[test]
+fn attempt_update_refuses_an_unauthorized_delete() {
+    let pre = [("root", 1, None), ("child", 1, Some("root"))];
+    let post = [("root", 1, None)];
+    let result = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &[], &["child"]);
+    assert_frame_refused(
+        result,
+        "frame_violation",
+        "unauthorized-change",
+        Some("child"),
+    );
+}
+
+/// FR-106 check 11.3: `root`'s `parent` changes, a field outside
+/// `attemptUpdate`'s `modifies [versionNumber]` -- refuses naming `root`.
+#[trace("TC-464", "FR-106-AC-5")]
+#[test]
+fn attempt_update_refuses_a_change_outside_modifies() {
+    let pre = [("root", 1, None), ("child", 1, None)];
+    let post = [("root", 1, Some("child")), ("child", 1, None)];
+    let result = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &[], &[]);
+    assert_frame_refused(
+        result,
+        "frame_violation",
+        "unauthorized-change",
+        Some("root"),
+    );
+}
+
+/// FR-106 check 11.4: nothing is actually created between pre and post, but
+/// the invocation declares `created: [child]` -- refuses
+/// `population_delta_mismatch`/`delta-disagreement`.
+#[trace("TC-464", "FR-106-AC-5")]
+#[test]
+fn attempt_update_refuses_a_declared_delta_mismatch() {
+    let pre = [("root", 1, None)];
+    let post = [("root", 1, None)];
+    let result = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &["child"], &[]);
+    assert_frame_refused(
+        result,
+        "population_delta_mismatch",
+        "delta-disagreement",
+        None,
     );
 }

@@ -315,16 +315,6 @@ fn read_raw_value(json: &serde_json::Value) -> Option<RawValue> {
     }
 }
 
-/// The JSON structural nesting depth of `value` (objects and arrays only),
-/// starting at 1 for the root.
-fn json_depth(value: &serde_json::Value) -> u32 {
-    match value {
-        serde_json::Value::Object(map) => 1 + map.values().map(json_depth).max().unwrap_or(0),
-        serde_json::Value::Array(items) => 1 + items.iter().map(json_depth).max().unwrap_or(0),
-        _ => 0,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Re-derived model view
 // ---------------------------------------------------------------------------
@@ -529,6 +519,7 @@ pub fn admit_observations(
 
 mod document;
 mod frame;
+mod ordered_json;
 
 use document::{read_document, DocumentKind};
 
