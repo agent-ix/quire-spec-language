@@ -75,16 +75,20 @@ payload.
   three documents only from the byte provision.
 - If admission fails, then the executor SHALL refuse with a `ReplayRefusal`
   holding FR-106's record.
-- The executor SHALL run FR-115's frame check once.
-  - If it reports `frame_violation`/`unauthorized-change` at the object and
-    member (field, or created or deleted type) the payload's `change` names,
-    then the executor SHALL settle `reproduced-with-evaluated-witness`.
-  - If the frame check passes, or reports a violation at another object or
-    member, then the executor SHALL settle `inconclusive` with cause
-    `Verdicts`, holding both, never repaired (FR-072).
-  - If it reports `population_delta_mismatch`, then the executor SHALL settle
-    `inconclusive` with cause `NoValue`: the invocation completes no frame
-    verdict.
+- The executor SHALL run FR-115's frame check once and compare verdicts as
+  FR-072 does. The counterexample refuted the frame, so the proved verdict is
+  `violation`.
+  - If the check reports a violation (FR-115), then the executor SHALL
+    settle `reproduced-with-evaluated-witness`. The result carries the
+    replay's frame witness beside the payload's `change`; when the first
+    change the check finds is not the one the payload names, both stay in
+    the result as found.
+  - If the check finds nothing, then the executor SHALL settle
+    `inconclusive` with cause `Verdicts` (`violation` proved, `success`
+    replayed), never repaired (FR-072).
+  - If the check refuses with `population_delta_mismatch`, then the executor
+    SHALL settle `inconclusive` with cause `NoValue`: a refusal completes no
+    value (FR-072).
 - Replay SHALL read no path, environment variable, clock or search location,
   and SHALL give the same result for the same request.
 - CG builds the frame witness bindings over IR's `WitnessBinding` (AD-016)
@@ -97,7 +101,7 @@ payload.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-116-AC-1 | A hand-built envelope for `Config::ConfigVersion::attemptUpdate` carrying the forbidden-parent-change invocation and `change` (`child`, `parent`) settles `reproduced-with-evaluated-witness`. The result holds the source digest, `package_id`, the anchor, frame and occurrence identities equal to the payload's, the three document identities and digests, and both changes. | Test (TC-515) |
-| FR-116-AC-2 | The same envelope carrying the changed-version invocation (inside the frame) settles `inconclusive`, `Verdicts`; carrying forbidden-parent-change with `change` (`child`, `versionNumber`) settles `inconclusive`, `Verdicts`, holding both changes; carrying an invocation whose `created` disagrees settles `inconclusive`, `NoValue`. | Test (TC-515) |
+| FR-116-AC-2 | The same envelope carrying the changed-version invocation (inside the frame) settles `inconclusive`, `Verdicts`, holding `violation` and `success`; carrying forbidden-parent-change with `change` (`child`, `versionNumber`) settles `reproduced-with-evaluated-witness` and holds both the payload's change and the replay's (`child`, `parent`); carrying an invocation whose `created` disagrees settles `inconclusive`, `NoValue`. | Test (TC-515) |
 | FR-116-AC-3 | Stale identity: an envelope whose frame node identity is taken from a package whose `attemptUpdate` frame also modifies `parent` refuses `stale_dependency`/`revision-mismatch` naming both frame identities, with no admission; a source edit that changes the `package_id` refuses by FR-098's stale `package_id` rule; an `operation` naming `missing` refuses `missing_declaration`/`missing-name`. | Test (TC-515) |
 | FR-116-AC-4 | An envelope whose pre snapshot is absent from the byte provision refuses with FR-106's `unavailable_observation` record, and one whose invocation bytes differ from their digest refuses with `stale_dependency`/`byte-digest-mismatch`; neither settles a result. | Test (TC-515) |
 | FR-116-AC-5 | Replaying one envelope twice gives equal results. `FrameCounterexample` implements `FamilyPayload`, and the envelope carries it as its generic parameter with no string-keyed field. | Test (TC-515) |

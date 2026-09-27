@@ -11,7 +11,8 @@ relationships:
 ## Description
 
 Verify replay of a `WitnessEnvelope<FrameCounterexample>`: an agreeing
-replay reproduces, a disagreeing one is inconclusive, and a stale identity
+replay reproduces, a replay that finds no violation is inconclusive, and a
+stale identity
 refuses before admission.
 
 Scope: FR-116-AC-1 to FR-116-AC-5.
@@ -41,8 +42,10 @@ Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
 - Step 1: `reproduced-with-evaluated-witness`; the result holds the source
   digest, `package_id`, the payload's anchor, frame and occurrence
   identities, the three document identities and digests, and both changes.
-- Step 2: `inconclusive`, `Verdicts`; `inconclusive`, `Verdicts` holding
-  both changes; `inconclusive`, `NoValue`.
+- Step 2: `inconclusive`, `Verdicts` (`violation`, `success`);
+  `reproduced-with-evaluated-witness` holding the payload's change
+  (`child`, `versionNumber`) and the replay's (`child`, `parent`);
+  `inconclusive`, `NoValue`.
 - Step 3: `stale_dependency`/`revision-mismatch` naming both frame
   identities, with no admission; FR-098's stale `package_id` refusal;
   `missing_declaration`/`missing-name`.

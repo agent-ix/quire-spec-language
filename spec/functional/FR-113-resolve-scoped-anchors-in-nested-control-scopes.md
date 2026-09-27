@@ -1,6 +1,6 @@
 ---
 id: FR-113
-title: "Resolve scoped anchors in nested control scopes and refuse missing, ambiguous and shadowing names"
+title: "Resolve scoped anchors in nested control scopes and refuse missing, ambiguous, shadowing and wrong-kind names"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-006
@@ -12,14 +12,15 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-048
     type: traces_to
 ---
-# FR-113: Resolve scoped anchors in nested control scopes and refuse missing, ambiguous and shadowing names
+# FR-113: Resolve scoped anchors in nested control scopes and refuse missing, ambiguous, shadowing and wrong-kind names
 
 ## Description
 
 When S3 checks a protocol declaration, the `ProtocolClause` family SHALL
 resolve each `ScopedAnchorForm` (FR-112) to the one static protocol node it
 names, by its own scope function, and SHALL refuse a reference that names no
-node, a name that names two, and a binder that shadows a visible name, each
+node or a node of the wrong kind, a name that names two, and a binder that
+shadows a visible name, each
 with a catalog code at its span (ADR-012 §3 "anchor scoping", §4.2, §12.2
 Check row). A resolved anchor is recorded by the identity of its target, so
 no later stage recovers a target from a name (QSL-21 scope).
@@ -80,6 +81,26 @@ unresolved or ambiguous scope fails before S4, with no partial substitute.
   shadow aliases, native declarations or another visible binding", and "the
   same no-shadowing rule applies to binders and captures"). Two separate
   protocols may reuse a binder name.
+- The checker SHALL check the kind of node each resolved anchor names,
+  by its site (QSpec `choreography-surface.md`'s node and deadline rows):
+
+  | Site | Admitted target |
+  | --- | --- |
+  | `receive-of` | a `send` event node |
+  | `effect-of` | an `attempt` event node |
+  | `event-for` | a `compensate` template |
+  | `compensate-for` | an `effect` event node |
+  | `compensate-commit` | a `commit` node |
+  | `await-after` | a `send`, `receive`, `attempt`, `effect` or `event` node, a `commit` node, or a `compensate` template; never a structural control (`sequence`, `parallel`, `branch`, `choice`, `case`, `repeat`, `await`, `check`) |
+
+- If a resolved anchor names a node its site does not admit, then the
+  checker SHALL refuse `ill_typed`/`type-mismatch` at the anchor, naming the
+  site, the kinds it admits and the target's kind (the catalog row keeps the
+  expected and actual kind).
+- If a `receive` names a channel other than the channel of the `send` its
+  `receive-of` anchor names, then the checker SHALL refuse
+  `ill_typed`/`type-mismatch` at the anchor, naming both channels (QSpec: a receive is "related to the exact concrete send
+  occurrence" of its channel).
 - A refused anchor or binder SHALL NOT stop the checker from checking the
   other anchors and binders of the declaration: each clause that is in order
   but fails its own check still advances the builder (ADR-012 §4.2).
@@ -94,6 +115,7 @@ unresolved or ambiguous scope fails before S4, with no partial substitute.
 | FR-113-AC-4 | Ambiguity: two event nodes named `Applied` in `Main` refuse `ambiguous_declaration`/`ambiguous-name` at both declarations, and `Main::Applied` refuses `ambiguous_declaration`/`ambiguous-name` at the anchor naming both, in source order. Swapping the two declarations swaps nothing but their order in the refusal. | Test (TC-512) |
 | FR-113-AC-5 | Shadowing: a capture named `forward` inside `Undo`, where `forward` is already the template's bound parameter, refuses `ambiguous_declaration`/`ambiguous-name` at the capture naming the parameter; an event record binder named `M` where `M` is the unit's model alias refuses at the binder naming the alias. A second protocol in the same unit whose record binder is also `attempted` checks. | Test (TC-512) |
 | FR-113-AC-6 | A protocol with one missing anchor and one shadowing binder reports both refusals, ordered by builder state and then source position, and emits no checked protocol node. Checking it twice gives the same refusals in the same order. | Test (TC-512) |
+| FR-113-AC-7 | Wrong kind and channel: `effect Applied of Recovered` (an `event` node) refuses `ill_typed`/`type-mismatch` at the anchor naming site `effect-of` and kind `event`; `compensate Undo for Main::Tried` (an `attempt`) refuses naming `compensate-for` and `attempt`; `await Wait after Main ...` (a `sequence`) refuses naming `await-after` and `sequence`. With channels `C` and `D` from `R` to `R`, `send S via C ...` and `receive Got via D of S ...` refuse at the anchor naming `C` and `D`; the same receive `via C` checks. | Test (TC-512) |
 
 ## Dependencies
 
@@ -105,8 +127,9 @@ unresolved or ambiguous scope fails before S4, with no partial substitute.
   `missing_declaration` and `ambiguous_declaration` in
   `definitions/native-diagnostics.md`.
 - The composed lane resolves the same references today in
-  `src/linking/composed/scopes/protocol.rs` (`structural`), with scope issues
-  that carry no catalog code; M-6d deletes that checker (QSL-303) once this
+  `src/linking/composed/scopes/protocol.rs` (`structural`, with
+  `WrongTargetKind` and `IncompatibleReference`), with scope issues that
+  carry no catalog code; M-6d deletes that checker (QSL-303) once this
   requirement's checker replaces it.
 
 ## Status

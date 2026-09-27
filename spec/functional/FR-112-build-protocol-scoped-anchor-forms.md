@@ -19,13 +19,18 @@ relationships:
 When S2 builds the form of a `1-draft` protocol declaration, it SHALL build
 one `ScopedAnchorForm { scope, anchor }` for each protocol node reference the
 declaration holds, and SHALL attach it to the form of the construct that
-holds the reference (ADR-012 §12.2 Parse and Form rows, §4.1). A scoped
+holds the reference (ADR-012 §12.2 Form row, §4.1). A scoped
 anchor is a clause of its construct with its own refusal causes (FR-113), so
 it is a typed subnode, not a string kept inside the construct's form.
 
 `ScopedAnchorForm` is a `ProtocolClause` form (ADR-012 §1, §3) and lives in
 `forms::protocol_clause`. S2 records the reference and where it was written.
 It resolves nothing: resolution is S3's (FR-113).
+
+A scoped anchor is represented only inside S2 and S3. It has no
+`CheckedClauseKind` variant and no checked-package/v2 node: S4 emits nothing
+for it, and a resolved anchor reaches later stages only as its target's
+identity (ADR-012 §12.2).
 
 ## Inputs
 
@@ -73,7 +78,7 @@ One `ScopedAnchorForm` per node reference, with:
 
 ## Dependencies
 
-- ADR-012 §4 (typed subnodes), §12.2 (Parse and Form rows).
+- ADR-012 §4 (typed subnodes), §12.2 (Form row).
 - QSpec `choreography-surface.md` ("Control names and declaration paths
   identify static nodes"; "Relative references resolve in their lexical
   control scope").

@@ -95,8 +95,10 @@ selection, admission or evaluation result is a report.
   the entry SHALL report stage `compile`, category `refusal`,
   `stale_dependency`, naming both identities, with no admission or
   evaluation (FR-098's stale package rule).
-- The entry SHALL resolve the selected name in the compiled package's one
-  name table of state clauses and functions. FR-104 refuses a clause whose
+- The entry SHALL resolve a `Clause` or `Function` selection's name in the
+  compiled package's one name table of state clauses and functions. A
+  `Frame` selection names an operation, not a clause or function, and
+  resolves as FR-115 states. FR-104 refuses a clause whose
   name equals another clause's or a function's, so a name resolves to at
   most one declaration. This is the same one name lookup after checking that
   FR-100's `spine::run` makes (ADR-011 §5).

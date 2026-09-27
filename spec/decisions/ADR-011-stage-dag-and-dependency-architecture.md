@@ -1268,7 +1268,9 @@ on QSL-193.
   the same placement. It also settles #216's "backend artifact" wording:
   after M-6a, native `run` builds a `NativePackage` in process and writes no
   package bytes and no backend artifact, so no M-6a checked-package producer
-  remains for #216 to find.
+  remains for #216 to find. Amended 2026-09-24: `lower` moved to M-6c and
+  IT-010 imports `lowering`, so `lowering` and IT-010 are deleted in M-6c,
+  not M-6a.
 
 ## Ruling (2026-09-24): CLI `compile` routes by edition
 
