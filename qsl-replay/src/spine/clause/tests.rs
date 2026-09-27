@@ -1507,25 +1507,30 @@ fn config_version_domain_document() -> Vec<u8> {
 /// The unit text selecting [`config_version_domain_document`] as model alias
 /// `Config`, plus `ParentOrder` (invariant).
 ///
-/// **Scope note** (disclosed gap, not attempted here): a postcondition of
-/// `attemptUpdate` (`VersionUnchanged`, or a `pre(..)`-reading clause for
-/// TC-466 step 2) cannot be added to this file's fixture. Reaching S5
+/// **Pending QSL-279** (TC-466 Status; not this fix round's own finding): a
+/// postcondition of `attemptUpdate` (`VersionUnchanged`, or a
+/// `pre(..)`-reading clause for TC-466 step 2) cannot be added to this
+/// file's fixture. `evaluate_clause` is sealed to
+/// `qsl_package::checked::CheckedPackage` (`qsl-eval/src/value/expression/
+/// mod.rs:314`), reachable only through full compile-to-emit; reaching S5
 /// (`qsl_package::emit::emit_checked`) with any clause that uses the
 /// operation refuses `EmitRefusal::UnlocatedOccurrence` (`qsl-package/src/
-/// emit.rs:142`, "Source regions", emit.rs:35-42): the operation's own
-/// `origin.source` here is a synthetic `{sourceIdentity, path, startLine,
-/// startColumn}` (the same shape `qsl-semantics`' own TC-458 fixture uses,
-/// `model_operations.rs`'s `operation()`), never a byte source S1/S2 ever
-/// actually parsed, and `qsl-semantics`' own `tests/it` suite only checks
-/// through S3/S4 (`PackageDeclarations::check`), never S5, so this gap is
-/// invisible there. Confirmed by removing each new clause one at a time:
+/// emit.rs:142`, "Source regions", emit.rs:35-42), because FR-105's own
+/// state-node emission is not implemented yet ("Today QSL emits no `state`
+/// node", `spec/functional/FR-105-emit-state-nodes.md`): a hand-authored
+/// domain-package operation's `origin.source` here is a synthetic
+/// `{sourceIdentity, path, startLine, startColumn}` (the same shape
+/// `qsl-semantics`' own TC-458 fixture uses, `model_operations.rs`'s
+/// `operation()`), never a byte source S1/S2 ever actually parsed, and
+/// `qsl-semantics`' own `tests/it` suite only checks through S3/S4
+/// (`PackageDeclarations::check`), never S5, so this gap is invisible
+/// there. Confirmed by removing each new clause one at a time:
 /// `ParentOrder` alone (no clause referencing `attemptUpdate`) compiles
 /// through `run_clause` cleanly; any postcondition of `attemptUpdate`
 /// reaches the same `UnlocatedOccurrence` refusal regardless of its body.
-/// Building a hand-authored domain-package operation that survives full
-/// spine compile through emit needs either a real registered source for
-/// the operation's own occurrence or a spine change; both are outside this
-/// fix round's own findings.
+/// QSL-279 ("A05-8: S4 state node emission and the ConfigVersion spine
+/// corpus, FR-105, FR-108") is the ticket that implements the missing
+/// emission this depends on.
 fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let document = config_version_domain_document();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
