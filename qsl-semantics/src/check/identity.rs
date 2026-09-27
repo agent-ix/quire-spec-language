@@ -72,8 +72,20 @@ use crate::value::enumeration::mint_variant_id;
 // ---------------------------------------------------------------------
 
 /// ADR-013 O-10: one closed checked clause-kind enum, defined once in the
-/// layer-3 `check` core (FR-088-AC-1). See this module's own doc for why it
-/// is not named `ClauseKind`.
+/// layer-3 `check` core (FR-088-AC-1, amended by FR-105/QSL-279). See this
+/// module's own doc for why it is not named `ClauseKind`.
+///
+/// FR-105 splits the frame-anchored `state`/`frame` spelling this enum used
+/// to carry into two things: `StateTransition` now names the `state`/
+/// `transition` node (QSpec STD-111 item 5), and the three state-clause
+/// kinds -- invariant, precondition, postcondition -- get their own
+/// variants, each spelled with the node pair (`state`, `state_clause`), the
+/// clause operation `quire.op.state.clause` and their own `clause` member.
+/// The three share one `node_tag`/`semantic_form` pair and one clause
+/// operation identity: only the member's `clause` value tells them apart, so
+/// totality and injectivity hold over the full (node pair, operation
+/// identity, member) triple, not over any one of its parts alone
+/// (FR-105-AC-5).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CheckedClauseKind {
     /// A `claim` node: a native-runtime boolean claim.
@@ -82,8 +94,15 @@ pub enum CheckedClauseKind {
     Temporal,
     /// A `protocol` node: a native-runtime protocol control.
     Protocol,
-    /// A `state` node with `semantic_form: "frame"` (ADR-013 O-08): the
-    /// frame identity this module also builds.
+    /// A `state`/`state_clause` node whose `clause` member is `invariant`.
+    Invariant,
+    /// A `state`/`state_clause` node whose `clause` member is
+    /// `precondition`.
+    Precondition,
+    /// A `state`/`state_clause` node whose `clause` member is
+    /// `postcondition`.
+    Postcondition,
+    /// A `state` node with `semantic_form: "transition"` (QSpec STD-111).
     StateTransition,
 }
 
@@ -91,7 +110,7 @@ impl CheckedClauseKind {
     /// `kind`'s own successor in `all()`'s enumeration order, or the first
     /// variant when `kind` is `None`, or `None` after the last variant.
     /// Exhaustive over `Self` with no `_` arm (PR #300 review finding 8/
-    /// round 2 L6): adding a fifth variant to the enum without adding its
+    /// round 2 L6): adding an eighth variant to the enum without adding its
     /// own arm here is a missing-match-arm compile error, not merely a
     /// match that stays green while a *separate* array literal silently
     /// forgets it -- this chain is the one place a variant's position in
@@ -101,7 +120,10 @@ impl CheckedClauseKind {
             None => Some(Self::Claim),
             Some(Self::Claim) => Some(Self::Temporal),
             Some(Self::Temporal) => Some(Self::Protocol),
-            Some(Self::Protocol) => Some(Self::StateTransition),
+            Some(Self::Protocol) => Some(Self::Invariant),
+            Some(Self::Invariant) => Some(Self::Precondition),
+            Some(Self::Precondition) => Some(Self::Postcondition),
+            Some(Self::Postcondition) => Some(Self::StateTransition),
             Some(Self::StateTransition) => None,
         }
     }
@@ -111,84 +133,112 @@ impl CheckedClauseKind {
     /// so not linked here). The
     /// trailing `debug_assert` closes the one gap `next`'s exhaustiveness
     /// alone cannot: a variant added to the chain but not to this walk
-    /// would leave `next(Some(d))` still `Some(_)`, which fails loudly
-    /// (in every debug-mode test that calls `all()`, starting with TC-250's
+    /// would leave `next(Some(g))` still `Some(_)`, which fails loudly
+    /// (in every debug-mode test that calls `all()`, starting with TC-462's
     /// own totality test below) rather than silently returning a
-    /// four-element array one short of the real vocabulary.
-    pub fn all() -> [Self; 4] {
+    /// seven-element array one short of the real vocabulary.
+    pub fn all() -> [Self; 7] {
         let a = Self::next(None).expect("Self::next(None) is always Some(Self::Claim)");
         let b = Self::next(Some(a)).expect("Claim is always followed by Temporal");
         let c = Self::next(Some(b)).expect("Temporal is always followed by Protocol");
-        let d = Self::next(Some(c)).expect("Protocol is always followed by StateTransition");
+        let d = Self::next(Some(c)).expect("Protocol is always followed by Invariant");
+        let e = Self::next(Some(d)).expect("Invariant is always followed by Precondition");
+        let f = Self::next(Some(e)).expect("Precondition is always followed by Postcondition");
+        let g = Self::next(Some(f)).expect("Postcondition is always followed by StateTransition");
         debug_assert!(
-            Self::next(Some(d)).is_none(),
+            Self::next(Some(g)).is_none(),
             "CheckedClauseKind::next has a variant after StateTransition that \
              CheckedClauseKind::all does not walk to -- extend this walk to match"
         );
-        [a, b, c, d]
+        [a, b, c, d, e, f, g]
     }
 
-    /// This variant's exactly-one v2 clause-operation identity (ADR-013
-    /// O-10's own wire vocabulary: `quire.op.claim.clause`,
-    /// `quire.op.temporal.clause`, `quire.op.protocol.control`,
-    /// `quire.op.state.transition`). Total and injective over the four
-    /// variants, with no `_` arm (FR-088-AC-4).
+    /// This variant's v2 clause-operation identity (ADR-013 O-10's own wire
+    /// vocabulary: `quire.op.claim.clause`, `quire.op.temporal.clause`,
+    /// `quire.op.protocol.control`, `quire.op.state.clause` (shared by the
+    /// three state-clause variants) and `quire.op.state.transition`). Not
+    /// injective alone since FR-105: the three state-clause variants share
+    /// this identity and differ only in [`Self::kind_member`] -- see this
+    /// type's own doc.
     pub fn wire_operation_identity(self) -> &'static str {
         match self {
             Self::Claim => "quire.op.claim.clause",
             Self::Temporal => "quire.op.temporal.clause",
             Self::Protocol => "quire.op.protocol.control",
+            Self::Invariant | Self::Precondition | Self::Postcondition => "quire.op.state.clause",
             Self::StateTransition => "quire.op.state.transition",
-        }
-    }
-
-    /// The variant whose [`Self::wire_operation_identity`] is exactly
-    /// `wire`, or `None` when `wire` names none of them: backward totality
-    /// is over exactly this enum's own closed wire vocabulary, not an open
-    /// string set (FR-088-AC-4).
-    #[qsl_attrs::string_edge]
-    pub fn from_wire_operation_identity(wire: &str) -> Option<Self> {
-        match wire {
-            "quire.op.claim.clause" => Some(Self::Claim),
-            "quire.op.temporal.clause" => Some(Self::Temporal),
-            "quire.op.protocol.control" => Some(Self::Protocol),
-            "quire.op.state.transition" => Some(Self::StateTransition),
-            _ => None,
         }
     }
 
     /// This variant's own v2 syntax `node_tag`, with a `semantic_form` where
     /// the node kind is overloaded (ADR-013 O-08/O-10): `claim`, `temporal`
     /// and `protocol` are each their own dedicated node kind with no
-    /// `semantic_form` disambiguation needed (this type's own per-variant
-    /// doc comments above already name them so); [`Self::StateTransition`]
-    /// is the `state` node kind's `semantic_form: "frame"` case specifically
-    /// (its own doc). FR-088-AC-4's "node_tag/semantic_form pair" half of
-    /// the wire vocabulary, alongside [`Self::wire_operation_identity`]'s
-    /// "clause operation identity" half -- total and injective over the
-    /// four variants, with no `_` arm.
+    /// `semantic_form` disambiguation needed; the three state-clause
+    /// variants share the `state`/`state_clause` pair (FR-341); a
+    /// [`Self::StateTransition`] is the `state`/`transition` case (QSpec
+    /// STD-111). Not injective alone -- the three state-clause variants
+    /// share this pair too; see [`Self::kind_member`].
     pub fn node_tag_and_semantic_form(self) -> (&'static str, Option<&'static str>) {
         match self {
             Self::Claim => ("claim", None),
             Self::Temporal => ("temporal", None),
             Self::Protocol => ("protocol", None),
-            Self::StateTransition => ("state", Some("frame")),
+            Self::Invariant | Self::Precondition | Self::Postcondition => {
+                ("state", Some("state_clause"))
+            }
+            Self::StateTransition => ("state", Some("transition")),
         }
     }
 
-    /// The variant whose [`Self::node_tag_and_semantic_form`] is exactly
-    /// `(node_tag, semantic_form)`, or `None` when the pair names none of
-    /// them: backward totality over this closed vocabulary, not an open
-    /// pair of strings (FR-088-AC-4).
-    pub fn from_node_tag_and_semantic_form(
-        node_tag: &str,
-        semantic_form: Option<&str>,
+    /// The `clause` value of a `state`/`state_clause` node's `state_clause`
+    /// operation member (FR-341): `Some` for exactly the three state-clause
+    /// variants, `None` for every variant that carries no such member. This
+    /// is the one part of the wire vocabulary that tells the three
+    /// state-clause variants apart, since [`Self::wire_operation_identity`]
+    /// and [`Self::node_tag_and_semantic_form`] are equal across all three
+    /// (FR-105-AC-5).
+    pub fn kind_member(self) -> Option<&'static str> {
+        match self {
+            Self::Claim | Self::Temporal | Self::Protocol | Self::StateTransition => None,
+            Self::Invariant => Some("invariant"),
+            Self::Precondition => Some("precondition"),
+            Self::Postcondition => Some("postcondition"),
+        }
+    }
+
+    /// The variant whose ([`Self::node_tag_and_semantic_form`],
+    /// [`Self::wire_operation_identity`], [`Self::kind_member`]) triple is
+    /// exactly this one, or `None` when no variant matches: backward
+    /// totality over the closed vocabulary (FR-105-AC-5), not an open triple
+    /// of strings. `(("state", Some("frame")), _, _)` -- the pre-FR-105
+    /// spelling -- decodes to no variant: a frame node's body holds no
+    /// clause application (FR-341 "Node forms and body roots"), so no
+    /// `CheckedClauseKind` variant is ever keyed at a frame node.
+    pub fn from_triple(
+        node_tag_and_semantic_form: (&str, Option<&str>),
+        wire_operation_identity: &str,
+        kind_member: Option<&str>,
     ) -> Option<Self> {
-        match (node_tag, semantic_form) {
-            ("claim", None) => Some(Self::Claim),
-            ("temporal", None) => Some(Self::Temporal),
-            ("protocol", None) => Some(Self::Protocol),
-            ("state", Some("frame")) => Some(Self::StateTransition),
+        match (
+            node_tag_and_semantic_form,
+            wire_operation_identity,
+            kind_member,
+        ) {
+            (("claim", None), "quire.op.claim.clause", None) => Some(Self::Claim),
+            (("temporal", None), "quire.op.temporal.clause", None) => Some(Self::Temporal),
+            (("protocol", None), "quire.op.protocol.control", None) => Some(Self::Protocol),
+            (("state", Some("state_clause")), "quire.op.state.clause", Some("invariant")) => {
+                Some(Self::Invariant)
+            }
+            (("state", Some("state_clause")), "quire.op.state.clause", Some("precondition")) => {
+                Some(Self::Precondition)
+            }
+            (("state", Some("state_clause")), "quire.op.state.clause", Some("postcondition")) => {
+                Some(Self::Postcondition)
+            }
+            (("state", Some("transition")), "quire.op.state.transition", None) => {
+                Some(Self::StateTransition)
+            }
             _ => None,
         }
     }
@@ -567,89 +617,136 @@ mod tests {
 
     // -- O-10: clause kind ------------------------------------------------
 
-    /// TC-250 steps 2a-5: the forward mapping matches a fixed table
-    /// (written independently of [`CheckedClauseKind::wire_operation_identity`]
-    /// itself) and is total/injective in both directions.
+    /// TC-250 (FR-088-AC-4): the per-variant `node_tag`/`semantic_form` and
+    /// wire-operation-identity spellings match a fixed table (written
+    /// independently of [`CheckedClauseKind::wire_operation_identity`] and
+    /// [`CheckedClauseKind::node_tag_and_semantic_form`] themselves), for
+    /// every one of the four non-state-clause variants each of which is
+    /// already unique on its own.
     #[trace("TC-250", "FR-088-AC-4")]
     #[test]
-    fn wire_mapping_matches_fixed_table_and_is_total_and_injective() {
+    fn wire_mapping_matches_fixed_table_for_the_non_state_clause_variants() {
         let expected = [
-            (CheckedClauseKind::Claim, "quire.op.claim.clause"),
-            (CheckedClauseKind::Temporal, "quire.op.temporal.clause"),
-            (CheckedClauseKind::Protocol, "quire.op.protocol.control"),
+            (
+                CheckedClauseKind::Claim,
+                ("claim", None),
+                "quire.op.claim.clause",
+            ),
+            (
+                CheckedClauseKind::Temporal,
+                ("temporal", None),
+                "quire.op.temporal.clause",
+            ),
+            (
+                CheckedClauseKind::Protocol,
+                ("protocol", None),
+                "quire.op.protocol.control",
+            ),
             (
                 CheckedClauseKind::StateTransition,
+                ("state", Some("transition")),
                 "quire.op.state.transition",
             ),
         ];
-        for (kind, wire) in expected {
+        for (kind, pair, wire) in expected {
+            assert_eq!(kind.node_tag_and_semantic_form(), pair, "{kind:?}");
             assert_eq!(kind.wire_operation_identity(), wire, "{kind:?}");
-            assert_eq!(
-                CheckedClauseKind::from_wire_operation_identity(wire),
-                Some(kind)
-            );
+            assert_eq!(kind.kind_member(), None, "{kind:?}");
+            assert_eq!(CheckedClauseKind::from_triple(pair, wire, None), Some(kind));
         }
-        let forward: Vec<&str> = CheckedClauseKind::all()
-            .iter()
-            .map(|kind| kind.wire_operation_identity())
-            .collect();
-        let mut sorted = forward.clone();
-        sorted.sort_unstable();
-        sorted.dedup();
-        assert_eq!(
-            sorted.len(),
-            forward.len(),
-            "forward collision: {forward:?}"
-        );
-        assert_eq!(
-            CheckedClauseKind::from_wire_operation_identity("not-a-real-wire-string"),
-            None
-        );
     }
 
-    /// TC-250 (FR-088-AC-4): the `node_tag`/`semantic_form` half of the wire
-    /// vocabulary is likewise total and injective, and matches the fixed
-    /// table this type's own per-variant doc comments state (`claim`/
-    /// `temporal`/`protocol` each their own node kind, `StateTransition` the
-    /// `state`/`semantic_form: "frame"` case). PR #300 review round 2, L7:
-    /// this closes the gap the prior version of this test suite left --
-    /// only the clause-operation-identity half of AC-4's wire vocabulary had
-    /// a totality/injectivity test.
-    #[trace("TC-250", "FR-088-AC-4")]
+    /// TC-462 step 4 (FR-105-AC-5): the mapping is total and injective over
+    /// all seven variants of the full (node pair, wire operation identity,
+    /// `clause` member) triple -- the three state-clause variants share a
+    /// node pair and an operation identity, so only the triple as a whole is
+    /// injective; each variant gives exactly one triple, no two variants
+    /// share one, every triple decodes back to its variant, `(("state",
+    /// Some("frame")), _, _)` decodes to no variant, and `StateTransition`
+    /// gives `(("state", Some("transition")), "quire.op.state.transition",
+    /// None)`.
+    #[trace("TC-462", "FR-105-AC-5")]
     #[test]
-    fn node_tag_and_semantic_form_mapping_matches_a_fixed_table_and_is_total_and_injective() {
+    fn triple_mapping_is_total_and_injective_over_all_seven_variants() {
         let expected = [
-            (CheckedClauseKind::Claim, ("claim", None)),
-            (CheckedClauseKind::Temporal, ("temporal", None)),
-            (CheckedClauseKind::Protocol, ("protocol", None)),
-            (CheckedClauseKind::StateTransition, ("state", Some("frame"))),
+            (
+                CheckedClauseKind::Invariant,
+                ("state", Some("state_clause")),
+                "quire.op.state.clause",
+                Some("invariant"),
+            ),
+            (
+                CheckedClauseKind::Precondition,
+                ("state", Some("state_clause")),
+                "quire.op.state.clause",
+                Some("precondition"),
+            ),
+            (
+                CheckedClauseKind::Postcondition,
+                ("state", Some("state_clause")),
+                "quire.op.state.clause",
+                Some("postcondition"),
+            ),
         ];
-        for (kind, (node_tag, semantic_form)) in expected {
-            assert_eq!(kind.node_tag_and_semantic_form(), (node_tag, semantic_form));
+        for (kind, pair, wire, member) in expected {
+            assert_eq!(kind.node_tag_and_semantic_form(), pair, "{kind:?}");
+            assert_eq!(kind.wire_operation_identity(), wire, "{kind:?}");
+            assert_eq!(kind.kind_member(), member, "{kind:?}");
             assert_eq!(
-                CheckedClauseKind::from_node_tag_and_semantic_form(node_tag, semantic_form),
+                CheckedClauseKind::from_triple(pair, wire, member),
                 Some(kind)
             );
         }
-        let forward: Vec<(&str, Option<&str>)> = CheckedClauseKind::all()
+
+        type Triple<'a> = ((&'a str, Option<&'a str>), &'a str, Option<&'a str>);
+        let triples: Vec<Triple<'_>> = CheckedClauseKind::all()
             .iter()
-            .map(|kind| kind.node_tag_and_semantic_form())
+            .map(|kind| {
+                (
+                    kind.node_tag_and_semantic_form(),
+                    kind.wire_operation_identity(),
+                    kind.kind_member(),
+                )
+            })
             .collect();
-        let mut sorted = forward.clone();
+        let mut sorted = triples.clone();
         sorted.sort_unstable();
         sorted.dedup();
         assert_eq!(
             sorted.len(),
-            forward.len(),
-            "forward collision: {forward:?}"
+            triples.len(),
+            "forward collision over the full triple: {triples:?}"
+        );
+        for kind in CheckedClauseKind::all() {
+            let triple = (
+                kind.node_tag_and_semantic_form(),
+                kind.wire_operation_identity(),
+                kind.kind_member(),
+            );
+            assert_eq!(
+                CheckedClauseKind::from_triple(triple.0, triple.1, triple.2),
+                Some(kind),
+                "{kind:?} does not decode back from its own triple"
+            );
+        }
+
+        // The pre-FR-105 spelling decodes to no variant: a frame node's
+        // body holds no clause application.
+        assert_eq!(
+            CheckedClauseKind::from_triple(("state", Some("frame")), "quire.op.state.clause", None),
+            None
         );
         assert_eq!(
-            CheckedClauseKind::from_node_tag_and_semantic_form("state", None),
+            CheckedClauseKind::from_triple(
+                ("state", Some("state_clause")),
+                "quire.op.state.clause",
+                None
+            ),
             None,
-            "a bare `state` node_tag with no semantic_form names no variant"
+            "a state_clause pair and operation with no clause member names no variant"
         );
         assert_eq!(
-            CheckedClauseKind::from_node_tag_and_semantic_form("not-a-real-node-tag", None),
+            CheckedClauseKind::from_triple(("not-a-real-node-tag", None), "not-a-real-wire", None),
             None
         );
     }

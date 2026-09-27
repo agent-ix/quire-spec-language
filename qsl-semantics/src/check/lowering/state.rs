@@ -6,33 +6,31 @@
 //!
 //! FR-104 needs each clause's node identity, its `claim` occurrence and the
 //! frame node's own occurrence to key the clause's requirement records.
-//! The node contents follow FR-105's Outputs table, whose wire spellings
-//! (the `quire.op.state.clause` application and its `state_clause` member,
-//! the frame term's (object type, member name) entry) QSpec STD-111 has
-//! not yet published. Until it does, the `state_clause` body is an
-//! aggregate of FR-105's four arguments (the clause kind, the parameter
-//! references, the anchor and the condition) and the frame body an
-//! aggregate of its three entry lists. Either way the key covers the
-//! clause kind, its anchor and its checked body and nothing else: two
-//! declarations with equal kind, anchor and body share one node and differ
-//! in their `claim` occurrence (FR-088, FR-104-AC-6), and the declared name
-//! enters no key. FR-105 (QSL-279) replaces these bodies with the STD-111
-//! spellings when it emits them.
+//! The node contents follow FR-105's Outputs table, in the wire spellings
+//! QSpec STD-111 published: a `state_clause` node's body is a
+//! `quire.op.state.clause` application (FR-341), an `operation_anchor`
+//! node's body is FR-342's three-binding aggregate, and a `frame` node's
+//! body is FR-340's own non-`SemanticTerm` `frame` term
+//! ([`SemanticTerm::Frame`]). The key covers the clause kind, its anchor and
+//! its checked body and nothing else: two declarations with equal kind,
+//! anchor and body share one node and differ in their `claim` occurrence
+//! (FR-088, FR-104-AC-6), and the declared name enters no key.
 
 use std::collections::BTreeMap;
 
 use quire_exact::{EffectiveId, NodeKey, Origin, ValueType};
 
-use super::{fault, generated_location, Binder, Binders, Lowering};
+use super::{fault, Binder, Binders, Lowering};
 use crate::check::claims::BinderSite;
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::Node;
-use crate::check::node_key::{NodeTag, SemanticTerm};
+use crate::check::node_key::{FrameField, NodeRef, NodeTag, Operation, Operator, SemanticTerm};
 use crate::check::refusal::{CheckRefusal, KeyFault, Location};
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::member_identity_name;
 use crate::model::key::DeclarationKey;
 use crate::value::declaration::OperationDeclaration;
+use crate::value::member::Member;
 use qsl_forms::StateClauseKind;
 
 /// The operation a `pre` or `post` clause names, as lowering reads it.
@@ -42,6 +40,18 @@ pub(crate) struct AnchorInput<'a> {
     pub(crate) declaring: EffectiveId,
     /// The operation.
     pub(crate) operation: &'a OperationDeclaration,
+    /// A real location of a clause that names this operation, read from the
+    /// unit (never [`generated_location`]): the `frame` and
+    /// `operation_anchor` nodes carry no source position of their own (the
+    /// operation is declared in the domain package, not the unit), so their
+    /// `generated` occurrence needs one clause's own location to resolve a
+    /// region at all (FR-096; the SR-751 round-2 finding this field fixes,
+    /// `EmitRefusal::UnlocatedOccurrence` at every clause naming an
+    /// operation). Which clause's location is used, when several name the
+    /// same operation, is unconstrained by FR-105: it decides only the
+    /// source-map region the occurrence is placed at, never the node's
+    /// identity, its dependencies or its ordinal.
+    pub(crate) location: &'a Location,
 }
 
 /// One checked state clause, as lowering reads it.
@@ -135,27 +145,36 @@ impl Lowering<'_> {
                 (anchor, Some((frame, frame_origin)))
             }
         };
-        let kind = self.text_literal(kind_spelling(clause.kind), location)?;
+        // FR-341: a `state_clause` node's body is a `quire.op.state.clause`
+        // application whose `state_clause` member names the clause kind and
+        // whose three arguments are, in order, the parameter aggregate, the
+        // anchor and the condition. `result_type` names the same `Boolean`
+        // node as `semantic_type` (FR-341 "the application's `result_type`
+        // names the same node").
         let key = self.insert(
             location,
             NodeTag::State,
             "state_clause",
             Some(boolean),
             None,
-            SemanticTerm::Aggregate {
-                members: vec![
-                    SemanticTerm::binding("clause", kind),
-                    SemanticTerm::binding(
-                        "parameters",
-                        SemanticTerm::Aggregate {
-                            members: parameters
-                                .iter()
-                                .map(|parameter| SemanticTerm::reference(*parameter))
-                                .collect(),
-                        },
-                    ),
-                    SemanticTerm::binding("anchor", SemanticTerm::reference(anchor)),
-                    SemanticTerm::binding("condition", condition),
+            SemanticTerm::Application {
+                operator: Operator::StateClause,
+                operation: Operation {
+                    member: Some(Member::StateClause {
+                        clause: kind_spelling(clause.kind),
+                    }),
+                    ..Operation::plain("quire.op.state.clause")
+                },
+                result_type: NodeRef(boolean),
+                arguments: vec![
+                    SemanticTerm::Aggregate {
+                        members: parameters
+                            .iter()
+                            .map(|parameter| SemanticTerm::reference(*parameter))
+                            .collect(),
+                    },
+                    SemanticTerm::reference(anchor),
+                    condition,
                 ],
             },
         )?;
@@ -220,33 +239,24 @@ impl Lowering<'_> {
         for field in &effect.modifies {
             modifies.push(self.frame_field(field, location)?);
         }
-        // FR-105: entries in ascending (object type node digest, name).
+        // FR-340: entries ascending by (declaring node digest, field name).
         modifies.sort();
-        let mut modified = Vec::with_capacity(modifies.len());
-        for (object, name) in modifies {
-            let name = self.text_literal(&name, location)?;
-            modified.push(SemanticTerm::Aggregate {
-                members: vec![SemanticTerm::reference(object), name],
-            });
-        }
+        let modifies: Vec<FrameField> = modifies
+            .into_iter()
+            .map(|(object, name)| FrameField::new(object, name))
+            .collect();
         let creates = self.frame_objects(&effect.creates, location)?;
         let deletes = self.frame_objects(&effect.deletes, location)?;
+        // FR-340: the frame body is not a `SemanticTerm` at all -- it holds
+        // no application, and it never nests inside another term (the
+        // schema scopes this shape to a `state`/`frame` node's own body).
         let frame = self.insert(
             location,
             NodeTag::State,
             "frame",
             Some(declaring),
             None,
-            SemanticTerm::Aggregate {
-                members: vec![
-                    SemanticTerm::binding(
-                        "modifies",
-                        SemanticTerm::Aggregate { members: modified },
-                    ),
-                    SemanticTerm::binding("creates", creates),
-                    SemanticTerm::binding("deletes", deletes),
-                ],
-            },
+            SemanticTerm::frame(modifies, creates, deletes),
         )?;
         Ok((declaring, frame))
     }
@@ -264,7 +274,6 @@ impl Lowering<'_> {
         &mut self,
         operations: &[AnchorInput<'_>],
     ) -> Result<(), CheckRefusal> {
-        let location = generated_location();
         let mut distinct: BTreeMap<(EffectiveId, String), &AnchorInput<'_>> = BTreeMap::new();
         for anchor in operations {
             distinct
@@ -274,13 +283,18 @@ impl Lowering<'_> {
         let mut ordered: Vec<(DeclarationKey, String, &AnchorInput<'_>)> =
             Vec::with_capacity(distinct.len());
         for ((declaring, name), anchor) in distinct {
-            let key = self.declaration_key_of(declaring, &location)?;
+            let key = self.declaration_key_of(declaring, anchor.location)?;
             ordered.push((key, name, anchor));
         }
         ordered.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
         for (_, name, anchor) in ordered {
-            let (_, frame) = self.frame_node(anchor, &location)?;
-            self.frame_occurrence(anchor.declaring, &name, frame, &location)?;
+            // `anchor.location` is a real clause location (never
+            // `generated_location`): the sort above already fixed this
+            // operation's ordinal independently of it, so which clause's
+            // location is used here decides only the occurrence's source
+            // region.
+            let (_, frame) = self.frame_node(anchor, anchor.location)?;
+            self.frame_occurrence(anchor.declaring, &name, frame, anchor.location)?;
         }
         Ok(())
     }
@@ -310,14 +324,12 @@ impl Lowering<'_> {
         &mut self,
         objects: &[DeclarationKey],
         location: &Location,
-    ) -> Result<SemanticTerm, CheckRefusal> {
+    ) -> Result<Vec<NodeKey>, CheckRefusal> {
         let mut nodes = Vec::with_capacity(objects.len());
         for object in objects {
             nodes.push(self.model_node(object, location)?);
         }
         nodes.sort();
-        Ok(SemanticTerm::Aggregate {
-            members: nodes.into_iter().map(SemanticTerm::reference).collect(),
-        })
+        Ok(nodes)
     }
 }

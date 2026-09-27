@@ -87,6 +87,15 @@ pub enum Member {
         /// The operator's own identifier, e.g. `"add"`.
         operator: Identifier,
     },
+    /// A `quire.op.state.clause` application's own clause kind (QSpec
+    /// STD-111, FR-341): the only difference between an invariant's,
+    /// precondition's and postcondition's spellings. Like
+    /// [`Self::ProfileOperator`], this variant carries no `declaration` --
+    /// the schema's shape is `{"kind": "state_clause", "clause": ...}`.
+    StateClause {
+        /// `invariant`, `precondition` or `postcondition`.
+        clause: &'static str,
+    },
 }
 
 impl Member {
@@ -100,7 +109,7 @@ impl Member {
             | Self::RelationshipEnd { declaration, .. }
             | Self::Operation { declaration, .. }
             | Self::TypeArgument { declaration } => Some(*declaration),
-            Self::ProfileOperator { .. } => None,
+            Self::ProfileOperator { .. } | Self::StateClause { .. } => None,
         }
     }
 
@@ -159,6 +168,10 @@ impl Member {
             Self::ProfileOperator { operator } => json!({
                 "kind": "profile_operator",
                 "operator": operator.as_str(),
+            }),
+            Self::StateClause { clause } => json!({
+                "kind": "state_clause",
+                "clause": clause,
             }),
         }
     }
@@ -279,6 +292,23 @@ mod tests {
                 "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(6).to_string()},
             })
         );
+    }
+
+    /// FR-341's own catalog member shape (QSpec STD-111).
+    #[test]
+    fn state_clause_renders_the_schema_shape_with_no_declaration() {
+        let member = Member::StateClause {
+            clause: "invariant",
+        };
+        let wire = member.to_wire();
+        assert_eq!(
+            wire,
+            json!({
+                "kind": "state_clause",
+                "clause": "invariant",
+            })
+        );
+        assert_eq!(member.declaration(), None);
     }
 
     #[test]

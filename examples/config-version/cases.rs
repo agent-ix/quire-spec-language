@@ -177,4 +177,39 @@ cases! {
         input: Input::Update { pre: HEALTHY, post: &[ROOT, Row { parent: None, ..CHILD }] },
         ..PARENT_CASE
     },
+    // FR-108's QSpec FR-180-AC-4 boundary cases: 0, 1000 (in range) and
+    // -1, 1001 (out of range) against ConfigVersion's own `Int[0, 1000]`
+    // bound.
+    BoundaryZero => CaseSpec {
+        id: "boundary-zero",
+        input: Input::Current {
+            rows: &[Row { version: 0, ..ROOT }, Row { version: 1, ..CHILD }],
+            self_key: "child", other: None,
+        },
+        ..PARENT_CASE
+    },
+    BoundaryMax => CaseSpec {
+        id: "boundary-max",
+        input: Input::Current {
+            rows: &[Row { version: 999, ..ROOT }, Row { version: 1000, ..CHILD }],
+            self_key: "child", other: None,
+        },
+        ..PARENT_CASE
+    },
+    BelowRange => CaseSpec {
+        id: "below-range",
+        input: Input::Current {
+            rows: &[Row { version: -1, ..ROOT }, CHILD],
+            self_key: "child", other: None,
+        },
+        ..PARENT_CASE
+    },
+    AboveRange => CaseSpec {
+        id: "above-range",
+        input: Input::Current {
+            rows: &[ROOT, Row { version: 1001, ..CHILD }],
+            self_key: "child", other: None,
+        },
+        ..PARENT_CASE
+    },
 }

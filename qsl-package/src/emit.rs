@@ -312,6 +312,22 @@ impl BodyNames {
                 // FR-322-AC-37: a `dependency_reference` is never one of the
                 // node's `dependencies`, and names no node of this graph.
                 SemanticTerm::DependencyReference { .. } => {}
+                // QSpec FR-340: every `modifies` declaration and every
+                // `creates`/`deletes` entry is a declared dependency of the
+                // frame node, so a reader can join each entry to the node
+                // it names among the frame's own `dependencies`.
+                SemanticTerm::Frame {
+                    modifies,
+                    creates,
+                    deletes,
+                } => {
+                    names
+                        .dependencies
+                        .extend(modifies.iter().map(|field| node_id(field.declaration().0)));
+                    names
+                        .dependencies
+                        .extend(creates.iter().chain(deletes).map(|node| node_id(node.0)));
+                }
             }
         }
         names

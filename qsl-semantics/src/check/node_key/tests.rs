@@ -102,6 +102,18 @@ pub(super) fn member<'de, D: Deserializer<'de>>(
         "profile_operator" => Member::ProfileOperator {
             operator: identifier("operator")?,
         },
+        "state_clause" => Member::StateClause {
+            clause: match text("clause")? {
+                "invariant" => "invariant",
+                "precondition" => "precondition",
+                "postcondition" => "postcondition",
+                other => {
+                    return Err(D::Error::custom(format!(
+                        "unknown state clause kind {other}"
+                    )))
+                }
+            },
+        },
         other => return Err(D::Error::custom(format!("unknown member kind {other}"))),
     };
     // The decoded member must re-encode to exactly the wire it came from, so
