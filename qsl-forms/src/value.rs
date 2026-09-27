@@ -30,14 +30,14 @@ use super::syntax::{
 
 /// One significant child of a CST node: a token or a node.
 #[derive(Clone, Copy)]
-enum Item<'c> {
+pub(crate) enum Item<'c> {
     Token(&'c CstToken),
     Node(&'c CstNode),
 }
 
 /// `node`'s significant children in order: its nodes, and its own
 /// non-trivia tokens.
-fn items<'c>(cst: &'c LosslessCst, node: &'c CstNode) -> Vec<Item<'c>> {
+pub(crate) fn items<'c>(cst: &'c LosslessCst, node: &'c CstNode) -> Vec<Item<'c>> {
     node.children()
         .iter()
         .filter_map(|child| match child {
@@ -52,7 +52,7 @@ fn items<'c>(cst: &'c LosslessCst, node: &'c CstNode) -> Vec<Item<'c>> {
 }
 
 /// `node`'s child nodes of `production`, in order.
-fn nodes_of<'c>(items: &[Item<'c>], production: Production) -> Vec<&'c CstNode> {
+pub(crate) fn nodes_of<'c>(items: &[Item<'c>], production: Production) -> Vec<&'c CstNode> {
     items
         .iter()
         .filter_map(|item| match item {
@@ -63,7 +63,7 @@ fn nodes_of<'c>(items: &[Item<'c>], production: Production) -> Vec<&'c CstNode> 
 }
 
 /// `node`'s own tokens of `kind`, in order.
-fn tokens_of<'c>(items: &[Item<'c>], kind: TokenKind) -> Vec<&'c CstToken> {
+pub(crate) fn tokens_of<'c>(items: &[Item<'c>], kind: TokenKind) -> Vec<&'c CstToken> {
     items
         .iter()
         .filter_map(|item| match item {
@@ -81,7 +81,7 @@ fn has_token(items: &[Item<'_>], spelling: &[u8]) -> bool {
 }
 
 /// The refusal for a CST node whose shape its grammar rule does not give.
-fn unexpected(node: &CstNode) -> FormsFailure {
+pub(crate) fn unexpected(node: &CstNode) -> FormsFailure {
     FormsFailure::refused(
         FormsCause::UnexpectedShape {
             production: node.production(),
@@ -91,12 +91,12 @@ fn unexpected(node: &CstNode) -> FormsFailure {
 }
 
 /// The refusal for a construct no `Expression` variant represents.
-fn unrepresented(production: Production, span: Span) -> FormsFailure {
+pub(crate) fn unrepresented(production: Production, span: Span) -> FormsFailure {
     FormsFailure::refused(FormsCause::UnrepresentedConstruct { production }, span)
 }
 
 /// A token's spelling as text.
-fn text(token: &CstToken, node: &CstNode) -> Result<String, FormsFailure> {
+pub(crate) fn text(token: &CstToken, node: &CstNode) -> Result<String, FormsFailure> {
     std::str::from_utf8(token.spelling())
         .map(str::to_owned)
         .map_err(|_| unexpected(node))
@@ -130,7 +130,7 @@ fn integer(spelling: &str, node: &CstNode) -> Result<Integer, FormsFailure> {
 }
 
 /// The one production node under a `Declaration` node.
-fn production_node<'c>(construct: Construct<'c>) -> Result<&'c CstNode, FormsFailure> {
+pub(crate) fn production_node<'c>(construct: Construct<'c>) -> Result<&'c CstNode, FormsFailure> {
     items(construct.cst, construct.node)
         .into_iter()
         .find_map(|item| match item {
@@ -153,7 +153,7 @@ fn declared_name(items: &[Item<'_>], node: &CstNode) -> Result<DeclaredName, For
 }
 
 /// The one child node of `production`.
-fn only<'c>(
+pub(crate) fn only<'c>(
     items: &[Item<'c>],
     production: Production,
     node: &CstNode,
@@ -282,7 +282,7 @@ pub(crate) fn enumeration(construct: Construct<'_>) -> Result<DeclarationForm, F
 }
 
 /// A `QualifiedName` node as a name form.
-fn name_form(cst: &LosslessCst, node: &CstNode) -> Result<NameForm, FormsFailure> {
+pub(crate) fn name_form(cst: &LosslessCst, node: &CstNode) -> Result<NameForm, FormsFailure> {
     Ok(NameForm {
         name: spelled(cst, node)?,
         span: node.span(),
@@ -612,6 +612,13 @@ enum Shape {
     Sum(DeclaredName, String),
     Size,
     Contains,
+    /// `self` (FR-102, ADR-012 §15.2, `ProtocolClause`).
+    SelfRef,
+    /// `result` (FR-102, ADR-012 §15.2, `ProtocolClause`).
+    Result,
+    /// `reaches(a, b, edge)` (FR-102, ADR-012 §15.2, `StateModel`): the
+    /// edge member name and its span.
+    Reaches(String, Span),
 }
 
 /// The built subexpressions of one node, consumed in order.
@@ -812,6 +819,23 @@ impl Shape {
                     item: operands.boxed()?,
                 }
             }
+            Self::SelfRef => {
+                arity(0)?;
+                Expression::SelfRef
+            }
+            Self::Result => {
+                arity(0)?;
+                Expression::Result
+            }
+            Self::Reaches(edge, edge_span) => {
+                arity(2)?;
+                Expression::Reaches {
+                    source: operands.boxed()?,
+                    target: operands.boxed()?,
+                    edge,
+                    edge_span,
+                }
+            }
         };
         Some(expression)
     }
@@ -838,7 +862,7 @@ struct Mapping<'c> {
 /// An expression CST node (`Expression` or any production under it) as its
 /// `Expression` tree and the spans of every node (FR-091 "Expression
 /// mapping", "Every expression node carries its span").
-fn expression(
+pub(crate) fn expression(
     cst: &LosslessCst,
     root: &CstNode,
     limits: FormsLimits,
@@ -1290,13 +1314,30 @@ impl<'c> Mapping<'c> {
         match token.spelling() {
             b"true" => self.leaf(Shape::Boolean(true), &task),
             b"false" => self.leaf(Shape::Boolean(false), &task),
-            b"null" | b"none" | b"self" | b"result" | b"reaches" => {
-                Err(unrepresented(Production::Primary, node.span()))
-            }
+            b"null" | b"none" => Err(unrepresented(Production::Primary, node.span())),
+            b"self" => self.leaf(Shape::SelfRef, &task),
+            b"result" => self.leaf(Shape::Result, &task),
             b"present" => self.with_children(Shape::Present, &task, one(&operands)?),
             b"value" => self.with_children(Shape::Value, &task, one(&operands)?),
             b"deref" => self.with_children(Shape::Deref, &task, one(&operands)?),
             b"pre" => self.with_children(Shape::Pre, &task, one(&operands)?),
+            b"reaches" => {
+                if operands.len() != 2 {
+                    return Err(unexpected(node));
+                }
+                let edge_node = only(items, Production::QualifiedName, node)?;
+                let edge_items = self::items(self.cst, edge_node);
+                let segments = tokens_of(&edge_items, TokenKind::Identifier);
+                let [edge_token] = segments.as_slice() else {
+                    // S1 parses the edge as a `QualifiedName`; a
+                    // multi-segment spelling names a member of the
+                    // operands' own type, which S3 resolves (FR-102-AC-3).
+                    return Err(unrepresented(Production::QualifiedName, edge_node.span()));
+                };
+                let edge = text(edge_token, node)?;
+                let edge_span = edge_token.span();
+                self.with_children(Shape::Reaches(edge, edge_span), &task, operands)
+            }
             b"convert" | b"allInstances" => {
                 let target = type_form(
                     self.cst,

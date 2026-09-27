@@ -54,13 +54,14 @@ mod units;
 
 use super::CheckedGraph;
 use crate::model::domain_package::{
-    DomainPackageRecord, FieldMemberRecord, NativeValueType, ValueTypeRef,
+    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, OperationMemberRecord,
+    ValueTypeRef,
 };
 use crate::model::intake::{member_identity_name, type_identity_segment, SelectedModel};
 use crate::model::key::DeclarationKey;
 use crate::value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
-    InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+    InvalidDeclaration, ObjectTypeDeclaration, OperationDeclaration, TypeEnvironment,
 };
 use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
 use crate::value::semantic_node::{InvalidSemanticGraph, OwnerSelection};
@@ -427,6 +428,15 @@ impl Unit {
                     unit.declare(&enumeration.name, Declared::Enum);
                     unit.enums.push(enumeration);
                 }
+                // FR-102 (QSL-273) builds the form; FR-104 (QSL-277) is the
+                // ticket that checks it (context, anchor, observation-keyed
+                // facts, body typing) and declares it on the assembled
+                // package. Nothing downstream of this assembler reads a
+                // state clause yet, so it is admitted (not refused) and
+                // dropped here, the same "S2 builds it, S3 does not check
+                // it yet" split FR-102-AC-3 states for the body's own
+                // `self`/`result`/`reaches` forms.
+                DeclarationForm::StateClause(_) => {}
             }
         }
         unit
@@ -505,6 +515,7 @@ fn model_object_types(
         .collect();
     let mut errors = Vec::new();
     let mut fields: BTreeMap<&DeclarationKey, Vec<FieldDeclaration>> = BTreeMap::new();
+    let mut operations: BTreeMap<&DeclarationKey, Vec<OperationDeclaration>> = BTreeMap::new();
     for record in &package.records {
         match record {
             DomainPackageRecord::FieldMember(field) => {
@@ -521,8 +532,24 @@ fn model_object_types(
                     }
                 }
             }
+            DomainPackageRecord::OperationMember(operation) => {
+                match model_operation(operation, &records, identities) {
+                    Ok(declaration) => operations
+                        .entry(&operation.owner)
+                        .or_default()
+                        .push(declaration),
+                    Err(Unmapped::Unsupported) => errors.push(unsupported(&operation.key.node)),
+                    Err(Unmapped::Broken) => errors.push(broken(&operation.key.node)),
+                    Err(Unmapped::Float(width)) => {
+                        errors.push(error(AssemblyCause::FloatingType {
+                            width,
+                            rounding: RoundingMode::Exact,
+                            profile: None,
+                        }))
+                    }
+                }
+            }
             DomainPackageRecord::RecordValueType(_)
-            | DomainPackageRecord::OperationMember(_)
             | DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
@@ -558,8 +585,16 @@ fn model_object_types(
                 format!("{alias}::{artifact}"),
                 fields.remove(key).unwrap_or_default(),
             )
-            .with_supertypes(supertypes),
+            .with_supertypes(supertypes)
+            .with_operations(operations.remove(key).unwrap_or_default()),
         );
+    }
+    // An operation whose owner is no object type: a broken record (every
+    // operation record is read from inside an object type's own
+    // `operations[]`, so its owner always resolves here unless I1 is
+    // broken).
+    for (owner, _) in operations {
+        errors.push(broken(&owner.node));
     }
     // A field whose owner is no object type: its owner is a record value
     // type, already refused above, or a broken record.
@@ -603,13 +638,24 @@ enum Unmapped {
 /// unwrapped element or collection type; `check`'s `attribute`/`field`
 /// readers wrap it in `Option` from `presence()` alone, as they already do
 /// for every other `FieldDeclaration`.
-fn model_field(
-    field: &FieldMemberRecord,
+/// A domain package's `value_type`/`multiplicity` pair as a kernel
+/// [`ValueType`] (FR-056's field rule, reused by [`model_field`] and
+/// [`model_operation`] for a parameter's or a result's own value type,
+/// FR-103): a native `Boolean`/`Integer`, a scalar type as its `Int[lower,
+/// upper]`, an object type as `Reference<M::T>`. `[1, 1]` gives the
+/// element type `E`; any other multiplicity gives the collection its
+/// `ordered`/`unique` flags name (`Set`, `Bag`, `Sequence` or
+/// `OrderedSet`), bounded when the upper bound is finite, and unbounded
+/// only when the lower bound is `0` -- an unbounded multiplicity with a
+/// lower bound above `0` has no kernel type (QSpec FR-322's "Model-owned
+/// members" step 4).
+fn model_value_type(
+    value_type: &ValueTypeRef,
+    multiplicity: Multiplicity,
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
-) -> Result<FieldDeclaration, Unmapped> {
-    let name = member_identity_name(&field.owner.node, &field.key.node).ok_or(Unmapped::Broken)?;
-    let element = match &field.value_type {
+) -> Result<ValueType, Unmapped> {
+    let element = match value_type {
         ValueTypeRef::Native(native) => match native {
             NativeValueType::Boolean => ValueType::Boolean,
             NativeValueType::Integer => ValueType::Integer,
@@ -633,8 +679,7 @@ fn model_field(
             None => return Err(Unmapped::Broken),
         },
     };
-    let multiplicity = field.multiplicity;
-    let value_type = match (multiplicity.lower, multiplicity.upper) {
+    Ok(match (multiplicity.lower, multiplicity.upper) {
         (1, Some(1)) => element,
         (lower, upper) => {
             let kind = match (multiplicity.ordered, multiplicity.unique) {
@@ -652,7 +697,25 @@ fn model_field(
             };
             ValueType::collection(CollectionType::new(kind, element, bound))
         }
-    };
+    })
+}
+
+/// `field` as an object type's field: named by its member name, typed by
+/// [`model_value_type`], and made `Optional` exactly when the domain
+/// package's own `presence` is `optional` -- never by a lower bound of `0`
+/// (QSpec's `model-complete.md` Presence row: "a lower bound of `0` makes
+/// an empty collection legal and never makes a field optional"). The
+/// returned declaration's own `value_type` is always the unwrapped element
+/// or collection type; `check`'s `attribute`/`field` readers wrap it in
+/// `Option` from `presence()` alone, as they already do for every other
+/// `FieldDeclaration`.
+fn model_field(
+    field: &FieldMemberRecord,
+    records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
+    identities: &BTreeMap<DeclarationKey, EffectiveId>,
+) -> Result<FieldDeclaration, Unmapped> {
+    let name = member_identity_name(&field.owner.node, &field.key.node).ok_or(Unmapped::Broken)?;
+    let value_type = model_value_type(&field.value_type, field.multiplicity, records, identities)?;
     let declaration = FieldDeclaration::new(name, value_type, field.presence);
     let Some(target) = &field.redefines else {
         return Ok(declaration);
@@ -664,6 +727,45 @@ fn model_field(
     let redefined_name =
         member_identity_name(&redefined.owner.node, &redefined.key.node).ok_or(Unmapped::Broken)?;
     Ok(declaration.with_redefines(FieldRef::new(*owner, redefined_name)))
+}
+
+/// `operation` as an object type's operation (FR-103): named by its member
+/// name, its parameters and result typed by [`model_value_type`] (FR-056's
+/// field rule), and its effect frame carried unchanged -- I1 already
+/// resolved every key it names against the whole domain package
+/// (`resolve_effect`), so the assembler does no further resolution over it.
+fn model_operation(
+    operation: &OperationMemberRecord,
+    records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
+    identities: &BTreeMap<DeclarationKey, EffectiveId>,
+) -> Result<OperationDeclaration, Unmapped> {
+    let name =
+        member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
+    let mut parameters = Vec::with_capacity(operation.parameters.len());
+    for parameter in &operation.parameters {
+        let parameter_name = member_identity_name(&operation.key.node, &parameter.key.node)
+            .ok_or(Unmapped::Broken)?;
+        let value_type = model_value_type(
+            &parameter.value_type,
+            parameter.multiplicity,
+            records,
+            identities,
+        )?;
+        parameters.push((parameter_name.to_owned(), value_type));
+    }
+    let result = operation
+        .result
+        .as_ref()
+        .map(|result| {
+            model_value_type(&result.value_type, result.multiplicity, records, identities)
+        })
+        .transpose()?;
+    Ok(OperationDeclaration::new(
+        name,
+        parameters,
+        result,
+        operation.effect.clone(),
+    ))
 }
 
 /// A function signature's type forms: its parameters' and its result's,
@@ -728,7 +830,10 @@ fn body_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
                 | Expression::Contains { .. }
                 | Expression::Lookup { .. }
                 | Expression::Dispatch { .. }
-                | Expression::Pre(_) => {}
+                | Expression::Pre(_)
+                | Expression::SelfRef
+                | Expression::Result
+                | Expression::Reaches { .. } => {}
                 // Not the S2 seam (`Typer::infer_form`'s own doc,
                 // `qsl-semantics/src/check/check/typing.rs`): an
                 // unconditional probe arm so this match keeps compiling

@@ -1023,6 +1023,53 @@ fn unsupported_at(value: &Value, at: &str, what: impl Into<String>) -> ModelRefu
     }
 }
 
+/// FR-103: `entry` (a `modifies`/`creates`/`deletes` frame entry) names no
+/// declaration of the operation's own domain package. `node`/`artifact`/
+/// `span` are the operation's own (`PendingFrame`'s own fields, read once
+/// at intake).
+fn missing_frame_declaration(
+    node: String,
+    artifact: Option<String>,
+    span: Option<LocatedSpan>,
+    entry: &str,
+    at: &str,
+) -> ModelRefusal {
+    ModelRefusal {
+        code: Code::MissingDeclaration,
+        cause: ModelRefusalCause::FrameEntryMissing {
+            node,
+            artifact,
+            span,
+            entry: entry.to_owned(),
+        },
+        detail: format!("{at}: {entry:?} names no declaration of this domain package"),
+    }
+}
+
+/// FR-103: `entry` (a `modifies`/`creates`/`deletes` frame entry) names a
+/// relationship or a process -- QSpec's Frames row admits both, but no
+/// FR-106 observation carries a relationship link or a process instance, so
+/// a grant over either could never be enforced. See
+/// [`missing_frame_declaration`] for `node`/`artifact`/`span`.
+fn unsupported_frame_feature(
+    node: String,
+    artifact: Option<String>,
+    span: Option<LocatedSpan>,
+    entry: &str,
+    at: &str,
+) -> ModelRefusal {
+    ModelRefusal {
+        code: Code::UnknownRequiredFeature,
+        cause: ModelRefusalCause::FrameEntryUnsupported {
+            node,
+            artifact,
+            span,
+            entry: entry.to_owned(),
+        },
+        detail: format!("{at}: {entry:?} names a relationship or a process, never grantable"),
+    }
+}
+
 /// A native value type whose required parameters
 /// `agent-ix-semantic-ir`'s own constraint keyword vocabulary
 /// (`min`/`max`/`exclusiveMin`/`exclusiveMax`/`minLength`/`maxLength`/
@@ -1221,11 +1268,60 @@ fn read_operation_parameter(
     })
 }
 
+/// One operation's frame, read as raw identity strings only (FR-103): I1
+/// resolves `modifies`/`creates`/`deletes` against the whole package's
+/// declarations only after every node is read (`resolve_pending_frames`),
+/// since an entry may name a sibling type's field or a type declared later
+/// in the document (TC-458-AC-5: admission is order-independent).
+struct PendingFrame {
+    /// This operation's own declaration key, to write the resolved
+    /// [`OperationEffect`] back onto its [`OperationMemberRecord`].
+    operation: DeclarationKey,
+    /// The operation's own identity label, artifact and span, for a
+    /// refusal naming the operation (the same triple
+    /// [`ModelRefusalCause::IntakeMalformedDeclaration`] carries).
+    node: String,
+    artifact: Option<String>,
+    span: Option<LocatedSpan>,
+    /// Each member's entries, in document order, with the JSON path to
+    /// report against.
+    modifies: Vec<(String, String)>,
+    creates: Vec<(String, String)>,
+    deletes: Vec<(String, String)>,
+}
+
+/// `frame[member]`'s entries as `(identity, at-path)` pairs, in document
+/// order. `agent-ix-semantic-ir`'s own reader already validates this shape
+/// (FR-103's own dependency note, `crates/semantic-ir/src/schema.rs`), but a
+/// non-string entry still refuses here rather than panicking, the same
+/// defensive posture every other reader in this module takes.
+fn frame_entries(
+    frame: &Value,
+    frame_at: &str,
+    member: &'static str,
+) -> Result<Vec<(String, String)>, ModelRefusal> {
+    let member_at = format!("{frame_at}.{member}");
+    let member_ctx = NodeCtx::new(frame, member_at.clone());
+    member_ctx
+        .array_field(member)?
+        .iter()
+        .enumerate()
+        .map(|(position, entry)| {
+            let entry_at = format!("{member_at}[{position}]");
+            entry
+                .as_str()
+                .map(|identity| (identity.to_owned(), entry_at.clone()))
+                .ok_or_else(|| NodeCtx::new(entry, entry_at).malformed("not a string"))
+        })
+        .collect()
+}
+
 fn read_operation_member(
     package: &str,
     owner_identity: &str,
     operation: &Value,
     at: &str,
+    pending: &mut Vec<PendingFrame>,
 ) -> Result<OperationMemberRecord, ModelRefusal> {
     let ctx = NodeCtx::new(operation, at);
     let node = ctx.str_field("identity")?;
@@ -1261,38 +1357,36 @@ fn read_operation_member(
     // expressions, which `crate::model` does not parse (see
     // `domain_package::PostconditionClause`), so nothing is kept from it.
     ctx.array_field("pre")?;
-    // `frame` is a real QSpec capability
-    // (model-complete.md's Frames row) this reader does not yet turn into
-    // an `OperationEffect`. An absent frame, or one whose `modifies`,
-    // `creates` and `deletes` are all absent or empty, carries no effect
-    // data at all and reads as `OperationEffect::default()` honestly; a
-    // frame that actually declares anything refuses rather than being
-    // silently dropped.
-    let effect = match operation.get("frame") {
-        None => OperationEffect::default(),
-        Some(frame) => {
-            let non_empty = ["modifies", "creates", "deletes"].iter().any(|member| {
-                frame
-                    .get(member)
-                    .and_then(Value::as_array)
-                    .is_some_and(|entries| !entries.is_empty())
+    // FR-103: `frame` (model-complete.md's Frames row). An absent frame, or
+    // one whose three members are all absent or empty, reads as the empty
+    // effect; a frame that declares anything is queued for
+    // `resolve_pending_frames` rather than resolved (or refused) here.
+    if let Some(frame) = operation.get("frame") {
+        let frame_at = format!("{at}.frame");
+        let modifies = frame_entries(frame, &frame_at, "modifies")?;
+        let creates = frame_entries(frame, &frame_at, "creates")?;
+        let deletes = frame_entries(frame, &frame_at, "deletes")?;
+        if !(modifies.is_empty() && creates.is_empty() && deletes.is_empty()) {
+            let (artifact, span) = node_span(operation);
+            pending.push(PendingFrame {
+                operation: declaration_key(package, node),
+                node: node_identity_label(operation, at),
+                artifact,
+                span,
+                modifies,
+                creates,
+                deletes,
             });
-            if non_empty {
-                return Err(unsupported_at(
-                    operation,
-                    &format!("{at}.frame"),
-                    "operation.frame",
-                ));
-            }
-            OperationEffect::default()
         }
-    };
+    }
     Ok(OperationMemberRecord {
         key: declaration_key(package, node),
         owner: declaration_key(package, owner_identity),
         parameters,
         result,
-        effect,
+        // Resolved from `pending` by `resolve_pending_frames`, once every
+        // node of the document is read; the empty effect until then.
+        effect: OperationEffect::default(),
         // FR-146's expression parser is out of scope for `crate::model`
         // (`domain_package::PostconditionClause`'s own module docs); this
         // reader states none rather than inventing one.
@@ -1433,6 +1527,7 @@ fn read_object_type(
     at: &str,
     is_interface: bool,
     records: &mut Vec<DomainPackageRecord>,
+    pending: &mut Vec<PendingFrame>,
 ) -> Result<(), ModelRefusal> {
     let ctx = NodeCtx::new(type_value, at);
     let supertypes = ctx.identity_keys(package, "supertypes")?;
@@ -1473,6 +1568,7 @@ fn read_object_type(
             node,
             operation,
             &format!("{operations_at}[{position}]"),
+            pending,
         )?));
     }
     // A type's own inline `relationships[]` is QSpec's Relationship
@@ -1911,6 +2007,7 @@ fn read_type_node(
     type_meanings: &HashMap<&str, &str>,
     type_value: &Value,
     at: &str,
+    pending: &mut Vec<PendingFrame>,
 ) -> Result<Vec<DomainPackageRecord>, ModelRefusal> {
     let ctx = NodeCtx::new(type_value, at);
     let (_, key) = read_type_identity(package, &ctx)?;
@@ -1935,10 +2032,10 @@ fn read_type_node(
     let mut records = Vec::new();
     match construct_meaning.as_str() {
         meaning::OBJECT_TYPE => {
-            read_object_type(package, type_value, node, at, false, &mut records)?
+            read_object_type(package, type_value, node, at, false, &mut records, pending)?
         }
         meaning::SYSTEMS_INTERFACE => {
-            read_object_type(package, type_value, node, at, true, &mut records)?
+            read_object_type(package, type_value, node, at, true, &mut records, pending)?
         }
         meaning::RECORD_VALUE_TYPE => {
             read_record_value_type(package, type_value, node, at, type_meanings, &mut records)?
@@ -1974,6 +2071,160 @@ fn read_type_node(
         }
     }
     Ok(records)
+}
+
+/// What a domain package record names, for FR-103's frame-entry
+/// classification. No `Process` case exists: `read_type_node` already
+/// refuses a real FR-208 meaning with no reader (`unsupported_at`), so a
+/// process declaration (QSpec `model-complete.md`'s Frames row admits
+/// `creates`/`deletes` naming one) never reaches an admitted document's
+/// records at all -- the whole document refuses earlier, at the process
+/// type's own node. FR-103's own "or a process" case is therefore
+/// unreachable through this reader today, not silently mis-classified.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum FrameEntryKind {
+    Field,
+    ObjectType,
+    Relationship,
+    /// Every other record kind: a value type, a population, a component, an
+    /// endpoint, an allocation or an operation.
+    Other,
+}
+
+fn frame_entry_kind(record: &DomainPackageRecord) -> FrameEntryKind {
+    match record {
+        DomainPackageRecord::FieldMember(_) => FrameEntryKind::Field,
+        DomainPackageRecord::ObjectType(_) => FrameEntryKind::ObjectType,
+        DomainPackageRecord::Relationship(_) => FrameEntryKind::Relationship,
+        DomainPackageRecord::RecordValueType(_)
+        | DomainPackageRecord::ScalarType(_)
+        | DomainPackageRecord::OperationMember(_)
+        | DomainPackageRecord::Component(_)
+        | DomainPackageRecord::Endpoint(_)
+        | DomainPackageRecord::Allocation(_)
+        | DomainPackageRecord::Population(_) => FrameEntryKind::Other,
+    }
+}
+
+/// One `modifies`/`creates`/`deletes` array's entries, resolved against
+/// `classification` in document order, checking the entries of `modifies`,
+/// then `creates`, then `deletes` (FR-103's own document order), and
+/// reporting the first that fails within this array. `expected` is the one
+/// [`FrameEntryKind`] this array admits (`Field` for `modifies`,
+/// `ObjectType` for `creates`/`deletes`); `unsupported`, when given, is the
+/// other kind the Frames row admits but this reader cannot grant
+/// (`Relationship` for `modifies`). `creates`/`deletes` pass `None`: the
+/// Frames row also admits a process there, but [`FrameEntryKind`] has no
+/// case for it (see its own doc), so every other kind there is
+/// `malformed-declaration`, never `unsupported-feature`, until a process
+/// can actually be classified.
+fn resolve_frame_array(
+    package: &str,
+    classification: &HashMap<&str, FrameEntryKind>,
+    frame: &PendingFrame,
+    entries: &[(String, String)],
+    expected: FrameEntryKind,
+    unsupported: Option<FrameEntryKind>,
+) -> Result<Vec<DeclarationKey>, ModelRefusal> {
+    let mut keys = Vec::with_capacity(entries.len());
+    for (entry, at) in entries {
+        match classification.get(entry.as_str()) {
+            None => {
+                return Err(missing_frame_declaration(
+                    frame.node.clone(),
+                    frame.artifact.clone(),
+                    frame.span,
+                    entry,
+                    at,
+                ))
+            }
+            Some(kind) if *kind == expected => keys.push(declaration_key(package, entry)),
+            Some(kind) if Some(*kind) == unsupported => {
+                return Err(unsupported_frame_feature(
+                    frame.node.clone(),
+                    frame.artifact.clone(),
+                    frame.span,
+                    entry,
+                    at,
+                ))
+            }
+            Some(_) => {
+                return Err(malformed_declaration(
+                    frame.node.clone(),
+                    frame.artifact.clone(),
+                    frame.span,
+                    format!("{at}: {entry:?} names a declaration of a different meaning"),
+                ))
+            }
+        }
+    }
+    Ok(keys)
+}
+
+/// FR-103: resolves every [`PendingFrame`] `read_operation_member` queued,
+/// against a package-wide classification of every record `read_nodes`
+/// collected (order-independent: TC-458-AC-5), and writes each resolved
+/// [`OperationEffect`] onto its own [`OperationMemberRecord`] in `records`.
+/// Every resolution failure is collected into `refusals`, exactly as every
+/// other node's own refusal is (FR-154, `model-complete.md`:74-83).
+fn resolve_pending_frames(
+    package: &str,
+    pending: &[PendingFrame],
+    records: &mut [DomainPackageRecord],
+    refusals: &mut Vec<ModelRefusal>,
+) {
+    let classification: HashMap<&str, FrameEntryKind> = records
+        .iter()
+        .map(|record| (record.key().node.as_str(), frame_entry_kind(record)))
+        .collect();
+    let mut resolved: Vec<(DeclarationKey, OperationEffect)> = Vec::with_capacity(pending.len());
+    for frame in pending {
+        let effect = (|| {
+            let modifies = resolve_frame_array(
+                package,
+                &classification,
+                frame,
+                &frame.modifies,
+                FrameEntryKind::Field,
+                Some(FrameEntryKind::Relationship),
+            )?;
+            let creates = resolve_frame_array(
+                package,
+                &classification,
+                frame,
+                &frame.creates,
+                FrameEntryKind::ObjectType,
+                None,
+            )?;
+            let deletes = resolve_frame_array(
+                package,
+                &classification,
+                frame,
+                &frame.deletes,
+                FrameEntryKind::ObjectType,
+                None,
+            )?;
+            Ok(OperationEffect {
+                modifies,
+                creates,
+                deletes,
+            })
+        })();
+        match effect {
+            Ok(effect) => resolved.push((frame.operation.clone(), effect)),
+            Err(refusal) => refusals.push(refusal),
+        }
+    }
+    if !refusals.is_empty() {
+        return;
+    }
+    for (operation, effect) in resolved {
+        if let Some(DomainPackageRecord::OperationMember(member)) =
+            records.iter_mut().find(|record| record.key() == &operation)
+        {
+            member.effect = effect;
+        }
+    }
 }
 
 /// One document node under the combined `types[]`/`populations[]` ascending
@@ -2058,11 +2309,19 @@ fn read_nodes(
 
     let mut records = Vec::new();
     let mut refusals = Vec::new();
+    let mut pending: Vec<PendingFrame> = Vec::new();
     for node in nodes {
         match node {
             DocumentNode::Type(type_value, position, _) => {
                 let at = format!("$.types[{position}]");
-                match read_type_node(package_identity, &meanings, &type_meanings, type_value, &at) {
+                match read_type_node(
+                    package_identity,
+                    &meanings,
+                    &type_meanings,
+                    type_value,
+                    &at,
+                    &mut pending,
+                ) {
                     Ok(mut new_records) => records.append(&mut new_records),
                     Err(refusal) => refusals.push(refusal),
                 }
@@ -2079,6 +2338,15 @@ fn read_nodes(
                 }
             }
         }
+    }
+    // FR-103: resolve every queued operation frame against the whole
+    // package's own records, only once every node above has been read --
+    // an entry may name a sibling type's field or a type declared later in
+    // the document (TC-458-AC-5: admission is deterministic regardless of
+    // document order). Skipped entirely when an earlier node already
+    // refused: a broken package resolves no frame.
+    if refusals.is_empty() {
+        resolve_pending_frames(package_identity, &pending, &mut records, &mut refusals);
     }
     if refusals.is_empty() {
         Ok(records)
@@ -3055,14 +3323,14 @@ mod tests {
         .into_bytes()
     }
 
-    /// An operation `frame` that actually declares something -- here a
-    /// `creates` naming a real type of the document --
-    /// refuses as a known-but-unsupported declaration form. It is never
-    /// silently read as `OperationEffect::default()`, unlike an absent
-    /// frame or one whose `modifies`/`creates`/`deletes` are all empty.
-    #[trace("TC-146", "FR-056-AC-3")]
+    /// FR-103 (QSL-273): an operation `frame` that actually declares
+    /// something -- here a `creates` naming a real object type of the
+    /// document -- resolves to an `OperationEffect` naming that type's own
+    /// key, instead of refusing as unsupported (superseding this test's own
+    /// prior FR-056-AC-3 assertion, from before FR-103 amended it).
+    #[trace("TC-146", "FR-103-AC-1")]
     #[test]
-    fn refuses_a_non_empty_operation_frame_as_unsupported() {
+    fn a_non_empty_operation_frame_resolves_to_its_effect() {
         let document = document_with_object_type_extra(serde_json::json!({
             "operations": [{
                 "identity": "ix://acme/orders/Widget/discard",
@@ -3084,20 +3352,25 @@ mod tests {
                 },
             }],
         }));
-        let refusals = read_records("acme/orders", &parse_document(&document))
-            .expect_err("a frame that declares a creates entry is not silently dropped");
+        let records = read_records("acme/orders", &parse_document(&document))
+            .expect("a creates entry naming a real object type is admitted");
+        let operation = records
+            .iter()
+            .find_map(|record| match record {
+                DomainPackageRecord::OperationMember(operation) => Some(operation),
+                _ => None,
+            })
+            .expect("the operation is read");
         assert_eq!(
-            refusals,
-            vec![ModelRefusal {
-                code: Code::UnsupportedConstruct,
-                cause: ModelRefusalCause::UnsupportedDeclarationForm {
-                    node: "ix://acme/orders/Widget/discard".to_owned(),
-                    what: "operation.frame".to_owned(),
-                },
-                detail: "$.types[0].operations[0].frame: construct meaning/capability \
-                          \"operation.frame\" has no reader yet"
-                    .to_owned(),
-            }]
+            operation.effect,
+            OperationEffect {
+                modifies: Vec::new(),
+                creates: vec![DeclarationKey {
+                    package: "acme/orders".to_owned(),
+                    node: "ix://acme/orders/OtherType".to_owned(),
+                }],
+                deletes: Vec::new(),
+            }
         );
     }
 
@@ -3153,6 +3426,7 @@ mod tests {
             "$.types[0]",
             true,
             &mut records,
+            &mut Vec::new(),
         )
         .expect("the real sourceEnd/targetEnd relationship shape reads, it is not refused");
 
@@ -3229,6 +3503,7 @@ mod tests {
             "$.types[0]",
             false,
             &mut records,
+            &mut Vec::new(),
         )
         .expect("undirected is a real member of RelationshipDirection, not refused");
 
@@ -3283,6 +3558,7 @@ mod tests {
             "$.types[0]",
             false,
             &mut records,
+            &mut Vec::new(),
         )
         .expect_err(
             "FCD's own relationship identity form does not parse as owner/<name> and refuses",
@@ -3336,6 +3612,7 @@ mod tests {
             "$.types[0]",
             false,
             &mut records,
+            &mut Vec::new(),
         )
         .expect_err("a relationship member with no origin.source refuses per FR-056-AC-5");
         assert!(
@@ -3382,6 +3659,7 @@ mod tests {
             "$.types[0]",
             false,
             &mut records,
+            &mut Vec::new(),
         )
         .expect_err("an unrecognized relationship direction refuses rather than panicking");
         assert!(

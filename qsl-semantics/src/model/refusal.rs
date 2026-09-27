@@ -482,6 +482,40 @@ pub enum ModelRefusalCause {
         /// label naming the unread member (e.g. `"operation.frame"`).
         what: String,
     },
+    /// FR-103 (QSpec `model-complete.md`'s Frames row): an operation's
+    /// `modifies`, `creates` or `deletes` entry names no declaration of
+    /// this domain package. Carries the operation's own node/artifact/span
+    /// triple, the same shape [`Self::IntakeMalformedDeclaration`] does,
+    /// plus the entry itself.
+    FrameEntryMissing {
+        /// The operation's own identity string.
+        node: String,
+        /// The operation's source artifact, as
+        /// [`Self::IntakeMalformedDeclaration`]'s own field.
+        artifact: Option<String>,
+        /// The operation's source position, as
+        /// [`Self::IntakeMalformedDeclaration`]'s own field.
+        span: Option<LocatedSpan>,
+        /// The frame entry identity string that resolved to nothing.
+        entry: String,
+    },
+    /// FR-103: an operation's `modifies` entry names a relationship, or its
+    /// `creates`/`deletes` entry names a process. QSpec's Frames row admits
+    /// both, but no FR-106 observation carries a relationship link or a
+    /// process instance, so a grant over either could never be enforced.
+    FrameEntryUnsupported {
+        /// The operation's own identity string.
+        node: String,
+        /// The operation's source artifact, as
+        /// [`Self::IntakeMalformedDeclaration`]'s own field.
+        artifact: Option<String>,
+        /// The operation's source position, as
+        /// [`Self::IntakeMalformedDeclaration`]'s own field.
+        span: Option<LocatedSpan>,
+        /// The frame entry identity string that names the relationship or
+        /// process.
+        entry: String,
+    },
     /// FR-154 Intake check 1 (`model-complete.md:67`): the selection's
     /// digest domain is not the one domain Intake accepts.
     DigestDomainMismatch {
@@ -735,6 +769,8 @@ impl ModelRefusalCause {
             | Self::MalformedDeclaration { .. }
             | Self::IntakeMalformedDeclaration { .. }
             | Self::UnsupportedDeclarationForm { .. }
+            | Self::FrameEntryMissing { .. }
+            | Self::FrameEntryUnsupported { .. }
             | Self::DigestDomainMismatch { .. }
             | Self::MissingSelection { .. }
             | Self::ByteDigestMismatch { .. }
@@ -813,6 +849,8 @@ impl ModelRefusalCause {
             | Self::ReservedPackageIdentity { .. } => "malformed-declaration",
             Self::DuplicateSelection { .. } => "duplicate-identity",
             Self::UnsupportedDeclarationForm { .. } => "declaration-form",
+            Self::FrameEntryMissing { .. } => "missing-name",
+            Self::FrameEntryUnsupported { .. } => "unsupported-feature",
             Self::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             Self::MissingSelection { .. } => "missing-selection",
             Self::ByteDigestMismatch { .. } => "byte-digest-mismatch",
@@ -894,9 +932,12 @@ impl ModelRefusalCause {
             | Self::AbsentKey { .. }
             | Self::DuplicateMember { .. }
             | Self::SubsettingViolation { .. } => "invalid_runtime_input",
-            Self::UnknownPopulationMemberType { .. } => "missing_declaration",
+            Self::UnknownPopulationMemberType { .. } | Self::FrameEntryMissing { .. } => {
+                "missing_declaration"
+            }
             Self::AboveMaximum { .. } => "cardinality_out_of_bound",
             Self::UnsupportedDeclarationForm { .. } => "unsupported_construct",
+            Self::FrameEntryUnsupported { .. } => "unknown_required_feature",
             Self::DigestDomainMismatch { .. } | Self::ByteDigestMismatch { .. } => {
                 "stale_dependency"
             }
@@ -1149,6 +1190,40 @@ pub mod fixtures {
             node: String::new(),
             what: String::new(),
         },
+        FrameEntryMissing => ModelRefusalCause::FrameEntryMissing {
+            node: String::new(),
+            artifact: Some(String::new()),
+            span: Some(LocatedSpan {
+                start: Position {
+                    byte: 0,
+                    line: 1,
+                    column: 1,
+                },
+                end: Position {
+                    byte: 0,
+                    line: 1,
+                    column: 1,
+                },
+            }),
+            entry: String::new(),
+        },
+        FrameEntryUnsupported => ModelRefusalCause::FrameEntryUnsupported {
+            node: String::new(),
+            artifact: Some(String::new()),
+            span: Some(LocatedSpan {
+                start: Position {
+                    byte: 0,
+                    line: 1,
+                    column: 1,
+                },
+                end: Position {
+                    byte: 0,
+                    line: 1,
+                    column: 1,
+                },
+            }),
+            entry: String::new(),
+        },
         DigestDomainMismatch => ModelRefusalCause::DigestDomainMismatch {
             expected: crate::model::key::SHA256_JCS_DIGEST_DOMAIN,
             actual: String::new(),
@@ -1310,6 +1385,8 @@ pub(crate) mod tests {
             | ModelRefusalCause::ReservedPackageIdentity { .. } => "malformed-declaration",
             ModelRefusalCause::DuplicateSelection { .. } => "duplicate-identity",
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "declaration-form",
+            ModelRefusalCause::FrameEntryMissing { .. } => "missing-name",
+            ModelRefusalCause::FrameEntryUnsupported { .. } => "unsupported-feature",
             ModelRefusalCause::DigestDomainMismatch { .. } => "digest-domain-mismatch",
             ModelRefusalCause::MissingSelection { .. } => "missing-selection",
             ModelRefusalCause::ByteDigestMismatch { .. } => "byte-digest-mismatch",
@@ -1390,8 +1467,10 @@ pub(crate) mod tests {
             ModelRefusalCause::DuplicateMember { .. } => "invalid_runtime_input",
             ModelRefusalCause::SubsettingViolation { .. } => "invalid_runtime_input",
             ModelRefusalCause::UnknownPopulationMemberType { .. } => "missing_declaration",
+            ModelRefusalCause::FrameEntryMissing { .. } => "missing_declaration",
             ModelRefusalCause::AboveMaximum { .. } => "cardinality_out_of_bound",
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "unsupported_construct",
+            ModelRefusalCause::FrameEntryUnsupported { .. } => "unknown_required_feature",
             ModelRefusalCause::DigestDomainMismatch { .. } => "stale_dependency",
             ModelRefusalCause::ByteDigestMismatch { .. } => "stale_dependency",
             ModelRefusalCause::MissingSelection { .. } => "missing_import",

@@ -740,6 +740,45 @@ impl<'a> Typer<'a> {
                 let goal = Goal::Infer(operand, hint, location.child(0));
                 return Ok(Self::unary(Unary::Pre, goal, location, frames));
             }
+            Expression::SelfRef | Expression::Result => {
+                // FR-102 (QSL-273) builds `self`/`result` as expressions
+                // everywhere the grammar admits them, and checks nothing
+                // about where they may appear (FR-102-AC-3): "S3 does
+                // (FR-104)". No declaration this checker admits today
+                // supplies a state clause's own observation -- `check::
+                // assemble`'s `Unit::new` does not yet keep a
+                // `DeclarationForm::StateClause` at all (FR-104, QSL-277,
+                // wires the anchor this needs) -- so every clause kind
+                // reachable here refuses them, the same
+                // `wrong_snapshot`/`forbidden-pre-read` `Pre` above already
+                // gives "written where the checked declaration does not
+                // admit it at all", which this cause's own doc already
+                // names `self` and `result` beside (`WrongSnapshotCause::
+                // ForbiddenPreRead`'s doc, `refusal.rs`).
+                return Err(refuse(
+                    &location,
+                    CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead),
+                ));
+            }
+            Expression::Reaches { .. } => {
+                // FR-102 builds `reaches` as an expression everywhere the
+                // grammar admits it; ADR-012 §15.2 assigns its "where it may
+                // appear" check to `StateModel`, not yet wired ("the `Value`
+                // evaluator therefore never meets a `reaches` node"). No
+                // family-`Cause` exists for it yet (FR-104/FR-106,
+                // QSL-277/QSL-278, add the real one alongside the state
+                // clause anchor), so this refuses with the same generic
+                // "the grammar admits it further than this stage supports"
+                // signal FR-103 uses for a domain package's own
+                // not-yet-supported frame entries (`unknown_required_
+                // feature`/`unsupported-feature`).
+                return Err(refuse(
+                    &location,
+                    CheckCause::UnsupportedFeature {
+                        loci: vec![location.clone()],
+                    },
+                ));
+            }
             Expression::Call { name, arguments } => {
                 let application = Application::resolve(self, name, arguments.len(), &location)?;
                 return Ok(Self::application(

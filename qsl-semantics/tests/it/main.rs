@@ -22,6 +22,7 @@ mod model_dispatch;
 mod model_intake;
 #[cfg(feature = "test-support")]
 mod model_normalization;
+mod model_operations;
 #[cfg(feature = "test-support")]
 mod model_population;
 #[cfg(feature = "test-support")]
