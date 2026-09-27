@@ -14,7 +14,7 @@
 
 use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
 
-use super::dispatch::{Construct, FormsFailure};
+use super::dispatch::{Construct, FormsFailure, FormsLimits};
 use super::spans::DeclarationSpans;
 use super::syntax::{
     AnchorForm, AnchorSegment, AnchorSite, DeclarationForm, DeclaredName, ProtocolDeclarationForm,
@@ -113,7 +113,14 @@ pub(crate) fn protocol_declaration(
         compensation_anchors(cst, compensation, &mut scoped_anchors)?;
     }
     let run = only(&clause_items, Production::Control, node)?;
-    control_anchors(cst, run, &mut Vec::new(), &mut scoped_anchors)?;
+    control_anchors(
+        cst,
+        run,
+        &mut Vec::new(),
+        &mut scoped_anchors,
+        construct.limits,
+        1,
+    )?;
 
     Ok(DeclarationForm::Protocol(ProtocolDeclarationForm {
         name,
@@ -154,14 +161,47 @@ fn compensation_anchors(
     Ok(())
 }
 
+/// Runs `body` with `name` pushed onto `scope` as one more enclosing named
+/// control, popping it again afterward -- even when `body` refuses -- so
+/// every one of this walk's named-control shapes (`sequence`, `choice`,
+/// `parallel`, `repeat`, `case`, `branch`, `await`) pushes and pops through
+/// this single place instead of its own copy of the pattern (a missed push
+/// in one copy is exactly how FND-001/SR-753 left `await`'s own name out
+/// of its children's scope).
+fn with_scope<F>(
+    scope: &mut Vec<ScopeName>,
+    name: DeclaredName,
+    body: F,
+) -> Result<(), FormsFailure>
+where
+    F: FnOnce(&mut Vec<ScopeName>) -> Result<(), FormsFailure>,
+{
+    scope.push(ScopeName {
+        name: name.name,
+        span: name.span,
+    });
+    let result = body(scope);
+    scope.pop();
+    result
+}
+
 /// Walks one `Control` node: unwraps it to the alternative it actually
 /// matched (`Sequence`, `Parallel`, ..., `EventNode`) and dispatches on
 /// that alternative's own production.
+///
+/// `depth` is charged against `limits.nesting_depth`, the same S2 bound
+/// `value::expression` applies to an expression tree (a root is at depth
+/// 1, each nested `Control` one deeper): `await ... then <Control>` and
+/// `repeat ... exhausted <Control>` nest with no bracket, so the CST's own
+/// nesting ceiling does not bound them, and unbounded native recursion on
+/// untrusted source would abort the process rather than refuse.
 fn control_anchors(
     cst: &LosslessCst,
     control: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
+    limits: FormsLimits,
+    depth: u64,
 ) -> Result<(), FormsFailure> {
     let matched = items(cst, control)
         .into_iter()
@@ -170,60 +210,51 @@ fn control_anchors(
             Item::Token(_) => None,
         })
         .ok_or_else(|| unexpected(control))?;
+    if depth > limits.nesting_depth {
+        return Err(FormsFailure::depth(limits, matched.span()));
+    }
     match matched.production() {
         Production::Sequence => {
             let sequence_items = items(cst, matched);
             let name = declared_name(&sequence_items, matched)?;
-            scope.push(ScopeName {
-                name: name.name,
-                span: name.span,
-            });
-            for child in nodes_of(&sequence_items, Production::Control) {
-                control_anchors(cst, child, scope, out)?;
-            }
-            scope.pop();
-            Ok(())
+            with_scope(scope, name, |scope| {
+                for child in nodes_of(&sequence_items, Production::Control) {
+                    control_anchors(cst, child, scope, out, limits, depth + 1)?;
+                }
+                Ok(())
+            })
         }
         Production::Choice => {
             let choice_items = items(cst, matched);
             let name = declared_name(&choice_items, matched)?;
-            scope.push(ScopeName {
-                name: name.name,
-                span: name.span,
-            });
-            for case in nodes_of(&choice_items, Production::Case) {
-                case_anchors(cst, case, scope, out)?;
-            }
-            scope.pop();
-            Ok(())
+            with_scope(scope, name, |scope| {
+                for case in nodes_of(&choice_items, Production::Case) {
+                    case_anchors(cst, case, scope, out, limits, depth)?;
+                }
+                Ok(())
+            })
         }
         Production::Parallel => {
             let parallel_items = items(cst, matched);
             let name = declared_name(&parallel_items, matched)?;
-            scope.push(ScopeName {
-                name: name.name,
-                span: name.span,
-            });
-            for branch in nodes_of(&parallel_items, Production::Branch) {
-                branch_anchors(cst, branch, scope, out)?;
-            }
-            scope.pop();
-            Ok(())
+            with_scope(scope, name, |scope| {
+                for branch in nodes_of(&parallel_items, Production::Branch) {
+                    branch_anchors(cst, branch, scope, out, limits, depth)?;
+                }
+                Ok(())
+            })
         }
         Production::Repetition => {
             let repetition_items = items(cst, matched);
             let name = declared_name(&repetition_items, matched)?;
-            scope.push(ScopeName {
-                name: name.name,
-                span: name.span,
-            });
-            for child in nodes_of(&repetition_items, Production::Control) {
-                control_anchors(cst, child, scope, out)?;
-            }
-            scope.pop();
-            Ok(())
+            with_scope(scope, name, |scope| {
+                for child in nodes_of(&repetition_items, Production::Control) {
+                    control_anchors(cst, child, scope, out, limits, depth + 1)?;
+                }
+                Ok(())
+            })
         }
-        Production::AwaitControl => await_control_anchors(cst, matched, scope, out),
+        Production::AwaitControl => await_control_anchors(cst, matched, scope, out, limits, depth),
         Production::EventNode => event_node_anchors(cst, matched, scope, out),
         // `check` and `commit` (the bare control, distinct from a
         // compensation's `commit`) hold no `NodeReference` and enclose no
@@ -236,57 +267,68 @@ fn control_anchors(
 
 /// `case N when { c } Control`: the case's own name encloses its one
 /// control, the same shape a `branch` gives a `parallel` (FR-112
-/// "Outputs": "the named controls that enclose the reference").
+/// "Outputs": "the named controls that enclose the reference"). `depth` is
+/// the enclosing `choice`'s own depth: the case's inner `Control` is one
+/// level deeper, charged where [`control_anchors`] recurses into it.
 fn case_anchors(
     cst: &LosslessCst,
     node: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
+    limits: FormsLimits,
+    depth: u64,
 ) -> Result<(), FormsFailure> {
     let case_items = items(cst, node);
     let name = declared_name(&case_items, node)?;
-    scope.push(ScopeName {
-        name: name.name,
-        span: name.span,
-    });
-    let control = only(&case_items, Production::Control, node)?;
-    control_anchors(cst, control, scope, out)?;
-    scope.pop();
-    Ok(())
+    with_scope(scope, name, |scope| {
+        let control = only(&case_items, Production::Control, node)?;
+        control_anchors(cst, control, scope, out, limits, depth + 1)
+    })
 }
 
 /// `branch N Control`: the branch's own name encloses its one control
 /// (FR-112-AC-2: `branch left await Wait after Sent` records scope
-/// `[..., left]`).
+/// `[..., left]`). `depth` is the enclosing `parallel`'s own depth, the
+/// same convention [`case_anchors`] follows.
 fn branch_anchors(
     cst: &LosslessCst,
     node: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
+    limits: FormsLimits,
+    depth: u64,
 ) -> Result<(), FormsFailure> {
     let branch_items = items(cst, node);
     let name = declared_name(&branch_items, node)?;
-    scope.push(ScopeName {
-        name: name.name,
-        span: name.span,
-    });
-    let control = only(&branch_items, Production::Control, node)?;
-    control_anchors(cst, control, scope, out)?;
-    scope.pop();
-    Ok(())
+    with_scope(scope, name, |scope| {
+        let control = only(&branch_items, Production::Control, node)?;
+        control_anchors(cst, control, scope, out, limits, depth + 1)
+    })
 }
 
 /// `await N after R using alias clock "c" within i match Event then Control
-/// timeout Control`: the `after` reference (`await-after`, FR-112-AC-2),
-/// the matched event template's own reference when it names one, and both
-/// branches, all under the current scope (the await's own name `N` is a
-/// leaf reference target, not an enclosing control, the same way an
-/// `effect`'s own name never encloses its own `of` reference).
+/// timeout Control`.
+///
+/// The `after` reference (`await-after`, FR-112-AC-2) is built under the
+/// scope enclosing the await, before the await's own name is pushed: an
+/// await is a leaf reference target for its own `after` anchor, the same
+/// way an `effect`'s own name never encloses its own `of` reference.
+///
+/// The matched event template and the `then`/`timeout` branches are
+/// different: FR-113 Inputs says a control declares the names of its
+/// direct child controls and event nodes, and lists `await` among the
+/// structural controls, so these three are the await's own children --
+/// the legacy checker FR-113 replaces puts them under the await's own
+/// symbol (`src/linking/composed/scopes/protocol.rs` `ControlKind::Await`).
+/// A reference inside any of them therefore resolves as if nested one
+/// level inside this await.
 fn await_control_anchors(
     cst: &LosslessCst,
     node: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
+    limits: FormsLimits,
+    depth: u64,
 ) -> Result<(), FormsFailure> {
     let await_items = items(cst, node);
     let after_reference = only(&await_items, Production::NodeReference, node)?;
@@ -296,12 +338,15 @@ fn await_control_anchors(
         AnchorSite::AwaitAfter,
         scope,
     )?);
-    let matched_event = only(&await_items, Production::EventNode, node)?;
-    event_node_anchors(cst, matched_event, scope, out)?;
-    for branch in nodes_of(&await_items, Production::Control) {
-        control_anchors(cst, branch, scope, out)?;
-    }
-    Ok(())
+    let name = declared_name(&await_items, node)?;
+    with_scope(scope, name, |scope| {
+        let matched_event = only(&await_items, Production::EventNode, node)?;
+        event_node_anchors(cst, matched_event, scope, out)?;
+        for branch in nodes_of(&await_items, Production::Control) {
+            control_anchors(cst, branch, scope, out, limits, depth + 1)?;
+        }
+        Ok(())
+    })
 }
 
 /// `send`, `receive ... of R`, `attempt`, `effect ... of R` or `event ...

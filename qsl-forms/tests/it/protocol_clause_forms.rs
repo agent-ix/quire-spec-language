@@ -127,14 +127,17 @@ fn protocol_form(form: &DeclarationForm) -> &ProtocolDeclarationForm {
     }
 }
 
-/// `RecoveryFlow` (TC-510's fixture): a `compensate Undo` clause (its `for`
-/// and `commit` targets, both `compensate-for`/`compensate-commit`) and a
+/// `RecoveryFlow` (TC-510's fixture, matching `tests/it/composed_scopes.rs`
+/// `COMPENSATION`'s shape): a `compensate Undo` clause (its `for` and
+/// `commit` targets, both `compensate-for`/`compensate-commit`) and a
 /// `run sequence Main` holding an `attempt` (no anchor: FR-112 lists no
-/// site for it), an `effect` (`effect-of`) and an `event` (`event-for`).
-/// `commit` is the compensation's own `commit` target (`Main::Committed`
-/// or `never`); `effect` is included unless `include_effect` is false;
-/// `main_extra` is spliced in after the `attempt`, before the `effect`, so
-/// a caller can nest further controls inside `Main` (FR-112-AC-2).
+/// site for it), an `effect` (`effect-of`), an `event` (`event-for`) and,
+/// as `COMPENSATION` does, a bare `commit` control (no anchor, but it
+/// exercises the walk's `Commit` arm). `commit` is the compensation's own
+/// `commit` target (`Main::Committed` or `never`); `effect` is included
+/// unless `include_effect` is false; `main_extra` is spliced in after the
+/// `attempt`, before the `effect`, so a caller can nest further controls
+/// inside `Main` (FR-112-AC-2).
 fn recovery_flow(commit: &str, include_effect: bool, main_extra: &str) -> String {
     let effect = if include_effect {
         "effect Applied of Tried as (applied: Config::ConfigVersion) { true };\n"
@@ -156,6 +159,7 @@ fn recovery_flow(commit: &str, include_effect: bool, main_extra: &str) -> String
          {main_extra}\
          {effect}\
          event Recovered by R for Undo as (notice: Config::ConfigVersion) {{ true }};\n\
+         commit Committed by R as (committed: Config::ConfigVersion) {{ true }};\n\
          }}\n\
          finish End as (outcome: Boolean) {{ true }};\n\
          }}"
@@ -216,6 +220,14 @@ fn s2_builds_four_scoped_anchors_in_source_order() {
         );
         for segment in &anchor.anchor.segments {
             assert_eq!(&text[segment.span.start..segment.span.end], segment.text);
+        }
+        // Each scope name's span covers exactly that name's text too
+        // (FR-112 Outputs: "the names, with their spans").
+        for scope_name in &anchor.scope {
+            assert_eq!(
+                &text[scope_name.span.start..scope_name.span.end],
+                scope_name.name
+            );
         }
     }
 }
@@ -283,6 +295,138 @@ fn building_twice_gives_equal_forms_independent_of_a_named_targets_existence() {
     assert_eq!(event_for_c.site, event_for_a.site);
     assert_eq!(segment_texts(event_for_c), segment_texts(event_for_a));
     assert_eq!(scope_names(event_for_c), scope_names(event_for_a));
+}
+
+/// SR-753/SR-754 FND-001: FR-113 Inputs says a control declares the names
+/// of its direct child controls and event nodes, and lists `await` among
+/// the structural controls, so an await's matched event template and its
+/// `then`/`timeout` branches are its own children -- unlike the await's
+/// own `after` reference, which sits in the scope enclosing the await
+/// (asserted by FR-112-AC-2 already; re-asserted here for contrast).
+#[trace("TC-510", "FR-112")]
+#[test]
+fn an_awaits_matched_event_and_branches_are_scoped_inside_the_await() {
+    let awaiting = "await Wait after Sent using v clock \"ticks\" within [0,1] \
+         match receive Got via Messages of Sent as (got: Config::ConfigVersion) { true }; \
+         then sequence Then {\n\
+         effect Applied of Tried as (applied: Config::ConfigVersion) { true };\n\
+         } timeout sequence Timeout { }\n";
+    let (_, unit) = build(&recovery_flow("Main::Committed", false, awaiting));
+    let form = protocol_form(unit.forms()[0].form());
+
+    let await_after = form
+        .scoped_anchors
+        .iter()
+        .find(|anchor| anchor.site == AnchorSite::AwaitAfter)
+        .expect("the await-after anchor");
+    assert_eq!(segment_texts(await_after), ["Sent"]);
+    assert_eq!(scope_names(await_after), ["Main"]);
+
+    let receive_of = form
+        .scoped_anchors
+        .iter()
+        .find(|anchor| anchor.site == AnchorSite::ReceiveOf)
+        .expect("the await's matched event's receive-of anchor");
+    assert_eq!(segment_texts(receive_of), ["Sent"]);
+    assert_eq!(scope_names(receive_of), ["Main", "Wait"]);
+
+    let effect_of = form
+        .scoped_anchors
+        .iter()
+        .find(|anchor| anchor.site == AnchorSite::EffectOf)
+        .expect("the await's then-branch effect-of anchor");
+    assert_eq!(scope_names(effect_of), ["Main", "Wait", "Then"]);
+}
+
+/// SR-753 FND-004: no test built a `choice`/`case` or a `repeat`, so a
+/// missed scope push in either was untested. `choice`'s and `repeat`'s own
+/// names, and each `case`'s, enclose their bodies the same way `parallel`'s
+/// and `branch`'s do (FR-112-AC-2).
+#[trace("TC-510", "FR-112")]
+#[test]
+fn choice_and_repeat_named_controls_enclose_their_bodies() {
+    let choice = "choice Decision by R visible () {\n\
+         case yes when { true } sequence Yes {\n\
+         effect Applied of Tried as (applied: Config::ConfigVersion) { true };\n\
+         }\n\
+         case no when { false } sequence No { }\n\
+         }\n";
+    let (_, unit) = build(&recovery_flow("Main::Committed", false, choice));
+    let form = protocol_form(unit.forms()[0].form());
+    let effect_of = form
+        .scoped_anchors
+        .iter()
+        .find(|anchor| anchor.site == AnchorSite::EffectOf)
+        .expect("the choice case's effect-of anchor");
+    assert_eq!(scope_names(effect_of), ["Main", "Decision", "yes", "Yes"]);
+
+    let repeat = "repeat Loop by R visible (true) max 2 invariant { true } variant { 1 } \
+         while { false } sequence Body {\n\
+         effect Applied of Tried as (applied: Config::ConfigVersion) { true };\n\
+         } exhausted sequence Exhausted {\n\
+         event Recovered by R for Undo as (notice: Config::ConfigVersion) { true };\n\
+         }\n";
+    let (_, unit) = build(&recovery_flow("Main::Committed", false, repeat));
+    let form = protocol_form(unit.forms()[0].form());
+    let effect_of = form
+        .scoped_anchors
+        .iter()
+        .find(|anchor| anchor.site == AnchorSite::EffectOf)
+        .expect("the repeat body's effect-of anchor");
+    assert_eq!(scope_names(effect_of), ["Main", "Loop", "Body"]);
+    // `event-for` appears twice here (the repeat's own `exhausted` branch,
+    // and `recovery_flow`'s trailing `event Recovered ... for Undo`, at
+    // `["Main"]`); the repeat's own is the one nested three levels deep.
+    let event_for = form
+        .scoped_anchors
+        .iter()
+        .find(|anchor| anchor.site == AnchorSite::EventFor && anchor.scope.len() == 3)
+        .expect("the repeat's exhausted-branch event-for anchor");
+    assert_eq!(scope_names(event_for), ["Main", "Loop", "Exhausted"]);
+}
+
+/// SR-753 FND-003: `await ... then <Control>` and `repeat ... exhausted
+/// <Control>` nest with no bracket, so only an explicit depth charge --
+/// not the CST's own bracket-based nesting ceiling -- bounds a chain of
+/// them. A chain past the limit refuses instead of recursing without
+/// bound (a 500-await chain aborts the process on a small stack without
+/// this charge).
+#[trace("TC-510", "FR-112")]
+#[test]
+fn the_control_walk_refuses_past_its_nesting_depth_limit_instead_of_recursing_unbounded() {
+    let limits = FormsLimits { nesting_depth: 6 };
+    let awaits = |count: u64| {
+        let mut control = "sequence End { }".to_owned();
+        for i in 0..count {
+            control = format!(
+                "await W{i} after Sent using v clock \"ticks\" within [0,1] \
+                 match send Ping via Messages as (ping: Config::ConfigVersion) {{ true }}; \
+                 then {control} timeout sequence T{i} {{ }}"
+            );
+        }
+        control
+    };
+    let source = |count: u64| {
+        format!(
+            "protocol Chain using v over (input: Config::ConfigVersion) on origin {{\n\
+             role R on Config::ConfigVersion;\n\
+             run sequence Main {{ {} }}\n\
+             finish End as (outcome: Boolean) {{ true }};\n\
+             }}",
+            awaits(count)
+        )
+    };
+
+    let (_, parsed) = admissible(&source(2));
+    build_unit(&parsed, limits).expect("a short chain of awaits builds");
+
+    let (text, parsed) = admissible(&source(20));
+    match build_unit(&parsed, limits) {
+        Err(FormsFailure::Limit { limit, .. }) => {
+            assert_eq!(limit.kind(), LimitKind::NestingDepth);
+        }
+        other => panic!("{text}: a limit refusal, not {other:?}"),
+    }
 }
 
 /// A compact rendering of an expression tree, operands in order (mirrors
