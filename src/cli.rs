@@ -51,6 +51,7 @@ pub(super) enum UsageError<'a> {
 impl<'a> TryFrom<&'a [OsString]> for Command<'a> {
     type Error = UsageError<'a>;
 
+    #[qsl_attrs::string_edge]
     fn try_from(arguments: &'a [OsString]) -> Result<Self, Self::Error> {
         let (command, operands) = arguments.split_first().ok_or(UsageError::MissingCommand)?;
         let command = command

@@ -24,10 +24,10 @@ use quire_spec_language::protocol_artifact::{
 };
 use quire_spec_language::state::{
     self, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, CanonicalDigest,
-    ContextualSlot, Dimension as StateDimension, EvaluationOutcome, EvaluationRequest, FieldInput,
-    FieldValue, InputSlot, Limits as StateLimits, MissingInput, ObjectInput, ObjectKey,
-    ObservationDigest, ObservationIdentity, ObservationKey, PopulationInput,
-    Refusal as StateRefusal, StateView, StaticAuthority, Value as StateValue,
+    CanonicalizationDomain, ContextualSlot, Dimension as StateDimension, EvaluationOutcome,
+    EvaluationRequest, FieldInput, FieldValue, InputSlot, Limits as StateLimits, MissingInput,
+    ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
+    PopulationInput, Refusal as StateRefusal, StateView, StaticAuthority, Value as StateValue,
     ValueKind as StateValueKind, OBSERVATION_CONTRACT_REVISION,
 };
 use quire_spec_language::temporal;
@@ -238,9 +238,10 @@ fn compensation_inputs() -> Inputs {
 
 fn canonical(value: char) -> CanonicalDigest {
     CanonicalDigest {
-        algorithm: "sha256".into(),
-        domain: "filament-canonical-json-1".into(),
-        value: format!("sha256:{}", value.to_string().repeat(64)),
+        domain: CanonicalizationDomain::FilamentCanonicalJson1,
+        value: format!("sha256:{}", value.to_string().repeat(64))
+            .parse()
+            .expect("a sha256 digest"),
     }
 }
 
@@ -294,7 +295,9 @@ fn state_authority(
     let compiled = package.artifact().expect("strict package artifact").clone();
     let observation = requirement.authority.clone();
     let adapter = AuthorityAdapter {
-        artifact: adapter_artifact,
+        artifact: adapter_artifact
+            .try_into()
+            .expect("an authority-adapter reference"),
         compiled: compiled.clone(),
         requirement: observation.clone(),
         producer: producer.clone(),

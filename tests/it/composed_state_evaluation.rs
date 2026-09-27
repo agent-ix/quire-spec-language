@@ -11,11 +11,11 @@ use quire_spec_language::protocol_artifact::{
 };
 use quire_spec_language::state::{
     self, AssessmentAuthority, AuthorityAdapter, AuthorityEvidence, BinderInput, CanonicalDigest,
-    ContextualSlot, ContextualValue, ContextualValueKind, Dimension, EvaluationOutcome,
-    EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot, Limits, MissingInput,
-    ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
-    PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind, ValuePathSegment,
-    OBSERVATION_CONTRACT_REVISION,
+    CanonicalizationDomain, ContextualSlot, ContextualValue, ContextualValueKind, Dimension,
+    EvaluationOutcome, EvaluationRequest, ExhaustionCause, FieldInput, FieldValue, InputSlot,
+    Limits, MissingInput, ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity,
+    ObservationKey, PopulationInput, Refusal, StateView, StaticAuthority, Value, ValueKind,
+    ValuePathSegment, OBSERVATION_CONTRACT_REVISION,
 };
 use setup::{Inputs, Unit};
 
@@ -251,9 +251,10 @@ fn admitted_postcondition(
 
 fn canonical(value: char) -> CanonicalDigest {
     CanonicalDigest {
-        algorithm: "sha256".into(),
-        domain: "filament-canonical-json-1".into(),
-        value: format!("sha256:{}", value.to_string().repeat(64)),
+        domain: CanonicalizationDomain::FilamentCanonicalJson1,
+        value: format!("sha256:{}", value.to_string().repeat(64))
+            .parse()
+            .expect("a sha256 digest"),
     }
 }
 
@@ -307,7 +308,9 @@ fn authority(
     let compiled = package.artifact().clone();
     let observation = requirement.authority.clone();
     let adapter = AuthorityAdapter {
-        artifact: adapter_artifact,
+        artifact: adapter_artifact
+            .try_into()
+            .expect("an authority-adapter reference"),
         compiled: compiled.clone(),
         requirement: observation.clone(),
         producer: producer.clone(),
@@ -1829,7 +1832,7 @@ fn tc_129_130_131_full_occurrences_authority_and_graph_limits_are_exact() {
             .expect("binder authority")
             .static_selection
             .model_digest
-            .value = package.digest().to_string();
+            .value = package.digest();
         assert!(matches!(
             state::evaluate(
                 package,

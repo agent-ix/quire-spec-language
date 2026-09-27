@@ -617,11 +617,19 @@ fn resolve_context<'a>(
             }
         }
         BindingProfile::Formal => {
+            let self_name = SymbolName::new("self").map_err(|error| {
+                failure(
+                    unit,
+                    Code::InvalidModelBinding,
+                    clause.context.span,
+                    format!("the `self` value name is not a valid symbol name: {error:?}"),
+                )
+            })?;
             let self_value = models[model]
                 .environment
                 .values()
                 .iter()
-                .find(|value| value.name().as_str() == "self");
+                .find(|value| *value.name() == self_name);
             if !self_value.is_some_and(|value| {
                 value.kind() == ValueDeclarationKind::State
                     && matches!(value.value_type(), ValueType::Record { name } if name == record.name())

@@ -16,6 +16,7 @@ use xtask::{
 const USAGE: &str =
     "usage: cargo xtask seam-probe\n       cargo xtask string-edge\n       cargo xtask route-lint";
 
+#[qsl_attrs::string_edge]
 fn run(arguments: &[OsString]) -> Result<String> {
     let Some((command, operands)) = arguments.split_first() else {
         return Err(Error::Usage(USAGE));

@@ -10,6 +10,7 @@ use crate::protocol_artifact::{self as artifact, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report, Unsupported};
 use qsl_foundation::ByteDigest;
 
+#[qsl_attrs::string_edge]
 fn headers(
     package: &wire::Package,
     expected: &artifact::Expected<'_>,
@@ -489,8 +490,8 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         let supplied =
             artifact::intake::selected(&package.inherited, &expected.inherited, &mut work)?;
         artifact::intake::sources(&package.inherited, &expected.inherited, &mut work)?;
-        artifact::intake::definitions(&package.inherited, &supplied, &mut work)?;
-        artifact::validate::package(&package.inherited, &mut work)?;
+        let registered = artifact::intake::definitions(&package.inherited, &supplied, &mut work)?;
+        artifact::validate::package(&package.inherited, &registered, &mut work)?;
         let model_schema = artifact::models::validate(
             &package.inherited,
             expected.inherited.models,
@@ -505,6 +506,7 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             return Err(Error::Invalid(Invalid::Canonical));
         }
         Ok(AdmittedPackage {
+            clocks: super::super::ClockNames::of(&package.inherited),
             package,
             digest,
             artifact: Some(artifact::intake::retained_reference(

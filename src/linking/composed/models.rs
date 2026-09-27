@@ -62,6 +62,7 @@ pub enum SelectedDigest {
 
 impl FromStr for SelectedDigest {
     type Err = qsl_foundation::digest::InvalidDigest;
+    #[qsl_attrs::string_edge]
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         match text.strip_prefix("sha256-jcs:") {
             Some(hex) => {

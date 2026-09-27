@@ -800,6 +800,7 @@ fn is_artifact_segment(text: &str) -> bool {
 
 /// The single segment past `ix://<package_identity>/`, when `identity` has
 /// exactly that form.
+#[qsl_attrs::string_edge]
 pub(crate) fn type_identity_segment<'a>(
     package_identity: &str,
     identity: &'a str,
@@ -1376,6 +1377,7 @@ fn read_value_type_ref(
     Ok(ValueTypeRef::Package(declaration_key(package, type_ref)))
 }
 
+#[qsl_attrs::string_edge]
 fn read_field_member(
     package: &str,
     owner_identity: &str,
@@ -1642,6 +1644,7 @@ fn read_endpoint(
     })
 }
 
+#[qsl_attrs::string_edge]
 fn read_connection(
     package: &str,
     ctx: &NodeCtx<'_>,
@@ -1711,6 +1714,7 @@ fn read_connection(
 /// to `source-to-target`/`target-to-source`/`bidirectional` -- never
 /// `undirected`. This shape's own member is `direction`, not
 /// `flowDirection`; the two are never conflated.
+#[qsl_attrs::string_edge]
 fn read_relationship(
     package: &str,
     owner_identity: &str,
@@ -1809,6 +1813,7 @@ fn read_allocation(
     })
 }
 
+#[qsl_attrs::string_edge]
 fn read_population(
     package: &str,
     ctx: &NodeCtx<'_>,
