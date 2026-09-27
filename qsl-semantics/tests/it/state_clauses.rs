@@ -1387,7 +1387,7 @@ fn assert_frame_refused(
 /// TC-464 (FR-106 check 11, precondition): `root`'s `versionNumber` changes
 /// from 1 to 2 -- authorized (`attemptUpdate`'s frame `modifies
 /// [versionNumber]`) -- no other defect; admission admits.
-#[trace("TC-464", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5")]
 #[test]
 fn attempt_update_precondition_admits_an_authorized_change() {
     let pre = [("root", 1, None)];
@@ -1400,7 +1400,7 @@ fn attempt_update_precondition_admits_an_authorized_change() {
 
 /// TC-464 (FR-106 check 11, postcondition): the same authorized change,
 /// admitted for `AttemptUpdatePost` over the same pre/post snapshots.
-#[trace("TC-464", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5")]
 #[test]
 fn attempt_update_postcondition_admits_an_authorized_change() {
     let pre = [("root", 1, None)];
@@ -1413,7 +1413,7 @@ fn attempt_update_postcondition_admits_an_authorized_change() {
 
 /// FR-106 check 11.1: the post snapshot's `child`, absent from pre, is not
 /// granted by `attemptUpdate`'s (empty) `creates` -- refuses naming `child`.
-#[trace("TC-464", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5")]
 #[test]
 fn attempt_update_refuses_an_unauthorized_create() {
     let pre = [("root", 1, None)];
@@ -1429,7 +1429,7 @@ fn attempt_update_refuses_an_unauthorized_create() {
 
 /// FR-106 check 11.2: the pre snapshot's `child`, absent from post, is not
 /// granted by `attemptUpdate`'s (empty) `deletes` -- refuses naming `child`.
-#[trace("TC-464", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5")]
 #[test]
 fn attempt_update_refuses_an_unauthorized_delete() {
     let pre = [("root", 1, None), ("child", 1, Some("root"))];
@@ -1445,7 +1445,7 @@ fn attempt_update_refuses_an_unauthorized_delete() {
 
 /// FR-106 check 11.3: `root`'s `parent` changes, a field outside
 /// `attemptUpdate`'s `modifies [versionNumber]` -- refuses naming `root`.
-#[trace("TC-464", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5")]
 #[test]
 fn attempt_update_refuses_a_change_outside_modifies() {
     let pre = [("root", 1, None), ("child", 1, None)];
@@ -1462,7 +1462,7 @@ fn attempt_update_refuses_a_change_outside_modifies() {
 /// FR-106 check 11.4: nothing is actually created between pre and post, but
 /// the invocation declares `created: [child]` -- refuses
 /// `population_delta_mismatch`/`delta-disagreement`.
-#[trace("TC-464", "FR-106-AC-5")]
+#[trace("TC-465", "FR-106-AC-5")]
 #[test]
 fn attempt_update_refuses_a_declared_delta_mismatch() {
     let pre = [("root", 1, None)];

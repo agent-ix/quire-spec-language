@@ -2092,7 +2092,7 @@ mod tests {
     /// directly through `Machine::with_pre` with a protocol-clause-shaped
     /// `reads` map, to exercise the guard itself rather than leave it
     /// unreachable from every test.
-    #[trace("TC-467", "FR-107-AC-5")]
+    #[trace("TC-467")]
     #[test]
     fn all_instances_under_a_protocol_clause_refuses_unsupported_construct() {
         let (package, _identity) = population_function_package();
@@ -2151,7 +2151,7 @@ mod tests {
     /// a population read either, so this, too, is unreachable from any
     /// admitted `ProtocolClause`, but the guard is exercised here rather
     /// than left untested).
-    #[trace("TC-467", "FR-107-AC-5")]
+    #[trace("TC-467")]
     #[test]
     fn lookup_under_a_protocol_clause_refuses_unsupported_construct() {
         use qsl_foundation::absence::AbsenceMode;
@@ -2236,7 +2236,7 @@ mod tests {
     /// always comes with an attached `pre_objects`); this test bypasses
     /// admission the same way the two tests above do, to exercise the
     /// guard itself.
-    #[trace("FR-107-AC-5")]
+    #[trace("TC-467")]
     #[test]
     fn a_pre_read_with_no_pre_observation_refuses_wrong_anchor() {
         let a_with_field = qsl_semantics::model::domain_package::DomainPackage::new(

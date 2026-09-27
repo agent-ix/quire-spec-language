@@ -240,7 +240,7 @@ mod tests {
     /// TC-465 (FR-106 check 1.6): a document's own member order survives
     /// parsing, unsorted -- the property `serde_json::Value` (its object
     /// `BTreeMap`-backed) does not have.
-    #[trace("TC-465", "FR-106-AC-2")]
+    #[trace("TC-465", "FR-106-AC-3")]
     #[test]
     fn object_members_keep_document_order_not_alphabetical() {
         let value: OrderedJson =

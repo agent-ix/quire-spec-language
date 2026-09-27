@@ -563,7 +563,7 @@ fn evaluate_clause_is_deterministic() {
 
 /// FR-090/FR-107: an exhausted `work_units` budget completes `incomplete`,
 /// never a fault or a silent truncation.
-#[trace("TC-467", "FR-107-AC-7")]
+#[trace("TC-467", "FR-107-AC-4")]
 #[test]
 fn evaluate_clause_reports_incomplete_when_the_meter_is_exhausted() {
     let compiled = compiled();
@@ -942,7 +942,7 @@ fn run_clause_reports_not_a_predicate_for_an_integer_function() {
 /// FR-098's stale-package rule (reused verbatim by FR-109): an
 /// `expected_package_id` the recompile disagrees with refuses at stage
 /// `compile`, before any selection.
-#[trace("TC-468", "FR-109-AC-6")]
+#[trace("TC-468", "FR-109-AC-2")]
 #[test]
 fn run_clause_reports_a_stale_package() {
     let compiled = compiled();
@@ -972,8 +972,10 @@ fn run_clause_reports_a_stale_package() {
 }
 
 /// [`ClauseRunRefusal::EmptySource`]: an empty unit refuses before any
-/// stage runs.
-#[trace("TC-468", "FR-109-AC-7")]
+/// stage runs. Not one of FR-109's own AC rows (`ClauseRunRefusal` is only
+/// for a request that cannot be formed, distinct from every `ClauseRunReport`
+/// the AC table describes), so tagged by TC-468 alone.
+#[trace("TC-468")]
 #[test]
 fn run_clause_refuses_an_empty_source() {
     let mut request = request(ClauseRunSelection::Function {
