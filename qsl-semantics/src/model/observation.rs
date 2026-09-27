@@ -6,14 +6,17 @@
 //!
 //! # Design note: re-deriving the domain package's effective view
 //!
-//! [`CheckedGraph`] resolves a state clause's context and operation frame
-//! only as opaque [`EffectiveId`]s (ADR-013 O-05): the raw producer
+//! `check::CheckedGraph` resolves a state clause's context and operation
+//! frame only as opaque [`EffectiveId`]s (ADR-013 O-05): the raw producer
 //! identity strings, population declarations and operation effect frames
 //! that admission needs to validate a document against are not retained on
 //! the checked package once S3 finishes (they are `check`-internal,
-//! consumed by `Lowering` and discarded). This module re-admits and
-//! re-normalizes each of [`CheckedGraph::model_selections`]'s domain
-//! packages through the same [`crate::model::intake`]/[`crate::model::normalize`]
+//! consumed by `Lowering` and discarded). This module (which the model ->
+//! check import edge must stay empty, FR-074-AC-3, so it never names that
+//! type directly) re-admits and re-normalizes each of the caller's own
+//! `check::CheckedGraph::model_selections()`'s domain packages, passed in
+//! as [`ClauseFacts`] and `&[DomainPackageRef]`, through the same
+//! [`crate::model::intake`]/[`crate::model::normalize`]
 //! pipeline `crate::model::intake::admit_unit` already runs at compile time
 //! (the caller supplies the same package input FR-056 already requires),
 //! and reads population/type/field identities from the resulting

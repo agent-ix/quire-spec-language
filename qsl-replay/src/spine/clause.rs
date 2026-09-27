@@ -62,7 +62,7 @@ pub enum ClauseRunSelection {
     /// A function, called as a claim (FR-109's own `Function` selection).
     Function {
         /// The function's name (FR-100's `function` rule; one segment,
-        /// resolved by [`super::call::select`]).
+        /// resolved by `super::call::select`).
         name: String,
         /// The call's arguments, one per parameter, in any order.
         arguments: Vec<ClauseArgument>,
