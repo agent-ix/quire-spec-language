@@ -121,4 +121,4 @@ including incomplete native, model, package and runtime input failures.
 
 ## Status
 
-FR-026-AC-6 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-430. Its `invalid_source_identity` code is backed; the `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are planned (QSL-245).
+FR-026-AC-6 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-430. Its `invalid_source_identity` code, `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are backed (QSL-245).

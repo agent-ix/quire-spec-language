@@ -51,4 +51,4 @@ Tag the tests `#[trace("TC-430", "FR-026-AC-6")]` and
 
 ## Status
 
-Partial. ADR-013 §7 slice S-4b (QSL-233). Steps 2 to 5 pass locally. Step 1 passes with the model source's revision value `draft:1`, not `1`: the program's model import pins the model artifact, which binds that label. Step 2's `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are planned (QSL-245).
+Passed locally. ADR-013 §7 slice S-4b (QSL-233). Step 1 passes with the model source's revision value `draft:1`, not `1`: the program's model import pins the model artifact, which binds that label. Step 2's `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are asserted (QSL-245).

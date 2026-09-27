@@ -83,6 +83,6 @@ a second error envelope or alter the audit target's derived errors.
 ## Status
 
 Draft. FR-010-AC-11 is implemented under QSL-233 (ADR-013 §7 slice S-4b):
-`src/cli.rs` takes the four labels before the file, and TC-425 backs it. The `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are planned (QSL-245); the `invalid_source_identity` code is backed.
+`src/cli.rs` takes the four labels before the file, and TC-425 backs it. The `refused` line carries `cause` `blank-label` and `label` for a blank label (catalog revision `1-draft.8`, FR-001, QSL-245), backed by TC-425.
 
 Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

@@ -41,6 +41,5 @@ Tag the tests `#[trace("TC-425", "FR-010-AC-11")]`.
 
 ## Status
 
-Partial. Passed locally under ADR-013 §7 slice S-4b (QSL-233) for the
-`invalid_source_identity` code. Step 3's `blank-label` cause and `label`
-field (catalog revision `1-draft.8`, FR-001) are planned (QSL-245).
+Passed locally under ADR-013 §7 slice S-4b (QSL-233) and QSL-245: step 3's `blank-label` cause and `label`
+field (catalog revision `1-draft.8`, FR-001) are asserted.

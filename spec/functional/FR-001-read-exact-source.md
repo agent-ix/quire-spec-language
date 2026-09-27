@@ -225,13 +225,14 @@ native-v1 `Diagnostic` still renders a region-less refusal at byte 0 (the
 debt recorded above). The replay executor's recompilation under the
 reference's labels is ADR-013 TK-01's.
 
-Not built against catalog revision `1-draft.8` (QSL-245): the refusal
-carries one cause, `SourceReadCause::UnnamedSource`, for a blank label and
-an empty path alike, with no `blank-label`/`empty-path` cause and no `label`
-field; `Source::read_typed` tests the labels and the path in one condition
-(`qsl-foundation/src/source.rs`). So AC-6's cause and field, AC-11 and AC-12
-are planned; AC-6's refusal code is backed. The three edit and binding host causes
-still refuse with `invalid_source_identity` at byte 0
-(`qsl-cst/src/diagnostic.rs` `HostCause`, `qsl-cst/src/cst.rs`
-`render_node`, `src/complete/edit.rs`, `src/complete/editor.rs`); their move
-to `invalid_source_map` with no region is planned (QSL-245).
+Built against catalog revision `1-draft.8` (QSL-245): `SourceReadCause`
+carries `BlankLabel { label }` and `EmptyPath`, `Source::read_typed` checks
+the four labels in order before the path
+(`qsl-foundation/src/source.rs`), and the cause and `label` reach the native
+`Diagnostic`, the `parse`/`format` refusal line, the native-run output, the
+native-state-input construction error and the replay recompile refusal
+(`invalid_source_identity`, `blank-label` or `empty-path`, `label` on the
+first only). `EditPredecessor`, `ForeignNode` and `RequestRevision` refuse
+with `invalid_source_map` and no region (`qsl-cst/src/diagnostic.rs`
+`HostCause::code`, `error_without_region`). AC-6, AC-11 and AC-12 are backed
+by TC-424.
