@@ -592,6 +592,48 @@ fn every_expression_node_carries_its_span() {
     assert!(text[declaration_span.start..declaration_span.end].starts_with("function f"));
 }
 
+/// TC-403 step 3: every `Expression` node's span lies inside its parent's.
+#[trace("FR-091-AC-10", "TC-403")]
+#[test]
+fn every_expression_span_lies_inside_its_parents() {
+    fn walk(
+        spans: &qsl_forms::ExpressionSpans,
+        path: &mut Vec<usize>,
+        parent: (usize, usize),
+        seen: &mut usize,
+    ) {
+        let mut index = 0;
+        while let Some(span) = spans.at(&{
+            let mut child = path.clone();
+            child.push(index);
+            child
+        }) {
+            assert!(
+                span.start >= parent.0 && span.end <= parent.1,
+                "child {path:?}/{index} {span:?} escapes its parent {parent:?}"
+            );
+            *seen += 1;
+            path.push(index);
+            walk(spans, path, (span.start, span.end), seen);
+            path.pop();
+            index += 1;
+        }
+    }
+    let mut seen = 0;
+    for source in ["if a then b else c + d", "(a + b) * c"] {
+        let (_, declaration) = body(source);
+        let spans = declaration.spans().expect("the form carries its spans");
+        let root = spans.body.at(&[]).expect("the body has a span");
+        walk(
+            &spans.body,
+            &mut Vec::new(),
+            (root.start, root.end),
+            &mut seen,
+        );
+    }
+    assert_eq!(seen, 9, "every non-root node of both bodies carries a span");
+}
+
 #[trace("FR-091-AC-21", "TC-406")]
 #[test]
 fn the_nesting_depth_limit_reports_stage_limit_exceeded() {
