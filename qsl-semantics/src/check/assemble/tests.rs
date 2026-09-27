@@ -306,10 +306,17 @@ fn floating_types_are_admitted_and_reference_types_are_refused() {
 fn nested_constructs_of_other_families_refuse_with_their_own_causes() {
     let checked = |declarations: &str| {
         let (_, assembled) = assemble(declarations);
-        assembled
+        let refusals = assembled
             .expect("the unit assembles")
             .check(CheckingLimits::default())
-            .expect_err("check refuses")
+            .expect_err("check refuses");
+        assert!(
+            refusals
+                .iter()
+                .all(|refusal| refusal.cause.code() != qsl_foundation::Code::UnsupportedConstruct),
+            "no step-3 refusal is unsupported_construct: {refusals:?}"
+        );
+        refusals
     };
     for declarations in [
         "function f using v(x: Int[0, 9]): Boolean pure { pre(x) }",
@@ -497,10 +504,209 @@ impl<'ast> syn::visit::Visit<'ast> for CstEdges {
 fn the_assembler_reads_no_cst() {
     use syn::visit::Visit as _;
     assert!(module_path!().starts_with("qsl_semantics::check::assemble"));
-    let file = syn::parse_file(include_str!("../assemble.rs")).expect("assemble.rs parses");
-    let mut edges = CstEdges::default();
-    edges.visit_file(&file);
-    assert_eq!(edges.0, 0, "the assembler's shipped code names qsl_cst");
+    for (name, source) in [
+        ("assemble.rs", include_str!("../assemble.rs")),
+        ("assemble/units.rs", include_str!("units.rs")),
+    ] {
+        let file = syn::parse_file(source).expect("an assembler file parses");
+        let mut edges = CstEdges::default();
+        edges.visit_file(&file);
+        assert_eq!(
+            edges.0, 0,
+            "{name}: the assembler's shipped code names qsl_cst"
+        );
+    }
+}
+
+/// Whether a `use` tree names `qsl_cst` anywhere.
+fn use_tree_names_cst(tree: &syn::UseTree) -> bool {
+    match tree {
+        syn::UseTree::Path(path) => path.ident == "qsl_cst" || use_tree_names_cst(&path.tree),
+        syn::UseTree::Name(name) => name.ident == "qsl_cst",
+        syn::UseTree::Rename(rename) => rename.ident == "qsl_cst",
+        syn::UseTree::Glob(_) => false,
+        syn::UseTree::Group(group) => group.items.iter().any(use_tree_names_cst),
+    }
+}
+
+fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    for entry in std::fs::read_dir(dir).expect("a source directory reads") {
+        let path = entry.expect("a directory entry").path();
+        if path.is_dir() {
+            rust_files(&path, out);
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            out.push(path);
+        }
+    }
+}
+
+/// The `qsl_cst` re-exports in `dir`: a non-private `use` of a path rooted at
+/// `qsl_cst`, or a non-private `type` alias whose type names a `qsl_cst`
+/// path. Returns `path:line` findings.
+fn cst_re_exports(dir: &std::path::Path) -> Vec<String> {
+    /// Whether a type names a path rooted at `qsl_cst`.
+    struct NamesCst(bool);
+    impl<'ast> syn::visit::Visit<'ast> for NamesCst {
+        fn visit_path(&mut self, path: &'ast syn::Path) {
+            if path
+                .segments
+                .first()
+                .is_some_and(|first| first.ident == "qsl_cst")
+            {
+                self.0 = true;
+            }
+            syn::visit::visit_path(self, path);
+        }
+    }
+    struct ReExports(Vec<usize>);
+    impl<'ast> syn::visit::Visit<'ast> for ReExports {
+        fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
+            if !matches!(item.vis, syn::Visibility::Inherited) && use_tree_names_cst(&item.tree) {
+                self.0.push(item.use_token.span.start().line);
+            }
+        }
+        fn visit_item_type(&mut self, item: &'ast syn::ItemType) {
+            let mut names = NamesCst(false);
+            syn::visit::Visit::visit_type(&mut names, &item.ty);
+            if !matches!(item.vis, syn::Visibility::Inherited) && names.0 {
+                self.0.push(item.type_token.span.start().line);
+            }
+        }
+    }
+    use syn::visit::Visit as _;
+    let mut files = Vec::new();
+    rust_files(dir, &mut files);
+    assert!(files.len() > 3, "the scan reads {}", dir.display());
+    let mut found = Vec::new();
+    for path in &files {
+        let source = std::fs::read_to_string(path).expect("a source file reads");
+        let file = syn::parse_file(&source).expect("a source file parses");
+        let mut visitor = ReExports(Vec::new());
+        visitor.visit_file(&file);
+        found.extend(
+            visitor
+                .0
+                .iter()
+                .map(|line| format!("{}:{line}", path.display())),
+        );
+    }
+    found
+}
+
+/// TC-402 step 2, re-exported types: neither `qsl-forms` (through which the
+/// assembler reaches the forms types) nor `qsl-semantics` re-exports a
+/// `qsl_cst` item, by `pub use` or by a `pub type` alias. With no such
+/// re-export in either crate, the assembler has no path to a CST type
+/// except `qsl_cst` itself, which `the_assembler_reads_no_cst` refuses.
+#[trace("FR-091-AC-20", "TC-402")]
+#[test]
+fn no_qsl_cst_type_is_re_exported_to_the_assembler() {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut found = Vec::new();
+    for dir in [manifest.join("src"), manifest.join("../qsl-forms/src")] {
+        found.extend(cst_re_exports(&dir));
+    }
+    assert!(found.is_empty(), "qsl_cst is re-exported: {found:?}");
+}
+
+/// TC-402 step 3: the assembler's test code reaches `qsl_cst` only to run
+/// S1 (`parse`, `parse_source`) and to build the `Limits` argument of that
+/// call.
+#[trace("FR-091-AC-20", "TC-402")]
+#[test]
+fn the_assembler_tests_reach_qsl_cst_only_to_run_s1() {
+    struct Reach(Vec<String>, usize);
+    impl Reach {
+        fn judge(&mut self, names: &[String]) {
+            if names.first().is_some_and(|first| first == "qsl_cst") {
+                self.1 += 1;
+                match names.get(1).map(String::as_str) {
+                    Some("parse" | "parse_source" | "Limits") => {}
+                    _ => self.0.push(names.join("::")),
+                }
+            }
+        }
+        fn use_tree(&mut self, tree: &syn::UseTree, prefix: &mut Vec<String>) {
+            match tree {
+                syn::UseTree::Path(path) => {
+                    prefix.push(path.ident.to_string());
+                    self.use_tree(&path.tree, prefix);
+                    prefix.pop();
+                }
+                syn::UseTree::Name(name) => {
+                    let mut full = prefix.clone();
+                    full.push(name.ident.to_string());
+                    self.judge(&full);
+                }
+                syn::UseTree::Rename(rename) => {
+                    let mut full = prefix.clone();
+                    full.push(rename.ident.to_string());
+                    self.judge(&full);
+                }
+                syn::UseTree::Glob(_) => self.judge(prefix),
+                syn::UseTree::Group(group) => {
+                    for item in &group.items {
+                        self.use_tree(item, prefix);
+                    }
+                }
+            }
+        }
+        fn tokens(&mut self, stream: proc_macro2::TokenStream) {
+            use proc_macro2::TokenTree;
+            let tokens: Vec<TokenTree> = stream.into_iter().collect();
+            let mut i = 0;
+            while i < tokens.len() {
+                match &tokens[i] {
+                    TokenTree::Group(group) => self.tokens(group.stream()),
+                    TokenTree::Ident(root) => {
+                        let mut names = vec![root.to_string()];
+                        let mut j = i + 1;
+                        while let (
+                            Some(TokenTree::Punct(a)),
+                            Some(TokenTree::Punct(b)),
+                            Some(TokenTree::Ident(next)),
+                        ) = (tokens.get(j), tokens.get(j + 1), tokens.get(j + 2))
+                        {
+                            if a.as_char() != ':' || b.as_char() != ':' {
+                                break;
+                            }
+                            names.push(next.to_string());
+                            j += 3;
+                        }
+                        self.judge(&names);
+                        i = j;
+                        continue;
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+        }
+    }
+    impl<'ast> syn::visit::Visit<'ast> for Reach {
+        fn visit_path(&mut self, path: &'ast syn::Path) {
+            let names: Vec<String> = path.segments.iter().map(|s| s.ident.to_string()).collect();
+            self.judge(&names);
+            syn::visit::visit_path(self, path);
+        }
+        fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
+            self.use_tree(&item.tree, &mut Vec::new());
+        }
+        fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+            self.tokens(mac.tokens.clone());
+            syn::visit::visit_macro(self, mac);
+        }
+    }
+    use syn::visit::Visit as _;
+    let file = syn::parse_file(include_str!("tests.rs")).expect("tests.rs parses");
+    let mut reach = Reach(Vec::new(), 0);
+    reach.visit_file(&file);
+    assert!(reach.1 > 0, "the scan sees the S1 call");
+    assert!(
+        reach.0.is_empty(),
+        "a test reaches qsl_cst beyond S1: {:?}",
+        reach.0
+    );
 }
 
 /// FR-096: a record read from the unit places its `declaration`

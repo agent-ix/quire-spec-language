@@ -42,4 +42,4 @@ Tag the test `#[trace("FR-091-AC-10", "TC-403")]`.
 
 ## Status
 
-Steps 1 and 2 are backed by `qsl-forms/tests/it/value_forms.rs`: `every_expression_node_carries_its_span`. Step 3 holds by construction: `ExpressionSpans::push_child` refuses a child outside its parent, and a form with no fitting spans carries none.
+Steps 1 and 2 are backed by `qsl-forms/tests/it/value_forms.rs`: `every_expression_node_carries_its_span`. Step 3 is backed by `every_expression_span_lies_inside_its_parents` (same file), which walks every node of both bodies and asserts each span lies inside its parent's.
