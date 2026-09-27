@@ -277,6 +277,15 @@ pub enum AssemblyCause {
         /// The populations, in ascending `DeclarationKey` order.
         populations: Vec<DeclarationKey>,
     },
+    /// A `protocol` declaration: S2 builds its form (FR-112), but FR-113's
+    /// scoped-anchor resolution has no S3 checker yet (QSL-298). The
+    /// assembler refuses it rather than silently accept a declaration it
+    /// cannot check: a construct QSL does not yet check must not succeed
+    /// (no old refusal path is removed before its replacement works).
+    UnimplementedProtocol {
+        /// The declared protocol name.
+        name: String,
+    },
 }
 
 impl AssemblyCause {
@@ -322,6 +331,7 @@ impl AssemblyCause {
             },
             Self::TypeLimit(_) => Code::StageLimitExceeded,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
+            Self::UnimplementedProtocol { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -367,6 +377,7 @@ impl AssemblyCause {
             },
             Self::TypeLimit(limit) => limit.kind().catalog_cause(),
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
+            Self::UnimplementedProtocol { .. } => "not-yet-implemented",
         };
         CatalogCode::new(self.code().as_str(), cause)
     }
@@ -425,6 +436,10 @@ struct Unit {
     /// State clause declarations in declaration order (FR-102), resolved
     /// by the caller into `StateClauseDeclaration`s (FR-104).
     state_clauses: Vec<StateClauseForm>,
+    /// Each `protocol` declaration's name and declaration span, in source
+    /// order: FR-113 has no S3 checker yet (QSL-298), so `assemble_with_limits`
+    /// refuses each of these rather than silently accept it.
+    protocols: Vec<(String, Span)>,
 }
 
 impl Unit {
@@ -438,8 +453,10 @@ impl Unit {
             functions: Vec::new(),
             declared: BTreeMap::new(),
             state_clauses: Vec::new(),
+            protocols: Vec::new(),
         };
         for form in forms {
+            let span = form.span();
             match form.into_form() {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
                 DeclarationForm::Alias(alias) => {
@@ -467,6 +484,15 @@ impl Unit {
                     unit.enums.push(enumeration);
                 }
                 DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
+                // A protocol declaration's scoped-anchor resolution through
+                // nested control scopes is FR-113 (QSL-298, the S3
+                // `ProtocolClause` checker). Its name and span are recorded
+                // here so `assemble_with_limits` can refuse it (below):
+                // this stage does not check it yet, and must not silently
+                // accept it either.
+                DeclarationForm::Protocol(protocol) => {
+                    unit.protocols.push((protocol.name.name, span));
+                }
             }
         }
         unit
@@ -1146,6 +1172,15 @@ impl PackageDeclarations {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
+
+        // FR-113 (QSL-298) has no S3 checker yet: refuse every `protocol`
+        // declaration rather than silently drop it from the package.
+        for (name, span) in &unit.protocols {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::UnimplementedProtocol { name: name.clone() },
+                span: *span,
+            });
+        }
 
         // Each `model` declaration's admitted domain package, and its
         // object types by name.

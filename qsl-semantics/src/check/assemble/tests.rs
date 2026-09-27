@@ -417,10 +417,49 @@ fn each_assembler_cause_has_its_catalog_code() {
             },
             "ambiguous_declaration/ambiguous-name",
         ),
+        (
+            AssemblyCause::UnimplementedProtocol {
+                name: "Flow".into(),
+            },
+            "unsupported_construct/not-yet-implemented",
+        ),
     ];
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
     }
+}
+
+/// SR-753/SR-754 FND-002: FR-113's scoped-anchor resolution has no S3
+/// checker yet (QSL-298), so the assembler refuses a `protocol`
+/// declaration rather than silently drop it from the package -- on main,
+/// S2 itself refused `protocol` as `unsupported_construct` before this
+/// ticket taught S2 to build its form; the refusal moves here so the
+/// cutover never lets an unchecked construct through.
+#[trace("TC-510", "FR-112")]
+#[test]
+fn a_protocol_declaration_refuses_unimplemented_rather_than_silently_dropping() {
+    let (text, found) = errors(
+        "protocol Flow using v over (input: M::Input) on origin {\n\
+         role R on M::Actor;\n\
+         run sequence Main {\n\
+         attempt Tried by R on M::Actor::act contracts [] as (tried: M::Attempt) { true };\n\
+         effect Applied of Missing as (applied: M::Effect) { true };\n\
+         }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }",
+    );
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(
+        found[0].cause,
+        AssemblyCause::UnimplementedProtocol {
+            name: "Flow".into()
+        }
+    );
+    assert_eq!(found[0].span.start, text.find("protocol Flow").unwrap());
+    assert_eq!(
+        found[0].cause.catalog_code().to_string(),
+        "unsupported_construct/not-yet-implemented"
+    );
 }
 
 /// FR-104 "Resolution" (TC-460 row 1's shape, over a unit with no `model`

@@ -392,6 +392,10 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        AssemblyCause::UnimplementedProtocol { name } => format!(
+            "`protocol {name}` is not checked yet (FR-113/QSL-298), so it is refused rather than \
+             silently accepted"
+        ),
     };
     with_more(message, refusal.errors.len())
 }
