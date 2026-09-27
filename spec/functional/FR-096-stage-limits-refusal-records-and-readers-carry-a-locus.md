@@ -278,9 +278,11 @@ total, so S6a makes no separate `integer_out_of_domain` decision on it.
 family reasons `absent-key` and `precondition-false`, so it builds no
 `UndefinedRecord`. Like the other kernel undefined reasons, it reaches the
 consumer as `FamilyOutcome::Evaluated(Outcome::Undefined(_))` with
-`Evaluation.location`, and renders by QSL's own kernel reason spelling,
-`sum-out-of-domain`, in the table that spells the kernel undefined reasons
-([FR-100](FR-100-run-a-named-function-through-the-spine.md)).
+`Evaluation.location`. QSL's kernel reason spelling for it is
+`sum-out-of-domain`. The owner of
+[FR-100](FR-100-run-a-named-function-through-the-spine.md) adds that
+spelling to FR-100's kernel undefined-reason table, which does not list it
+today (planned, QSL-245).
 
 A linked `sum` whose prefixes are not all proved members is refused at
 checking (QSpec FR-145, `undefined_expression`/`unproved-range`), so only a
@@ -475,7 +477,9 @@ not built (QSL-245):
 - AC-14 is not built: S6a's `sum` refuses a running total outside an `Int`
   domain with `Refusal::IntegerOutOfDomain`, checks the final total rather
   than the seed (`qsl-eval/src/value/expression/evaluate.rs`), and
-  `quire_exact::Undefined` has no `SumOutOfDomain` variant.
+  `quire_exact::Undefined` has no `SumOutOfDomain` variant. FR-100's
+  kernel undefined-reason table has no `sum-out-of-domain` row yet (planned,
+  FR-100's owner).
 
 Not built, independent of the catalog revision:
 
