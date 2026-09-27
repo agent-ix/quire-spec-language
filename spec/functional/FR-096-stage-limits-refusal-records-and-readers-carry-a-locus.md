@@ -127,11 +127,16 @@ actual counter at the failed charge, and an optional `Locus`. Its catalog
 code is its kind's.
 
 Every ceiling of a stage's own limits type in compiler stages S2 to S4, the
-I2 reader and a family `check` is a stage limit and SHALL be reported as
-`LimitExceeded`, never as `resource_exhausted`. A `CheckingLimits` stop
-raised while package checking (`PackageDeclarations::check`) is a
-`CheckRefusal` with code `stage_limit_exceeded` carrying the locus this
-FR gives its row; it is never `resource_exhausted`. A ceiling of an
+I2 reader and a family `check`'s own per-declaration precheck (the row
+"S3, a family `check`, for a declaration as a whole" below) is a stage
+limit and SHALL be reported as `LimitExceeded`, never as `resource_exhausted`.
+A package-level `CheckingLimits` stop -- `Typer`'s nesting depth and
+package-wide node count, lowering's own work charge, and package checking's
+own declaration-level precheck (`PackageDeclarations::check`, the other S3
+rows below) -- is a stage limit by the same rule, but is reported as a
+`CheckRefusal` with code `stage_limit_exceeded`, carrying the locus this FR
+gives its row; it is never a standalone `LimitExceeded` value and never
+`resource_exhausted`. A ceiling of an
 accounting-contract limits type (`ModelNormalizationLimitsV1`,
 `PopulationAdmissionLimitsV1`, quire-specification FR-150) is the caller's
 meter wherever it is read and keeps `resource_exhausted`
@@ -160,7 +165,8 @@ Each producer's locus is the position at which its charge failed:
 | S2 (`forms`) | nesting depth (FR-091-AC-9) | `Locus::Region` over the span of the first node past the bound, under the unit's `RawSourceRef` |
 | S3, a family `check`, for a declaration as a whole | the contract's nesting entry, and the declaration's preimage input bytes, node count and work charge | `Locus::Region` over that declaration's span |
 | S3, `Typer` and lowering, under `CheckingLimits` | nesting depth, and the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `check::Location`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
-| S3, package checking, under `CheckingLimits` | a declaration's input bytes and the package's work (NFR-011) | `Locus::Region` over the declaration being charged |
+| S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `check::Location` |
+| S3, package checking's declaration-level precheck, under `CheckingLimits` | a declaration's input bytes (NFR-011) | `Locus::Region` over the declaration being charged |
 | I2 reader, IR's reported limits | IR's `Bytes`, `Depth`, `Nodes`, `Edges`, `Occurrences`, `Diagnostics` and `Work` as input bytes, nesting depth, node count, edge count, occurrence count, diagnostic count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
 
 `LimitExceeded`'s locus SHALL be absent in exactly these cases:
@@ -343,7 +349,9 @@ name.
 | FR-096-AC-12 | `Code::RuntimeInvariant`, the code of `InternalFault` (T-4, O-16 internal-failure category), resolves to FR-301 exit status 30 (tool failure) through `Code::exit_code`, and every other `Code` resolves to 20, 21 or 22. A native `run` whose evaluation refuses with `runtime_invariant` exits 30. A report holding a `runtime_invariant` diagnostic beside invalid, unsupported or incomplete ones exits 30. | Test (TC-470) |
 | FR-096-AC-13 | A kernel `DivisionPairOutOfDomain` for consumer domain `Int[0, 9]` builds a record with `expected` `Int[0, 9]` and cause `quotient-outside-domain` when only the quotient is outside it, `remainder-outside-domain` when only the remainder is, and `both-outside-domain` when both are. | Test (TC-428) |
 | FR-096-AC-14 | With `type Small = Int[0, 3]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 3]>[0, 2]` holding `2, 2` returns `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))`, located at the `sum` node, with no refusal record and no charge after `integer-arithmetic.arithmetic`; it is not `Outcome::Refused(Refusal::IntegerOutOfDomain)`. The same `sum` for `q` holding `1, 2` completes with `3`. `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 9]>[0, 2]` holding `5, 0` returns the same undefined outcome, located at the summand node, with no addition. | Test (TC-500) |
-| FR-096-AC-15 | An S6a evaluation of `not x` for `x: Boolean`, called through the seam with an Integer argument that admission would have refused, stops on a kernel `CheckedInvariant`. `Machine::run` returns `Err(InternalFault)` naming stage `S6a` and invariant `checked-program-invariant` (category internal failure, code `runtime_invariant`); it returns no `Evaluation` and builds no refusal record. | Test (TC-428) |
+| FR-096-AC-15 | An S6a evaluation of `not x` for `x: Boolean`, called through `qsl_semantics::check::ValueFunctionFamily::evaluate` with an Integer argument that admission would have refused, stops on a kernel `CheckedInvariant`. It returns `Err(InternalFault)` naming stage `S6a` and invariant `checked-program-invariant` (category internal failure, code `runtime_invariant`); it returns no `Evaluation` and builds no refusal record. | Test (TC-428) |
+| FR-096-AC-16 | A lowering work-budget stop -- the shared work meter denying a per-node charge past a declaration's own precheck -- is a `CheckRefusal`/`stage_limit_exceeded` with kind work budget, `region: None` on its `StageLimitCause`, and `DeclarationRegions::refusal_region` resolving to the specific node whose lowering charge crossed the bound, not the declaration span. | Test (TC-427) |
+| FR-096-AC-17 | Two declarations `g1`, `g2`, each with an individually-under-bound preimage node count, checked together under a package-wide node bound one past `g1`'s own count: `g1` passes its own precheck and types fully, and `Typer`'s package-wide counter, seeded from `g1`'s final count, crosses the bound partway through `g2`'s own body walk -- a `CheckRefusal`/`stage_limit_exceeded` with kind node count located at the specific node of `g2` where the running count passed the bound, never at either declaration's span. | Test (TC-427) |
 
 ## Dependencies
 
@@ -435,11 +443,15 @@ Implemented under QSL-245:
 - `kernel_refusal_record` maps the kernel `CardinalityOutOfBound` to
   `cardinality_out_of_bound` with its fields.
 - Package checking reports a `CheckingLimits` stop (`Typer`'s node count and
-  depth, and a declaration's input bytes and work) as a `CheckRefusal` with
-  code `stage_limit_exceeded`; the region comes from
-  `DeclarationRegions::refusal_region`, tested for each stop.
-- A kernel `CheckedInvariant` is an `InternalFault` from `Machine::run`
-  (AC-15, TC-428), named `S6a`/`checked-program-invariant`.
+  depth, lowering's own work charge, and a declaration's input bytes) as a
+  `CheckRefusal` with code `stage_limit_exceeded`; the region comes from
+  `DeclarationRegions::refusal_region`, tested for each stop, including
+  `Typer`'s package-wide node count reached from a second declaration
+  (AC-17) and lowering's own work charge located at a node, not a
+  declaration span (AC-16).
+- A kernel `CheckedInvariant` is an `InternalFault` from
+  `ValueFunctionFamily::evaluate`/`Machine::run` (AC-15, TC-428), named
+  `S6a`/`checked-program-invariant`.
 
 Implemented under QSL-282:
 

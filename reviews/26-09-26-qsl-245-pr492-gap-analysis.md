@@ -1,0 +1,45 @@
+---
+id: SR-746
+title: "PR 492 gap analysis (QSL-245 remainder)"
+type: SpecReview
+analysis: base
+scope: "agent-ix/quire-spec-language@caa1520a4393c132583accda17aa9f8c01c14949; diff 2df75ab6...caa1520a; FR-096 AC-4, AC-5, AC-7, AC-15; TC-427; TC-428; qsl-eval; qsl-foundation; qsl-replay; qsl-semantics/src/check/region.rs"
+review_set: subset
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-096
+    type: reviews
+  - target: ix://agent-ix/quire-spec-language/TC-428
+    type: reviews
+---
+## Summary
+
+Ticket: QSL-245. PR: quire-spec-language#492. Gap analysis of the new and changed tests against FR-096. The tests were mutation-checked in a detached scratch worktree at caa1520a with its own `CARGO_TARGET_DIR`. Both were deleted afterwards.
+
+The unmutated tree passes all six region tests, the stage.rs, bounds.rs and AC-15 unit tests, and `pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor`.
+
+Mutation results. Every claimed proof holds.
+
+| Mutant | Killed by |
+| --- | --- |
+| `stopped` CheckedInvariant check disabled (`if false && ...`) | `checked_invariant_is_an_internal_fault_at_s6a` (got `Kernel(Refused(CheckedInvariant))`) |
+| `refusal_region` branch order swapped (location first) | `a_checking_limit_stop_is_located_at_its_node` (InputBytes gave the body text, not the declaration text), and also `package_checking_keeps_the_family_limit_region` |
+| `refusal_region` location branch dropped for a `None` region | `a_lowering_stop_is_located_by_its_location` (got `None`) |
+| spurious extra key in `LimitExceeded::catalog_fields` | `limit_exceeded_reports_stage_limit_exceeded_per_kind` |
+| `"pre"`/`"post"` swapped in `select_anchor` | `pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor` |
+
+**Item 3 deletion.** No coverage is lost. The deleted `limit_exceeded` test checked the kind, bound, actual and region for the same four limits. The rewritten test checks the same `StageLimitCause` kind, bound and actual, plus the code and cause and the exact region text. The deleted function had no production caller. `qsl-replay/src/spine.rs:936` uses `refusal_region` directly.
+
+**Item 4 tags.** `TC-428`/`FR-096-AC-7` on the stage.rs and bounds.rs tests is correct: the `LimitExceeded` and `BoundExceeded` key-table rows, and both now assert the whole map. The WrongAnchor assertion stays under its FR-090-AC-7/TC-388 test, which is correct. AC-7's `wrong-anchor` row is already backed in `causes.rs:226`.
+
+## Verdict
+
+**Approve with changes.** One medium finding: an untested locus that the Status section claims is tested. Three low findings.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | medium | No test checks the locus of `Typer`'s package-wide node-count stop (`Typer::enter`, `region: None`, located by `refusal.location`). The node-count case in the region test is the family's per-declaration `check_node_count`: actual 7 is the preimage count, and it fires before `Typer` for any single-declaration package because both use `limits.nodes()`. Yet FR-096 Status says package checking reports "`Typer`'s node count and depth ... tested for each stop", and FR-096's row for `Typer`/lowering names this locus. Add a two-declaration case whose second declaration passes the running count, and assert the node whose entry failed. | qsl-semantics/src/check/check.rs:1127-1147; qsl-semantics/src/check/region.rs:440-446; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md:437-440 |
+| FND-002 | low | The fault conversion silently changes `qsl_replay::replay` (FR-098). A kernel `CheckedInvariant` used to settle `ProofCategory::Refusal`, an `Ok` result that is inconclusive with `NoValue` (execute.rs:264). It is now `Err(ReplayRefusal::Fault)` through `CallFailure::Fault` (execute.rs:246). This agrees with FR-096's "SHALL become an `InternalFault`", but no test covers it and FR-098 does not mention it. `spine::run`'s output is unchanged. | qsl-replay/src/execute.rs:238-264 |
+| FND-003 | low | `a_lowering_stop_is_located_by_its_location` is tagged FR-096-AC-4 and AC-5. AC-4 is input bytes, which the test does not touch. AC-5 is a declaration work charge located at the declaration's span, and the test asserts that a lowering work stop is not at the declaration span. Tag it to the requirement that states the lowering locus, once the spec states one (see the spec review). | qsl-semantics/src/check/region.rs:483 |
+| FND-004 | low | FR-096-AC-15 names the code `runtime_invariant`. The test asserts the stage, category and invariant but not `fault.catalog_code()`. | qsl-eval/src/value/expression/mod.rs:543-545 |

@@ -241,10 +241,7 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
             &ObjectEnvironment::default(),
             &mut meter,
         )
-        .map_err(|failure| match failure {
-            CallFailure::Input(refusal) => ReplayRefusal::Input(refusal),
-            CallFailure::Fault(fault) => ReplayRefusal::Fault(fault),
-        })?;
+        .map_err(call_failure_to_replay_refusal)?;
     let (replayed, value) = match evaluation.outcome {
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(holds))) => (
             if holds {
@@ -321,6 +318,19 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
             pin,
         )),
     })
+}
+
+/// FR-096-AC-15, SR-746 FND-002: a broken S6a invariant -- including a
+/// kernel `Refusal::CheckedInvariant`, which the seam itself now turns into
+/// `CallFailure::Fault` before `package.call` ever returns -- settles
+/// `Err(ReplayRefusal::Fault(_))`, never `Ok(ReplayResult::..)` with
+/// `ProofCategory::Refusal`. `CallFailure::Input` passes its own refusal
+/// through unchanged.
+fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
+    match failure {
+        CallFailure::Input(refusal) => ReplayRefusal::Input(refusal),
+        CallFailure::Fault(fault) => ReplayRefusal::Fault(fault),
+    }
 }
 
 /// The recompile's stage limits: the request's S1 `text_input_bytes`
