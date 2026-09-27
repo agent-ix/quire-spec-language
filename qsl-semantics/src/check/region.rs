@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 use qsl_forms::DeclarationSpans;
 use qsl_foundation::diagnostic::{LimitExceeded, Locus};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
+use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::Span;
 
 use super::{CheckCause, CheckRefusal, CheckedGraph, Location, Origin, PackageDeclarations};
@@ -29,6 +30,7 @@ use super::{CheckCause, CheckRefusal, CheckedGraph, Location, Origin, PackageDec
 /// declaration index.
 fn resolve<'s>(
     source: &RawSourceRef,
+    embedding: Option<&SourceMap>,
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     type_spans: &BTreeMap<String, Span>,
     location: &Location,
@@ -39,11 +41,23 @@ fn resolve<'s>(
         Origin::TypeDeclaration { name } if location.path.is_empty() => *type_spans.get(name)?,
         Origin::TypeDeclaration { .. } | Origin::Expression => return None,
     };
-    region(source, span)
+    region(source, embedding, span)
 }
 
-/// `span` as a region of `source`.
-fn region(source: &RawSourceRef, span: Span) -> Option<SourceRegion> {
+/// `span` as a region of `source`. For a body embedded in a document
+/// (ADR-013 C-21), `embedding` maps it to the document's region, under the
+/// document's own `RawSourceRef`, shifted by the body's offset in the
+/// document. A span that maps to no single document region (one a layout
+/// deletion splits, or one the map does not cover) names none.
+fn region(
+    source: &RawSourceRef,
+    embedding: Option<&SourceMap>,
+    span: Span,
+) -> Option<SourceRegion> {
+    if let Some(map) = embedding {
+        let mut regions = map.map_regions(map.body(), span)?.into_iter();
+        return regions.next().filter(|_| regions.len() == 0);
+    }
     let start = u64::try_from(span.start).ok()?;
     let end = u64::try_from(span.end).ok()?;
     SourceRegion::new(source.clone(), start, end).ok()
@@ -55,6 +69,7 @@ impl PackageDeclarations {
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
             &self.source,
+            self.embedding.as_ref(),
             |index| self.functions.get(index)?.spans(),
             &self.declared_type_spans,
             location,
@@ -65,7 +80,7 @@ impl PackageDeclarations {
     /// `None` when it was not read from this unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
         let spans = self.functions.get(index)?.spans()?;
-        region(&self.source, spans.declaration)
+        region(&self.source, self.embedding.as_ref(), spans.declaration)
     }
 }
 
@@ -75,6 +90,7 @@ impl PackageDeclarations {
 #[derive(Clone, Debug)]
 pub struct DeclarationRegions {
     source: RawSourceRef,
+    embedding: Option<SourceMap>,
     spans: Vec<Option<DeclarationSpans>>,
     type_spans: BTreeMap<String, Span>,
 }
@@ -85,6 +101,7 @@ impl DeclarationRegions {
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
             &self.source,
+            self.embedding.as_ref(),
             |index| self.spans.get(index)?.as_ref(),
             &self.type_spans,
             location,
@@ -95,7 +112,7 @@ impl DeclarationRegions {
     /// `None` when it was not read from the unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
         let spans = self.spans.get(index)?.as_ref()?;
-        region(&self.source, spans.declaration)
+        region(&self.source, self.embedding.as_ref(), spans.declaration)
     }
 
     /// FR-096: the region a check refusal names. A stage limit a family
@@ -132,6 +149,7 @@ impl PackageDeclarations {
     pub fn regions(&self) -> DeclarationRegions {
         DeclarationRegions {
             source: self.source.clone(),
+            embedding: self.embedding.clone(),
             spans: self
                 .functions
                 .iter()
@@ -149,6 +167,7 @@ impl CheckedGraph {
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
             &self.source,
+            self.embedding.as_ref(),
             |index| self.form_spans.get(index)?.as_ref(),
             &self.type_spans,
             location,
@@ -159,7 +178,7 @@ impl CheckedGraph {
     /// `None` when it was not read from this unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
         let spans = self.form_spans.get(index)?.as_ref()?;
-        region(&self.source, spans.declaration)
+        region(&self.source, self.embedding.as_ref(), spans.declaration)
     }
 }
 
@@ -172,7 +191,8 @@ mod tests {
     };
     use qsl_foundation::diagnostic::{LimitKind, Locus};
     use qsl_foundation::source::provenance::SourceRegion;
-    use qsl_foundation::{SourceIdentity, Span};
+    use qsl_foundation::source_map::{Layout, Segment, SourceMap};
+    use qsl_foundation::{Source, SourceIdentity, Span};
 
     use super::super::family::fixtures::{admitted_source, empty_scope, measure_resolved};
     use super::super::{CheckingLimits, Location, Origin, PackageDeclarations};
@@ -422,6 +442,89 @@ mod tests {
             assert_eq!(checked.region(location), None, "{location:?}");
         }
         assert_eq!(checked.declaration_region(1), None);
+    }
+
+    /// TC-426 step 3 (ADR-013 C-21): a body embedded at byte offset `k` of
+    /// a document with reference `d`, with no layout deletions, resolves
+    /// the four locations under `d` to the same spans shifted by `k`, from
+    /// the declarations, from the regions taken from them and from the
+    /// checked package alike. Dropping the shift (or the document's
+    /// reference) makes the byte-for-byte text comparison fail.
+    #[trace("TC-426", "FR-096-AC-1")]
+    #[test]
+    fn an_embedded_body_resolves_its_locations_under_the_document_shifted() {
+        let prefix = "# Notes\n\n```qsl\n";
+        let document_text = format!("{prefix}{UNIT}```\n");
+        let k = prefix.len();
+        let original = Source::read(
+            SourceIdentity::new("a", "doc", "git", "1"),
+            "doc.md",
+            document_text.as_bytes(),
+            document_text.len() + 1,
+        )
+        .unwrap();
+        let document = original.reference().clone();
+        let map = SourceMap::verify(
+            original,
+            Source::read(
+                SourceIdentity::new("a", "u", "git", "1"),
+                "u.qsl",
+                UNIT.as_bytes(),
+                UNIT.len() + 1,
+            )
+            .unwrap(),
+            Span {
+                start: k,
+                end: k + UNIT.len(),
+            },
+            vec![Segment {
+                body: Span {
+                    start: 0,
+                    end: UNIT.len(),
+                },
+                original: Span {
+                    start: k,
+                    end: k + UNIT.len(),
+                },
+            }],
+            Layout::default(),
+            1,
+        )
+        .expect("the body is the document's bytes at k");
+        let mut declarations = unit();
+        declarations.embedding = Some(map);
+        let standalone = unit();
+        let regions = declarations.regions();
+        let checked = declarations
+            .clone()
+            .check(CheckingLimits::default())
+            .expect("the unit checks");
+        let cases = [
+            (body(&[]), "if a then b else c + d"),
+            (body(&[2]), "c + d"),
+            (body(&[2, 1]), "d"),
+            (measure(&[]), "n"),
+        ];
+        for (location, expected) in &cases {
+            let plain = standalone.region(location).unwrap();
+            let embedded = declarations.region(location).unwrap();
+            assert_eq!(embedded.source(), &document, "{location:?}");
+            assert_eq!(embedded.start(), plain.start() + k as u64, "{location:?}");
+            assert_eq!(embedded.end(), plain.end() + k as u64, "{location:?}");
+            let bytes = &document_text[usize::try_from(embedded.start()).unwrap()
+                ..usize::try_from(embedded.end()).unwrap()];
+            assert_eq!(bytes, *expected, "{location:?}");
+            assert_eq!(regions.region(location), Some(embedded.clone()));
+            assert_eq!(checked.region(location), Some(embedded));
+        }
+        let form = declarations.declaration_region(0).unwrap();
+        assert_eq!(form.source(), &document);
+        assert_eq!(
+            usize::try_from(form.start()).unwrap(),
+            k + UNIT.find("function").unwrap()
+        );
+        // A location the unit does not read still resolves to none.
+        assert_eq!(declarations.region(&body(&[3])), None);
     }
 
     /// FR-096, QSL-245: each `CheckingLimits` ceiling `Typer` reaches
