@@ -450,36 +450,29 @@ Implemented under QSL-281:
   (`quire-exact` fields `required`/`supplied`), and `kernel_refusal_record`
   builds the record from them.
 
-Specified against catalog revision `1-draft.8` (QSpec STD-110, merged) and
-not built (QSL-245):
+Implemented under QSL-245 against catalog revision `1-draft.8` (QSpec
+STD-110, merged):
 
-- AC-8 is backed for `CardinalityOutOfBound` only. `ForeignReference`
-  builds its record with its code, fields and locus, but
-  `Refusal::cause()` returns `None` for it, not `foreign-universe`.
-  Revision `1-draft.8` gives the other ten kernel causes their codes, causes
-  and fields (the key table), but the code does not build them:
-  `kernel_refusal_record` builds no record for `InexactDecimal`,
-  `DecimalOutOfDomain`, `DivisionPairOutOfDomain`, `ModuloOutOfDomain`,
-  `TextLengthOutOfDomain`, `IntegerOutOfDomain`, `RationalOutOfDomain`,
-  `IeeeNotExact`, `IeeeNanPayloadNotRepresentable` or
-  `IeeeRationalOutOfDomain`. Those variants carry no target domain or width
-  (`IeeeNotExact` carries only its would-be flags, and
-  `DivisionPairOutOfDomain` only its two admitted flags).
-  `Refusal::code()` returns `None` for the first eight, and
-  `Refusal::cause()` returns `None` for every cause but
-  `CardinalityOutOfBound` (`quire-exact/src/outcome.rs`). The code still
-  claims revision `1-draft.7`. The `quire-exact/src/outcome.rs` test
-  tagged `TC-318`, and its doc comment saying `CardinalityOutOfBound` is the
-  only refusal with a code, are stale: no TC-318 artifact exists, and the
-  coder building AC-8 retags that test `TC-428`/`FR-096-AC-8` and corrects
-  the comment.
-- AC-13 is not built: no record gives `DivisionPairOutOfDomain` a cause.
-- AC-14 is not built: S6a's `sum` refuses a running total outside an `Int`
-  domain with `Refusal::IntegerOutOfDomain`, checks the final total rather
-  than the seed (`qsl-eval/src/value/expression/evaluate.rs`), and
-  `quire_exact::Undefined` has no `SumOutOfDomain` variant. FR-100's
+- AC-8 is backed for all twelve kernel causes. Each of the ten value
+  refusals carries the target domain or IEEE width its `expected` field
+  renders from (`quire-exact` `Refusal`; bigint domains are boxed, so
+  `Refusal` is `Clone`, not `Copy`), `IeeeNotExact` its would-be flags and
+  `IeeeNanPayloadNotRepresentable` its source width. `Refusal::code()` and
+  `Refusal::cause()` return the key table's code and cause for every cause
+  but `CheckedInvariant`, `ForeignReference` included (`foreign-universe`).
+  `kernel_refusal_record` builds the twelve records, and the ten codes are in
+  the catalog category table.
+- AC-13: `DivisionPairOutOfDomain` takes its cause from its
+  `quotient_admitted`/`remainder_admitted` flags.
+- AC-14: S6a's `sum` checks the seed and each running total, returns
+  `Undefined::SumOutOfDomain` located at the summand (seed) or the `sum`
+  node (addition), charges nothing after the failed decision, and makes no
+  final-total decision for a non-empty sum. An empty `sum` whose `N` does
+  not admit `0` is the same undefined outcome at the `sum` node. FR-100's
   kernel undefined-reason table has no `sum-out-of-domain` row yet (planned,
-  FR-100's owner).
+  FR-100's owner); `qsl-replay` spells it `sum-out-of-domain`.
+- The code still claims revision `1-draft.7`; the claim moves to `1-draft.8`
+  in the last QSL-245 step.
 
 Not built, independent of the catalog revision:
 
