@@ -42,6 +42,10 @@ Tag the tests `#[trace("TC-426", "FR-096-AC-1")]`.
 
 ## Status
 
-Steps 2 and 4 are backed by `qsl-semantics` `check::region` tests (QSL-239).
-Step 3 (a body embedded in a document, C-21) is not: package declarations
-carry the unit's `RawSourceRef` only, not the embedding's source map.
+Passed locally. Steps 2 and 4 are backed by `qsl-semantics` `check::region`
+tests (QSL-239). Step 3 (a body embedded in a document, C-21) is backed by
+`an_embedded_body_resolves_its_locations_under_the_document_shifted`
+(QSL-293): `PackageDeclarations::embedding` carries the body's `SourceMap`,
+and the declarations, the regions taken from them and the checked package
+resolve each location under the document's `RawSourceRef`, shifted by `k`.
+A span the map splits (layout deletions) resolves to no single region.
