@@ -1079,12 +1079,12 @@ fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
     let report = run_clause(request).unwrap();
     match &report.disposition {
         ClauseDisposition::Compile(refusal) => {
-            assert_eq!(refusal.code(), qsl_foundation::diagnostic::Code::MissingImport);
+            assert_eq!(
+                refusal.code(),
+                qsl_foundation::diagnostic::Code::MissingImport
+            );
             assert!(
-                matches!(
-                    refusal.as_ref(),
-                    super::CompileRefusal::Intake { .. }
-                ),
+                matches!(refusal.as_ref(), super::CompileRefusal::Intake { .. }),
                 "expected an Intake refusal, got {refusal:?}"
             );
         }
@@ -1683,10 +1683,7 @@ fn boolean_disposition(disposition: &ClauseDisposition) -> bool {
 /// A `ClauseRunRequest` selecting `Function { name, arguments, snapshot }`
 /// over `config_version_snapshot`'s distinct-identities case (`root` at
 /// version 1, `child` at version 2).
-fn config_version_function_request(
-    name: &str,
-    arguments: Vec<ClauseArgument>,
-) -> ClauseRunRequest {
+fn config_version_function_request(name: &str, arguments: Vec<ClauseArgument>) -> ClauseRunRequest {
     let model_digest_hex = config_version_model_digest_hex();
     let label = config_version_document_ref("distinct-identities");
     let bytes = config_version_snapshot(&label, &model_digest_hex, 1, Some(2));
@@ -1887,9 +1884,9 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
     let report = run_clause(request).unwrap();
     assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
     match &report.disposition {
-        ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Incomplete(
-            record,
-        )) => {
+        ClauseDisposition::Admit(
+            qsl_semantics::model::observation::AdmissionFailure::Incomplete(record),
+        ) => {
             assert_eq!(record.code, "incomplete_population");
         }
         other => panic!("expected Admit(Incomplete(incomplete_population)), got {other:?}"),
