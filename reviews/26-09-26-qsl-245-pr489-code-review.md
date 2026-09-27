@@ -75,3 +75,17 @@ Mutation checks are in SR-733.
 The full gates were not re-run, as the brief instructed. Only the targeted tests were run: at
 237f6571, the 5 root `it` tests, 12 `qsl-foundation` `source::` unit tests
 and 1 `qsl-replay` TC-444 test pass.
+
+## Dispositions
+
+Checked against `git diff 9f1be528..86cabd0e` (the fix commit alone, after the
+main merge 9f1be528) on 2026-09-26, with mutation checks run in a detached
+scratch worktree at 86cabd0e.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | This finding still stands as a merge-order constraint. By leader ruling, the bump to `1-draft.8` lands in PR #490 (QSL-245 part 1), right after this PR. At 86cabd0e, FR-001 Status (spec/functional/FR-001-read-exact-source.md:229-235) says that the claim still reads `1-draft.7` and that the bump comes with #490. `definition_source.rs:248` is unchanged. |
+| FND-002 | fixed 86cabd0e | A private `ReferenceError { Blank, Provenance }` replaces the invented label (qsl-foundation/src/source.rs:112-137). A provenance refusal now becomes `SourceReadCause::ReferenceInvariant`, which maps to `Code::RuntimeInvariant` and to `CompleteCode::RuntimeInvariant`/`EstablishedInvariantBroken`. The path is still unreachable. A mutation back to `BlankLabel{Authority}` survives because no input can reach that path, and that is acceptable. |
+| FND-003 | fixed 86cabd0e | `with_identity_cause` is deleted. |
+| FND-004 | fixed 86cabd0e | `BLANK_LABEL_TAG`/`EMPTY_PATH_TAG` are defined once, in qsl-foundation/src/source.rs:230-232, and `HostCause::tag` reads them. No other non-test literal remains. A mutation of the constant fails 4 tests: qsl-cst, replay, CLI and run. |
+| FND-005 | fixed 86cabd0e | The CLI uses a typed `Line` struct (src/main.rs:30-66). A shared `IdentityCauseFields` is `#[serde(flatten)]`-ed into both the CLI and the run output. Removing either `flatten` fails the CLI and run tests. SR-735 FND-001 records a side effect: the CLI key order changed. |

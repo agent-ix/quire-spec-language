@@ -558,9 +558,9 @@ fn source_refusal(
         SourceReadCause::BlankLabel { .. } | SourceReadCause::EmptyPath => {
             Code::InvalidSourceIdentity
         }
+        SourceReadCause::ReferenceInvariant => Code::RuntimeInvariant,
         // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
         // one of the four kinds the catalog admits.
-        SourceReadCause::ReferenceInvariant => Code::RuntimeInvariant,
         SourceReadCause::ByteBudget => Code::StageLimitExceeded,
         SourceReadCause::InvalidUtf8 => Code::InvalidUtf8,
         SourceReadCause::Bom | SourceReadCause::Nul => Code::InvalidSyntax,

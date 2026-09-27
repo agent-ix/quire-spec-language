@@ -45,3 +45,11 @@ pins.
 
 Approve. Every changed AC has a test, and each of these tests fails when its
 behaviour regresses. One low-severity overclaim in the Status text.
+
+## Dispositions
+
+Checked against `git diff 9f1be528..86cabd0e` on 2026-09-26.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 86cabd0e | FR-001 Status (lines 236-243) now limits `empty-path` backing to the reader and to the native `Diagnostic`. The new test `the_native_diagnostic_carries_the_identity_cause` (qsl-foundation/src/diagnostic.rs) fails when `EmptyPath` is dropped from `source_refusal`. The new CLI assertion in tests/it/cli.rs:390-398 shows that an empty operand gives a file error. I checked the unreachability claims against the code. The run path reads `directory.join(file)` through `read_file` before `Source::read_verified` (src/command.rs:432-442), and an empty `file` resolves to the directory, so `read_to_end` fails with `RunCause::Io`. Snapshot and Invocation constructors take no path. Replay passes the reference identity as the path, and that identity is non-empty once the labels are non-blank. |

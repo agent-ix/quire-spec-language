@@ -301,12 +301,12 @@ pub fn read_source(
                 CompleteCode::InvalidSourceIdentity,
                 CompleteCause::Host(HostCause::EmptyPath),
             ),
-            // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
-            // one of the four kinds the catalog admits.
             SourceReadCause::ReferenceInvariant => (
                 CompleteCode::RuntimeInvariant,
                 CompleteCause::EstablishedInvariantBroken,
             ),
+            // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
+            // one of the four kinds the catalog admits.
             SourceReadCause::ByteBudget => (
                 CompleteCode::StageLimitExceeded,
                 CompleteCause::StageLimit(LimitKind::InputBytes),

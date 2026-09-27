@@ -40,3 +40,14 @@ Approve with findings. The status edits match the code and tests: TC-424
 steps 2, 6 and 7, TC-425 step 3, TC-430 step 2, TC-431 step 2 and TC-444
 step 5 all pass and were mutation-checked in SR-733. None of the four
 low-severity findings blocks a merge.
+
+## Dispositions
+
+Checked against `git diff 9f1be528..86cabd0e` on 2026-09-26.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 86cabd0e | FR-001 Status says the revision claim still reads `1-draft.7` and that the bump lands with #490. The merge-order constraint stays open under SR-732 FND-001. |
+| FND-002 | fixed 86cabd0e | The FR-001 S0 bullet (lines 95-98) now reads "A blank label or an empty path ... no complete, non-blank label set to name the source by, and an empty path names no location." |
+| FND-003 | fixed 86cabd0e | FR-026 Status, TC-430 Status and a new FR-001 Status paragraph each point to the byte-0 debt. |
+| FND-004 | fixed 86cabd0e | The TC-430 Status and its spec/tests.md row are back to Partial, and say that step 1 passes only with the deviation. |
