@@ -6,8 +6,8 @@ mod control;
 use std::collections::BTreeSet;
 
 use super::value_graph::ValueGraph;
-use crate::linking::composed::definition_source::RegisteredDefinition as Registered;
 use super::{intake, wire::*, work::Work, Dimension, Error, Invalid, ProtocolNumber, Unsupported};
+use crate::linking::composed::definition_source::RegisteredDefinition as Registered;
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
@@ -287,7 +287,10 @@ impl<'a> Graph<'a, '_> {
             Family::Value => state || temporal || registered == Registered::Protocol,
             Family::State => state,
             Family::Predicate => {
-                matches!(registered, Registered::StateQueries | Registered::StateGraph)
+                matches!(
+                    registered,
+                    Registered::StateQueries | Registered::StateGraph
+                )
             }
             Family::Temporal => temporal,
             Family::Protocol => registered == Registered::Protocol,
@@ -1478,9 +1481,8 @@ fn features(package: &Package, work: &mut Work) -> Result {
     let mut declared = Vec::with_capacity(package.features.declarations.len());
     for value in &package.features.declarations {
         work.visit()?;
-        declared.push(
-            FamilyFeature::from_wire(value).ok_or(Error::Unsupported(Unsupported::Feature))?,
-        );
+        declared
+            .push(FamilyFeature::from_wire(value).ok_or(Error::Unsupported(Unsupported::Feature))?);
     }
     let mut needed = Vec::with_capacity(package.features.required.len());
     for value in &package.features.required {
@@ -1498,11 +1500,7 @@ fn features(package: &Package, work: &mut Work) -> Result {
     Ok(())
 }
 
-pub(super) fn package(
-    package: &Package,
-    registered: &[Registered],
-    work: &mut Work,
-) -> Result {
+pub(super) fn package(package: &Package, registered: &[Registered], work: &mut Work) -> Result {
     numbers(package, work)?;
     types(package, work)?;
     features(package, work)?;

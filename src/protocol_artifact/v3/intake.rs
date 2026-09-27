@@ -233,8 +233,7 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             &mut work,
         )?;
         artifact::intake::sources(&package.inherited, &expected.inherited.inherited, &mut work)?;
-        let registered =
-            artifact::intake::definitions(&package.inherited, &supplied, &mut work)?;
+        let registered = artifact::intake::definitions(&package.inherited, &supplied, &mut work)?;
         artifact::validate::package(&package.inherited, &registered, &mut work)?;
         let model_schema = artifact::models::validate(
             &package.inherited,

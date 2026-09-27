@@ -1258,7 +1258,8 @@ impl<'a> Lowering<'a> {
         for key in self.graph.nodes.keys() {
             if !self.occurrences.has(*key) {
                 let at = enclosing.get(key).unwrap_or(root);
-                self.occurrences.record(*key, OccurrenceRole::Generated, at.clone());
+                self.occurrences
+                    .record(*key, OccurrenceRole::Generated, at.clone());
             }
         }
         Lowered {
