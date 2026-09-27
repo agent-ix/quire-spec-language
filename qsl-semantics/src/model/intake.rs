@@ -46,7 +46,7 @@ use crate::model::domain_package::{
     Extent, FieldMemberRecord, Multiplicity, NativeValueType, ObjectTypeRecord, OperationEffect,
     OperationMemberRecord, OperationParameterRecord, OperationResult, PopulationRecord,
     PortDirection, RecordValueTypeRecord, RelationshipDirection, RelationshipEnd,
-    RelationshipRecord, ValueTypeRef,
+    RelationshipRecord, ScalarTypeRecord, ValueTypeRef,
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
@@ -1736,6 +1736,101 @@ fn read_record_value_type(
     Ok(())
 }
 
+/// Reads a `VALUE_TYPE` type (FR-056's `value-type/v1` scalar reader,
+/// QSL-289) into a [`ScalarTypeRecord`]: [`ScalarTypeRecord`]'s own narrow
+/// bound-integer slice, not a general scalar type system.
+///
+/// The wire's own `scalar` member names the bound native scalar
+/// (`agent-ix-semantic-ir`'s closed `SCALARS` set); only `"integer"`
+/// resolves here, since [`ScalarTypeRecord`] bounds only an integer domain.
+/// Its `constraints[]` carry the domain as `min`/`max` entries
+/// (`agent-ix-semantic-ir`'s own closed constraint-keyword vocabulary), each
+/// naming a numeric `operands.value` -- read structurally from those typed
+/// fields, never by parsing a rendered `Int[lo,hi]` string. A `fields`,
+/// `operations`, `relationships` or `supertypes` member that is non-empty
+/// refuses rather than being silently dropped: a value type carries none of
+/// FR-208's export records this reader could hold that data in.
+#[qsl_attrs::string_edge]
+fn read_value_type(
+    package: &str,
+    type_value: &Value,
+    node: &str,
+    at: &str,
+) -> Result<ScalarTypeRecord, ModelRefusal> {
+    let ctx = NodeCtx::new(type_value, at);
+    if let Some(field) = ctx.array_field("fields")?.first() {
+        return Err(NodeCtx::new(field, format!("{at}.fields[0]"))
+            .malformed("a value type declares no fields"));
+    }
+    if let Some(operation) = ctx.array_field("operations")?.first() {
+        let operation_at = format!("{at}.operations[0]");
+        return Err(unsupported_at(
+            operation,
+            &operation_at,
+            format!("{}:operations", meaning::VALUE_TYPE),
+        ));
+    }
+    if let Some(relationship) = ctx.array_field("relationships")?.first() {
+        return Err(NodeCtx::new(relationship, format!("{at}.relationships[0]"))
+            .malformed("a value type owns no relationship"));
+    }
+    if let Some(supertype) = ctx.array_field("supertypes")?.first() {
+        return Err(NodeCtx::new(supertype, format!("{at}.supertypes[0]"))
+            .malformed("a value type declares no supertype"));
+    }
+    let scalar = ctx.str_field("scalar")?;
+    if scalar != "integer" {
+        return Err(unsupported_at(
+            type_value,
+            at,
+            format!("{}:scalar={scalar:?}", meaning::VALUE_TYPE),
+        ));
+    }
+    let constraints = ctx.array_field("constraints")?;
+    let mut lower: Option<i64> = None;
+    let mut upper: Option<i64> = None;
+    for (position, constraint) in constraints.iter().enumerate() {
+        let constraint_at = format!("{at}.constraints[{position}]");
+        let constraint_ctx = NodeCtx::new(constraint, constraint_at.clone());
+        let keyword = constraint_ctx.str_field("keyword")?;
+        let slot = match keyword {
+            "min" => &mut lower,
+            "max" => &mut upper,
+            other => {
+                return Err(unsupported_at(
+                    constraint,
+                    &constraint_at,
+                    format!("{}:constraints:{other}", meaning::VALUE_TYPE),
+                ))
+            }
+        };
+        if slot.is_some() {
+            return Err(constraint_ctx.malformed(format!("keyword: {keyword:?} is declared twice")));
+        }
+        let value = constraint
+            .get("operands")
+            .and_then(|operands| operands.get("value"))
+            .and_then(Value::as_i64)
+            .ok_or_else(|| constraint_ctx.malformed("operands.value: missing or not an integer"))?;
+        *slot = Some(value);
+    }
+    let (Some(lower), Some(upper)) = (lower, upper) else {
+        return Err(
+            ctx.malformed("constraints: an integer value type requires both a min and a max bound")
+        );
+    };
+    if lower > upper {
+        return Err(ctx.malformed(format!(
+            "constraints: lower bound {lower} is greater than upper bound {upper}"
+        )));
+    }
+    Ok(ScalarTypeRecord {
+        key: declaration_key(package, node),
+        lower,
+        upper,
+    })
+}
+
 fn read_component(
     package: &str,
     ctx: &NodeCtx<'_>,
@@ -2133,6 +2228,11 @@ fn read_type_node(
         }
         meaning::RECORD_VALUE_TYPE => {
             read_record_value_type(package, type_value, node, at, type_meanings, &mut records)?
+        }
+        meaning::VALUE_TYPE => {
+            records.push(DomainPackageRecord::ScalarType(read_value_type(
+                package, type_value, node, at,
+            )?));
         }
         meaning::SYSTEMS_PART => {
             records.push(DomainPackageRecord::Component(read_component(
@@ -3979,6 +4079,140 @@ mod tests {
                 other => panic!("{extra}: {other:?}"),
             };
             assert_eq!(named, node, "{extra}");
+            assert!(
+                refusal.detail.starts_with(detail),
+                "{extra}: {}",
+                refusal.detail
+            );
+        }
+    }
+
+    /// The wire shape TC-458's fixture declares for `VersionNumber`: an
+    /// integer scalar bound `0..=1000`.
+    fn version_number(extra: Value) -> Value {
+        let mut node = serde_json::json!({
+            "identity": "ix://acme/orders/VersionNumber",
+            "scalar": "integer",
+            "constraints": [
+                {"keyword": "min", "operands": {"value": 0}},
+                {"keyword": "max", "operands": {"value": 1000}},
+            ],
+        });
+        if let (Some(node), Some(extra)) = (node.as_object_mut(), extra.as_object()) {
+            for (key, value) in extra {
+                node.insert(key.clone(), value.clone());
+            }
+        }
+        node
+    }
+
+    fn read_version_number(extra: Value) -> Result<ScalarTypeRecord, ModelRefusal> {
+        read_value_type(
+            "acme/orders",
+            &version_number(extra),
+            "ix://acme/orders/VersionNumber",
+            "$.types[0]",
+        )
+    }
+
+    /// FR-056's `value-type/v1` scalar reader (QSL-289) admits a bound
+    /// integer value type, reading its `min`/`max` constraints structurally
+    /// into a [`ScalarTypeRecord`] -- never by parsing a rendered
+    /// `Int[lo,hi]` string.
+    #[trace("TC-458", "FR-103-AC-1")]
+    #[test]
+    fn reads_a_bound_integer_value_type() {
+        let record = read_version_number(serde_json::json!({})).expect("VersionNumber reads");
+        assert_eq!(
+            record,
+            ScalarTypeRecord {
+                key: declaration_key("acme/orders", "ix://acme/orders/VersionNumber"),
+                lower: 0,
+                upper: 1000,
+            }
+        );
+    }
+
+    /// Every malformed or unsupported bound-scalar wire shape this reader
+    /// refuses -- structurally, from the constraint's own typed `keyword`/
+    /// `operands.value` fields, never from a rendered `Int[lo,hi]` string.
+    #[trace("TC-458", "FR-103-AC-1")]
+    #[test]
+    fn refuses_a_malformed_or_unsupported_bound_scalar() {
+        for (extra, code, detail) in [
+            (
+                serde_json::json!({"scalar": "string"}),
+                Code::UnsupportedConstruct,
+                "$.types[0]:",
+            ),
+            (
+                serde_json::json!({"constraints": []}),
+                Code::InvalidModelBinding,
+                "$.types[0]: constraints: an integer value type requires both a min and a max \
+                 bound",
+            ),
+            (
+                serde_json::json!({"constraints": [{"keyword": "min", "operands": {"value": 0}}]}),
+                Code::InvalidModelBinding,
+                "$.types[0]: constraints: an integer value type requires both a min and a max \
+                 bound",
+            ),
+            (
+                serde_json::json!({"constraints": [
+                    {"keyword": "min", "operands": {"value": 1000}},
+                    {"keyword": "max", "operands": {"value": 0}},
+                ]}),
+                Code::InvalidModelBinding,
+                "$.types[0]: constraints: lower bound 1000 is greater than upper bound 0",
+            ),
+            (
+                serde_json::json!({"constraints": [
+                    {"keyword": "min", "operands": {"value": 0}},
+                    {"keyword": "min", "operands": {"value": 1}},
+                    {"keyword": "max", "operands": {"value": 1000}},
+                ]}),
+                Code::InvalidModelBinding,
+                "$.types[0].constraints[1]: keyword: \"min\" is declared twice",
+            ),
+            (
+                serde_json::json!({"constraints": [
+                    {"keyword": "min", "operands": {"value": 0}},
+                    {"keyword": "exclusiveMax", "operands": {"value": 1000}},
+                ]}),
+                Code::UnsupportedConstruct,
+                "$.types[0].constraints[1]:",
+            ),
+            (
+                serde_json::json!({"constraints": [
+                    {"keyword": "min", "operands": {"value": "zero"}},
+                    {"keyword": "max", "operands": {"value": 1000}},
+                ]}),
+                Code::InvalidModelBinding,
+                "$.types[0].constraints[0]: operands.value: missing or not an integer",
+            ),
+            (
+                serde_json::json!({"fields": [money_field("oops", "ix://quire/native/Integer")]}),
+                Code::InvalidModelBinding,
+                "$.types[0].fields[0]: a value type declares no fields",
+            ),
+            (
+                serde_json::json!({"operations": [{"identity": "ix://acme/orders/VersionNumber/inc"}]}),
+                Code::UnsupportedConstruct,
+                "$.types[0].operations[0]:",
+            ),
+            (
+                serde_json::json!({"relationships": [{"identity": "ix://acme/orders/VersionNumber/rel"}]}),
+                Code::InvalidModelBinding,
+                "$.types[0].relationships[0]: a value type owns no relationship",
+            ),
+            (
+                serde_json::json!({"supertypes": ["ix://acme/orders/Other"]}),
+                Code::InvalidModelBinding,
+                "$.types[0].supertypes[0]: a value type declares no supertype",
+            ),
+        ] {
+            let refusal = read_version_number(extra.clone()).expect_err("VersionNumber refuses");
+            assert_eq!(refusal.code, code, "{extra}");
             assert!(
                 refusal.detail.starts_with(detail),
                 "{extra}: {}",
