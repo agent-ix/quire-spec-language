@@ -1028,8 +1028,19 @@ pub(super) fn admit_population_values<'t>(
                         .with("object", object.key.clone()),
                 ));
             }
-            // 6.4: a declared field missing, or an undeclared field
-            // present -- both named here, before any 6.5 value check.
+            // 6.4: a declared field missing (`missing-member`), then an
+            // undeclared field present (`unknown-member`), in the order
+            // FR-106 lists them -- both before any 6.5 value check.
+            for attribute in declared {
+                let name = attribute.field().name();
+                if raw_field(&object.fields, name).is_none() {
+                    return Err(refuse(
+                        admission_record(Code::InvalidRuntimeInput, "missing-member")
+                            .with("object", object.key.clone())
+                            .with("field", name.to_owned()),
+                    ));
+                }
+            }
             for (name, _) in &object.fields {
                 if !declared
                     .iter()
@@ -1039,16 +1050,6 @@ pub(super) fn admit_population_values<'t>(
                         admission_record(Code::InvalidRuntimeInput, "unknown-member")
                             .with("object", object.key.clone())
                             .with("field", name.clone()),
-                    ));
-                }
-            }
-            for attribute in declared {
-                let name = attribute.field().name();
-                if raw_field(&object.fields, name).is_none() {
-                    return Err(refuse(
-                        admission_record(Code::InvalidRuntimeInput, "missing-member")
-                            .with("object", object.key.clone())
-                            .with("field", name.to_owned()),
                     ));
                 }
             }

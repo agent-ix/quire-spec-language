@@ -3015,6 +3015,31 @@ fn unknown_member_beats_a_wrong_value_kind_at_the_same_object() {
     );
 }
 
+/// SR-750 FND-017: check 6.4 lists a missing declared field before an
+/// undeclared one, so an object with both defects (no `versionNumber`, an
+/// extra `label`) refuses `missing-member` naming `versionNumber`.
+#[trace("TC-465", "FR-106-AC-7")]
+#[test]
+fn a_missing_field_beats_an_unknown_field_at_the_same_object() {
+    let document = tc465_document();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            let fields = value["populations"][0]["objects"][0]["fields"]
+                .as_object_mut()
+                .unwrap();
+            fields.insert("label".to_owned(), json!({"boolean": true}));
+            fields.remove("versionNumber");
+        },
+        None,
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "missing-member");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("versionNumber")
+    );
+}
+
 /// Row 18 (check 6.5): `versionNumber` `{"boolean": true}`.
 #[trace("TC-465", "FR-106-AC-3")]
 #[test]
