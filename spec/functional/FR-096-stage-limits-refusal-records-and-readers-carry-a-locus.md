@@ -107,6 +107,9 @@ unit names it:
 3. A position in the expression checker's type environment built from a
    domain package's object types (FR-082). Those types were read from the
    domain package, not the unit.
+4. A position in a body embedded in a document (C-21), whose mapped span
+   spans more than one document region (a layout deletion the C-21 map
+   admits splits it). No single region of the document names it.
 
 The checked package SHALL resolve a `check::Location` of its own
 declarations by the same rule, so a consumer holding an S6a `Evaluation`
@@ -483,4 +486,19 @@ Not built, independent of the catalog revision:
 - The key table has no row for the other `ModelQueryRefusal` causes
   (including `type-mismatch`) or for `qsl-route`'s `BoundRefusal`; they build
   no record.
-- The embedded-document mapping of AC-1 (TC-426 step 3).
+
+Implemented under QSL-293:
+
+- The embedded-document mapping of AC-1 (TC-426 step 3, C-21):
+  `PackageDeclarations::embedding` and `CheckedGraph`'s equivalent carry the
+  body's C-21 `SourceMap`, and `check::region`'s resolver maps a location's
+  span through it -- under the map's own body's identity, never a caller-
+  supplied one -- to the document's region, uniformly for
+  `PackageDeclarations`, `DeclarationRegions` and `CheckedGraph`. The fourth
+  no-region case (a span the map splits) is backed directly against the
+  resolver; no production caller builds a multi-segment C-21 map today, so
+  that path is untested by any end-to-end flow. No production caller sets
+  `embedding` yet either: `qsl-source`'s own document map
+  (`qsl-source/src/lib.rs` ~304-344) does not reach the FR-091 assembler, so
+  a real Markdown-embedded unit still resolves under its own body reference
+  until that wiring lands (QSL-294, filed as QSL-293's follow-up).

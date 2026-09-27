@@ -268,10 +268,11 @@ caller-named `RawSourceRef` (TC-424) and
 `format` grammar that supplies it (TC-425). Check-stage regions, stage
 limits, refusal records and the I2 reader's loci are slice S-5b (QSL-160,
 [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md),
-TC-426 to TC-429). TC-427, TC-429, TC-378, TC-428 (refusal record fields
-at S6a, including the ten kernel value refusals catalog revision
-`1-draft.8` codes) and TC-500 (a `sum` running total outside its domain is
-undefined) pass locally.
+TC-426 to TC-429). TC-426 (a check location's region, including the C-21
+embedded-document mapping, QSL-293), TC-427, TC-429, TC-378, TC-428
+(refusal record fields at S6a, including the ten kernel value refusals
+catalog revision `1-draft.8` codes) and TC-500 (a `sum` running total
+outside its domain is undefined) pass locally.
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 

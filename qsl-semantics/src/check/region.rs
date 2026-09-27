@@ -17,6 +17,7 @@
 //! here like any other body location.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use qsl_forms::DeclarationSpans;
 use qsl_foundation::diagnostic::{LimitExceeded, Locus};
@@ -47,16 +48,21 @@ fn resolve<'s>(
 /// `span` as a region of `source`. For a body embedded in a document
 /// (ADR-013 C-21), `embedding` maps it to the document's region, under the
 /// document's own `RawSourceRef`, shifted by the body's offset in the
-/// document. A span that maps to no single document region (one a layout
-/// deletion splits, or one the map does not cover) names none.
+/// document -- but only when `embedding`'s own body is `source` itself; a
+/// map for a different body is ignored, and `span` resolves under `source`
+/// as if there were no embedding. A span the map splits into more than one
+/// document region (a layout deletion) is FR-096's fourth no-region case:
+/// no single document region names it.
 fn region(
     source: &RawSourceRef,
     embedding: Option<&SourceMap>,
     span: Span,
 ) -> Option<SourceRegion> {
-    if let Some(map) = embedding {
-        let mut regions = map.map_regions(map.body(), span)?.into_iter();
-        return regions.next().filter(|_| regions.len() == 0);
+    if let Some(map) = embedding.filter(|map| map.body().reference() == source) {
+        return match map.map_regions(map.body(), span)?.as_slice() {
+            [region] => Some(region.clone()),
+            _ => None,
+        };
     }
     let start = u64::try_from(span.start).ok()?;
     let end = u64::try_from(span.end).ok()?;
@@ -69,7 +75,7 @@ impl PackageDeclarations {
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
             &self.source,
-            self.embedding.as_ref(),
+            self.embedding.as_deref(),
             |index| self.functions.get(index)?.spans(),
             &self.declared_type_spans,
             location,
@@ -80,7 +86,7 @@ impl PackageDeclarations {
     /// `None` when it was not read from this unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
         let spans = self.functions.get(index)?.spans()?;
-        region(&self.source, self.embedding.as_ref(), spans.declaration)
+        region(&self.source, self.embedding.as_deref(), spans.declaration)
     }
 }
 
@@ -90,7 +96,7 @@ impl PackageDeclarations {
 #[derive(Clone, Debug)]
 pub struct DeclarationRegions {
     source: RawSourceRef,
-    embedding: Option<SourceMap>,
+    embedding: Option<Arc<SourceMap>>,
     spans: Vec<Option<DeclarationSpans>>,
     type_spans: BTreeMap<String, Span>,
 }
@@ -101,7 +107,7 @@ impl DeclarationRegions {
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
             &self.source,
-            self.embedding.as_ref(),
+            self.embedding.as_deref(),
             |index| self.spans.get(index)?.as_ref(),
             &self.type_spans,
             location,
@@ -112,7 +118,7 @@ impl DeclarationRegions {
     /// `None` when it was not read from the unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
         let spans = self.spans.get(index)?.as_ref()?;
-        region(&self.source, self.embedding.as_ref(), spans.declaration)
+        region(&self.source, self.embedding.as_deref(), spans.declaration)
     }
 
     /// FR-096: the region a check refusal names. A stage limit a family
@@ -167,7 +173,7 @@ impl CheckedGraph {
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
             &self.source,
-            self.embedding.as_ref(),
+            self.embedding.as_deref(),
             |index| self.form_spans.get(index)?.as_ref(),
             &self.type_spans,
             location,
@@ -178,7 +184,7 @@ impl CheckedGraph {
     /// `None` when it was not read from this unit.
     pub fn declaration_region(&self, index: usize) -> Option<SourceRegion> {
         let spans = self.form_spans.get(index)?.as_ref()?;
-        region(&self.source, self.embedding.as_ref(), spans.declaration)
+        region(&self.source, self.embedding.as_deref(), spans.declaration)
     }
 }
 
@@ -196,6 +202,7 @@ mod tests {
 
     use super::super::family::fixtures::{admitted_source, empty_scope, measure_resolved};
     use super::super::{CheckingLimits, Location, Origin, PackageDeclarations};
+    use super::Arc;
 
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
         profile \"ix:value\" as v;\n\
@@ -444,18 +451,22 @@ mod tests {
         assert_eq!(checked.declaration_region(1), None);
     }
 
-    /// TC-426 step 3 (ADR-013 C-21): a body embedded at byte offset `k` of
-    /// a document with reference `d`, with no layout deletions, resolves
-    /// the four locations under `d` to the same spans shifted by `k`, from
-    /// the declarations, from the regions taken from them and from the
-    /// checked package alike. Dropping the shift (or the document's
-    /// reference) makes the byte-for-byte text comparison fail.
-    #[trace("TC-426", "FR-096-AC-1")]
-    #[test]
-    fn an_embedded_body_resolves_its_locations_under_the_document_shifted() {
-        let prefix = "# Notes\n\n```qsl\n";
-        let document_text = format!("{prefix}{UNIT}```\n");
-        let k = prefix.len();
+    /// The `u.qsl` `Source` [`function_f`]'s unit reads as, used as a C-21
+    /// embedding body: identity `"a"`/`"u"`/`"git"`/`"1"`, matching
+    /// [`unit`]'s own `RawSourceRef` exactly.
+    fn embedding_body() -> Source {
+        Source::read(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "u.qsl",
+            UNIT.as_bytes(),
+            UNIT.len() + 1,
+        )
+        .unwrap()
+    }
+
+    /// A one-segment C-21 map of the whole of [`UNIT`] at byte offset `k`
+    /// of `document_text`, over `body`.
+    fn embedding_map(document_text: &str, k: usize, body: Source) -> SourceMap {
         let original = Source::read(
             SourceIdentity::new("a", "doc", "git", "1"),
             "doc.md",
@@ -463,16 +474,9 @@ mod tests {
             document_text.len() + 1,
         )
         .unwrap();
-        let document = original.reference().clone();
-        let map = SourceMap::verify(
+        SourceMap::verify(
             original,
-            Source::read(
-                SourceIdentity::new("a", "u", "git", "1"),
-                "u.qsl",
-                UNIT.as_bytes(),
-                UNIT.len() + 1,
-            )
-            .unwrap(),
+            body,
             Span {
                 start: k,
                 end: k + UNIT.len(),
@@ -490,9 +494,25 @@ mod tests {
             Layout::default(),
             1,
         )
-        .expect("the body is the document's bytes at k");
+        .expect("the body is the document's bytes at k")
+    }
+
+    /// TC-426 step 3 (ADR-013 C-21): a body embedded at byte offset `k` of
+    /// a document with reference `d`, with no layout deletions, resolves
+    /// the four locations under `d` to the same spans shifted by `k`, from
+    /// the declarations, from the regions taken from them and from the
+    /// checked package alike. Dropping the shift (or the document's
+    /// reference) makes the byte-for-byte text comparison fail.
+    #[trace("TC-426", "FR-096-AC-1")]
+    #[test]
+    fn an_embedded_body_resolves_its_locations_under_the_document_shifted() {
+        let prefix = "# Notes\n\n```qsl\n";
+        let document_text = format!("{prefix}{UNIT}```\n");
+        let k = prefix.len();
+        let map = embedding_map(&document_text, k, embedding_body());
+        let document = map.original().reference().clone();
         let mut declarations = unit();
-        declarations.embedding = Some(map);
+        declarations.embedding = Some(Arc::new(map));
         let standalone = unit();
         let regions = declarations.regions();
         let checked = declarations
@@ -505,12 +525,13 @@ mod tests {
             (body(&[2, 1]), "d"),
             (measure(&[]), "n"),
         ];
+        let k64 = u64::try_from(k).expect("the fixture prefix fits u64");
         for (location, expected) in &cases {
             let plain = standalone.region(location).unwrap();
             let embedded = declarations.region(location).unwrap();
             assert_eq!(embedded.source(), &document, "{location:?}");
-            assert_eq!(embedded.start(), plain.start() + k as u64, "{location:?}");
-            assert_eq!(embedded.end(), plain.end() + k as u64, "{location:?}");
+            assert_eq!(embedded.start(), plain.start() + k64, "{location:?}");
+            assert_eq!(embedded.end(), plain.end() + k64, "{location:?}");
             let bytes = &document_text[usize::try_from(embedded.start()).unwrap()
                 ..usize::try_from(embedded.end()).unwrap()];
             assert_eq!(bytes, *expected, "{location:?}");
@@ -523,8 +544,140 @@ mod tests {
             usize::try_from(form.start()).unwrap(),
             k + UNIT.find("function").unwrap()
         );
+        // The declaration span resolves the same way from the pre-check
+        // regions and the checked package, not just from the declarations:
+        // a resolver that only threads the embedding through one of the
+        // three `declaration_region`s would still pass the four-location
+        // cases above.
+        assert_eq!(regions.declaration_region(0), Some(form.clone()));
+        assert_eq!(checked.declaration_region(0), Some(form));
         // A location the unit does not read still resolves to none.
         assert_eq!(declarations.region(&body(&[3])), None);
+    }
+
+    /// SR-742 FND-001: a `SourceMap` embedding whose own body is a
+    /// *different* source than the declarations' unit is ignored, not
+    /// consulted. `region`'s identity check must compare the declarations'
+    /// `source` against the map's own `map.body().reference()`, not hand
+    /// the map its own body back (which always passes `map_regions`'s
+    /// internal check and proves nothing about which source it belongs to).
+    #[trace("FR-096-AC-1")]
+    #[test]
+    fn an_embedding_for_a_different_body_is_ignored() {
+        let prefix = "# Notes\n\n```qsl\n";
+        let document_text = format!("{prefix}{UNIT}```\n");
+        let other_body = Source::read(
+            SourceIdentity::new("a", "other-unit", "git", "1"),
+            "other.qsl",
+            UNIT.as_bytes(),
+            UNIT.len() + 1,
+        )
+        .unwrap();
+        let map = embedding_map(&document_text, prefix.len(), other_body);
+        let mut declarations = unit();
+        declarations.embedding = Some(Arc::new(map));
+        let standalone = unit();
+        let regions = declarations.regions();
+        for (location, _) in [
+            (body(&[]), ()),
+            (body(&[2]), ()),
+            (body(&[2, 1]), ()),
+            (measure(&[]), ()),
+        ] {
+            let expected = standalone.region(&location);
+            assert_eq!(declarations.region(&location), expected, "{location:?}");
+            assert_eq!(regions.region(&location), expected, "{location:?}");
+        }
+        assert_eq!(
+            declarations.declaration_region(0),
+            standalone.declaration_region(0)
+        );
+    }
+
+    /// SR-744 FND-001: FR-096's fourth no-region case. A span the C-21 map
+    /// splits into more than one document region (discontiguous segments
+    /// either side of an indentation strip and a CRLF normalization, as
+    /// `qsl-foundation`'s own C-21 fixture uses) names no single region, so
+    /// it resolves to `None` rather than the first of the split regions --
+    /// unreachable from any production caller today (`qsl-source` builds
+    /// only single-segment maps), but reachable directly through the
+    /// embedding once one is attached.
+    #[trace("FR-096-AC-1")]
+    #[test]
+    fn a_span_the_embedding_splits_has_no_region() {
+        let original_text = "head\r\n  p <= 2\r\n\tq\r\nend";
+        let body_text = "p <= 2\nq";
+        let start = original_text.find("  p").unwrap();
+        let a = original_text.find('p').unwrap();
+        let b = original_text.find('q').unwrap();
+        let line = body_text.find('\n').unwrap();
+        let original = Source::read(
+            SourceIdentity::new("a", "doc", "git", "1"),
+            "doc.md",
+            original_text.as_bytes(),
+            original_text.len() + 1,
+        )
+        .unwrap();
+        let body = Source::read(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "u.qsl",
+            body_text.as_bytes(),
+            body_text.len() + 1,
+        )
+        .unwrap();
+        let segment = |body_start: usize, original_start: usize, length: usize| Segment {
+            body: Span {
+                start: body_start,
+                end: body_start + length,
+            },
+            original: Span {
+                start: original_start,
+                end: original_start + length,
+            },
+        };
+        let map = SourceMap::verify(
+            original,
+            body,
+            Span {
+                start,
+                end: original_text.find("end").unwrap(),
+            },
+            vec![
+                segment(0, a, line),
+                segment(line, a + line + 1, 1),
+                segment(line + 1, b, 1),
+            ],
+            Layout {
+                strip_indentation: true,
+                normalize_crlf: true,
+                drop_final_newline: true,
+            },
+            3,
+        )
+        .expect("the C-21 discontiguous fixture verifies");
+        let whole = Span {
+            start: 0,
+            end: body_text.len(),
+        };
+        assert_eq!(
+            map.map_regions(map.body(), whole)
+                .map(|regions| regions.len()),
+            Some(3),
+            "the query span must actually split into more than one region"
+        );
+        let source = map.body().reference().clone();
+        assert_eq!(super::region(&source, Some(&map), whole), None);
+        // The single-segment sub-span still resolves to its own document
+        // region: only the multi-region span is refused.
+        assert!(super::region(
+            &source,
+            Some(&map),
+            Span {
+                start: 0,
+                end: line
+            }
+        )
+        .is_some());
     }
 
     /// FR-096, QSL-245: each `CheckingLimits` ceiling `Typer` reaches

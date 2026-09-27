@@ -317,8 +317,10 @@ pub struct PackageDeclarations {
     /// FR-096-AC-1, ADR-013 C-21: the map of a body embedded in a document.
     /// The spans above are body offsets; with a map, each region resolves
     /// under the document's `RawSourceRef`, shifted by the body's offset in
-    /// the document. `None` for a unit that is its own document.
-    pub embedding: Option<qsl_foundation::source_map::SourceMap>,
+    /// the document. `None` for a unit that is its own document. `Arc`
+    /// so `regions()` shares one map rather than cloning the document and
+    /// body text on every call.
+    pub embedding: Option<std::sync::Arc<qsl_foundation::source_map::SourceMap>>,
     /// The `UnitGraph` the assembler admitted over the unit's dimension and
     /// unit declarations (FR-091). Empty when the unit declares none.
     pub units: crate::value::unit::UnitGraph,
