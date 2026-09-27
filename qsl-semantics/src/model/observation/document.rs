@@ -945,12 +945,8 @@ pub(super) fn admit_population_values<'t>(
                     "objects-exceeded",
                 )));
             }
-            if !seen.insert(object.key.clone()) {
-                return Err(refuse(
-                    admission_record("invalid_runtime_input", "conflicting-identity")
-                        .with("object", object.key.clone()),
-                ));
-            }
+            // 6.1: type/population membership, before anything else in this
+            // check (SR-750 FND-005 round 2's own numbered order).
             let Some((_, object_key)) = find_declaration(views, object.type_identity.as_str())
             else {
                 return Err(refuse(
@@ -983,6 +979,7 @@ pub(super) fn admit_population_values<'t>(
                     "object-type-has-no-checked-attributes",
                 ))
             })?;
+            // 6.2: a set/bag/ordered-set field.
             for attribute in declared {
                 if let quire_exact::ValueType::Collection(collection) =
                     attribute.field().value_type()
@@ -995,18 +992,52 @@ pub(super) fn admit_population_values<'t>(
                     }
                 }
             }
-            let mut attributes: Vec<(&str, FieldValue)> = Vec::with_capacity(declared.len());
+            // 6.3: duplicate key. `seen.insert` still runs first (its
+            // result feeds `keys_by_population`, check 8's own input,
+            // whichever way this object's own admission ends), but the
+            // refusal is raised only after 6.1 and 6.2 have already passed
+            // for this object.
+            let is_duplicate = !seen.insert(object.key.clone());
+            if is_duplicate {
+                return Err(refuse(
+                    admission_record("invalid_runtime_input", "conflicting-identity")
+                        .with("object", object.key.clone()),
+                ));
+            }
+            // 6.4: a declared field missing, or an undeclared field
+            // present -- both named here, before any 6.5 value check.
+            for (name, _) in &object.fields {
+                if !declared
+                    .iter()
+                    .any(|attribute| attribute.field().name() == name)
+                {
+                    return Err(refuse(
+                        admission_record("invalid_runtime_input", "unknown-member")
+                            .with("object", object.key.clone())
+                            .with("field", name.clone()),
+                    ));
+                }
+            }
             for attribute in declared {
                 let name = attribute.field().name();
-                let value_type = attribute.field().value_type();
-                let presence = attribute.field().presence();
-                let Some(raw) = raw_field(&object.fields, name) else {
+                if raw_field(&object.fields, name).is_none() {
                     return Err(refuse(
                         admission_record("invalid_runtime_input", "missing-member")
                             .with("object", object.key.clone())
                             .with("field", name.to_owned()),
                     ));
-                };
+                }
+            }
+            // 6.5: value checks, per declared field, in declared order.
+            let mut attributes: Vec<(&str, FieldValue)> = Vec::with_capacity(declared.len());
+            for attribute in declared {
+                let name = attribute.field().name();
+                let value_type = attribute.field().value_type();
+                let presence = attribute.field().presence();
+                // 6.4 above already confirmed every declared field has a
+                // raw value here.
+                let raw = raw_field(&object.fields, name)
+                    .ok_or_else(|| fault("declared-field-missing-after-check-6-4"))?;
                 if !object_field_kind_matches(raw, value_type, presence) {
                     return Err(refuse(
                         admission_record("invalid_runtime_input", "wrong-value-kind")
@@ -1030,18 +1061,6 @@ pub(super) fn admit_population_values<'t>(
                     )));
                 }
                 attributes.push((name, field_value));
-            }
-            for (name, _) in &object.fields {
-                if !declared
-                    .iter()
-                    .any(|attribute| attribute.field().name() == name)
-                {
-                    return Err(refuse(
-                        admission_record("invalid_runtime_input", "unknown-member")
-                            .with("object", object.key.clone())
-                            .with("field", name.clone()),
-                    ));
-                }
             }
 
             // `object_reference` already refuses an empty key with FR-106's

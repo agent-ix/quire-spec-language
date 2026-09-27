@@ -2791,6 +2791,53 @@ fn tc465_row16_duplicate_key_refuses_conflicting_identity() {
     assert_tc465_refused(result, "invalid_runtime_input", "conflicting-identity");
 }
 
+/// SR-750 FND-005 round 2 (two defects): an object of an undeclared member
+/// type (`Note`, check 6.1) *and* a duplicate key (of the population's
+/// existing `root`, check 6.3) -- 6.1 must be named, not 6.3.
+#[trace("TC-465", "FR-106-AC-7")]
+#[test]
+fn wrong_role_mapping_beats_a_duplicate_key_at_the_same_object() {
+    let document = tc465_document_with_note_type();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "key": "root", "type": "ix://example/config-version/Note",
+                    "fields": {},
+                }));
+        },
+        None,
+    );
+    assert_tc465_refused(result, "invalid_runtime_input", "wrong-role-mapping");
+}
+
+/// SR-750 FND-005 round 2 (two defects): an undeclared field (`label`,
+/// check 6.4) *and* a wrong-kind value on a declared field
+/// (`versionNumber`, check 6.5) on the same object -- 6.4 must be named,
+/// not 6.5.
+#[trace("TC-465", "FR-106-AC-7")]
+#[test]
+fn unknown_member_beats_a_wrong_value_kind_at_the_same_object() {
+    let document = tc465_document();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            value["populations"][0]["objects"][0]["fields"]["label"] = json!({"boolean": true});
+            value["populations"][0]["objects"][0]["fields"]["versionNumber"] =
+                json!({"boolean": true});
+        },
+        None,
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "unknown-member");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("label")
+    );
+}
+
 /// Row 18 (check 6.5): `versionNumber` `{"boolean": true}`.
 #[trace("TC-465", "FR-106-AC-3")]
 #[test]
