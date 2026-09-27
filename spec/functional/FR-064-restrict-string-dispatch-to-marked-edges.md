@@ -129,7 +129,7 @@ reader, a typed wire reader, CLI argument parsing, or a source scanner doing
 its one total conversion) or was converted onto a closed enum or typed
 identity (QSL-145). The allow-list is empty.
 
-**Not yet built: the string-value clause.** Behavior asks the scan to report
+**Not yet built: the string-value clause (owner: [QSL-287](https://linear.app/agent-ix/issue/QSL-287)).** Behavior asks the scan to report
 a comparison between a string and "another `&str`/`String` value". The scan
 reads string *literals* only. A comparison against a named `const NAME: &str`
 or between two string bindings is not reported, so a clean scan does not show

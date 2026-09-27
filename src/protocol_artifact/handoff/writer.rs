@@ -852,11 +852,25 @@ struct UnitInput {
     mapping: CheckBindings,
 }
 
-/// Whether `operation` is the one `Workflow.apply` operation the handoff
-/// names, read once from the model's declared identities.
-#[qsl_attrs::string_edge]
-fn is_workflow_apply(operation: &crate::native_model::OperationRole) -> bool {
-    operation.context.as_str() == "Workflow" && operation.name.as_str() == "apply"
+/// The one `Workflow.apply` operation the handoff names, admitted once from
+/// the model's declared identities: holding one is the proof the identity
+/// matched.
+struct WorkflowApply<'a>(&'a crate::native_model::OperationRole);
+
+impl<'a> TryFrom<&'a crate::native_model::OperationRole> for WorkflowApply<'a> {
+    type Error = Error;
+
+    #[qsl_attrs::string_edge]
+    fn try_from(operation: &'a crate::native_model::OperationRole) -> Result<Self, Error> {
+        if operation.context.as_str() == "Workflow" && operation.name.as_str() == "apply" {
+            Ok(Self(operation))
+        } else {
+            Err(Error::OperationIdentity {
+                context: operation.context.clone(),
+                name: operation.name.clone(),
+            })
+        }
+    }
 }
 
 struct OperationSelection {
@@ -871,12 +885,7 @@ impl OperationSelection {
                 count: model.roles().operations.len(),
             });
         };
-        if !is_workflow_apply(operation) {
-            return Err(Error::OperationIdentity {
-                context: operation.context.clone(),
-                name: operation.name.clone(),
-            });
-        }
+        let WorkflowApply(operation) = WorkflowApply::try_from(operation)?;
         // The wire orders exports by kind label then path. In this actual native
         // model, enums, fields and objects precede its single operation. Derive
         // its expected handle from admitted inputs, never from the emitted table.

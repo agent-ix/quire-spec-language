@@ -349,6 +349,21 @@ fn select(
     })
 }
 
+/// The asserted clock name must be the declaration's admitted clock name; a
+/// declaration with no admitted clock name (its clock binding lacks the
+/// `clock:` spelling) matches no asserted name.
+fn check_clock_name(admitted: Option<&str>, asserted: &str, subject: Subject) -> Result<(), Error> {
+    if admitted == Some(asserted) {
+        Ok(())
+    } else {
+        Err(Refusal::Binding {
+            dimension: Dimension::Clock,
+            subject,
+        }
+        .into())
+    }
+}
+
 fn run(
     package: &w::Package,
     clocks: &ClockNames,
@@ -361,6 +376,7 @@ fn run(
     work.subject = subject;
     let selected = select(package, declaration, subject)?;
     let w::Body::Temporal {
+        clock,
         activation,
         captures,
         root,
@@ -386,16 +402,15 @@ fn run(
         }
         .into());
     }
-    let clock_name = clocks
-        .get(declaration)
+    // A missing clock binding is a dangling reference; a clock binding whose
+    // name lacks the `clock:` spelling names no clock and is a clock-binding
+    // mismatch, exactly as when the name was parsed here.
+    selected
+        .declaration
+        .bindings
+        .get(usize::try_from(*clock).unwrap_or(usize::MAX))
         .ok_or(Refusal::Reference { subject })?;
-    if clock_name != trace.clock.name {
-        return Err(Refusal::Binding {
-            dimension: Dimension::Clock,
-            subject,
-        }
-        .into());
-    }
+    check_clock_name(clocks.get(declaration), &trace.clock.name, subject)?;
 
     let shape = Shape {
         origin: matches!(activation, w::Activation::Origin { .. }),
@@ -621,5 +636,32 @@ fn settle(value: Tri, trace: &Trace) -> (Truth, Basis) {
         Tri::False if closed => (Truth::False, Basis::ClosedScope),
         Tri::True => (Truth::True, Basis::DecisiveWitness),
         Tri::False => (Truth::False, Basis::DecisiveCounterexample),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A clock binding without the `clock:` spelling has no admitted clock
+    /// name; the evaluator refuses it as a clock-binding mismatch, the same
+    /// refusal as a wrong asserted name, and accepts only the exact name.
+    #[test]
+    fn a_clock_binding_without_the_prefix_is_a_clock_binding_mismatch() {
+        let subject = declaration_subject(0);
+        for admitted in [None, Some("other")] {
+            let error = check_clock_name(admitted, "orders", subject).expect_err("refused");
+            assert!(
+                matches!(
+                    error,
+                    Error::Refused(Refusal::Binding {
+                        dimension: Dimension::Clock,
+                        ..
+                    })
+                ),
+                "{admitted:?}: {error:?}"
+            );
+        }
+        assert!(check_clock_name(Some("orders"), "orders", subject).is_ok());
     }
 }

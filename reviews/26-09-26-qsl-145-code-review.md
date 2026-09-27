@@ -100,3 +100,18 @@ sight. The rest are low.
   `cargo test -p xtask --lib string_edge`, and
   `cargo test --test it family_outcome_layering`. The full gates were not
   re-run.
+
+## Dispositions
+
+Disposition pass at 5f573711.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 91369e11: valid_digest/valid_adapter deleted; CanonicalizationDomain (FromStr) + ByteDigest-typed CanonicalDigest, AdapterArtifact via TryFrom, each the one marked conversion. ByteDigest::from_hex keeps the old 64-lowercase-hex rule. |
+| FND-002 | fixed | 91369e11, 39bd09e2: clock: read once per admission into ClockNames (v1/v2 intake, temporal_v2 admit; v3 has no temporal evaluator); the three runtime re-parses are gone; clock_binding_name compares the literal and is back in the real-site test. The ADR-012 typed clock-role variant stays unbuilt and is now stated as partial in ADR-012 (SR-722 FND-003 asks for an owner). |
+| FND-003 | fixed | 91369e11: Profile::classify deleted; definitions() returns Vec<RegisteredDefinition> (native path uses metadata's registered list) and Graph::profile matches it. Same identity sets per Family arm. |
+| FND-004 | fixed | 91369e11: Closed OccurrenceRole enum (alphabetical order preserved, same kernel spellings); key_claims uses iter_role(Expression); the one spelling read is the marked OccurrenceRole::of. |
+| FND-005 | fixed | 91369e11: SymbolName::new("self") error now propagated as an InvalidModelBinding failure. |
+| FND-006 | fixed | 39bd09e2: Filename skip removed; only tests/ dirs and #[cfg(test)] mod x; files skipped. Reviewer mutation: a plain `mod plain_tests;` file with a string compare is reported by cargo xtask string-edge. |
+| FND-007 | fixed | 91369e11: mapped::compile, OperationSelection::new and features are unmarked; features uses closed FamilyFeature/RequiredFeature with marked from_wire. Reviewer mutation: a new compare in features and in mapped::compile is reported. is_workflow_apply is a narrow marked predicate (SR-722 FND-002). |
+| FND-008 | fixed | 8ffa54a3: Module doc now states the literal-only scope and that named-constant dispatch is not detected. |
