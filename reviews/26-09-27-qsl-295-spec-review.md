@@ -37,3 +37,11 @@ Sound:
 
 Request changes on FND-001. AC-6 and TC-468 step 6 are otherwise correct and
 testable.
+
+## Dispositions
+
+Round 2, reviewed 39837943e97327e49c203501188a556651439211.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 39837943. FR-109 has a new Behavior bullet (:94-98): a non-`ix:native` I3 source reports stage `compile`, `refusal`, `unknown_language`, carries the extraction's original, and compiles, admits and evaluates nothing. FR-109-AC-6 (:162) and TC-468 step 6 (:38-42, :68-74) add the `ix:formal` case with exit 20 and no `package_id`. The case is testable and tested. `unknown_language` is the catalog code the CLI join emits (qsl-foundation/src/diagnostic.rs:192; docs/native-error-codes.md:40). |
