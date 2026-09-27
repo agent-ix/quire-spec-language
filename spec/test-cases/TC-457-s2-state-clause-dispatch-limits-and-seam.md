@@ -22,7 +22,8 @@ Scope: FR-102-AC-4, FR-102-AC-5, FR-102-AC-6.
 2. Build a unit whose only declaration begins `temporal` (a spelling no
    family claims).
 3. Let `d` be `FormsLimits`' nesting-depth limit. Build an invariant whose
-   body is `d` nested `not`s around `true`, then `d + 1` (a bare `(e)` is a
+   body is `d - 1` nested `not`s around `true` (depth `d`, since the root
+   counts as depth 1), then `d` nested `not`s (a bare `(e)` is a
    transparent pass-through and adds no depth, so parentheses cannot bound
    this).
 4. Run `xtask seam-probe` with the `seam-probe` feature.

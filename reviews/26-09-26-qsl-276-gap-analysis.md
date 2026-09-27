@@ -64,3 +64,24 @@ Round 2, reviewed at 960490173a2601bf8fd9e76b9ccf344242b18002.
 | FND-005 | still-open | FR-102-AC-6 and TC-457 step 4 are unchanged at 96049017, and `dispatch_entry_is_a_single_thin_call` (qsl-forms/src/dispatch.rs:630-631) is still untagged. |
 | FND-006 | still-open | TC-457 step 3 still prescribes nested parentheses at 96049017. |
 | FND-007 | deferred | QSL-277 (FR-104 is the first reader of operations through the effective view). |
+
+## Round 3 findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | The amended TC-457 step 3 is off by one against its own expected result and the test. The procedure builds "`d` nested `not`s around `true`, then `d + 1`", and the expected result says "depth `d` builds". But the root counts at depth 1, so `d` nots plus the leaf is depth `d + 1`, which refuses. The test builds `d - 1` nots, which pass, and `d` nots, which refuse (protocol_clause_forms.rs:261-264). Fix: "`d - 1` nested `not`s around `true` (depth `d`), then `d`". | spec/test-cases/TC-457-s2-state-clause-dispatch-limits-and-seam.md:25; qsl-forms/tests/it/protocol_clause_forms.rs:261-264 |
+
+## Dispositions (round 3)
+
+Round 3, reviewed at fe9224fcffc69700dd7467cabab243e76206f399.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3b94b129 (bef8bb35): Unverified, QSL-289 |
+| FND-002 | deferred | QSL-279 |
+| FND-003 | fixed | 3b94b129 (bef8bb35) |
+| FND-004 | deferred | QSL-290 |
+| FND-005 | fixed | fe9224fc: FR-102-AC-6 and TC-457 step 4 now say the list is "unchanged", and `dispatch_entry_is_a_single_thin_call` is tagged `TC-457`/`FR-102-AC-4` (dispatch.rs:630) |
+| FND-006 | fixed | fe9224fc: TC-457 step 3 now uses nested `not`s. It introduced the off-by-one in FND-008. |
+| FND-007 | deferred | QSL-277 |
+| FND-008 | still-open | new in round 3, low |

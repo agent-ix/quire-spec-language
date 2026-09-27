@@ -82,3 +82,26 @@ Round 2, reviewed at 960490173a2601bf8fd9e76b9ccf344242b18002.
 | FND-005 | fixed | 3b94b129: the stale "an operation" lists are removed (assemble.rs:240-245, 502-510). |
 | FND-006 | fixed | 3b94b129: the closure is now `fn resolve_frame` (intake.rs:2198). A miss is a `debug_assert!` rather than a refusal, so a release build still skips silently. Accepted, because the miss is unreachable by construction. |
 | FND-007 | still-open | `qsl-forms/tests/it/protocol_clause_forms.rs` is unchanged at 96049017; the FR-102-AC-1 test still checks two spans. |
+
+## Dispositions (round 3)
+
+Round 3, reviewed at fe9224fcffc69700dd7467cabab243e76206f399. The branch is
+rebased onto origin/main 6db63a3e. `git range-diff` shows all four commits
+unchanged (`=`). In the four files both sides touched (`value_forms.rs`,
+`assemble/tests.rs`, `family.rs`, `intake.rs`), the PR's changed lines
+relative to main are identical to those before the rebase, so main's changes
+are kept. The reviewer ran `cargo test -p qsl-forms -p qsl-semantics -p
+qsl-replay` with `CARGO_TARGET_DIR` set to the worktree's own `target/`: all
+passed, including the two new tests.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3b94b129 (bef8bb35 after the rebase); guarded now by FND-009's test |
+| FND-002 | fixed | 3b94b129 (bef8bb35) |
+| FND-003 | fixed | 3b94b129 (bef8bb35); the hole the filter opened is closed by FND-008 |
+| FND-004 | fixed | 3b94b129 (bef8bb35) |
+| FND-005 | fixed | 3b94b129 (bef8bb35) |
+| FND-006 | fixed | 3b94b129 (bef8bb35); a debug_assert, accepted as unreachable |
+| FND-007 | fixed | fe9224fc: `assert_every_span_slice_reparses` walks every body node and checks that each span's slice reparses as one whole expression (protocol_clause_forms.rs:70-99, called at 174). |
+| FND-008 | fixed | fe9224fc: `read_component`, `read_endpoint`, `read_connection` and `read_allocation` refuse a non-empty `operations` through `unsupported_at`. That covers every reader that accepts a type node without queuing its frames: object and interface types queue theirs, and a record value type refuses. Test: `a_systems_part_carrying_an_operation_with_a_broken_frame_refuses` (model_intake.rs:1064) asserts `unsupported_construct`/`declaration-form`, which would fail without the guard. |
+| FND-009 | fixed | fe9224fc: `a_state_clause_refuses_unsupported_until_fr_104` (assemble/tests.rs) asserts the exact error and the span. |
