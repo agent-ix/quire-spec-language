@@ -229,6 +229,21 @@ pub struct RequirementRecord {
 }
 
 impl RequirementRecord {
+    /// An unguarded record of an item whose result is a `value_type` typed
+    /// at the type node `node`: a state clause's or an operation frame's
+    /// `operation-contract` record (FR-104), which has no path condition.
+    pub(crate) fn unguarded(
+        requirements: Requirements,
+        value_type: ValueType,
+        node: WireNodeId,
+    ) -> Self {
+        Self {
+            requirements,
+            result_bound: ResultBound { value_type, node },
+            path_condition: Vec::new(),
+        }
+    }
+
     /// The claim's capability kind and extent, each unbounded domain keyed
     /// by its root's parameter node.
     pub fn requirements(&self) -> &Requirements {
@@ -291,7 +306,8 @@ fn is_scalar_application(node: &Node) -> bool {
         | NodeKind::AllInstances { .. }
         | NodeKind::Lookup { .. }
         | NodeKind::Dispatch { .. }
-        | NodeKind::Pre(_) => false,
+        | NodeKind::Pre(_)
+        | NodeKind::Reaches { .. } => false,
         #[cfg(seam_probe)]
         NodeKind::__SeamProbe => unreachable!("never constructed outside the probe build"),
     }
@@ -595,7 +611,7 @@ impl Classify<'_> {
 }
 
 /// The wire id of lowered node `key`.
-fn wire(key: NodeKey) -> WireNodeId {
+pub(crate) fn wire(key: NodeKey) -> WireNodeId {
     WireNodeId::from_digest(*key.as_bytes())
 }
 

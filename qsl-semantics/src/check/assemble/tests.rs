@@ -397,8 +397,25 @@ fn each_assembler_cause_has_its_catalog_code() {
             "ambiguous_declaration/ambiguous-name",
         ),
         (
-            AssemblyCause::UnsupportedStateClause { name: "X".into() },
-            "unknown_required_feature/unsupported-feature",
+            AssemblyCause::UnresolvedOperation {
+                context: "M::T".into(),
+                operation: "op".into(),
+            },
+            "missing_declaration/missing-name",
+        ),
+        (
+            AssemblyCause::AmbiguousOperation {
+                context: "M::T".into(),
+                operation: "op".into(),
+            },
+            "ambiguous_declaration/ambiguous-name",
+        ),
+        (
+            AssemblyCause::AmbiguousPopulation {
+                context: "M::T".into(),
+                populations: Vec::new(),
+            },
+            "ambiguous_declaration/ambiguous-name",
         ),
     ];
     for (cause, code) in cases {
@@ -406,14 +423,16 @@ fn each_assembler_cause_has_its_catalog_code() {
     }
 }
 
-/// SR-722 FND-009: a state clause builds at S2 (FR-102) but has no checker
-/// or declaration until FR-104 (QSL-277), so the assembler refuses it at its
-/// own declaration span rather than silently dropping it (FND-001's fix).
-/// This guards that refusal directly, since going back to a silent drop
-/// would otherwise still leave every other gate green.
-#[trace("FR-091-AC-21")]
+/// FR-104 "Resolution" (TC-460 row 1's shape, over a unit with no `model`
+/// declaration): the assembler keeps a state clause and resolves its
+/// context, so a context `M::T` naming no admitted object type refuses
+/// `missing_declaration`/`missing-name` at the name -- never an
+/// unsupported-feature refusal of the whole clause, and never a silent
+/// drop. TC-459 to TC-461 check clauses over an admitted model
+/// (`qsl-semantics/tests/it/state_clauses.rs`).
+#[trace("TC-460", "FR-104-AC-3")]
 #[test]
-fn a_state_clause_refuses_unsupported_until_fr_104() {
+fn a_state_clause_context_resolves_or_refuses_at_its_name() {
     let clause = "invariant Foo using v on Config::ConfigVersion at current { true }";
     let (text, found) = errors(&format!(
         "{clause}\nfunction ok using v(): Boolean pure {{ true }}\n"
@@ -421,13 +440,15 @@ fn a_state_clause_refuses_unsupported_until_fr_104() {
     assert_eq!(
         found,
         [AssemblyError {
-            cause: AssemblyCause::UnsupportedStateClause { name: "Foo".into() },
-            span: last(&text, clause),
+            cause: AssemblyCause::UnresolvedTypeName {
+                name: "Config::ConfigVersion".into()
+            },
+            span: after(&text, "on ", "Config::ConfigVersion"),
         }]
     );
     assert_eq!(
         found[0].cause.catalog_code().to_string(),
-        "unknown_required_feature/unsupported-feature"
+        "missing_declaration/missing-name"
     );
 }
 

@@ -27,17 +27,19 @@ use qsl_foundation::Span;
 
 use super::{CheckCause, CheckRefusal, CheckedGraph, Location, Origin, PackageDeclarations};
 
-/// The region `location` names, given each function's form spans by
-/// declaration index.
+/// The region `location` names, given each function's and each state
+/// clause's form spans by declaration index.
 fn resolve<'s>(
     source: &RawSourceRef,
     embedding: Option<&SourceMap>,
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
+    clause_spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     type_spans: &BTreeMap<String, Span>,
     location: &Location,
 ) -> Option<SourceRegion> {
     let span = match &location.origin {
         Origin::Body { index, .. } => spans(*index)?.body.at(&location.path)?,
+        Origin::StateClause { index, .. } => clause_spans(*index)?.body.at(&location.path)?,
         Origin::Measure { index, .. } => spans(*index)?.measure.as_ref()?.at(&location.path)?,
         Origin::TypeDeclaration { name } if location.path.is_empty() => *type_spans.get(name)?,
         Origin::TypeDeclaration { .. } | Origin::Expression => return None,
@@ -77,6 +79,7 @@ impl PackageDeclarations {
             &self.source,
             self.embedding.as_deref(),
             |index| self.functions.get(index)?.spans(),
+            |index| Some(&self.state_clauses.get(index)?.spans),
             &self.declared_type_spans,
             location,
         )
@@ -98,6 +101,8 @@ pub struct DeclarationRegions {
     source: RawSourceRef,
     embedding: Option<Arc<SourceMap>>,
     spans: Vec<Option<DeclarationSpans>>,
+    /// Each state clause's form spans, by its index in source order.
+    clause_spans: Vec<DeclarationSpans>,
     type_spans: BTreeMap<String, Span>,
 }
 
@@ -109,6 +114,7 @@ impl DeclarationRegions {
             &self.source,
             self.embedding.as_deref(),
             |index| self.spans.get(index)?.as_ref(),
+            |index| self.clause_spans.get(index),
             &self.type_spans,
             location,
         )
@@ -161,6 +167,11 @@ impl PackageDeclarations {
                 .iter()
                 .map(|function| function.spans().cloned())
                 .collect(),
+            clause_spans: self
+                .state_clauses
+                .iter()
+                .map(|clause| clause.spans.clone())
+                .collect(),
             type_spans: self.declared_type_spans.clone(),
         }
     }
@@ -175,6 +186,7 @@ impl CheckedGraph {
             &self.source,
             self.embedding.as_deref(),
             |index| self.form_spans.get(index)?.as_ref(),
+            |index| Some(&self.state_clauses.get(index)?.spans),
             &self.type_spans,
             location,
         )

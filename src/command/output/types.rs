@@ -241,6 +241,7 @@ pub(super) enum SpineOrigin {
     Measure { function: String, index: usize },
     Expression,
     TypeDeclaration { name: String },
+    StateClause { clause: String, index: usize },
 }
 
 /// FR-100's `outcome` member. `Refused`'s members follow the refusal

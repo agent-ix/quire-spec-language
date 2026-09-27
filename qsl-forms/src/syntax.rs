@@ -1088,7 +1088,7 @@ pub struct UnitForm {
 /// invariant's `at current` observation is carried as this kind itself: the
 /// grammar admits no other observation for an invariant, so no separate
 /// observation member is added.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum StateClauseKind {
     /// `invariant N using p on M::T at current { e }`.
     Invariant,

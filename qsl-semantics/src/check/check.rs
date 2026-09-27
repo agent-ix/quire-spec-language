@@ -335,6 +335,10 @@ pub struct PackageDeclarations {
     /// alias resolved to, by index into [`Self::functions`]. A function
     /// with no `using` alias, or built by hand, has no entry.
     pub function_selections: BTreeMap<usize, qsl_foundation::selection::ProfileSelection>,
+    /// FR-104: the unit's state clauses in declaration order, each header
+    /// name resolved by the FR-091 assembler. Clauses and functions share
+    /// one selection namespace (FR-109).
+    pub state_clauses: Vec<super::state_clause::StateClauseDeclaration>,
 }
 
 impl PackageDeclarations {
@@ -361,6 +365,7 @@ impl PackageDeclarations {
             nominal_spans: BTreeMap::new(),
             imports: BTreeMap::new(),
             function_selections: BTreeMap::new(),
+            state_clauses: Vec::new(),
         }
     }
 
@@ -732,9 +737,29 @@ pub(crate) struct Typer<'a> {
     /// operations" -- and refused `wrong_snapshot`/`wrong-anchor` in every
     /// other clause kind, including a standalone `check_expression` call).
     clause_kind: ClauseKind,
+    /// The state clause this pass types (FR-104), or `None` for a function,
+    /// a measure or a standalone expression: only a state clause binds
+    /// `self`, `result` and admits `reaches`.
+    state: Option<StateContext>,
     /// The package's quantity units, then every compound unit this pass
     /// formed as a product or quotient type.
     units: UnitScope<'a>,
+}
+
+/// A state clause's own typing context (FR-104 "Typing"): its kind, the
+/// operation a `pre` or `post` clause names, and the slots `self` and
+/// `result` are bound to.
+#[derive(Clone, Debug)]
+pub(crate) struct StateContext {
+    /// The clause kind.
+    pub(crate) kind: qsl_forms::StateClauseKind,
+    /// The operation's name, for a `pre` or `post` clause.
+    pub(crate) operation: Option<String>,
+    /// The slot `self` reads.
+    pub(crate) self_slot: Slot,
+    /// The slot `result` reads: only in a postcondition of an operation
+    /// that declares a result.
+    pub(crate) result_slot: Option<Slot>,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -806,6 +831,22 @@ fn contains_pre_eligible_read(expression: &Expression) -> bool {
         pending.extend(expression.children());
     }
     false
+}
+
+/// The name a reference expression reads through, looking past `deref`,
+/// `value` and field projections: `target` for `deref(value(target.f))`,
+/// `None` when the reference is not rooted at a name.
+fn reference_root(expression: &Expression) -> Option<&str> {
+    let mut expression = expression;
+    loop {
+        match expression {
+            Expression::Name(name) => return Some(name),
+            Expression::Deref(operand)
+            | Expression::Value(operand)
+            | Expression::Field { operand, .. } => expression = operand,
+            _ => return None,
+        }
+    }
 }
 
 /// One `let` a captured-alias walk has passed (QSL-228): its name, whether
@@ -896,8 +937,20 @@ impl<'a> Typer<'a> {
             slots: 0,
             slot_names: Vec::new(),
             clause_kind,
+            state: None,
             units: UnitScope::new(scope.types.units()),
         }
+    }
+
+    /// Type this pass as the state clause `state` (FR-104): `self`, `result`
+    /// and `reaches` resolve against it. Its slots are already bound.
+    pub(crate) fn enter_state_clause(&mut self, state: StateContext) {
+        self.state = Some(state);
+    }
+
+    /// Whether this pass types a state clause.
+    pub(crate) fn in_state_clause(&self) -> bool {
+        self.state.is_some()
     }
 
     /// The number of slots allocated so far.
@@ -1604,6 +1657,167 @@ impl<'a> Typer<'a> {
             value_type,
             location,
         ))
+    }
+
+    /// `self` (FR-104): in a state clause, the context object,
+    /// `Reference<M::T>`. Outside a state clause no declaration binds it, so
+    /// it refuses `missing_declaration`/`missing-name`.
+    fn self_reference(&self, location: &Location) -> Result<Node, CheckRefusal> {
+        let Some(state) = &self.state else {
+            return Err(refuse(location, CheckCause::MissingName("self".to_owned())));
+        };
+        self.bound_slot(state.self_slot, location)
+    }
+
+    /// `result` (FR-104): admitted only in a postcondition of an operation
+    /// that declares a result, typed as that result. Anywhere else it
+    /// refuses `wrong_snapshot`/`wrong-anchor`, naming the clause kind and
+    /// the operation.
+    fn operation_result(&self, location: &Location) -> Result<Node, CheckRefusal> {
+        match &self.state {
+            Some(StateContext {
+                result_slot: Some(slot),
+                ..
+            }) => self.bound_slot(*slot, location),
+            state => Err(refuse(
+                location,
+                CheckCause::UnanchoredResult {
+                    clause: state.as_ref().map(|state| state.kind),
+                    operation: state.as_ref().and_then(|state| state.operation.clone()),
+                },
+            )),
+        }
+    }
+
+    /// A read of `slot`, a state clause's own `self` or `result` binding,
+    /// bound for the whole clause before its body is typed.
+    fn bound_slot(&self, slot: Slot, location: &Location) -> Result<Node, CheckRefusal> {
+        let local = self
+            .locals
+            .iter()
+            .find(|local| local.slot == slot)
+            .ok_or_else(|| mismatch(location))?;
+        Ok(node(
+            NodeKind::Local(slot),
+            local.value_type.clone(),
+            location,
+        ))
+    }
+
+    /// `reaches(source, target, edge)` over the typed `source` and `target`
+    /// (FR-104): both `Reference<T>` of one object type `T`, and `edge` a
+    /// field of `T`'s effective attribute set typed `Reference<T>`,
+    /// `Option<Reference<T>>` or a sequence of `Reference<T>` (QSpec
+    /// `state-contract.md`, "Finite graph extension"). Anything else,
+    /// a set, bag or ordered set of references included, refuses
+    /// `ill_typed`/`operator-ineligible` at the `reaches`.
+    fn reaches(
+        &self,
+        source: Node,
+        target: Node,
+        edge: &str,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let (ValueType::Reference(object), ValueType::Reference(other)) =
+            (&source.value_type, &target.value_type)
+        else {
+            return Err(ineligible(location));
+        };
+        if object != other {
+            return Err(ineligible(location));
+        }
+        let object = *object;
+        let attribute = self
+            .scope
+            .types
+            .attribute(object, edge)
+            .ok_or_else(|| ineligible(location))?;
+        let declared = attribute.field();
+        let names_object = |value_type: &ValueType| value_type == &ValueType::Reference(object);
+        let admitted = match (declared.presence(), declared.value_type()) {
+            (_, ValueType::Reference(_)) => names_object(declared.value_type()),
+            (Presence::Required, ValueType::Collection(collection)) => {
+                collection.kind() == CollectionKind::Sequence && names_object(collection.element())
+            }
+            _ => false,
+        };
+        if !admitted {
+            return Err(ineligible(location));
+        }
+        Ok(node(
+            NodeKind::Reaches {
+                source: Box::new(source),
+                target: Box::new(target),
+                edge: attribute.identity(),
+            },
+            ValueType::Boolean,
+            location,
+        ))
+    }
+
+    /// Whether a state clause's `pre(e)` operand contains, in its own
+    /// syntax, an eligible state read (FR-104 "Observations of reads"):
+    /// `self`, a field read through `self` or through a reference-typed
+    /// operation parameter, `allInstances`, `lookup` or a nested `pre`. A
+    /// field read through a `let` or binder name is never one: a name bound
+    /// outside the `pre` is a capture (QSpec's `let s = self in
+    /// pre(s.version)` row), and one bound inside it names no parameter.
+    /// Parameters, literals and `result` alone are never eligible (QSpec:
+    /// "a bare or parameter-only historical selection refuses").
+    fn state_pre_eligible(&self, operand: &Expression) -> bool {
+        let mut inner: BTreeSet<&str> = BTreeSet::new();
+        let mut pending = vec![operand];
+        while let Some(expression) = pending.pop() {
+            match expression {
+                Expression::Let { name, .. } => {
+                    inner.insert(name);
+                }
+                Expression::Query { binder, .. }
+                | Expression::Count { binder, .. }
+                | Expression::Sum { binder, .. } => {
+                    inner.insert(binder);
+                }
+                Expression::Accumulate {
+                    accumulator,
+                    binder,
+                    ..
+                } => {
+                    inner.insert(accumulator);
+                    inner.insert(binder);
+                }
+                _ => {}
+            }
+            pending.extend(expression.children());
+        }
+        let parameter = |name: &str| {
+            !inner.contains(name)
+                && self
+                    .locals
+                    .iter()
+                    .rev()
+                    .find(|local| local.name == name)
+                    .is_some_and(|local| local.kind == LocalKind::Parameter)
+        };
+        let mut pending = vec![operand];
+        while let Some(expression) = pending.pop() {
+            match expression {
+                Expression::SelfRef
+                | Expression::AllInstances { .. }
+                | Expression::Lookup { .. }
+                | Expression::Pre(_) => return true,
+                Expression::Field {
+                    operand: reference, ..
+                }
+                | Expression::Deref(reference)
+                    if reference_root(reference).is_some_and(parameter) =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+            pending.extend(expression.children());
+        }
+        false
     }
 
     /// `e.f` over the typed record `e`.

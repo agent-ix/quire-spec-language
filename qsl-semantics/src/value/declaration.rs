@@ -220,6 +220,24 @@ impl OperationDeclaration {
     }
 }
 
+/// Where an operation name resolves in an object type's effective view
+/// ([`TypeEnvironment::operation`]).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OperationLookup<'a> {
+    /// The operation, and the object type that declares it.
+    Declared {
+        /// The declaring object type.
+        declaring: EffectiveId,
+        /// The operation.
+        operation: &'a OperationDeclaration,
+    },
+    /// No type of the view declares an operation of that name.
+    Missing,
+    /// Several declarations, none of whose declaring types is more derived
+    /// than every other: the declaring types, in key order.
+    Ambiguous(Vec<EffectiveId>),
+}
+
 /// A record field in a record value expression. Omitting a `?` field
 /// constructs `absent`.
 pub enum FieldExpression<'a> {
@@ -867,6 +885,46 @@ impl TypeEnvironment {
         self.attributes(object_type)?
             .iter()
             .find(|attribute| attribute.field().name() == name)
+    }
+
+    /// The operation `name` resolves to in the object type's effective view
+    /// (FR-103, FR-104): declared by the type itself or by an ancestor,
+    /// visible on a subtype as a field is, and keeping its declaring type.
+    /// A declaration an ancestor makes is hidden by one a more derived type
+    /// of the view makes; two declarations neither of whose types is more
+    /// derived are ambiguous.
+    pub fn operation(&self, object_type: EffectiveId, name: &str) -> OperationLookup<'_> {
+        let candidates: Vec<(EffectiveId, &OperationDeclaration)> = self
+            .object_types
+            .values()
+            .filter(|declaring| self.conforms(object_type, declaring.key()))
+            .flat_map(|declaring| {
+                declaring
+                    .operations()
+                    .iter()
+                    .filter(|operation| operation.name() == name)
+                    .map(move |operation| (declaring.key(), operation))
+            })
+            .collect();
+        let nearest: Vec<(EffectiveId, &OperationDeclaration)> = candidates
+            .iter()
+            .filter(|(declaring, _)| {
+                !candidates
+                    .iter()
+                    .any(|(other, _)| other != declaring && self.conforms(*other, *declaring))
+            })
+            .copied()
+            .collect();
+        match nearest.as_slice() {
+            [] => OperationLookup::Missing,
+            [(declaring, operation)] => OperationLookup::Declared {
+                declaring: *declaring,
+                operation,
+            },
+            many => {
+                OperationLookup::Ambiguous(many.iter().map(|(declaring, _)| *declaring).collect())
+            }
+        }
     }
 
     /// This environment with `units` as its quantity unit table.
