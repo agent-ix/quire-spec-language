@@ -128,3 +128,12 @@ which uses the same document as my round-3 probe.
 | FND-016 | fixed 5690b68a. There is one constructor, `ObjectEnvironment::new(types, objects, tolerated_dangling: &[ObjectReference])` (object_environment.rs), and closure is checked for every reference not in that exact set. `References::resolve` looks up the wire `(population, key)` among admitted objects first, and a hit must pass `ValueType::Reference(declared).admits`. Only a miss is resolved by declared type and recorded as unresolved, and `finish_populations` tolerates only the unresolved targets whose population is not complete. The `{archive, k}` to `Sub` probe now refuses `invalid_runtime_input`/`wrong-value-kind` at `child`/`parent`. That is the right check under FR-106's order. The wire reference names an existing object in a complete population, so check 8 has nothing to report. The value is a `Sub` reference where the field declares `Reference<ConfigVersion>`, and the kernel admits a reference only at its exact object type (`quire-exact/src/value.rs:246-248`; TC-465's amended note says a `Sub` object cannot be validly referenced by a `ConfigVersion`-typed field). That is check 6.5's "the value's kind does not fit the declared type", which runs before checks 7 and 8. The tolerated case still admits (`a_dangling_reference_into_an_incomplete_population_still_admits`, `ok` in r12). One remaining edge is recorded as new FND-019 (low). |
 | FND-017 | fixed 64e8f97e: inside 6.4, the missing-field test now runs before the undeclared-field test. |
 | FND-018 | fixed dc8dc8f5: `Code::parse_str` is deleted and callers use `Code::from_code`. |
+
+### Round 5 (reviewed 9ba7652c6dbce0dc86ef8ccc13935ee012e97d67)
+
+The caller's qsl-278-ci-r13.log starts with the head SHA and ends `exit=0`.
+Both tests below appear in it as `ok`.
+
+| ID | Disposition |
+| --- | --- |
+| FND-019 | fixed c3e121e3: `finish_populations` now tolerates an unresolved reference only when the snapshot lists its population with `complete: false` (`completeness.get(..) == Some(false)`, document.rs:1310). A reference into an unlisted population now fails the closure check and refuses `dangling_reference` (`a_reference_into_an_unlisted_population_refuses_dangling_reference`, state_clauses.rs:3364). The tolerated-incomplete case still admits (`a_dangling_reference_into_an_incomplete_population_still_admits`). |
