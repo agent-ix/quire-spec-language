@@ -2840,9 +2840,9 @@ fn s4_state_package_emission_is_stable_across_compiles() {
 /// pinned `ApplicationOperator` enum. This is IR's own implementation gap,
 /// in a separate pinned dependency this ticket does not own; QSL's own
 /// emission (asserted by `s4_emits_exactly_the_fr_105_state_nodes` above,
-/// TC-462) is unaffected. File a ticket to bump the `quire-contract-model`
-/// pin once its own vocabulary lands, then remove this `#[ignore]`.
-#[ignore = "blocked on quire-contract-model absorbing STD-111's state_clause/frame vocabulary (see doc comment)"]
+/// TC-462) is unaffected. QSL-307 tracks bumping the `quire-contract-model`
+/// pin once its own vocabulary lands; remove this `#[ignore]` there.
+#[ignore = "QSL-307: blocked on quire-contract-model absorbing STD-111's state_clause/frame vocabulary (see doc comment)"]
 #[trace("TC-463", "FR-105-AC-3")]
 #[test]
 fn s4_state_package_reads_back_through_i2() {
