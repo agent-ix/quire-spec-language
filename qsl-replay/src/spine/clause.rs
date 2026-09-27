@@ -308,7 +308,6 @@ impl ClauseRunReport {
     /// FR-109: one total match over the stage and category, no `_` arm.
     pub fn exit_code(&self) -> u8 {
         use qsl_foundation::diagnostic::Code;
-        let code_of = |code: &str| Code::all().iter().find(|c| c.as_str() == code).copied();
         match &self.disposition {
             ClauseDisposition::Compile(refusal) => refusal.code().exit_code(),
             ClauseDisposition::StalePackage { .. } => Code::StaleDependency.exit_code(),
@@ -317,7 +316,7 @@ impl ClauseRunReport {
             ClauseDisposition::Admit(AdmissionFailure::Fault(_)) => 30,
             ClauseDisposition::Admit(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
-            ) => code_of(record.code).map_or(20, Code::exit_code),
+            ) => Code::parse_str(record.code).map_or(20, Code::exit_code),
             ClauseDisposition::ArgumentRefusal(refusal) => match refusal.as_ref() {
                 RunRefusal::Fault(_) => 30,
                 other => other.code().exit_code(),
@@ -330,16 +329,15 @@ impl ClauseRunReport {
 
 fn evaluate_exit_code(outcome: &CallOutcome) -> u8 {
     use qsl_foundation::diagnostic::Code;
-    let code_of = |code: &str| Code::all().iter().find(|c| c.as_str() == code).copied();
     match outcome {
         CallOutcome::Completed(CallValue::Boolean(true)) => 0,
         CallOutcome::Completed(CallValue::Boolean(false)) => 10,
         CallOutcome::Completed(CallValue::Integer(_)) => 0,
         CallOutcome::Refused(super::call::CallRefusal::Record { code, .. }) => {
-            code_of(code.code()).map_or(20, |c| c.exit_code())
+            Code::parse_str(code.code()).map_or(20, |c| c.exit_code())
         }
         CallOutcome::Refused(super::call::CallRefusal::Family { code, .. }) => {
-            code_of(code.code()).map_or(20, |c| c.exit_code())
+            Code::parse_str(code.code()).map_or(20, |c| c.exit_code())
         }
         CallOutcome::Undefined { .. } => 20,
         CallOutcome::Incomplete { .. } => 22,

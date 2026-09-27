@@ -220,6 +220,17 @@ impl Code {
         }
     }
 
+    /// The `Code` whose [`Self::as_str`] spelling is `code`, or `None` for
+    /// an unrecognized spelling. The typed reverse lookup callers scanning
+    /// [`Self::all`] by hand (`Code::all().iter().find(|c| c.as_str() ==
+    /// code)`) should call instead (SR-750 FND-011: that scan was
+    /// duplicated at two call sites rather than shared here). Named
+    /// `parse_str`, not `from_str`, so it is never mistaken for
+    /// `std::str::FromStr::from_str`.
+    pub fn parse_str(code: &str) -> Option<Self> {
+        Self::all().iter().find(|c| c.as_str() == code).copied()
+    }
+
     /// Complete code vocabulary for enumeration and compatibility checks.
     pub fn all() -> &'static [Self] {
         &[
@@ -1160,6 +1171,17 @@ mod foundation_tests {
         category_of, resource_exhausted, CatalogCode, Category, Code, InternalFault, Phase, Source,
         SourceIdentity, Span, SyntaxLimit, CATALOG_CATEGORIES,
     };
+
+    /// SR-750 FND-011: `Code::parse_str` is the typed reverse lookup of
+    /// `Code::as_str`, round-tripping every code, and `None` for an
+    /// unrecognized spelling.
+    #[test]
+    fn parse_str_round_trips_every_code_and_refuses_an_unknown_one() {
+        for code in Code::all() {
+            assert_eq!(Code::parse_str(code.as_str()), Some(*code));
+        }
+        assert_eq!(Code::parse_str("not_a_real_code"), None);
+    }
 
     /// FR-001-AC-11: the native `Diagnostic` of `Source::read` carries
     /// `blank-label` with its label, or `empty-path`, on

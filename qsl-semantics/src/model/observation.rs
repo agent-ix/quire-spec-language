@@ -640,8 +640,9 @@ fn admit_invariant(
         .anchor
         .as_ref()
         .ok_or_else(|| refuse(AdmissionRecord::new("wrong_snapshot", "wrong-observation")))?;
-    if document_anchor.kind.as_str() != anchor.kind.as_str() || document_anchor.name != anchor.name
-    {
+    // `AnchorKind` derives `PartialEq`; compared directly (SR-750
+    // FND-011), never through `as_str()` string equality.
+    if document_anchor.kind != anchor.kind || document_anchor.name != anchor.name {
         return Err(refuse(
             AdmissionRecord::new("wrong_snapshot", "wrong-anchor")
                 .with(
