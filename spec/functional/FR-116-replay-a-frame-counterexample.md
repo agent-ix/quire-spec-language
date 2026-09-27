@@ -86,8 +86,8 @@ payload.
   - If the check finds nothing, then the executor SHALL settle
     `inconclusive` with cause `Verdicts` (`violation` proved, `success`
     replayed), never repaired (FR-072).
-  - If the check refuses with `population_delta_mismatch`, then the executor
-    SHALL settle `inconclusive` with cause `NoValue`: a refusal completes no
+  - If the check refuses with `population_delta_mismatch`, then the
+    executor SHALL settle `inconclusive` with cause `NoValue`: a refusal completes no
     value (FR-072).
 - Replay SHALL read no path, environment variable, clock or search location,
   and SHALL give the same result for the same request.

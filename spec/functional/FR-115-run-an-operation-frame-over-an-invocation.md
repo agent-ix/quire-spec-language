@@ -82,8 +82,8 @@ clause under test.
   its type), and the frame permission it was checked against. The witness's
   cause is the catalog's `frame_violation`/`unauthorized-change`, whose
   payload it carries.
-- If check 11's step 4 finds a declared delta that disagrees, then the entry
-  SHALL report stage `evaluate`, `refusal`, `population_delta_mismatch`/
+- If check 11's step 4 finds a declared delta that disagrees, then the
+  entry SHALL report stage `evaluate`, `refusal`, `population_delta_mismatch`/
   `delta-disagreement`, exit 20: the invocation's own inventory is
   inconsistent, so the frame cannot be evaluated over it.
 - The frame SHALL come only from the compiled package. The request carries no
