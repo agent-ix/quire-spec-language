@@ -2280,7 +2280,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
 }
 
 /// SR-750 FND-011 round 2: `exit_code`'s `Admit(Refused | Incomplete)` arm
-/// no longer maps a code that fails `Code::parse_str` to a silently
+/// no longer maps a code that fails `Code::from_code` to a silently
 /// guessed exit status (the old `map_or(20, ..)`). Every real
 /// `AdmissionRecord.code` this crate ever constructs is one of
 /// `admission_record`'s own fixed catalog literals, so a code outside the

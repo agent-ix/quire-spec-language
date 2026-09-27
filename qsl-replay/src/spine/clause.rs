@@ -335,7 +335,7 @@ impl ClauseRunReport {
             ClauseDisposition::Admit(AdmissionFailure::Fault(_)) => 30,
             ClauseDisposition::Admit(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
-            ) => Code::parse_str(record.code).map_or_else(
+            ) => Code::from_code(record.code).map_or_else(
                 || {
                     // `record.code` is always one of `admission_record`'s own
                     // fixed `&'static str` literals (SR-750 FND-011 round
@@ -367,10 +367,10 @@ fn evaluate_exit_code(outcome: &CallOutcome) -> u8 {
         CallOutcome::Completed(CallValue::Boolean(false)) => 10,
         CallOutcome::Completed(CallValue::Integer(_)) => 0,
         CallOutcome::Refused(super::call::CallRefusal::Record { code, .. }) => {
-            Code::parse_str(code.code()).map_or(20, |c| c.exit_code())
+            Code::from_code(code.code()).map_or(20, |c| c.exit_code())
         }
         CallOutcome::Refused(super::call::CallRefusal::Family { code, .. }) => {
-            Code::parse_str(code.code()).map_or(20, |c| c.exit_code())
+            Code::from_code(code.code()).map_or(20, |c| c.exit_code())
         }
         CallOutcome::Undefined { .. } => 20,
         CallOutcome::Incomplete { .. } => 22,
