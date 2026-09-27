@@ -1643,26 +1643,36 @@ fn state_clauses(
                 }
             },
         };
-        let mut objects = vec![context];
-        objects.extend(
-            operation
-                .as_ref()
-                .map(|operation| operation.declaring)
-                .filter(|declaring| *declaring != context),
-        );
-        if let Some(populations) = objects
-            .into_iter()
-            .find_map(|object| population_of(models, object).err())
-        {
-            errors.push(error(
+        let ambiguous = |populations| {
+            error(
                 AssemblyCause::AmbiguousPopulation {
                     context: form.context.name.clone(),
                     populations,
                 },
                 form.context.span,
-            ));
-            continue;
-        }
+            )
+        };
+        let context_population = match population_of(models, context, types) {
+            Ok(domain) => domain,
+            Err(populations) => {
+                errors.push(ambiguous(populations));
+                continue;
+            }
+        };
+        // The type declaring the operation shares the context's population
+        // when it is the context type itself; only a distinct declaring
+        // type (an inherited operation) needs its own resolution.
+        let frame_population = match &operation {
+            None => None,
+            Some(operation) if operation.declaring == context => context_population,
+            Some(operation) => match population_of(models, operation.declaring, types) {
+                Ok(domain) => domain,
+                Err(populations) => {
+                    errors.push(ambiguous(populations));
+                    continue;
+                }
+            },
+        };
         let Some(selection) = selection else {
             continue;
         };
@@ -1672,6 +1682,8 @@ fn state_clauses(
             selection,
             context,
             operation,
+            context_population,
+            frame_population,
             body: form.body,
             spans: form.spans,
         });

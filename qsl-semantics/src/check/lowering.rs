@@ -49,7 +49,8 @@ fn content_hash(content: &NodeContent) -> u64 {
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
-    Identifier, Integer, Meter, NodeKey, OrderingOperator, Presence, TextProfile, Value, ValueType,
+    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, Presence,
+    TextProfile, Value, ValueType,
 };
 
 use super::check::{EnumBinding, Scope};
@@ -474,6 +475,15 @@ pub(crate) struct Lowering<'a> {
     /// Whether a text type is reachable from each composite a text-leaf
     /// walk asked about.
     text_reach: BTreeMap<NodeKey, bool>,
+    /// FR-104: the `Origin` recording one occurrence of a named operation's
+    /// `frame` node, by the operation's own identity (its declaring type
+    /// and name), not by the frame node's key. Two operations whose frame
+    /// content happens to coincide (equal `modifies`/`creates`/`deletes`)
+    /// still key one node, but this map gives each its own occurrence, so
+    /// each keeps its own `operation-contract` record (FR-104-AC-5). The
+    /// first clause naming an operation, in source order, mints the
+    /// occurrence; every later clause naming the same operation shares it.
+    frame_origins: BTreeMap<(EffectiveId, String), OccurrenceOrigin>,
 }
 
 fn refuse(location: &Location, cause: CheckCause) -> CheckRefusal {
@@ -1227,6 +1237,7 @@ impl<'a> Lowering<'a> {
             node_limit: u64::MAX,
             node_budget: u64::MAX,
             text_reach: BTreeMap::new(),
+            frame_origins: BTreeMap::new(),
         }
     }
 
@@ -1279,6 +1290,37 @@ impl<'a> Lowering<'a> {
         } else {
             self.occurrences.record(key, role, location);
         }
+    }
+
+    /// The `Origin` of one occurrence of `frame`, the operation
+    /// `(declaring, name)`'s frame node (FR-104 "Requirements",
+    /// FR-104-AC-5): the first call for a given operation mints it, and
+    /// every later call naming the same operation returns the same
+    /// `Origin`, in the caller's own dedup key -- never the frame node's
+    /// key, since two unrelated operations can key one equal-content
+    /// frame node and must still keep two records. State clauses are
+    /// lowered after every function, so a frame node is never a pending
+    /// draft in practice; that case is an internal fault, not a silent
+    /// fallback.
+    fn frame_occurrence(
+        &mut self,
+        declaring: EffectiveId,
+        name: &str,
+        frame: NodeKey,
+        location: &Location,
+    ) -> Result<OccurrenceOrigin, CheckRefusal> {
+        let key = (declaring, name.to_owned());
+        if let Some(origin) = self.frame_origins.get(&key) {
+            return Ok(origin.clone());
+        }
+        if self.pending(frame) {
+            return Err(fault(location, KeyFault::UnresolvedDraft));
+        }
+        let origin = self
+            .occurrences
+            .record(frame, OccurrenceRole::Anchor, location.clone());
+        self.frame_origins.insert(key, origin.clone());
+        Ok(origin)
     }
 
     /// Record `key` as the parameter node of the binder at `site`: a

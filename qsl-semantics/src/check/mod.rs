@@ -1210,21 +1210,18 @@ impl PackageDeclarations {
                     &claims,
                     &form,
                     &lowered,
+                    &claim,
                     scope.types(),
                     limits.nodes(),
                     &location,
                 )
                 .map_err(|refusal| vec![refusal])?;
-                for state_clause::KeyedClaim { node, record } in keyed {
-                    let origin = if node == lowered.key {
-                        claim.clone()
-                    } else {
-                        occurrences
-                            .iter_role(family::OccurrenceRole::Generated)
-                            .find(|(generated, _, _)| *generated == node)
-                            .map(|(_, origin, _)| origin)
-                            .ok_or_else(unkeyable)?
-                    };
+                for state_clause::KeyedClaim {
+                    node,
+                    origin,
+                    record,
+                } in keyed
+                {
                     match requirements.entry(OccurrenceKey::new(claims::wire(node), origin)) {
                         std::collections::btree_map::Entry::Vacant(slot) => {
                             slot.insert(record);

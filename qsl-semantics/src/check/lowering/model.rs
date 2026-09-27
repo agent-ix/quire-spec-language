@@ -114,16 +114,26 @@ impl AdmittedModel {
         self.records.get(key)
     }
 
-    /// FR-104: every population declaration of this package whose member
-    /// types include the object type `target`, each with its ordinal among
-    /// the package's population declarations in ascending `DeclarationKey`
-    /// order (its own `Ord`: `package`, then `node`). The ordinal is stable
-    /// within this package's digest only. A domain package population
-    /// declares no maximum (the Semantic IR `population` record has no such
-    /// member), so each one is an unbounded `Population(None)` domain.
-    pub(crate) fn populations_of(&self, target: EffectiveId) -> Vec<(usize, &DeclarationKey)> {
-        let Some(member) = self.types.get(&target) else {
-            return Vec::new();
+    /// FR-104: every population declaration of this package that covers the
+    /// object type `target`: one of its member types is `target` itself or
+    /// a proper supertype of it, by `conforms` (FR-084's `allInstances<T>`
+    /// conformance, not exact identity -- a clause over a subtype still
+    /// ranges over its supertype's population). Each is paired with its
+    /// ordinal among the package's population declarations in ascending
+    /// `DeclarationKey` order (its own `Ord`: `package`, then `node`). The
+    /// ordinal is stable within this package's digest only. A domain
+    /// package population declares no maximum (the Semantic IR `population`
+    /// record has no such member), so each one is an unbounded
+    /// `Population(None)` domain.
+    pub(crate) fn populations_of(
+        &self,
+        target: EffectiveId,
+        conforms: impl Fn(EffectiveId, EffectiveId) -> bool,
+    ) -> Vec<(usize, &DeclarationKey)> {
+        let covers = |member: &DeclarationKey| {
+            self.types.iter().any(|(id, declared)| {
+                declared == member && (*id == target || conforms(target, *id))
+            })
         };
         // `records` is a `BTreeMap` keyed by `DeclarationKey`, so its
         // population records iterate in ascending key order.
@@ -134,7 +144,7 @@ impl AdmittedModel {
                 _ => None,
             })
             .enumerate()
-            .filter(|(_, population)| population.member_types.contains(member))
+            .filter(|(_, population)| population.member_types.iter().any(covers))
             .map(|(ordinal, population)| (ordinal, &population.key))
             .collect()
     }

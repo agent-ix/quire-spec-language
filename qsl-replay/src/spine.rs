@@ -402,6 +402,22 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         CheckCause::MissingName(name) | CheckCause::AmbiguousName { name, .. } => {
             message = format!("{message}: `{name}`");
         }
+        // FR-104-AC-2: name the clause kind and, when the clause names one,
+        // the operation `result` was written under.
+        CheckCause::UnanchoredResult { clause, operation } => {
+            let clause = match clause {
+                Some(qsl_forms::StateClauseKind::Invariant) => "an invariant",
+                Some(qsl_forms::StateClauseKind::Precondition) => "a precondition",
+                Some(qsl_forms::StateClauseKind::Postcondition) => {
+                    "a postcondition of an operation with no result"
+                }
+                None => "no state clause",
+            };
+            message = match operation {
+                Some(operation) => format!("{message}: {clause} of `{operation}`"),
+                None => format!("{message}: {clause}"),
+            };
+        }
         _ => {}
     }
     with_more(message, refusals.len())

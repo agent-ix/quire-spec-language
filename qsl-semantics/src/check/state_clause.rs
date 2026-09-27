@@ -35,8 +35,8 @@ use super::observation::Observations;
 use super::refusal::{CheckCause, CheckRefusal, KeyFault, Location};
 use super::{Capability, CheckingLimits, Scope};
 use crate::family::{
-    classify_domains, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure, DomainKind,
-    FamilyContract, Requirements,
+    classify_domains, classify_extent, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure,
+    DomainKind, FamilyContract, Requirements,
 };
 use crate::model::key::DeclarationKey;
 use crate::value::declaration::{OperationDeclaration, TypeEnvironment};
@@ -67,6 +67,15 @@ pub struct StateClauseDeclaration {
     /// The operation a `pre` or `post` clause names; `None` for an
     /// invariant.
     pub operation: Option<ClauseOperation>,
+    /// The context's population domain, the assembler's own resolution
+    /// (FR-104 "Resolution", "Requirements"): the one population with no
+    /// maximum whose member types cover `context`, by conformance
+    /// (FR-084's `allInstances<T>`); `None` when none does.
+    pub context_population: Option<PopulationDomain>,
+    /// The population domain of the type declaring the operation a `pre` or
+    /// `post` clause names, resolved the same way; `None` for an invariant,
+    /// or when the declaring type shares no population.
+    pub frame_population: Option<PopulationDomain>,
     /// The body.
     pub body: Expression,
     /// The form's spans: the declaration's, and one per body node.
@@ -131,7 +140,7 @@ pub(crate) struct ClauseDeclarations<'a> {
 /// population's member object type and its ordinal among its package's
 /// population declarations in ascending `DeclarationKey` order.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct PopulationDomain {
+pub struct PopulationDomain {
     pub(crate) object: EffectiveId,
     pub(crate) ordinal: usize,
 }
@@ -176,17 +185,19 @@ pub(crate) struct TypedStateClause {
 /// FR-104).
 pub(crate) struct ProtocolClauseFamily;
 
-/// The one population with no maximum whose member types include
-/// `object` (FR-104, FR-084): `Ok(None)` when none does, and the
-/// populations' keys in ascending `DeclarationKey` order when several do.
-/// A domain package population declares no maximum, so every one counts.
+/// The one population with no maximum that covers `object`, by conformance
+/// (FR-104, FR-084's `allInstances<T>`: a member type or a proper supertype
+/// of it): `Ok(None)` when none does, and the populations' keys in ascending
+/// `DeclarationKey` order when several do. A domain package population
+/// declares no maximum, so every one counts.
 pub(crate) fn population_of(
     models: &[AdmittedModel],
     object: EffectiveId,
+    types: &TypeEnvironment,
 ) -> Result<Option<PopulationDomain>, Vec<DeclarationKey>> {
     let found: Vec<(usize, &DeclarationKey)> = models
         .iter()
-        .flat_map(|model| model.populations_of(object))
+        .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
         .collect();
     match found.as_slice() {
         [] => Ok(None),
@@ -293,18 +304,19 @@ fn check_clause(
     .with_observations(&observations)
     .check(&body)?;
 
-    // The populations the clause ranges over: its context's, then each one
-    // a `reaches` walks (FR-104 "Requirements").
+    // The populations the clause ranges over: its context's, already
+    // resolved by the assembler (FR-104 "Resolution"), then each one a
+    // `reaches` walks -- unknown until the body is typed, so resolved here
+    // (FR-104 "Requirements").
     let mut clause_populations = BTreeSet::new();
-    let context = population_of(input.models, form.context)
-        .map_err(|keys| ambiguous_population(input.scope, form.context, &keys, location))?;
-    clause_populations.extend(context);
+    clause_populations.extend(form.context_population);
     for node in body.descendants() {
         if let NodeKind::Reaches { source, .. } = node.kind() {
             if let ValueType::Reference(object) = source.value_type() {
-                let walked = population_of(input.models, *object).map_err(|keys| {
-                    ambiguous_population(input.scope, *object, &keys, node.location())
-                })?;
+                let walked =
+                    population_of(input.models, *object, input.scope.types()).map_err(|keys| {
+                        ambiguous_population(input.scope, *object, &keys, node.location())
+                    })?;
                 clause_populations.extend(walked);
             }
         }
@@ -313,13 +325,10 @@ fn check_clause(
         subject: ClaimSubject::Clause,
         populations: clause_populations.into_iter().collect(),
     }];
-    if let Some(operation) = &form.operation {
-        let frame = population_of(input.models, operation.declaring).map_err(|keys| {
-            ambiguous_population(input.scope, operation.declaring, &keys, location)
-        })?;
+    if form.operation.is_some() {
         claims.push(ClauseClaim {
             subject: ClaimSubject::Frame,
-            populations: frame.into_iter().collect(),
+            populations: form.frame_population.into_iter().collect(),
         });
     }
     let population_types = claims
@@ -428,19 +437,29 @@ fn record(
     types: &TypeEnvironment,
     position_limit: u64,
 ) -> Result<RequirementRecord, ClassifyFailure> {
-    let root_types: Vec<&ValueType> = roots.iter().map(|(_, value_type)| *value_type).collect();
     let mut domains = BTreeMap::new();
-    for ((root, path), kind) in classify_domains(&root_types, types, position_limit)? {
-        let Some((node, _)) = roots.get(root) else {
-            return Err(ClassifyFailure::Fault(qsl_foundation::InternalFault::new(
-                "check.requirements",
-                "domain-root-classified",
-            )));
-        };
-        let key = match root_prefix {
-            // A frame has no parameter node of its own: its roots' domains
-            // are keyed by the frame node, each under its root's position.
-            Some(frame) => {
+    match root_prefix {
+        // The ordinary case: each root already has its own node, exactly
+        // what `classify_extent` keys by, so it is reused rather than
+        // reimplemented.
+        None => {
+            let wired: Vec<(qsl_foundation::digest::WireNodeId, &ValueType)> = roots
+                .iter()
+                .map(|(node, value_type)| (wire(*node), *value_type))
+                .collect();
+            if let ClaimExtent::Unbounded(unbounded) =
+                classify_extent(&wired, types, position_limit)?
+            {
+                domains.extend(unbounded.iter().map(|(key, kind)| (key.clone(), kind)));
+            }
+        }
+        // A frame has no parameter node of its own: its roots' domains are
+        // keyed by the frame node, each under its root's position, so this
+        // walks `classify_domains` directly instead.
+        Some(frame) => {
+            let root_types: Vec<&ValueType> =
+                roots.iter().map(|(_, value_type)| *value_type).collect();
+            for ((root, path), kind) in classify_domains(&root_types, types, position_limit)? {
                 let position = u32::try_from(root).map_err(|_| {
                     ClassifyFailure::Fault(qsl_foundation::InternalFault::new(
                         "check.requirements",
@@ -449,11 +468,9 @@ fn record(
                 })?;
                 let mut prefixed = vec![position];
                 prefixed.extend(path);
-                DomainKey::new(wire(frame), prefixed)
+                domains.insert(DomainKey::new(wire(frame), prefixed), kind);
             }
-            None => DomainKey::new(wire(*node), path),
-        };
-        domains.insert(key, kind);
+        }
     }
     for (domain, object) in populations {
         let ordinal = u32::try_from(domain.ordinal).map_err(|_| {
@@ -477,20 +494,28 @@ fn record(
     ))
 }
 
-/// A lowered state clause's claims, each with the node whose occurrence
-/// keys its record: the clause's own `state_clause` node, or its
-/// operation's `frame` node.
+/// A lowered state clause's claims, each with the node and the `Origin` of
+/// the occurrence that keys its record: the clause's own `state_clause`
+/// node at its `claim` occurrence, or its operation's `frame` node at that
+/// operation's own occurrence (FR-104-AC-5: two operations never share one,
+/// even when their frame nodes' content coincides -- see
+/// [`super::lowering::Lowering::frame_occurrence`]).
 pub(crate) struct KeyedClaim {
     pub(crate) node: NodeKey,
+    pub(crate) origin: Origin,
     pub(crate) record: RequirementRecord,
 }
 
 /// The records of `clause`'s claims, once `lowered` has keyed its nodes.
+/// `claim` is the clause's own `claim` occurrence (ADR-013 O-07), reused for
+/// every `ClaimSubject::Clause` record.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn clause_records(
     clause: &TypedStateClause,
     claims: &[ClauseClaim],
     form: &StateClauseDeclaration,
     lowered: &LoweredClause,
+    claim: &Origin,
     types: &TypeEnvironment,
     position_limit: u64,
     location: &Location,
@@ -506,16 +531,14 @@ pub(crate) fn clause_records(
         location: location.clone(),
         cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
     };
+    // `limit_cause` is `check`'s one mapping from a stage limit to a
+    // checking cause (QSL-236); reused here rather than hand-built, so a
+    // state clause's resource-exhausted refusal carries the same kind and
+    // region a function's would.
     let classify = |failure: ClassifyFailure| match failure {
         ClassifyFailure::Limit(exceeded) => CheckRefusal {
             location: location.clone(),
-            cause: CheckCause::ResourceExhausted(Box::new(super::refusal::StageLimitCause {
-                stage: super::refusal::CheckingStage::Typing,
-                kind: super::refusal::CheckingLimitKind::Nodes,
-                limit: exceeded.configured_bound(),
-                actual: exceeded.actual(),
-                region: None,
-            })),
+            cause: super::limit_cause(&exceeded),
         },
         ClassifyFailure::Fault(fault) => CheckRefusal {
             location: location.clone(),
@@ -523,14 +546,14 @@ pub(crate) fn clause_records(
         },
     };
     let mut keyed = Vec::with_capacity(claims.len());
-    for claim in claims {
-        let populations: Vec<(PopulationDomain, NodeKey)> = claim
+    for entry in claims {
+        let populations: Vec<(PopulationDomain, NodeKey)> = entry
             .populations
             .iter()
             .map(|domain| object_of(domain.object).map(|object| (*domain, object)))
             .collect::<Option<_>>()
             .ok_or_else(unkeyable)?;
-        match claim.subject {
+        match entry.subject {
             ClaimSubject::Clause => {
                 let roots: Vec<(NodeKey, &ValueType)> = lowered
                     .parameters
@@ -549,11 +572,14 @@ pub(crate) fn clause_records(
                 .map_err(classify)?;
                 keyed.push(KeyedClaim {
                     node: lowered.key,
+                    origin: claim.clone(),
                     record,
                 });
             }
             ClaimSubject::Frame => {
-                let (Some(frame), Some(operation)) = (lowered.frame, &form.operation) else {
+                let (Some((frame, frame_origin)), Some(operation)) =
+                    (lowered.frame.clone(), &form.operation)
+                else {
                     return Err(unkeyable());
                 };
                 // The frame's own roots: the declaring type's `self`, the
@@ -579,6 +605,7 @@ pub(crate) fn clause_records(
                 .map_err(classify)?;
                 keyed.push(KeyedClaim {
                     node: frame,
+                    origin: frame_origin,
                     record,
                 });
             }

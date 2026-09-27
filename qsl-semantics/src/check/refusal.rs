@@ -210,6 +210,17 @@ impl TryFrom<LimitKind> for CheckingLimitKind {
 /// postcondition it did admit, evaluated at runtime
 /// (`evaluate.rs`'s `select_anchor`) over a population value with no
 /// attached pre binding.
+///
+/// FR-104 adds a second checking-time `wrong_snapshot`/`wrong-anchor`
+/// refusal -- `result` named anywhere but an admitting postcondition -- but
+/// it is not a third variant of this enum: [`super::refusal::CheckCause`]'s
+/// own [`super::refusal::CheckCause::UnanchoredResult`] carries the payload
+/// FR-104-AC-2 needs (the clause kind and the operation), which this type
+/// cannot hold without widening every runtime consumer of the FR-090
+/// evaluation-cause contract. The two share one catalog cause
+/// (`wrong-anchor`) and nothing else: `UnanchoredResult` is `check`'s own
+/// checking-time path to it, [`Self::WrongAnchor`] stays the runtime-only
+/// path, and this enum's two-cause closure is otherwise unchanged.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum WrongSnapshotCause {
     /// A postcondition's `pre(...)` evaluated over a `Value::Population`

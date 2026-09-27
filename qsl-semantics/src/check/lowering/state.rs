@@ -19,7 +19,7 @@
 //! enters no key. FR-105 (QSL-279) replaces these bodies with the STD-111
 //! spellings when it emits them.
 
-use quire_exact::{EffectiveId, NodeKey, ValueType};
+use quire_exact::{EffectiveId, NodeKey, Origin, ValueType};
 
 use super::{fault, Binder, Binders, Lowering};
 use crate::check::claims::BinderSite;
@@ -70,8 +70,12 @@ pub(crate) struct LoweredClause {
     pub(crate) key: NodeKey,
     /// Each parameter's `value`/`parameter` node, in slot order.
     pub(crate) parameters: Vec<NodeKey>,
-    /// The `frame` node of the operation a `pre` or `post` clause names.
-    pub(crate) frame: Option<NodeKey>,
+    /// The `frame` node of the operation a `pre` or `post` clause names,
+    /// and the `Origin` of its own occurrence: one per named operation,
+    /// shared by every clause that names it, distinct even from another
+    /// operation whose frame node happens to hold equal content
+    /// (FR-104-AC-5).
+    pub(crate) frame: Option<(NodeKey, Origin)>,
     /// The `Boolean` scalar type node: the clause's semantic type.
     pub(crate) boolean: NodeKey,
     /// The model object type node of each of `population_types`, in order.
@@ -124,9 +128,9 @@ impl Lowering<'_> {
         let (anchor, frame) = match &clause.anchor {
             None => (self.object_node(clause.context, location)?, None),
             Some(anchor) => {
-                let (anchor, frame) = self.operation_anchor(anchor, location)?;
+                let (anchor, frame, frame_origin) = self.operation_anchor(anchor, location)?;
                 self.record(anchor, OccurrenceRole::Anchor, location.clone());
-                (anchor, Some(frame))
+                (anchor, Some((frame, frame_origin)))
             }
         };
         let kind = self.text_literal(kind_spelling(clause.kind), location)?;
@@ -167,14 +171,16 @@ impl Lowering<'_> {
         })
     }
 
-    /// The `operation_anchor` and `frame` nodes of `anchor`'s operation:
-    /// one of each per (declaring object type, operation name), however
-    /// many clauses name it (their contents are equal, so their keys are).
+    /// The `operation_anchor` and `frame` nodes of `anchor`'s operation, and
+    /// the frame's own occurrence: one of each per (declaring object type,
+    /// operation name), however many clauses name it (their contents are
+    /// equal, so their keys are, but the occurrence is minted once per
+    /// operation identity, not per node -- see [`Lowering::frame_occurrence`]).
     fn operation_anchor(
         &mut self,
         anchor: &AnchorInput<'_>,
         location: &Location,
-    ) -> Result<(NodeKey, NodeKey), CheckRefusal> {
+    ) -> Result<(NodeKey, NodeKey, Origin), CheckRefusal> {
         let declaring = self.object_node(anchor.declaring, location)?;
         let effect = anchor.operation.effect();
         let mut modifies = Vec::with_capacity(effect.modifies.len());
@@ -209,6 +215,8 @@ impl Lowering<'_> {
                 ],
             },
         )?;
+        let frame_origin =
+            self.frame_occurrence(anchor.declaring, anchor.operation.name(), frame, location)?;
         let operation = self.text_literal(anchor.operation.name(), location)?;
         let anchor = self.insert(
             location,
@@ -224,7 +232,7 @@ impl Lowering<'_> {
                 ],
             },
         )?;
-        Ok((anchor, frame))
+        Ok((anchor, frame, frame_origin))
     }
 
     /// A frame `modifies` entry: the field member `field`'s declaring

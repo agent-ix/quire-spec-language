@@ -461,6 +461,208 @@ pub(super) fn archive_population() -> Value {
     })
 }
 
+/// [`config_version_document`], with `operations` on `ConfigVersion`
+/// instead of exactly one (SR-736 FND-001: two operations of one frame
+/// content still key two distinct `operation-contract` records).
+pub(super) fn config_version_document_with_operations(operations: Vec<Value>) -> Vec<u8> {
+    let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
+    let constructs = vec![
+        wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
+        wire_construct("population", meaning::POPULATION, json!({})),
+    ];
+    let types = vec![wire_type(
+        &config_version,
+        "object_type",
+        json!({
+            "supertypes": [],
+            "fields": [
+                wire_field(
+                    &config_version_identity("versionNumber"),
+                    "versionNumber",
+                    "ix://quire/native/Integer",
+                    "required",
+                    1,
+                ),
+                wire_field(
+                    &config_version_identity("parent"),
+                    "parent",
+                    &config_version,
+                    "optional",
+                    1,
+                ),
+            ],
+            "operations": operations,
+            "relationships": [],
+        }),
+    )];
+    let population_identity = format!("ix://{PACKAGE_IDENTITY}/config_history");
+    let population = json!({
+        "identity": population_identity.clone(),
+        "displayName": population_identity.clone(),
+        "kind": {"module": PACKAGE_IDENTITY, "name": "population"},
+        "members": [config_version],
+        "extent": "closed",
+        "origin": {
+            "generated": {
+                "generatorIdentity": population_identity.clone(),
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [population_identity],
+            }
+        },
+    });
+    wire_envelope(json!(constructs), json!(types), json!([population]))
+        .to_string()
+        .into_bytes()
+}
+
+/// `ConfigVersion` (with `operation`, TC-458's own shape) and `Sub`, an
+/// object type with `supertypes: [ConfigVersion]` and no operations or
+/// population membership of its own (SR-723 FND-007, SR-736 FND-002): a
+/// state clause `on Config::Sub` covers `config_history` only by
+/// conformance, and `on Config::Sub::<name>` resolves the operation
+/// `ConfigVersion` declares, keeping `ConfigVersion` as its declaring type.
+pub(super) fn subtype_document(operation: Value) -> Vec<u8> {
+    let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
+    let sub = format!("ix://{PACKAGE_IDENTITY}/Sub");
+    let constructs = vec![
+        wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
+        wire_construct("population", meaning::POPULATION, json!({})),
+    ];
+    let config_version_type = wire_type(
+        &config_version,
+        "object_type",
+        json!({
+            "supertypes": [],
+            "fields": [
+                wire_field(
+                    &config_version_identity("versionNumber"),
+                    "versionNumber",
+                    "ix://quire/native/Integer",
+                    "required",
+                    1,
+                ),
+                wire_field(
+                    &config_version_identity("parent"),
+                    "parent",
+                    &config_version,
+                    "optional",
+                    1,
+                ),
+            ],
+            "operations": [operation],
+            "relationships": [],
+        }),
+    );
+    let sub_type = wire_type(
+        &sub,
+        "object_type",
+        json!({
+            "supertypes": [config_version],
+            "fields": [],
+            "operations": [],
+            "relationships": [],
+        }),
+    );
+    let population_identity = format!("ix://{PACKAGE_IDENTITY}/config_history");
+    let population = json!({
+        "identity": population_identity.clone(),
+        "displayName": population_identity.clone(),
+        "kind": {"module": PACKAGE_IDENTITY, "name": "population"},
+        "members": [format!("ix://{PACKAGE_IDENTITY}/ConfigVersion")],
+        "extent": "closed",
+        "origin": {
+            "generated": {
+                "generatorIdentity": population_identity.clone(),
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [population_identity],
+            }
+        },
+    });
+    wire_envelope(
+        json!(constructs),
+        json!([config_version_type, sub_type]),
+        json!([population]),
+    )
+    .to_string()
+    .into_bytes()
+}
+
+/// Two unrelated object types `Left` and `Right`, each declaring its own
+/// `dup(): Boolean` operation with an empty frame, and `Both`, whose
+/// `supertypes: [Left, Right]` inherits both (SR-736 FND-006): neither
+/// declaring type is more derived than the other, so `Config::Both::dup`
+/// is ambiguous.
+pub(super) fn ambiguous_operation_document() -> Vec<u8> {
+    let left = format!("ix://{PACKAGE_IDENTITY}/Left");
+    let right = format!("ix://{PACKAGE_IDENTITY}/Right");
+    let both = format!("ix://{PACKAGE_IDENTITY}/Both");
+    let dup = |owner: &str| {
+        json!({
+            "identity": format!("{owner}/dup"),
+            "name": "dup",
+            "params": [],
+            "returns": {
+                "typeRef": "ix://quire/native/Boolean",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                "nullable": false,
+            },
+            "pre": [],
+            "post": [],
+            "origin": {
+                "source": {
+                    "sourceIdentity": format!("ix://{PACKAGE_IDENTITY}/spec"),
+                    "path": "spec.qspec",
+                    "startLine": 1,
+                    "startColumn": 1,
+                },
+            },
+            "frame": {"modifies": [], "creates": [], "deletes": []},
+        })
+    };
+    let constructs = vec![wire_construct(
+        "object_type",
+        meaning::OBJECT_TYPE,
+        json!({}),
+    )];
+    let left_type = wire_type(
+        &left,
+        "object_type",
+        json!({
+            "supertypes": [],
+            "fields": [],
+            "operations": [dup(&left)],
+            "relationships": [],
+        }),
+    );
+    let right_type = wire_type(
+        &right,
+        "object_type",
+        json!({
+            "supertypes": [],
+            "fields": [],
+            "operations": [dup(&right)],
+            "relationships": [],
+        }),
+    );
+    let both_type = wire_type(
+        &both,
+        "object_type",
+        json!({
+            "supertypes": [left, right],
+            "fields": [],
+            "operations": [],
+            "relationships": [],
+        }),
+    );
+    wire_envelope(
+        json!(constructs),
+        json!([left_type, right_type, both_type]),
+        json!([]),
+    )
+    .to_string()
+    .into_bytes()
+}
+
 /// [`config_version_document`], with an extra `populations[]` entry
 /// appended (TC-461 step 5).
 pub(super) fn config_version_document_with_population(
