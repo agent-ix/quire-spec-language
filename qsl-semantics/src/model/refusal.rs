@@ -516,6 +516,26 @@ pub enum ModelRefusalCause {
         /// process.
         entry: String,
     },
+    /// FR-103: an operation's `modifies`/`creates`/`deletes` entry names a
+    /// declaration of this domain package, but of the wrong meaning for
+    /// that member (e.g. `modifies` naming an object type, `creates`
+    /// naming a field). Shares [`Self::IntakeMalformedDeclaration`]'s tag
+    /// (`malformed-declaration`) but, like [`Self::FrameEntryMissing`] and
+    /// [`Self::FrameEntryUnsupported`], carries the entry itself in a
+    /// structured field rather than only in free-text `detail`.
+    FrameEntryMalformed {
+        /// The operation's own identity string.
+        node: String,
+        /// The operation's source artifact, as
+        /// [`Self::IntakeMalformedDeclaration`]'s own field.
+        artifact: Option<String>,
+        /// The operation's source position, as
+        /// [`Self::IntakeMalformedDeclaration`]'s own field.
+        span: Option<LocatedSpan>,
+        /// The frame entry identity string that names a declaration of the
+        /// wrong meaning for its member.
+        entry: String,
+    },
     /// FR-154 Intake check 1 (`model-complete.md:67`): the selection's
     /// digest domain is not the one domain Intake accepts.
     DigestDomainMismatch {
@@ -771,6 +791,7 @@ impl ModelRefusalCause {
             | Self::UnsupportedDeclarationForm { .. }
             | Self::FrameEntryMissing { .. }
             | Self::FrameEntryUnsupported { .. }
+            | Self::FrameEntryMalformed { .. }
             | Self::DigestDomainMismatch { .. }
             | Self::MissingSelection { .. }
             | Self::ByteDigestMismatch { .. }
@@ -846,6 +867,7 @@ impl ModelRefusalCause {
             Self::DuplicatePath { .. } => "duplicate-path",
             Self::MalformedDeclaration
             | Self::IntakeMalformedDeclaration { .. }
+            | Self::FrameEntryMalformed { .. }
             | Self::ReservedPackageIdentity { .. } => "malformed-declaration",
             Self::DuplicateSelection { .. } => "duplicate-identity",
             Self::UnsupportedDeclarationForm { .. } => "declaration-form",
@@ -907,6 +929,7 @@ impl ModelRefusalCause {
             | Self::PortDirection { .. }
             | Self::MalformedDeclaration
             | Self::IntakeMalformedDeclaration { .. }
+            | Self::FrameEntryMalformed { .. }
             | Self::ReservedPackageIdentity { .. }
             | Self::WrongModelSelection { .. } => "invalid_model_binding",
             Self::FamilySteps { .. }
@@ -1224,6 +1247,23 @@ pub mod fixtures {
             }),
             entry: String::new(),
         },
+        FrameEntryMalformed => ModelRefusalCause::FrameEntryMalformed {
+            node: String::new(),
+            artifact: Some(String::new()),
+            span: Some(LocatedSpan {
+                start: Position {
+                    byte: 0,
+                    line: 1,
+                    column: 1,
+                },
+                end: Position {
+                    byte: 0,
+                    line: 1,
+                    column: 1,
+                },
+            }),
+            entry: String::new(),
+        },
         DigestDomainMismatch => ModelRefusalCause::DigestDomainMismatch {
             expected: crate::model::key::SHA256_JCS_DIGEST_DOMAIN,
             actual: String::new(),
@@ -1382,6 +1422,7 @@ pub(crate) mod tests {
             ModelRefusalCause::DuplicatePath { .. } => "duplicate-path",
             ModelRefusalCause::MalformedDeclaration
             | ModelRefusalCause::IntakeMalformedDeclaration { .. }
+            | ModelRefusalCause::FrameEntryMalformed { .. }
             | ModelRefusalCause::ReservedPackageIdentity { .. } => "malformed-declaration",
             ModelRefusalCause::DuplicateSelection { .. } => "duplicate-identity",
             ModelRefusalCause::UnsupportedDeclarationForm { .. } => "declaration-form",
@@ -1440,6 +1481,7 @@ pub(crate) mod tests {
             ModelRefusalCause::PortDirection { .. } => "invalid_model_binding",
             ModelRefusalCause::MalformedDeclaration => "invalid_model_binding",
             ModelRefusalCause::IntakeMalformedDeclaration { .. } => "invalid_model_binding",
+            ModelRefusalCause::FrameEntryMalformed { .. } => "invalid_model_binding",
             ModelRefusalCause::ReservedPackageIdentity { .. } => "invalid_model_binding",
             ModelRefusalCause::WrongModelSelection { .. } => "invalid_model_binding",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "resource_exhausted",

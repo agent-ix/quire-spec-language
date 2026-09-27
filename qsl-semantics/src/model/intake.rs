@@ -914,6 +914,17 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         .diagnostics
         .iter()
         .filter(|located| located.severity == agent_ix_semantic_ir::diag::Severity::Error)
+        // FR-103 (QSL-273): a `modifies`/`creates`/`deletes` frame entry's
+        // resolution is QSL's own, strictly finer classification
+        // (`resolve_pending_frames`/`resolve_frame_array`), not this
+        // validator's own coarser `UNRESOLVED_FRAME_PATH` rule (which
+        // cannot distinguish "names no declaration at all" from "names a
+        // declaration of the wrong kind", the distinction FR-103-AC-2
+        // itself draws). Surfacing it here as a `malformed-declaration`
+        // refusal would preempt `resolve_pending_frames` for every frame
+        // entry it also flags, so it is filtered out and left entirely to
+        // this reader's own per-node classification.
+        .filter(|located| located.code != agent_ix_semantic_ir::constructs::UNRESOLVED_FRAME_PATH)
         .map(|located| {
             let node = if located.owner.is_empty() {
                 "$".to_owned()
@@ -1067,6 +1078,30 @@ fn unsupported_frame_feature(
             entry: entry.to_owned(),
         },
         detail: format!("{at}: {entry:?} names a relationship or a process, never grantable"),
+    }
+}
+
+/// FR-103: `entry` (a `modifies`/`creates`/`deletes` frame entry) names a
+/// declaration of this domain package, but of the wrong meaning for that
+/// member (an object type for `modifies`, a field for `creates`/`deletes`,
+/// and so on). See [`missing_frame_declaration`] for `node`/`artifact`/
+/// `span`.
+fn malformed_frame_entry(
+    node: String,
+    artifact: Option<String>,
+    span: Option<LocatedSpan>,
+    entry: &str,
+    at: &str,
+) -> ModelRefusal {
+    ModelRefusal {
+        code: Code::InvalidModelBinding,
+        cause: ModelRefusalCause::FrameEntryMalformed {
+            node,
+            artifact,
+            span,
+            entry: entry.to_owned(),
+        },
+        detail: format!("{at}: {entry:?} names a declaration of a different meaning"),
     }
 }
 
@@ -2149,16 +2184,56 @@ fn resolve_frame_array(
                 ))
             }
             Some(_) => {
-                return Err(malformed_declaration(
+                return Err(malformed_frame_entry(
                     frame.node.clone(),
                     frame.artifact.clone(),
                     frame.span,
-                    format!("{at}: {entry:?} names a declaration of a different meaning"),
+                    entry,
+                    at,
                 ))
             }
         }
     }
     Ok(keys)
+}
+
+/// One [`PendingFrame`]'s resolved [`OperationEffect`]: `modifies`, then
+/// `creates`, then `deletes`, each checked in document order, reporting the
+/// first that fails (FR-103's own Behavior; TC-458-AC-2 step 5).
+fn resolve_frame(
+    package: &str,
+    classification: &HashMap<&str, FrameEntryKind>,
+    frame: &PendingFrame,
+) -> Result<OperationEffect, ModelRefusal> {
+    let modifies = resolve_frame_array(
+        package,
+        classification,
+        frame,
+        &frame.modifies,
+        FrameEntryKind::Field,
+        Some(FrameEntryKind::Relationship),
+    )?;
+    let creates = resolve_frame_array(
+        package,
+        classification,
+        frame,
+        &frame.creates,
+        FrameEntryKind::ObjectType,
+        None,
+    )?;
+    let deletes = resolve_frame_array(
+        package,
+        classification,
+        frame,
+        &frame.deletes,
+        FrameEntryKind::ObjectType,
+        None,
+    )?;
+    Ok(OperationEffect {
+        modifies,
+        creates,
+        deletes,
+    })
 }
 
 /// FR-103: resolves every [`PendingFrame`] `read_operation_member` queued,
@@ -2179,38 +2254,7 @@ fn resolve_pending_frames(
         .collect();
     let mut resolved: Vec<(DeclarationKey, OperationEffect)> = Vec::with_capacity(pending.len());
     for frame in pending {
-        let effect = (|| {
-            let modifies = resolve_frame_array(
-                package,
-                &classification,
-                frame,
-                &frame.modifies,
-                FrameEntryKind::Field,
-                Some(FrameEntryKind::Relationship),
-            )?;
-            let creates = resolve_frame_array(
-                package,
-                &classification,
-                frame,
-                &frame.creates,
-                FrameEntryKind::ObjectType,
-                None,
-            )?;
-            let deletes = resolve_frame_array(
-                package,
-                &classification,
-                frame,
-                &frame.deletes,
-                FrameEntryKind::ObjectType,
-                None,
-            )?;
-            Ok(OperationEffect {
-                modifies,
-                creates,
-                deletes,
-            })
-        })();
-        match effect {
+        match resolve_frame(package, &classification, frame) {
             Ok(effect) => resolved.push((frame.operation.clone(), effect)),
             Err(refusal) => refusals.push(refusal),
         }
@@ -2219,9 +2263,20 @@ fn resolve_pending_frames(
         return;
     }
     for (operation, effect) in resolved {
-        if let Some(DomainPackageRecord::OperationMember(member)) =
-            records.iter_mut().find(|record| record.key() == &operation)
-        {
+        let member = records.iter_mut().find(|record| record.key() == &operation);
+        // `operation` is always a key `read_operation_member` minted for the
+        // very `OperationMemberRecord` its own caller (`read_object_type`)
+        // pushed into `records` moments before queuing this `PendingFrame`
+        // (see `PendingFrame`'s own doc comment) -- a miss here is a broken
+        // invariant of this reader, never a property of the package, so it
+        // is loud in every debug build (every test in this crate runs
+        // unoptimized) rather than a silent no-op that would admit the
+        // operation with the empty effect in release.
+        debug_assert!(
+            matches!(member, Some(DomainPackageRecord::OperationMember(_))),
+            "resolve_pending_frames: {operation:?} names no OperationMemberRecord of records"
+        );
+        if let Some(DomainPackageRecord::OperationMember(member)) = member {
             member.effect = effect;
         }
     }

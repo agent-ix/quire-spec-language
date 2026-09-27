@@ -238,14 +238,26 @@ pub enum AssemblyCause {
         node: String,
     },
     /// An admitted domain package's record has no type environment form
-    /// yet: an operation, a record value type, a systems part, port or
-    /// allocation, or a field whose value type or multiplicity no kernel
-    /// type represents.
+    /// yet: a record value type, a systems part, port or allocation, or a
+    /// field whose value type or multiplicity no kernel type represents.
+    /// (FR-103, QSL-273: an operation is no longer refused here -- see
+    /// `model_operation`.)
     UnsupportedModelMember {
         /// The declaration's alias.
         alias: String,
         /// The record's IR node identity.
         node: String,
+    },
+    /// A state clause (`invariant`/`pre`/`post`) declared in the `1-draft`
+    /// unit. FR-102 (QSL-273) builds the form at S2; FR-104 (QSL-277) is
+    /// the ticket that checks it (context, anchor, observation-keyed facts,
+    /// body typing) and declares it on the assembled package. Until then
+    /// the assembler refuses it here rather than silently dropping it, so
+    /// a unit holding one never checks and emits as if the clause said
+    /// nothing.
+    UnsupportedStateClause {
+        /// The clause's declared name.
+        name: String,
     },
 }
 
@@ -269,9 +281,9 @@ impl AssemblyCause {
             // FR-091-OQ-12: STD-112 has not published the topology causes.
             Self::UnitGraphTopology { .. } => Code::InvalidPackage,
             Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
-            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
-                Code::UnknownRequiredFeature
-            }
+            Self::FloatingType { .. }
+            | Self::UnsupportedModelMember { .. }
+            | Self::UnsupportedStateClause { .. } => Code::UnknownRequiredFeature,
             Self::AliasCycle { .. } => Code::InvalidPackage,
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
                 DeclarationCause::DuplicateMember(_) => Code::AmbiguousDeclaration,
@@ -311,9 +323,9 @@ impl AssemblyCause {
             Self::UnitGraphTopology { .. } => "unit-graph-topology",
             Self::IllFormedBounds(_) => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
-            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
-                "unsupported-feature"
-            }
+            Self::FloatingType { .. }
+            | Self::UnsupportedModelMember { .. }
+            | Self::UnsupportedStateClause { .. } => "unsupported-feature",
             Self::AliasCycle { .. } => "definition-cycle",
             Self::UndeclaredAlias { .. }
             | Self::UnadmittedModel { .. }
@@ -388,6 +400,10 @@ struct Unit {
     functions: Vec<FunctionDeclaration>,
     /// Each declared type name's declarations, with the span of each name.
     declared: BTreeMap<String, Vec<(Declared, Span)>>,
+    /// Each state clause's declared name and declaration span, refused as
+    /// [`AssemblyCause::UnsupportedStateClause`] by the caller (FR-104,
+    /// QSL-277, is not built yet).
+    state_clauses: Vec<(String, Span)>,
 }
 
 impl Unit {
@@ -400,6 +416,7 @@ impl Unit {
             enums: Vec::new(),
             functions: Vec::new(),
             declared: BTreeMap::new(),
+            state_clauses: Vec::new(),
         };
         for form in forms {
             match form.into_form() {
@@ -432,11 +449,14 @@ impl Unit {
                 // ticket that checks it (context, anchor, observation-keyed
                 // facts, body typing) and declares it on the assembled
                 // package. Nothing downstream of this assembler reads a
-                // state clause yet, so it is admitted (not refused) and
-                // dropped here, the same "S2 builds it, S3 does not check
-                // it yet" split FR-102-AC-3 states for the body's own
-                // `self`/`result`/`reaches` forms.
-                DeclarationForm::StateClause(_) => {}
+                // state clause yet, so `assemble_with_limits` refuses each
+                // one as `AssemblyCause::UnsupportedStateClause` rather than
+                // silently dropping it -- a checked, emittable package must
+                // never say nothing about a clause the unit declared.
+                DeclarationForm::StateClause(clause) => {
+                    unit.state_clauses
+                        .push((clause.name.name, clause.spans.declaration));
+                }
             }
         }
         unit
@@ -482,12 +502,12 @@ impl TypeNames for Names {
 /// The object types of the domain package admitted for the `model`
 /// declaration `alias`, each named `alias::T` with `T` its artifact id, and
 /// declaring its supertypes by their effective identities and its fields
-/// with their value types, presences and redefinitions. Every other record
-/// an object type's shape would need and the type environment cannot hold
-/// (an operation, a record value type, a systems part, port or allocation)
-/// refuses as [`AssemblyCause::UnsupportedModelMember`]. Relationship and
-/// population records name no type environment entry; they stay in the
-/// admitted model `check` keys model nodes from.
+/// with their value types, presences and redefinitions, and its operations
+/// (FR-103). Every other record an object type's shape would need and the
+/// type environment cannot hold (a record value type, a systems part, port
+/// or allocation) refuses as [`AssemblyCause::UnsupportedModelMember`].
+/// Relationship and population records name no type environment entry;
+/// they stay in the admitted model `check` keys model nodes from.
 fn model_object_types(
     alias: &str,
     model: &SelectedModel,
@@ -1108,6 +1128,17 @@ impl PackageDeclarations {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
+
+        // FR-102/FR-104: a state clause builds at S2 but has no checker or
+        // declaration yet (QSL-277 owns FR-104). Refuse it here, at its own
+        // declaration span, rather than admitting a package that silently
+        // says nothing about a clause the unit declared.
+        for (name, span) in &unit.state_clauses {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::UnsupportedStateClause { name: name.clone() },
+                span: *span,
+            });
+        }
 
         // Each `model` declaration's admitted domain package, and its
         // object types by name.
