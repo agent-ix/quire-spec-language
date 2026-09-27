@@ -1064,7 +1064,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Self::project(slot, *optional, node.value_type())?
             }
             NodeKind::Attribute {
-                field, optional, ..
+                field,
+                optional,
+                derefed,
+                ..
             } => {
                 let Value::Reference(reference) = self.pop()? else {
                     return Err(invariant());
@@ -1073,10 +1076,16 @@ impl<'a, 'm> Machine<'a, 'm> {
                 // S6a accounting rule (`value-accounting.md`, cited by
                 // FR-107's Behavior section), never a `Value`-family one:
                 // this `Attribute` arm is shared by both families, and
-                // charging it unconditionally would add two charge units
-                // to every `Value`-family attribute read that had none
-                // before FR-107 (SR-750 FND-008).
+                // charging it unconditionally would add charge units to
+                // every `Value`-family attribute read that had none before
+                // FR-107 (SR-750 FND-008). `model.deref` charges once per
+                // explicit `deref(...)` in the source, never for a bare
+                // `self.f`/`r.f` read that types identically (SR-750
+                // FND-008 round 2, `derefed`, `check/ir.rs`'s own doc).
                 if self.is_protocol_clause() {
+                    if *derefed {
+                        charge_named(self.meter, ChargePoint::ModelDeref)?;
+                    }
                     charge_named(self.meter, ChargePoint::ModelNavigate)?;
                 }
                 let slot = self
@@ -2335,5 +2344,132 @@ mod tests {
             }
             other => panic!("expected FamilyEvaluated(Refused(_)), got {other:?}"),
         }
+    }
+
+    /// SR-750 FND-008 round 2 (`FR-107-evaluate-state-clauses-at-s6a.md:92-93`,
+    /// "charge `model.deref` for each `deref(...)` and `model.navigate` for
+    /// each field read"): a protocol-clause `deref(r).x` charges both
+    /// `ModelDeref` and `ModelNavigate`, in that order -- confirmed by
+    /// running it (this fails against the code before this fix, which
+    /// charged `ModelNavigate` alone for every `Attribute` read regardless
+    /// of an explicit `deref(...)`).
+    #[trace("TC-467")]
+    #[test]
+    fn a_protocol_clause_deref_charges_model_deref_then_model_navigate() {
+        let a_with_field = qsl_semantics::model::domain_package::DomainPackage::new(
+            qsl_semantics::model::domain_package::DomainPackageRef::fixture("bundle.qsl278-fnd008"),
+            vec![
+                qsl_semantics::model::domain_package::DomainPackageRecord::ObjectType(
+                    qsl_semantics::model::domain_package::ObjectTypeRecord {
+                        key: DeclarationKey::fixture("model.A"),
+                        interface_features: None,
+                        abstract_type: false,
+                        supertypes: Vec::new(),
+                    },
+                ),
+            ],
+        );
+        let view = match normalize(&a_with_field, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("expected a completed effective view, got {other:?}"),
+        };
+        let a = view
+            .type_identities()
+            .get(&DeclarationKey::fixture("model.A"))
+            .copied()
+            .expect("model.A has a type-level effective declaration");
+        let types = qsl_semantics::value::declaration::TypeEnvironment::new(
+            [],
+            [
+                qsl_semantics::value::declaration::ObjectTypeDeclaration::new(
+                    a,
+                    "M::A",
+                    vec![qsl_semantics::value::declaration::FieldDeclaration::new(
+                        "x",
+                        quire_exact::ValueType::Integer,
+                        quire_exact::Presence::Required,
+                    )],
+                ),
+            ],
+        )
+        .expect("one object type with one field admits cleanly");
+        let model = qsl_semantics::check::AdmittedModel::new(&a_with_field, &view)
+            .expect("the view is the domain package's own");
+        let graph = PackageDeclarations {
+            types,
+            models: vec![model],
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        }
+        .check(CheckingLimits::default())
+        .expect("one type with one field checks cleanly");
+
+        let expression = graph
+            .check_expression(
+                vec![("r".to_owned(), ValueType::Reference(a))],
+                &Expression::Field {
+                    operand: Box::new(Expression::Deref(Box::new(Expression::Name(
+                        "r".to_owned(),
+                    )))),
+                    field: "x".to_owned(),
+                },
+                None,
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .expect("deref(r).x checks as a standalone expression");
+        // Marking this location `Current` (never `Pre`) makes `reads.is_some()`
+        // true (`is_protocol_clause`) while `objects_for` reads `objects`
+        // itself, no `pre_objects` needed.
+        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
+            std::collections::BTreeMap::from([(
+                expression.root().location().clone(),
+                qsl_semantics::check::Observation::Current,
+            )]);
+        let reference = ObjectReference::new(
+            quire_exact::UniverseId::from_digest([9; 32]),
+            a,
+            quire_exact::ObjectId::new("a1".to_owned()).expect("non-empty key"),
+        );
+        let objects = ObjectEnvironment::new(
+            graph.scope().types(),
+            [(
+                reference.clone(),
+                vec![(
+                    "x",
+                    quire_exact::FieldValue::Present(Value::Integer(7_i64.into())),
+                )],
+            )],
+        )
+        .expect("one object with its one required field admits cleanly");
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let arguments = vec![Value::Reference(reference)];
+        let evaluation = Machine::with_pre(
+            graph.scope(),
+            &graph,
+            &objects,
+            None,
+            Some(&reads),
+            &mut meter,
+            graph.dispatch_tables(),
+        )
+        .run(expression.root(), expression.slots(), arguments)
+        .expect("deref(r).x over an admitted object completes");
+        match evaluation.outcome {
+            FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(value))) => {
+                assert_eq!(value, quire_exact::Integer::from(7_i64));
+            }
+            other => panic!("expected Evaluated(Completed(Integer(_))), got {other:?}"),
+        }
+        let charges: Vec<_> = meter
+            .admitted_charges()
+            .iter()
+            .copied()
+            .filter(|point| matches!(point, ChargePoint::ModelDeref | ChargePoint::ModelNavigate))
+            .collect();
+        assert_eq!(
+            charges,
+            [ChargePoint::ModelDeref, ChargePoint::ModelNavigate],
+            "deref(r).x charges model.deref once, then model.navigate once"
+        );
     }
 }
