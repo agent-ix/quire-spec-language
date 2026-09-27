@@ -143,11 +143,18 @@ enum Halt {
     Stop(Stop),
     /// An evaluator stop located at a node other than the current task's
     /// (a `sum` seed is located at its summand, not at the `sum` node).
-    Located(Stop, Location),
+    Located(Box<LocatedStop>),
     /// A family-owned evaluation-time refusal or undefined result.
     Family(FamilyResult),
     /// An S6a invariant break: never converted to an `Outcome`.
     Fault(InternalFault),
+}
+
+/// A [`Stop`] and the location it reports, boxed in [`Halt::Located`] to keep
+/// `Halt` small.
+struct LocatedStop {
+    stop: Stop,
+    location: Location,
 }
 
 /// A quantity whose `UnitId` neither the package's unit table nor this
@@ -463,11 +470,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                     }),
                     Halt::Stop(stop) => Ok(Self::stopped(stop, located.location())),
                     // An imported call site still locates at that call.
-                    Halt::Located(stop, location) => Ok(Self::stopped(
-                        stop,
+                    Halt::Located(at) => Ok(Self::stopped(
+                        at.stop,
                         self.imported
                             .first()
-                            .map_or(&location, |call| call.location()),
+                            .map_or(&at.location, |call| call.location()),
                     )),
                 };
             }
@@ -1507,10 +1514,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                             Some(Value::Integer(match iteration.accumulator.take() {
                                 None => {
                                     if domain.is_some_and(|domain| !domain.contains(&summand)) {
-                                        return Err(Halt::Located(
-                                            Stop::Undefined(Undefined::SumOutOfDomain),
-                                            body.location().clone(),
-                                        ));
+                                        return Err(Halt::Located(Box::new(LocatedStop {
+                                            stop: Stop::Undefined(Undefined::SumOutOfDomain),
+                                            location: body.location().clone(),
+                                        })));
                                     }
                                     summand
                                 }
