@@ -3142,31 +3142,28 @@ fn tc465_row24_dangling_target_in_a_complete_population_refuses_dangling_referen
 
 /// Row 25 (check 7): healthy-parent plus a second population `archive`
 /// over `ConfigVersion`, `complete: false`, that no reference names --
-/// admits.
+/// admits (SR-751 FND-007 round 2: `archive` is `tc465_document_with_
+/// archive_population`'s own genuine, declared population, not a bare
+/// name pushed onto a package that never declares it; that undeclared
+/// name previously made this row wrongly assert a `wrong-role-mapping`
+/// refusal, when TC-465 states this row admits).
 #[trace("TC-465", "FR-106-AC-4")]
 #[test]
 fn tc465_row25_an_incomplete_population_no_reference_names_still_admits() {
-    let document = tc465_document();
+    let document = tc465_document_with_archive_population();
+    let archive = "ix://example/config-version/archive";
     let result = run_tc465_current(
         &document,
         |value| {
             value["populations"].as_array_mut().unwrap().push(json!({
-                "population": "ix://example/config-version/archive",
+                "population": archive,
                 "complete": false,
                 "objects": [],
             }));
         },
         None,
     );
-    // `archive` is not declared on this test's own package (a genuine
-    // second population would need a package variant), so this asserts
-    // the one thing this row is actually testing here: an incomplete
-    // population no reference names is never itself a reason to refuse
-    // or return `Incomplete` before that population's own membership is
-    // even checked -- `wrong-role-mapping` (an undeclared population) is
-    // the correct, and only, remaining defect once `archive` is not a
-    // real population of this package.
-    assert_tc465_refused(result, "invalid_runtime_input", "wrong-role-mapping");
+    result.expect("an incomplete population no reference names still admits");
 }
 
 /// FR-106 check 7's own last sentence ("admission SHALL skip the dangling
