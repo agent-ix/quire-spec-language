@@ -501,7 +501,7 @@ pub fn admit_current_snapshot(
         )));
     }
     check_model(&views, &snapshot.model)?;
-    let admitted = document::admit_populations(&views, types, &snapshot.populations, None)?;
+    let admitted = document::admit_populations(&views, types, &snapshot.populations, None, limits)?;
     Ok(admitted.environment)
 }
 
@@ -664,6 +664,7 @@ fn admit_invariant(
         types,
         &snapshot.populations,
         Some(&self_object.population),
+        limits,
     )?;
 
     // Check 9: self.
@@ -792,8 +793,10 @@ fn admit_operation(
         StateClauseKind::Postcondition => Some(self_object.population.as_str()),
         StateClauseKind::Invariant | StateClauseKind::Precondition => None,
     };
-    let pre_values = document::admit_population_values(views, types, &pre_snapshot.populations)?;
-    let post_values = document::admit_population_values(views, types, &post_snapshot.populations)?;
+    let pre_values =
+        document::admit_population_values(views, types, &pre_snapshot.populations, limits)?;
+    let post_values =
+        document::admit_population_values(views, types, &post_snapshot.populations, limits)?;
     document::check_population_completeness(
         &pre_snapshot.populations,
         &pre_values.completeness,

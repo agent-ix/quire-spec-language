@@ -904,15 +904,24 @@ pub(super) struct PopulationValues<'t> {
 /// document order. `types` is the checked package's own effective attribute
 /// set (`CheckedGraph::scope().types()`); `views` are the re-derived domain
 /// package views (population declarations and identity strings, `EffectiveId`
-/// conformance).
+/// conformance). `limits`' `objects_per_document`/`values_per_document`
+/// ceilings (FR-106 Inputs, `FR-106-admit-snapshots-and-invocations.md:52-54`)
+/// are enforced here, walk order, alongside check 1.2's own bytes/depth
+/// ceilings: `stage_limit_exceeded`/`objects-exceeded` once this document's
+/// object count would exceed `objects_per_document`, `values-exceeded` once
+/// its admitted field-value count would exceed `values_per_document` (SR-750
+/// FND-011: previously declared but never read).
 pub(super) fn admit_population_values<'t>(
     views: &[ModelView],
     types: &'t TypeEnvironment,
     populations: &[RawPopulation],
+    limits: ObservationLimits,
 ) -> Result<PopulationValues<'t>, AdmissionFailure> {
     let mut objects: Vec<(ObjectReference, Vec<(&str, FieldValue)>)> = Vec::new();
     let mut completeness = BTreeMap::new();
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut object_count: u64 = 0;
+    let mut value_count: u64 = 0;
 
     for entry in populations {
         completeness.insert(entry.population.clone(), entry.complete);
@@ -927,6 +936,13 @@ pub(super) fn admit_population_values<'t>(
             .entry(entry.population.clone())
             .or_default();
         for object in &entry.objects {
+            object_count += 1;
+            if object_count > limits.objects_per_document {
+                return Err(refuse(admission_record(
+                    "stage_limit_exceeded",
+                    "objects-exceeded",
+                )));
+            }
             if !seen.insert(object.key.clone()) {
                 return Err(refuse(
                     admission_record("invalid_runtime_input", "conflicting-identity")
@@ -1004,6 +1020,13 @@ pub(super) fn admit_population_values<'t>(
                                 .with("field", name.to_owned()),
                         )
                     })?;
+                value_count += 1;
+                if value_count > limits.values_per_document {
+                    return Err(refuse(admission_record(
+                        "stage_limit_exceeded",
+                        "values-exceeded",
+                    )));
+                }
                 attributes.push((name, field_value));
             }
             for (name, _) in &object.fields {
@@ -1182,8 +1205,9 @@ pub(super) fn admit_populations(
     types: &TypeEnvironment,
     populations: &[RawPopulation],
     self_population: Option<&str>,
+    limits: ObservationLimits,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
-    let values = admit_population_values(views, types, populations)?;
+    let values = admit_population_values(views, types, populations, limits)?;
     check_population_completeness(populations, &values.completeness, self_population)?;
     check_population_closure(
         populations,

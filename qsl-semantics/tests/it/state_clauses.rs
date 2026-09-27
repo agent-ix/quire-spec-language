@@ -1611,13 +1611,37 @@ fn tc465_invocation(
 }
 
 /// Runs `clause_name` over `document`, admitting `selection` under
-/// `snapshots`/`invocations` -- TC-465's own harness.
+/// `snapshots`/`invocations` -- TC-465's own harness, `ObservationLimits::
+/// default()`.
 fn run_tc465(
     document: &[u8],
     clause_name: &str,
     selection: qsl_semantics::model::observation::ClauseSelectionInput,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     invocations: BTreeMap<[u8; 32], Vec<u8>>,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    run_tc465_with_limits(
+        document,
+        clause_name,
+        selection,
+        snapshots,
+        invocations,
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    )
+}
+
+/// [`run_tc465`], with the `ObservationLimits` given explicitly (SR-750
+/// FND-011's `objects_per_document`/`values_per_document` rows).
+fn run_tc465_with_limits(
+    document: &[u8],
+    clause_name: &str,
+    selection: qsl_semantics::model::observation::ClauseSelectionInput,
+    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    limits: qsl_semantics::model::observation::ObservationLimits,
 ) -> Result<
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
@@ -1656,7 +1680,7 @@ fn run_tc465(
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         &provisions,
         &selection,
-        qsl_semantics::model::observation::ObservationLimits::default(),
+        limits,
     )
 }
 
@@ -1701,6 +1725,47 @@ fn run_tc465_current(
         },
         snapshots,
         BTreeMap::new(),
+    )
+}
+
+/// [`run_tc465_current`], with the `ObservationLimits` given explicitly
+/// (SR-750 FND-011's `objects_per_document`/`values_per_document` rows).
+fn run_tc465_current_with_limits(
+    document: &[u8],
+    mutate: impl FnOnce(&mut serde_json::Value),
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    let model_digest_hex = tc465_model_digest_hex(document);
+    let label = frame_label("current-snap");
+    let mut value = tc465_healthy_parent(&label, &model_digest_hex);
+    mutate(&mut value);
+    let bytes = value.to_string().into_bytes();
+    let selected = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&bytes),
+        ..label
+    };
+    let mut snapshots = BTreeMap::new();
+    snapshots.insert(selected.digest, bytes);
+    run_tc465_with_limits(
+        document,
+        "ParentOrder",
+        qsl_semantics::model::observation::ClauseSelectionInput::Current {
+            snapshot: selected,
+            anchor: qsl_semantics::model::observation::SelectedAnchor {
+                kind: qsl_semantics::model::observation::AnchorKind::Handler,
+                name: "validate".to_owned(),
+            },
+            self_object: qsl_semantics::model::observation::SelectedObject {
+                population: "ix://example/config-version/config_history".to_owned(),
+                key: "child".to_owned(),
+            },
+        },
+        snapshots,
+        BTreeMap::new(),
+        limits,
     )
 }
 
@@ -1846,6 +1911,36 @@ fn tc465_row2_oversized_document_refuses_input_bytes_exceeded() {
         None,
     );
     assert_tc465_refused(result, "stage_limit_exceeded", "input-bytes-exceeded");
+}
+
+/// SR-750 FND-011: `objects_per_document` (FR-106 Inputs,
+/// `FR-106-admit-snapshots-and-invocations.md:52-54`) is enforced: the
+/// healthy-parent snapshot's two objects (`root`, `child`) exceed a
+/// ceiling of 1.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn objects_per_document_limit_refuses_objects_exceeded() {
+    let document = tc465_document();
+    let limits = qsl_semantics::model::observation::ObservationLimits {
+        objects_per_document: 1,
+        ..qsl_semantics::model::observation::ObservationLimits::default()
+    };
+    let result = run_tc465_current_with_limits(&document, |_| {}, limits);
+    assert_tc465_refused(result, "stage_limit_exceeded", "objects-exceeded");
+}
+
+/// SR-750 FND-011: `values_per_document` is enforced: the healthy-parent
+/// snapshot's field values exceed a ceiling of 0.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn values_per_document_limit_refuses_values_exceeded() {
+    let document = tc465_document();
+    let limits = qsl_semantics::model::observation::ObservationLimits {
+        values_per_document: 0,
+        ..qsl_semantics::model::observation::ObservationLimits::default()
+    };
+    let result = run_tc465_current_with_limits(&document, |_| {}, limits);
+    assert_tc465_refused(result, "stage_limit_exceeded", "values-exceeded");
 }
 
 /// Row 3 (check 1.2): a field value nested 65 `present` levels deep.
