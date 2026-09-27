@@ -3,7 +3,7 @@
 
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::source::provenance::SourceRegion;
-use qsl_foundation::source::SourceReadCause;
+use qsl_foundation::source::{SourceLabel, SourceReadCause};
 use qsl_foundation::{Phase, Source, SourceIdentity, SyntaxLimit};
 
 /// Compatibility name for the crate's pre-existing diagnostic code type. The
@@ -83,14 +83,24 @@ pub enum HostCause {
     SelectionVersion,
     /// `invalid_digest`: a selection digest is not canonical SHA-256.
     SelectionDigest,
-    /// `invalid_source_identity`: a source label is empty or only
-    /// whitespace, or the path is empty (FR-001).
-    UnnamedSource,
-    /// `invalid_source_identity`: an edit names a different predecessor.
+    /// `invalid_source_identity`, cause `blank-label`: a source label is
+    /// empty or only Unicode `White_Space`; `label` is the first such label
+    /// in FR-001's order.
+    BlankLabel {
+        /// The first blank label.
+        label: SourceLabel,
+    },
+    /// `invalid_source_identity`, cause `empty-path`: every label is
+    /// non-blank and the path is empty (FR-001).
+    EmptyPath,
+    /// `invalid_source_map`: an edit names a different predecessor
+    /// (FR-001-AC-12); the refusal names no region.
     EditPredecessor,
-    /// `invalid_source_identity`: a CST node belongs to another parsed source.
+    /// `invalid_source_map`: a CST node belongs to another parsed source
+    /// (FR-001-AC-12); the refusal names no region.
     ForeignNode,
-    /// `invalid_source_identity`: a request is bound to another revision.
+    /// `invalid_source_map`: a request is bound to another revision
+    /// (FR-001-AC-12); the refusal names no region.
     RequestRevision,
     /// `invalid_source_map`: edits are unordered, overlapping or off a UTF-8
     /// boundary.
@@ -125,7 +135,7 @@ impl CompleteCause {
             Self::CallerCancelled => "caller-cancelled",
             Self::CorrespondenceLoss => "correspondence-loss",
             Self::EstablishedInvariantBroken => "established-invariant-broken",
-            Self::Host(cause) => cause.code().as_str(),
+            Self::Host(cause) => cause.tag(),
             Self::StageLimit(kind) => kind.catalog_cause(),
         }
     }
@@ -172,16 +182,33 @@ impl CompleteCause {
 }
 
 impl HostCause {
+    /// The stable catalog tag: `blank-label` and `empty-path` for the two
+    /// source-identity causes, the code's own tag for every other host cause.
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::BlankLabel { .. } => "blank-label",
+            Self::EmptyPath => "empty-path",
+            Self::SelectionIdentity
+            | Self::SelectionVersion
+            | Self::SelectionDigest
+            | Self::EditPredecessor
+            | Self::ForeignNode
+            | Self::RequestRevision
+            | Self::EditRanges
+            | Self::InvalidUtf8 => self.code().as_str(),
+        }
+    }
+
     /// The retained code this cause refines.
     pub fn code(self) -> CompleteCode {
         match self {
             Self::SelectionIdentity | Self::SelectionVersion => CompleteCode::InvalidIdentifier,
             Self::SelectionDigest => CompleteCode::InvalidDigest,
-            Self::UnnamedSource
-            | Self::EditPredecessor
+            Self::BlankLabel { .. } | Self::EmptyPath => CompleteCode::InvalidSourceIdentity,
+            Self::EditPredecessor
             | Self::ForeignNode
-            | Self::RequestRevision => CompleteCode::InvalidSourceIdentity,
-            Self::EditRanges => CompleteCode::InvalidSourceMap,
+            | Self::RequestRevision
+            | Self::EditRanges => CompleteCode::InvalidSourceMap,
             Self::InvalidUtf8 => CompleteCode::InvalidUtf8,
         }
     }
@@ -254,9 +281,13 @@ pub fn read_source(
         let limit = (refusal.cause == SourceReadCause::ByteBudget)
             .then_some(SyntaxLimit::SourceBytes { bound: byte_limit });
         let (code, cause) = match refusal.cause {
-            SourceReadCause::UnnamedSource => (
+            SourceReadCause::BlankLabel { label } => (
                 CompleteCode::InvalidSourceIdentity,
-                CompleteCause::Host(HostCause::UnnamedSource),
+                CompleteCause::Host(HostCause::BlankLabel { label }),
+            ),
+            SourceReadCause::EmptyPath => (
+                CompleteCode::InvalidSourceIdentity,
+                CompleteCause::Host(HostCause::EmptyPath),
             ),
             // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
             // one of the four kinds the catalog admits.
@@ -313,6 +344,28 @@ pub fn error(
                 .region(qsl_foundation::Span { start, end })
                 .expect("internal offsets are UTF-8 boundaries"),
         ),
+        related: Vec::new(),
+        message: message.into(),
+        limit: None,
+    })
+}
+
+/// Build a diagnostic that names no region: a refusal about the request or
+/// the source's identity rather than about a byte range (FR-001-AC-12).
+pub fn error_without_region(
+    source: &Source,
+    code: CompleteCode,
+    cause: CompleteCause,
+    phase: Phase,
+    message: impl Into<String>,
+) -> Box<CompleteDiagnostic> {
+    Box::new(CompleteDiagnostic {
+        phase,
+        code,
+        cause,
+        source: source.identity().clone(),
+        path: source.path().into(),
+        region: None,
         related: Vec::new(),
         message: message.into(),
         limit: None,

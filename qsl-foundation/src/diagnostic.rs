@@ -2,7 +2,7 @@
 //! FR-010: stable source-bound native diagnostics and standard error propagation.
 //!
 //! [`Locus`] is ADR-013 T-5's foundation diagnostic locus.
-use crate::source::{LocatedSpan, Source, SourceIdentity, Span};
+use crate::source::{LocatedSpan, Source, SourceIdentity, SourceReadCause, Span};
 
 mod locus;
 mod stage;
@@ -346,6 +346,10 @@ pub struct Diagnostic {
     /// Set only by [`resource_exhausted`], so it never disagrees with
     /// `code`; read through [`Diagnostic::limit`].
     limit: Option<SyntaxLimit>,
+    /// Set only for an `invalid_source_identity` refusal: `BlankLabel`
+    /// (which label) or `EmptyPath` (`quire.native.diagnostics/v1`,
+    /// FR-001); read through [`Diagnostic::identity_cause`].
+    identity_cause: Option<SourceReadCause>,
 }
 
 /// The syntax resource ceiling a `resource_exhausted` refusal names
@@ -453,6 +457,18 @@ impl Diagnostic {
     pub fn limit(&self) -> Option<SyntaxLimit> {
         self.limit
     }
+    /// The `invalid_source_identity` cause (`BlankLabel` naming its label,
+    /// or `EmptyPath`); `None` for every other diagnostic.
+    pub fn identity_cause(&self) -> Option<SourceReadCause> {
+        self.identity_cause
+    }
+    /// This diagnostic carrying an `invalid_source_identity` cause. For a
+    /// refusal built outside `Source::read` that checks the same labels.
+    #[must_use]
+    pub fn with_identity_cause(mut self, cause: SourceReadCause) -> Self {
+        self.identity_cause = Some(cause);
+        self
+    }
     /// Whether incomplete work, rather than invalid input, caused this diagnostic.
     pub fn is_incomplete(&self) -> bool {
         self.code.is_incomplete()
@@ -496,6 +512,7 @@ pub fn error(
             .expect("internal offsets are UTF-8 boundaries"),
         message: message.into(),
         limit: None,
+        identity_cause: None,
     })
 }
 
@@ -544,9 +561,10 @@ fn source_refusal(
     bytes: &[u8],
     byte_limit: usize,
 ) -> Box<Diagnostic> {
-    use crate::source::SourceReadCause;
     let code = match refusal.cause {
-        SourceReadCause::UnnamedSource => Code::InvalidSourceIdentity,
+        SourceReadCause::BlankLabel { .. } | SourceReadCause::EmptyPath => {
+            Code::InvalidSourceIdentity
+        }
         // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
         // one of the four kinds the catalog admits.
         SourceReadCause::ByteBudget => Code::StageLimitExceeded,
@@ -580,6 +598,11 @@ fn source_refusal(
         span,
         message: refusal.error.message,
         limit,
+        identity_cause: matches!(
+            refusal.cause,
+            SourceReadCause::BlankLabel { .. } | SourceReadCause::EmptyPath
+        )
+        .then_some(refusal.cause),
     })
 }
 
@@ -626,6 +649,7 @@ impl From<crate::source_map::SourceMapError> for Diagnostic {
             span: error.span,
             message: error.message,
             limit: None,
+            identity_cause: None,
         }
     }
 }

@@ -301,13 +301,11 @@ fn validate_binding(
 ) -> Result<(), Box<CompleteDiagnostic>> {
     validate_catalog_profiles(parsed, catalog)?;
     if parsed.source().identity() != &binding.source {
-        return Err(qsl_cst::diagnostic::error(
+        return Err(qsl_cst::diagnostic::error_without_region(
             parsed.source(),
-            CompleteCode::InvalidSourceIdentity,
+            CompleteCode::InvalidSourceMap,
             CompleteCause::Host(HostCause::RequestRevision),
             Phase::SourceMap,
-            0,
-            0,
             "editor request is bound to a different document revision",
         ));
     }

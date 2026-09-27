@@ -261,6 +261,7 @@ fn invalid_source_retains_bytes_and_exposes_recovery_without_admission() {
 }
 
 #[trace("TC-222", "FR-302-AC-3")]
+#[trace("TC-424", "FR-001-AC-12")]
 #[test]
 fn rendering_a_foreign_cst_node_is_a_typed_refusal() {
     let first = qsl_cst::parse(
@@ -286,10 +287,11 @@ fn rendering_a_foreign_cst_node_is_a_typed_refusal() {
     assert_eq!(
         (foreign.code, foreign.cause),
         (
-            CompleteCode::InvalidSourceIdentity,
+            CompleteCode::InvalidSourceMap,
             CompleteCause::Host(HostCause::ForeignNode)
         )
     );
+    assert_eq!(foreign.region, None);
 }
 
 #[trace("TC-222", "FR-302-AC-3")]

@@ -376,13 +376,11 @@ impl LosslessCst {
     /// Render one node through its ordered token/node children.
     pub fn render_node(&self, node: &CstNode) -> Result<Vec<u8>, Box<super::CompleteDiagnostic>> {
         let Some(own) = self.resolve(node.identity()) else {
-            return Err(super::diagnostic::error(
+            return Err(super::diagnostic::error_without_region(
                 &self.source,
-                super::CompleteCode::InvalidSourceIdentity,
+                super::CompleteCode::InvalidSourceMap,
                 super::CompleteCause::Host(super::HostCause::ForeignNode),
                 qsl_foundation::Phase::SourceMap,
-                0,
-                0,
                 "CST node belongs to a different parsed source",
             ));
         };

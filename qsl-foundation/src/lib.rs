@@ -33,4 +33,4 @@ pub use diagnostic::{
     UndefinedCoded, UndefinedReason, UndefinedRecord,
 };
 pub use digest::ByteDigest;
-pub use source::{LocatedSpan, Position, Source, SourceIdentity, Span, Spanned};
+pub use source::{LocatedSpan, Position, Source, SourceIdentity, SourceLabel, Span, Spanned};

@@ -607,7 +607,9 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
             "unnamed",
             Vec::new(),
             CompleteCode::InvalidSourceIdentity,
-            CompleteCause::Host(HostCause::UnnamedSource),
+            CompleteCause::Host(HostCause::BlankLabel {
+                label: qsl_foundation::SourceLabel::Identity,
+            }),
         ),
     ];
     for (id, bytes, code, cause) in cases {
