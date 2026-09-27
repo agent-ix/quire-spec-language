@@ -206,19 +206,18 @@ pub(super) fn read_document(
     check_document_digest(bytes, selected.digest)?;
     let digest = selected.digest;
     // Bytes that matched the expected digest raw (never parsed as JSON at
-    // all) or that parsed but are not a JSON object trivially hold none of
-    // check 1.5's required members -- `format` is the first named, in both
-    // documents' own member order -- so this is that same refusal, never an
-    // `AdmissionFailure::Fault`: FR-106 settles every input defect at
-    // admission (SR-750 FND-004), and this input is untrusted, not an
-    // internal invariant.
-    let missing_format = || {
-        refuse(admission_record("invalid_runtime_input", "missing-member").with("field", "format"))
-    };
+    // all) or that parsed but are not a JSON object trivially hold no
+    // `format` member at all: absent is not the expected format string, so
+    // check 1.4 (which comes before 1.5's member-presence check, FR-106's
+    // own order) refuses it here, never 1.5's `missing-member` (SR-750
+    // FND-015 round 2) and never an `AdmissionFailure::Fault` (SR-750
+    // FND-004): FR-106 settles every input defect at admission, and this
+    // input is untrusted, not an internal invariant.
+    let unsupported_wire = || refuse(admission_record("unknown_wire", "unsupported-wire"));
     let Some(value) = parsed else {
-        return Err(missing_format());
+        return Err(unsupported_wire());
     };
-    let object = value.as_object().ok_or_else(missing_format)?;
+    let object = value.as_object().ok_or_else(unsupported_wire)?;
 
     // 1.4: format.
     let expected_format = match kind {
@@ -1093,25 +1092,12 @@ pub(super) fn check_population_completeness(
     self_population: Option<&str>,
 ) -> Result<(), AdmissionFailure> {
     // Built from the wire-declared `reference.population` (SR-750 FND-001):
-    // a dangling reference (whose target admission never admits into a
-    // typed object) still makes its named population required, or check 8
-    // could never see it, and it still makes `self`'s own population
+    // a dangling reference (whose target this call never admits into
+    // `objects`) still makes its named population required, or check 8
+    // below could never see it, and it still makes `self`'s own population
     // required even when `self` is never itself the target of any
     // reference (SR-750 FND-001, "self's population is never required at
     // all").
-    let mut required: BTreeSet<String> = BTreeSet::new();
-    if let Some(name) = self_population {
-        required.insert(name.to_owned());
-    }
-    // repeatedly, every population a reference field of any object of a
-    // required population names -- must be complete (FR-106's own
-    // recursive definition). Built from the wire-declared
-    // `reference.population` (SR-750 FND-001): a dangling reference (whose
-    // target this call never admits into `objects`) still makes its named
-    // population required, or check 8 below could never see it, and it
-    // still makes `self`'s own population required even when `self` is
-    // never itself the target of any reference (SR-750 FND-001, "self's
-    // population is never required at all").
     let mut required: BTreeSet<String> = BTreeSet::new();
     if let Some(name) = self_population {
         required.insert(name.to_owned());

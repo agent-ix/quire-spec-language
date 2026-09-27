@@ -2591,6 +2591,19 @@ fn tc465_row5_wrong_format_refuses_unsupported_wire() {
     assert_tc465_refused(result, "unknown_wire", "unsupported-wire");
 }
 
+/// SR-750 FND-015 round 2: a document that parses as JSON but isn't an
+/// object holds no `format` member at all -- check 1.4 (format) comes
+/// before check 1.5 (member presence) in FR-106's own order, so this
+/// refuses `unknown_wire`/`unsupported-wire`, never 1.5's
+/// `invalid_runtime_input`/`missing-member`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn a_non_object_document_refuses_unsupported_wire_before_missing_member() {
+    let document = tc465_document();
+    let result = run_tc465_current(&document, |value| *value = json!([1, 2, 3]), None);
+    assert_tc465_refused(result, "unknown_wire", "unsupported-wire");
+}
+
 /// Row 6 (check 1.5): `populations` removed.
 #[trace("TC-465", "FR-106-AC-3")]
 #[test]
