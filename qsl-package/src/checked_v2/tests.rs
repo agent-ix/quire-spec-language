@@ -1826,7 +1826,7 @@ fn a_refusal_at_a_value_is_located_at_its_pointer() {
     }
 }
 
-/// FR-096-AC-10 at catalog revision `1-draft.7`: each of IR's reader limits
+/// FR-096-AC-10 at catalog revision `1-draft.8`: each of IR's reader limits
 /// the reader can reach, lowered below a real fixture, stops the read with
 /// its own kind, the configured bound, IR's counter as actual, and
 /// `Locus::Artifact` at the bytes' `raw-artifact-digest` and the pointer IR

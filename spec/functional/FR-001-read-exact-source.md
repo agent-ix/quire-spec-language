@@ -229,10 +229,9 @@ reference's labels is ADR-013 TK-01's.
 QSL-245 (part 2) emits the catalog revision `1-draft.8` causes:
 `SourceReadCause` carries `BlankLabel { label }` and `EmptyPath`, and
 `Source::read_typed` checks the four labels in order before the path
-(`qsl-foundation/src/source.rs`). The revision claim itself
-(`src/linking/composed/definition_source.rs`) still reads `1-draft.7`; its
-bump to `1-draft.8` lands with QSL-245 part 1 (the refusal-record PR, #490),
-right after this one. The cause and `label` reach the native `Diagnostic`,
+(`qsl-foundation/src/source.rs`). The revision claim
+(`src/linking/composed/definition_source.rs`) reads `1-draft.8` (QSL-245
+part 1). The cause and `label` reach the native `Diagnostic`,
 the `parse`/`format` refusal line, the native-run output, the
 native-state-input construction error and the replay recompile refusal, each
 tested for `blank-label` with its label. `empty-path` is tested at the reader

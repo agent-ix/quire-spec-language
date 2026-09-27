@@ -161,7 +161,7 @@ pub enum Code {
     /// already selected at a different (or the same) version.
     DuplicateSelection,
     /// QSL-236: a stage-entry limit was reached (`stage_limit_exceeded`,
-    /// catalog revision `1-draft.7`). The exhausted kind is a `SyntaxLimit`
+    /// catalog revision `1-draft.8`). The exhausted kind is a `SyntaxLimit`
     /// or [`LimitKind`] carried alongside, not part of this code.
     StageLimitExceeded,
 }
@@ -367,7 +367,7 @@ pub enum SyntaxLimit {
     },
     /// Token (complete-V1: retained CST leaf) ceiling:
     /// `stage_limit_exceeded`/`token-count-exceeded` (catalog revision
-    /// `1-draft.7`).
+    /// `1-draft.8`).
     Tokens {
         /// Selected token ceiling.
         bound: usize,
@@ -408,7 +408,7 @@ impl std::fmt::Display for SyntaxLimit {
 
 impl SyntaxLimit {
     /// The T-4 [`LimitKind`] this ceiling names (catalog revision
-    /// `1-draft.7`).
+    /// `1-draft.8`).
     pub const fn stage_kind(self) -> LimitKind {
         match self {
             Self::NestingDepth { .. } => LimitKind::NestingDepth,
@@ -422,7 +422,7 @@ impl SyntaxLimit {
 
 /// The one constructor for a syntax-ceiling refusal, at `span`: code
 /// `stage_limit_exceeded` for every [`SyntaxLimit`] kind (catalog revision
-/// `1-draft.7`), and a message rendered from `limit`.
+/// `1-draft.8`), and a message rendered from `limit`.
 pub fn resource_exhausted(
     source: &Source,
     phase: Phase,
@@ -660,7 +660,7 @@ impl From<crate::source_map::SourceMapError> for Diagnostic {
 // S-5b (QSL-160) adds T-4's `LimitKind`, `LimitExceeded`, `Staged` and
 // `StageFailure` in `stage`, and O-17's `RefusalRecord` below, each naming
 // its position by T-5's `Locus`. This build claims catalog revision
-// `1-draft.7`, whose `stage_limit_exceeded` has one cause per `LimitKind`.
+// `1-draft.8`, whose `stage_limit_exceeded` has one cause per `LimitKind`.
 
 /// ADR-013 O-16: the outcome category every evaluation, negotiation and proof
 /// result maps into. Exactly the eight values ADR-013 §3 O-16's category
@@ -1198,7 +1198,7 @@ mod foundation_tests {
     }
 
     /// Every `SyntaxLimit` kind reports `Code::StageLimitExceeded`, and
-    /// names its catalog `LimitKind` (revision `1-draft.7`): the token
+    /// names its catalog `LimitKind` (revision `1-draft.8`): the token
     /// ceiling is `token-count-exceeded`. The native-v1 `Diagnostic` has no
     /// typed cause field, so the kind is named in the rendered message.
     #[test]

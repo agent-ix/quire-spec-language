@@ -117,7 +117,7 @@ const EXPECTED: &[Expected] = &[
     Expected {
         definition: Diagnostics,
         identity: "quire.native.diagnostics/v1",
-        revision: "1-draft.7",
+        revision: "1-draft.8",
         file: "native-diagnostics.md",
         requirements: &[],
     },

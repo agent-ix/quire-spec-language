@@ -120,7 +120,7 @@ budget. Its `catalog_code()` SHALL be `stage_limit_exceeded` with cause
 `input-bytes-exceeded`, `nesting-depth-exceeded`, `token-count-exceeded`,
 `node-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`,
 `diagnostic-count-exceeded` or `work-budget-exceeded` respectively
-(revision `1-draft.7`).
+(revision `1-draft.8`).
 
 `LimitExceeded` SHALL carry its `LimitKind`, the configured bound, the
 actual counter at the failed charge, and an optional `Locus`. Its catalog
@@ -134,7 +134,7 @@ accounting-contract limits type (`ModelNormalizationLimitsV1`,
 meter wherever it is read and keeps `resource_exhausted`
 ([ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
 §1). The `quire.native.diagnostics/v1`
-`stage_limit_exceeded` row (revision `1-draft.7`) names these surfaces,
+`stage_limit_exceeded` row (revision `1-draft.8`) names these surfaces,
 together with S1, `replay` and `route`, and the catalog keeps `resource_exhausted` for the caller's
 work-budget meter, adding that a semantic maximum is not a caller work
 budget. The check stage's `CheckingLimits` ceilings (nesting depth, node
@@ -471,8 +471,9 @@ STD-110, merged):
   not admit `0` is the same undefined outcome at the `sum` node. FR-100's
   kernel undefined-reason table has no `sum-out-of-domain` row yet (planned,
   FR-100's owner); `qsl-replay` spells it `sum-out-of-domain`.
-- The code still claims revision `1-draft.7`; the claim moves to `1-draft.8`
-  in the last QSL-245 step.
+- The build claims catalog revision `1-draft.8` (the definition lock, the
+  checked-package emitter's diagnostics catalog and the native Diagnostics
+  registration), and conformance passes against QSpec's `1-draft.8`.
 
 Not built, independent of the catalog revision:
 

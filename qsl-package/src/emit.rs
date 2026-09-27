@@ -105,7 +105,7 @@ const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
 const IDENTITY_PREIMAGE_V2: &str = qsl_semantics::library::PACKAGE_ID_VERSION;
 
 /// The diagnostics catalog the package's (empty) diagnostics are qualified
-/// by: QSpec's `quire.native.diagnostics/v1` at `1-draft.7`. This is the
+/// by: QSpec's `quire.native.diagnostics/v1` at `1-draft.8`. This is the
 /// same reference the v2 emitter writes at `diagnostics.catalog`
 /// (FR-093-AC-17); a caller that needs it as evidence (IR's checked-package
 /// v2 reader refuses it as a stale dependency without one) reads it here
@@ -116,7 +116,7 @@ pub fn diagnostics_catalog() -> CheckedArtifactRef {
         identity: "quire.native.diagnostics/v1".into(),
         revision: CheckedRevision {
             namespace: "quire-draft".into(),
-            value: "1-draft.7".into(),
+            value: "1-draft.8".into(),
         },
         digest_domain: "quire.definition.bytes/v1".into(),
         // Informational; no reader verifies it yet.
