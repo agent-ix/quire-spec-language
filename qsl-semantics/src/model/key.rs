@@ -511,7 +511,16 @@ pub(super) fn sha256_and_len(preimage: &impl Serialize) -> ([u8; 32], u64) {
     // this costs one extra discard-sink encode pass, never a second hash.
     let digest = quire_canonical::sha256(preimage, LIMITS)
         .unwrap_or_else(|error| panic!("a typed identity preimage encodes: {error}"));
-    let len = quire_exact::length_amount(canonical_len(preimage) as usize);
+    // SR-750 FND-011: `usize::try_from`, never a lossy `as usize` -- on a
+    // 32-bit target a `u64` length past `usize::MAX` would otherwise
+    // silently truncate. Every preimage this module hands here is a small,
+    // fixed-shape typed identity value (see this function's own doc
+    // comment), never externally supplied bytes of unbounded size, so this
+    // is an internal invariant, panicking with its own reason exactly as
+    // the encode failure above does -- never a document-defect refusal.
+    let byte_len = usize::try_from(canonical_len(preimage))
+        .unwrap_or_else(|error| panic!("a typed identity preimage's length fits usize: {error}"));
+    let len = quire_exact::length_amount(byte_len);
     (*digest.as_bytes(), len)
 }
 
