@@ -3314,6 +3314,47 @@ fn tc465_row25_an_incomplete_population_no_reference_names_still_admits() {
     result.expect("an incomplete population no reference names still admits");
 }
 
+/// SR-750 FND-016: a reference resolves against the population the wire
+/// names, not only the field's declared type. `child.parent` names
+/// `{archive, k}`; `archive` is complete and holds `k` of type `Sub`, and
+/// `config_history` holds no `k`. `k` exists, so check 8 does not apply;
+/// but a `Reference<ConfigVersion>` value admits only a `ConfigVersion`
+/// object (`ValueType::admits`), so this refuses `wrong-value-kind` at
+/// `child`'s `parent` (check 6.5) -- never admitting a `ConfigVersion`-typed
+/// reference that names no admitted object.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn a_reference_to_an_admitted_object_of_another_type_refuses_wrong_value_kind() {
+    let document = tc465_document_with_archive_population();
+    let archive = "ix://example/config-version/archive";
+    let sub = "ix://example/config-version/Sub";
+    let result = run_tc465_current(
+        &document,
+        move |value| {
+            value["populations"][0]["objects"][1]["fields"]["parent"] =
+                json!({"present": {"reference": {"population": archive, "key": "k"}}});
+            value["populations"].as_array_mut().unwrap().push(json!({
+                "population": archive,
+                "complete": true,
+                "objects": [{
+                    "key": "k", "type": sub,
+                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}},
+                }],
+            }));
+        },
+        None,
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("child")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("parent")
+    );
+}
+
 /// FR-106 check 7's own last sentence ("admission SHALL skip the dangling
 /// check over an incomplete population",
 /// `FR-106-admit-snapshots-and-invocations.md:216`), SR-750 FND-001 round 2:
@@ -3321,9 +3362,8 @@ fn tc465_row25_an_incomplete_population_no_reference_names_still_admits() {
 /// archive_population`) is `complete: false` and holds `a1`, whose `parent`
 /// names a key (`missing`) absent from `archive` itself -- nothing else
 /// requires `archive`, so this must admit, not refuse `dangling_reference`.
-/// Before the fix (`ObjectEnvironment::new`, unconditionally closed),
-/// `finish_populations` re-refused this after `check_population_closure`
-/// had already, correctly, let it through.
+/// `finish_populations` passes exactly this reference to
+/// `ObjectEnvironment::new` as a tolerated dangling target.
 #[trace("TC-465", "FR-106-AC-4")]
 #[test]
 fn a_dangling_reference_into_an_incomplete_population_still_admits() {

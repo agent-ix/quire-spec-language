@@ -418,7 +418,7 @@ mod family_contract_tests {
         // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
-        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
+        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
         let mut env = EvaluationEnv::new(&package, &objects, Vec::new());
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         ValueFunctionFamily::evaluate(&identity, &mut env, &mut meter)
@@ -473,7 +473,7 @@ mod family_contract_tests {
         // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
-        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
+        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
         let mut env = EvaluationEnv::new(&package, &objects, Vec::new());
         let exhausted_limits = quire_exact::ScalarLimits {
             work_units: 0,
@@ -551,7 +551,7 @@ mod family_contract_tests {
             .function_identity("exact")
             .expect("exact is declared in this package");
         let package = qsl_package::CheckedPackage::link(graph);
-        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
+        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
         let decimal = |coefficient: i64| {
             Value::Decimal(quire_exact::Decimal::new(
                 quire_exact::Integer::from(coefficient),
@@ -642,7 +642,7 @@ mod family_contract_tests {
         // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
-        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), []).unwrap();
+        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
         let mut env = EvaluationEnv::new(&package, &objects, Vec::new());
         let mut meter = Meter::new(quire_exact::ScalarLimits {
             work_units: 1,

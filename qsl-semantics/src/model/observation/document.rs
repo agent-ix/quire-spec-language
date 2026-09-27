@@ -803,8 +803,85 @@ fn object_field_kind_matches(
     )
 }
 
+/// Resolves each `{population, key}` reference value against the objects
+/// one snapshot's populations actually hold, and records the ones that name
+/// no admitted object. Built once per snapshot, before check 6 walks it, so
+/// a reference resolves whatever the walk order of its target.
+pub(super) struct References<'a> {
+    views: &'a [ModelView],
+    /// Every object of the snapshot whose type and key resolve, by its wire
+    /// `(population, key)`.
+    admitted: BTreeMap<(&'a str, &'a str), ObjectReference>,
+    /// Each reference that named no object of the snapshot, with the wire
+    /// population it named, in walk order.
+    unresolved: Vec<(String, ObjectReference)>,
+}
+
+impl<'a> References<'a> {
+    /// Indexes `populations`' objects. An object whose type or key does not
+    /// resolve is left out: check 6 refuses it in walk order before any
+    /// reference to it is used.
+    pub(super) fn over(views: &'a [ModelView], populations: &'a [RawPopulation]) -> Self {
+        let mut admitted = BTreeMap::new();
+        for population in populations {
+            for object in &population.objects {
+                let Some((view, key)) = find_declaration(views, object.type_identity.as_str())
+                else {
+                    continue;
+                };
+                let Some(effective) = view.view.type_identities().get(&key) else {
+                    continue;
+                };
+                let Ok(reference) = object_reference(views, *effective, &object.key) else {
+                    continue;
+                };
+                admitted
+                    .entry((population.population.as_str(), object.key.as_str()))
+                    .or_insert(reference);
+            }
+        }
+        Self {
+            views,
+            admitted,
+            unresolved: Vec::new(),
+        }
+    }
+
+    /// The typed reference `reference` names, for a value of declared type
+    /// `Reference<declared>`. A reference to an admitted object resolves to
+    /// that object, which the declared type must admit
+    /// ([`quire_exact::ValueType::admits`]: the object's most-specific type
+    /// is `declared`), else `wrong-value-kind` (check 6.5). A reference to no
+    /// admitted object -- a dangling target, which check 8 refuses in a
+    /// complete population and skips in an incomplete one -- is typed by
+    /// `declared` and recorded.
+    fn resolve(
+        &mut self,
+        reference: &super::RawRef,
+        declared: quire_exact::EffectiveId,
+    ) -> Result<ObjectReference, AdmissionRecord> {
+        let wire = (reference.population.as_str(), reference.key.as_str());
+        if let Some(target) = self.admitted.get(&wire) {
+            let value = Value::Reference(target.clone());
+            return if quire_exact::ValueType::Reference(declared).admits(&value) {
+                Ok(target.clone())
+            } else {
+                Err(admission_record(
+                    Code::InvalidRuntimeInput,
+                    "wrong-value-kind",
+                ))
+            };
+        }
+        let target = object_reference(self.views, declared, &reference.key)
+            .map_err(|_| admission_record(Code::InvalidRuntimeInput, "wrong-value-kind"))?;
+        self.unresolved
+            .push((reference.population.clone(), target.clone()));
+        Ok(target)
+    }
+}
+
 fn admit_scalar(
-    views: &[ModelView],
+    references: &mut References<'_>,
     raw: &RawValue,
     value_type: &quire_exact::ValueType,
 ) -> Result<Value, AdmissionRecord> {
@@ -825,15 +902,9 @@ fn admit_scalar(
             }
         }
         (RawValue::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
-            // `reference.population`'s own name is not read here:
-            // `type_identity` (the field's own declared type) is what
-            // resolves this reference's universe now (matching
-            // `crate::model::normalize` exactly), not the wire-supplied
-            // population name -- this is unchanged from before this fix,
-            // which also never cross-checked the two against each other.
-            let target = object_reference(views, *type_identity, &reference.key)
-                .map_err(|_| admission_record(Code::InvalidRuntimeInput, "wrong-value-kind"))?;
-            Ok(Value::Reference(target))
+            references
+                .resolve(reference, *type_identity)
+                .map(Value::Reference)
         }
         _ => Err(admission_record(
             Code::InvalidRuntimeInput,
@@ -849,7 +920,7 @@ fn admit_scalar(
 /// [`admit_scalar`] plus [`field_kind_matches`]'s `ValueType::Option`
 /// reading), so this is the one caller [`admit_populations`] needs.
 fn admit_object_field(
-    views: &[ModelView],
+    references: &mut References<'_>,
     raw: &RawValue,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
@@ -858,7 +929,7 @@ fn admit_object_field(
         return match raw {
             RawValue::Absent => Ok(FieldValue::Absent),
             RawValue::Present(inner) => {
-                admit_scalar(views, inner, value_type).map(FieldValue::Present)
+                admit_scalar(references, inner, value_type).map(FieldValue::Present)
             }
             // `object_field_kind_matches` already refused every other raw
             // form for an optional field before this is called.
@@ -881,14 +952,14 @@ fn admit_object_field(
             }
             let mut elements = Vec::with_capacity(items.len());
             for item in items {
-                elements.push(admit_scalar(views, item, collection.element())?);
+                elements.push(admit_scalar(references, item, collection.element())?);
             }
             Ok(FieldValue::Present(quire_exact::from_admitted(
                 (**collection).clone(),
                 elements,
             )))
         }
-        (raw, value_type) => admit_scalar(views, raw, value_type).map(FieldValue::Present),
+        (raw, value_type) => admit_scalar(references, raw, value_type).map(FieldValue::Present),
     }
 }
 
@@ -920,6 +991,9 @@ pub(super) struct PopulationValues<'t> {
     objects: Vec<(ObjectReference, Vec<(&'t str, FieldValue)>)>,
     pub(super) completeness: BTreeMap<String, bool>,
     pub(super) keys_by_population: BTreeMap<String, BTreeSet<String>>,
+    /// Each reference that named no object of this snapshot, with the wire
+    /// population it named ([`References`]).
+    unresolved: Vec<(String, ObjectReference)>,
     /// FR-109 Outputs' admission usage: this document's own admitted
     /// object and field-value counts (SR-751 FND-002 round 2).
     pub(super) objects_admitted: u64,
@@ -948,6 +1022,7 @@ pub(super) fn admit_population_values<'t>(
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut object_count: u64 = 0;
     let mut value_count: u64 = 0;
+    let mut references = References::over(views, populations);
 
     for entry in populations {
         completeness.insert(entry.population.clone(), entry.complete);
@@ -1070,8 +1145,8 @@ pub(super) fn admit_population_values<'t>(
                             .with("field", name.to_owned()),
                     ));
                 }
-                let field_value =
-                    admit_object_field(views, raw, value_type, presence).map_err(|record| {
+                let field_value = admit_object_field(&mut references, raw, value_type, presence)
+                    .map_err(|record| {
                         refuse(
                             record
                                 .with("object", object.key.clone())
@@ -1100,6 +1175,7 @@ pub(super) fn admit_population_values<'t>(
         objects,
         completeness,
         keys_by_population,
+        unresolved: references.unresolved,
         objects_admitted: object_count,
         values_admitted: value_count,
     })
@@ -1221,22 +1297,24 @@ pub(super) fn finish_populations(
     types: &TypeEnvironment,
     values: PopulationValues<'_>,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
-    // `check_population_closure` (check 8) already ran, over the same
-    // populations, before this is ever called (`admit_populations`'s own
-    // call order): every dangling reference still standing here, if any,
-    // already passed that check because it names an incomplete population
-    // (FR-106 check 7's own "skip the dangling check over an incomplete
-    // population", SR-750 FND-001 round 2) -- so this construction must
-    // not re-refuse it.
+    // The dangling targets check 8 tolerated: references naming no object
+    // of this snapshot, into a population not admitted `complete` (FR-106
+    // check 7: "skip the dangling check over an incomplete population").
+    // Every other reference must name an admitted object.
+    let tolerated: Vec<ObjectReference> = values
+        .unresolved
+        .into_iter()
+        .filter(|(population, _)| values.completeness.get(population).copied() != Some(true))
+        .map(|(_, reference)| reference)
+        .collect();
     let usage = super::AdmissionUsage {
         document_bytes: 0,
         nesting_depth: 0,
         objects: values.objects_admitted,
         values: values.values_admitted,
     };
-    let environment =
-        ObjectEnvironment::new_tolerating_incomplete_population_dangling(types, values.objects)
-            .map_err(map_environment_refusal)?;
+    let environment = ObjectEnvironment::new(types, values.objects, &tolerated)
+        .map_err(map_environment_refusal)?;
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
@@ -1336,7 +1414,7 @@ pub(super) fn resolve_self(
 pub(super) type AdmittedParametersAndResult = (Vec<(String, Value)>, Option<Value>);
 
 pub(super) fn admit_parameters_and_result(
-    views: &[ModelView],
+    references: &mut References<'_>,
     operation: &OperationDeclaration,
     parameters: &[(String, RawValue)],
     result: &ResultValue,
@@ -1355,7 +1433,7 @@ pub(super) fn admit_parameters_and_result(
                     .with("field", name.clone()),
             ));
         }
-        let value = admit_scalar(views, raw, value_type)
+        let value = admit_scalar(references, raw, value_type)
             .map_err(|record| refuse(record.with("field", name.clone())))?;
         admitted.push((name.clone(), value));
     }
@@ -1393,7 +1471,7 @@ pub(super) fn admit_parameters_and_result(
                     "wrong-value-kind",
                 )));
             }
-            Some(admit_scalar(views, raw, value_type).map_err(refuse)?)
+            Some(admit_scalar(references, raw, value_type).map_err(refuse)?)
         }
     };
     Ok((admitted, result_value))

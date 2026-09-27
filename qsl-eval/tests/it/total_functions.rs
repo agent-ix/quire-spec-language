@@ -982,6 +982,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
     let objects = ObjectEnvironment::new(
         &types,
         [(object(), vec![("n", FieldValue::Present(int(7)))])],
+        &[],
     )
     .unwrap();
     // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty

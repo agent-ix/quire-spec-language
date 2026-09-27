@@ -443,6 +443,7 @@ fn objects(scenario: &Scenario) -> ObjectEnvironment {
                 vec![],
             ),
         ],
+        &[],
     )
     .unwrap()
     .with_population(scenario.binding.clone())
@@ -1194,7 +1195,7 @@ fn attribute_world_of(
         ],
     )
     .unwrap();
-    let objects = ObjectEnvironment::new(&types, world)
+    let objects = ObjectEnvironment::new(&types, world, &[])
         .unwrap()
         .with_population(scenario.binding.clone())
         .unwrap();
@@ -1745,11 +1746,14 @@ fn lookup_expression_foreign_universe_is_foreign_universe_after_one_work_unit() 
         scenario.b,
         ObjectId::new("b1").unwrap(),
     );
-    let object_world =
-        ObjectEnvironment::new(&types(&scenario), [(foreign_reference.clone(), vec![])])
-            .unwrap()
-            .with_population(scenario.binding.clone())
-            .unwrap();
+    let object_world = ObjectEnvironment::new(
+        &types(&scenario),
+        [(foreign_reference.clone(), vec![])],
+        &[],
+    )
+    .unwrap()
+    .with_population(scenario.binding.clone())
+    .unwrap();
 
     let (outcome, meter) = run_family(
         &package,
@@ -1815,11 +1819,14 @@ fn lookup_expression_absent_identity_in_a_foreign_universe_is_refused_not_absent
         scenario.a,
         ObjectId::new("zz9-never-admitted").unwrap(),
     );
-    let object_world =
-        ObjectEnvironment::new(&types(&scenario), [(foreign_reference.clone(), vec![])])
-            .unwrap()
-            .with_population(scenario.binding.clone())
-            .unwrap();
+    let object_world = ObjectEnvironment::new(
+        &types(&scenario),
+        [(foreign_reference.clone(), vec![])],
+        &[],
+    )
+    .unwrap()
+    .with_population(scenario.binding.clone())
+    .unwrap();
 
     for absence in [
         AbsenceMode::Undefined,
@@ -1989,7 +1996,7 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
         ("r", ValueType::Reference(scenario.a)),
     ];
     let r2 = object_reference(&scenario.universe, &scenario.a, "a2");
-    let object_world = ObjectEnvironment::new(&types(&scenario), [(r2.clone(), vec![])])
+    let object_world = ObjectEnvironment::new(&types(&scenario), [(r2.clone(), vec![])], &[])
         .unwrap()
         .with_population(scenario.binding.clone())
         .unwrap();
@@ -3103,8 +3110,12 @@ fn tc_294_lookup_refuses_an_unresolved_population_id() {
     let expression = lookup(target, AbsenceMode::Empty);
     let unresolved_id = scenario.binding.population_id();
     let present_reference = object_reference(&scenario.universe, &scenario.b, "b1");
-    let environment =
-        ObjectEnvironment::new(&types(&scenario), [(present_reference.clone(), vec![])]).unwrap();
+    let environment = ObjectEnvironment::new(
+        &types(&scenario),
+        [(present_reference.clone(), vec![])],
+        &[],
+    )
+    .unwrap();
 
     let checked = check(&package, &parameters, &expression);
     let mut meter = Meter::new(SCALAR_UNLIMITED);
@@ -3574,11 +3585,14 @@ fn a_foreign_universe_lookup_builds_a_record_with_both_universes() {
         scenario.b,
         ObjectId::new("b1").unwrap(),
     );
-    let object_world =
-        ObjectEnvironment::new(&types(&scenario), [(foreign_reference.clone(), vec![])])
-            .unwrap()
-            .with_population(scenario.binding.clone())
-            .unwrap();
+    let object_world = ObjectEnvironment::new(
+        &types(&scenario),
+        [(foreign_reference.clone(), vec![])],
+        &[],
+    )
+    .unwrap()
+    .with_population(scenario.binding.clone())
+    .unwrap();
     let (evaluation, _) = run_family(
         &package,
         &parameters,

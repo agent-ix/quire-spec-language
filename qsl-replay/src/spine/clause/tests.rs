@@ -320,7 +320,7 @@ fn node_environment(
             vec![("next", next.unwrap_or(FieldValue::Absent))],
         ));
     }
-    ObjectEnvironment::new(types, objects).expect("the chain is internally closed")
+    ObjectEnvironment::new(types, objects, &[]).expect("the chain is internally closed")
 }
 
 fn no_cycle_observations(
@@ -448,6 +448,7 @@ fn no_cycle_completes_false_over_a_cycle() {
                 )],
             ),
         ],
+        &[],
     )
     .expect("the two-node cycle is internally closed");
     let observations = no_cycle_observations(
@@ -595,6 +596,7 @@ fn evaluate_clause_is_deterministic() {
                     )],
                 ),
             ],
+            &[],
         )
         .expect("the two-node cycle is internally closed")
     };

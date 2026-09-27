@@ -925,8 +925,10 @@ fn admit_operation(
     }
 
     // Check 10: parameters and result.
+    // A reference parameter resolves against the pre snapshot's objects.
+    let mut parameter_references = document::References::over(views, &pre_snapshot.populations);
     let (parameters, result) = document::admit_parameters_and_result(
-        views,
+        &mut parameter_references,
         &operation.declaration,
         &invocation.parameters,
         &invocation.result,

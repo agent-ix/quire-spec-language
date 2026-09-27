@@ -2492,6 +2492,7 @@ mod tests {
                     quire_exact::FieldValue::Present(Value::Integer(7_i64.into())),
                 )],
             )],
+            &[],
         )
         .expect("one object with its one required field admits cleanly");
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);

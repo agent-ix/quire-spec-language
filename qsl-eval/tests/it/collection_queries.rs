@@ -873,6 +873,7 @@ fn q10_contains_stops_at_the_first_equal_member_and_size_only_retains() {
     let objects = ObjectEnvironment::new(
         &types,
         [(object("h1"), Vec::new()), (object("h2"), Vec::new())],
+        &[],
     )
     .unwrap();
     let package = package(types.clone(), Vec::new());

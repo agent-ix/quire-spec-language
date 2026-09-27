@@ -458,6 +458,7 @@ fn r09_object_reference_cycles_are_admitted_and_compare_by_identity() {
             (node_reference("o1"), peer("o2")),
             (node_reference("o2"), peer("o1")),
         ],
+        &[],
     )
     .unwrap();
     let project = |object: &str| match objects.attribute(
@@ -478,7 +479,7 @@ fn r09_object_reference_cycles_are_admitted_and_compare_by_identity() {
         Ok(Outcome::Completed(false))
     );
     assert_eq!(
-        ObjectEnvironment::new(&env, [(node_reference("o1"), peer("missing"))]).unwrap_err(),
+        ObjectEnvironment::new(&env, [(node_reference("o1"), peer("missing"))], &[]).unwrap_err(),
         ObjectEnvironmentRefusal {
             object: Box::new(node_reference("o1")),
             cause: ObjectEnvironmentCause::DanglingReference(Box::new(node_reference("missing"))),

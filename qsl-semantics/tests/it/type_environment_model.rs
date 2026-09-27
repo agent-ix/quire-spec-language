@@ -500,6 +500,7 @@ fn an_inherited_field_is_flattened_into_the_subtype() {
     let objects = ObjectEnvironment::new(
         &environment,
         [(b1.clone(), vec![("x", int(7)), ("y", int(8))])],
+        &[],
     )
     .unwrap();
     assert_eq!(
@@ -512,7 +513,7 @@ fn an_inherited_field_is_flattened_into_the_subtype() {
     );
     // The inherited field is a required slot of `B`'s storage.
     assert_eq!(
-        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("y", int(8))])]).unwrap_err(),
+        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("y", int(8))])], &[]).unwrap_err(),
         ObjectEnvironmentRefusal {
             object: Box::new(b1),
             cause: ObjectEnvironmentCause::Attribute(ConstructionRefusal {
@@ -554,7 +555,7 @@ fn a_redefined_field_is_hidden_and_its_redefiner_takes_its_slot() {
 
     let b1 = reference("M::B", "b1");
     let objects =
-        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("x", int(3))])]).unwrap();
+        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("x", int(3))])], &[]).unwrap();
     assert_eq!(
         slot_integer(objects.attribute(&environment, &b1, &field_ref("M::A", "x"))),
         Integer::from(3_i64)
@@ -629,6 +630,7 @@ fn a_diamond_shares_one_slot_and_orders_supertypes_by_declaration() {
             d1.clone(),
             vec![("x", int(5)), ("b", int(6)), ("c", int(7)), ("d", int(8))],
         )],
+        &[],
     )
     .unwrap();
     for path in ["M::B", "M::C"] {
@@ -831,13 +833,13 @@ fn a_renamed_redefinition_replaces_the_inherited_name() {
 
     let b1 = reference("M::B", "b1");
     let objects =
-        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("y", int(5))])]).unwrap();
+        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("y", int(5))])], &[]).unwrap();
     assert_eq!(
         slot_integer(objects.attribute(&environment, &b1, &field_ref("M::A", "x"))),
         Integer::from(5_i64)
     );
     assert_eq!(
-        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("x", int(5))])]).unwrap_err(),
+        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("x", int(5))])], &[]).unwrap_err(),
         ObjectEnvironmentRefusal {
             object: Box::new(b1),
             cause: ObjectEnvironmentCause::Attribute(ConstructionRefusal {

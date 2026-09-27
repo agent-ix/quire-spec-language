@@ -24,7 +24,7 @@
 //! `model`, above the `value::declaration` registry it reads, instead of
 //! importing `model` upward from `semantic_value`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::model::population::PopulationBinding;
@@ -93,37 +93,17 @@ pub struct ObjectEnvironment {
 impl ObjectEnvironment {
     /// Admit `objects` as `(reference, attributes)` pairs against the model
     /// object types of `types`. An omitted `?` attribute is `absent`.
+    ///
+    /// Every reference any attribute holds must name an object of the
+    /// environment, except a reference in `tolerated_dangling`: the exact
+    /// targets a caller has already decided may dangle. FR-106 admission
+    /// passes the references its check 8 skipped, because they name an
+    /// incomplete population nothing requires; every other caller passes
+    /// `&[]`.
     pub fn new<'n>(
         types: &TypeEnvironment,
         objects: impl IntoIterator<Item = (ObjectReference, Vec<(&'n str, FieldValue)>)>,
-    ) -> Result<Self, ObjectEnvironmentRefusal> {
-        Self::admit(types, objects, false)
-    }
-
-    /// [`Self::new`], but never refuses [`ObjectEnvironmentCause::DanglingReference`]
-    /// (SR-750 FND-001, round 2): for `document::finish_populations` alone,
-    /// called only after `check_population_closure` has already verified
-    /// every dangling reference still standing, if any, names an
-    /// *incomplete* population (FR-106 check 7's own "admission SHALL skip
-    /// the dangling check over an incomplete population",
-    /// `FR-106-admit-snapshots-and-invocations.md:216`). A reference is not
-    /// itself tagged with the population name it was read under (`model`
-    /// discards that once a raw field becomes a typed `Value::Reference`,
-    /// `document.rs`'s `admit_scalar`), so this constructor cannot itself
-    /// tell a genuinely broken reference from a tolerated one -- it relies
-    /// on the caller having already run `check_population_closure` first,
-    /// which does have that information from the wire.
-    pub(crate) fn new_tolerating_incomplete_population_dangling<'n>(
-        types: &TypeEnvironment,
-        objects: impl IntoIterator<Item = (ObjectReference, Vec<(&'n str, FieldValue)>)>,
-    ) -> Result<Self, ObjectEnvironmentRefusal> {
-        Self::admit(types, objects, true)
-    }
-
-    fn admit<'n>(
-        types: &TypeEnvironment,
-        objects: impl IntoIterator<Item = (ObjectReference, Vec<(&'n str, FieldValue)>)>,
-        tolerate_dangling: bool,
+        tolerated_dangling: &[ObjectReference],
     ) -> Result<Self, ObjectEnvironmentRefusal> {
         let mut admitted = BTreeMap::new();
         for (reference, attributes) in objects {
@@ -145,10 +125,9 @@ impl ObjectEnvironment {
             objects: admitted,
             populations: BTreeMap::new(),
         };
-        if !tolerate_dangling {
-            for (owner, slots) in &environment.objects {
-                environment.check_closed(owner, slots)?;
-            }
+        let tolerated: BTreeSet<&ObjectReference> = tolerated_dangling.iter().collect();
+        for (owner, slots) in &environment.objects {
+            environment.check_closed(owner, slots, &tolerated)?;
         }
         Ok(environment)
     }
@@ -248,11 +227,14 @@ impl ObjectEnvironment {
         &self,
         owner: &ObjectReference,
         slots: &[FieldValue],
+        tolerated: &BTreeSet<&ObjectReference>,
     ) -> Result<(), ObjectEnvironmentRefusal> {
         let mut pending: Vec<&Value> = present(slots).collect();
         while let Some(value) = pending.pop() {
             match value {
-                Value::Reference(reference) if !self.objects.contains_key(reference) => {
+                Value::Reference(reference)
+                    if !self.objects.contains_key(reference) && !tolerated.contains(reference) =>
+                {
                     return Err(ObjectEnvironmentRefusal {
                         object: Box::new(owner.clone()),
                         cause: ObjectEnvironmentCause::DanglingReference(Box::new(
