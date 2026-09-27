@@ -1736,9 +1736,14 @@ fn read_record_value_type(
     Ok(())
 }
 
-/// Reads a `VALUE_TYPE` type (FR-056's `value-type/v1` scalar reader,
-/// QSL-289) into a [`ScalarTypeRecord`]: [`ScalarTypeRecord`]'s own narrow
-/// bound-integer slice, not a general scalar type system.
+/// Reads the plain-scalar shape of a `VALUE_TYPE` type (FR-056's
+/// `value-type/v1` scalar reader, QSL-289) into a [`ScalarTypeRecord`]:
+/// [`ScalarTypeRecord`]'s own narrow bound-integer slice, not a general
+/// scalar type system. The pinned `agent-ix-semantic-ir` also binds
+/// `value-type/v1` to a record-shaped form (a non-empty `fields`); that
+/// shape names no scalar at all and is never routed here -- see
+/// [`read_type_node`]'s own dispatch, which sends it to the generic
+/// known-but-unsupported bucket instead.
 ///
 /// The wire's own `scalar` member names the bound native scalar
 /// (`agent-ix-semantic-ir`'s closed `SCALARS` set); only `"integer"`
@@ -1746,10 +1751,24 @@ fn read_record_value_type(
 /// Its `constraints[]` carry the domain as `min`/`max` entries
 /// (`agent-ix-semantic-ir`'s own closed constraint-keyword vocabulary), each
 /// naming a numeric `operands.value` -- read structurally from those typed
-/// fields, never by parsing a rendered `Int[lo,hi]` string. A `fields`,
-/// `operations`, `relationships` or `supertypes` member that is non-empty
-/// refuses rather than being silently dropped: a value type carries none of
-/// FR-208's export records this reader could hold that data in.
+/// fields, never by parsing a rendered `Int[lo,hi]` string.
+///
+/// **Unsupported vs. malformed.** A shape this reader's own narrow slice
+/// cannot hold -- a scalar keyword other than `"integer"`, a constraint
+/// keyword this integer slice has no case for, or a half-bounded domain
+/// (only `min` or only `max`; both are itself schema-valid FCD wire, e.g. a
+/// natural-number domain) -- refuses `unsupported_construct`: a real,
+/// schema-valid form this reader does not implement yet, not a defect in
+/// the document. A shape that is wrong regardless of what this reader
+/// implements -- an `operations`/`relationships`/`supertypes` member on a
+/// scalar, a constraint keyword given twice, a non-numeric bound, no bound
+/// at all, or `lower` greater than `upper` -- refuses
+/// `invalid_model_binding`/`malformed-declaration`. Members this reader has
+/// no use for at all (`variants`, `clauses`, `abstract`, ...) are read by no
+/// reader and left alone, same as for every other construct kind's own
+/// irrelevant members -- only the members a value type could plausibly
+/// carry structure through (`operations`/`relationships`/`supertypes`) are
+/// checked so they are never silently dropped.
 #[qsl_attrs::string_edge]
 fn read_value_type(
     package: &str,
@@ -1758,10 +1777,6 @@ fn read_value_type(
     at: &str,
 ) -> Result<ScalarTypeRecord, ModelRefusal> {
     let ctx = NodeCtx::new(type_value, at);
-    if let Some(field) = ctx.array_field("fields")?.first() {
-        return Err(NodeCtx::new(field, format!("{at}.fields[0]"))
-            .malformed("a value type declares no fields"));
-    }
     if let Some(operation) = ctx.array_field("operations")?.first() {
         let operation_at = format!("{at}.operations[0]");
         return Err(unsupported_at(
@@ -1783,7 +1798,7 @@ fn read_value_type(
         return Err(unsupported_at(
             type_value,
             at,
-            format!("{}:scalar={scalar:?}", meaning::VALUE_TYPE),
+            format!("{}:scalar={scalar}", meaning::VALUE_TYPE),
         ));
     }
     let constraints = ctx.array_field("constraints")?;
@@ -1814,10 +1829,28 @@ fn read_value_type(
             .ok_or_else(|| constraint_ctx.malformed("operands.value: missing or not an integer"))?;
         *slot = Some(value);
     }
-    let (Some(lower), Some(upper)) = (lower, upper) else {
-        return Err(
-            ctx.malformed("constraints: an integer value type requires both a min and a max bound")
-        );
+    let (lower, upper) = match (lower, upper) {
+        (Some(lower), Some(upper)) => (lower, upper),
+        (None, None) => {
+            return Err(ctx.malformed(
+                "constraints: an integer value type requires both a min and a max bound",
+            ))
+        }
+        (lower, _upper) => {
+            // Exactly one of `min`/`max` is present: a half-bounded integer
+            // domain, schema-valid `agent-ix-semantic-ir` wire this reader's
+            // own [`ScalarTypeRecord`] has no shape for (it bounds a closed
+            // `[lower, upper]` interval only) -- a real form, not a defect.
+            return Err(unsupported_at(
+                type_value,
+                at,
+                format!(
+                    "{}:constraints:half-bounded({})",
+                    meaning::VALUE_TYPE,
+                    if lower.is_some() { "min" } else { "max" }
+                ),
+            ));
+        }
     };
     if lower > upper {
         return Err(ctx.malformed(format!(
@@ -2218,6 +2251,16 @@ fn read_type_node(
     let Some(construct_meaning) = meanings.get(&(module.to_owned(), name.to_owned())) else {
         return Err(ctx.malformed("kind: names no constructs[] entry"));
     };
+    // `agent-ix-semantic-ir` binds `VALUE_TYPE` to two wire shapes: a plain
+    // scalar (`scalar` + `constraints`, no `fields`) and a record-shaped one
+    // (a non-empty `fields`, e.g. its own `value_object`/`event` forms).
+    // `read_value_type` claims only the former; a record-shaped node falls
+    // through to the generic known-but-unsupported bucket below, the same
+    // refusal it got before that reader existed, rather than being routed
+    // into the scalar reader's own malformed/missing-declaration checks.
+    if construct_meaning.as_str() == meaning::VALUE_TYPE && !ctx.array_field("fields")?.is_empty() {
+        return Err(unsupported_at(type_value, at, meaning::VALUE_TYPE));
+    }
     let mut records = Vec::new();
     match construct_meaning.as_str() {
         meaning::OBJECT_TYPE => {
@@ -2255,9 +2298,12 @@ fn read_type_node(
             )?));
         }
         other if meaning::ALL.contains(&other) => {
-            // A real FR-208 meaning (e.g. RECORD_VALUE_TYPE) with no
-            // QSL record shape yet -- refused as a known-but-unsupported
-            // declaration form, never silently folded into `ObjectTypeRecord`.
+            // A real FR-208 meaning (e.g. EVENT_TYPE, STATE_MACHINE) with no
+            // QSL record shape yet, or a real meaning whose shape this
+            // reader claims only part of (VALUE_TYPE's record-shaped form,
+            // caught above before this match) -- refused as a
+            // known-but-unsupported declaration form, never silently folded
+            // into `ObjectTypeRecord`.
             return Err(unsupported_at(type_value, at, other));
         }
         other => {
@@ -4136,6 +4182,10 @@ mod tests {
     /// Every malformed or unsupported bound-scalar wire shape this reader
     /// refuses -- structurally, from the constraint's own typed `keyword`/
     /// `operands.value` fields, never from a rendered `Int[lo,hi]` string.
+    /// Every row asserts the reader's own full detail text, not just its
+    /// location prefix, so a reader that ignores the actual scalar keyword,
+    /// the actual failing constraint keyword, or one side of a half-bounded
+    /// domain could not pass by accident.
     #[trace("TC-458", "FR-103-AC-1")]
     #[test]
     fn refuses_a_malformed_or_unsupported_bound_scalar() {
@@ -4143,7 +4193,8 @@ mod tests {
             (
                 serde_json::json!({"scalar": "string"}),
                 Code::UnsupportedConstruct,
-                "$.types[0]:",
+                "$.types[0]: construct meaning/capability \
+                 \"quire.meaning.model.value-type/v1:scalar=string\" has no reader yet",
             ),
             (
                 serde_json::json!({"constraints": []}),
@@ -4153,9 +4204,17 @@ mod tests {
             ),
             (
                 serde_json::json!({"constraints": [{"keyword": "min", "operands": {"value": 0}}]}),
-                Code::InvalidModelBinding,
-                "$.types[0]: constraints: an integer value type requires both a min and a max \
-                 bound",
+                Code::UnsupportedConstruct,
+                "$.types[0]: construct meaning/capability \
+                 \"quire.meaning.model.value-type/v1:constraints:half-bounded(min)\" has no \
+                 reader yet",
+            ),
+            (
+                serde_json::json!({"constraints": [{"keyword": "max", "operands": {"value": 1000}}]}),
+                Code::UnsupportedConstruct,
+                "$.types[0]: construct meaning/capability \
+                 \"quire.meaning.model.value-type/v1:constraints:half-bounded(max)\" has no \
+                 reader yet",
             ),
             (
                 serde_json::json!({"constraints": [
@@ -4180,7 +4239,8 @@ mod tests {
                     {"keyword": "exclusiveMax", "operands": {"value": 1000}},
                 ]}),
                 Code::UnsupportedConstruct,
-                "$.types[0].constraints[1]:",
+                "$.types[0].constraints[1]: construct meaning/capability \
+                 \"quire.meaning.model.value-type/v1:constraints:exclusiveMax\" has no reader yet",
             ),
             (
                 serde_json::json!({"constraints": [
@@ -4191,14 +4251,10 @@ mod tests {
                 "$.types[0].constraints[0]: operands.value: missing or not an integer",
             ),
             (
-                serde_json::json!({"fields": [money_field("oops", "ix://quire/native/Integer")]}),
-                Code::InvalidModelBinding,
-                "$.types[0].fields[0]: a value type declares no fields",
-            ),
-            (
                 serde_json::json!({"operations": [{"identity": "ix://acme/orders/VersionNumber/inc"}]}),
                 Code::UnsupportedConstruct,
-                "$.types[0].operations[0]:",
+                "$.types[0].operations[0]: construct meaning/capability \
+                 \"quire.meaning.model.value-type/v1:operations\" has no reader yet",
             ),
             (
                 serde_json::json!({"relationships": [{"identity": "ix://acme/orders/VersionNumber/rel"}]}),
@@ -4213,12 +4269,134 @@ mod tests {
         ] {
             let refusal = read_version_number(extra.clone()).expect_err("VersionNumber refuses");
             assert_eq!(refusal.code, code, "{extra}");
-            assert!(
-                refusal.detail.starts_with(detail),
-                "{extra}: {}",
-                refusal.detail
-            );
+            assert_eq!(refusal.detail, detail, "{extra}");
         }
+    }
+
+    /// A record-shaped `VALUE_TYPE` node (a non-empty `fields`, FCD's own
+    /// `value_object`/`event` forms at the pinned rev) is not this reader's
+    /// scalar shape at all: [`read_type_node`]'s own dispatch (not
+    /// [`read_value_type`], which never sees this node) falls it through to
+    /// the generic known-but-unsupported bucket -- the same refusal it got
+    /// before [`read_value_type`] existed, never the scalar reader's own
+    /// malformed/missing-declaration checks.
+    #[trace("TC-458", "FR-103-AC-1")]
+    #[test]
+    fn refuses_a_record_shaped_value_type_as_unsupported_not_malformed() {
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "value_type",
+                meaning::VALUE_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/Money",
+                serde_json::json!({"module": "acme/orders", "name": "value_type"}),
+                serde_json::json!({
+                    "scalar": "integer",
+                    "fields": [wire_field(
+                        "ix://acme/orders/Money/amount_minor",
+                        "amount_minor",
+                        "ix://quire/native/Integer",
+                    )],
+                }),
+            )]),
+        )
+        .to_string()
+        .into_bytes();
+        let refusals = read_records("acme/orders", &parse_document(&document))
+            .expect_err("a record-shaped value type refuses, never admits as a scalar");
+        assert_eq!(
+            refusals,
+            vec![ModelRefusal {
+                code: Code::UnsupportedConstruct,
+                cause: ModelRefusalCause::UnsupportedDeclarationForm {
+                    node: "ix://acme/orders/Money".to_owned(),
+                    what: meaning::VALUE_TYPE.to_owned(),
+                },
+                detail: format!(
+                    "$.types[0]: construct meaning/capability {:?} has no reader yet",
+                    meaning::VALUE_TYPE
+                ),
+            }]
+        );
+    }
+
+    /// [`read_type_node`]'s own dispatch arm for `VALUE_TYPE` -- not just
+    /// [`read_value_type`] called directly -- resolves a `types[]` entry
+    /// into a [`DomainPackageRecord::ScalarType`] through the real
+    /// `constructs[]`-meaning lookup [`read_records`] exercises end to end.
+    /// Deleting the dispatch arm (while leaving [`read_value_type`] itself
+    /// untouched) would leave every other test in this module green; this
+    /// one would not.
+    #[trace("TC-458", "FR-103-AC-1")]
+    #[test]
+    fn reads_a_bound_integer_value_type_through_the_real_dispatch() {
+        let document = wire_envelope(
+            "acme/orders",
+            serde_json::json!([wire_construct(
+                "acme/orders",
+                "value_type",
+                meaning::VALUE_TYPE,
+                serde_json::json!({}),
+            )]),
+            serde_json::json!([wire_type(
+                "ix://acme/orders/VersionNumber",
+                serde_json::json!({"module": "acme/orders", "name": "value_type"}),
+                serde_json::json!({
+                    "scalar": "integer",
+                    // `agent-ix-semantic-ir`'s own `CONSTRAINT_MEMBERS`
+                    // requires every constraint's `identity`/`appliesTo`/
+                    // `diagnosticCode`/`origin` present, since `read_records`
+                    // (unlike `read_value_type` called directly) runs the
+                    // full `validate_with_semantic_ir` schema/rules check
+                    // first. `appliesTo` names the native scalar the value
+                    // type binds (`ix://quire/native/Integer`), not
+                    // `VersionNumber`'s own identity -- see
+                    // `model_operations.rs`'s own matching fixture for why.
+                    "constraints": [
+                        {
+                            "identity": "ix://acme/orders/VersionNumber/constraints/min",
+                            "keyword": "min",
+                            "operands": {"value": 0},
+                            "appliesTo": "ix://quire/native/Integer",
+                            "diagnosticCode": "bound.min",
+                            "origin": {"generated": {
+                                "generatorIdentity": "ix://acme/orders/VersionNumber",
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": ["ix://acme/orders/VersionNumber"],
+                            }},
+                        },
+                        {
+                            "identity": "ix://acme/orders/VersionNumber/constraints/max",
+                            "keyword": "max",
+                            "operands": {"value": 1000},
+                            "appliesTo": "ix://quire/native/Integer",
+                            "diagnosticCode": "bound.max",
+                            "origin": {"generated": {
+                                "generatorIdentity": "ix://acme/orders/VersionNumber",
+                                "generatorVersion": "1.0.0",
+                                "inputIdentities": ["ix://acme/orders/VersionNumber"],
+                            }},
+                        },
+                    ],
+                }),
+            )]),
+        )
+        .to_string()
+        .into_bytes();
+        let records = read_records("acme/orders", &parse_document(&document))
+            .expect("VersionNumber admits through the real dispatch");
+        assert_eq!(
+            records,
+            vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+                key: declaration_key("acme/orders", "ix://acme/orders/VersionNumber"),
+                lower: 0,
+                upper: 1000,
+            })]
+        );
     }
 
     /// A construct's `meaning` is schema-free text to
