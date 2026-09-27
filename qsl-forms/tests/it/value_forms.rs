@@ -54,7 +54,8 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Tuple(_)
         | DeclarationForm::Enum(_)
         | DeclarationForm::Dimension(_)
-        | DeclarationForm::Unit(_) => panic!("a function form, not {form:?}"),
+        | DeclarationForm::Unit(_)
+        | DeclarationForm::StateClause(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -139,6 +140,9 @@ fn show(expression: &Expression) -> String {
         Expression::Lookup { .. } => "Lookup".into(),
         Expression::Dispatch { .. } => "Dispatch".into(),
         Expression::Pre(_) => "Pre".into(),
+        Expression::SelfRef => "SelfRef".into(),
+        Expression::Result => "Result".into(),
+        Expression::Reaches { edge, .. } => format!("Reaches[{edge}]"),
     };
     if children.is_empty() {
         head
@@ -182,6 +186,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Enum(_) => "enum",
             DeclarationForm::Dimension(_) => "dimension",
             DeclarationForm::Unit(_) => "unit",
+            DeclarationForm::StateClause(_) => "state_clause",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);
@@ -253,6 +258,7 @@ impl StartAnd for Span {
 }
 
 #[trace("FR-091-AC-3", "TC-394")]
+#[trace("TC-456", "FR-102-AC-3")]
 #[test]
 fn each_expression_construct_maps_to_its_variant() {
     let cases = [
@@ -316,6 +322,12 @@ fn each_expression_construct_maps_to_its_variant() {
         ("pre(a)", "Pre(a)"),
         ("allInstances<M::T>(p)", "AllInstances[Name(\"M::T\")](p)"),
         ("(a)", "a"),
+        // FR-102 (QSL-273, TC-456): `self`, `result` and a single-segment
+        // `reaches` edge build as expressions instead of refusing.
+        ("self", "SelfRef"),
+        ("result", "Result"),
+        ("reaches(a, b, e)", "Reaches[e](a, b)"),
+        ("not reaches(a, a, e)", "Not(Reaches[e](a, a))"),
     ];
     for (source, expected) in cases {
         let (_, declaration) = body(source);
@@ -414,17 +426,20 @@ fn s2_refuses_inadmissible_input_and_undispatched_declarations() {
         other => panic!("the diagnosed-source cause, not {other:?}"),
     }
 
-    let invariant = "invariant Positive using v on M::T at current { true }";
+    // FR-102 (QSL-273) gave `invariant`/`pre`/`post` their own dispatch
+    // entry, so FR-091-AC-6's undispatched case moves to a spelling no
+    // family claims yet: `synthesis` (`SynthesisDeclaration`).
+    let synthesis = "synthesis Syn using v grammar M::G domain M::D satisfies { true };";
     let (text, cause, span) = refusal(&format!(
-        "function t using v(): Boolean pure {{ true }}\n{invariant}"
+        "function t using v(): Boolean pure {{ true }}\n{synthesis}"
     ));
     assert_eq!(
         cause,
         FormsCause::NoDispatchEntry {
-            spelling: name("invariant")
+            spelling: name("synthesis")
         }
     );
-    assert_eq!(span, Some(span_of(&text, invariant)));
+    assert_eq!(span, Some(span_of(&text, synthesis)));
 }
 
 #[trace("FR-091-AC-7", "TC-396")]
@@ -436,11 +451,11 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
         ("a mod b", Production::Product, "a mod b"),
         ("xs[0]", Production::Postfix, "xs[0]"),
         ("none", Production::Primary, "none"),
-        (
-            "reaches(a, b, M::R)",
-            Production::Primary,
-            "reaches(a, b, M::R)",
-        ),
+        // FR-102 (QSL-273): a single-segment `reaches` edge now builds
+        // (`each_expression_construct_maps_to_its_variant`); a
+        // multi-segment edge still refuses, but at the qualified edge
+        // itself, not the whole construct (FR-102-AC-3).
+        ("reaches(a, b, M::R)", Production::QualifiedName, "M::R"),
         ("if a then b else a mod b", Production::Product, "a mod b"),
         (
             "size<Int[0, 1]>(c)",
@@ -449,8 +464,6 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
         ),
         ("a div b", Production::Product, "a div b"),
         ("null", Production::Primary, "null"),
-        ("self", Production::Primary, "self"),
-        ("result", Production::Primary, "result"),
         ("a rem b", Production::Product, "a rem b"),
         (
             "float32(bits: 0x00000000)",

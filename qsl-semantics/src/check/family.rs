@@ -579,6 +579,22 @@ fn encode_expression(
                 out.write_str("pre");
                 pending.push(operand);
             }
+            Expression::SelfRef => {
+                out.write_str("self_ref");
+            }
+            Expression::Result => {
+                out.write_str("result");
+            }
+            Expression::Reaches {
+                source,
+                target,
+                edge,
+                ..
+            } => {
+                out.write_str("reaches");
+                out.write_str(edge);
+                pending.extend([&**source, &**target]);
+            }
             // Not the S2 seam (`Typer::infer_form`'s own doc,
             // `qsl-semantics/src/check/check/typing.rs`): an unconditional
             // probe arm so this match keeps compiling under `--cfg

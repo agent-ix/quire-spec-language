@@ -444,6 +444,34 @@ pub enum Expression {
     /// valid only where a checked declaration's postcondition body admits
     /// it; `e`'s own type is unchanged.
     Pre(Box<Expression>),
+    /// `self` (FR-102, ADR-012 §15.2): the state clause's current object.
+    /// Owned by `ProtocolClause`, which reads the clause's own observation
+    /// to give it a value; `Value`'s evaluator never meets this node
+    /// (legal only inside a state clause).
+    SelfRef,
+    /// `result` (FR-102, ADR-012 §15.2): an operation postcondition's
+    /// result value. Owned by `ProtocolClause`, for the same reason as
+    /// [`Self::SelfRef`]. Nothing here checks that it appears only in a
+    /// postcondition; S3 does (FR-104).
+    Result,
+    /// `reaches(source, target, edge)` (FR-102, ADR-012 §15.2): whether
+    /// `target` is reachable from `source` by following `edge` in the
+    /// state clause's own observation. Owned by `StateModel`, which reads
+    /// object fields (§15.2's "Field reads, `deref`, `reaches` and object
+    /// identity equality"); legal only inside a state clause (FR-104).
+    /// `edge` is one member name and its span: a qualified spelling names
+    /// nothing more than the operands' own type, which S3 resolves, so a
+    /// multi-segment edge refuses at S2 (FR-102-AC-3).
+    Reaches {
+        /// The source reference.
+        source: Box<Expression>,
+        /// The target reference.
+        target: Box<Expression>,
+        /// The edge member name, as spelled.
+        edge: String,
+        /// The span of the edge member name.
+        edge_span: Span,
+    },
     /// FR-063/S2 (QSL-143): exists only so `--cfg seam_probe` makes every
     /// match over `Expression` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -455,7 +483,12 @@ impl Expression {
     /// The direct subexpressions in location-index order.
     pub fn children(&self) -> Vec<&Expression> {
         match self {
-            Self::Boolean(_) | Self::Integer(_) | Self::Rational(..) | Self::Name(_) => Vec::new(),
+            Self::Boolean(_)
+            | Self::Integer(_)
+            | Self::Rational(..)
+            | Self::Name(_)
+            | Self::SelfRef
+            | Self::Result => Vec::new(),
             Self::Let { value, body, .. } => vec![value, body],
             Self::If {
                 condition,
@@ -515,6 +548,7 @@ impl Expression {
                 children.extend(arguments);
                 children
             }
+            Self::Reaches { source, target, .. } => vec![source, target],
             // Not the S2 seam (`Typer::infer_form`'s own doc): this is
             // `Expression`'s own module, so its match gets an unconditional
             // probe arm rather than being left to break.
@@ -535,7 +569,12 @@ impl Expression {
             }
         }
         match self {
-            Self::Boolean(_) | Self::Integer(_) | Self::Rational(..) | Self::Name(_) => {}
+            Self::Boolean(_)
+            | Self::Integer(_)
+            | Self::Rational(..)
+            | Self::Name(_)
+            | Self::SelfRef
+            | Self::Result => {}
             Self::Negate(operand)
             | Self::Not(operand)
             | Self::Present(operand)
@@ -582,6 +621,11 @@ impl Expression {
             | Self::Lookup {
                 population: first,
                 reference: second,
+                ..
+            }
+            | Self::Reaches {
+                source: first,
+                target: second,
                 ..
             } => {
                 take(first, stack);
@@ -640,7 +684,12 @@ impl Expression {
     /// Whether this form has no subexpressions at all.
     fn is_childless(&self) -> bool {
         match self {
-            Self::Boolean(_) | Self::Integer(_) | Self::Rational(..) | Self::Name(_) => true,
+            Self::Boolean(_)
+            | Self::Integer(_)
+            | Self::Rational(..)
+            | Self::Name(_)
+            | Self::SelfRef
+            | Self::Result => true,
             Self::Call { arguments, .. }
             | Self::Collection {
                 elements: arguments,
@@ -667,6 +716,7 @@ impl Expression {
             | Self::AllInstances { .. }
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
+            | Self::Reaches { .. }
             | Self::Pre(_) => false,
             #[cfg(seam_probe)]
             Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
@@ -1032,6 +1082,49 @@ pub struct UnitForm {
     pub offset: Option<ExactNumberForm>,
 }
 
+/// A [`StateClauseForm`]'s kind (FR-102 "Outputs"): read from the leading
+/// token alone, `invariant` gives [`Self::Invariant`], `pre` gives
+/// [`Self::Precondition`] and `post` gives [`Self::Postcondition`]. An
+/// invariant's `at current` observation is carried as this kind itself: the
+/// grammar admits no other observation for an invariant, so no separate
+/// observation member is added.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StateClauseKind {
+    /// `invariant N using p on M::T at current { e }`.
+    Invariant,
+    /// `pre N using p on M::T::op { e }`.
+    Precondition,
+    /// `post N using p on M::T::op { e }`.
+    Postcondition,
+}
+
+/// `invariant N using p on M::T at current { e }`, `pre N using p on
+/// M::T::op { e }` or `post N using p on M::T::op { e }` (FR-102 "Outputs",
+/// ADR-012 §15.2: owned by `ProtocolClause`). S2 keeps the `using` alias,
+/// the model context and the operation member spelled and spanned,
+/// unresolved: it resolves none of them, and neither does it check where
+/// the clause may appear; the assembler and S3 do (FR-104).
+#[derive(Clone, Debug)]
+pub struct StateClauseForm {
+    /// Invariant, precondition or postcondition.
+    pub kind: StateClauseKind,
+    /// The declared clause name.
+    pub name: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The `model-name` (`M::T`) context, as spelled.
+    pub context: NameForm,
+    /// The operation member name, for a `pre` or `post` clause; `None` for
+    /// an invariant.
+    pub operation: Option<DeclaredName>,
+    /// The body.
+    pub body: Expression,
+    /// The form's byte spans (FR-091-AC-10 applied to a state clause): the
+    /// whole declaration's, and one per node of the body. A state clause
+    /// declares no `decreases` measure, so `measure` is always `None`.
+    pub spans: DeclarationSpans,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -1051,6 +1144,9 @@ pub enum DeclarationForm {
     Dimension(DimensionForm),
     /// A `unit` declaration.
     Unit(UnitForm),
+    /// An `invariant`, `pre` or `post` state clause, boxed for the same
+    /// reason as [`Self::Function`] (FR-102).
+    StateClause(Box<StateClauseForm>),
 }
 
 #[cfg(test)]
@@ -1271,6 +1367,14 @@ mod tests {
                     arguments: _,
                 } => "Dispatch",
                 Expression::Pre(_) => "Pre",
+                Expression::SelfRef => "SelfRef",
+                Expression::Result => "Result",
+                Expression::Reaches {
+                    source: _,
+                    target: _,
+                    edge: _,
+                    edge_span: _,
+                } => "Reaches",
             }
         }
         assert_eq!(expression(&Expression::Boolean(true)), "Boolean");
