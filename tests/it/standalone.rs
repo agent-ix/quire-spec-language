@@ -744,4 +744,6 @@ fn run_requests_and_results_carry_the_four_source_labels() {
     let (code, result, _) = invoke(directory.path());
     assert_eq!(code, 20, "{result}");
     assert_eq!(result["code"], "invalid_source_identity");
+    assert_eq!(result["details"]["cause"], "blank-label", "{result}");
+    assert_eq!(result["details"]["label"], "authority", "{result}");
 }

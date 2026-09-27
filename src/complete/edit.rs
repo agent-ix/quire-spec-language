@@ -115,10 +115,11 @@ fn apply_edits_selected(
         || (&new_identity.revision_namespace, &new_identity.revision)
             == (&old.revision_namespace, &old.revision)
     {
-        return Err(failure(
-            CompleteCode::InvalidSourceIdentity,
+        return Err(qsl_cst::diagnostic::error_without_region(
+            source,
+            CompleteCode::InvalidSourceMap,
             CompleteCause::Host(HostCause::EditPredecessor),
-            Span { start: 0, end: 0 },
+            Phase::SourceMap,
             "incremental edit revision does not match the exact source predecessor",
         ));
     }

@@ -51,4 +51,6 @@ Tag the tests `#[trace("TC-430", "FR-026-AC-6")]` and
 
 ## Status
 
-Partial. ADR-013 §7 slice S-4b (QSL-233). Steps 2 to 5 pass locally. Step 1 passes with the model source's revision value `draft:1`, not `1`: the program's model import pins the model artifact, which binds that label. Step 2's `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are planned (QSL-245).
+Partial. ADR-013 §7 slice S-4b (QSL-233). Steps 2 to 5 pass locally; step 1 passes only with the deviation below. Step 1 passes with the model source's revision value `draft:1`, not `1`: the program's model import pins the model artifact, which binds that label. Step 2's `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are asserted (QSL-245).
+
+Step 2's blank-label refusal renders a byte-0 span in the run output: the native `Diagnostic`'s retained debt (FR-001, "Where an S0 refusal is located"), not this requirement's behaviour.

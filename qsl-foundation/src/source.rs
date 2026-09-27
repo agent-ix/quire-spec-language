@@ -29,6 +29,40 @@ pub struct SourceIdentity {
     pub revision: String,
 }
 
+/// One of the four labels of a [`SourceIdentity`], in FR-001's check order.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SourceLabel {
+    /// The authority that issues the identity.
+    Authority,
+    /// The identity within the authority.
+    Identity,
+    /// The revision namespace.
+    RevisionNamespace,
+    /// The revision value.
+    Revision,
+}
+
+impl SourceLabel {
+    /// The labels in the order admission checks them.
+    pub const ALL: [Self; 4] = [
+        Self::Authority,
+        Self::Identity,
+        Self::RevisionNamespace,
+        Self::Revision,
+    ];
+
+    /// The catalog spelling of the `label` payload
+    /// (`quire.native.diagnostics/v1`, `blank-label`).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Authority => "authority",
+            Self::Identity => "identity",
+            Self::RevisionNamespace => "revision_namespace",
+            Self::Revision => "revision",
+        }
+    }
+}
+
 impl SourceIdentity {
     /// The four labels exactly as given. Nothing is checked here: admission
     /// ([`Source::read_typed`]) refuses a blank label.
@@ -46,35 +80,60 @@ impl SourceIdentity {
         }
     }
 
-    /// FR-001: whether every label is non-empty and not only whitespace.
-    pub fn is_named(&self) -> bool {
-        [
-            &self.authority,
-            &self.identity,
-            &self.revision_namespace,
-            &self.revision,
-        ]
-        .iter()
-        .all(|label| !label.trim().is_empty())
+    /// FR-001: the first blank label in the order authority, identity,
+    /// revision namespace, revision. A label is blank when it is empty or
+    /// only Unicode `White_Space` scalars (`str::trim` strips exactly
+    /// those; U+3000 is blank, U+200B is not).
+    pub fn first_blank_label(&self) -> Option<SourceLabel> {
+        SourceLabel::ALL
+            .into_iter()
+            .find(|label| self.label(*label).trim().is_empty())
     }
 
-    /// The `RawSourceRef` of bytes with `digest` under these labels, or
-    /// `None` when a label is blank.
-    fn reference(&self, digest: ByteDigest) -> Option<RawSourceRef> {
-        if !self.is_named() {
-            return None;
+    /// FR-001: whether every label is non-blank.
+    pub fn is_named(&self) -> bool {
+        self.first_blank_label().is_none()
+    }
+
+    /// The value of one label.
+    pub fn label(&self, label: SourceLabel) -> &str {
+        match label {
+            SourceLabel::Authority => &self.authority,
+            SourceLabel::Identity => &self.identity,
+            SourceLabel::RevisionNamespace => &self.revision_namespace,
+            SourceLabel::Revision => &self.revision,
+        }
+    }
+
+    /// The `RawSourceRef` of bytes with `digest` under these labels.
+    /// Provenance refuses only an empty label, which is a blank one, so a
+    /// blank label is named first and a provenance refusal after it is an
+    /// established-invariant break ([`ReferenceError::Provenance`]).
+    fn reference(&self, digest: ByteDigest) -> Result<RawSourceRef, ReferenceError> {
+        if let Some(label) = self.first_blank_label() {
+            return Err(ReferenceError::Blank(label));
         }
         let revision =
             provenance::Revision::new(self.revision_namespace.clone(), self.revision.clone())
-                .ok()?;
+                .map_err(ReferenceError::Provenance)?;
         RawSourceRef::new(
             self.authority.clone(),
             self.identity.clone(),
             revision,
             DigestRecord::mint(DigestDomain::SourceBytesV1, digest.as_bytes()),
         )
-        .ok()
+        .map_err(ReferenceError::Provenance)
     }
+}
+
+/// Why [`SourceIdentity::reference`] minted no reference.
+enum ReferenceError {
+    /// A label is blank: `blank-label` naming it.
+    Blank(SourceLabel),
+    /// Provenance refused labels that are all non-blank: not reachable, so
+    /// it is reported as [`SourceReadCause::ReferenceInvariant`], never as a
+    /// label.
+    Provenance(provenance::InvalidProvenance),
 }
 
 /// Original byte offset and one-based line/Unicode scalar column.
@@ -141,8 +200,18 @@ pub struct Source(Arc<Document>);
 /// onto its own `CompleteCode`, a real cross-crate call site.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceReadCause {
-    /// A label is empty or only whitespace, or the path is empty.
-    UnnamedSource,
+    /// A label is blank (`blank-label`): the first blank one, in FR-001's
+    /// order.
+    BlankLabel {
+        /// The first blank label.
+        label: SourceLabel,
+    },
+    /// Every label is non-blank and the path is empty (`empty-path`).
+    EmptyPath,
+    /// Provenance refused labels and a path that passed the blank checks:
+    /// an established invariant broke (`runtime_invariant`); not reachable
+    /// from any input today.
+    ReferenceInvariant,
     /// The bytes exceed the byte budget.
     ByteBudget,
     /// The bytes are not UTF-8.
@@ -153,6 +222,48 @@ pub enum SourceReadCause {
     Nul,
     /// Verified intake: the bytes differ from the selected digest.
     DigestMismatch,
+}
+
+/// The catalog cause tag of a blank label
+/// (`quire.native.diagnostics/v1`, `invalid_source_identity`); the one
+/// spelling every layer above reads.
+pub const BLANK_LABEL_TAG: &str = "blank-label";
+/// The catalog cause tag of an empty path; see [`BLANK_LABEL_TAG`].
+pub const EMPTY_PATH_TAG: &str = "empty-path";
+
+/// The wire fields an `invalid_source_identity` refusal adds to a refusal
+/// record: `cause`, and `label` on `blank-label` only. Flattened into the
+/// CLI refusal line and the run output.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct IdentityCauseFields {
+    /// `blank-label` or `empty-path`.
+    pub cause: &'static str,
+    /// The first blank label's spelling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<&'static str>,
+}
+
+impl SourceReadCause {
+    /// The wire fields of an `invalid_source_identity` cause; `None` for
+    /// every other cause.
+    pub const fn identity_fields(self) -> Option<IdentityCauseFields> {
+        match self {
+            Self::BlankLabel { label } => Some(IdentityCauseFields {
+                cause: BLANK_LABEL_TAG,
+                label: Some(label.as_str()),
+            }),
+            Self::EmptyPath => Some(IdentityCauseFields {
+                cause: EMPTY_PATH_TAG,
+                label: None,
+            }),
+            Self::ReferenceInvariant
+            | Self::ByteBudget
+            | Self::InvalidUtf8
+            | Self::Bom
+            | Self::Nul
+            | Self::DigestMismatch => None,
+        }
+    }
 }
 
 /// Cause-specific location and message for a source refusal, before
@@ -246,11 +357,18 @@ impl Source {
                 },
             })
         };
-        if !identity.is_named() || path.is_empty() {
+        if let Some(label) = identity.first_blank_label() {
             return Err(refuse(
-                SourceReadCause::UnnamedSource,
+                SourceReadCause::BlankLabel { label },
                 None,
-                "source authority, identity, revision namespace, revision and path must be explicit",
+                &format!("source {} must not be blank", label.as_str()),
+            ));
+        }
+        if path.is_empty() {
+            return Err(refuse(
+                SourceReadCause::EmptyPath,
+                None,
+                "source path must not be empty",
             ));
         }
         if bytes.len() > byte_limit {
@@ -261,12 +379,24 @@ impl Source {
             ));
         }
         let digest = ByteDigest::of(bytes);
-        let Some(reference) = identity.reference(digest) else {
-            return Err(refuse(
-                SourceReadCause::UnnamedSource,
-                None,
-                "source authority, identity, revision namespace, revision and path must be explicit",
-            ));
+        // Every label is non-blank here, so the reference is minted unless
+        // provenance itself refuses the values.
+        let reference = match identity.reference(digest) {
+            Ok(reference) => reference,
+            Err(ReferenceError::Blank(label)) => {
+                return Err(refuse(
+                    SourceReadCause::BlankLabel { label },
+                    None,
+                    &format!("source {} must not be blank", label.as_str()),
+                ))
+            }
+            Err(ReferenceError::Provenance(error)) => {
+                return Err(refuse(
+                    SourceReadCause::ReferenceInvariant,
+                    None,
+                    &format!("source reference refused non-blank labels: {error}"),
+                ))
+            }
         };
         let at = |start: usize, end: usize| {
             let (start, end) = (u64::try_from(start).ok()?, u64::try_from(end).ok()?);
@@ -530,14 +660,16 @@ mod tests {
         );
     }
 
-    /// FR-001-AC-6: exactly one empty or single-space label refuses with
-    /// the unnamed-source cause (`invalid_source_identity`) and no region.
+    /// FR-001-AC-6: exactly one empty, single-space or U+3000 label refuses
+    /// with `blank-label` naming that label, and no region; U+200B is not
+    /// `White_Space`, so it is not blank.
     #[trace("TC-424", "FR-001-AC-6")]
     #[test]
-    fn a_blank_label_refuses_and_admits_nothing() {
-        for blank in ["", " "] {
-            for position in 0..4 {
+    fn a_blank_label_refuses_naming_it_and_admits_nothing() {
+        for blank in ["", " ", "\u{3000}"] {
+            for label in SourceLabel::ALL {
                 let mut values = ["agent-ix", "specs/a.quire", "git", "3f2a"];
+                let position = SourceLabel::ALL.iter().position(|l| *l == label).unwrap();
                 values[position] = blank;
                 let refused = refusal(
                     labels(values[0], values[1], values[2], values[3]),
@@ -546,12 +678,50 @@ mod tests {
                 );
                 assert_eq!(
                     refused.cause,
-                    SourceReadCause::UnnamedSource,
-                    "label {position} = {blank:?}"
+                    SourceReadCause::BlankLabel { label },
+                    "{label:?} = {blank:?}"
                 );
                 assert_eq!(refused.error.region, None);
             }
         }
+        let zero_width = labels("\u{200b}", "u", "git", "1");
+        assert!(Source::read_typed(zero_width, "a", b"b", MAX_SOURCE_BYTES).is_ok());
+    }
+
+    /// FR-001-AC-11: the first blank label in order wins, and a blank label
+    /// beats an empty path; only with four non-blank labels is the path
+    /// refused, as `empty-path`.
+    #[trace("TC-424", "FR-001-AC-11")]
+    #[test]
+    fn label_order_precedes_the_path() {
+        let cause = |identity, path: &str| {
+            Source::read_typed(identity, path, b"b", MAX_SOURCE_BYTES)
+                .expect_err("refused")
+                .cause
+        };
+        assert_eq!(
+            cause(labels(" ", "u", "", "1"), "a"),
+            SourceReadCause::BlankLabel {
+                label: SourceLabel::Authority
+            }
+        );
+        assert_eq!(
+            cause(labels("a", "", "git", "1"), ""),
+            SourceReadCause::BlankLabel {
+                label: SourceLabel::Identity
+            }
+        );
+        assert_eq!(
+            cause(labels("a", "u", "git", "1"), ""),
+            SourceReadCause::EmptyPath
+        );
+        assert_eq!(
+            Source::read_typed(labels("a", "u", "git", "1"), "", b"b", MAX_SOURCE_BYTES)
+                .unwrap_err()
+                .error
+                .region,
+            None
+        );
     }
 
     /// FR-001-AC-8: invalid UTF-8 refuses at the empty region at the end of
@@ -595,7 +765,12 @@ mod tests {
     #[test]
     fn unnamed_over_budget_and_mismatched_refusals_have_no_region() {
         let unnamed = refusal(labels("a", "u", "", "1"), b"b", MAX_SOURCE_BYTES);
-        assert_eq!(unnamed.cause, SourceReadCause::UnnamedSource);
+        assert_eq!(
+            unnamed.cause,
+            SourceReadCause::BlankLabel {
+                label: SourceLabel::RevisionNamespace
+            }
+        );
         assert_eq!(unnamed.error.region, None);
 
         let over = refusal(labels("a", "u", "git", "1"), b"abcde", 4);

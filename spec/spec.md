@@ -385,7 +385,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 
 | Artifact | Type | Status |
 | --- | --- | --- |
-| [FR-001](functional/FR-001-read-exact-source.md) | FR | Draft; AC-5 to AC-10 (the caller-named four-label `RawSourceRef` for every source admission, S0 refusal regions, render-time line and column; TC-424) implemented under QSL-233 (ADR-013 §7 S-4b); catalog revision `1-draft.8` (STD-110) `invalid_source_identity` causes `blank-label` (with `label`, labels checked first in order) and `empty-path` (AC-6's cause and field, AC-11) specified and planned (QSL-245); the complete-V1 edit and binding host causes move to `invalid_source_map` with no region (AC-12, team-lead ruling 2026-09-26), planned (QSL-245) |
+| [FR-001](functional/FR-001-read-exact-source.md) | FR | Draft; AC-5 to AC-10 (the caller-named four-label `RawSourceRef` for every source admission, S0 refusal regions, render-time line and column; TC-424) implemented under QSL-233 (ADR-013 §7 S-4b); catalog revision `1-draft.8` (STD-110) `invalid_source_identity` causes `blank-label` (with `label`, labels checked first in order) and `empty-path` (AC-6's cause and field, AC-11) implemented (QSL-245); the complete-V1 edit and binding host causes refuse as `invalid_source_map` with no region (AC-12, team-lead ruling 2026-09-26), implemented (QSL-245) |
 | [FR-002](functional/FR-002-parse-native-units.md) | FR | Draft |
 | [FR-003](functional/FR-003-format-native-source.md) | FR | Draft |
 | [FR-004](functional/FR-004-verify-source-maps.md) | FR | Draft |
@@ -394,7 +394,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-007](functional/FR-007-validate-runtime-inputs.md) | FR | Draft |
 | [FR-008](functional/FR-008-evaluate-state-reference.md) | FR | Draft |
 | [FR-009](functional/FR-009-lower-qualified-projections.md) | FR | Draft |
-| [FR-010](functional/FR-010-report-native-outcomes.md) | FR | Draft; AC-11 (the four source labels, TC-425) implemented under QSL-233 (ADR-013 §7 S-4b); the catalog revision `1-draft.8` `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are specified and planned (QSL-245) |
+| [FR-010](functional/FR-010-report-native-outcomes.md) | FR | Draft; AC-11 (the four source labels, TC-425) implemented under QSL-233 (ADR-013 §7 S-4b); the catalog revision `1-draft.8` `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are implemented (QSL-245) |
 | [FR-011](functional/FR-011-integrate-opaque-extraction.md) | FR | Draft |
 | [US-001](usecase/US-001-author-native-source.md) | US | Draft |
 | [US-002](usecase/US-002-link-exact-models.md) | US | Draft |
@@ -419,7 +419,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-015](functional/FR-015-project-native-model-semantics.md) | FR | Planned native semantic roles |
 | [FR-016](functional/FR-016-check-native-clauses.md) | FR | Qualified type/definedness checker |
 | [FR-017](functional/FR-017-separate-qualification-stages.md) | FR | Qualified construction-stage repairs; SR-083 |
-| [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR | Planned LC03 byte-bound input construction; FR-018-AC-8 (four source labels, TC-431) implemented under QSL-233 (ADR-013 §7 S-4b); the catalog revision `1-draft.8` `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are specified and planned (QSL-245) |
+| [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR | Planned LC03 byte-bound input construction; FR-018-AC-8 (four source labels, TC-431) implemented under QSL-233 (ADR-013 §7 S-4b); the catalog revision `1-draft.8` `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are implemented (QSL-245) |
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
 | [FR-019](functional/FR-019-package-checked-native-clauses.md) | FR | Implemented; qualified in the native-packages test matrix |
@@ -429,7 +429,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-023](functional/FR-023-run-native-packages.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-024](functional/FR-024-read-native-runtime-artifacts.md) | FR | Implemented; tested in the native-workflow test matrix; FR-024-AC-6 (four source labels, TC-431) implemented under QSL-233 (ADR-013 §7 S-4b) |
 | [FR-025](functional/FR-025-compile-rule-model-source.md) | FR | Implemented; tested in the native-workflow test matrix |
-| [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR | Implemented; tested in the native-workflow test matrix; FR-026-AC-6 (four source labels, TC-430) implemented under QSL-233 (ADR-013 §7 S-4b); the catalog revision `1-draft.8` `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are specified and planned (QSL-245) |
+| [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR | Implemented; tested in the native-workflow test matrix; FR-026-AC-6 (four source labels, TC-430) implemented under QSL-233 (ADR-013 §7 S-4b); the catalog revision `1-draft.8` `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are implemented (QSL-245) |
 | [FR-027](functional/FR-027-export-compiled-native-package.md) | FR | Implemented; tested in the native-workflow test matrix; FR-027-AC-4 (four source labels, TC-430) implemented under QSL-233 (ADR-013 §7 S-4b); FR-027-AC-5 to FR-027-AC-8 (edition routing: `1-draft` to the spine, `0-draft` to native, TC-435) implemented under QSL-8 (ADR-011 §7.3 M-6a); FR-027-AC-9 (domain packages on the spine, `model_selections`, TC-442) implemented under QSL-249; FR-027-AC-10 (`libraries`, TC-446 step 7) implemented under QSL-255 |
 | [FR-028](functional/FR-028-run-selected-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-029](functional/FR-029-export-executable-projection.md) | FR | Implemented; tested in the native-workflow test matrix |

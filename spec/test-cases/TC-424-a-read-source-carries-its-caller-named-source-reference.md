@@ -70,7 +70,11 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 
 ## Status
 
-Partial. Steps 1 to 5 pass locally under ADR-013 §7 slice S-4b (QSL-233)
-for the `invalid_source_identity` code. Step 2's U+3000 and U+200B cases,
-its `blank-label` cause and `label` field, step 6 (FR-001-AC-11) and step 7
-(FR-001-AC-12) are planned (QSL-245).
+Passed locally (QSL-233 steps 1 to 5; QSL-245 steps 2, 6 and 7): step 2's
+U+3000 and U+200B cases and its `blank-label` cause and `label`
+(`qsl-foundation/src/source.rs`, `a_blank_label_refuses_naming_it_and_admits_nothing`),
+step 6 (`label_order_precedes_the_path`, and the complete reader's
+`the_reader_reports_blank_label_before_empty_path`) and step 7
+(`a_stale_edit_predecessor_refuses_as_a_source_map_with_no_region`,
+`rendering_a_foreign_cst_node_is_a_typed_refusal`,
+`stale_profile_and_cancelled_editor_requests_are_typed`).

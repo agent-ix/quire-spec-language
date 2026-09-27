@@ -299,6 +299,7 @@ fn lowered_parse_limits_force_full_incremental_validation() {
 }
 
 #[trace("Task-047")]
+#[trace("TC-424", "FR-001-AC-12")]
 #[test]
 fn stale_profile_and_cancelled_editor_requests_are_typed() {
     let (catalog, profile) = catalog();
@@ -315,10 +316,11 @@ fn stale_profile_and_cancelled_editor_requests_are_typed() {
     assert_eq!(
         (unbound.code, unbound.cause),
         (
-            CompleteCode::InvalidSourceIdentity,
+            CompleteCode::InvalidSourceMap,
             CompleteCause::Host(HostCause::RequestRevision)
         )
     );
+    assert_eq!(unbound.region, None);
     let mut wrong_profile = binding("r1", &profile);
     wrong_profile.profile = DefinitionRef::new(
         "unknown",

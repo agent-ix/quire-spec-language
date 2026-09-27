@@ -111,6 +111,10 @@ pub(super) struct Diagnostic<'a> {
     pub span: LocatedSpan,
     pub upstream: Option<&'a ir::Diagnostic>,
     pub runtime: Option<RuntimeLocation<'a>>,
+    /// FR-001: `cause` and `label`, on an `invalid_source_identity`
+    /// refusal only.
+    #[serde(flatten)]
+    pub identity: Option<qsl_foundation::source::IdentityCauseFields>,
 }
 
 #[derive(Serialize)]
