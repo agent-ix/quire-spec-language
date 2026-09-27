@@ -244,6 +244,7 @@ fn extract_selections(
         digest: &'a Significant,
     }
 
+    #[qsl_attrs::string_edge]
     fn capture<'a>(
         production: Production,
         selected: &'a [Significant],
@@ -880,6 +881,7 @@ fn coalesce_complete_compounds(
     output
 }
 
+#[qsl_attrs::string_edge]
 fn selection_code(tokens: &[Significant], position: usize) -> Option<CompleteCode> {
     match position {
         1 if tokens

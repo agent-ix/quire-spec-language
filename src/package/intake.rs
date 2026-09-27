@@ -447,6 +447,7 @@ impl<'de> Deserialize<'de> for Recognized {
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str("a package object")
             }
+            #[qsl_attrs::string_edge]
             fn visit_map<A: MapAccess<'de>>(self, mut object: A) -> Result<Self::Value, A::Error> {
                 let mut format = None;
                 while let Some(key) = object.next_key::<String>()? {

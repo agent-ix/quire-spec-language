@@ -156,6 +156,17 @@ impl<'model> MappedPackage<'model> {
     }
 }
 
+/// The one language tag a mapped clause may declare, decoded once from the
+/// caller's fence tag (ADR-012 section 9 source-lexing edge).
+struct NativeLanguage;
+
+impl NativeLanguage {
+    #[qsl_attrs::string_edge]
+    fn of(tag: &str) -> Option<Self> {
+        (tag == "ix:native").then_some(Self)
+    }
+}
+
 /// Compile an adapter-selected complete native unit containing exactly one clause.
 ///
 /// The caller selects and verifies the original document/digest/region before
@@ -171,7 +182,7 @@ pub fn compile<'model>(
 ) -> Result<MappedPackage<'model>, Box<CompileError>> {
     let compile_native = || -> Result<NativePackage<'model>, CompileCause> {
         let body = mapping.body();
-        if language != "ix:native" {
+        if NativeLanguage::of(language).is_none() {
             return Err(qsl_foundation::diagnostic::error(
                 body,
                 Code::UnknownLanguage,

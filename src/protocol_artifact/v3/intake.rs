@@ -9,6 +9,7 @@ use crate::protocol_artifact::{self as artifact, v2, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report};
 use qsl_foundation::ByteDigest;
 
+#[qsl_attrs::string_edge]
 fn headers(
     package: &wire::Package,
     expected: &artifact::Expected<'_>,
@@ -232,8 +233,8 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             &mut work,
         )?;
         artifact::intake::sources(&package.inherited, &expected.inherited.inherited, &mut work)?;
-        artifact::intake::definitions(&package.inherited, &supplied, &mut work)?;
-        artifact::validate::package(&package.inherited, &mut work)?;
+        let registered = artifact::intake::definitions(&package.inherited, &supplied, &mut work)?;
+        artifact::validate::package(&package.inherited, &registered, &mut work)?;
         let model_schema = artifact::models::validate(
             &package.inherited,
             expected.inherited.inherited.models,

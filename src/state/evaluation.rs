@@ -922,10 +922,6 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
                 .window_identity
                 .as_ref()
                 .is_some_and(|identity| !valid_identity(identity))
-            || !valid_digest(&offered.static_selection.document_digest)
-            || !valid_digest(&offered.static_selection.model_digest)
-            || !valid_digest(&offered.static_selection.profile_digest)
-            || !valid_digest(&offered.static_selection.configuration_digest)
             || !valid_observation_digest(&offered.assessment_selection.membership_digest)
             || !valid_observation_digest(&offered.assessment_selection.snapshot_digest)
             || !valid_observation_digest(&offered.assessment_selection.closure_digest)
@@ -949,8 +945,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
         let Some(adapter) = &offered.adapter else {
             return Err(Stop::Refused(Refusal::UngroundedAuthorityMapping(handle)));
         };
-        if !valid_adapter(&adapter.artifact)
-            || adapter.compiled != offered.compiled
+        if adapter.compiled != offered.compiled
             || adapter.requirement != requirement.authority
             || adapter.producer != offered.producer
             || adapter.observation != offered.observation
@@ -2474,19 +2469,6 @@ fn declaration_root_type(declaration: &w::Declaration, handle: &w::Handle) -> Re
         .ok_or_else(|| Stop::Refused(Refusal::Authority(handle.clone())))
 }
 
-fn valid_digest(value: &CanonicalDigest) -> bool {
-    value.algorithm == "sha256"
-        && value.domain == "filament-canonical-json-1"
-        && value.value.len() == 71
-        && value.value.starts_with("sha256:")
-        && value
-            .value
-            .strip_prefix("sha256:")
-            .unwrap_or_default()
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-}
-
 fn valid_observation_digest(value: &ObservationDigest) -> bool {
     valid_identity(&value.0)
 }
@@ -2775,17 +2757,6 @@ fn discovery_push(work: &mut Work, pending: &mut Vec<w::Handle>, handle: &w::Han
         .map_err(|_| Stop::Exhausted(work.allocation(Dimension::InputAggregateEntries, 1)))?;
     pending.push(handle.clone());
     Ok(())
-}
-
-fn valid_adapter(value: &w::ArtifactRef) -> bool {
-    value.ref_version == "ix.artifact-ref/3-draft"
-        && value.kind == w::ArtifactKind::Binding
-        && value.wire.identity == "quire.state.authority-adapter"
-        && value.wire.version == "1"
-        && !value.authority.is_empty()
-        && !value.identity.is_empty()
-        && !value.revision.namespace.is_empty()
-        && !value.revision.value.is_empty()
 }
 
 fn wire_integer(value: &w::Integer) -> Option<i64> {

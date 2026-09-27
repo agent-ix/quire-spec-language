@@ -39,6 +39,7 @@ pub(super) fn revision(value: &Revision) -> Result<(), Error> {
     name(&value.value)
 }
 
+#[qsl_attrs::string_edge]
 pub(super) fn reference(value: &ArtifactRef) -> Result<(), Error> {
     if value.ref_version != "ix.artifact-ref/3-draft" {
         return Err(Error::Unsupported(Unsupported::Wire));
@@ -231,6 +232,7 @@ pub(super) fn selected<'a>(
         .collect()
 }
 
+#[qsl_attrs::string_edge]
 fn headers(package: &Package, expected: &Expected<'_>, work: &mut Work) -> Result<(), Error> {
     if package.wire != WIRE
         || package.media != MEDIA
@@ -414,11 +416,12 @@ fn definition_key(value: &Definition) -> (&str, &str, &str) {
     )
 }
 
+#[qsl_attrs::string_edge]
 pub(super) fn definitions(
     package: &Package,
     supplied: &[&SuppliedDependency<'_>],
     work: &mut Work,
-) -> Result<(), Error> {
+) -> Result<Vec<Registered>, Error> {
     work.charge(Dimension::Definitions, package.definitions.len())?;
     for pair in package.definitions.windows(2) {
         work.visit()?;
@@ -512,7 +515,7 @@ pub(super) fn definitions(
     {
         return Err(Error::Invalid(Invalid::Definition));
     }
-    Ok(())
+    Ok(registered)
 }
 
 /// Read exact bounded bytes without parsing any embedded native source text.
@@ -530,8 +533,8 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         headers(&package, expected, &mut work)?;
         let supplied = selected(&package, expected, &mut work)?;
         sources(&package, expected, &mut work)?;
-        definitions(&package, &supplied, &mut work)?;
-        super::validate::package(&package, &mut work)?;
+        let registered = definitions(&package, &supplied, &mut work)?;
+        super::validate::package(&package, &registered, &mut work)?;
         let model_schema = super::models::validate(
             &package,
             expected.models,
@@ -545,6 +548,7 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             return Err(Error::Invalid(Invalid::Canonical));
         }
         Ok(AdmittedPackage {
+            clocks: super::ClockNames::of(&package),
             package,
             digest,
             artifact: retained_reference(expected.artifact)?,

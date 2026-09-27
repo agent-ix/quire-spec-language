@@ -48,7 +48,10 @@ use super::ir::{coerce_builds_narrow, scalar_conversion_target, Node, NodeKind, 
 use super::lowering::SemanticGraph;
 use super::node_key::SemanticTerm;
 use super::refusal::{KeyFault, Location, Origin as CheckOrigin};
-use super::{family::OccurrenceMap, Capability};
+use super::{
+    family::{OccurrenceMap, OccurrenceRole},
+    Capability,
+};
 use crate::family::{classify_domains, ClaimExtent, ClassifyFailure, DomainKind, Requirements};
 use crate::value::declaration::TypeEnvironment;
 
@@ -617,10 +620,8 @@ pub(crate) fn key_claims(
 ) -> Result<BTreeMap<OccurrenceKey, RequirementRecord>, KeyFault> {
     let unkeyable = || KeyFault::UnkeyableRequirements;
     let mut at: BTreeMap<&Location, Vec<(NodeKey, Origin)>> = BTreeMap::new();
-    for (node, origin, location) in occurrences.iter() {
-        if origin.role().as_str() == "expression" {
-            at.entry(location).or_default().push((node, origin));
-        }
+    for (node, origin, location) in occurrences.iter_role(OccurrenceRole::Expression) {
+        at.entry(location).or_default().push((node, origin));
     }
     let application = |key: NodeKey| match graph.node(key).map(|node| node.body()) {
         Some(SemanticTerm::Application {

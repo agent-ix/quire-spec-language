@@ -123,6 +123,7 @@ pub enum ModelDigest {
 impl ModelDigest {
     /// Parse the canonical `sha256:` or `sha256-jcs:` spelling selected by
     /// source.
+    #[qsl_attrs::string_edge]
     pub fn parse(value: &str) -> Result<Self, InvalidDigest> {
         match value.strip_prefix("sha256-jcs:") {
             Some(hex) => ByteDigest::from_hex(hex).map(Self::DomainPackage),

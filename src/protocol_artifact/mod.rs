@@ -47,6 +47,46 @@ pub use occurrence::{
 pub use work::{Accumulation, Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 
 use crate::native_model::NativeModel;
+
+/// The clock name of each temporal declaration of an admitted package, read
+/// once from the wire's `clock:` binding name at admission (ADR-012 section 9):
+/// evaluation and request derivation use these names and never re-parse the
+/// binding spelling.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ClockNames(Vec<Option<String>>);
+
+impl ClockNames {
+    /// The clock names of every declaration of `package`, `None` for a
+    /// declaration that is not temporal or has no `clock:` binding at its
+    /// clock index.
+    pub(crate) fn of(package: &wire::Package) -> Self {
+        Self(
+            package
+                .declarations
+                .iter()
+                .map(|declaration| match &declaration.body {
+                    wire::Body::Temporal { clock, .. } => usize::try_from(*clock)
+                        .ok()
+                        .and_then(|index| declaration.bindings.get(index))
+                        .and_then(clock_binding_name)
+                        .map(str::to_owned),
+                    _ => None,
+                })
+                .collect(),
+        )
+    }
+
+    /// The clock name of `declaration`.
+    pub(crate) fn get(&self, declaration: usize) -> Option<&str> {
+        self.0.get(declaration)?.as_deref()
+    }
+}
+
+/// The one reader of the emitter's `clock:` binding-name spelling.
+#[qsl_attrs::string_edge]
+fn clock_binding_name(binding: &wire::BindingRequirement) -> Option<&str> {
+    binding.name.strip_prefix("clock:")
+}
 use qsl_foundation::ByteDigest;
 
 /// Payload wire version; the external reference retains its separate wire pair.
@@ -494,9 +534,14 @@ pub struct AdmittedPackage {
     // schema needed by state evaluation after the reader's borrowed inputs end.
     // `None` for a domain-package model, which state evaluation cannot read.
     model_schema: Vec<Option<NativeModel>>,
+    clocks: ClockNames,
 }
 
 impl AdmittedPackage {
+    pub(crate) fn clock_names(&self) -> &ClockNames {
+        &self.clocks
+    }
+
     /// Read-only wire data admitted against the supplied selection context.
     pub fn package(&self) -> &wire::Package {
         &self.package

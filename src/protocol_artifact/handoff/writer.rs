@@ -852,6 +852,27 @@ struct UnitInput {
     mapping: CheckBindings,
 }
 
+/// The one `Workflow.apply` operation the handoff names, admitted once from
+/// the model's declared identities: holding one is the proof the identity
+/// matched.
+struct WorkflowApply<'a>(&'a crate::native_model::OperationRole);
+
+impl<'a> TryFrom<&'a crate::native_model::OperationRole> for WorkflowApply<'a> {
+    type Error = Error;
+
+    #[qsl_attrs::string_edge]
+    fn try_from(operation: &'a crate::native_model::OperationRole) -> Result<Self, Error> {
+        if operation.context.as_str() == "Workflow" && operation.name.as_str() == "apply" {
+            Ok(Self(operation))
+        } else {
+            Err(Error::OperationIdentity {
+                context: operation.context.clone(),
+                name: operation.name.clone(),
+            })
+        }
+    }
+}
+
 struct OperationSelection {
     anchor: ir::AnchorName,
     export: w::ExportRef,
@@ -864,12 +885,7 @@ impl OperationSelection {
                 count: model.roles().operations.len(),
             });
         };
-        if operation.context.as_str() != "Workflow" || operation.name.as_str() != "apply" {
-            return Err(Error::OperationIdentity {
-                context: operation.context.clone(),
-                name: operation.name.clone(),
-            });
-        }
+        let WorkflowApply(operation) = WorkflowApply::try_from(operation)?;
         // The wire orders exports by kind label then path. In this actual native
         // model, enums, fields and objects precede its single operation. Derive
         // its expected handle from admitted inputs, never from the emitted table.

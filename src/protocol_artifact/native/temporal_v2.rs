@@ -179,7 +179,7 @@ pub fn admit_v2(
         lowered.package.wire = v2::WIRE.into();
         lowered.package.media = v2::MEDIA.into();
         lowered.package.schema = v2::SCHEMA.into();
-        artifact::validate::package(&lowered.package, &mut work)?;
+        artifact::validate::package(&lowered.package, &lowered.registered, &mut work)?;
         let temporal_bindings = bindings(&lowered.package, temporal, &mut work)?;
         let package = v2::wire::Package {
             inherited: lowered.package,
@@ -188,6 +188,7 @@ pub fn admit_v2(
         let candidate = artifact::encoding::candidate(&package, &mut work)?;
         let admitted = v2::AdmittedPackage {
             digest: candidate.digest(),
+            clocks: artifact::ClockNames::of(&package.inherited),
             package,
             // Emission produces bytes and their raw-byte digest; the caller
             // publishes the artifact identity, so none is invented here.

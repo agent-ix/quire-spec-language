@@ -11,6 +11,7 @@ description = "ADR-011 §6.1 layer 6: the CG-facing replay facade -- the TK-01 r
 # recompile (S1 `qsl-cst`, S2 `qsl-forms`, I1 and S3 `qsl-semantics`, S4
 # `qsl-package`) and the S6a call (`qsl-eval`) of the TK-01 executor (QSL-5).
 [dependencies]
+qsl-attrs = { path = "../qsl-attrs" }
 qsl-cst = { path = "../qsl-cst" }
 qsl-eval = { path = "../qsl-eval" }
 qsl-forms = { path = "../qsl-forms" }

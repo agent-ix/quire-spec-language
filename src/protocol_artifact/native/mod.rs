@@ -88,8 +88,12 @@ pub fn admit(
 ) -> Report<FamilyAdmission> {
     let mut work = Work::new(limits);
     let result = (|| {
-        let metadata::Lowered { package, .. } = metadata::lower(proofs, selections, &mut work)?;
-        super::validate::package(&package, &mut work)?;
+        let metadata::Lowered {
+            package,
+            registered,
+            ..
+        } = metadata::lower(proofs, selections, &mut work)?;
+        super::validate::package(&package, &registered, &mut work)?;
         Ok(FamilyAdmission { package })
     })();
     super::report(work, result)

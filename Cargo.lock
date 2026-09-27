@@ -1384,6 +1384,7 @@ version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
  "logos",
+ "qsl-attrs",
  "qsl-foundation",
  "serde_json",
 ]
@@ -1423,6 +1424,7 @@ name = "qsl-foundation"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "qsl-attrs",
  "quire-exact",
  "serde",
  "sha2",
@@ -1452,6 +1454,7 @@ name = "qsl-replay"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
+ "qsl-attrs",
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
@@ -1485,6 +1488,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "proc-macro2",
+ "qsl-attrs",
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",

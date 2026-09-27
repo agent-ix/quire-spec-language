@@ -221,8 +221,7 @@ seam_probe.rs` (new file, this migration's seam-probe implementation).
 
 ## What this recipe does not cover
 
-FR-064 (`#[string_edge]`/`xtask string-edge`) and its own crate-wide marking
-sweep are a separate, cross-cutting concern from this per-family recipe;
-see [QSL-145](https://linear.app/agent-ix/issue/QSL-145) for the remaining
-string-dispatch sites a family's own migration may need to mark or convert
-as it touches that family's code.
+FR-064 (`#[string_edge]`/`xtask string-edge`) is a cross-cutting gate, part of
+`make ci`: a family's migration marks a genuine intake edge `#[string_edge]`
+or converts the string to a closed enum or typed identity, and never adds a
+branch-gating allow-list entry.
