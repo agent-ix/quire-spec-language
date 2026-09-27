@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{CollectionKind, FieldValue, Integer, ObjectReference, Value};
 
+use qsl_foundation::diagnostic::Code;
+
 use super::helpers::{admission_record, object_reference};
 use super::ordered_json::{OrderedJson, OrderedObject};
 use super::{
@@ -183,14 +185,14 @@ pub(super) fn read_document(
     // 1.1
     let bytes = provision.get(&selected.digest).ok_or_else(|| {
         incomplete(admission_record(
-            "unavailable_observation",
+            Code::UnavailableObservation,
             "missing-required-artifact",
         ))
     })?;
     // 1.2: input bytes.
     if bytes.len() as u64 > limits.document_bytes {
         return Err(refuse(admission_record(
-            "stage_limit_exceeded",
+            Code::StageLimitExceeded,
             "input-bytes-exceeded",
         )));
     }
@@ -200,7 +202,7 @@ pub(super) fn read_document(
     let nesting_depth = parsed.as_ref().map_or(0, OrderedJson::depth);
     if nesting_depth > limits.nesting_depth {
         return Err(refuse(admission_record(
-            "stage_limit_exceeded",
+            Code::StageLimitExceeded,
             "nesting-depth-exceeded",
         )));
     }
@@ -216,7 +218,7 @@ pub(super) fn read_document(
     // FND-015 round 2) and never an `AdmissionFailure::Fault` (SR-750
     // FND-004): FR-106 settles every input defect at admission, and this
     // input is untrusted, not an internal invariant.
-    let unsupported_wire = || refuse(admission_record("unknown_wire", "unsupported-wire"));
+    let unsupported_wire = || refuse(admission_record(Code::UnknownWire, "unsupported-wire"));
     let Some(value) = parsed else {
         return Err(unsupported_wire());
     };
@@ -228,7 +230,10 @@ pub(super) fn read_document(
         DocumentKind::Invocation => "quire.state.invocation/v1",
     };
     if object.member("format").and_then(|value| value.as_str()) != Some(expected_format) {
-        return Err(refuse(admission_record("unknown_wire", "unsupported-wire")));
+        return Err(refuse(admission_record(
+            Code::UnknownWire,
+            "unsupported-wire",
+        )));
     }
 
     // 1.5/1.6: member presence, in the member order FR-106 states.
@@ -263,14 +268,15 @@ pub(super) fn read_document(
     for member in always_required {
         if !object.contains_key(member) {
             return Err(refuse(
-                admission_record("invalid_runtime_input", "missing-member").with("field", *member),
+                admission_record(Code::InvalidRuntimeInput, "missing-member")
+                    .with("field", *member),
             ));
         }
     }
     for key in object.keys() {
         if !allowed.contains(&key.as_str()) {
             return Err(refuse(
-                admission_record("invalid_runtime_input", "unknown-member")
+                admission_record(Code::InvalidRuntimeInput, "unknown-member")
                     .with("field", key.clone()),
             ));
         }
@@ -282,7 +288,7 @@ pub(super) fn read_document(
         .and_then(|value| value.as_object())
         .ok_or_else(|| {
             refuse(
-                admission_record("invalid_runtime_input", "wrong-value-kind")
+                admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
                     .with("field", "identity"),
             )
         })?;
@@ -293,7 +299,8 @@ pub(super) fn read_document(
             .map(str::to_owned)
             .ok_or_else(|| {
                 refuse(
-                    admission_record("invalid_runtime_input", "missing-member").with("field", name),
+                    admission_record(Code::InvalidRuntimeInput, "missing-member")
+                        .with("field", name),
                 )
             })
     };
@@ -306,12 +313,12 @@ pub(super) fn read_document(
     };
     if let Some(blank_label) = first_blank_label(&document_identity) {
         return Err(refuse(
-            admission_record("invalid_source_identity", "blank-label").with("label", blank_label),
+            admission_record(Code::InvalidSourceIdentity, "blank-label").with("label", blank_label),
         ));
     }
     if !labels_match(&document_identity, selected) {
         return Err(refuse(
-            admission_record("stale_dependency", "revision-mismatch")
+            admission_record(Code::StaleDependency, "revision-mismatch")
                 .with("required", format!("{selected:?}"))
                 .with("supplied", format!("{document_identity:?}")),
         ));
@@ -359,7 +366,7 @@ fn read_model(object: &[(String, OrderedJson)]) -> Result<ModelHeader, Admission
         .as_object()
         .ok_or_else(|| wrong_kind("model"))?;
     let missing_member = |field: &'static str| {
-        refuse(admission_record("invalid_runtime_input", "missing-member").with("field", field))
+        refuse(admission_record(Code::InvalidRuntimeInput, "missing-member").with("field", field))
     };
     let identity = model
         .member("identity")
@@ -379,7 +386,7 @@ fn read_model(object: &[(String, OrderedJson)]) -> Result<ModelHeader, Admission
         .strip_prefix("sha256-jcs:")
         .ok_or_else(|| {
             refuse(
-                admission_record("invalid_runtime_input", "wrong-value-kind")
+                admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
                     .with("field", "digest"),
             )
         })?
@@ -392,11 +399,11 @@ fn read_model(object: &[(String, OrderedJson)]) -> Result<ModelHeader, Admission
 }
 
 fn wrong_kind(field: impl Into<String>) -> AdmissionFailure {
-    refuse(admission_record("invalid_runtime_input", "wrong-value-kind").with("field", field))
+    refuse(admission_record(Code::InvalidRuntimeInput, "wrong-value-kind").with("field", field))
 }
 
 fn missing_member(field: impl Into<String>) -> AdmissionFailure {
-    refuse(admission_record("invalid_runtime_input", "missing-member").with("field", field))
+    refuse(admission_record(Code::InvalidRuntimeInput, "missing-member").with("field", field))
 }
 
 /// Reads a `{population, key}` object reference at `field`: a document
@@ -507,7 +514,7 @@ fn read_snapshot_body(
         Some("post") => ObservationRole::Post,
         _ => {
             return Err(refuse(AdmissionRecord::new(
-                "wrong_snapshot",
+                Code::WrongSnapshot,
                 "wrong-observation",
             )))
         }
@@ -806,15 +813,15 @@ fn admit_scalar(
         (RawValue::Integer(spelling), quire_exact::ValueType::Integer) => spelling
             .parse::<Integer>()
             .map(Value::Integer)
-            .map_err(|_| admission_record("invalid_runtime_input", "invalid-value")),
+            .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value")),
         (RawValue::Integer(spelling), quire_exact::ValueType::Int(interval)) => {
             let value = spelling
                 .parse::<Integer>()
-                .map_err(|_| admission_record("invalid_runtime_input", "invalid-value"))?;
+                .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))?;
             if interval.contains(&value) {
                 Ok(Value::Integer(value))
             } else {
-                Err(admission_record("invalid_runtime_input", "invalid-value"))
+                Err(admission_record(Code::InvalidRuntimeInput, "invalid-value"))
             }
         }
         (RawValue::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
@@ -825,11 +832,11 @@ fn admit_scalar(
             // population name -- this is unchanged from before this fix,
             // which also never cross-checked the two against each other.
             let target = object_reference(views, *type_identity, &reference.key)
-                .map_err(|_| admission_record("invalid_runtime_input", "wrong-value-kind"))?;
+                .map_err(|_| admission_record(Code::InvalidRuntimeInput, "wrong-value-kind"))?;
             Ok(Value::Reference(target))
         }
         _ => Err(admission_record(
-            "invalid_runtime_input",
+            Code::InvalidRuntimeInput,
             "wrong-value-kind",
         )),
     }
@@ -859,7 +866,7 @@ fn admit_object_field(
             | RawValue::Integer(_)
             | RawValue::Reference(_)
             | RawValue::Sequence(_) => Err(admission_record(
-                "invalid_runtime_input",
+                Code::InvalidRuntimeInput,
                 "wrong-value-kind",
             )),
         };
@@ -868,7 +875,7 @@ fn admit_object_field(
         (RawValue::Sequence(items), quire_exact::ValueType::Collection(collection)) => {
             if collection.kind() != CollectionKind::Sequence {
                 return Err(admission_record(
-                    "unknown_required_feature",
+                    Code::UnknownRequiredFeature,
                     "unsupported-feature",
                 ));
             }
@@ -947,7 +954,7 @@ pub(super) fn admit_population_values<'t>(
         let Some((population_view, population_info)) = find_population(views, &entry.population)
         else {
             return Err(refuse(
-                admission_record("invalid_runtime_input", "wrong-role-mapping")
+                admission_record(Code::InvalidRuntimeInput, "wrong-role-mapping")
                     .with("population", entry.population.clone()),
             ));
         };
@@ -958,7 +965,7 @@ pub(super) fn admit_population_values<'t>(
             object_count += 1;
             if object_count > limits.objects_per_document {
                 return Err(refuse(admission_record(
-                    "stage_limit_exceeded",
+                    Code::StageLimitExceeded,
                     "objects-exceeded",
                 )));
             }
@@ -967,7 +974,7 @@ pub(super) fn admit_population_values<'t>(
             let Some((_, object_key)) = find_declaration(views, object.type_identity.as_str())
             else {
                 return Err(refuse(
-                    admission_record("invalid_runtime_input", "wrong-role-mapping")
+                    admission_record(Code::InvalidRuntimeInput, "wrong-role-mapping")
                         .with("object", object.key.clone()),
                 ));
             };
@@ -980,7 +987,7 @@ pub(super) fn admit_population_values<'t>(
             });
             if !covered {
                 return Err(refuse(
-                    admission_record("invalid_runtime_input", "wrong-role-mapping")
+                    admission_record(Code::InvalidRuntimeInput, "wrong-role-mapping")
                         .with("object", object.key.clone()),
                 ));
             }
@@ -1003,7 +1010,7 @@ pub(super) fn admit_population_values<'t>(
                 {
                     if collection.kind() != CollectionKind::Sequence {
                         return Err(refuse(
-                            admission_record("unknown_required_feature", "unsupported-feature")
+                            admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
                                 .with("field", attribute.field().name().to_owned()),
                         ));
                     }
@@ -1017,7 +1024,7 @@ pub(super) fn admit_population_values<'t>(
             let is_duplicate = !seen.insert(object.key.clone());
             if is_duplicate {
                 return Err(refuse(
-                    admission_record("invalid_runtime_input", "conflicting-identity")
+                    admission_record(Code::InvalidRuntimeInput, "conflicting-identity")
                         .with("object", object.key.clone()),
                 ));
             }
@@ -1029,7 +1036,7 @@ pub(super) fn admit_population_values<'t>(
                     .any(|attribute| attribute.field().name() == name)
                 {
                     return Err(refuse(
-                        admission_record("invalid_runtime_input", "unknown-member")
+                        admission_record(Code::InvalidRuntimeInput, "unknown-member")
                             .with("object", object.key.clone())
                             .with("field", name.clone()),
                     ));
@@ -1039,7 +1046,7 @@ pub(super) fn admit_population_values<'t>(
                 let name = attribute.field().name();
                 if raw_field(&object.fields, name).is_none() {
                     return Err(refuse(
-                        admission_record("invalid_runtime_input", "missing-member")
+                        admission_record(Code::InvalidRuntimeInput, "missing-member")
                             .with("object", object.key.clone())
                             .with("field", name.to_owned()),
                     ));
@@ -1057,7 +1064,7 @@ pub(super) fn admit_population_values<'t>(
                     .ok_or_else(|| fault("declared-field-missing-after-check-6-4"))?;
                 if !object_field_kind_matches(raw, value_type, presence) {
                     return Err(refuse(
-                        admission_record("invalid_runtime_input", "wrong-value-kind")
+                        admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
                             .with("object", object.key.clone())
                             .with("field", name.to_owned()),
                     ));
@@ -1073,7 +1080,7 @@ pub(super) fn admit_population_values<'t>(
                 value_count += 1;
                 if value_count > limits.values_per_document {
                     return Err(refuse(admission_record(
-                        "stage_limit_exceeded",
+                        Code::StageLimitExceeded,
                         "values-exceeded",
                     )));
                 }
@@ -1160,7 +1167,7 @@ pub(super) fn check_population_completeness(
     for name in walk_order {
         if required.contains(name) && completeness.get(name).copied() != Some(true) {
             return Err(incomplete(
-                admission_record("incomplete_population", "incomplete-scope")
+                admission_record(Code::IncompletePopulation, "incomplete-scope")
                     .with("population", name.to_owned()),
             ));
         }
@@ -1194,7 +1201,7 @@ pub(super) fn check_population_closure(
                     }
                     return Err(refuse(
                         admission_record(
-                            "dangling_reference",
+                            Code::DanglingReference,
                             "absent-target-in-complete-population",
                         )
                         .with("population", population)
@@ -1266,8 +1273,11 @@ fn map_environment_refusal(
 ) -> AdmissionFailure {
     match error.cause {
         ObjectEnvironmentCause::DanglingReference(target) => refuse(
-            admission_record("dangling_reference", "absent-target-in-complete-population")
-                .with("object", target.object().as_str().to_owned()),
+            admission_record(
+                Code::DanglingReference,
+                "absent-target-in-complete-population",
+            )
+            .with("object", target.object().as_str().to_owned()),
         ),
         _ => fault("object-environment-refused-after-admission-checks"),
     }
@@ -1305,7 +1315,7 @@ pub(super) fn resolve_self(
     let universe = population_universe(views, context_effective)?;
     let wrong_role_mapping = || {
         refuse(admission_record(
-            "invalid_runtime_input",
+            Code::InvalidRuntimeInput,
             "wrong-role-mapping",
         ))
     };
@@ -1334,13 +1344,13 @@ pub(super) fn admit_parameters_and_result(
     for (name, value_type) in operation.parameters() {
         let raw = raw_field(parameters, name).ok_or_else(|| {
             refuse(
-                admission_record("invalid_runtime_input", "missing-member")
+                admission_record(Code::InvalidRuntimeInput, "missing-member")
                     .with("field", name.clone()),
             )
         })?;
         if !field_kind_matches(raw, value_type) {
             return Err(refuse(
-                admission_record("invalid_runtime_input", "wrong-value-kind")
+                admission_record(Code::InvalidRuntimeInput, "wrong-value-kind")
                     .with("field", name.clone()),
             ));
         }
@@ -1355,7 +1365,7 @@ pub(super) fn admit_parameters_and_result(
             .any(|(declared, _)| declared == name)
         {
             return Err(refuse(
-                admission_record("invalid_runtime_input", "unknown-member")
+                admission_record(Code::InvalidRuntimeInput, "unknown-member")
                     .with("field", name.clone()),
             ));
         }
@@ -1365,20 +1375,20 @@ pub(super) fn admit_parameters_and_result(
         (None, ResultValue::Null) => None,
         (None, ResultValue::Value(_)) => {
             return Err(refuse(admission_record(
-                "invalid_runtime_input",
+                Code::InvalidRuntimeInput,
                 "unknown-member",
             )))
         }
         (Some(_), ResultValue::Null) => {
             return Err(refuse(admission_record(
-                "invalid_runtime_input",
+                Code::InvalidRuntimeInput,
                 "missing-member",
             )))
         }
         (Some(value_type), ResultValue::Value(raw)) => {
             if !field_kind_matches(raw, value_type) {
                 return Err(refuse(admission_record(
-                    "invalid_runtime_input",
+                    Code::InvalidRuntimeInput,
                     "wrong-value-kind",
                 )));
             }

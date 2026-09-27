@@ -335,21 +335,7 @@ impl ClauseRunReport {
             ClauseDisposition::Admit(AdmissionFailure::Fault(_)) => 30,
             ClauseDisposition::Admit(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
-            ) => Code::from_code(record.code).map_or_else(
-                || {
-                    // `record.code` is always one of `admission_record`'s own
-                    // fixed `&'static str` literals (SR-750 FND-011 round
-                    // 2): every call site is this crate's own, never
-                    // untrusted input, so a code that fails to parse is an
-                    // internal invariant violation, not a normal defect to
-                    // silently paper over with a guessed exit status.
-                    unreachable!(
-                        "admission record code {:?} does not name a catalog code",
-                        record.code
-                    )
-                },
-                Code::exit_code,
-            ),
+            ) => record.code.exit_code(),
             ClauseDisposition::ArgumentRefusal(refusal) => match refusal.as_ref() {
                 RunRefusal::Fault(_) => 30,
                 other => other.code().exit_code(),
@@ -742,7 +728,7 @@ fn run_function(
                     fields.insert("object", key.clone());
                     return Ok(report(ClauseDisposition::Admit(AdmissionFailure::Refused(
                         AdmissionRecord {
-                            code: "invalid_runtime_input",
+                            code: qsl_foundation::diagnostic::Code::InvalidRuntimeInput,
                             cause: "wrong-role-mapping",
                             fields,
                         },

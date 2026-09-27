@@ -1371,7 +1371,7 @@ fn assert_frame_refused(
 ) {
     match result {
         Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
-            assert_eq!(record.code, expected_code);
+            assert_eq!(record.code.as_str(), expected_code);
             assert_eq!(record.cause, expected_cause);
             if let Some(expected_object) = expected_object {
                 assert_eq!(
@@ -2473,7 +2473,7 @@ fn assert_tc465_refused(
 ) -> qsl_semantics::model::observation::AdmissionRecord {
     match result {
         Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
-            assert_eq!(record.code, expected_code);
+            assert_eq!(record.code.as_str(), expected_code);
             assert_eq!(record.cause, expected_cause);
             record
         }
@@ -2491,7 +2491,7 @@ fn assert_tc465_incomplete(
 ) -> qsl_semantics::model::observation::AdmissionRecord {
     match result {
         Err(qsl_semantics::model::observation::AdmissionFailure::Incomplete(record)) => {
-            assert_eq!(record.code, expected_code);
+            assert_eq!(record.code.as_str(), expected_code);
             assert_eq!(record.cause, expected_cause);
             record
         }

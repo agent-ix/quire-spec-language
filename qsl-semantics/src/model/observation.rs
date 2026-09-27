@@ -29,7 +29,7 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::StateClauseKind;
-use qsl_foundation::diagnostic::InternalFault;
+use qsl_foundation::diagnostic::{Code, InternalFault};
 use quire_exact::{EffectiveId, ObjectId, ObjectReference, UniverseId, Value};
 
 use crate::model::accounting::ModelNormalizationLimits;
@@ -199,8 +199,9 @@ pub enum ClauseSelectionInput {
 /// position in a *document*, which no `Locus` variant represents.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmissionRecord {
-    /// The catalog code, e.g. `"invalid_runtime_input"`.
-    pub code: &'static str,
+    /// The catalog code, e.g. [`Code::InvalidRuntimeInput`]: typed, so a
+    /// caller maps it (for example to an exit code) with no string lookup.
+    pub code: Code,
     /// The catalog cause, e.g. `"wrong-role-mapping"`.
     pub cause: &'static str,
     /// The named input path components this record carries, keyed by name
@@ -209,7 +210,7 @@ pub struct AdmissionRecord {
 }
 
 impl AdmissionRecord {
-    fn new(code: &'static str, cause: &'static str) -> Self {
+    fn new(code: Code, cause: &'static str) -> Self {
         Self {
             code,
             cause,
@@ -228,12 +229,12 @@ impl AdmissionRecord {
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum AdmissionFailure {
     /// A real input defect: no `AdmittedObservations` and no truth value.
-    #[error("admission refused: {}/{}", .0.code, .0.cause)]
+    #[error("admission refused: {}/{}", .0.code.as_str(), .0.cause)]
     Refused(AdmissionRecord),
     /// Missing evidence, or an unresolved object/subtype closure: no
     /// `AdmittedObservations`, distinct from a refusal (FR-106 checks 1.1,
     /// 7).
-    #[error("admission incomplete: {}/{}", .0.code, .0.cause)]
+    #[error("admission incomplete: {}/{}", .0.code.as_str(), .0.cause)]
     Incomplete(AdmissionRecord),
     /// A broken invariant of admission itself (never a document defect):
     /// the re-supplied domain packages do not re-normalize the way the
@@ -484,7 +485,7 @@ fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
 fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), AdmissionFailure> {
     let mismatch = || {
         refuse(AdmissionRecord::new(
-            "stale_dependency",
+            Code::StaleDependency,
             "byte-digest-mismatch",
         ))
     };
@@ -538,7 +539,7 @@ pub fn admit_current_snapshot(
         .ok_or_else(|| fault("expected-snapshot-document"))?;
     if snapshot.observation != document::ObservationRole::Current {
         return Err(refuse(AdmissionRecord::new(
-            "wrong_snapshot",
+            Code::WrongSnapshot,
             "wrong-observation",
         )));
     }
@@ -593,7 +594,7 @@ pub fn admit_observations(
         ) => {}
         _ => {
             return Err(refuse(AdmissionRecord::new(
-                "wrong_snapshot",
+                Code::WrongSnapshot,
                 "wrong-observation",
             )))
         }
@@ -675,19 +676,21 @@ fn admit_invariant(
     // Check 3: observation role and anchor.
     if snapshot.observation != document::ObservationRole::Current {
         return Err(refuse(AdmissionRecord::new(
-            "wrong_snapshot",
+            Code::WrongSnapshot,
             "wrong-observation",
         )));
     }
-    let document_anchor = snapshot
-        .anchor
-        .as_ref()
-        .ok_or_else(|| refuse(AdmissionRecord::new("wrong_snapshot", "wrong-observation")))?;
+    let document_anchor = snapshot.anchor.as_ref().ok_or_else(|| {
+        refuse(AdmissionRecord::new(
+            Code::WrongSnapshot,
+            "wrong-observation",
+        ))
+    })?;
     // `AnchorKind` derives `PartialEq`; compared directly (SR-750
     // FND-011), never through `as_str()` string equality.
     if document_anchor.kind != anchor.kind || document_anchor.name != anchor.name {
         return Err(refuse(
-            AdmissionRecord::new("wrong_snapshot", "wrong-anchor")
+            AdmissionRecord::new(Code::WrongSnapshot, "wrong-anchor")
                 .with(
                     "required",
                     format!("{} {}", anchor.kind.as_str(), anchor.name),
@@ -758,7 +761,7 @@ fn check_model(
         Ok(())
     } else {
         Err(refuse(AdmissionRecord::new(
-            "invalid_model_binding",
+            Code::InvalidModelBinding,
             "wrong-model-selection",
         )))
     }
@@ -783,7 +786,7 @@ fn check_model_any(
         Ok(())
     } else {
         Err(refuse(AdmissionRecord::new(
-            "invalid_model_binding",
+            Code::InvalidModelBinding,
             "wrong-model-selection",
         )))
     }
@@ -840,7 +843,7 @@ fn admit_operation(
         || post_snapshot.observation != document::ObservationRole::Post
     {
         return Err(refuse(AdmissionRecord::new(
-            "wrong_snapshot",
+            Code::WrongSnapshot,
             "wrong-observation",
         )));
     }
@@ -854,7 +857,7 @@ fn admit_operation(
     let operation = operation.ok_or_else(|| fault("clause-declares-no-operation"))?;
     if invocation.context != context_name || invocation.operation != operation.declaration.name() {
         return Err(refuse(AdmissionRecord::new(
-            "wrong_snapshot",
+            Code::WrongSnapshot,
             "wrong-invocation",
         )));
     }
@@ -1004,13 +1007,15 @@ mod helpers {
         key: &str,
     ) -> Result<ObjectReference, AdmissionFailure> {
         let object = ObjectId::new(key.to_owned()).map_err(|_| {
-            refuse(admission_record("invalid_runtime_input", "invalid-value").with("field", "key"))
+            refuse(
+                admission_record(Code::InvalidRuntimeInput, "invalid-value").with("field", "key"),
+            )
         })?;
         let universe = population_universe(views, type_identity)?;
         Ok(ObjectReference::new(universe, type_identity, object))
     }
 
-    pub(crate) fn admission_record(code: &'static str, cause: &'static str) -> AdmissionRecord {
+    pub(crate) fn admission_record(code: Code, cause: &'static str) -> AdmissionRecord {
         AdmissionRecord::new(code, cause)
     }
 }

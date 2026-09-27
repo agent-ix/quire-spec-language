@@ -958,7 +958,10 @@ fn run_clause_refuses_an_unresolved_reference_argument() {
         ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
             record,
         )) => {
-            assert_eq!(record.code, "invalid_runtime_input");
+            assert_eq!(
+                record.code,
+                qsl_foundation::diagnostic::Code::InvalidRuntimeInput
+            );
             assert_eq!(record.cause, "wrong-role-mapping");
         }
         other => panic!("expected Admit(Refused(..)), got {other:?}"),
@@ -1279,7 +1282,10 @@ fn run_clause_refuses_a_model_with_a_missing_digest() {
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
-            assert_eq!(record.code, "invalid_runtime_input");
+            assert_eq!(
+                record.code,
+                qsl_foundation::diagnostic::Code::InvalidRuntimeInput
+            );
             assert_eq!(record.cause, "missing-member");
             assert_eq!(
                 record.fields.get("field").map(String::as_str),
@@ -1321,7 +1327,10 @@ fn run_clause_refuses_a_model_digest_with_the_wrong_prefix() {
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Admit(super::AdmissionFailure::Refused(record)) => {
-            assert_eq!(record.code, "invalid_runtime_input");
+            assert_eq!(
+                record.code,
+                qsl_foundation::diagnostic::Code::InvalidRuntimeInput
+            );
             assert_eq!(record.cause, "wrong-value-kind");
             assert_eq!(
                 record.fields.get("field").map(String::as_str),
@@ -1839,7 +1848,10 @@ fn run_clause_refuses_a_dangling_parent_reference() {
         ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
             record,
         )) => {
-            assert_eq!(record.code, "dangling_reference");
+            assert_eq!(
+                record.code,
+                qsl_foundation::diagnostic::Code::DanglingReference
+            );
         }
         other => panic!("expected Admit(Refused(dangling_reference)), got {other:?}"),
     }
@@ -1893,7 +1905,10 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
         ClauseDisposition::Admit(
             qsl_semantics::model::observation::AdmissionFailure::Incomplete(record),
         ) => {
-            assert_eq!(record.code, "incomplete_population");
+            assert_eq!(
+                record.code,
+                qsl_foundation::diagnostic::Code::IncompletePopulation
+            );
         }
         other => panic!("expected Admit(Incomplete(incomplete_population)), got {other:?}"),
     }
@@ -2004,7 +2019,10 @@ fn run_clause_evaluates_the_same_identity_family() {
         ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
             record,
         )) => {
-            assert_eq!(record.code, "invalid_runtime_input");
+            assert_eq!(
+                record.code,
+                qsl_foundation::diagnostic::Code::InvalidRuntimeInput
+            );
             assert_eq!(record.cause, "wrong-role-mapping");
         }
         other => panic!("expected Admit(Refused(wrong-role-mapping)), got {other:?}"),
@@ -2088,7 +2106,10 @@ fn run_clause_refuses_a_snapshot_edited_after_its_digest_was_taken() {
         ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
             record,
         )) => {
-            assert_eq!(record.code, "stale_dependency");
+            assert_eq!(
+                record.code,
+                qsl_foundation::diagnostic::Code::StaleDependency
+            );
             assert_eq!(record.cause, "byte-digest-mismatch");
         }
         other => panic!("expected Admit(Refused(byte-digest-mismatch)), got {other:?}"),
@@ -2279,26 +2300,29 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     assert_eq!(report_for(disposition).exit_code(), 22);
 }
 
-/// SR-750 FND-011 round 2: `exit_code`'s `Admit(Refused | Incomplete)` arm
-/// no longer maps a code that fails `Code::from_code` to a silently
-/// guessed exit status (the old `map_or(20, ..)`). Every real
-/// `AdmissionRecord.code` this crate ever constructs is one of
-/// `admission_record`'s own fixed catalog literals, so a code outside the
-/// catalog is an internal invariant violation, not reachable through any
-/// legitimate admission path -- confirmed here by constructing one
-/// directly and asserting the loud panic, rather than the old silent 20.
+/// SR-750 FND-011 round 3: `AdmissionRecord.code` is a typed `Code`, so
+/// `exit_code`'s `Admit(Refused | Incomplete)` arm maps every catalog code
+/// to that code's own exit status, with no string lookup and no panic path.
 #[test]
-#[should_panic(expected = "does not name a catalog code")]
-fn exit_code_panics_on_an_admission_record_code_outside_the_catalog() {
-    let record = qsl_semantics::model::observation::AdmissionRecord {
-        code: "not-a-real-catalog-code",
-        cause: "not-a-real-cause",
-        fields: BTreeMap::new(),
-    };
-    let disposition = ClauseDisposition::Admit(
-        qsl_semantics::model::observation::AdmissionFailure::Refused(record),
-    );
-    let _ = report_for(disposition).exit_code();
+fn exit_code_maps_every_admission_record_code_to_its_own_exit_status() {
+    for code in qsl_foundation::diagnostic::Code::all() {
+        for failure in [
+            qsl_semantics::model::observation::AdmissionFailure::Refused as fn(_) -> _,
+            qsl_semantics::model::observation::AdmissionFailure::Incomplete,
+        ] {
+            let record = qsl_semantics::model::observation::AdmissionRecord {
+                code: *code,
+                cause: "any-cause",
+                fields: BTreeMap::new(),
+            };
+            let disposition = ClauseDisposition::Admit(failure(record));
+            assert_eq!(
+                report_for(disposition).exit_code(),
+                code.exit_code(),
+                "{code}"
+            );
+        }
+    }
 }
 
 /// Wraps a bare [`ClauseDisposition`] in a minimal [`ClauseRunReport`], for

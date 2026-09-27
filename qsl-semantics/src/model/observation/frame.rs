@@ -68,6 +68,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use quire_exact::ObjectReference;
 
 use super::document::{find_declaration, raw_field, RawPopulation, RawTypeIdentity};
+use qsl_foundation::diagnostic::Code;
+
 use super::helpers::{admission_record, object_reference};
 use super::{refuse, AdmissionFailure, ModelView, SelectedObject};
 use crate::model::domain_package::OperationEffect;
@@ -180,7 +182,7 @@ pub(super) fn enforce(
                 None => {
                     if !creates.contains(post_type.as_str()) {
                         return Err(refuse(
-                            admission_record("frame_violation", "unauthorized-change")
+                            admission_record(Code::FrameViolation, "unauthorized-change")
                                 .with("population", name.clone())
                                 .with("object", key.clone()),
                         ));
@@ -189,7 +191,7 @@ pub(super) fn enforce(
                 Some(pre_type) => {
                     if pre_type != post_type {
                         return Err(refuse(
-                            admission_record("frame_violation", "unauthorized-change")
+                            admission_record(Code::FrameViolation, "unauthorized-change")
                                 .with("population", name.clone())
                                 .with("object", key.clone()),
                         ));
@@ -203,7 +205,7 @@ pub(super) fn enforce(
                 let pre_type = pre_side.producer_identity[key];
                 if !deletes.contains(pre_type.as_str()) {
                     return Err(refuse(
-                        admission_record("frame_violation", "unauthorized-change")
+                        admission_record(Code::FrameViolation, "unauthorized-change")
                             .with("population", name.clone())
                             .with("object", key.clone()),
                     ));
@@ -225,7 +227,7 @@ pub(super) fn enforce(
                     find_declaration(views, pre_object.type_identity.as_str())
                 else {
                     return Err(refuse(admission_record(
-                        "invalid_runtime_input",
+                        Code::InvalidRuntimeInput,
                         "wrong-role-mapping",
                     )));
                 };
@@ -245,7 +247,7 @@ pub(super) fn enforce(
                     let post_value = raw_field(post_fields, field);
                     if !raw_values_equal(pre_value, post_value) {
                         return Err(refuse(
-                            admission_record("frame_violation", "unauthorized-change")
+                            admission_record(Code::FrameViolation, "unauthorized-change")
                                 .with("population", name.clone())
                                 .with("object", key.clone())
                                 .with("field", field.to_owned()),
@@ -279,7 +281,7 @@ pub(super) fn enforce(
             || !population_created.is_disjoint(&population_deleted)
         {
             return Err(refuse(admission_record(
-                "population_delta_mismatch",
+                Code::PopulationDeltaMismatch,
                 "delta-disagreement",
             )));
         }
@@ -297,7 +299,7 @@ pub(super) fn enforce(
             .collect();
         if population_created != computed_created || population_deleted != computed_deleted {
             return Err(refuse(admission_record(
-                "population_delta_mismatch",
+                Code::PopulationDeltaMismatch,
                 "delta-disagreement",
             )));
         }
@@ -306,7 +308,7 @@ pub(super) fn enforce(
                 find_declaration(views, post_side.producer_identity[key].as_str())
             else {
                 return Err(refuse(admission_record(
-                    "invalid_runtime_input",
+                    Code::InvalidRuntimeInput,
                     "wrong-role-mapping",
                 )));
             };
@@ -324,7 +326,7 @@ pub(super) fn enforce(
                 find_declaration(views, pre_side.producer_identity[key].as_str())
             else {
                 return Err(refuse(admission_record(
-                    "invalid_runtime_input",
+                    Code::InvalidRuntimeInput,
                     "wrong-role-mapping",
                 )));
             };
