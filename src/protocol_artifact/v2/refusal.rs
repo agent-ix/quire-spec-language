@@ -25,9 +25,6 @@ pub enum BindingCause {
     Surplus,
     /// Two records carry the same declaration key.
     Duplicate,
-    /// The typed `clock_name` field disagrees with the inherited `v1`
-    /// binding's legacy `clock:`-prefixed spelling (QSL-288).
-    ClockName,
 }
 
 /// A caller selection whose exact source does not own the selected span.
@@ -163,6 +160,11 @@ pub enum Refusal {
     Definition(DefinitionField),
     /// An independently selected clock configuration differs.
     Clock(ClockField),
+    /// An offered binding's typed `clock_name` disagrees with the inherited
+    /// `v1` binding's legacy `clock:`-prefixed spelling (QSL-288). This is
+    /// always an offer-side defect: the comparison is entirely within the
+    /// offer's own bytes, so there is no `Expected`/`Producer` side for it.
+    ClockName,
 }
 
 impl Refusal {
@@ -214,18 +216,7 @@ impl Refusal {
                 side: InventorySide::Producer,
                 cause: BindingCause::Duplicate,
             } => "v2.binding.producer-duplicate",
-            Self::Binding {
-                side: InventorySide::Offer,
-                cause: BindingCause::ClockName,
-            } => "v2.binding.offer-clock-name",
-            Self::Binding {
-                side: InventorySide::Expected,
-                cause: BindingCause::ClockName,
-            } => "v2.binding.expected-clock-name",
-            Self::Binding {
-                side: InventorySide::Producer,
-                cause: BindingCause::ClockName,
-            } => "v2.binding.producer-clock-name",
+            Self::ClockName => "v2.binding.offer-clock-name",
             Self::OfferOrder => "v2.binding.offer-order",
             Self::ForeignOwner(SelectionSide::Expected) => "v2.binding.expected-foreign-owner",
             Self::ForeignOwner(SelectionSide::Producer) => "v2.binding.producer-foreign-owner",

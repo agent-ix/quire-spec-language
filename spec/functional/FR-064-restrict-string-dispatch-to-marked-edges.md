@@ -121,34 +121,55 @@ than accept it into the allow-list.
 
 ## Status
 
-**Implemented.** `#[string_edge]` and `xtask string-edge` are built,
-`string-edge` is a prerequisite of `make ci` (the lint gate), and `cargo
-xtask string-edge` reports no unmarked, unlisted occurrence over the whole
-workspace. The detector resolves both a string literal and a comparison,
-method call or `match` arm against a named same-crate `const NAME: &str`
-(the string-value clause, QSL-287): `const NAME: &str` at module, `impl` and
-trait scope, matched by its last path segment. Every occurrence the scan
-finds is either a `#[string_edge]`-marked edge (an intake reader, a typed
-wire reader, CLI argument parsing, or a source scanner doing its one total
-conversion) or was converted onto a closed enum or typed identity (QSL-145,
-QSL-287). The allow-list is empty.
+**Implemented, with a stated residual.** `#[string_edge]` and `xtask
+string-edge` are built, `string-edge` is a prerequisite of `make ci` (the
+lint gate), and `cargo xtask string-edge` reports no unmarked, unlisted
+occurrence over the whole workspace. The detector resolves both a string
+literal and a comparison, method call or `match` arm against a named
+same-crate `const NAME: &str` (the string-value clause, QSL-287): `const
+NAME: &str` at module, `impl` and trait scope, matched by its last path
+segment. Every occurrence the scan finds is either a `#[string_edge]`-marked
+edge (an intake reader, a typed wire reader, CLI argument parsing, or a
+source scanner doing its one total conversion) or was converted onto a
+closed enum or typed identity (QSL-145, QSL-287). The allow-list is empty.
+
+Residual: the Behavior clause asks for a report on any comparison between a
+`&str`/`String` value and *any other* such value, and any `match` whose
+scrutinee is a string. The detector covers a literal and a same-crate named
+constant on one side; it does not resolve a comparison between two bindings
+(for example `adapter.observation_contract_revision != offered
+.observation_contract_revision`, neither side a literal or a named
+constant) or a constant defined in another crate. Both shapes are
+undetected today, not merely unmarked -- the scan cannot see them to report
+them. Extending the detector to those shapes is unticketed follow-up work,
+not scope this requirement claims to close.
 
 QSL-287's re-measurement against a clean scan found 53 named-constant
 occurrences across roughly 35 functions the literal-only scan could not see.
 Wire, contract-version and format checks (the large majority) are marked
-`#[string_edge]`, each a genuine one-shot admission edge. Five sites needed a
-real typed conversion rather than a mark, because the same fact was
-re-derived by comparing the identity string a second time, or a wire enum
-already existed to decode into instead of comparing forms directly:
-`qsl-semantics/src/check/claims.rs`'s `identity == NARROW` (both sites) now
-resolve through one closed `OperationRole` classifier; `qsl-semantics/src/
-check/lowering.rs`'s `name == FUNCTION_PARAMETERS` reads the parameters
-binding positionally (it is always the function node's first member, by
-construction, not merely by name); and `qsl-package/src/emit.rs`'s
+`#[string_edge]`, each a genuine one-shot admission edge. Two sites got a
+real typed conversion rather than a mark, because a wire enum already
+existed to decode into instead of comparing forms directly:
+`qsl-semantics/src/check/lowering.rs`'s `name == FUNCTION_PARAMETERS` reads
+the parameters binding positionally (it is always the function node's first
+member, by construction, not merely by name); and `qsl-package/src/emit.rs`'s
 `semantic_form() == ENUM_VALUE_FORM` decodes through IR's existing
 `CheckedNodeKind::decode`/`ValueForm::EnumValue`, the same closed vocabulary
 `form_is_supported` already uses one line above it, rather than comparing
 the wire form string a second time.
+
+`qsl-semantics/src/check/claims.rs`'s `identity == NARROW`/`SCALAR_FAMILIES`
+compares (QSL-288 review, SR-758 FND-005) are marked `#[string_edge]`
+through one `operation_role` classifier, corrected here from an earlier
+claim that this was a typed conversion: `operation_role` re-derives the
+classification from the identity string on every call; nothing resolves it
+once and threads a stored value. Mutation-testing the two checks that read
+it (`claims.rs`'s narrow lookup and `emit.rs`'s `forced_absent` `EnumValue`
+arm, SR-758 FND-006) found neither is distinguished by any fixture in the
+tree today; both are kept as defensive checks against a future shape that
+would make the distinction load-bearing, documented at each site rather
+than removed, since FR-322 states the underlying rule as a property of the
+node kind, not as a fact this tree's current inputs happen to make trivial.
 
 Detector scope (QSL-268): a comparison is branch-gating when it feeds an
 `if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`

@@ -19,7 +19,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:14288bfd3e82a8c0cd45d978a5dd800fe0056e5a7c6d2a8fbcebd0a74fcf6afc",
+          "digest": "sha256:34bb3b6f4fd4e479d6fe1cf20839b14862b4996a68122bc7577fddec616d8492",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -43,7 +43,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:2e8450a50ebdfa36afc77830e42c3172faf4a46b18df492afa37f288c97ef5c1",
+          "digest": "sha256:e338f2233e8b0c6065ab506c7fc5ad0cce7d7b5c8b33cc02a146a9debf8d1907",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -67,7 +67,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:e4cc642a139fbc1ed55d79e1e44b3c6c629e5d55a7a585159579283a10c33cfd",
+          "digest": "sha256:8e67c4964abe274e8329b58cd4250935a73829eec1994ce351f345b21736f33e",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -91,7 +91,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:75536b5cc63528e3608aa52b85ed3867a1fa5509fccecbfce92d1ba3c2cd2d86",
+          "digest": "sha256:5ac214c884add805212a797dffd82cfbef00afc7a26ba634c7fc1641bc60e4e9",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -115,7 +115,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:ed4238f95c9b2aa6683f4a73279788d1e3136fd467efe95b8d4ea51653267788",
+          "digest": "sha256:8bff1f06af36af79bb9debe6608b7e5b8c0387144b5a79d355584f5cd90db2c5",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -139,7 +139,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:cc2f1965db916aa282f51f7099f84b598c881b5b088bc11da19d315b71824b66",
+          "digest": "sha256:71220201b61991cfeb49defdc28f6524eaa2391779ea5b9d444605a2c8ffbb34",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -163,7 +163,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:8f03de4e8a9b1ad0eacdae464fcb89246aab57576a5f42031679ce88f83c985a",
+          "digest": "sha256:702d98288e8700ffc990e5c822c604639885ecfbef4dcdb3ddbf0f4aff6ef597",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -187,7 +187,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:6e3201820472915c2752f4a74b82be73e5d152f83d819a876532eaf8e5cbe188",
+          "digest": "sha256:cd03575b12bc4ba7eca5fdc747037f7e3a4837bee27290e6f74473ce9c1fa17f",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -211,7 +211,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:783e2b91e9cd7bba4d0d8eab08f2f30fb006a1ac8a8d338029e99860909f21d6",
+          "digest": "sha256:d50ea10dad8277e95bdb95390b090b318dbe925d154051bcbc070d15b341bc96",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -235,7 +235,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:979881cadb0d20f4a839ed236bb4e25b4cccb4b186537425786f92a26f2fbca4",
+          "digest": "sha256:3003a3d131305b4bab337b1689f71c0f2f1edb6fe636d0cd2f3bc133b28e4611",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -259,7 +259,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:1f0ae7a25de5bf87d54ce0ceb9cb491c069739f7ae9d393faaaf5baa4963b2a7",
+          "digest": "sha256:1a685fac5a4ef19513f4bd544b5dc18ca545901d23302b6a3833c04c302319be",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -283,7 +283,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:b442bf3fcad5168a2c506e45a7c30ee39d8ee9a134c0729953af57ce54c8278b",
+          "digest": "sha256:6538dc8f952a9307b2ffec28aaa7571425e56b4d9787b7567b1b46ae706c393d",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -307,7 +307,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:14d491497acd1ab20c2876ab60e26bb866a57470699075e56b8e65a0ad79da9a",
+          "digest": "sha256:9a4c98d818e8efaa84cbc3d255eb7afe23a2e8dffd7aae10cf4e8edffe64690b",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -331,7 +331,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:a77333c6c40446cedd753b8f6a1eedb4e6ff389f103f8318069f45874b8ad554",
+          "digest": "sha256:aaebe205db7a81e2f6c61cfdbfecd0c87aec30d31ce55cc1ae0fdad8a50ffb44",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -355,7 +355,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:b79cc9c2c4b7e724a0fe114fecca0e3a9822011559bddc594cf3dc127119c958",
+          "digest": "sha256:6705c6ba3be6bbfe6b95cb178acb373d44904475f23f49d0e6f675a09e33fd09",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -379,7 +379,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:ee7b156bff03d8ad9fe846d791f30958697472a9471f9e616edd160c909f0332",
+          "digest": "sha256:684831477d7e3ad0d2ed58cf76c076729ad76a3b8c400bea8239d7967a57b73b",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -403,7 +403,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:56f446b3834dff8d9f00d675d676ae9c917db872c7549859e5bf36ec3857e085",
+          "digest": "sha256:cf506a8dc3fd1c2672262d33a3bdc1f49911b724a01d04e85f3ed6582020c01b",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -427,7 +427,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:80452a61d7f2eae2272e91580f42d3b852ec099facd25d32c734379cdfb8df0b",
+          "digest": "sha256:9badaaf9486a1824f0104f5107da15b57aafa182628d2602b69214d353bb748c",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -451,7 +451,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:905abdaecf9aaec880aa84b86eb73476a2379c52135df8221396c6e3a757b1cc",
+          "digest": "sha256:dcd3497313a88dfa67d04b5694fcd38e94d0d2d9ba6ce84b2ede77e4f7576375",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -475,7 +475,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:dbee5c68e3ff257f5382c791efa18f6a405164bba2a6d673eedc24f237ad6557",
+          "digest": "sha256:facbadf652a024ac614744426f8a16be2c0f2f0e39792a839a66e299be3db84a",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -499,7 +499,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:1c91a83c4c2d4a6c4d6c3459e84757320634c7d58a9e754a00350a98fb244c84",
+          "digest": "sha256:dfbb314c2bc5f35f95cc0b7051161a59fd0e4f80d9c9eed02f1b644a0c59428d",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -507,6 +507,30 @@
         }
       },
       "expected_refusal_code": "v2.clock.timestamp-unit"
+    },
+    {
+      "identity": "clock-name",
+      "axis": "temporal_bindings.clock_name",
+      "input": {
+        "operation": "offer",
+        "file": "mutations/clock-name.json",
+        "artifact": {
+          "refVersion": "ix.artifact-ref/3-draft",
+          "kind": "linked-package",
+          "authority": "ix://agent-ix/quire-spec-language",
+          "identity": "examples/protocol-handoff/workflow-v2",
+          "revision": {
+            "namespace": "example-output",
+            "value": "2"
+          },
+          "digest": "sha256:43f975f6de0e6e57124ede5ed78cba16b5ff66eff34aac4f51f3f990dc8f37be",
+          "wire": {
+            "identity": "quire.compiled-protocol",
+            "version": "2"
+          }
+        }
+      },
+      "expected_refusal_code": "v2.binding.offer-clock-name"
     },
     {
       "identity": "clock-missing-sequence-authority",
@@ -523,7 +547,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:60410b8a0ac230e1fcfc91ac2822362827cee276f37bb27d3f23b02e06ad0801",
+          "digest": "sha256:198e97262fb85d775c970fcd67b20f2b417c5a4ba395991f9f0a685637066346",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -547,7 +571,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:6a926242d9ddd9e7dd6145fa64460f8ed5d1d80421a7e6be7e93ffb78ae16b7b",
+          "digest": "sha256:a697417f48e84dabf8d281f5a8b348d3d3c249aeeff23f745bc65e8f6dd2ca99",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -571,7 +595,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:f7ae45e0cc9d9e323051dd6d628a4ee13252ce97c3783dbacb93176123b8b09f",
+          "digest": "sha256:f853fdbd4bc84f9ee2390befd88d4a3de9a46e426fdbed9adb8231dfaddb53d4",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -595,7 +619,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:238a7b486c793898947333ecaf8fb2a92e2d720a6bc0861467089b0d3557ea99",
+          "digest": "sha256:4c9d1c0ab47bb90da219807593eab3ba6c1083aba61eb9c7d446c3cc2dbd1ef7",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -619,7 +643,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:f3a259c978c9dcb2e5b888d8cb2a350d8f422091ac6b207878ca0b16748714b5",
+          "digest": "sha256:37e6cf307bd89fbc518311c6cdc1d8108e31c14c3af542dd27c62f81dfe4a996",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"
@@ -643,7 +667,7 @@
             "namespace": "example-output",
             "value": "2"
           },
-          "digest": "sha256:4930d5aa8841d8ac6c1028f77874e382a70b0012c09ffd1486e7adc932aa5d4f",
+          "digest": "sha256:5865c6448f9261ef1bc4b888f42313ec088531d2fa948c1e8f34aaba613934f9",
           "wire": {
             "identity": "quire.compiled-protocol",
             "version": "2"

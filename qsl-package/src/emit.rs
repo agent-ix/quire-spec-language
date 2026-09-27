@@ -383,6 +383,17 @@ impl<'g> Candidate<'g> {
     /// `correspondence` node and on a `value`/`enum_value` node, and on every
     /// other node present exactly when it has a `declaration` occurrence.
     fn declaration_matches_occurrences(&self) -> bool {
+        // The `EnumValue` arm is not distinguished by any fixture today:
+        // occurrence-recording never attaches a `Declaration`-role
+        // occurrence to an enum-value node under current lowering, so
+        // `declared` already comes out `false` for one without this arm
+        // (SR-758 FND-006 mutation-tested this and found no fixture that
+        // depends on it). It is kept because FR-322 states the rule as a
+        // property of the node kind, not as a derived fact about today's
+        // occurrence-recording: if recording ever starts attaching a
+        // `Declaration` occurrence to an enum-value node (for example while
+        // building out a future enum-value declaration form), this arm is
+        // what keeps that node refused instead of silently accepted.
         let forced_absent = matches!(
             self.tag,
             CheckedNodeTag::Expression

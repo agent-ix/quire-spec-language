@@ -2466,11 +2466,7 @@ fn mutation_fixtures(
     offer(
         "clock-name",
         "temporal_bindings.clock_name",
-        v2::Refusal::Binding {
-            side: v2::InventorySide::Offer,
-            cause: v2::BindingCause::ClockName,
-        }
-        .code(),
+        v2::Refusal::ClockName.code(),
         clock_name,
     )?;
 

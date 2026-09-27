@@ -136,7 +136,7 @@ fn committed_handoff_checksums_and_interchange_records_are_complete() {
     )
     .expect("decode mutations/manifest.json with the published type");
     assert_eq!(manifest.format, MUTATION_MANIFEST_FORMAT);
-    assert_eq!(manifest.cases.len(), 28);
+    assert_eq!(manifest.cases.len(), 29);
     let manifest_bytes =
         serde_json::to_vec(&manifest).expect("encode published mutation-manifest type");
     assert_eq!(
