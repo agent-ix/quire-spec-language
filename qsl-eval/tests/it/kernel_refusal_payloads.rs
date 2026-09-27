@@ -247,7 +247,7 @@ fn arithmetic_refusals_name_their_result_domain() {
         &[("expected", "Int[0, 9]")],
     );
     let half = Rational::new(int(1), int(2)).unwrap();
-    let domain = RationalDomain::new(interval(-9, 9), interval(2, 9)).unwrap();
+    let domain = RationalDomain::new(interval(-3, 9), interval(2, 9)).unwrap();
     let refused = refusal(evaluate_rational_arithmetic(
         RationalArithmetic::Add(&half, &half),
         Some(&domain),
@@ -257,7 +257,7 @@ fn arithmetic_refusals_name_their_result_domain() {
         &refused,
         "rational_out_of_domain",
         "outside-domain",
-        &[("expected", "Rational[-9, 9; 2, 9]")],
+        &[("expected", "Rational[-3, 9; 2, 9]")],
     );
 }
 
