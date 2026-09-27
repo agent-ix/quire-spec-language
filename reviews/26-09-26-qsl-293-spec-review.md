@@ -39,3 +39,11 @@ multiple embedding for one unit.
 Approve with changes. Fix FND-002 and FND-003 in this PR. FND-001 needs an
 owner ruling on the disposition before its test (SR-743 FND-002) can be
 written.
+
+## Dispositions
+
+| ID | Disposition |
+| --- | --- |
+| FND-001 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6, per the reviewer's ruling: FR-096 gets a fourth no-region case (a span the C-21 map splits into more than one document region), TC-426's Status and FR-096's AC-1 Status both record it, and `a_span_the_embedding_splits_has_no_region` exercises a real multi-segment map against `region()` directly, asserting `None`. |
+| FND-002 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: FR-096's Status no longer lists the embedded-document mapping as not built; a new "Implemented under QSL-293" entry records what is built, the fourth no-region case, and the QSL-294 production-wiring gap. |
+| FND-003 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: `spec/tests.md`'s S-5b coverage prose now names TC-426 alongside TC-427, TC-429, TC-378, TC-428 and TC-500. |

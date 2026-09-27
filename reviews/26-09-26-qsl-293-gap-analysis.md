@@ -42,3 +42,10 @@ is ignored), and `None` is passed in `CheckedGraph::region`,
 
 Approve with changes. Fix FND-002 in this PR. FND-001 is either fixed here or
 deferred with a ticket and an honest FR-096 Status line.
+
+## Dispositions
+
+| ID | Disposition |
+| --- | --- |
+| FND-001 | deferred: filed as QSL-294 ("Wire qsl-source's document embedding map into PackageDeclarations (FR-096-AC-1 end to end)"), a child of QSL-293, per the reviewer's ruling. FR-096's Status (aea25ff46537b3d00ca787cd55d2c09290960fa6) now states the gap plainly and links QSL-294. |
+| FND-002 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: added `an_embedding_for_a_different_body_is_ignored` and `a_span_the_embedding_splits_has_no_region` (kills mutant (c), and the SR-742 FND-001 identity mutant), plus declaration-region assertions through `regions.declaration_region(0)` and `checked.declaration_region(0)` in `an_embedded_body_resolves_its_locations_under_the_document_shifted` (kills mutants (a) and (b)). All three re-run and killed post-fix. |

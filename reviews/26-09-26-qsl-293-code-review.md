@@ -39,3 +39,11 @@ Approve with changes. Fix FND-001 in this PR, because it can produce a wrong
 result. FND-002 and FND-003 are optional cleanups. The split-span disposition
 is a spec question, recorded in SR-744 FND-001. Test coverage is recorded in
 SR-743.
+
+## Dispositions
+
+| ID | Disposition |
+| --- | --- |
+| FND-001 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: `region()` now resolves `embedding.filter(|map| map.body().reference() == source)` before trusting it; a map for a different body falls through to the non-embedded resolution. `an_embedding_for_a_different_body_is_ignored` (region.rs) proves it. |
+| FND-002 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: `PackageDeclarations::embedding` and `DeclarationRegions::embedding` are `Option<Arc<SourceMap>>`; `regions()` clones the `Arc`, not the map. |
+| FND-003 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: `region()`'s exactly-one-region check is `match map.map_regions(...)?.as_slice() { [region] => Some(region.clone()), _ => None }`; the test uses one `u64::try_from(k).expect(...)` conversion throughout. |
