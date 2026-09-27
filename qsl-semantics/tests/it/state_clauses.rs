@@ -3355,6 +3355,33 @@ fn a_reference_to_an_admitted_object_of_another_type_refuses_wrong_value_kind() 
     );
 }
 
+/// SR-750 FND-019: only a population the snapshot lists as incomplete
+/// tolerates a dangling reference. `child.parent` names `{bogus, missing}`,
+/// a population the snapshot does not list, so the reference is not
+/// tolerated and refuses `dangling_reference`.
+#[trace("TC-465", "FR-106-AC-4")]
+#[test]
+fn a_reference_into_an_unlisted_population_refuses_dangling_reference() {
+    let document = tc465_document();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            value["populations"][0]["objects"][1]["fields"]["parent"] =
+                json!({"present": {"reference": {"population": "bogus", "key": "missing"}}});
+        },
+        None,
+    );
+    let record = assert_tc465_refused(
+        result,
+        "dangling_reference",
+        "absent-target-in-complete-population",
+    );
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("missing")
+    );
+}
+
 /// FR-106 check 7's own last sentence ("admission SHALL skip the dangling
 /// check over an incomplete population",
 /// `FR-106-admit-snapshots-and-invocations.md:216`), SR-750 FND-001 round 2:

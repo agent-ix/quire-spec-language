@@ -1298,13 +1298,16 @@ pub(super) fn finish_populations(
     values: PopulationValues<'_>,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
     // The dangling targets check 8 tolerated: references naming no object
-    // of this snapshot, into a population not admitted `complete` (FR-106
-    // check 7: "skip the dangling check over an incomplete population").
-    // Every other reference must name an admitted object.
+    // of this snapshot, into a population the snapshot lists as incomplete
+    // (FR-106 check 7: "skip the dangling check over an incomplete
+    // population"). A reference into a population the snapshot does not
+    // list is not tolerated (SR-750 FND-019): every reference other than
+    // the tolerated ones must name an admitted object, so the closure check
+    // refuses it `dangling_reference`.
     let tolerated: Vec<ObjectReference> = values
         .unresolved
         .into_iter()
-        .filter(|(population, _)| values.completeness.get(population).copied() != Some(true))
+        .filter(|(population, _)| values.completeness.get(population).copied() == Some(false))
         .map(|(_, reference)| reference)
         .collect();
     let usage = super::AdmissionUsage {
