@@ -44,3 +44,14 @@ On the interim state for `sum-out-of-domain`: it is not described honestly, but 
 | FND-002 | medium | FR-093-AC-17 still says `qsl_package::diagnostics_catalog` writes `quire.native.diagnostics/v1` "at revision `1-draft.7`". This PR changed `emit.rs:119` to write `1-draft.8`, so the AC now contradicts the code. FR-093 is not in a protected lane. Update the AC's revision (TC-416 compares the accessor to the emitted bytes, not the literal, so no test change is needed). | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:698; qsl-package/src/emit.rs:119 |
 | FND-003 | low | The spec.md FR-096 row says "each of the twelve kernel refusals with a record carries its target domain or width". Only the ten value refusals carry a domain or width. `CardinalityOutOfBound` and `ForeignReference` carry their own fields. It should say "ten", as FR-096 Status does. | spec/spec.md:510 |
 | FND-004 | low | FR-100 Status is now stale, but this is a routing item, not a fix for this PR. "Remaining work: the code renders the ten kernel refusals ... as a bare `{"kind": "refused"}`, and refuses a `sum` running total ... as `IntegerOutOfDomain`" is no longer true after this PR. FR-100 is agent-a's lane (not edited here), so route it to FR-100's owner. | spec/functional/FR-100-run-a-named-function-through-the-spine.md:374-378 |
+
+## Dispositions
+
+Round 1, re-checked at 94e49221.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 54633014: FR-096 Behavior and Status both say FR-100's kernel undefined-reason table owns the `sum-out-of-domain` spelling (FR-100-AC-10) |
+| FND-002 | fixed | 54633014: FR-093-AC-17 reads `1-draft.8` |
+| FND-003 | fixed | 54633014: the spec.md FR-096 row says "each of the ten kernel value refusals carries its target domain or width". The new wording repeats one clause; that is SR-741 FND-001. |
+| FND-004 | deferred | FR-100 is agent-a's lane, and the PR leaves it untouched. The stale "Remaining work" text is routed to FR-100's owner. |
