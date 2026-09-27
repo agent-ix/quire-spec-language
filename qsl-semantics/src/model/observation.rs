@@ -30,13 +30,47 @@ use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::ByteDigest;
 use quire_exact::{EffectiveId, ObjectId, ObjectReference, UniverseId, Value};
 
-use crate::check::{CheckedGraph, CheckedStateClause};
 use crate::model::accounting::ModelNormalizationLimits;
-use crate::model::domain_package::DomainPackage;
+use crate::model::domain_package::{DomainPackage, DomainPackageRef};
 use crate::model::intake::{admit_selections, read_records};
 use crate::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use crate::model::object_environment::ObjectEnvironment;
+use crate::value::declaration::{OperationDeclaration, TypeEnvironment};
+
+// ---------------------------------------------------------------------------
+// Clause facts (the model -> check edge must stay empty, FR-074-AC-3): the
+// plain model-level facts a caller reads off its own `check::
+// CheckedStateClause`/`check::CheckedGraph` and passes in here, so this
+// module depends on no `check` type. `qsl-replay/src/spine/clause.rs`
+// builds these from the checked package it already holds.
+// ---------------------------------------------------------------------------
+
+/// The one operation a precondition's or postcondition's clause names
+/// (`check::ClauseOperation`'s own two model-level fields, copied out by
+/// the caller).
+pub struct OperationFacts {
+    /// The object type that declares the operation.
+    pub declaring: EffectiveId,
+    /// The operation itself.
+    pub declaration: OperationDeclaration,
+}
+
+/// The facts [`admit_observations`] needs about the selected state clause
+/// (FR-104's own `check::CheckedStateClause`, read by the caller before
+/// this call: `qsl-replay/src/spine/clause.rs` builds this from
+/// `CheckedGraph::state_clause`).
+pub struct ClauseFacts {
+    /// The clause's own minted node identity (FR-107's own lookup key).
+    pub identity: quire_exact::NodeKey,
+    /// Invariant, precondition or postcondition.
+    pub kind: StateClauseKind,
+    /// The context object type, by its effective identity.
+    pub context: EffectiveId,
+    /// The operation a precondition or postcondition names; `None` for an
+    /// invariant.
+    pub operation: Option<OperationFacts>,
+}
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -340,16 +374,16 @@ impl ModelView {
     }
 }
 
-/// Re-admit and re-normalize every domain package `graph` selected
-/// (`CheckedGraph::model_selections`), against the same package input a
-/// caller's `compile` already used. See the module doc's design note.
+/// Re-admit and re-normalize every domain package `model_selections`
+/// names (the caller's own `CheckedGraph::model_selections()`), against the
+/// same package input a caller's `compile` already used. See the module
+/// doc's design note.
 fn model_views(
-    graph: &CheckedGraph,
+    model_selections: &[DomainPackageRef],
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     limits: ModelNormalizationLimits,
 ) -> Result<Vec<ModelView>, AdmissionFailure> {
-    let selections = graph.model_selections();
-    let admitted = admit_selections(selections, SHA256_JCS_DIGEST_DOMAIN, packages)
+    let admitted = admit_selections(model_selections, SHA256_JCS_DIGEST_DOMAIN, packages)
         .map_err(|_| fault("model-reconsistent-admission"))?;
     let mut views = Vec::with_capacity(admitted.len());
     for (package_ref, document) in admitted {
@@ -419,15 +453,15 @@ pub struct Provisions<'a> {
 /// against (FR-109's own `wrong-role-mapping` refusal on an unresolved
 /// one).
 pub fn admit_current_snapshot(
-    graph: &CheckedGraph,
+    model_selections: &[DomainPackageRef],
+    types: &TypeEnvironment,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     model_limits: ModelNormalizationLimits,
     provision: &BTreeMap<[u8; 32], Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
 ) -> Result<ObjectEnvironment, AdmissionFailure> {
-    let views = model_views(graph, packages, model_limits)?;
-    let types = graph.scope().types();
+    let views = model_views(model_selections, packages, model_limits)?;
     let read = read_document(DocumentKind::Snapshot, provision, selected, limits)?;
     let snapshot = read
         .as_snapshot()
@@ -448,11 +482,16 @@ pub fn admit_current_snapshot(
 // ---------------------------------------------------------------------------
 
 /// FR-106: admit the selected snapshot and invocation documents against
-/// `graph`'s selected `clause`, into one [`AdmittedObservations`] value, or
-/// return exactly one [`AdmissionFailure`].
+/// `model_selections`/`types` (the caller's own checked graph, re-derived
+/// per the module doc's design note) and `clause` (the caller's own
+/// selected `check::CheckedStateClause`, read into [`ClauseFacts`] before
+/// this call), into one [`AdmittedObservations`] value, or return exactly
+/// one [`AdmissionFailure`].
+#[allow(clippy::too_many_arguments)]
 pub fn admit_observations(
-    graph: &CheckedGraph,
-    clause: &CheckedStateClause,
+    model_selections: &[DomainPackageRef],
+    types: &TypeEnvironment,
+    clause: &ClauseFacts,
     packages: &BTreeMap<[u8; 32], Vec<u8>>,
     model_limits: ModelNormalizationLimits,
     provisions: &Provisions<'_>,
@@ -460,7 +499,7 @@ pub fn admit_observations(
     limits: ObservationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     // Check 2: selection form.
-    match (clause.kind(), &selection.input) {
+    match (clause.kind, &selection.input) {
         (StateClauseKind::Invariant, ClauseSelectionInput::Current { .. })
         | (
             StateClauseKind::Precondition | StateClauseKind::Postcondition,
@@ -474,14 +513,13 @@ pub fn admit_observations(
         }
     }
 
-    let views = model_views(graph, packages, model_limits)?;
+    let views = model_views(model_selections, packages, model_limits)?;
     let context_view =
-        view_of(&views, clause.context()).ok_or_else(|| fault("unresolved-context-type"))?;
+        view_of(&views, clause.context).ok_or_else(|| fault("unresolved-context-type"))?;
     let context_name = context_view
-        .type_name(clause.context())
+        .type_name(clause.context)
         .ok_or_else(|| fault("unresolved-context-name"))?
         .to_owned();
-    let types = graph.scope().types();
 
     match &selection.input {
         ClauseSelectionInput::Current {
@@ -493,7 +531,7 @@ pub fn admit_observations(
             types,
             context_view,
             &context_name,
-            clause.identity(),
+            clause.identity,
             provisions,
             snapshot,
             anchor,
@@ -505,7 +543,8 @@ pub fn admit_observations(
             types,
             context_view,
             &context_name,
-            clause,
+            clause.identity,
+            clause.operation.as_ref(),
             provisions,
             invocation,
             limits,
@@ -526,7 +565,7 @@ use document::{read_document, DocumentKind};
 #[allow(clippy::too_many_arguments)]
 fn admit_invariant(
     views: &[ModelView],
-    types: &crate::value::declaration::TypeEnvironment,
+    types: &TypeEnvironment,
     context_view: &ModelView,
     context_name: &str,
     clause: quire_exact::NodeKey,
@@ -623,10 +662,11 @@ fn check_model(views: &[ModelView], model: &document::ModelHeader) -> Result<(),
 #[allow(clippy::too_many_arguments)]
 fn admit_operation(
     views: &[ModelView],
-    types: &crate::value::declaration::TypeEnvironment,
+    types: &TypeEnvironment,
     context_view: &ModelView,
     context_name: &str,
-    clause: &CheckedStateClause,
+    clause_identity: quire_exact::NodeKey,
+    operation: Option<&OperationFacts>,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
     limits: ObservationLimits,
@@ -643,9 +683,7 @@ fn admit_operation(
 
     check_model(views, &invocation.model)?;
 
-    let operation = clause
-        .operation()
-        .ok_or_else(|| fault("clause-declares-no-operation"))?;
+    let operation = operation.ok_or_else(|| fault("clause-declares-no-operation"))?;
     if invocation.context != context_name || invocation.operation != operation.declaration.name() {
         return Err(refuse(AdmissionRecord::new(
             "wrong_snapshot",
@@ -716,7 +754,7 @@ fn admit_operation(
     )?;
 
     Ok(AdmittedObservations {
-        clause: clause.identity(),
+        clause: clause_identity,
         current: None,
         pre: Some(Observation {
             identity: pre_read.identity,

@@ -19,7 +19,8 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
     admit_current_snapshot, admit_observations, population_universe, AdmissionFailure,
-    AdmissionRecord, ClauseSelection, DocumentRef, ObservationLimits, Provisions,
+    AdmissionRecord, ClauseFacts, ClauseSelection, DocumentRef, ObservationLimits, OperationFacts,
+    Provisions,
 };
 use quire_exact::{Meter, ScalarLimits, Value, ValueType};
 
@@ -288,9 +289,25 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                 snapshots: &request.snapshots,
                 invocations: &request.invocations,
             };
+            // The model -> check edge must stay empty (FR-074-AC-3):
+            // `admit_observations` (FR-106) is a `model`-layer function, so
+            // this caller reads the checked clause's own facts out of
+            // `check::CheckedStateClause` here, into model-level
+            // `ClauseFacts`/`OperationFacts`, rather than that module
+            // importing `check` itself.
+            let clause_facts = ClauseFacts {
+                identity: clause.identity(),
+                kind: clause.kind(),
+                context: clause.context(),
+                operation: clause.operation().map(|operation| OperationFacts {
+                    declaring: operation.declaring,
+                    declaration: operation.declaration.clone(),
+                }),
+            };
             let observations = match admit_observations(
-                package.graph(),
-                clause,
+                package.graph().model_selections(),
+                package.graph().scope().types(),
+                &clause_facts,
                 &request.packages,
                 request.model_limits,
                 &provisions,
@@ -432,7 +449,8 @@ fn run_function(
     }
 
     let environment = match admit_current_snapshot(
-        package.graph(),
+        package.graph().model_selections(),
+        package.graph().scope().types(),
         packages,
         model_limits,
         snapshots,

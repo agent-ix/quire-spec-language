@@ -203,7 +203,7 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             item: "evaluate_declaration".to_owned(),
         },
         SeamLocation {
-            file: "qsl-eval/src/value/expression/s6a.rs".to_owned(),
+            file: "qsl-eval/src/value/expression/s6a/mod.rs".to_owned(),
             item: "S6aFamilyKind::family".to_owned(),
         },
         SeamLocation {

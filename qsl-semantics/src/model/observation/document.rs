@@ -37,10 +37,26 @@ pub(super) struct DocAnchor {
     pub(super) name: String,
 }
 
+/// An object's own `"type"` member: a raw producer identity string, not
+/// yet resolved against a re-derived view (`find_declaration` does that
+/// resolution, matching a [`DeclarationKey`](crate::model::key::DeclarationKey)'s
+/// `node` half only -- this document reader never learns the matching
+/// `package` half, only the domain package's own intake does, TC-260's
+/// own typestate rule (FR-088-AC-8): no "type"-named field under `model`
+/// is a bare `String`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct RawTypeIdentity(String);
+
+impl RawTypeIdentity {
+    pub(super) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct RawObject {
     pub(super) key: String,
-    pub(super) type_identity: String,
+    pub(super) type_identity: RawTypeIdentity,
     /// The object's own `fields` member, in document order (FR-106 check
     /// 6.4's "unknown-member" detection needs "the first ... in walk
     /// order").
@@ -424,11 +440,13 @@ fn read_populations(
                 .and_then(|value| value.as_str())
                 .unwrap_or_default()
                 .to_owned();
-            let type_identity = object_entry
-                .member("type")
-                .and_then(|value| value.as_str())
-                .unwrap_or_default()
-                .to_owned();
+            let type_identity = RawTypeIdentity(
+                object_entry
+                    .member("type")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()
+                    .to_owned(),
+            );
             let field_items = object_entry
                 .member("fields")
                 .and_then(|value| value.as_object())
@@ -757,7 +775,8 @@ pub(super) fn admit_populations(
                         .with("object", object.key.clone()),
                 ));
             }
-            let Some((_, object_key)) = find_declaration(views, &object.type_identity) else {
+            let Some((_, object_key)) = find_declaration(views, object.type_identity.as_str())
+            else {
                 return Err(refuse(
                     admission_record("invalid_runtime_input", "wrong-role-mapping")
                         .with("object", object.key.clone()),

@@ -26,7 +26,6 @@
 mod causes;
 mod evaluate;
 mod family;
-mod protocol_clause;
 mod s6a;
 
 use evaluate::Machine;
@@ -221,6 +220,18 @@ fn validate(
     Ok(())
 }
 
+/// The evaluation environment `evaluate_declaration` runs `identity`
+/// against: exactly one variant per [`S6aFamilyKind`] family (FR-107,
+/// QSL-278), each carrying its own family's real `Env<'a>`. A caller always
+/// pairs a `family` with its own matching variant; the mismatched pairs
+/// `evaluate_declaration`'s own match handles are a broken invariant, never
+/// reachable through [`CheckedPackageEvaluation::call`] or
+/// [`CheckedPackageEvaluation::evaluate_clause`].
+enum EvaluationTarget<'e, 'a> {
+    Value(&'e mut family::EvaluationEnv<'a>),
+    ProtocolClause(&'e mut s6a::protocol_clause::ProtocolClauseEnv<'a>),
+}
+
 /// The ADR-011 S6a seam for a checked declaration (FR-090, ADR-012 §5.1 S1):
 /// one hand-written arm per [`S6aFamilyKind`] variant, each calling that
 /// family's `evaluate` hook, and no `_` arm. `S6aFamilyKind` has no
@@ -244,18 +255,6 @@ fn validate(
 /// `--cfg seam_probe` with `E0004`.
 #[deny(clippy::wildcard_enum_match_arm)]
 #[deny(clippy::match_wildcard_for_single_variants)]
-/// The evaluation environment `evaluate_declaration` runs `identity`
-/// against: exactly one variant per [`S6aFamilyKind`] family (FR-107,
-/// QSL-278), each carrying its own family's real `Env<'a>`. A caller always
-/// pairs a `family` with its own matching variant; the mismatched pairs
-/// `evaluate_declaration`'s own match handles are a broken invariant, never
-/// reachable through [`CheckedPackageEvaluation::call`] or
-/// [`CheckedPackageEvaluation::evaluate_clause`].
-enum EvaluationTarget<'e, 'a> {
-    Value(&'e mut family::EvaluationEnv<'a>),
-    ProtocolClause(&'e mut protocol_clause::ProtocolClauseEnv<'a>),
-}
-
 fn evaluate_declaration(
     family: S6aFamilyKind,
     identity: &NodeKey,
@@ -489,7 +488,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
         }
 
         let identity = declaration.identity();
-        let mut env = protocol_clause::ProtocolClauseEnv::new(
+        let mut env = s6a::protocol_clause::ProtocolClauseEnv::new(
             self.graph(),
             &current.environment,
             pre_environment,
@@ -684,7 +683,7 @@ mod tests {
                     )
                 }
                 S6aFamilyKind::ProtocolClause => {
-                    let mut env = protocol_clause::ProtocolClauseEnv::new(
+                    let mut env = s6a::protocol_clause::ProtocolClauseEnv::new(
                         empty.graph(),
                         &objects,
                         None,

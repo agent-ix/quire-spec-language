@@ -7,7 +7,7 @@
 //! - **11.1's retype refusal is exact-type, by design.** "a surviving
 //!   object whose most-specific type differs between pre and post
 //!   (`FrameTypeChanged`; no frame authorizes a retype)" (line 252) states a
-//!   retype is *never* authorized, so comparing `type_identity` strings
+//!   retype is *never* authorized, so comparing `producer_identity` strings
 //!   directly (never conformance) is what the line says, not a narrowing of
 //!   it.
 //! - **11.3's `modifies` grant is matched by field display name.** The wire
@@ -33,7 +33,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::ObjectReference;
 
-use super::document::{find_declaration, raw_field, RawPopulation};
+use super::document::{find_declaration, raw_field, RawPopulation, RawTypeIdentity};
 use super::helpers::{admission_record, object_reference};
 use super::{refuse, AdmissionFailure, ModelView, SelectedObject};
 use crate::model::domain_package::OperationEffect;
@@ -44,21 +44,21 @@ fn field_name_of(key: &crate::model::key::DeclarationKey) -> &str {
 
 struct PopulationSide<'a> {
     keys: BTreeMap<String, &'a [(String, super::RawValue)]>,
-    type_identity: BTreeMap<String, &'a str>,
+    producer_identity: BTreeMap<String, &'a RawTypeIdentity>,
 }
 
 fn side<'a>(populations: &'a [RawPopulation], name: &str) -> PopulationSide<'a> {
     let mut keys = BTreeMap::new();
-    let mut type_identity = BTreeMap::new();
+    let mut producer_identity = BTreeMap::new();
     if let Some(population) = populations.iter().find(|entry| entry.population == name) {
         for object in &population.objects {
             keys.insert(object.key.clone(), object.fields.as_slice());
-            type_identity.insert(object.key.clone(), object.type_identity.as_str());
+            producer_identity.insert(object.key.clone(), &object.type_identity);
         }
     }
     PopulationSide {
         keys,
-        type_identity,
+        producer_identity,
     }
 }
 
@@ -97,10 +97,10 @@ pub(super) fn enforce(
         let post_side = side(post_populations, name);
 
         // 11.1: post objects in ascending key order.
-        for (key, post_type) in &post_side.type_identity {
-            match pre_side.type_identity.get(key) {
+        for (key, post_type) in &post_side.producer_identity {
+            match pre_side.producer_identity.get(key) {
                 None => {
-                    if !creates.contains(*post_type) {
+                    if !creates.contains(post_type.as_str()) {
                         return Err(refuse(
                             admission_record("frame_violation", "unauthorized-change")
                                 .with("population", name.clone())
@@ -120,10 +120,10 @@ pub(super) fn enforce(
             }
         }
         // 11.2: pre objects absent from post, ascending key order.
-        for key in pre_side.type_identity.keys() {
-            if !post_side.type_identity.contains_key(key) {
-                let pre_type = pre_side.type_identity[key];
-                if !deletes.contains(pre_type) {
+        for key in pre_side.producer_identity.keys() {
+            if !post_side.producer_identity.contains_key(key) {
+                let pre_type = pre_side.producer_identity[key];
+                if !deletes.contains(pre_type.as_str()) {
                     return Err(refuse(
                         admission_record("frame_violation", "unauthorized-change")
                             .with("population", name.clone())
@@ -136,7 +136,7 @@ pub(super) fn enforce(
         if let Some(pre_population) = pre_populations.iter().find(|p| p.population == *name) {
             for pre_object in &pre_population.objects {
                 let key = &pre_object.key;
-                if !post_side.type_identity.contains_key(key) {
+                if !post_side.producer_identity.contains_key(key) {
                     continue;
                 }
                 let empty: &[(String, super::RawValue)] = &[];
@@ -194,15 +194,15 @@ pub(super) fn enforce(
             )));
         }
         let computed_created: BTreeSet<String> = post_side
-            .type_identity
+            .producer_identity
             .keys()
-            .filter(|key| !pre_side.type_identity.contains_key(*key))
+            .filter(|key| !pre_side.producer_identity.contains_key(*key))
             .cloned()
             .collect();
         let computed_deleted: BTreeSet<String> = pre_side
-            .type_identity
+            .producer_identity
             .keys()
-            .filter(|key| !post_side.type_identity.contains_key(*key))
+            .filter(|key| !post_side.producer_identity.contains_key(*key))
             .cloned()
             .collect();
         if population_created != computed_created || population_deleted != computed_deleted {
@@ -212,7 +212,8 @@ pub(super) fn enforce(
             )));
         }
         for key in &population_created {
-            let Some((_, object_key)) = find_declaration(views, post_side.type_identity[key])
+            let Some((_, object_key)) =
+                find_declaration(views, post_side.producer_identity[key].as_str())
             else {
                 return Err(refuse(admission_record(
                     "invalid_runtime_input",
@@ -229,7 +230,9 @@ pub(super) fn enforce(
             );
         }
         for key in &population_deleted {
-            let Some((_, object_key)) = find_declaration(views, pre_side.type_identity[key]) else {
+            let Some((_, object_key)) =
+                find_declaration(views, pre_side.producer_identity[key].as_str())
+            else {
                 return Err(refuse(admission_record(
                     "invalid_runtime_input",
                     "wrong-role-mapping",

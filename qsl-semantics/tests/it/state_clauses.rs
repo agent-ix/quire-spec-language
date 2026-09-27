@@ -1333,9 +1333,25 @@ fn run_frame_clause(
         name: clause_name.to_owned(),
         input: qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
     };
+    // The model -> check edge must stay empty (FR-074-AC-3): the caller
+    // (here, this test; in production, `qsl-replay/src/spine/clause.rs`)
+    // reads the checked clause's own facts into `ClauseFacts`/
+    // `OperationFacts`, `admit_observations`'s own model-level input.
+    let clause_facts = qsl_semantics::model::observation::ClauseFacts {
+        identity: clause.identity(),
+        kind: clause.kind(),
+        context: clause.context(),
+        operation: clause.operation().map(|operation| {
+            qsl_semantics::model::observation::OperationFacts {
+                declaring: operation.declaring,
+                declaration: operation.declaration.clone(),
+            }
+        }),
+    };
     qsl_semantics::model::observation::admit_observations(
-        &graph,
-        clause,
+        graph.model_selections(),
+        graph.scope().types(),
+        &clause_facts,
         &packages,
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
         &provisions,
