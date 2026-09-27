@@ -2161,6 +2161,28 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     assert_eq!(report_for(disposition_from_call_failure).exit_code(), 30);
 }
 
+/// SR-750 FND-011 round 2: `exit_code`'s `Admit(Refused | Incomplete)` arm
+/// no longer maps a code that fails `Code::parse_str` to a silently
+/// guessed exit status (the old `map_or(20, ..)`). Every real
+/// `AdmissionRecord.code` this crate ever constructs is one of
+/// `admission_record`'s own fixed catalog literals, so a code outside the
+/// catalog is an internal invariant violation, not reachable through any
+/// legitimate admission path -- confirmed here by constructing one
+/// directly and asserting the loud panic, rather than the old silent 20.
+#[test]
+#[should_panic(expected = "does not name a catalog code")]
+fn exit_code_panics_on_an_admission_record_code_outside_the_catalog() {
+    let record = qsl_semantics::model::observation::AdmissionRecord {
+        code: "not-a-real-catalog-code",
+        cause: "not-a-real-cause",
+        fields: BTreeMap::new(),
+    };
+    let disposition = ClauseDisposition::Admit(
+        qsl_semantics::model::observation::AdmissionFailure::Refused(record),
+    );
+    let _ = report_for(disposition).exit_code();
+}
+
 /// Wraps a bare [`ClauseDisposition`] in a minimal [`ClauseRunReport`], for
 /// `exit_code` (an inherent method of the report, not the disposition).
 fn report_for(disposition: ClauseDisposition) -> super::ClauseRunReport {

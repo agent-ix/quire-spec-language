@@ -124,16 +124,23 @@ impl StateClauseDeclaration {
 }
 
 /// The read-only declarations a state clause checks against.
+///
+/// The type itself stays `pub`: it is `FamilyContract::Declarations`
+/// (`family/contract.rs`), a trait `qsl-eval` and `qsl-package` also
+/// implement/consume, so E0446 ("private in public") refuses a
+/// `pub(crate)` type here. Its fields are `pub(crate)` (SR-750 FND-012):
+/// only `check::mod`'s own state-clause checking constructs or reads one,
+/// never a caller outside `qsl-semantics`.
 pub struct ClauseDeclarations<'a> {
-    pub scope: &'a Scope,
-    pub signatures: &'a Signatures,
-    pub dispatch_tables: &'a [DispatchTable],
-    pub models: &'a [AdmittedModel],
-    pub checking_limits: CheckingLimits,
+    pub(crate) scope: &'a Scope,
+    pub(crate) signatures: &'a Signatures,
+    pub(crate) dispatch_tables: &'a [DispatchTable],
+    pub(crate) models: &'a [AdmittedModel],
+    pub(crate) checking_limits: CheckingLimits,
     /// The clause body's root location.
-    pub location: &'a Location,
+    pub(crate) location: &'a Location,
     /// The package's running expression-node total before this clause.
-    pub nodes_used: u64,
+    pub(crate) nodes_used: u64,
 }
 
 /// One population domain of a requested item (FR-104 "Requirements"): the
@@ -148,6 +155,11 @@ pub struct PopulationDomain {
 }
 
 /// What an `operation-contract` claim is about.
+///
+/// `pub`, not narrowed: an enum's own variants cannot carry a narrower
+/// visibility than the enum itself, and this enum is `ClauseClaim::subject`
+/// (below)'s field type, which must stay reachable wherever `ClauseClaim`
+/// is (SR-750 FND-012).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ClaimSubject {
     /// The clause itself, keyed by its `claim` occurrence.
@@ -159,11 +171,14 @@ pub enum ClaimSubject {
 
 /// One `operation-contract` claim of a checked state clause, before
 /// lowering keys it (ADR-012 §13.5).
+///
+/// The type itself stays `pub` (`FamilyContract::Claim`, same reasoning as
+/// [`ClauseDeclarations`]); its own field is `pub(crate)` (SR-750 FND-012).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClauseClaim {
-    pub subject: ClaimSubject,
+    pub(crate) subject: ClaimSubject,
     /// The population domains the item ranges over.
-    pub populations: Vec<PopulationDomain>,
+    pub(crate) populations: Vec<PopulationDomain>,
 }
 
 /// A state clause checked by [`ProtocolClauseFamily::check`], before

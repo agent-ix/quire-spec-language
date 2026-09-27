@@ -345,6 +345,17 @@ struct Iteration<'a> {
     count: Integer,
 }
 
+/// Which value family a [`Machine`] evaluates (SR-750 FND-011 round 2):
+/// set once by the constructor, never inferred from `reads.is_some()` at
+/// each call to [`Machine::is_protocol_clause`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EvaluationFamily {
+    /// [`Machine::new`]: the `Value` family, no state-clause observations.
+    Value,
+    /// [`Machine::with_pre`]: FR-107's `ProtocolClause` family (S6a).
+    Protocol,
+}
+
 pub(crate) struct Machine<'a, 'm> {
     scope: &'a Scope,
     /// The checked package's functions, read by index where a call runs
@@ -363,6 +374,14 @@ pub(crate) struct Machine<'a, 'm> {
     /// `Attribute` node to choose `objects` or `pre_objects`. Empty for the
     /// `Value` family.
     reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+    /// Which family this `Machine` evaluates (SR-750 FND-011 round 2): set
+    /// once, explicitly, by whichever constructor built it, rather than
+    /// inferred from `reads.is_some()`. [`Self::new`] always builds
+    /// [`EvaluationFamily::Value`]; [`Self::with_pre`] always builds
+    /// [`EvaluationFamily::Protocol`], since every call site of
+    /// `with_pre` (`s6a::protocol_clause` and this module's own tests)
+    /// supplies a `reads` map.
+    family: EvaluationFamily,
     meter: &'m mut Meter,
     dispatch_tables: &'a [DispatchTable],
     values: Vec<Value>,
@@ -397,14 +416,24 @@ impl<'a, 'm> Machine<'a, 'm> {
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
-        Self::with_pre(scope, graph, objects, None, None, meter, dispatch_tables)
+        Self::build(
+            scope,
+            graph,
+            objects,
+            None,
+            None,
+            meter,
+            dispatch_tables,
+            EvaluationFamily::Value,
+        )
     }
 
     /// [`Self::new`], additionally carrying a precondition's or
     /// postcondition's pre observation and the clause's own model-read
     /// observations (FR-107): `pre_objects` is consulted at an `Attribute`
     /// node whose location `reads` maps to `Observation::Pre`. Both are
-    /// `None` for every caller but [`super::protocol_clause`]'s S6a hook.
+    /// `None` for every caller but [`super::protocol_clause`]'s S6a hook,
+    /// which always supplies `reads` (`EvaluationFamily::Protocol`).
     pub(crate) fn with_pre(
         scope: &'a Scope,
         graph: &'a CheckedGraph,
@@ -414,6 +443,29 @@ impl<'a, 'm> Machine<'a, 'm> {
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
+        Self::build(
+            scope,
+            graph,
+            objects,
+            pre_objects,
+            reads,
+            meter,
+            dispatch_tables,
+            EvaluationFamily::Protocol,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        scope: &'a Scope,
+        graph: &'a CheckedGraph,
+        objects: &'a ObjectEnvironment,
+        pre_objects: Option<&'a ObjectEnvironment>,
+        reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+        meter: &'m mut Meter,
+        dispatch_tables: &'a [DispatchTable],
+        family: EvaluationFamily,
+    ) -> Self {
         let enum_members = scope.enum_member_index();
         Self {
             scope,
@@ -421,6 +473,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             objects,
             pre_objects,
             reads,
+            family,
             meter,
             dispatch_tables,
             values: Vec::new(),
@@ -1492,14 +1545,14 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     /// Whether this `Machine` is running a `ProtocolClause` (FR-107):
-    /// `self.reads` carries the clause's own model-read observation map for
-    /// that family alone, `None` for every `Value`-family call
-    /// ([`Self::new`]/[`Self::with_pre`]'s own doc). Consulted only to
-    /// refuse `allInstances`/`lookup` (see [`ProtocolClauseUnsupported`]'s
-    /// doc): FR-104 admits either into a checked clause body, but FR-107
+    /// `self.family` is set once, explicitly, by whichever constructor
+    /// built it (SR-750 FND-011 round 2), never inferred per-call from
+    /// `self.reads.is_some()`. Consulted only to refuse
+    /// `allInstances`/`lookup` (see [`ProtocolClauseUnsupported`]'s doc):
+    /// FR-104 admits either into a checked clause body, but FR-107
     /// specifies no evaluation for them.
     fn is_protocol_clause(&self) -> bool {
-        self.reads.is_some()
+        self.family == EvaluationFamily::Protocol
     }
 
     /// FR-107: `reaches(source, target, edge)`, evaluated as
