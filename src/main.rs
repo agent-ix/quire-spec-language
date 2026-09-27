@@ -4,7 +4,7 @@ mod cli;
 
 use cli::{Command, SyntaxCommand};
 use qsl_cst::CompleteDiagnostic;
-use qsl_foundation::source::{render_offered, SourceReadCause};
+use qsl_foundation::source::{render_offered, IdentityCauseFields, SourceReadCause};
 use qsl_foundation::{Code, Diagnostic, LocatedSpan, Phase, SourceIdentity};
 use quire_spec_language::{format::format, parse, Limits};
 use serde_json::json;
@@ -25,6 +25,21 @@ struct Refusal<'a> {
     message: &'a str,
 }
 
+/// The one refusal line, typed so a field cannot be missed on one branch.
+#[derive(serde::Serialize)]
+struct Line<'a> {
+    status: &'static str,
+    phase: &'static str,
+    code: &'static str,
+    source: &'a SourceIdentity,
+    path: &'a str,
+    span: Option<serde_json::Value>,
+    message: &'a str,
+    /// FR-001: `cause` and `label`, on `invalid_source_identity` only.
+    #[serde(flatten)]
+    identity: Option<IdentityCauseFields>,
+}
+
 impl Refusal<'_> {
     fn render(&self) -> (u8, String) {
         let span = self.span.map(|span| {
@@ -32,17 +47,23 @@ impl Refusal<'_> {
                 "start": {"byte":span.start.byte,"line":span.start.line,"column":span.start.column},
                 "end": {"byte":span.end.byte,"line":span.end.line,"column":span.end.column}})
         });
-        let mut output = json!({ "status": if self.code.is_incomplete() { "incomplete" } else { "refused" },
-            "phase": self.phase.as_str(), "code": self.code.as_str(),
-            "source": self.source, "path": self.path, "span": span,
-            "message": self.message });
-        if let Some(cause) = self.identity_cause {
-            output["cause"] = json!(cause.identity_tag());
-            if let Some(label) = cause.blank_label() {
-                output["label"] = json!(label.as_str());
-            }
-        }
-        let output = output.to_string();
+        let output = serde_json::to_string(&Line {
+            status: if self.code.is_incomplete() {
+                "incomplete"
+            } else {
+                "refused"
+            },
+            phase: self.phase.as_str(),
+            code: self.code.as_str(),
+            source: self.source,
+            path: self.path,
+            span,
+            message: self.message,
+            identity: self
+                .identity_cause
+                .and_then(SourceReadCause::identity_fields),
+        })
+        .unwrap_or_else(|error| format!("{{\"message\":\"unserializable refusal: {error}\"}}"));
         // FR-301's contract, via Code::exit_code(): a recognized construct this
         // profile does not admit is unsupported (21); other incomplete work is
         // 22; a refused syntax request is otherwise invalid input (20).

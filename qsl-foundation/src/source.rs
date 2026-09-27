@@ -105,37 +105,35 @@ impl SourceIdentity {
         }
     }
 
-    /// The `RawSourceRef` of bytes with `digest` under these labels, or the
-    /// label that is blank.
-    fn reference(&self, digest: ByteDigest) -> Result<RawSourceRef, SourceLabel> {
-        use provenance::InvalidProvenance as Invalid;
+    /// The `RawSourceRef` of bytes with `digest` under these labels.
+    /// Provenance refuses only an empty label, which is a blank one, so a
+    /// blank label is named first and a provenance refusal after it is an
+    /// established-invariant break ([`ReferenceError::Provenance`]).
+    fn reference(&self, digest: ByteDigest) -> Result<RawSourceRef, ReferenceError> {
         if let Some(label) = self.first_blank_label() {
-            return Err(label);
+            return Err(ReferenceError::Blank(label));
         }
-        // Provenance refuses only empty labels, which the check above has
-        // excluded; the other variants cannot come from these constructors
-        // and name no label, so they are attributed to the authority.
-        let blamed = |error: Invalid| match error {
-            Invalid::EmptyIdentity => SourceLabel::Identity,
-            Invalid::EmptyRevisionNamespace => SourceLabel::RevisionNamespace,
-            Invalid::EmptyRevisionValue => SourceLabel::Revision,
-            Invalid::EmptyAuthority
-            | Invalid::NotSourceBytes(_)
-            | Invalid::ReversedRegion { .. }
-            | Invalid::NoRegion(_)
-            | Invalid::DuplicateOccurrence(_) => SourceLabel::Authority,
-        };
         let revision =
             provenance::Revision::new(self.revision_namespace.clone(), self.revision.clone())
-                .map_err(blamed)?;
+                .map_err(ReferenceError::Provenance)?;
         RawSourceRef::new(
             self.authority.clone(),
             self.identity.clone(),
             revision,
             DigestRecord::mint(DigestDomain::SourceBytesV1, digest.as_bytes()),
         )
-        .map_err(blamed)
+        .map_err(ReferenceError::Provenance)
     }
+}
+
+/// Why [`SourceIdentity::reference`] minted no reference.
+enum ReferenceError {
+    /// A label is blank: `blank-label` naming it.
+    Blank(SourceLabel),
+    /// Provenance refused labels that are all non-blank: not reachable, so
+    /// it is reported as [`SourceReadCause::ReferenceInvariant`], never as a
+    /// label.
+    Provenance(provenance::InvalidProvenance),
 }
 
 /// Original byte offset and one-based line/Unicode scalar column.
@@ -210,6 +208,10 @@ pub enum SourceReadCause {
     },
     /// Every label is non-blank and the path is empty (`empty-path`).
     EmptyPath,
+    /// Provenance refused labels and a path that passed the blank checks:
+    /// an established invariant broke (`runtime_invariant`); not reachable
+    /// from any input today.
+    ReferenceInvariant,
     /// The bytes exceed the byte budget.
     ByteBudget,
     /// The bytes are not UTF-8.
@@ -222,24 +224,39 @@ pub enum SourceReadCause {
     DigestMismatch,
 }
 
-impl SourceReadCause {
-    /// The catalog cause tag of an `invalid_source_identity` refusal
-    /// (`blank-label`, `empty-path`); `None` for every other cause.
-    pub const fn identity_tag(self) -> Option<&'static str> {
-        match self {
-            Self::BlankLabel { .. } => Some("blank-label"),
-            Self::EmptyPath => Some("empty-path"),
-            Self::ByteBudget | Self::InvalidUtf8 | Self::Bom | Self::Nul | Self::DigestMismatch => {
-                None
-            }
-        }
-    }
+/// The catalog cause tag of a blank label
+/// (`quire.native.diagnostics/v1`, `invalid_source_identity`); the one
+/// spelling every layer above reads.
+pub const BLANK_LABEL_TAG: &str = "blank-label";
+/// The catalog cause tag of an empty path; see [`BLANK_LABEL_TAG`].
+pub const EMPTY_PATH_TAG: &str = "empty-path";
 
-    /// The `label` payload of a `blank-label` refusal.
-    pub const fn blank_label(self) -> Option<SourceLabel> {
+/// The wire fields an `invalid_source_identity` refusal adds to a refusal
+/// record: `cause`, and `label` on `blank-label` only. Flattened into the
+/// CLI refusal line and the run output.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct IdentityCauseFields {
+    /// `blank-label` or `empty-path`.
+    pub cause: &'static str,
+    /// The first blank label's spelling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<&'static str>,
+}
+
+impl SourceReadCause {
+    /// The wire fields of an `invalid_source_identity` cause; `None` for
+    /// every other cause.
+    pub const fn identity_fields(self) -> Option<IdentityCauseFields> {
         match self {
-            Self::BlankLabel { label } => Some(label),
-            Self::EmptyPath
+            Self::BlankLabel { label } => Some(IdentityCauseFields {
+                cause: BLANK_LABEL_TAG,
+                label: Some(label.as_str()),
+            }),
+            Self::EmptyPath => Some(IdentityCauseFields {
+                cause: EMPTY_PATH_TAG,
+                label: None,
+            }),
+            Self::ReferenceInvariant
             | Self::ByteBudget
             | Self::InvalidUtf8
             | Self::Bom
@@ -366,11 +383,18 @@ impl Source {
         // provenance itself refuses the values.
         let reference = match identity.reference(digest) {
             Ok(reference) => reference,
-            Err(label) => {
+            Err(ReferenceError::Blank(label)) => {
                 return Err(refuse(
                     SourceReadCause::BlankLabel { label },
                     None,
                     &format!("source {} must not be blank", label.as_str()),
+                ))
+            }
+            Err(ReferenceError::Provenance(error)) => {
+                return Err(refuse(
+                    SourceReadCause::ReferenceInvariant,
+                    None,
+                    &format!("source reference refused non-blank labels: {error}"),
                 ))
             }
         };

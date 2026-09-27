@@ -92,9 +92,10 @@ path or a name-search match cannot masquerade as a located failure"):
   mint a reference over bytes that were not admitted. Invalid UTF-8 is the
   empty region at the end of the longest valid prefix; a BOM is the region
   of its three bytes at 0; NUL is the one-byte region of the first NUL.
-- An unnamed source (an empty or blank label or path), input beyond the
-  byte ceiling, and a digest mismatch under verified intake refuse with no
-  region. The first has no label set to name the source by. The second is
+- A blank label or an empty path, input beyond the byte ceiling, and a
+  digest mismatch under verified intake refuse with no region. The first has
+  no complete, non-blank label set to name the source by, and an empty path
+  names no location. The second is
   refused without hashing the offered bytes. The third concerns the bytes
   as a whole, not a position in them.
 
@@ -225,14 +226,26 @@ native-v1 `Diagnostic` still renders a region-less refusal at byte 0 (the
 debt recorded above). The replay executor's recompilation under the
 reference's labels is ADR-013 TK-01's.
 
-Built against catalog revision `1-draft.8` (QSL-245): `SourceReadCause`
-carries `BlankLabel { label }` and `EmptyPath`, `Source::read_typed` checks
-the four labels in order before the path
-(`qsl-foundation/src/source.rs`), and the cause and `label` reach the native
-`Diagnostic`, the `parse`/`format` refusal line, the native-run output, the
-native-state-input construction error and the replay recompile refusal
-(`invalid_source_identity`, `blank-label` or `empty-path`, `label` on the
-first only). `EditPredecessor`, `ForeignNode` and `RequestRevision` refuse
-with `invalid_source_map` and no region (`qsl-cst/src/diagnostic.rs`
-`HostCause::code`, `error_without_region`). AC-6, AC-11 and AC-12 are backed
-by TC-424.
+QSL-245 (part 2) emits the catalog revision `1-draft.8` causes:
+`SourceReadCause` carries `BlankLabel { label }` and `EmptyPath`, and
+`Source::read_typed` checks the four labels in order before the path
+(`qsl-foundation/src/source.rs`). The revision claim itself
+(`src/linking/composed/definition_source.rs`) still reads `1-draft.7`; its
+bump to `1-draft.8` lands with QSL-245 part 1 (the refusal-record PR, #490),
+right after this one. The cause and `label` reach the native `Diagnostic`,
+the `parse`/`format` refusal line, the native-run output, the
+native-state-input construction error and the replay recompile refusal, each
+tested for `blank-label` with its label. `empty-path` is tested at the reader
+and the native `Diagnostic`; the other outputs cannot reach it: `parse` and
+`format` and the run request open the file before any source is admitted (an
+empty file operand is a file error), a native-state-input artifact has no
+path, and the replay path is the reference's identity, which a non-blank
+label set makes non-empty. `EditPredecessor`, `ForeignNode` and
+`RequestRevision` refuse with `invalid_source_map` and no region
+(`qsl-cst/src/diagnostic.rs` `HostCause::code`, `error_without_region`).
+AC-6, AC-11 and AC-12 are backed by TC-424.
+
+The native-run output and the `parse`/`format` refusal line render the span
+of a region-less refusal as byte 0 only where the lane-private native
+`Diagnostic` does (the debt recorded in "Where an S0 refusal is located");
+that byte 0 is not this requirement's behaviour.

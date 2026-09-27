@@ -13,7 +13,7 @@ use crate::runtime::{
     RuntimeReference, ValidationDiagnostic, ValidationStatus,
 };
 use qsl_foundation::source::SourceReadCause;
-use qsl_foundation::{ByteDigest, Diagnostic, SourceLabel};
+use qsl_foundation::{ByteDigest, Diagnostic};
 use quire_contract_ir as ir;
 use serde_json::Value;
 
@@ -96,13 +96,9 @@ fn diagnostic(value: &Diagnostic) -> types::Diagnostic<'_> {
         span: value.span,
         upstream: None,
         runtime: None,
-        cause: value
+        identity: value
             .identity_cause()
-            .and_then(SourceReadCause::identity_tag),
-        label: value
-            .identity_cause()
-            .and_then(SourceReadCause::blank_label)
-            .map(SourceLabel::as_str),
+            .and_then(SourceReadCause::identity_fields),
     }
 }
 

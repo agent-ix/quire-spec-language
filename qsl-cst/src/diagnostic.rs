@@ -3,7 +3,7 @@
 
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::source::provenance::SourceRegion;
-use qsl_foundation::source::{SourceLabel, SourceReadCause};
+use qsl_foundation::source::{SourceLabel, SourceReadCause, BLANK_LABEL_TAG, EMPTY_PATH_TAG};
 use qsl_foundation::{Phase, Source, SourceIdentity, SyntaxLimit};
 
 /// Compatibility name for the crate's pre-existing diagnostic code type. The
@@ -198,8 +198,8 @@ impl HostCause {
     /// source-identity causes, the code's own tag for every other host cause.
     pub fn tag(self) -> &'static str {
         match self {
-            Self::BlankLabel { .. } => "blank-label",
-            Self::EmptyPath => "empty-path",
+            Self::BlankLabel { .. } => BLANK_LABEL_TAG,
+            Self::EmptyPath => EMPTY_PATH_TAG,
             Self::SelectionIdentity
             | Self::SelectionVersion
             | Self::SelectionDigest
@@ -303,6 +303,10 @@ pub fn read_source(
             ),
             // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
             // one of the four kinds the catalog admits.
+            SourceReadCause::ReferenceInvariant => (
+                CompleteCode::RuntimeInvariant,
+                CompleteCause::EstablishedInvariantBroken,
+            ),
             SourceReadCause::ByteBudget => (
                 CompleteCode::StageLimitExceeded,
                 CompleteCause::StageLimit(LimitKind::InputBytes),

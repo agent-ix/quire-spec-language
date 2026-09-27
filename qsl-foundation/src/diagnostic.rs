@@ -462,13 +462,6 @@ impl Diagnostic {
     pub fn identity_cause(&self) -> Option<SourceReadCause> {
         self.identity_cause
     }
-    /// This diagnostic carrying an `invalid_source_identity` cause. For a
-    /// refusal built outside `Source::read` that checks the same labels.
-    #[must_use]
-    pub fn with_identity_cause(mut self, cause: SourceReadCause) -> Self {
-        self.identity_cause = Some(cause);
-        self
-    }
     /// Whether incomplete work, rather than invalid input, caused this diagnostic.
     pub fn is_incomplete(&self) -> bool {
         self.code.is_incomplete()
@@ -567,6 +560,7 @@ fn source_refusal(
         }
         // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
         // one of the four kinds the catalog admits.
+        SourceReadCause::ReferenceInvariant => Code::RuntimeInvariant,
         SourceReadCause::ByteBudget => Code::StageLimitExceeded,
         SourceReadCause::InvalidUtf8 => Code::InvalidUtf8,
         SourceReadCause::Bom | SourceReadCause::Nul => Code::InvalidSyntax,
@@ -1109,6 +1103,32 @@ mod foundation_tests {
         category_of, resource_exhausted, CatalogCode, Category, Code, InternalFault, Phase, Source,
         SourceIdentity, Span, SyntaxLimit, CATALOG_CATEGORIES,
     };
+
+    /// FR-001-AC-11: the native `Diagnostic` of `Source::read` carries
+    /// `blank-label` with its label, or `empty-path`, on
+    /// `invalid_source_identity`.
+    #[ix_trace_rs::trace("TC-424", "FR-001-AC-11")]
+    #[test]
+    fn the_native_diagnostic_carries_the_identity_cause() {
+        use crate::source::{SourceLabel, SourceReadCause};
+        let read = |identity, path| {
+            *Source::read(identity, path, b"x", crate::source::MAX_SOURCE_BYTES)
+                .expect_err("refused")
+        };
+        let blank = read(SourceIdentity::new("a", "u", " ", "1"), "");
+        let empty = read(SourceIdentity::new("a", "u", "git", "1"), "");
+        assert_eq!(
+            blank.identity_cause(),
+            Some(SourceReadCause::BlankLabel {
+                label: SourceLabel::RevisionNamespace
+            })
+        );
+        assert_eq!(empty.identity_cause(), Some(SourceReadCause::EmptyPath));
+        assert!(matches!(
+            (blank.code, empty.code),
+            (Code::InvalidSourceIdentity, Code::InvalidSourceIdentity)
+        ));
+    }
 
     fn source() -> Source {
         Source::read(
