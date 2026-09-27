@@ -7,8 +7,8 @@
 use ix_trace_rs::trace;
 use qsl_forms::{
     build_unit, AnchorSite, DeclarationForm, Expression, ExpressionSpans, FormsCause, FormsFailure,
-    FormsLimits, ParsedUnit, ProtocolDeclarationForm, ScopedAnchorForm, SpanId, StateClauseForm,
-    StateClauseKind,
+    FormsLimits, ParsedUnit, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
+    ScopedAnchorForm, SpanId, StateClauseForm, StateClauseKind,
 };
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::{SourceIdentity, Span};
@@ -383,6 +383,175 @@ fn choice_and_repeat_named_controls_enclose_their_bodies() {
         .find(|anchor| anchor.site == AnchorSite::EventFor && anchor.scope.len() == 3)
         .expect("the repeat's exhausted-branch event-for anchor");
     assert_eq!(scope_names(event_for), ["Main", "Loop", "Exhausted"]);
+}
+
+/// The one declaration named `name` of kind `kind` in `form.declarations`.
+fn decl<'a>(
+    form: &'a ProtocolDeclarationForm,
+    name: &str,
+    kind: ProtocolNodeKind,
+) -> &'a ProtocolNodeDeclaration {
+    let matches: Vec<&ProtocolNodeDeclaration> = form
+        .declarations
+        .iter()
+        .filter(|declaration| declaration.name.name == name && declaration.kind == kind)
+        .collect();
+    match matches[..] {
+        [declaration] => declaration,
+        _ => panic!(
+            "expected exactly one {kind:?} named {name}, found {}: {:?}",
+            matches.len(),
+            form.declarations
+        ),
+    }
+}
+
+fn decl_scope(declaration: &ProtocolNodeDeclaration) -> Vec<&str> {
+    declaration
+        .scope
+        .iter()
+        .map(|name| name.name.as_str())
+        .collect()
+}
+
+/// SR-761 FND-003: the S2 declaration collection (FR-113 Inputs) had no
+/// direct test -- only the anchors built alongside it were asserted, so
+/// removing a `declare(...)` call for `choice`, `case`, `parallel`,
+/// `branch`, `repeat`, `check` or `finish` passed every existing test. This
+/// exercises every control kind and asserts each declaration's own name,
+/// kind and scope.
+#[trace("TC-510", "FR-113")]
+#[test]
+fn s2_builds_a_declaration_for_every_control_kind() {
+    let controls = "choice Decision by R visible () {\n\
+         case yes when { true } sequence Yes { }\n\
+         case no when { false } sequence No { }\n\
+         }\n\
+         parallel Both {\n\
+         branch left sequence Left { }\n\
+         branch right sequence Right { }\n\
+         } join all [left,right];\n\
+         repeat Loop by R visible (true) max 2 invariant { true } variant { 1 } \
+         while { false } sequence Body { } exhausted sequence Exhausted { }\n\
+         check Guard using v { true };\n";
+    let (_, unit) = build(&recovery_flow("Main::Committed", true, controls));
+    let form = protocol_form(unit.forms()[0].form());
+
+    // Top level: the `run` control itself, the `finish` node and the
+    // `compensate` template -- FR-113 Inputs: "the top level declares the
+    // protocol's `run` control, its `finish` node and its `compensate`
+    // templates".
+    assert_eq!(
+        decl_scope(decl(form, "Main", ProtocolNodeKind::Sequence)),
+        Vec::<&str>::new()
+    );
+    assert_eq!(
+        decl_scope(decl(form, "End", ProtocolNodeKind::Finish)),
+        Vec::<&str>::new()
+    );
+    assert_eq!(
+        decl_scope(decl(form, "Undo", ProtocolNodeKind::CompensateTemplate)),
+        Vec::<&str>::new()
+    );
+
+    // Main declares its direct children: every event node and control
+    // written directly inside it.
+    for (name, kind) in [
+        ("Tried", ProtocolNodeKind::Attempt),
+        ("Decision", ProtocolNodeKind::Choice),
+        ("Both", ProtocolNodeKind::Parallel),
+        ("Loop", ProtocolNodeKind::Repeat),
+        ("Guard", ProtocolNodeKind::Check),
+        ("Applied", ProtocolNodeKind::Effect),
+        ("Recovered", ProtocolNodeKind::Event),
+        ("Committed", ProtocolNodeKind::Commit),
+    ] {
+        assert_eq!(decl_scope(decl(form, name, kind)), ["Main"], "{name}");
+    }
+
+    // `choice` declares its `case`s directly; each `case` declares its own
+    // inner control.
+    assert_eq!(
+        decl_scope(decl(form, "yes", ProtocolNodeKind::Case)),
+        ["Main", "Decision"]
+    );
+    assert_eq!(
+        decl_scope(decl(form, "no", ProtocolNodeKind::Case)),
+        ["Main", "Decision"]
+    );
+    assert_eq!(
+        decl_scope(decl(form, "Yes", ProtocolNodeKind::Sequence)),
+        ["Main", "Decision", "yes"]
+    );
+    assert_eq!(
+        decl_scope(decl(form, "No", ProtocolNodeKind::Sequence)),
+        ["Main", "Decision", "no"]
+    );
+
+    // `parallel` declares its `branch`es directly; each `branch` declares
+    // its own inner control.
+    assert_eq!(
+        decl_scope(decl(form, "left", ProtocolNodeKind::Branch)),
+        ["Main", "Both"]
+    );
+    assert_eq!(
+        decl_scope(decl(form, "right", ProtocolNodeKind::Branch)),
+        ["Main", "Both"]
+    );
+    assert_eq!(
+        decl_scope(decl(form, "Left", ProtocolNodeKind::Sequence)),
+        ["Main", "Both", "left"]
+    );
+    assert_eq!(
+        decl_scope(decl(form, "Right", ProtocolNodeKind::Sequence)),
+        ["Main", "Both", "right"]
+    );
+
+    // `repeat` declares both its `while`-body control and its `exhausted`
+    // control directly.
+    assert_eq!(
+        decl_scope(decl(form, "Body", ProtocolNodeKind::Sequence)),
+        ["Main", "Loop"]
+    );
+    assert_eq!(
+        decl_scope(decl(form, "Exhausted", ProtocolNodeKind::Sequence)),
+        ["Main", "Loop"]
+    );
+}
+
+/// SR-761 FND-003: `ScopedAnchorForm::channel` and
+/// `ProtocolNodeDeclaration::channel` had no test. Only `send` and
+/// `receive` carry a channel; every other kind carries `None`, and a
+/// `receive-of` anchor carries its own owning `receive`'s channel while
+/// every other site carries none.
+#[trace("TC-510", "FR-113")]
+#[test]
+fn s2_builds_the_channel_of_a_send_and_receive_only() {
+    let source = "protocol Handoff using v over (input: Config::ConfigVersion) on origin {\n\
+         role R on Config::ConfigVersion;\n\
+         run sequence Main {\n\
+         send Ping via C as (ping: Config::ConfigVersion) { true };\n\
+         receive Got via D of Ping as (got: Config::ConfigVersion) { true };\n\
+         }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }";
+    let (_, unit) = build(source);
+    let form = protocol_form(unit.forms()[0].form());
+
+    let send = decl(form, "Ping", ProtocolNodeKind::Send);
+    assert_eq!(send.channel.as_deref(), Some("C"));
+    let receive = decl(form, "Got", ProtocolNodeKind::Receive);
+    assert_eq!(receive.channel.as_deref(), Some("D"));
+    // Every other declared kind carries no channel.
+    assert_eq!(decl(form, "Main", ProtocolNodeKind::Sequence).channel, None);
+    assert_eq!(decl(form, "End", ProtocolNodeKind::Finish).channel, None);
+
+    let receive_of = form
+        .scoped_anchors
+        .iter()
+        .find(|anchor| anchor.site == AnchorSite::ReceiveOf)
+        .expect("the receive's own receive-of anchor");
+    assert_eq!(receive_of.channel.as_deref(), Some("D"));
 }
 
 /// SR-753 FND-003: `await ... then <Control>` and `repeat ... exhausted

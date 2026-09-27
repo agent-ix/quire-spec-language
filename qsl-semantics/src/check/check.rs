@@ -339,6 +339,10 @@ pub struct PackageDeclarations {
     /// name resolved by the FR-091 assembler. Clauses and functions share
     /// one selection namespace (FR-109).
     pub state_clauses: Vec<super::state_clause::StateClauseDeclaration>,
+    /// FR-112: the unit's protocol declarations in declaration order, each
+    /// carrying its own scoped anchors and declaration collection for
+    /// FR-113's checker to resolve.
+    pub protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
 }
 
 impl PackageDeclarations {
@@ -366,6 +370,7 @@ impl PackageDeclarations {
             imports: BTreeMap::new(),
             function_selections: BTreeMap::new(),
             state_clauses: Vec::new(),
+            protocols: Vec::new(),
         }
     }
 

@@ -3,9 +3,117 @@
 
 use qsl_foundation::diagnostic::{Code, LimitKind};
 use qsl_foundation::source::provenance::SourceRegion;
+use qsl_foundation::Span;
 use quire_exact::EffectiveId;
 use quire_exact::Integer;
 use quire_exact::{IllTyped, IllTypedCause};
+
+/// FR-113: why a protocol's `ProtocolClause` checker refused one scoped
+/// anchor, or a name it declares. Each variant's `span` is the refusal's
+/// own site: the anchor's whole reference for a resolution refusal, or the
+/// declaration's own name for a duplicate-declaration refusal (ADR-012
+/// §12.2 Check row). `region::DeclarationRegions::refusal_region` reads
+/// this span directly rather than through a `Location`'s path: a protocol
+/// has no expression tree for a path to walk.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ProtocolAnchorCause {
+    /// FR-113 "Refusals": no scope declares the anchor's first segment, or
+    /// a later segment names nothing its previous target declares.
+    Missing {
+        /// The anchor's segments exactly as written (FR-113 "Refusals":
+        /// "retaining the segments, the scope, and the first segment that
+        /// failed").
+        segments: Vec<String>,
+        /// The segment that failed to resolve.
+        segment: String,
+        /// The anchor's own lexical scope (outermost first, empty at the
+        /// top level) -- the search's starting point, named for context
+        /// regardless of which segment failed.
+        scope: Vec<String>,
+        /// The whole reference's span.
+        span: Span,
+    },
+    /// FR-113 "Refusals": a scope declares two static nodes of one name, or
+    /// an anchor whose resolution decides on that name.
+    Ambiguous {
+        /// The ambiguous name.
+        name: String,
+        /// Every declaring locus of the name, in source order.
+        loci: Vec<Span>,
+        /// The refusal's own site: the anchor's reference, or the
+        /// duplicated declaration's own name.
+        span: Span,
+    },
+    /// FR-113 "Refusals": a resolved anchor names a node its site does not
+    /// admit.
+    WrongKind {
+        /// The site the anchor fills, e.g. `"effect-of"`.
+        site: &'static str,
+        /// The kinds the site admits.
+        admitted: Vec<&'static str>,
+        /// The resolved target's actual kind.
+        actual: &'static str,
+        /// The anchor's reference span.
+        span: Span,
+    },
+    /// FR-113 "Refusals": a `receive`'s channel disagrees with the `send`
+    /// its `receive-of` anchor names.
+    ChannelMismatch {
+        /// The `receive`'s own channel.
+        receive_channel: String,
+        /// The named `send`'s channel.
+        send_channel: String,
+        /// The anchor's reference span.
+        span: Span,
+    },
+    /// A protocol declaration whose anchors all resolve, but whose other
+    /// content (types, roles, operation names, binder types, block bodies)
+    /// has no checker yet, and which nothing emits (QSL-299): kept refused
+    /// rather than silently accepted with no diagnostic (QSL-306 tracks
+    /// completing protocol checking and emission).
+    Unimplemented {
+        /// The declared protocol name.
+        name: String,
+        /// The protocol's declared name span.
+        span: Span,
+    },
+}
+
+impl ProtocolAnchorCause {
+    /// The refusal's own span (FR-096: read directly, not through a
+    /// `Location`'s path).
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Missing { span, .. }
+            | Self::Ambiguous { span, .. }
+            | Self::WrongKind { span, .. }
+            | Self::ChannelMismatch { span, .. }
+            | Self::Unimplemented { span, .. } => *span,
+        }
+    }
+
+    /// This cause's catalog code.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Missing { .. } => Code::MissingDeclaration,
+            Self::Ambiguous { .. } => Code::AmbiguousDeclaration,
+            Self::WrongKind { .. } | Self::ChannelMismatch { .. } => Code::IllTyped,
+            Self::Unimplemented { .. } => Code::UnsupportedConstruct,
+        }
+    }
+
+    /// This cause's catalog tag (FR-113: reuses the existing
+    /// `missing-name`, `ambiguous-name` and `type-mismatch` tags; no
+    /// protocol-specific catalog code exists).
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::Missing { .. } => "missing-name",
+            Self::Ambiguous { .. } => "ambiguous-name",
+            Self::WrongKind { .. } | Self::ChannelMismatch { .. } => "type-mismatch",
+            Self::Unimplemented { .. } => "not-yet-implemented",
+        }
+    }
+}
 
 /// The declaration a location belongs to.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -389,6 +497,11 @@ pub enum CheckCause {
     /// or non-identifier name, a number RFC 8785 cannot render exactly, a
     /// body nested past the preimage depth bound).
     NodePreimage(super::node_key::NodeKeyRefusal),
+    /// FR-113: a scoped anchor's resolution or a protocol's declaration
+    /// collection refused. Boxed for the same reason as
+    /// `InvalidDispatchDeclaration` above: this would otherwise be
+    /// `CheckCause`'s widest variant.
+    ProtocolAnchor(Box<ProtocolAnchorCause>),
     /// FR-062-AC-8/TC-161/FR-063: exists only so `--cfg seam_probe` makes
     /// `CheckCause::code`'s match below non-exhaustive. Never constructed
     /// outside the probe build.
@@ -604,6 +717,7 @@ impl CheckCause {
             Self::MissingSelection { .. } => Code::MissingDeclaration,
             Self::UnsupportedFeature { .. } => Code::UnknownRequiredFeature,
             Self::InternalFault(_) => Code::RuntimeInvariant,
+            Self::ProtocolAnchor(cause) => cause.code(),
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
             // have their own real seams over other enums, probed in the
             // same `--cfg seam_probe_downstream` build -- this arm exists
@@ -645,6 +759,7 @@ impl CheckCause {
             Self::IeeeProfileNotAdmitted | Self::UnrepresentableBound | Self::NodePreimage(_) => {
                 None
             }
+            Self::ProtocolAnchor(cause) => Some(cause.tag()),
             // Not a seam-probe location (unlike `code()`, above --
             // deliberately left non-exhaustive there): this arm keeps
             // `cause()` compiling under `--cfg seam_probe`, so `code()`'s

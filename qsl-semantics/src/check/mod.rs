@@ -91,6 +91,7 @@ mod lowering;
 mod node_key;
 mod observation;
 mod profile;
+mod protocol_clause;
 mod refusal;
 mod region;
 mod state_clause;
@@ -190,10 +191,11 @@ pub use identity::{
     SumVariants,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
+pub use protocol_clause::{CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
     InvalidDispatchDeclaration, KeyFault, Location, MeasureObligation, Obligation, Origin,
-    ProvedInterval, StageLimitCause, WrongSnapshotCause,
+    ProtocolAnchorCause, ProvedInterval, StageLimitCause, WrongSnapshotCause,
 };
 
 /// How a standalone expression is checked.
@@ -353,6 +355,8 @@ pub struct CheckedGraph {
     model_selections: Vec<DomainPackageRef>,
     /// FR-104: every checked state clause, in declaration order.
     state_clauses: Vec<CheckedStateClause>,
+    /// FR-113: every checked protocol declaration, in declaration order.
+    protocols: Vec<CheckedProtocol>,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -1029,6 +1033,28 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        // FR-113: each protocol declaration's scoped anchors, resolved
+        // through its nested control scopes (`check::protocol_clause`).
+        // Independent of every other declaration kind: a protocol is
+        // checked from its own form alone.
+        let mut checked_protocols = Vec::with_capacity(self.protocols.len());
+        for protocol in &self.protocols {
+            match protocol_clause::check(protocol) {
+                Ok(checked) => {
+                    // FR-113 checks only anchor resolution; the rest of a
+                    // protocol's content and its emission (QSL-299) have no
+                    // checker yet (QSL-306), so a protocol that resolves is
+                    // still refused rather than silently compiled with
+                    // unchecked content and dropped from the package.
+                    refusals.push(protocol_clause::unimplemented(protocol));
+                    checked_protocols.push(checked);
+                }
+                Err(protocol_refusals) => refusals.extend(protocol_refusals),
+            }
+        }
+        if !refusals.is_empty() {
+            return Err(refusals);
+        }
         // QSL-148: static definedness is checked per declaration now, inside
         // `family::check_declaration_body`, immediately after that same
         // declaration's typing -- `calls` (one entry per admitted function,
@@ -1304,6 +1330,7 @@ impl PackageDeclarations {
             embedding,
             model_selections,
             state_clauses,
+            protocols: checked_protocols,
         })
     }
 }
@@ -1467,6 +1494,16 @@ impl CheckedGraph {
     /// FR-104: every checked state clause, in declaration order.
     pub fn state_clauses(&self) -> &[CheckedStateClause] {
         &self.state_clauses
+    }
+
+    /// FR-113: every checked protocol declaration, in declaration order.
+    pub fn protocols(&self) -> &[CheckedProtocol] {
+        &self.protocols
+    }
+
+    /// FR-113: the checked protocol declared `name`, or `None`.
+    pub fn protocol(&self, name: &str) -> Option<&CheckedProtocol> {
+        self.protocols.iter().find(|protocol| protocol.name == name)
     }
 
     /// FR-107: the checked state clause whose minted node identity is
