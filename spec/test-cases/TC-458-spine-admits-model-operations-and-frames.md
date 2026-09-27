@@ -44,8 +44,13 @@ declares `model Config = ...` over it.
    `[".../Supersedes"]`; then set both `modifies` to
    `[".../ConfigVersion/missing"]` and `creates` to
    `[".../ConfigVersion/versionNumber"]`.
-3. Add parameter `note` typed `ix://quire/native/Text`; then replace it with
-   parameter `delta` typed `VersionNumber`.
+3. Add parameter `note` typed `ix://quire/native/Decimal`; then replace it
+   with parameter `delta` typed `VersionNumber`. (`Decimal`, not `Text`: the
+   pinned FCD schema validator's native-scalar vocabulary has no `Text`
+   entry -- it spells the concept `String`, which QSL's own `NativeValueType`
+   in turn has no variant for -- so a `Text` typeRef cannot reach even I1
+   through the real pipeline; that cross-repo vocabulary gap is QSL-290, not
+   this ticket's.)
 4. Add a record value type beside the operation.
 5. Admit the fixture twice; then admit it with its operation and population
    records moved to the end of the document.
@@ -54,7 +59,8 @@ Tag the tests `#[trace("TC-458", "FR-103-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `Config::ConfigVersion` has `versionNumber: Int[0, 1000]` and
+- Step 1: `Config::ConfigVersion` has `versionNumber: Int[0, 1000]`
+  (**unverified**: QSL-289, see the `versionNumber` field row above) and
   `parent: Option<Reference<Config::ConfigVersion>>`; operation
   `attemptUpdate` has no parameters, result `Boolean`, and effect
   `modifies == [versionNumber's key]`, `creates == []`, `deletes == []`.
@@ -63,8 +69,11 @@ Tag the tests `#[trace("TC-458", "FR-103-AC-n")]`.
   `unknown_required_feature`/`unsupported-feature` at the `Supersedes` entry;
   then only the `modifies` entry's `missing_declaration`/`missing-name`. No
   declaration admitted.
-- Step 3: `unknown_required_feature`/`unsupported-feature` at the `model`
-  declaration; then `delta: Int[0, 1000]`.
+- Step 3: `unsupported_construct`/`declaration-form` at the parameter, at I1
+  (intake) -- the same stage and cause a field of that type refuses at, per
+  FR-103's own Behavior ("as a field of that type does"); then
+  `delta: Int[0, 1000]` (**unverified**: depends on FR-056's `value-type/v1`
+  scalar reader, QSL-289; not built by this ticket).
 - Step 4: `UnsupportedModelMember` naming the record value type's node.
 - Step 5: equal `PackageDeclarations` and effect key lists in all three.
 

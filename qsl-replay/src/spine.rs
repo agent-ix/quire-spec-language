@@ -368,6 +368,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::ModelType { alias, node } => {
             format!("the domain package of `model {alias}` has no effective type for `{node}`")
         }
+        AssemblyCause::UnsupportedStateClause { name } => {
+            format!("the state clause `{name}` has no checker yet (FR-104, QSL-277)")
+        }
     };
     with_more(message, refusal.errors.len())
 }

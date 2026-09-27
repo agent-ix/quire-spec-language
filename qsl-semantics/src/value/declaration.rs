@@ -72,6 +72,8 @@ use quire_exact::{
 };
 use quire_exact::{from_admitted_slots, retain_composite, Deferred, FieldValue, Value, ValueType};
 
+use crate::model::domain_package::OperationEffect;
+
 use super::enumeration::{compare_enum, EnumMemberIndex};
 use super::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
@@ -161,6 +163,60 @@ impl FieldDeclaration {
     /// Whether the field was declared with `?`.
     pub fn presence(&self) -> Presence {
         self.presence
+    }
+}
+
+/// A declared operation of an object type (FR-103, ADR-012 §15.2
+/// `StateModel`): its name, its parameters and result value types (typed by
+/// [`FieldDeclaration`]'s own FR-056 rule, with no `Option` wrapping --
+/// the domain package's own `OperationParameterRecord`/`OperationResult`
+/// carry no independent presence flag the way a field's `presence` does),
+/// and its producer-declared effect frame, carried unchanged from the
+/// domain package: the assembler resolves none of its keys further.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationDeclaration {
+    name: String,
+    parameters: Vec<(String, ValueType)>,
+    result: Option<ValueType>,
+    effect: OperationEffect,
+}
+
+impl OperationDeclaration {
+    /// `name(parameters): result` with `effect`, exactly as the domain
+    /// package's own operation member declares them.
+    pub fn new(
+        name: impl Into<String>,
+        parameters: Vec<(String, ValueType)>,
+        result: Option<ValueType>,
+        effect: OperationEffect,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            parameters,
+            result,
+            effect,
+        }
+    }
+
+    /// The declared name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The declared parameters, in declaration order.
+    pub fn parameters(&self) -> &[(String, ValueType)] {
+        &self.parameters
+    }
+
+    /// The declared result type, or `None` when the operation has no
+    /// result.
+    pub fn result(&self) -> Option<&ValueType> {
+        self.result.as_ref()
+    }
+
+    /// The declared effect frame.
+    pub fn effect(&self) -> &OperationEffect {
+        &self.effect
     }
 }
 
@@ -364,11 +420,16 @@ pub struct ObjectTypeDeclaration {
     /// Every directly declared supertype (FR-151/FR-152/FR-153 generalization,
     /// #204 round 1 H1), empty unless [`Self::with_supertypes`] sets it.
     supertypes: Vec<EffectiveId>,
+    /// This type's own declared operations, in declaration order (FR-103).
+    /// Visible on a subtype through FR-081's effective view, as a field is;
+    /// this type stays its declaring, owning type.
+    operations: Vec<OperationDeclaration>,
 }
 
 impl ObjectTypeDeclaration {
     /// The object type `name` with declaration identity `key`, declaring no
-    /// supertype. See [`Self::with_supertypes`] to declare one.
+    /// supertype and no operation. See [`Self::with_supertypes`] and
+    /// [`Self::with_operations`] to declare either.
     pub fn new(
         key: EffectiveId,
         name: impl Into<String>,
@@ -379,6 +440,7 @@ impl ObjectTypeDeclaration {
             name: name.into(),
             attributes,
             supertypes: Vec::new(),
+            operations: Vec::new(),
         }
     }
 
@@ -390,6 +452,15 @@ impl ObjectTypeDeclaration {
     #[must_use]
     pub fn with_supertypes(mut self, supertypes: Vec<EffectiveId>) -> Self {
         self.supertypes = supertypes;
+        self
+    }
+
+    /// Declares this object type's own operations (FR-103). Consumes and
+    /// returns `self` so every existing [`Self::new`] call site is
+    /// unaffected.
+    #[must_use]
+    pub fn with_operations(mut self, operations: Vec<OperationDeclaration>) -> Self {
+        self.operations = operations;
         self
     }
 
@@ -413,6 +484,11 @@ impl ObjectTypeDeclaration {
     /// Every directly declared supertype, in declaration order.
     pub fn supertypes(&self) -> &[EffectiveId] {
         &self.supertypes
+    }
+
+    /// This type's own declared operations, in declaration order (FR-103).
+    pub fn operations(&self) -> &[OperationDeclaration] {
+        &self.operations
     }
 }
 

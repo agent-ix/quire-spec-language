@@ -95,7 +95,7 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 | FR-102-AC-3 | `not reaches(self, self, parent)` builds `Not(Reaches { SelfRef, SelfRef, edge: parent })`, and `reaches(self, self, Config::ConfigVersion::parent)` refuses `UnrepresentedConstruct` at the edge; and `self.versionNumber = pre(self.versionNumber)` builds an equality of two `Field` reads of `SelfRef`, the right one under `Pre`. `result` builds `Expression::Result`. None of the single-segment forms refuses. | Test (TC-456) |
 | FR-102-AC-4 | The `dispatch` arms for `Invariant`, `Pre` and `Post` each make exactly one call (the existing `dispatch_entry_is_a_single_thin_call` check passes over them). A unit whose only declaration begins with a spelling no family claims, such as `temporal`, still refuses `NoDispatchEntry`, naming that spelling. | Test (TC-457) |
 | FR-102-AC-5 | A state clause body nested one level deeper than `FormsLimits` allows refuses `StageFailure::Limit` with limit kind `nesting-depth-exceeded` at the body; at exactly the limit it builds. | Test (TC-457) |
-| FR-102-AC-6 | With the `seam-probe` feature, the probe variant of `LeadingTokenKind` and of `Expression` still fails to compile at exactly the checked-in S2 seam list, which now includes the `protocol_clause` production entry (FR-063). | Test (TC-457) |
+| FR-102-AC-6 | With the `seam-probe` feature, the probe variant of `LeadingTokenKind` and of `Expression` still fails to compile at exactly the checked-in S2 seam list, which is unchanged by this feature (FR-063). | Test (TC-457) |
 
 ## Dependencies
 
