@@ -33,7 +33,7 @@ mutated document except where the row says otherwise.
 | 5 | 1.4 | `format` `native-state-input/1` | `unknown_wire`/`unsupported-wire` |
 | 6 | 1.5 | `populations` removed | `invalid_runtime_input`/`missing-member` |
 | 7 | 1.6 | an extra top-level member `note` | `invalid_runtime_input`/`unknown-member` |
-| 8 | 1.7 | blank `authority` in document and selection | `invalid_runtime_input`/`invalid-value` at `authority` |
+| 8 | 1.7 | blank `authority` in document and selection | `invalid_source_identity`/`blank-label`, `label` `authority` |
 | 9 | 1.8 | the selection's `revision` `2` | `stale_dependency`/`revision-mismatch`, naming both |
 | 10 | 2 | `Current` selecting `VersionUnchanged` | `wrong_snapshot`/`wrong-observation` |
 | 11 | 3 | the current snapshot's `observation` set to `pre` (and `anchor` removed) | `wrong_snapshot`/`wrong-observation` |
@@ -67,6 +67,7 @@ mutated document except where the row says otherwise.
 | 39 | 11.1 over 11.2 | a package variant where `Sub` specializes `ConfigVersion` and is a member type of `config_history`; post changes `child`'s type to `Sub`, sets `child.parent` absent and deletes `root` | `frame_violation`/`unauthorized-change` naming `child`'s type change |
 | 40 | 11, population order | pre and post list `archive` (complete, object `a1` with `parent` absent) before `config_history`; post sets `a1.parent` to `{archive, a1}` and `child.parent` absent | `frame_violation`/`unauthorized-change` naming `a1` and `parent` in `archive` |
 | 41 | 11, one-sided population | post adds a population `archive` absent from pre, holding object `a1` (`parent` absent), with `created` unchanged | `frame_violation`/`unauthorized-change` naming the creation of `a1` in `archive` (pre side admitted as empty) |
+| 42 | 1.7 label order | blank `revision_namespace` and blank `revision` in document and selection | `invalid_source_identity`/`blank-label`, `label` `revision_namespace` |
 
 Rows 25, 40 and 41 need the fixture package to declare a second population
 `archive` over `ConfigVersion` with a maximum of 10. With no maximum, every
