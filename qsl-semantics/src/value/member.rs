@@ -20,6 +20,7 @@
 
 use serde_json::{json, Value};
 
+use qsl_forms::StateClauseKind;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use quire_exact::Identifier;
 use quire_exact::NodeKey;
@@ -93,8 +94,9 @@ pub enum Member {
     /// [`Self::ProfileOperator`], this variant carries no `declaration` --
     /// the schema's shape is `{"kind": "state_clause", "clause": ...}`.
     StateClause {
-        /// `invariant`, `precondition` or `postcondition`.
-        clause: &'static str,
+        /// Invariant, precondition or postcondition -- an invalid kind is
+        /// unrepresentable, since [`StateClauseKind`] is itself a closed enum.
+        clause: StateClauseKind,
     },
 }
 
@@ -171,9 +173,18 @@ impl Member {
             }),
             Self::StateClause { clause } => json!({
                 "kind": "state_clause",
-                "clause": clause,
+                "clause": state_clause_spelling(*clause),
             }),
         }
+    }
+}
+
+/// FR-341's own three spellings of a [`StateClauseKind`].
+fn state_clause_spelling(clause: StateClauseKind) -> &'static str {
+    match clause {
+        StateClauseKind::Invariant => "invariant",
+        StateClauseKind::Precondition => "precondition",
+        StateClauseKind::Postcondition => "postcondition",
     }
 }
 
@@ -298,7 +309,7 @@ mod tests {
     #[test]
     fn state_clause_renders_the_schema_shape_with_no_declaration() {
         let member = Member::StateClause {
-            clause: "invariant",
+            clause: StateClauseKind::Invariant,
         };
         let wire = member.to_wire();
         assert_eq!(

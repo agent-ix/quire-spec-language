@@ -54,5 +54,14 @@ Tag the tests `#[trace("TC-462", "FR-105-AC-n")]`.
 
 ## Status
 
-Planned (QSL-273). Steps 1 to 3 are pending STD-111 (the QSpec wire
-spellings); step 4 does not wait on it.
+Implemented (QSL-279): `s4_emits_exactly_the_fr_105_state_nodes` covers step
+1 and most of step 2 (node set, kinds, anchor operation, frame
+`modifies`/`creates`/`deletes`, the `ConfigVersion` node found independently
+through `resolve_declaration`, each invariant's anchor argument, the
+forbidden forms); `s4_emitted_frame_node_lists_configversion_in_dependencies`
+covers the frame's own emitted `dependencies`, decoding the wire directly.
+`triple_mapping_is_total_and_injective_over_all_seven_variants` covers step
+4. Step 3 (the `VersionUnchanged`/`NoCycle`/`ParentOrder` condition-term
+walk) and the remainder of step 2 (each non-frame node's own `dependencies`
+and occurrences, the `state_clause` `semantic_type`, `VersionUnchanged`'s
+anchor argument) are not yet covered; tracked by QSL-308.

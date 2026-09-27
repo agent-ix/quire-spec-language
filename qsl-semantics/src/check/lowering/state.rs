@@ -94,15 +94,6 @@ pub(crate) struct LoweredClause {
     pub(crate) population_objects: Vec<NodeKey>,
 }
 
-/// The FR-105 `<kind>` spelling of a state clause.
-fn kind_spelling(kind: StateClauseKind) -> &'static str {
-    match kind {
-        StateClauseKind::Invariant => "invariant",
-        StateClauseKind::Precondition => "precondition",
-        StateClauseKind::Postcondition => "postcondition",
-    }
-}
-
 impl Lowering<'_> {
     /// Lower and key the state clause `clause`, recording its `claim`
     /// occurrence at its root and, for a `pre` or `post` clause, one
@@ -161,7 +152,7 @@ impl Lowering<'_> {
                 operator: Operator::StateClause,
                 operation: Operation {
                     member: Some(Member::StateClause {
-                        clause: kind_spelling(clause.kind),
+                        clause: clause.kind,
                     }),
                     ..Operation::plain("quire.op.state.clause")
                 },
@@ -239,8 +230,14 @@ impl Lowering<'_> {
         for field in &effect.modifies {
             modifies.push(self.frame_field(field, location)?);
         }
-        // FR-340: entries ascending by (declaring node digest, field name).
+        // FR-340: entries ascending by (declaring node digest, field name),
+        // and no member holds a duplicate entry -- two clauses naming the
+        // same field twice (or a domain package listing it twice) still
+        // produce one `modifies` entry, so the frame's node id matches the
+        // deduplicated frame's and IR's reader (which rejects a repeated
+        // entry) never sees one.
         modifies.sort();
+        modifies.dedup();
         let modifies: Vec<FrameField> = modifies
             .into_iter()
             .map(|(object, name)| FrameField::new(object, name))
@@ -319,7 +316,7 @@ impl Lowering<'_> {
     }
 
     /// A frame `creates` or `deletes` list: each object type's model node,
-    /// ascending by node digest.
+    /// ascending by node digest and holding no duplicate entry (FR-340).
     fn frame_objects(
         &mut self,
         objects: &[DeclarationKey],
@@ -330,6 +327,7 @@ impl Lowering<'_> {
             nodes.push(self.model_node(object, location)?);
         }
         nodes.sort();
+        nodes.dedup();
         Ok(nodes)
     }
 }

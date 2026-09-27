@@ -666,6 +666,7 @@ mod tests {
     /// gives `(("state", Some("transition")), "quire.op.state.transition",
     /// None)`.
     #[trace("TC-462", "FR-105-AC-5")]
+    #[trace("TC-250", "FR-088-AC-4")]
     #[test]
     fn triple_mapping_is_total_and_injective_over_all_seven_variants() {
         let expected = [

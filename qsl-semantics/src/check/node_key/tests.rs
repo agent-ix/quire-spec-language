@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 
 use ix_trace_rs::trace;
 
+use qsl_forms::StateClauseKind;
+
 use super::*;
 use crate::value::semantic_node::NodeIdDocument;
 
@@ -104,9 +106,9 @@ pub(super) fn member<'de, D: Deserializer<'de>>(
         },
         "state_clause" => Member::StateClause {
             clause: match text("clause")? {
-                "invariant" => "invariant",
-                "precondition" => "precondition",
-                "postcondition" => "postcondition",
+                "invariant" => StateClauseKind::Invariant,
+                "precondition" => StateClauseKind::Precondition,
+                "postcondition" => StateClauseKind::Postcondition,
                 other => {
                     return Err(D::Error::custom(format!(
                         "unknown state clause kind {other}"

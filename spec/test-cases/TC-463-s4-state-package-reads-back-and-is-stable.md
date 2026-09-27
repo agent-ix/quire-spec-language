@@ -49,7 +49,12 @@ Tag the tests `#[trace("TC-463", "FR-105-AC-n")]`.
 
 ## Status
 
-Planned (QSL-273). Steps 1 to 3 are pending STD-111: QSL's reader admits
-these bodies once the QSpec body rules land, and the node ids and
-`package_id` steps 2 and 3 compare have STD-111 spellings in their
-preimages. Step 4 does not wait on it.
+Partial (QSL-279). Step 2's double-compile identity case is covered by
+`s4_state_package_emission_is_stable_across_compiles`. Step 1
+(`s4_state_package_reads_back_through_i2`) is implemented but `#[ignore]`d:
+it reproduces `invalid_semantic_graph` because the pinned
+`quire-contract-model` crate's `ApplicationOperator` vocabulary has not yet
+absorbed STD-111's `state_clause` member; tracked by QSL-307. The rest of
+step 2 (rename, `<=`, `ParentOrder2`, second `post`), step 3
+(inherited-operation anchor sharing) and step 4 (fault-injected all-or-
+nothing emission) are not yet implemented; tracked by QSL-308.
