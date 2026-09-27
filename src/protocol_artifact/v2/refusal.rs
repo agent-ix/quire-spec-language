@@ -25,6 +25,9 @@ pub enum BindingCause {
     Surplus,
     /// Two records carry the same declaration key.
     Duplicate,
+    /// The typed `clock_name` field disagrees with the inherited `v1`
+    /// binding's legacy `clock:`-prefixed spelling (QSL-288).
+    ClockName,
 }
 
 /// A caller selection whose exact source does not own the selected span.
@@ -211,6 +214,18 @@ impl Refusal {
                 side: InventorySide::Producer,
                 cause: BindingCause::Duplicate,
             } => "v2.binding.producer-duplicate",
+            Self::Binding {
+                side: InventorySide::Offer,
+                cause: BindingCause::ClockName,
+            } => "v2.binding.offer-clock-name",
+            Self::Binding {
+                side: InventorySide::Expected,
+                cause: BindingCause::ClockName,
+            } => "v2.binding.expected-clock-name",
+            Self::Binding {
+                side: InventorySide::Producer,
+                cause: BindingCause::ClockName,
+            } => "v2.binding.producer-clock-name",
             Self::OfferOrder => "v2.binding.offer-order",
             Self::ForeignOwner(SelectionSide::Expected) => "v2.binding.expected-foreign-owner",
             Self::ForeignOwner(SelectionSide::Producer) => "v2.binding.producer-foreign-owner",

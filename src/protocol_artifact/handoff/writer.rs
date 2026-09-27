@@ -2453,6 +2453,27 @@ fn mutation_fixtures(
         timestamp_unit,
     )?;
 
+    // QSL-288: the typed `clock_name` field must agree with the inherited
+    // `v1` binding's legacy `clock:`-prefixed spelling. A reader takes the
+    // typed field directly (`ClockNames::of_v2`), never re-parsing the
+    // legacy name, so an offer whose two facts disagree is refused.
+    let mut clock_name = package.clone();
+    clock_name
+        .temporal_bindings
+        .first_mut()
+        .ok_or(Error::MutationFixture("clock-name"))?
+        .clock_name = "a-different-clock".into();
+    offer(
+        "clock-name",
+        "temporal_bindings.clock_name",
+        v2::Refusal::Binding {
+            side: v2::InventorySide::Offer,
+            cause: v2::BindingCause::ClockName,
+        }
+        .code(),
+        clock_name,
+    )?;
+
     let raw: serde_json::Value = serde_json::to_value(package)?;
     for (identity, binding, field, replacement, axis) in [
         (

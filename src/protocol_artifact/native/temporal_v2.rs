@@ -83,6 +83,16 @@ fn bindings(
         .filter(|(_, declaration)| matches!(declaration.body, w::Body::Temporal { .. }))
     {
         work.visit()?;
+        let clock_index = match &declaration.body {
+            w::Body::Temporal { clock, .. } => *clock,
+            _ => return Err(Error::Invalid(Invalid::Reference)),
+        };
+        let clock_name = usize::try_from(clock_index)
+            .ok()
+            .and_then(|index| declaration.bindings.get(index))
+            .and_then(artifact::clock_binding_name)
+            .ok_or(Error::Invalid(Invalid::Reference))?
+            .to_owned();
         let emitted_source = package
             .sources
             .get(usize::try_from(declaration.locus.source).unwrap_or(usize::MAX))
@@ -161,6 +171,7 @@ fn bindings(
                 .map_err(|_| Error::Invalid(Invalid::StructuralInteger))?,
             definition: declaration.profile,
             clock: selected.clock.clone(),
+            clock_name,
         });
     }
     Ok(result)
@@ -188,7 +199,7 @@ pub fn admit_v2(
         let candidate = artifact::encoding::candidate(&package, &mut work)?;
         let admitted = v2::AdmittedPackage {
             digest: candidate.digest(),
-            clocks: artifact::ClockNames::of(&package.inherited),
+            clocks: artifact::ClockNames::of_v2(&package),
             package,
             // Emission produces bytes and their raw-byte digest; the caller
             // publishes the artifact identity, so none is invented here.

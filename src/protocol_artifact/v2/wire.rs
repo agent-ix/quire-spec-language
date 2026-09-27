@@ -78,6 +78,12 @@ pub struct TemporalBinding {
     pub definition: u32,
     /// Exact configuration alternative required by that definition.
     pub clock: ClockConfiguration,
+    /// The declaration's clock name, typed (ADR-012 section 9; QSL-288):
+    /// the same name the inherited `v1` binding carries with a `clock:`
+    /// prefix, without that prefix or any string convention. A reader takes
+    /// this field directly; it never re-derives a clock name by parsing the
+    /// inherited binding's name.
+    pub clock_name: String,
 }
 
 impl<'de> Deserialize<'de> for TemporalBinding {
@@ -88,16 +94,19 @@ impl<'de> Deserialize<'de> for TemporalBinding {
             declaration: u32,
             definition: u32,
             clock: ClockConfiguration,
+            clock_name: String,
         }
         let Fields {
             declaration,
             definition,
             clock,
+            clock_name,
         } = from_object(decoder)?;
         Ok(Self {
             declaration,
             definition,
             clock,
+            clock_name,
         })
     }
 }

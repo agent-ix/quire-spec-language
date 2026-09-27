@@ -411,6 +411,89 @@ fn write_v2_handoff_admits_from_its_files_through_the_strict_v2_reader() {
     );
 }
 
+/// QSL-288: the written handoff's `clock-name` mutation case (`clock_name`
+/// disagreeing with the inherited `v1` binding's legacy `clock:` spelling)
+/// replays through the strict reader and is refused with exactly the typed
+/// `v2.binding.offer-clock-name` code, never silently admitted.
+#[test]
+#[trace("TC-138", "FR-050-AC-1")]
+fn a_disagreeing_typed_clock_name_is_refused_not_silently_admitted() {
+    let (_directory, root) = written(handoff::write_v2);
+    let offer = fs::read(root.join(handoff::PUBLISHED_OFFER_FILE)).expect("written v2 offer");
+    let selection: SelectionV2 = serde_json::from_slice(
+        &fs::read(root.join(handoff::PUBLISHED_SELECTION_FILE)).expect("written v2 selection"),
+    )
+    .expect("decode expected-v2.json through the published type");
+    let temporal = selection.temporal.clone();
+    let declarations = temporal
+        .iter()
+        .map(|selected| expected_declaration(&selected.declaration))
+        .collect::<Vec<_>>();
+    let expected_temporal = temporal
+        .iter()
+        .zip(&declarations)
+        .map(|(selected, declaration)| v2::ExpectedTemporal {
+            source: &selected.source,
+            declaration,
+            definition: v2::ExpectedDefinition {
+                identity: &selected.definition_identity,
+                revision: &selected.definition_revision,
+                artifact: &selected.definition_artifact,
+            },
+            clock: &selected.clock_input.configuration,
+        })
+        .collect::<Vec<_>>();
+    let loaded = Loaded::new(&root, selection.inherited);
+    let _admitted = loaded
+        .with_expected(|inherited| {
+            v2::read(
+                &offer,
+                &v2::Expected {
+                    inherited,
+                    temporal: &expected_temporal,
+                },
+                artifact::Limits::default(),
+            )
+        })
+        .into_result()
+        .expect("the strict v2 reader admits the genuine handoff");
+
+    let manifest: handoff::MutationManifest = serde_json::from_slice(
+        &fs::read(root.join(handoff::PUBLISHED_MUTATION_MANIFEST_FILE))
+            .expect("written mutation manifest"),
+    )
+    .expect("decode the written mutation manifest");
+    let (case, file, mutated_artifact) = manifest
+        .cases
+        .iter()
+        .find_map(|case| match &case.input {
+            handoff::MutationInput::Offer { file, artifact } if case.identity == "clock-name" => {
+                Some((case, file, artifact))
+            }
+            _ => None,
+        })
+        .expect("the corpus carries a clock-name mutation case");
+    let mutated_bytes = fs::read(root.join(file)).expect("written clock-name mutation bytes");
+    let refusal = loaded
+        .with_expected(|inherited| {
+            v2::read(
+                &mutated_bytes,
+                &v2::Expected {
+                    inherited: artifact::Expected {
+                        artifact: mutated_artifact,
+                        ..inherited
+                    },
+                    temporal: &expected_temporal,
+                },
+                artifact::Limits::default(),
+            )
+        })
+        .into_result()
+        .expect_err("a disagreeing typed clock_name must not admit");
+    assert_eq!(refusal.code(), case.expected_refusal_code.as_str());
+    assert_eq!(refusal.code(), "v2.binding.offer-clock-name");
+}
+
 #[test]
 #[trace("TC-121", "FR-042-AC-15")]
 fn write_v1_is_deterministic_across_runs() {

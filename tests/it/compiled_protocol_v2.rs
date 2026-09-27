@@ -3064,8 +3064,10 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // `references`. QSL-64's domain-package `Model` paragraphs in that
             // document (the `Model`, then its populations and operations, then
             // its operations' parameters and result) move `byte_work` by their
-            // length.
-            (4_822, 2_581, 1_173_763, 85_376)
+            // length. QSL-288 added the typed `clock_name` field to each
+            // `temporal_bindings` entry, which moves `entries`, `byte_work`
+            // and `output_bytes` but not `references`.
+            (4_825, 2_581, 1_174_347, 85_462)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),
