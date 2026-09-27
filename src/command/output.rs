@@ -425,8 +425,8 @@ pub(super) fn spine_run_result(
         }) => (
             refusal_exit_code(code),
             types::SpineOutcome::Refused {
-                code: Some(code.code()),
-                cause: Some(code.cause()),
+                code: code.code(),
+                cause: code.cause(),
                 fields: Some(fields),
                 locus: locus.map(spine_locus),
                 location: location.as_ref().map(spine_location),
@@ -435,8 +435,8 @@ pub(super) fn spine_run_result(
         CallOutcome::Refused(CallRefusal::Family { code, location }) => (
             refusal_exit_code(code),
             types::SpineOutcome::Refused {
-                code: Some(code.code()),
-                cause: Some(code.cause()),
+                code: code.code(),
+                cause: code.cause(),
                 fields: None,
                 locus: None,
                 location: location.as_ref().map(spine_location),

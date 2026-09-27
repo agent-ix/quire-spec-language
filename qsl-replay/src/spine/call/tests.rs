@@ -429,76 +429,168 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         }
     }
 
-    // The ten kernel value refusals (QSL-245): each is a record with the
-    // refusal's own code and cause, an `expected` field, and the location.
+    // The ten kernel value refusals (QSL-245, TC-452 step 4): each is a
+    // record with the refusal's own code and cause, its exact catalog
+    // fields (TC-452's payloads), a locus and the location.
     {
         use quire_exact::{
-            DecimalType, IeeeFlags, IeeeWidth, InexactTarget, Integer, IntegerInterval,
+            DecimalType, IeeeFlag, IeeeFlags, IeeeWidth, InexactTarget, Integer, IntegerInterval,
             RationalDomain, RoundingMode, TextProfile, TextType,
         };
-        let interval = || IntegerInterval::spanning(Integer::zero(), Integer::from(9_i64));
-        let rational = || {
+        let int_0_9 = || IntegerInterval::spanning(Integer::zero(), Integer::from(9_i64));
+        let decimal_0_100 = || {
+            Box::new(
+                DecimalType::new(
+                    Integer::zero(),
+                    Integer::from(100_i64),
+                    0,
+                    2,
+                    RoundingMode::Exact,
+                )
+                .unwrap(),
+            )
+        };
+        let rational_neg5_5 = || {
             Box::new(
                 RationalDomain::new(
-                    interval(),
-                    IntegerInterval::spanning(Integer::one(), Integer::from(9_i64)),
+                    IntegerInterval::spanning(Integer::from(-5_i64), Integer::from(5_i64)),
+                    IntegerInterval::spanning(Integer::one(), Integer::from(12_i64)),
                 )
                 .unwrap(),
             )
         };
         let kernel_value_refusals = [
-            Refusal::InexactDecimal {
-                target: InexactTarget::Integer(Box::new(interval())),
-            },
-            Refusal::DecimalOutOfDomain {
-                target: Box::new(
-                    DecimalType::new(
-                        Integer::zero(),
-                        Integer::from(100_i64),
-                        0,
-                        2,
-                        RoundingMode::Exact,
-                    )
-                    .unwrap(),
-                ),
-            },
-            Refusal::DivisionPairOutOfDomain {
-                domain: Box::new(interval()),
-                quotient_admitted: false,
-                remainder_admitted: false,
-            },
-            Refusal::ModuloOutOfDomain {
-                domain: Box::new(interval()),
-            },
-            Refusal::TextLengthOutOfDomain {
-                target: TextType::new(1, 8, TextProfile::Nfc).unwrap(),
-            },
-            Refusal::IntegerOutOfDomain {
-                target: Box::new(interval()),
-            },
-            Refusal::RationalOutOfDomain { target: rational() },
-            Refusal::IeeeNotExact {
-                target: IeeeWidth::Binary32,
-                would_be: IeeeFlags::EMPTY,
-            },
-            Refusal::IeeeNanPayloadNotRepresentable {
-                target: IeeeWidth::Binary32,
-                source: IeeeWidth::Binary64,
-            },
-            Refusal::IeeeRationalOutOfDomain { target: rational() },
+            (
+                Refusal::InexactDecimal {
+                    target: InexactTarget::Decimal(decimal_0_100()),
+                },
+                "inexact_decimal",
+                "nonzero-discarded-digit",
+                BTreeMap::from([("expected", "Decimal[0, 100; 0, 2]".to_owned())]),
+            ),
+            (
+                Refusal::DecimalOutOfDomain {
+                    target: decimal_0_100(),
+                },
+                "decimal_out_of_domain",
+                "outside-domain",
+                BTreeMap::from([("expected", "Decimal[0, 100; 0, 2]".to_owned())]),
+            ),
+            (
+                Refusal::DivisionPairOutOfDomain {
+                    domain: Box::new(int_0_9()),
+                    quotient_admitted: false,
+                    remainder_admitted: true,
+                },
+                "division_pair_out_of_domain",
+                "quotient-outside-domain",
+                BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
+            ),
+            (
+                Refusal::DivisionPairOutOfDomain {
+                    domain: Box::new(int_0_9()),
+                    quotient_admitted: true,
+                    remainder_admitted: false,
+                },
+                "division_pair_out_of_domain",
+                "remainder-outside-domain",
+                BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
+            ),
+            (
+                Refusal::DivisionPairOutOfDomain {
+                    domain: Box::new(int_0_9()),
+                    quotient_admitted: false,
+                    remainder_admitted: false,
+                },
+                "division_pair_out_of_domain",
+                "both-outside-domain",
+                BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
+            ),
+            (
+                Refusal::ModuloOutOfDomain {
+                    domain: Box::new(int_0_9()),
+                },
+                "modulo_out_of_domain",
+                "outside-domain",
+                BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
+            ),
+            (
+                Refusal::TextLengthOutOfDomain {
+                    target: TextType::new(1, 8, TextProfile::BinaryUtf8).unwrap(),
+                },
+                "text_length_out_of_domain",
+                "outside-domain",
+                BTreeMap::from([("expected", "Text[1, 8; binary-utf8]".to_owned())]),
+            ),
+            (
+                Refusal::IntegerOutOfDomain {
+                    target: Box::new(int_0_9()),
+                },
+                "integer_out_of_domain",
+                "outside-domain",
+                BTreeMap::from([("expected", "Int[0, 9]".to_owned())]),
+            ),
+            (
+                Refusal::RationalOutOfDomain {
+                    target: rational_neg5_5(),
+                },
+                "rational_out_of_domain",
+                "outside-domain",
+                BTreeMap::from([("expected", "Rational[-5, 5; 1, 12]".to_owned())]),
+            ),
+            (
+                Refusal::IeeeNotExact {
+                    target: IeeeWidth::Binary64,
+                    would_be: [IeeeFlag::Overflow, IeeeFlag::Inexact]
+                        .into_iter()
+                        .collect::<IeeeFlags>(),
+                },
+                "ieee_not_exact",
+                "rounding-required",
+                BTreeMap::from([
+                    ("expected", "binary64".to_owned()),
+                    ("flags", "overflow,inexact".to_owned()),
+                ]),
+            ),
+            (
+                Refusal::IeeeNanPayloadNotRepresentable {
+                    target: IeeeWidth::Binary32,
+                    source: IeeeWidth::Binary64,
+                },
+                "ieee_nan_payload_not_representable",
+                "payload-exceeds-target",
+                BTreeMap::from([
+                    ("expected", "binary32".to_owned()),
+                    ("actual", "binary64".to_owned()),
+                ]),
+            ),
+            (
+                Refusal::IeeeRationalOutOfDomain {
+                    target: rational_neg5_5(),
+                },
+                "ieee_rational_out_of_domain",
+                "outside-domain",
+                BTreeMap::from([("expected", "Rational[-5, 5; 1, 12]".to_owned())]),
+            ),
         ];
-        for refusal in kernel_value_refusals {
-            let expected = CatalogCode::new(refusal.code().unwrap(), refusal.cause().unwrap());
+        for (refusal, code, cause, expected_fields) in kernel_value_refusals {
             match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal.clone()))).unwrap() {
                 CallOutcome::Refused(CallRefusal::Record {
-                    code,
+                    code: got_code,
                     fields,
-                    location: got,
-                    ..
+                    locus,
+                    location: got_location,
                 }) => {
-                    assert_eq!(code, expected, "{refusal:?}");
-                    assert!(fields.contains_key("expected"), "{refusal:?}");
-                    assert_location(&got);
+                    assert_eq!(got_code, CatalogCode::new(code, cause), "{refusal:?}");
+                    assert_eq!(fields, expected_fields, "{refusal:?}");
+                    let locus = locus.expect("a record locus");
+                    assert_eq!(
+                        locus.source_digest,
+                        "sha256:3cb8ab70e4d3187dae8621768491c4d2eb0c8c0b82d330d4f2fba72883f6e77c"
+                    );
+                    assert_eq!(locus.span.start.byte, 233);
+                    assert_eq!(locus.span.end.byte, 234);
+                    assert_location(&got_location);
                 }
                 other => panic!("{refusal:?}: {other:?}"),
             }
@@ -672,6 +764,129 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
     }
 }
 
+/// FR-100-AC-10 (TC-452 step 5, SR-749 FND-002): `sum<Pos>(x in q: x)` for
+/// `Pos = Int[1, 9]`, checked under `CheckMode::Kernel` (TC-452 step 5's own
+/// procedure -- a linked `sum` whose prefixes are not all proved members
+/// refuses at checking, QSpec FR-145, so a real compiled program can never
+/// reach this outcome; only a standalone expression checked this way can)
+/// and evaluated for real, not a hand-built `Evaluation` unlike
+/// [`tc_452_step_4_outcome_mapping_covers_every_category`], then converted
+/// by the real `convert_outcome`.
+///
+/// An empty `q` leaves the seed `0` outside `Pos`, and `q` holding `9, 9`
+/// leaves the running total `18` outside `Pos`: both are
+/// `Outcome::Undefined(Undefined::SumOutOfDomain)`, located at the `sum`
+/// node (`checked.root()`'s own location, never a summand's -- FR-100: "a
+/// failing addition's running total at the sum node"), and the real
+/// `convert_outcome` converts each to `CallOutcome::Undefined { reason:
+/// "sum-out-of-domain" }`. `q` holding `4` completes with integer `4`
+/// (TC-452 step 5's own third case).
+///
+/// Composes with `undefined_kernel_reasons_render_and_exit_20`
+/// (`src/command/output.rs`), which proves every `CallOutcome::Undefined {
+/// reason: "sum-out-of-domain" }` renders `{"kind": "undefined", "reason":
+/// "sum-out-of-domain"}` and exits 20 -- the root crate names no
+/// `qsl_eval` path (FR-100-AC-8, TC-452 step 2/3), so a real `Evaluation`
+/// can only be produced here, never there.
+#[trace("TC-452", "FR-100-AC-10")]
+#[test]
+fn tc_452_step_5_sum_over_pos_is_sum_out_of_domain_or_completes() {
+    use qsl_eval::value::CheckedPackageEvaluation;
+    use qsl_forms::Expression;
+    use qsl_semantics::check::{CheckMode, CheckingLimits, PackageDeclarations};
+    use quire_exact::{CardinalityBound, CollectionType, Integer, IntegerInterval, Meter};
+
+    let pos = ValueType::Int(IntegerInterval::spanning(
+        Integer::one(),
+        Integer::from(9_i64),
+    ));
+    let graph = PackageDeclarations {
+        aliases: vec![("Pos".to_owned(), pos.clone())],
+        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+    }
+    .check(CheckingLimits::default())
+    .unwrap();
+    let package = CheckedPackage::link(graph);
+
+    let q_type = ValueType::collection(CollectionType::new(
+        CollectionKind::Sequence,
+        pos,
+        Some(CardinalityBound::new(0, 2).unwrap()),
+    ));
+    let expression = Expression::Sum {
+        result_type_span: qsl_foundation::Span { start: 0, end: 0 },
+        result_type: "Pos".to_owned(),
+        binder: "x".to_owned(),
+        source: Box::new(Expression::Name("q".to_owned())),
+        summand: Box::new(Expression::Name("x".to_owned())),
+    };
+    let checked = package
+        .graph()
+        .check_expression(
+            vec![("q".to_owned(), q_type.clone())],
+            &expression,
+            None,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+    let sum_node = checked.root().location().clone();
+
+    let ValueType::Collection(q_collection_type) = &q_type else {
+        unreachable!("q_type is always a collection");
+    };
+    let q = |elements: Vec<i64>| {
+        let elements = elements
+            .into_iter()
+            .map(|value| Value::Integer(Integer::from(value)))
+            .collect();
+        quire_exact::form_collection(
+            q_collection_type,
+            elements,
+            &mut Meter::new(default_accounting(u64::MAX)),
+        )
+        .unwrap()
+        .completed()
+        .expect("q admits its own declared bound")
+    };
+    let evaluate = |q_value: Value| {
+        package
+            .evaluate(
+                &checked,
+                vec![q_value],
+                &ObjectEnvironment::default(),
+                &mut Meter::new(default_accounting(u64::MAX)),
+            )
+            .unwrap()
+    };
+
+    for elements in [Vec::<i64>::new(), vec![9, 9]] {
+        let evaluation = evaluate(q(elements.clone()));
+        assert!(
+            matches!(
+                evaluation.outcome,
+                FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))
+            ),
+            "{elements:?}: {:?}",
+            evaluation.outcome
+        );
+        assert_eq!(
+            evaluation.location.as_ref(),
+            Some(&sum_node),
+            "{elements:?}: located at the sum node"
+        );
+        match convert_outcome(evaluation, package.graph(), &[]).unwrap() {
+            CallOutcome::Undefined { reason } => assert_eq!(reason, "sum-out-of-domain"),
+            other => panic!("{elements:?}: {other:?}"),
+        }
+    }
+
+    match convert_outcome(evaluate(q(vec![4])), package.graph(), &[]).unwrap() {
+        CallOutcome::Completed(CallValue::Integer(value)) => assert_eq!(value.to_string(), "4"),
+        other => panic!("{other:?}"),
+    }
+}
+
 /// FR-100 "Internal failure at S6a" (SR-674 FND-013): `convert_call_failure`
 /// maps `CallFailure::Input(WrongValueKind)` to its own typed refusal, every
 /// other `InputRefusal` (already admitted before S6a, so never actually
@@ -708,6 +923,22 @@ fn convert_call_failure_maps_wrong_value_kind_and_forwards_faults() {
         RunRefusal::Fault(fault) => {
             assert_eq!(fault.stage(), "S6a");
             assert_eq!(fault.invariant(), "checked-program-invariant");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// SR-748 FND-001: `convert_refusal`'s `record == None && fallback == None`
+/// branch (call.rs:513-518) is unreachable from `convert_outcome` today (see
+/// its own doc comment), but is built directly here -- nothing else can
+/// reach it -- to prove it returns a typed `InternalFault`, stage `call`,
+/// invariant `kernel-refusal-with-no-record`, rather than panicking.
+#[test]
+fn convert_refusal_with_no_record_and_no_fallback_is_a_typed_fault() {
+    match *convert_refusal(None, None, None, &[]).unwrap_err() {
+        RunRefusal::Fault(fault) => {
+            assert_eq!(fault.stage(), "call");
+            assert_eq!(fault.invariant(), "kernel-refusal-with-no-record");
         }
         other => panic!("{other:?}"),
     }
