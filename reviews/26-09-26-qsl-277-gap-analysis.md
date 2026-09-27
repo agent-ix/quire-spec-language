@@ -94,3 +94,11 @@ The round-2 dispositions stand as written.
 | FND-001 | fixed 6b144f75 | The FR-104-AC-1 row now has an "Unverified ... QSL-289" note (FR-104:229). The TC-459 row at tests.md:241 says "AC-1's `Int[0, 1000]` half unverified, QSL-289". |
 | FND-002 | fixed 6b144f75 | Step 1 asserts, for each record, `Unbounded` with exactly one domain of kind `Population` and finite kind `Cardinality`, one `DomainKey` equal across all four records, and occurrence roles of 3 `claim` and 1 `generated` (state_clauses.rs:626-686). Step 5 asserts `AmbiguousPopulation{context: "Config::ConfigVersion", populations: [archive, config_history]}` in order, with a span that slices to `Config::ConfigVersion` (state_clauses.rs:769-803). |
 | FND-004 | fixed 6b144f75 | Exact `location.path` is asserted for `result` (root, :309-314) and for rows 3 `[]`, 5 `[0]`, 6 `[]`, 7 `[]` and 8 `[0, 0, 0]` (:521-613). This meets the finding: a refusal at a wrong subexpression now fails. A trivial leftover remains, which is low and not reopened: the integration test does not assert row 2's `op` span, row 10's path, or the exact loci of rows 4 and 9, which are only checked as distinct. |
+
+### Round 4 dispositions
+
+Checked against 18e70b23 on 2026-09-26.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed 18e70b23 | The round-3 leftovers are closed. Rows 4 and 9 assert exact `Location`s: `StateClause{ParentOrder, 0/1}`, and `Body{ParentOrder, 0}` plus `StateClause{ParentOrder, 0}`, each with an empty path (state_clauses.rs:468-525). Row 2 asserts `UnresolvedOperation{Config::ConfigVersion, missing}` with a span that slices to `missing` (:539-560). Row 10 asserts `Body{r, 0}` with an empty path (:664-684). Every TC-460 row now has an exact locus. |

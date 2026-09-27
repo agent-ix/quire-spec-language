@@ -128,3 +128,14 @@ against origin/main is still this PR's additions only.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-011 | low | A population with two or more declared member types still gets one `DomainKey` per covering member, not one per population. `covering_member` is the first `member_types` entry, in declared order, that covers the context. So with members {A, B}, clauses on A and on B key the same population by different nodes. With members [Sub, ConfigVersion], a `Sub` clause keys it by `Sub` and a `ConfigVersion` clause by `ConfigVersion`. FR-104:197-206 ("the population's own declared member type that covers `T`") allows this, which contradicts the ruling "a population has one `DomainKey`". Fix: pick one canonical node per population, for example the least member type in `DeclarationKey` order, whatever the clause context, and add that to FR-104. It is not reachable with today's single-member fixtures. | qsl-semantics/src/check/lowering/model.rs:131-158; spec/functional/FR-104-check-state-clauses.md:197-206 |
+
+### Round 4 dispositions
+
+Checked against 18e70b23 on 2026-09-26. The 27 `state_clauses` and
+`model_operations` tests pass, and `cargo clippy -p qsl-semantics
+--all-targets -D warnings` is clean. The `qsl-277-ci-r7.log` file's first
+line is the head SHA and its last line is `exit=0`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-011 | fixed 18e70b23 | `populations_of` keeps a population when any declared member covers the target. It keys the domain by the least declared member by `DeclarationKey`, whichever member covers (lowering/model.rs:135-168). FR-104:197-210 states this. `population_with_several_members_has_one_canonical_domain_key` (state_clauses.rs:1072-1099) declares members [Sub, ConfigVersion] and asserts one equal key across `Sub` and `ConfigVersion` clauses. The round-3 first-covering-member code would give `Sub` and `ConfigVersion` there, so the test catches a regression. Note, not a finding: the `?` on `min()` and on the canonical `find_map` (:160-164) would silently drop a covered population if the canonical member were not an admitted object type of this package. Normalization refuses missing and native members, so this cannot be reached today. |
