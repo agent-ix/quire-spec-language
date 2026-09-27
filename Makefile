@@ -136,6 +136,11 @@ CONFORMANCE_SOURCE_MAP_TEST := checked_v2::tests::conformance_c14_source_map_loo
 # QSL-232: QSL's full I2 read over QSpec's checked-package-v2 fixtures --
 # every positive fixture admitted, every adverse mutation refused by cause.
 CONFORMANCE_I2_TEST := checked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures
+# QSL-302 (FR-340): QSL's full I2 read over QSpec's
+# `node-identity-vectors.json` `frame_mutations` -- the frame-body member
+# eligibility table and its missing_declaration/invalid_model_binding
+# refusal split and precedence.
+CONFORMANCE_FRAME_TEST := checked_v2::tests::conformance_fr340_frame_mutations_match_qspec_vectors
 # QSL-255: QSL's I2 read over QSpec's `dependency-selection-vectors.json`.
 CONFORMANCE_DEPENDENCY_TEST := checked_v2::tests::conformance_dependency_selection_vectors
 # QSL-6 (FR-093-AC-13, TC-416 step 7): the emitted application nodes against
@@ -173,6 +178,11 @@ conformance:
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* positive fixtures through QSL.s full I2 read' || { echo "conformance: the I2 positive-fixture check did not run" >&2; exit 1; }; \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* adverse mutations refused' || { echo "conformance: the I2 adverse-mutation check did not run" >&2; exit 1; }
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_FRAME_TEST) --nocapture 2>&1); \
+	status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -q '^conformance: [1-9][0-9]* frame-body mutation vectors matched$$' || { echo "conformance: the frame-body mutation check did not run" >&2; exit 1; }
 	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-package --lib -- --exact $(CONFORMANCE_DEPENDENCY_TEST) --nocapture 2>&1); \
 	status=$$?; \
 	echo "$$out"; \

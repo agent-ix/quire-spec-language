@@ -10,8 +10,8 @@
 
 use ix_trace_rs::trace;
 use quire_contract_ir::{
-    CheckedArtifactLocator, CheckedPackageEvidence, CheckedPackageRefusalCode, CHECKED_PACKAGE_V2,
-    PACKAGE_DOMAIN_V2,
+    CheckedArtifactLocator, CheckedPackageEvidence, CheckedPackageRefusalCause,
+    CheckedPackageRefusalCode, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -1962,4 +1962,405 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
     };
     assert_eq!(exceeded.kind(), LimitKind::InputBytes);
     assert_eq!(exceeded.locus(), None);
+}
+
+/// The single `state`/`frame` node of a QSpec `checked-package/v2` fixture.
+/// Asserts there is exactly one, rather than silently taking the first of
+/// several.
+fn frame_node_index(package: &Value) -> usize {
+    let mut frames = package["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("nodes")
+        .iter()
+        .enumerate()
+        .filter(|(_, node)| node["node_tag"] == "state" && node["semantic_form"] == "frame");
+    let (index, _) = frames
+        .next()
+        .expect("fixture carries exactly one frame node");
+    assert!(
+        frames.next().is_none(),
+        "fixture carries exactly one frame node"
+    );
+    index
+}
+
+/// QSpec's `frame_mutations` spelling of a frame member (a bare hex digest
+/// per entry) as `state`/`frame` wire entries (`{domain, digest}`). `name`
+/// is the vector's own name, named in the panic message when an entry is not
+/// the plain-digest shape this vector schema version publishes.
+fn frame_entries(name: &str, digests: &[Value]) -> Value {
+    Value::Array(
+        digests
+            .iter()
+            .map(|digest| {
+                let digest = digest.as_str().unwrap_or_else(|| {
+                    panic!("{name}: frame_mutations entry is not a plain digest string: {digest}")
+                });
+                json!({"domain": NODE_DOMAIN, "digest": digest})
+            })
+            .collect(),
+    )
+}
+
+/// `nodes` mapped through `CheckedNodeProjectionV2::from`'s own definition
+/// of an identity projection entry: each node minus its `occurrences` (see
+/// this module's `node_fields` doc). Shared by [`refresh_frame_identity`]
+/// (which rebuilds an existing envelope's projection from its own graph) and
+/// [`valid_envelope_over`] (which builds one fresh).
+fn projection_of(nodes: &[Value]) -> Vec<Value> {
+    nodes
+        .iter()
+        .cloned()
+        .map(|mut node| {
+            node.as_object_mut()
+                .expect("node object")
+                .remove("occurrences");
+            node
+        })
+        .collect()
+}
+
+/// Rebuilds `envelope`'s `identity_preimage.identity_projection` from its
+/// current `semantic_graph.nodes`, and recomputes the envelope's own
+/// `package_id` over the refreshed preimage. Every other `identity_preimage`
+/// field is left as the fixture's own, so a frame-only mutation changes no
+/// other identity input.
+fn refresh_frame_identity(envelope: &mut Value) {
+    let projection = projection_of(
+        envelope["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("nodes"),
+    );
+    envelope["identity_preimage"]["identity_projection"] = Value::Array(projection);
+    envelope["package_id"]["digest"] =
+        json!(PackageId::of_preimage(&jcs(&envelope["identity_preimage"])).hex());
+}
+
+/// QSL-302 (FR-340): QSL's whole I2 read admits or refuses a `state`/`frame`
+/// node's `modifies`/`creates`/`deletes` membership exactly as QSpec's
+/// `node-identity-vectors.json` `frame_mutations` record: the closed
+/// per-member node-kind eligibility table, the
+/// `missing_declaration`/`missing-name` vs
+/// `invalid_model_binding`/`malformed-declaration` refusal split, and their
+/// precedence over each other and over a canonical-order defect (a
+/// meaning-join defect always wins; the lower-keyed of two defective frames
+/// is reported over a higher-keyed frame's stronger defect). Each vector
+/// replaces `positive-all-families.json`'s own frame node's `dependencies`
+/// and body members with its own, adds its `second_frame` node where one is
+/// given, and recomputes the envelope's identity the way FR-322's own
+/// emitter would. The check runs entirely through the existing I2 dispatch
+/// (`read_checked_package_v2` delegates frame-body admission to IR's
+/// `frame_defect`, already mapped by `map_refusal_code`); no new admission
+/// path is added for it.
+///
+/// Read at run time from `$QSPEC_DIR`; skipped (and passing) when unset.
+/// `make conformance` requires it. Nothing of QSpec is copied into this
+/// repository. Like this file's other `QSPEC_DIR`-gated conformance checks,
+/// the vectors this covers (including FR-340-AC-1, AC-4 and AC-9: an
+/// all-empty frame body, a misordered member array, and the lower-digest
+/// frame of two defective ones winning) run only when `make conformance` is
+/// part of the gate, not under a plain `cargo test`/`make ci`.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn conformance_fr340_frame_mutations_match_qspec_vectors() {
+    let Some((directory, _)) = qspec_v2_fixtures() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let vectors = read_fixture(&directory.join("../node-identity-vectors.json"));
+    let mutations = vectors["frame_mutations"]
+        .as_array()
+        .expect("frame_mutations");
+    assert!(
+        !mutations.is_empty(),
+        "node-identity-vectors.json holds no frame_mutations vector"
+    );
+    let base = read_fixture(&directory.join("positive-all-families.json"));
+    let index = frame_node_index(&base);
+
+    for mutation in mutations {
+        let name = mutation["name"].as_str().expect("name");
+        let mut candidate = base.clone();
+        {
+            let node = &mut candidate["semantic_graph"]["nodes"][index];
+            node["dependencies"] = frame_entries(
+                name,
+                mutation["dependencies"].as_array().expect("dependencies"),
+            );
+            node["body"]["modifies"] =
+                frame_entries(name, mutation["modifies"].as_array().expect("modifies"));
+            node["body"]["creates"] =
+                frame_entries(name, mutation["creates"].as_array().expect("creates"));
+            node["body"]["deletes"] =
+                frame_entries(name, mutation["deletes"].as_array().expect("deletes"));
+        }
+        if let Some(second_frame) = mutation.get("second_frame") {
+            candidate["semantic_graph"]["nodes"]
+                .as_array_mut()
+                .expect("nodes")
+                .push(second_frame.clone());
+        }
+        refresh_frame_identity(&mut candidate);
+
+        let expected_code = match mutation["expected_code"].as_str().expect("expected_code") {
+            "missing_declaration" => CheckedPackageRefusalCode::MissingDeclaration,
+            "invalid_model_binding" => CheckedPackageRefusalCode::InvalidModelBinding,
+            "invalid_semantic_graph" => CheckedPackageRefusalCode::InvalidSemanticGraph,
+            other => panic!("{name}: unmapped expected_code {other}"),
+        };
+        let expected_cause = match mutation["expected_cause"].as_str() {
+            Some("missing-name") => Some(CheckedPackageRefusalCause::MissingName),
+            Some("malformed-declaration") => Some(CheckedPackageRefusalCause::MalformedDeclaration),
+            None => None,
+            Some(other) => panic!("{name}: unmapped expected_cause {other}"),
+        };
+        let expected_locus = mutation["expected_locus_digest"]
+            .as_str()
+            .expect("expected_locus_digest");
+
+        let (_, outcome) = read_fixture_wire(&candidate);
+        match outcome {
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => {
+                assert_eq!(refusal.code, expected_code, "{name}: code");
+                assert_eq!(refusal.cause, expected_cause, "{name}: cause");
+                assert_eq!(
+                    refusal.locus.as_ref().map(|node| node.digest.as_ref()),
+                    Some(expected_locus),
+                    "{name}: locus"
+                );
+            }
+            other => panic!("{name}: expected a refusal, got {other:?}"),
+        }
+    }
+    println!(
+        "conformance: {} frame-body mutation vectors matched",
+        mutations.len()
+    );
+}
+
+/// A `model`/`field_declaration` or `model`/`object_type` node (FR-340's
+/// `modifies`- and `creates`/`deletes`-eligible model member kinds), typed by
+/// `type_ref`, with the minimal valid empty-`aggregate` body real fixtures
+/// use for either form.
+fn model_node(label: &str, form: &str, qualified_name: &str, type_ref: &Value) -> Value {
+    json!({
+        "node_id": node_ref(label),
+        "schema_version": "quire.checked-semantic-graph/v2",
+        "node_tag": "model",
+        "semantic_form": form,
+        "semantic_type": type_ref,
+        "declaration": {"qualified_name": [qualified_name]},
+        "dependencies": [],
+        "body": {"term": "aggregate", "members": []},
+    })
+}
+
+fn model_graph_node(label: &str, form: &str, qualified_name: &str, type_ref: &Value) -> Value {
+    let mut node = model_node(label, form, qualified_name, type_ref);
+    node["occurrences"] = json!([{"role": "declaration", "ordinal": 0}]);
+    node
+}
+
+/// A `state`/`frame` node whose `dependencies` and body members are given
+/// verbatim.
+fn frame_node(
+    label: &str,
+    type_ref: &Value,
+    dependencies: Vec<Value>,
+    modifies: Vec<Value>,
+    creates: Vec<Value>,
+    deletes: Vec<Value>,
+) -> Value {
+    json!({
+        "node_id": node_ref(label),
+        "schema_version": "quire.checked-semantic-graph/v2",
+        "node_tag": "state",
+        "semantic_form": "frame",
+        "semantic_type": type_ref,
+        "dependencies": dependencies,
+        "occurrences": [{"role": "declaration", "ordinal": 0}],
+        "body": {
+            "term": "frame",
+            "modifies": modifies,
+            "creates": creates,
+            "deletes": deletes,
+        },
+    })
+}
+
+/// A source-map entry for the node whose `node_id.digest` is `digest`'s own
+/// declaration occurrence. Takes the digest directly (never a label re-hashed
+/// through [`node_ref`]) so it names exactly the node a caller already built.
+fn source_map_entry_for_digest(digest: &str) -> Value {
+    json!({
+        "node_id": {"domain": NODE_DOMAIN, "digest": digest},
+        "role": "declaration",
+        "ordinal": 0,
+        "regions": [{"source": source_ref("src"), "start": 0, "end": 1}],
+    })
+}
+
+/// A structurally valid `quire.checked-package/v2` envelope over `nodes`
+/// (each already carrying its own `occurrences`), with a correctly
+/// recomputed `identity_projection` and `package_id`. Extends
+/// [`valid_envelope`] to more than the fixed single scalar node, for FR-340
+/// frame-body tests that need field/object-type members alongside their
+/// frame.
+fn valid_envelope_over(nodes: Vec<Value>) -> Value {
+    let projection = projection_of(&nodes);
+    let preimage = json!({
+        "definition_selections": [],
+        "dependency_selections": [],
+        "edition": selection("edition", "edition-def"),
+        "identity_projection": projection,
+        "model_selections": [],
+        "profile_selections": [],
+        "required_features": [],
+        "version": "quire.checked-package-id/v2",
+    });
+    json!({
+        "capability_report": [],
+        "contract_version": CHECKED_PACKAGE_V2,
+        "diagnostics": diagnostics(),
+        "identity_preimage": preimage.clone(),
+        "lock": lock(vec![]),
+        "package_id": package_id_member(&preimage),
+        "semantic_graph": {
+            "graph_version": "quire.checked-semantic-graph/v2",
+            "nodes": nodes,
+        },
+        "source_map": nodes_source_map(&nodes),
+    })
+}
+
+fn nodes_source_map(nodes: &[Value]) -> Value {
+    Value::Array(
+        nodes
+            .iter()
+            .map(|node| source_map_entry_for_digest(node["node_id"]["digest"].as_str().unwrap()))
+            .collect(),
+    )
+}
+
+/// A minimal, always-run (no `QSPEC_DIR` needed) FR-340 frame-body package:
+/// a self-typed scalar type `T`, a `model`/`field_declaration` `F` and a
+/// `model`/`object_type` `O`, both typed by `T`, and a `state`/`frame`
+/// naming both as `dependencies`. `frame_body` supplies the frame's own
+/// `modifies`/`creates`/`deletes`.
+fn frame_fixture(
+    frame_body: impl FnOnce(&Value, &Value) -> (Vec<Value>, Vec<Value>, Vec<Value>),
+) -> Value {
+    let type_ref = node_ref("pkg::T");
+    let field_ref = node_ref("pkg::F");
+    let object_ref = node_ref("pkg::O");
+    let (modifies, creates, deletes) = frame_body(&field_ref, &object_ref);
+    let type_node = graph_node("pkg::T", "T");
+    let field_node = model_graph_node("pkg::F", "field_declaration", "F", &type_ref);
+    let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
+    let frame = frame_node(
+        "pkg::Frame",
+        &object_ref,
+        vec![field_ref.clone(), object_ref.clone()],
+        modifies,
+        creates,
+        deletes,
+    );
+    valid_envelope_over(vec![type_node, field_node, object_node, frame])
+}
+
+fn read_frame_fixture(envelope: &Value) -> Read {
+    let (_, outcome) = read_fixture_wire(envelope);
+    outcome
+}
+
+/// FR-340: a `state`/`frame` node whose `modifies`/`creates`/`deletes`
+/// entries are eligible members of their own declared `dependencies` (a
+/// `field_declaration` in `modifies`, an `object_type` in `creates`) is
+/// admitted through QSL's whole I2 read.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn frame_body_membership_against_dependencies_is_admitted() {
+    let envelope =
+        frame_fixture(|field, object| (vec![field.clone()], vec![object.clone()], vec![]));
+    let outcome = read_frame_fixture(&envelope);
+    assert!(
+        matches!(outcome, Read::Verified { .. }),
+        "a frame whose modifies/creates entries are both declared dependencies of \
+         their own eligible kind must be admitted, got {outcome:?}"
+    );
+}
+
+/// FR-340: an entry naming a node that no dependency of the frame declares
+/// -- here, a node absent from the whole graph -- refuses
+/// `missing_declaration`/`missing-name`, located at the offending entry, and
+/// this crate's own `V2ReadRefusal::code()` maps that to `Code::
+/// MissingDeclaration`. The other half of FR-340-AC-13 (a real node elsewhere
+/// in the graph that is simply never declared to this frame) is covered by
+/// the `QSPEC_DIR`-gated `undeclared-entry` vector in
+/// `conformance_fr340_frame_mutations_match_qspec_vectors`, not repeated here.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
+    let field_digest = hex("pkg::F");
+    let type_ref = node_ref("pkg::T");
+    let object_ref = node_ref("pkg::O");
+    let type_node = graph_node("pkg::T", "T");
+    let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
+    // `F` is never declared as a dependency of this frame, only named in
+    // `modifies`.
+    let frame = frame_node(
+        "pkg::Frame",
+        &object_ref,
+        vec![object_ref.clone()],
+        vec![node_ref("pkg::F")],
+        vec![],
+        vec![],
+    );
+    let envelope = valid_envelope_over(vec![type_node, object_node, frame]);
+    let outcome = read_frame_fixture(&envelope);
+    match &outcome {
+        Read::Refused(outer @ V2ReadRefusal::Envelope { refusal, .. }) => {
+            assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);
+            assert_eq!(refusal.cause, Some(CheckedPackageRefusalCause::MissingName));
+            assert_eq!(
+                refusal.locus.as_ref().map(|node| node.digest.as_ref()),
+                Some(field_digest.as_str())
+            );
+            assert_eq!(outer.code(), Code::MissingDeclaration);
+        }
+        other => panic!("expected a missing_declaration refusal, got {other:?}"),
+    }
+}
+
+/// FR-340: an entry naming a declared dependency whose node kind the member
+/// does not admit (a `model`/`object_type` node in `modifies`, which only a
+/// `relationship` or `field_declaration` admits) refuses
+/// `invalid_model_binding`/`malformed-declaration`, located at the offending
+/// entry, and this crate's own `V2ReadRefusal::code()` maps that to
+/// `Code::InvalidModelBinding`.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn frame_entry_of_an_ineligible_kind_refuses_as_invalid_model_binding() {
+    let object_digest = hex("pkg::O");
+    let envelope = frame_fixture(|_field, object| {
+        // `object` (`model`/`object_type`) is declared, but `object_type` is
+        // eligible only for `creates`/`deletes`, never `modifies`.
+        (vec![object.clone()], vec![], vec![])
+    });
+    let outcome = read_frame_fixture(&envelope);
+    match &outcome {
+        Read::Refused(outer @ V2ReadRefusal::Envelope { refusal, .. }) => {
+            assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidModelBinding);
+            assert_eq!(
+                refusal.cause,
+                Some(CheckedPackageRefusalCause::MalformedDeclaration)
+            );
+            assert_eq!(
+                refusal.locus.as_ref().map(|node| node.digest.as_ref()),
+                Some(object_digest.as_str())
+            );
+            assert_eq!(outer.code(), Code::InvalidModelBinding);
+        }
+        other => panic!("expected an invalid_model_binding refusal, got {other:?}"),
+    }
 }
