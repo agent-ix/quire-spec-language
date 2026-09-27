@@ -45,3 +45,87 @@ Partial.
 | FND-002 | medium | TC-402 is flipped to Passed, but its step 3 (every `#[cfg(test)]` `qsl_cst` edge feeds S2) is "by inspection" per its own Status. Step 2's "or to any type it re-exports" is not checked either: `CstEdges` counts only a literal `qsl_cst` segment, so a `qsl_cst` type reached through another crate's re-export passes. TC-401 is kept Partial for exactly this reason (its step 5 "holds by search but is not a test"), so the two rows are graded inconsistently. Fix: keep TC-402 Partial and name the untested step, or add the step-3 scan. | spec/tests.md:188; spec/test-cases/TC-402-assembler-reads-no-cst.md; qsl-semantics/src/check/assemble/tests.rs:470-503 |
 | FND-003 | low | TC-403 is flipped to Passed, but step 3 (walk every node; each span lies inside its parent's) is not a test. Its Status says it "holds by construction" via `ExpressionSpans::push_child`, and `declaration.spans()` is an `Option`, so "every node carries a span" is not asserted. Same inconsistency as FND-002. Fix: keep it Partial, or add the walk to `every_expression_node_carries_its_span`. | spec/tests.md:189; qsl-forms/tests/it/value_forms.rs:569-593 |
 | FND-004 | low | TC-396's last expected result, "No step-3 refusal has code `unsupported_construct`", is not asserted. `nested_constructs_of_other_families_refuse_with_their_own_causes` uses `refusals.iter().any(...)` for the wanted cause, which still passes if an `unsupported_construct` refusal comes alongside it. S2's side is covered because the S2 test expects `Ok`. Fix: also assert that no refusal's code is `UnsupportedConstruct`. | spec/tests.md:182; qsl-semantics/src/check/assemble/tests.rs:316-333 |
+
+## Dispositions
+
+Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-3a4b2496 (SR-708 dispositions).
+
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-708 pr=quire-spec-language#484 reviewed=bee599c7a2f174864f0e90ed3911b2aec5d39e6c date=2026-09-26 -->
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bee599c7 |
+| FND-002 | still-open | Step 3 now has a test, but neither new test can fail on the two ways a CST edge actually gets in. The re-export scan reads the wrong crate, and the step-3 scan skips `use` trees. Both were proved by mutation. Details in SR-712 FND-001 and FND-002. TC-402 should stay Partial until they are fixed. |
+| FND-003 | fixed | bee599c7 (with a low follow-up in SR-712 FND-003) |
+| FND-004 | fixed | bee599c7 |
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+  - fnd: FND-001
+    outcome: fixed
+    fix_sha: bee599c7a2f174864f0e90ed3911b2aec5d39e6c
+    path: spec/test-cases/TC-398-value-builder-layering-and-identity-free-forms.md
+    lines: "66-81"
+    after_excerpt: |-
+      Passed locally. Step 1's crate edges
+      (`tests/it/family_outcome_layering.rs::no_crate_below_layer_three_depends_on_the_check_core`)
+      ... Step 1's family-module
+      edges are scanned by `value_module_has_edges_only_to_the_forms_core_and_the_lower_crates`
+      (`identity_free_forms.rs`): `value.rs`'s `use` trees, inline paths and macro-body
+      paths may name only `qsl_cst`, `qsl_foundation`, `quire_exact`, std and the
+      forms core (`dispatch`, `spans`, `syntax`), and the test fails on any other
+      edge.
+  - fnd: FND-002
+    outcome: still-open
+    reason: >-
+      The step-3 "by inspection" half now has a test, the_assembler_tests_reach_qsl_cst_only_to_run_s1
+      (TC-402, qsl-semantics/src/check/assemble/tests.rs:585). The step-2 "any type it re-exports"
+      half is not effectively tested. no_qsl_cst_type_is_re_exported_from_qsl_semantics (:548) scans
+      qsl-semantics/src, but qsl-cst is only a dev-dependency of qsl-semantics (Cargo.toml:63), so
+      non-test code there cannot `pub use qsl_cst` at all. The channel that can compile is a
+      re-export from qsl-forms, a normal dependency that depends on qsl-cst. Mutation at bee599c7:
+      adding `pub use qsl_cst::Production as CstProduction;` to qsl-forms/src/lib.rs and
+      `use qsl_forms::CstProduction as _P;` to qsl-semantics/src/check/assemble.rs left all 41
+      check::assemble tests and the qsl-forms identity_free tests green. The step-3 scan also
+      visits only syn::Path, so `use qsl_cst::CstNode as _Mutant;` added to assemble/tests.rs left
+      it green. spec/tests.md:188 still shows TC-402 Passed. New findings: SR-712 FND-001 and FND-002.
+    partial_fix_sha: bee599c7a2f174864f0e90ed3911b2aec5d39e6c
+  - fnd: FND-003
+    outcome: fixed
+    fix_sha: bee599c7a2f174864f0e90ed3911b2aec5d39e6c
+    path: qsl-forms/tests/it/value_forms.rs
+    lines: "595-635"
+    after_excerpt: |-
+      /// TC-403 step 3: every `Expression` node's span lies inside its parent's.
+      #[trace("FR-091-AC-10", "TC-403")]
+      #[test]
+      fn every_expression_span_lies_inside_its_parents() {
+          ...
+                  assert!(
+                      span.start >= parent.0 && span.end <= parent.1,
+                      "child {path:?}/{index} {span:?} escapes its parent {parent:?}"
+                  );
+          ...
+          for source in ["if a then b else c + d", "(a + b) * c"] {
+          ...
+          assert!(seen >= 7, "the walk visits the nested nodes, saw {seen}");
+    note: "The two bodies have 9 non-root nodes, so `seen >= 7` lets two nodes go without a span. Low follow-up is SR-712 FND-003."
+  - fnd: FND-004
+    outcome: fixed
+    fix_sha: bee599c7a2f174864f0e90ed3911b2aec5d39e6c
+    path: qsl-semantics/src/check/assemble/tests.rs
+    lines: "313-318"
+    after_excerpt: |-
+      assert!(
+          refusals
+              .iter()
+              .all(|refusal| refusal.cause.code() != qsl_foundation::Code::UnsupportedConstruct),
+          "no step-3 refusal is unsupported_construct: {refusals:?}"
+      );
+    note: "Applied to the pre, decreases(pre) and deref bodies. The allInstances body matches exactly one UnresolvedTypeName assembly error, so it cannot carry unsupported_construct either."
+```
+
++++
+

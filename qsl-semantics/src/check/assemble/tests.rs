@@ -540,41 +540,87 @@ fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
     }
 }
 
-/// TC-402 step 2, re-exported types: no item of `qsl-semantics` re-exports
-/// (`pub use`) anything from `qsl_cst`, so the assembler cannot reach a CST
-/// type through a `qsl-semantics` path either.
-#[trace("FR-091-AC-20", "TC-402")]
-#[test]
-fn no_qsl_cst_type_is_re_exported_from_qsl_semantics() {
-    struct ReExports(Vec<usize>);
+/// The `qsl_cst` re-exports (`pub use` of a path rooted at `qsl_cst`) in the
+/// crates that can make them: `qsl-forms` (a normal dependency that depends
+/// on `qsl-cst`) and `qsl-semantics` itself. Returns `path:line` findings and
+/// the exported names.
+fn cst_re_exports(dir: &std::path::Path) -> (Vec<String>, Vec<String>) {
+    struct ReExports {
+        lines: Vec<usize>,
+        names: Vec<String>,
+    }
+    fn exported(tree: &syn::UseTree, under_cst: bool, out: &mut Vec<String>) {
+        match tree {
+            syn::UseTree::Path(path) => {
+                exported(&path.tree, under_cst || path.ident == "qsl_cst", out);
+            }
+            syn::UseTree::Name(name) if under_cst => out.push(name.ident.to_string()),
+            syn::UseTree::Rename(rename) if under_cst => out.push(rename.rename.to_string()),
+            syn::UseTree::Glob(_) if under_cst => out.push("*".to_owned()),
+            syn::UseTree::Group(group) => {
+                for item in &group.items {
+                    exported(item, under_cst, out);
+                }
+            }
+            _ => {}
+        }
+    }
     impl<'ast> syn::visit::Visit<'ast> for ReExports {
         fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
             if !matches!(item.vis, syn::Visibility::Inherited) && use_tree_names_cst(&item.tree) {
-                self.0.push(item.use_token.span.start().line);
+                self.lines.push(item.use_token.span.start().line);
+                exported(&item.tree, false, &mut self.names);
             }
         }
     }
     use syn::visit::Visit as _;
     let mut files = Vec::new();
-    rust_files(
-        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
-        &mut files,
-    );
-    assert!(files.len() > 10, "the scan reads the crate's sources");
-    let mut found = Vec::new();
+    rust_files(dir, &mut files);
+    assert!(files.len() > 3, "the scan reads {}", dir.display());
+    let (mut found, mut names) = (Vec::new(), Vec::new());
     for path in &files {
         let source = std::fs::read_to_string(path).expect("a source file reads");
         let file = syn::parse_file(&source).expect("a source file parses");
-        let mut visitor = ReExports(Vec::new());
+        let mut visitor = ReExports {
+            lines: Vec::new(),
+            names: Vec::new(),
+        };
         visitor.visit_file(&file);
         found.extend(
             visitor
-                .0
+                .lines
                 .iter()
                 .map(|line| format!("{}:{line}", path.display())),
         );
+        names.extend(visitor.names);
+    }
+    (found, names)
+}
+
+/// TC-402 step 2, re-exported types: neither `qsl-forms` (through which the
+/// assembler reaches the forms types) nor `qsl-semantics` re-exports (`pub
+/// use`) anything from `qsl_cst`, and the assembler's own files name no
+/// item a `qsl_cst` re-export could carry.
+#[trace("FR-091-AC-20", "TC-402")]
+#[test]
+fn no_qsl_cst_type_is_re_exported_to_the_assembler() {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut found = Vec::new();
+    let mut names = Vec::new();
+    for dir in [manifest.join("src"), manifest.join("../qsl-forms/src")] {
+        let (lines, exported) = cst_re_exports(&dir);
+        found.extend(lines);
+        names.extend(exported);
     }
     assert!(found.is_empty(), "qsl_cst is re-exported: {found:?}");
+    for source in [include_str!("../assemble.rs"), include_str!("units.rs")] {
+        for name in &names {
+            assert!(
+                !source.contains(name.as_str()),
+                "the assembler names re-export {name}"
+            );
+        }
+    }
 }
 
 /// TC-402 step 3: the assembler's test code reaches `qsl_cst` only to run
@@ -584,9 +630,8 @@ fn no_qsl_cst_type_is_re_exported_from_qsl_semantics() {
 #[test]
 fn the_assembler_tests_reach_qsl_cst_only_to_run_s1() {
     struct Reach(Vec<String>, usize);
-    impl<'ast> syn::visit::Visit<'ast> for Reach {
-        fn visit_path(&mut self, path: &'ast syn::Path) {
-            let names: Vec<String> = path.segments.iter().map(|s| s.ident.to_string()).collect();
+    impl Reach {
+        fn judge(&mut self, names: &[String]) {
             if names.first().is_some_and(|first| first == "qsl_cst") {
                 self.1 += 1;
                 match names.get(1).map(String::as_str) {
@@ -594,7 +639,76 @@ fn the_assembler_tests_reach_qsl_cst_only_to_run_s1() {
                     _ => self.0.push(names.join("::")),
                 }
             }
+        }
+        fn use_tree(&mut self, tree: &syn::UseTree, prefix: &mut Vec<String>) {
+            match tree {
+                syn::UseTree::Path(path) => {
+                    prefix.push(path.ident.to_string());
+                    self.use_tree(&path.tree, prefix);
+                    prefix.pop();
+                }
+                syn::UseTree::Name(name) => {
+                    let mut full = prefix.clone();
+                    full.push(name.ident.to_string());
+                    self.judge(&full);
+                }
+                syn::UseTree::Rename(rename) => {
+                    let mut full = prefix.clone();
+                    full.push(rename.ident.to_string());
+                    self.judge(&full);
+                }
+                syn::UseTree::Glob(_) => self.judge(prefix),
+                syn::UseTree::Group(group) => {
+                    for item in &group.items {
+                        self.use_tree(item, prefix);
+                    }
+                }
+            }
+        }
+        fn tokens(&mut self, stream: proc_macro2::TokenStream) {
+            use proc_macro2::TokenTree;
+            let tokens: Vec<TokenTree> = stream.into_iter().collect();
+            let mut i = 0;
+            while i < tokens.len() {
+                match &tokens[i] {
+                    TokenTree::Group(group) => self.tokens(group.stream()),
+                    TokenTree::Ident(root) => {
+                        let mut names = vec![root.to_string()];
+                        let mut j = i + 1;
+                        while let (
+                            Some(TokenTree::Punct(a)),
+                            Some(TokenTree::Punct(b)),
+                            Some(TokenTree::Ident(next)),
+                        ) = (tokens.get(j), tokens.get(j + 1), tokens.get(j + 2))
+                        {
+                            if a.as_char() != ':' || b.as_char() != ':' {
+                                break;
+                            }
+                            names.push(next.to_string());
+                            j += 3;
+                        }
+                        self.judge(&names);
+                        i = j;
+                        continue;
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+        }
+    }
+    impl<'ast> syn::visit::Visit<'ast> for Reach {
+        fn visit_path(&mut self, path: &'ast syn::Path) {
+            let names: Vec<String> = path.segments.iter().map(|s| s.ident.to_string()).collect();
+            self.judge(&names);
             syn::visit::visit_path(self, path);
+        }
+        fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
+            self.use_tree(&item.tree, &mut Vec::new());
+        }
+        fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+            self.tokens(mac.tokens.clone());
+            syn::visit::visit_macro(self, mac);
         }
     }
     use syn::visit::Visit as _;

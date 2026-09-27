@@ -38,4 +38,4 @@ Tag the test `#[trace("FR-091-AC-20", "TC-402")]`.
 
 ## Status
 
-Backed by `qsl-semantics` `check::assemble` tests. `the_assembler_reads_no_cst` covers steps 1 and 2 over `assemble.rs` and `assemble/units.rs`; `no_qsl_cst_type_is_re_exported_from_qsl_semantics` covers step 2's re-exported types (no `pub use` of `qsl_cst` in `qsl-semantics/src`); `the_assembler_tests_reach_qsl_cst_only_to_run_s1` covers step 3 (`qsl_cst::parse`, `parse_source` and the `Limits` argument only).
+Backed by `qsl-semantics` `check::assemble` tests. `the_assembler_reads_no_cst` covers steps 1 and 2 over `assemble.rs` and `assemble/units.rs`; `no_qsl_cst_type_is_re_exported_to_the_assembler` covers step 2's re-exported types (no `pub use` of `qsl_cst` in `qsl-forms/src` or `qsl-semantics/src`, and no such name in the assembler files); `the_assembler_tests_reach_qsl_cst_only_to_run_s1` covers step 3 (`qsl_cst::parse`, `parse_source` and the `Limits` argument only).

@@ -631,7 +631,7 @@ fn every_expression_span_lies_inside_its_parents() {
             &mut seen,
         );
     }
-    assert!(seen >= 7, "the walk visits the nested nodes, saw {seen}");
+    assert_eq!(seen, 9, "every non-root node of both bodies carries a span");
 }
 
 #[trace("FR-091-AC-21", "TC-406")]
