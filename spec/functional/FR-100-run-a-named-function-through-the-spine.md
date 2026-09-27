@@ -204,6 +204,12 @@ An empty `sum` (`n = 0`) has the seed `0` as its only running total. When
 at the `sum` node. QSpec FR-145 step 1 requires `N`'s domain to admit `0` and
 states no outcome when it does not; QSL fixes that outcome this way.
 
+`run` never yields `sum-out-of-domain`. Linked checking proves a `sum`'s
+range over every running total, so a program whose `sum` could leave `N`'s
+domain refuses at `check` with `unproved-range` (FR-096). The row keeps the
+outcome mapping total. Only an expression checked under `CheckMode::Kernel`
+and evaluated at S6a reaches it (FR-100-AC-10).
+
 ### Internal failure at S6a
 
 A call whose outcome is the kernel `Refusal::CheckedInvariant`, for which

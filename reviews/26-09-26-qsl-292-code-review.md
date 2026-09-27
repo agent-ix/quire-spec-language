@@ -34,3 +34,12 @@ Gates run on this head: `cargo test -p qsl-replay spine` (32 passed), `cargo tes
 | --- | --- | --- | --- |
 | FND-001 | low | The new no-record fault branch has no test. Its sibling unreachable fault in `convert_call_failure` has a direct unit test (tests.rs:681-713). Add one: `convert_refusal(None, None, None, &[])` gives `RunRefusal::Fault` with stage `call` and invariant `kernel-refusal-with-no-record`. | qsl-replay/src/spine/call.rs:513-518; qsl-replay/src/spine/call/tests.rs:681 |
 | FND-002 | low | `SpineOutcome::Refused` still types `code` and `cause` as `Option` with `skip_serializing_if`, but every remaining arm sets `Some`. FR-100's refusal table requires both members on every refused outcome. A future arm could silently emit a bare `{"kind":"refused"}`, the shape this PR removes. Make both fields plain `&'static str`. | src/command/output/types.rs:259-262; src/command/output.rs:428-429, 439-440 |
+
+## Dispositions
+
+Round 2, reviewed at `74c7154ca4adf8621a49968635579410f471102e` (fix commit `74c7154c`). Gates run at this head: `cargo test -p qsl-replay` (97 passed), `cargo test -p quire-spec-language --lib output` (8 passed), `cargo test -p quire-spec-language --test it family_outcome_layering` (5 passed), and `cargo clippy -p qsl-replay -p quire-spec-language --all-targets -- -D warnings` (clean).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 74c7154c: the new test `convert_refusal_with_no_record_and_no_fallback_is_a_typed_fault` asserts stage `call` and invariant `kernel-refusal-with-no-record` (qsl-replay/src/spine/call/tests.rs:931-945, fn at :937) |
+| FND-002 | fixed | 74c7154c: `SpineOutcome::Refused` now has plain `code: &'static str` and `cause: &'static str`, and the type's doc comment is rewritten to match (src/command/output/types.rs:247-262; src/command/output.rs:428-429, 438-439) |
