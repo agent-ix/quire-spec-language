@@ -10,8 +10,9 @@ use quire_exact::{CollectionKind, FieldValue, Integer, ObjectReference, Value};
 use super::helpers::{admission_record, object_reference};
 use super::ordered_json::{OrderedJson, OrderedObject};
 use super::{
-    check_document_digest, fault, incomplete, read_raw_value, refuse, AdmissionFailure,
-    AdmissionRecord, DocumentRef, ModelView, ObservationLimits, RawValue, SelectedObject,
+    check_document_digest, fault, incomplete, population_universe, read_raw_value, refuse,
+    AdmissionFailure, AdmissionRecord, DocumentRef, ModelView, ObservationLimits, RawValue,
+    SelectedObject,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::{ObjectEnvironment, ObjectEnvironmentCause};
@@ -1229,7 +1230,23 @@ fn map_environment_refusal(
     }
 }
 
+/// Resolves `self` by conformance (QSL-277's ruling): the admitted object's
+/// *actual* type -- whatever the snapshot declared it, not necessarily
+/// `context_name` itself -- must conform to the clause's context type
+/// (itself or a subtype). The returned reference carries that actual type,
+/// so a later frame check (check 11) sees the object as it was really
+/// admitted, including a retype across an invocation's pre/post pair.
+///
+/// Resolving by conformance, not exact type, is FR-106 check 9's own rule,
+/// not an approximation of it: `context_name`'s effective type only locates
+/// the population's universe (every type in one population's hierarchy
+/// shares a universe, `ObjectEnvironment::find`'s own doc comment), and
+/// `self_object.key` alone -- not a caller-narrowed type -- names the
+/// object within it, the same way FR-109's `Function`-selection object
+/// argument does (`ObjectEnvironment::find`, `population_universe`).
 pub(super) fn resolve_self(
+    views: &[ModelView],
+    types: &TypeEnvironment,
     context_view: &ModelView,
     context_name: &str,
     environment: &ObjectEnvironment,
@@ -1242,22 +1259,20 @@ pub(super) fn resolve_self(
         .find(|(key, _)| key.node == context_name)
         .map(|(_, effective)| *effective)
         .ok_or_else(|| fault("context-type-unresolved"))?;
-    // `context_effective` is one of `context_view`'s own effective types
-    // (just resolved from it above), so `context_view` alone -- not the
-    // full re-derived `views` -- is enough to find its universe.
-    let reference = object_reference(
-        std::slice::from_ref(context_view),
-        context_effective,
-        &self_object.key,
-    )
-    .map_err(|_| fault("empty-object-identity"))?;
-    if environment.contains(&reference) {
-        Ok(reference)
-    } else {
-        Err(refuse(admission_record(
+    let universe = population_universe(views, context_effective)?;
+    let wrong_role_mapping = || {
+        refuse(admission_record(
             "invalid_runtime_input",
             "wrong-role-mapping",
-        )))
+        ))
+    };
+    let reference = environment
+        .find(universe, &self_object.key)
+        .ok_or_else(wrong_role_mapping)?;
+    if types.conforms(reference.object_type(), context_effective) {
+        Ok(reference.clone())
+    } else {
+        Err(wrong_role_mapping())
     }
 }
 

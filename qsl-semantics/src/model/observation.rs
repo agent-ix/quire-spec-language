@@ -670,6 +670,8 @@ fn admit_invariant(
 
     // Check 9: self.
     let self_reference = document::resolve_self(
+        views,
+        types,
         context_view,
         context_name,
         &environment.environment,
@@ -822,6 +824,8 @@ fn admit_operation(
     let post_admitted = document::finish_populations(types, post_values)?;
 
     let self_reference = document::resolve_self(
+        views,
+        types,
         context_view,
         context_name,
         &pre_admitted.environment,
@@ -829,6 +833,8 @@ fn admit_operation(
     )?;
     if kind == StateClauseKind::Postcondition {
         let _ = document::resolve_self(
+            views,
+            types,
             context_view,
             context_name,
             &post_admitted.environment,

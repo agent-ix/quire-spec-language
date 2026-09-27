@@ -45,7 +45,7 @@ mutated document except where the row says otherwise.
 | 17 | 6.2 | a package variant whose `ConfigVersion` has field `tags` typed a set of `ConfigVersion` | `unknown_required_feature`/`unsupported-feature` at `tags` |
 | 18 | 6.5 | `versionNumber` `{"boolean": true}` | `invalid_runtime_input`/`wrong-value-kind` |
 | 19 | 6.5 | `root.versionNumber` `"01"` | `invalid_runtime_input`/`invalid-value` at `root`, `versionNumber` |
-| 20 | 6.5 | `root.versionNumber` `"-1"`; then `child.versionNumber` `"1001"` | `invalid_runtime_input`/`invalid-value`, naming `root` then `child` and `versionNumber` |
+| 20 | 6.5 | `root.versionNumber` `"-1"`; then `child.versionNumber` `"1001"` | `invalid_runtime_input`/`invalid-value`, naming `root` then `child` and `versionNumber` -- Unverified (QSL-289) |
 | 21 | 9 | `self` `{config_history, ghost}` | `invalid_runtime_input`/`wrong-role-mapping` |
 | 22 | 10 | invocation `result` `null` | `invalid_runtime_input`/`missing-member` |
 | 23 | 7 | `complete: false` and `child.parent` naming `missing` | `Incomplete`, `incomplete_population`/`incomplete-scope`, no dangling record |
@@ -55,7 +55,7 @@ mutated document except where the row says otherwise.
 | 27 | 11.3 | a package whose `attemptUpdate` frame modifies only `parent`, with the changed-version invocation (post `child.versionNumber` 3) | `frame_violation`/`unauthorized-change`, naming `child` and `versionNumber` |
 | 28 | 11.4 | invocation `created: [{config_history, child}]` | `population_delta_mismatch`/`delta-disagreement` |
 | 29 | 1.3 over 1.6 | row 4's edit plus row 7's extra member, under the original digest | `stale_dependency`/`byte-digest-mismatch` |
-| 30 | 6.5 walk order | `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` together | `invalid_runtime_input`/`invalid-value` at `root` |
+| 30 | 6.5 walk order | `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` together | `invalid_runtime_input`/`invalid-value` at `root` -- Unverified (QSL-289) |
 | 31 | 11.2 over 11.3 | post deletes `root` and sets `child.parent` absent | `frame_violation`/`unauthorized-change` naming the deletion of `root` |
 | 32 | 6.1 | a package variant that adds object type `Note`, a member type of no population, and an object `n1` of type `Note` in `config_history` | `invalid_runtime_input`/`wrong-role-mapping` at `n1` |
 | 33 | 6.4 | `root` without its `parent` field | `invalid_runtime_input`/`missing-member` at `root`, `parent` |
@@ -65,14 +65,29 @@ mutated document except where the row says otherwise.
 | 37 | 10 | probe invocation with `target` `{"integer": "1"}` | `invalid_runtime_input`/`wrong-value-kind` at `target` |
 | 38 | 10 | probe invocation with `result` `{"boolean": true}` | `invalid_runtime_input`/`unknown-member` at `result` |
 | 39 | 11.1 over 11.2 | a package variant where `Sub` specializes `ConfigVersion` and is a member type of `config_history`; post changes `child`'s type to `Sub`, sets `child.parent` absent and deletes `root` | `frame_violation`/`unauthorized-change` naming `child`'s type change |
-| 40 | 11, population order | pre and post list `archive` (complete, object `a1` with `parent` absent) before `config_history`; post sets `a1.parent` to `{archive, a1}` and `child.parent` absent | `frame_violation`/`unauthorized-change` naming `a1` and `parent` in `archive` |
+| 40 | 11, population order | pre and post list `archive` (complete, object `a1` with `parent` absent) before `config_history`; post sets `a1.parent` to a present reference and `child.parent` absent | `frame_violation`/`unauthorized-change` naming `a1` and `parent` in `archive` |
 | 41 | 11, one-sided population | post adds a population `archive` absent from pre, holding object `a1` (`parent` absent), with `created` unchanged | `frame_violation`/`unauthorized-change` naming the creation of `a1` in `archive` (pre side admitted as empty) |
 | 42 | 1.7 label order | blank `revision_namespace` and blank `revision` in document and selection | `invalid_source_identity`/`blank-label`, `label` `revision_namespace` |
 
 Rows 25, 40 and 41 need the fixture package to declare a second population
-`archive` over `ConfigVersion` with a maximum of 10. With no maximum, every
-clause over `ConfigVersion` would refuse at S3, because its extent could not
-name exactly one population (FR-104-AC-5, TC-461 step 5). Rows 35 to 38 use
+`archive`. Every population declaration is an unbounded `Population(None)`
+(FR-104-check-state-clauses.md:194-195, as amended by QSL-277): no wire
+field expresses a maximum, and none is needed. `archive`'s own declared
+member type is `Sub` (see row 39), not `ConfigVersion` itself: population
+coverage is by conformance downward only, so a population whose member is
+`Sub` never covers a clause on `ConfigVersion` (`config_history` stays the
+sole population `ConfigVersion`'s own clauses resolve against), and two
+unbounded populations both declaring `ConfigVersion` directly would still
+refuse ambiguous_declaration/ambiguous-name at S3 regardless of any maximum
+(FR-104-AC-5, TC-461 step 5). Rows 40 and 41 further substitute a present
+reference to an existing exact-`ConfigVersion` object (`config_history`'s
+`child`) wherever the row's own scenario would otherwise need a `Sub`-typed
+object to be the *target* of a `Reference<ConfigVersion>` field: a
+reference field's target is admitted under the field's own declared type,
+never the referenced object's own possibly-subtyped admitted type
+(`qsl-semantics/src/model/observation/document.rs`'s `admit_scalar`,
+`Reference` arm), so a `Sub`-typed object can never itself be validly
+referenced by a `ConfigVersion`-typed field. Rows 35 to 38 use
 TC-466 step 3's `probe` package variant: `probe(target: ConfigVersion)` on
 `ConfigVersion`, no result, empty frame, with `ReachesTarget` selected. Their
 base invocation has `operation` `probe`, `self` `{config_history, child}`,

@@ -1786,6 +1786,102 @@ fn tc465_document_with_note_type() -> Vec<u8> {
     serde_json::to_vec(&envelope).expect("valid JSON")
 }
 
+/// [`tc465_document`], with an extra object type `Sub` (`supertypes:
+/// [ConfigVersion]`, no fields/operations of its own), declared as
+/// `config_history`'s own second member type (row 39: `Sub` "is a member
+/// type of `config_history`", `TC-465-admission-refuses-each-input-defect.md:67`
+/// -- not merely covered by conformance, so check 6.1 never refuses a `Sub`
+/// object as an undeclared member type).
+fn tc465_document_with_sub_subtype() -> Vec<u8> {
+    add_sub_type(
+        tc465_document(),
+        &["ix://example/config-version/config_history"],
+    )
+}
+
+/// Appends object type `Sub` (`supertypes: [ConfigVersion]`, no fields or
+/// operations of its own) to `document`, and declares it a member of every
+/// population in `populations` (by identity).
+fn add_sub_type(document: Vec<u8>, populations: &[&str]) -> Vec<u8> {
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let config_version = "ix://example/config-version/ConfigVersion";
+    let sub = "ix://example/config-version/Sub";
+    envelope["types"].as_array_mut().unwrap().push(json!({
+        "identity": sub,
+        "displayName": sub,
+        "kind": {"module": "example/config-version", "name": "object_type"},
+        "roles": [],
+        "origin": {
+            "generated": {
+                "generatorIdentity": sub,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [sub],
+            }
+        },
+        "constraints": [],
+        "extensions": [],
+        "unknownPolicy": "reject",
+        "supertypes": [config_version],
+        "fields": [],
+        "operations": [],
+    }));
+    for population in envelope["populations"].as_array_mut().unwrap() {
+        if populations.contains(&population["identity"].as_str().unwrap()) {
+            population["members"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(sub));
+        }
+    }
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// [`tc465_document`], with `Sub` (see [`add_sub_type`]) and a second,
+/// unbounded population `archive` whose only declared member is `Sub`
+/// (rows 40, 41). FR-104 (`FR-104-check-state-clauses.md:194-195,216-221`,
+/// as amended by QSL-277): a population declaration never has a maximum,
+/// so `archive`, like `config_history`, is simply an unbounded
+/// `Population(None)` -- no wire field expresses a maximum at all.
+/// `archive` never covers a clause on `ConfigVersion` itself: population
+/// coverage is by conformance downward only (a clause on a *subtype*
+/// reaches its supertype's population, never the reverse,
+/// `population_coverage_is_by_conformance_and_absent_when_none_covers`),
+/// so declaring `archive`'s member as `Sub` (not `ConfigVersion`) keeps
+/// `config_history` the sole population `ConfigVersion`'s own clauses
+/// resolve against -- no S3 `ambiguous_declaration`/`ambiguous-name`.
+fn tc465_document_with_archive_population() -> Vec<u8> {
+    let document = add_sub_type(tc465_document(), &[]);
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let sub = "ix://example/config-version/Sub";
+    let archive = "ix://example/config-version/archive";
+    envelope["populations"].as_array_mut().unwrap().push(json!({
+        "identity": archive,
+        "displayName": archive,
+        "kind": {"module": "example/config-version", "name": "population"},
+        "members": [sub],
+        "extent": "closed",
+        "origin": {
+            "generated": {
+                "generatorIdentity": archive,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [archive],
+            }
+        },
+    }));
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// [`tc465_document_with_archive_population`], with `attemptUpdate`
+/// modifying `[versionNumber]` only (row 40: a `parent` change anywhere,
+/// in any population, must be unauthorized).
+fn tc465_document_with_archive_population_and_narrow_frame() -> Vec<u8> {
+    let document = tc465_document_with_archive_population();
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    envelope["types"][0]["operations"][0]["frame"]["modifies"] =
+        json!(["ix://example/config-version/ConfigVersion/versionNumber"]);
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
 fn tc465_model_digest_hex(document: &[u8]) -> String {
     let packages = qsl_semantics::model::intake::package_input([document]);
     let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
@@ -2964,6 +3060,154 @@ fn tc465_row32_an_object_of_an_undeclared_member_type_refuses_wrong_role_mapping
     );
     let record = assert_tc465_refused(result, "invalid_runtime_input", "wrong-role-mapping");
     assert_eq!(record.fields.get("object").map(String::as_str), Some("n1"));
+}
+
+/// Row 39 (check 11.1 over 11.2): `Sub` specializes `ConfigVersion` and is
+/// a member type of `config_history`; post changes `child`'s type to `Sub`,
+/// sets `child.parent` absent (already true of the default post) and
+/// deletes `root` (added to pre, already absent from the default post) --
+/// the retype (11.1) must be named, not `root`'s deletion (11.2)
+/// (`resolve_self`, `document.rs`, now resolves by conformance per
+/// QSL-277's membership ruling, so both pre's `child`/`ConfigVersion` and
+/// post's `child`/`Sub` resolve at check 9, reaching check 11's own
+/// exact-type retype refusal, `frame.rs`'s module doc, 11.1).
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn tc465_row39_a_retype_beats_an_unauthorized_deletion() {
+    let document = tc465_document_with_sub_subtype();
+    let result = run_tc465_invocation(
+        &document,
+        |value| {
+            // Pre gains `root`, so its absence from post below is a real
+            // deletion, over a real pre-existing object.
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "key": "root", "type": "ix://example/config-version/ConfigVersion",
+                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}},
+                }));
+        },
+        |value| {
+            // `child` retypes to `Sub`; `root` stays deleted (the default
+            // post snapshot already omits it).
+            value["populations"][0]["objects"][0]["type"] =
+                json!("ix://example/config-version/Sub");
+        },
+        |_| {},
+    );
+    let record = assert_tc465_refused(result, "frame_violation", "unauthorized-change");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("child"),
+        "the retype (11.1) is named, not root's deletion (11.2)"
+    );
+}
+
+/// Row 40 (check 11, population order): pre and post list `archive` before
+/// `config_history`; post sets `a1.parent` (in `archive`) to a present
+/// reference (`config_history`'s `child`; see the substitution note below)
+/// and `child.parent` (in `config_history`) absent -- `archive` is checked
+/// to completion (11.1 to 11.4) before `config_history` even starts, so
+/// `a1`'s unauthorized `parent` change refuses first (`attemptUpdate` here
+/// modifies `versionNumber` only, so neither population's `parent` change
+/// is ever authorized).
+#[trace("TC-465", "FR-106-AC-5")]
+#[test]
+fn tc465_row40_population_order_checks_archive_before_config_history() {
+    let document = tc465_document_with_archive_population_and_narrow_frame();
+    let archive = "ix://example/config-version/archive";
+    let sub = "ix://example/config-version/Sub";
+    let a1_absent = json!({
+        "population": archive,
+        "complete": true,
+        "objects": [{
+            "key": "a1", "type": sub,
+            "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}},
+        }],
+    });
+    // `a1.parent` targets `config_history`'s `child` (exact type
+    // `ConfigVersion`), not `a1` itself: a `Reference<ConfigVersion>`
+    // field's target is admitted under the field's own declared type, by
+    // design (`document.rs`'s `admit_scalar`, the `Reference` arm --
+    // "matching `crate::model::normalize` exactly", not the referenced
+    // object's own possibly-subtyped admitted type), so a self-reference
+    // from a `Sub`-typed `a1` would never resolve regardless of frame
+    // authorization -- this substitutes a real, resolvable cross-population
+    // target while still exercising the same unauthorized field change on
+    // `a1` in `archive`.
+    let a1_present = json!({
+        "population": archive,
+        "complete": true,
+        "objects": [{
+            "key": "a1", "type": sub,
+            "fields": {
+                "versionNumber": {"integer": "1"},
+                "parent": {"present": {"reference": {
+                    "population": "ix://example/config-version/config_history", "key": "child"
+                }}},
+            },
+        }],
+    });
+    let result = run_tc465_invocation(
+        &document,
+        move |value| {
+            // `archive` is listed before `config_history`.
+            let config_history_entry = value["populations"][0].clone();
+            value["populations"] = json!([a1_absent, config_history_entry]);
+        },
+        move |value| {
+            let config_history_entry = value["populations"][0].clone();
+            value["populations"] = json!([a1_present, config_history_entry]);
+        },
+        |_| {},
+    );
+    let record = assert_tc465_refused(result, "frame_violation", "unauthorized-change");
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some(archive)
+    );
+    assert_eq!(record.fields.get("object").map(String::as_str), Some("a1"));
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("parent")
+    );
+}
+
+/// Row 41 (check 11, one-sided population): post adds population `archive`
+/// (absent from pre), holding object `a1` (`parent` absent), with
+/// `created` unchanged (empty) -- `archive`'s pre side admits as empty
+/// (SR-750's own population-order rule, `frame.rs`'s `enforce`: "any
+/// population only in the post snapshot" is appended to `order` after
+/// every pre population), so `a1` is a post-only object no `creates`
+/// grant or declared `created` entry authorizes.
+#[trace("TC-465", "FR-106-AC-5")]
+#[test]
+fn tc465_row41_a_population_only_in_post_admits_its_pre_side_as_empty() {
+    let document = tc465_document_with_archive_population();
+    let archive = "ix://example/config-version/archive";
+    let sub = "ix://example/config-version/Sub";
+    let result = run_tc465_invocation(
+        &document,
+        |_| {},
+        move |value| {
+            value["populations"].as_array_mut().unwrap().push(json!({
+                "population": archive,
+                "complete": true,
+                "objects": [{
+                    "key": "a1", "type": sub,
+                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}},
+                }],
+            }));
+        },
+        |_| {},
+    );
+    let record = assert_tc465_refused(result, "frame_violation", "unauthorized-change");
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some(archive)
+    );
+    assert_eq!(record.fields.get("object").map(String::as_str), Some("a1"));
 }
 
 /// Row 17 (check 6.2): a package variant whose `ConfigVersion` has field
