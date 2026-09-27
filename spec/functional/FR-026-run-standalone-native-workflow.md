@@ -111,7 +111,7 @@ including incomplete native, model, package and runtime input failures.
 | FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage and catalogued code with available provenance; emitted outcomes conform to the native result schema. | Test |
 | FR-026-AC-4 | Request/file/read and caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test |
 | FR-026-AC-5 | Existing parse/format behavior remains, command-specific arity errors precede I/O, and relative and absolute file operands resolve independently of the working directory. | Test |
-| FR-026-AC-6 | A native-run/1 request whose program source, model source and snapshot selection each name `authority` `agent-ix`, their own `identity`, `revision_namespace` `git` and `revision` `1` runs, and its result renders each with those four labels. The same request without the program source's `authority`, and again without the snapshot selection's `revision_namespace`, refuses at the request stage with `invalid-request` and exits 20. A present but blank `authority` refuses with `invalid_source_identity`. | Test (TC-430) |
+| FR-026-AC-6 | A native-run/1 request whose program source, model source and snapshot selection each name `authority` `agent-ix`, their own `identity`, `revision_namespace` `git` and `revision` `1` runs, and its result renders each with those four labels. The same request without the program source's `authority`, and again without the snapshot selection's `revision_namespace`, refuses at the request stage with `invalid-request` and exits 20. A present but blank `authority` refuses with `invalid_source_identity`, cause `blank-label`, field `label` `authority` (FR-001). | Test (TC-430) |
 
 ## Dependencies
 
@@ -121,4 +121,4 @@ including incomplete native, model, package and runtime input failures.
 
 ## Status
 
-FR-026-AC-6 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-430.
+FR-026-AC-6 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-430. Its `invalid_source_identity` code is backed; the `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are planned (QSL-245).

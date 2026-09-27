@@ -16,14 +16,16 @@ label, and a declaration's key depends on the authority and identity but
 not on the revision. This catches a defaulted or path-derived label, and a
 revision that leaks into a node key.
 
-Scope: FR-001-AC-5 to FR-001-AC-10.
+Scope: FR-001-AC-5 to FR-001-AC-12.
 
 ## Test Procedure
 
 1. Admit bytes `b` as authority `agent-ix`, identity `specs/a.quire`,
    revision (`git`, `3f2a`). Admit them again at revision value `3f2b`.
-2. Admit `b` four times, each with one of the four labels empty, and four
-   more times, each with one label a single space.
+2. Admit `b` four times, each with one of the four labels empty, four more
+   times, each with one label a single space, and four more, each with one
+   label U+3000 IDEOGRAPHIC SPACE. Admit `b` once with the authority U+200B
+   ZERO WIDTH SPACE.
 3. Check package declarations holding record `Point` with field
    `x: Int[0, 9]` under the reference of `b` as (`a`, `u`, `git`, `1`),
    under the reference of `b'` as (`a`, `u`, `git`, `2`), and under the
@@ -33,6 +35,12 @@ Scope: FR-001-AC-5 to FR-001-AC-10.
    empty revision namespace; admit five bytes under a four-byte ceiling;
    admit `b` under verified intake with a different selected digest.
 5. Render the region `[4, 7)` of admitted source `ab\ncdéf`.
+6. Admit `b` with the revision namespace and the authority blank; with the
+   identity blank and an empty path; and with all four labels non-blank and
+   an empty path.
+7. Apply an incremental edit whose expected revision is not the source's
+   revision; render a CST node against a parsed source it does not belong
+   to; and run an editor request bound to another document revision.
 
 Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 
@@ -41,7 +49,10 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 - Step 1: the reference reads the four labels exactly and the
   `quire.source.bytes/v1` digest of `b`; the second differs only in the
   revision value.
-- Step 2: each admission refuses with `invalid_source_identity`.
+- Step 2: each blank-label admission refuses with
+  `invalid_source_identity`, cause `blank-label`, field `label` naming the
+  blank label (`authority`, `identity`, `revision_namespace` or
+  `revision`). The U+200B authority admits.
 - Step 3: `Point` has the same key under the first two references, and
   the third and fourth references each give a key different from it and
   from each other.
@@ -50,7 +61,16 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
   region at byte 0. This checks the behaviour change FR-001 states.
 - Step 5: start line 2, column 2; end line 2, column 4. The region holds
   only its reference, 4 and 7.
+- Step 6: `blank-label` with `label` `authority`; `blank-label` with `label`
+  `identity`, not `empty-path`; `invalid_source_identity`/`empty-path` with
+  no field.
+- Step 7: each refuses with `invalid_source_map`, host cause
+  `EditPredecessor`, `ForeignNode` and `RequestRevision` respectively, and
+  no region; none is `invalid_source_identity`.
 
 ## Status
 
-Passed locally. ADR-013 §7 slice S-4b (QSL-233).
+Partial. Steps 1 to 5 pass locally under ADR-013 §7 slice S-4b (QSL-233)
+for the `invalid_source_identity` code. Step 2's U+3000 and U+200B cases,
+its `blank-label` cause and `label` field, step 6 (FR-001-AC-11) and step 7
+(FR-001-AC-12) are planned (QSL-245).

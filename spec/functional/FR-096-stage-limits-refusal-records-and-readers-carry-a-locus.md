@@ -34,14 +34,24 @@ The types are layer F's, in `qsl_foundation::diagnostic` (ADR-011 §6.1).
 ## Inputs
 
 - ADR-013 T-4, T-5, O-12, O-16, O-17, O-18 and O-22.
-- `quire.native.diagnostics/v1` revision `1-draft.7`
+- `quire.native.diagnostics/v1` revision `1-draft.8`
   (`ix://agent-ix/quire-specification`,
   `proposals/quire-v1/definitions/native-diagnostics.md`, cited by
   reference): the common structured context ("original source region and
   typed input location where known"; "Unavailable context is explicitly
   unavailable; byte zero, an empty path or a name-search match cannot
-  masquerade as a located failure"), and the `stage_limit_exceeded`,
-  `unknown_wire`, `invalid_runtime_input` and `wrong_snapshot` rows.
+  masquerade as a located failure"); the `stage_limit_exceeded`,
+  `unknown_wire`, `invalid_runtime_input` and `wrong_snapshot` rows; the ten
+  value-refusal rows revision `1-draft.8` adds (`inexact_decimal`,
+  `decimal_out_of_domain`, `division_pair_out_of_domain`,
+  `modulo_out_of_domain`, `text_length_out_of_domain`,
+  `integer_out_of_domain`, `rational_out_of_domain`, `ieee_not_exact`,
+  `ieee_nan_payload_not_representable`, `ieee_rational_out_of_domain`); and
+  its payload value spellings.
+- QSpec FR-044 (a bounded integer or `Rational[..]` arithmetic result's
+  membership at evaluation), FR-140, FR-141, FR-142 (an integer-target unit
+  conversion), FR-145 (`sum` as a fold whose every running total lies in
+  `N`'s domain), FR-147, FR-148 and `quire.value.accounting/v1`.
 - [FR-001](FR-001-read-exact-source.md): the unit's `RawSourceRef`.
 - [FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md)
   AC-1 and AC-10: every `Value` parsed form carries its declaration's span,
@@ -56,6 +66,9 @@ The types are layer F's, in `qsl_foundation::diagnostic` (ADR-011 §6.1).
   `catalog_fields`.
 - The resolution of a check-stage `check::Location` to a `SourceRegion`.
 - The I2 reader's refusals and limits, each with its locus.
+- The kernel value refusals' target domains and widths, carried in their
+  `quire-exact` variants, and the kernel undefined reason
+  `Undefined::SumOutOfDomain`.
 
 ## Behavior
 
@@ -175,9 +188,9 @@ A cause type SHALL carry every payload item the catalog requires for each of
 its causes in the cause's own variant. `catalog_fields` reads them from the
 variant and never from a message.
 
-The keys of the family causes S6a raises are these. Each key names the
-catalog payload item beside it (`quire.native.diagnostics/v1` revision
-`1-draft.7`):
+The keys of the family and kernel causes S6a raises are these. Each key
+names the catalog payload item beside it (`quire.native.diagnostics/v1`
+revision `1-draft.8`):
 
 | Cause type | Code / cause | Key: catalog payload item |
 | --- | --- | --- |
@@ -189,11 +202,91 @@ catalog payload item beside it (`quire.native.diagnostics/v1` revision
 | `BoundExceeded` (`replay`) | `stage_limit_exceeded` / `input-bytes-exceeded` | `kind`, `bound`, `actual`, as for `LimitExceeded` |
 | kernel `Refusal::CardinalityOutOfBound` | `cardinality_out_of_bound` / `below-minimum` or `above-maximum` | `collection`: the collection kind; `bound`: the inclusive bound `[minimum, maximum]`; `count`: the formed count |
 | kernel `Refusal::ForeignReference` | `foreign_reference` / `foreign-universe` | `required`: the universe already in force (an equality's left operand, or membership's collection or already-kept member), as lowercase hex; `supplied`: the universe of the value tested against it, as lowercase hex |
+| kernel `Refusal::InexactDecimal` | `inexact_decimal` / `nonzero-discarded-digit` | `expected`: the target type's declared domain, `Decimal[lo, hi; smin, smax]` for a decimal target and `Int[lo, hi]` for an integer target (scale zero) |
+| kernel `Refusal::DecimalOutOfDomain` | `decimal_out_of_domain` / `outside-domain` | `expected`: the target `Decimal[lo, hi; smin, smax]` domain |
+| kernel `Refusal::DivisionPairOutOfDomain` | `division_pair_out_of_domain` / `quotient-outside-domain`, `remainder-outside-domain` or `both-outside-domain` | `expected`: the bounded consumer's `Int[lo, hi]` domain |
+| kernel `Refusal::ModuloOutOfDomain` | `modulo_out_of_domain` / `outside-domain` | `expected`: the bounded consumer's `Int[lo, hi]` domain |
+| kernel `Refusal::TextLengthOutOfDomain` | `text_length_out_of_domain` / `outside-domain` | `expected`: the declared `Text[min, max; profile]` bounds and profile |
+| kernel `Refusal::IntegerOutOfDomain` | `integer_out_of_domain` / `outside-domain` | `expected`: the target `Int[lo, hi]` domain |
+| kernel `Refusal::RationalOutOfDomain` | `rational_out_of_domain` / `outside-domain` | `expected`: the `Rational[lo, hi; dmin, dmax]` result domain |
+| kernel `Refusal::IeeeNotExact` | `ieee_not_exact` / `rounding-required` | `expected`: the target IEEE width; `flags`: the would-be flag set, the flags the same operation returns under `nearest-even` (QSpec FR-148) |
+| kernel `Refusal::IeeeNanPayloadNotRepresentable` | `ieee_nan_payload_not_representable` / `payload-exceeds-target` | `expected`: the explicit width conversion's target IEEE width; `actual`: its source IEEE width |
+| kernel `Refusal::IeeeRationalOutOfDomain` | `ieee_rational_out_of_domain` / `outside-domain` | `expected`: the grammar-named `Rational[lo, hi; dmin, dmax]` conversion target |
 
 A cause another family adds to S6a adds its row here, with the key for each
 payload item its catalog row requires. A cause with no row here has no
 fields to give: `catalog_fields` returns `None` for it, and no record is
 built from it. An empty map is never a stand-in.
+
+### A kernel value refusal carries what its record renders
+
+The ten kernel value refusals above are category refusal: the operation is
+defined, and the rounding policy, target width or declared target domain
+does not admit its result. None retains the refused value. Each field is
+one exact ASCII string, spelled as the catalog spells it:
+
+- A domain is its type name and bounds: `Int[lo, hi]`,
+  `Decimal[lo, hi; smin, smax]`, `Rational[lo, hi; dmin, dmax]` or
+  `Text[min, max; profile]`. Each bound is written as QSpec FR-038 writes an
+  integer: a leading `-` when negative, and no other sign, leading zero or
+  exponent. Bounds within a group are separated by `, ` and groups by `; `.
+  The text profile is its grammar spelling. No rounding mode is written.
+- An IEEE width is `binary32` or `binary64`.
+- A flag set is its member flag names in the order `invalid`,
+  `divide_by_zero`, `overflow`, `underflow`, `inexact`, joined by `,` with
+  no space.
+
+Each of these ten `quire-exact` `Refusal` variants SHALL carry, in the
+variant, the target domain or IEEE width its `expected` field renders from,
+as `ForeignReference` carries its two universes (QSL-281). `IeeeNotExact`
+SHALL also carry the would-be flags, and `IeeeNanPayloadNotRepresentable`
+the source width its `actual` field renders from. `kernel_refusal_record`
+reads each field from the variant and never from a message or from the
+checked tree.
+
+`DivisionPairOutOfDomain` SHALL take its cause from which members of the
+`div`/`rem` pair fail membership: `quotient-outside-domain` when only the
+quotient is outside, `remainder-outside-domain` when only the remainder is,
+and `both-outside-domain` when both are. The kernel raises it only when at
+least one member is outside.
+
+`Refusal::code()` and `Refusal::cause()` SHALL return, for every kernel
+cause other than `CheckedInvariant`, the code and cause the key table gives
+it, and `kernel_refusal_record` builds its record with them.
+
+### A `sum` running total outside its domain is undefined, not refused
+
+A `sum<N>` seed or running total outside `N`'s domain is none of the ten
+refusals. QSpec FR-145 defines `sum` as a fold whose every running total
+lies in `N`'s domain, so a running total outside it leaves the fold with no
+value in `N`, even when a later summand would bring the total back inside
+(QSpec FR-044, FR-140, FR-145 and `quire.value.accounting/v1`).
+
+When S6a evaluates a `sum<N>` whose seed or running total is not a member
+of `N`'s domain, it SHALL return `Outcome::Undefined` with the kernel reason
+`Undefined::SumOutOfDomain`, never `Outcome::Refused`, and builds no refusal
+record. The outcome is located: `Evaluation.location` is the summand's node
+when the seed fails, and the `sum` node when an addition's running total
+fails. The sum exposes no total, and makes no charge after the failed
+membership decision: for an integer `N`, an addition fails after
+`integer-arithmetic.arithmetic` and before `integer-arithmetic.result-retain`.
+This holds whatever `N`'s numeric family is. The final total is a running
+total, so S6a makes no separate `integer_out_of_domain` decision on it.
+
+`Undefined::SumOutOfDomain` names no catalog undefined reason: the
+`quire.native.diagnostics/v1` "Undefined reasons" table admits only the
+family reasons `absent-key` and `precondition-false`, so it builds no
+`UndefinedRecord`. Like the other kernel undefined reasons, it reaches the
+consumer as `FamilyOutcome::Evaluated(Outcome::Undefined(_))` with
+`Evaluation.location`. QSL's kernel reason spelling for it is
+`sum-out-of-domain`. The owner of
+[FR-100](FR-100-run-a-named-function-through-the-spine.md) adds that
+spelling to FR-100's kernel undefined-reason table, which does not list it
+today (planned, QSL-245).
+
+A linked `sum` whose prefixes are not all proved members is refused at
+checking (QSpec FR-145, `undefined_expression`/`unproved-range`), so only a
+`sum` checked under `CheckMode::Kernel` meets this outcome.
 
 `RefusalRecord` SHALL carry the `CatalogCode`, the O-16 category, an
 optional `Locus`, and the catalog fields. It is built from a `CatalogCoded`
@@ -206,8 +299,8 @@ At S6a, a consumer SHALL build a record as follows:
   builds the record from the family cause.
 - From `FamilyOutcome::Evaluated(Outcome::Refused(refusal))`, it builds the
   record from the kernel `Refusal` through QSL F's map of the kernel cause
-  (O-17), `kernel_refusal_record`. The map covers the kernel causes the
-  catalog gives a code and fields, and returns no record for the others.
+  (O-17), `kernel_refusal_record`. The map gives a record for each of the
+  twelve kernel causes in the key table, and for no other.
   A kernel `CheckedInvariant` SHALL become an `InternalFault`
   (`runtime_invariant`), never a refusal record: a record is always
   category refusal.
@@ -240,12 +333,14 @@ name.
 | FR-096-AC-4 | A declaration whose preimage input bytes exceed a configured bound `B` returns `StageFailure::Limit` with kind input bytes, bound `B`, actual equal to the measured bytes, and `Locus::Region` over the declaration's span. The same limit reached for an FR-151 synthesized function carries no locus. | Test (TC-427) |
 | FR-096-AC-5 | A declaration whose work charge is denied by a work budget `W` returns `StageFailure::Limit` with kind work budget, bound `W`, actual equal to the spend the denied charge would have reached, and `Locus::Region` over the declaration's span. | Test (TC-427) |
 | FR-096-AC-6 | A family refusal of `lookup<T>(p, r) absent refused` with no member for `r` builds a `RefusalRecord` with code `invalid_runtime_input`/`absent-key`, category refusal, fields `binding` and `key` naming the population binding and the requested key, and `Locus::Region` over the span of the `lookup` expression. An `Evaluation` whose `location` is `None` builds a record with no locus. | Test (TC-428) |
-| FR-096-AC-7 | For each cause in the key table, `catalog_fields()` holds exactly the keys the table lists for it. | Test (TC-428) |
-| FR-096-AC-8 | A `RefusalRecord` built from an S6a `Evaluation` whose outcome is a kernel `Refused` carries the code QSL's kernel map gives that cause, category refusal, and the evaluation's resolved locus. | Test (TC-428) |
+| FR-096-AC-7 | For each `CatalogCoded` cause in the key table (every row but the twelve kernel `Refusal` rows, which `kernel_refusal_record` maps and AC-8 checks), `catalog_fields()` holds exactly the keys the table lists for it. | Test (TC-428) |
+| FR-096-AC-8 | For each of the twelve kernel causes in the key table, a `RefusalRecord` built from an S6a `Evaluation` whose outcome is that kernel `Refused` carries the table's code and cause, category refusal, exactly the table's field keys and the evaluation's resolved locus, and `Refusal::code()` and `Refusal::cause()` return the same code and cause. The fields are spelled exactly: `IntegerOutOfDomain` for target `Int[-5, 9]` gives `expected` `Int[-5, 9]`; `DecimalOutOfDomain` for `Decimal[-100, 100; 0, 2]` gives `expected` `Decimal[-100, 100; 0, 2]`; `RationalOutOfDomain` for `Rational[-9, 9; 1, 9]` gives `expected` `Rational[-9, 9; 1, 9]`; `TextLengthOutOfDomain` for `Text[1, 8; nfc]` gives `expected` `Text[1, 8; nfc]`; `InexactDecimal` for an integer target `Int[0, 9]` gives `expected` `Int[0, 9]`; `IeeeNotExact` for a `binary32` result whose `nearest-even` flags are inexact and overflow gives `expected` `binary32` and `flags` `overflow,inexact`; `IeeeNanPayloadNotRepresentable` for a `binary64` to `binary32` conversion gives `expected` `binary32` and `actual` `binary64`. A kernel `CheckedInvariant` builds no record. | Test (TC-428) |
 | FR-096-AC-9 | The I2 reader, given bytes whose `contract_version` is `quire.checked-package/v3`, returns `StageFailure::Refused` with code `unknown_wire`/`unsupported-wire`, `actual` `quire.checked-package/v3`, `expected` `quire.checked-package/v2`, and `Locus::Artifact` whose digest is the `raw-artifact-digest` of those bytes and whose pointer is `/contract_version`. Given bytes that are not JSON, it refuses with no locus. A refusal IR reports at a value, such as a `package_id` digest domain, is located at `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer of that value. | Test (TC-429) |
 | FR-096-AC-10 | The I2 reader, given a v2 wire whose graph has more nodes than its node bound `B`, returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed counter as actual, and `Locus::Artifact` with the bytes' `raw-artifact-digest` and the pointer IR reports. The same holds for IR's depth, edge, occurrence, diagnostic and work limits, each with its own kind. Given bytes longer than its artifact byte ceiling, it returns kind input bytes with no locus. | Test (TC-429) |
 | FR-096-AC-11 | A function whose body is the source text `not not not true` (four nodes deep), parsed under a unit reference so its forms carry spans and checked through `ValueFunctionFamily::check` with `CheckingLimits` depth 3, returns `StageFailure::Limit` with kind nesting depth, bound 3, actual 4, and `Locus::Region` over the span of `true`, reported as `stage_limit_exceeded`/`nesting-depth-exceeded`. With depth 4 and nothing else changed, it returns no nesting-depth limit. The same depth stop inside an FR-151 synthesized function carries no locus. | Test (TC-378) |
 | FR-096-AC-12 | `Code::RuntimeInvariant`, the code of `InternalFault` (T-4, O-16 internal-failure category), resolves to FR-301 exit status 30 (tool failure) through `Code::exit_code`, and every other `Code` resolves to 20, 21 or 22. A native `run` whose evaluation refuses with `runtime_invariant` exits 30. A report holding a `runtime_invariant` diagnostic beside invalid, unsupported or incomplete ones exits 30. | Test (TC-470) |
+| FR-096-AC-13 | A kernel `DivisionPairOutOfDomain` for consumer domain `Int[0, 9]` builds a record with `expected` `Int[0, 9]` and cause `quotient-outside-domain` when only the quotient is outside it, `remainder-outside-domain` when only the remainder is, and `both-outside-domain` when both are. | Test (TC-428) |
+| FR-096-AC-14 | With `type Small = Int[0, 3]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 3]>[0, 2]` holding `2, 2` returns `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))`, located at the `sum` node, with no refusal record and no charge after `integer-arithmetic.arithmetic`; it is not `Outcome::Refused(Refusal::IntegerOutOfDomain)`. The same `sum` for `q` holding `1, 2` completes with `3`. `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 9]>[0, 2]` holding `5, 0` returns the same undefined outcome, located at the summand node, with no addition. | Test (TC-500) |
 
 ## Dependencies
 
@@ -262,12 +357,14 @@ name.
   per-declaration limits and the package node budget.
 - [FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md):
   `CatalogCoded`, `UndefinedCoded`, `Evaluation` and `FamilyResult`.
-- The catalog revision QSL claims: `1-draft.7`
+- The catalog revision QSL claims: `1-draft.8` (QSpec STD-110)
   (`qsl-cst/src/diagnostic.rs`, `qsl-semantics/src/complete/package.rs`,
   the checked-package emitter's diagnostics catalog and the native
   Diagnostics registration). `token-count-exceeded`, `edge-count-exceeded`,
   `occurrence-count-exceeded` and `diagnostic-count-exceeded` are revision
-  `1-draft.7`.
+  `1-draft.7`; the ten kernel value-refusal codes and the
+  `invalid_source_identity` causes `blank-label` and `empty-path`
+  ([FR-001](FR-001-read-exact-source.md)) are revision `1-draft.8`.
 - [NFR-011](../non-functional/NFR-011-bound-value-checking-work.md): the
   `CheckingLimits` ceilings.
 - IR (`agent-ix/quire-contract-ir`, `quire-contract-model`'s
@@ -283,6 +380,17 @@ name.
   limits carry `edge-count-exceeded`, `occurrence-count-exceeded` and
   `diagnostic-count-exceeded`, which `quire.native.diagnostics/v1` revision
   `1-draft.7` adds (ADR-013 QC-28, STD-95).
+- **FR-096-OQ-2 (open):** `inexact_decimal`'s `expected` is the target's
+  declared domain. Revision `1-draft.8` spells a domain only with both
+  bounds, so it gives no spelling for an unbounded `Integer` target of a
+  unit conversion under strict `exact`. QSpec owns the ruling. QSL cannot
+  reach that case today: `QuantityTarget::Integer` always carries a
+  two-bounded `IntegerInterval` (`qsl-semantics/src/value/quantity.rs`,
+  `convert_quantity`), and the kernel's `InexactDecimal` raise sites place
+  into a `DecimalType` target, which has both bounds. An integer target is
+  placed as a temporary `DecimalType` `Decimal[lo, hi; 0, 0]`; its record
+  SHALL still render the declared `Int[lo, hi]`, not that placement, which
+  FR-096-AC-8's `InexactDecimal` example checks.
 
 ## Status
 
@@ -338,19 +446,43 @@ Implemented under QSL-281:
   universe already in force, `supplied` the universe of the value tested
   against it, both lowercase hex, agreeing with the family `ModelQueryRefusal`
   row's shape.
-  The kernel `Refusal::ForeignReference` variant now carries both universes
+- The kernel `Refusal::ForeignReference` variant carries both universes
   (`quire-exact` fields `required`/`supplied`), and `kernel_refusal_record`
   builds the record from them.
 
-Not backed:
+Specified against catalog revision `1-draft.8` (QSpec STD-110, merged) and
+not built (QSL-245):
 
-- AC-8 is only partly backed: the kernel causes `InexactDecimal`,
+- AC-8 is backed for `CardinalityOutOfBound` only. `ForeignReference`
+  builds its record with its code, fields and locus, but
+  `Refusal::cause()` returns `None` for it, not `foreign-universe`.
+  Revision `1-draft.8` gives the other ten kernel causes their codes, causes
+  and fields (the key table), but the code does not build them:
+  `kernel_refusal_record` builds no record for `InexactDecimal`,
   `DecimalOutOfDomain`, `DivisionPairOutOfDomain`, `ModuloOutOfDomain`,
-  `TextLengthOutOfDomain`, `IntegerOutOfDomain`, `RationalOutOfDomain` and
-  `IeeeNotExact` await catalog revision `1-draft.8` (STD-110), which defines
-  their codes. So do the two IEEE causes QSpec FR-148 names,
-  `ieee_nan_payload_not_representable` and `ieee_rational_out_of_domain`,
-  that the catalog omits.
+  `TextLengthOutOfDomain`, `IntegerOutOfDomain`, `RationalOutOfDomain`,
+  `IeeeNotExact`, `IeeeNanPayloadNotRepresentable` or
+  `IeeeRationalOutOfDomain`. Those variants carry no target domain or width
+  (`IeeeNotExact` carries only its would-be flags, and
+  `DivisionPairOutOfDomain` only its two admitted flags).
+  `Refusal::code()` returns `None` for the first eight, and
+  `Refusal::cause()` returns `None` for every cause but
+  `CardinalityOutOfBound` (`quire-exact/src/outcome.rs`). The code still
+  claims revision `1-draft.7`. The `quire-exact/src/outcome.rs` test
+  tagged `TC-318`, and its doc comment saying `CardinalityOutOfBound` is the
+  only refusal with a code, are stale: no TC-318 artifact exists, and the
+  coder building AC-8 retags that test `TC-428`/`FR-096-AC-8` and corrects
+  the comment.
+- AC-13 is not built: no record gives `DivisionPairOutOfDomain` a cause.
+- AC-14 is not built: S6a's `sum` refuses a running total outside an `Int`
+  domain with `Refusal::IntegerOutOfDomain`, checks the final total rather
+  than the seed (`qsl-eval/src/value/expression/evaluate.rs`), and
+  `quire_exact::Undefined` has no `SumOutOfDomain` variant. FR-100's
+  kernel undefined-reason table has no `sum-out-of-domain` row yet (planned,
+  FR-100's owner).
+
+Not built, independent of the catalog revision:
+
 - A kernel `CheckedInvariant` builds no record, and its conversion to an
   `InternalFault` is not built: the evaluator still returns it as a
   refusal.
