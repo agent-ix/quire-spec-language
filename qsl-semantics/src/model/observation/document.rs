@@ -10,8 +10,8 @@ use quire_exact::{CollectionKind, FieldValue, Integer, ObjectReference, Value};
 use super::helpers::{admission_record, object_reference};
 use super::ordered_json::{OrderedJson, OrderedObject};
 use super::{
-    document_digest, fault, incomplete, read_raw_value, refuse, AdmissionFailure, AdmissionRecord,
-    DocumentRef, ModelView, ObservationLimits, RawValue, SelectedObject,
+    check_document_digest, fault, incomplete, read_raw_value, refuse, AdmissionFailure,
+    AdmissionRecord, DocumentRef, ModelView, ObservationLimits, RawValue, SelectedObject,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::{ObjectEnvironment, ObjectEnvironmentCause};
@@ -202,13 +202,8 @@ pub(super) fn read_document(
     }
     // 1.3: digest, before any member is read. Bytes that do not parse are
     // digested raw, and so refuse here.
-    let digest = document_digest(bytes);
-    if digest != selected.digest {
-        return Err(refuse(admission_record(
-            "stale_dependency",
-            "byte-digest-mismatch",
-        )));
-    }
+    check_document_digest(bytes, selected.digest)?;
+    let digest = selected.digest;
     let Some(value) = parsed else {
         return Err(fault("provisioned-bytes-not-json-after-digest-match"));
     };
@@ -723,6 +718,7 @@ fn object_field_kind_matches(
 }
 
 fn admit_scalar(
+    views: &[ModelView],
     raw: &RawValue,
     value_type: &quire_exact::ValueType,
 ) -> Result<Value, AdmissionRecord> {
@@ -743,7 +739,13 @@ fn admit_scalar(
             }
         }
         (RawValue::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
-            let target = object_reference(&reference.population, *type_identity, &reference.key)
+            // `reference.population`'s own name is not read here:
+            // `type_identity` (the field's own declared type) is what
+            // resolves this reference's universe now (matching
+            // `crate::model::normalize` exactly), not the wire-supplied
+            // population name -- this is unchanged from before this fix,
+            // which also never cross-checked the two against each other.
+            let target = object_reference(views, *type_identity, &reference.key)
                 .map_err(|_| admission_record("invalid_runtime_input", "wrong-value-kind"))?;
             Ok(Value::Reference(target))
         }
@@ -761,6 +763,7 @@ fn admit_scalar(
 /// [`admit_scalar`] plus [`field_kind_matches`]'s `ValueType::Option`
 /// reading), so this is the one caller [`admit_populations`] needs.
 fn admit_object_field(
+    views: &[ModelView],
     raw: &RawValue,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
@@ -768,7 +771,9 @@ fn admit_object_field(
     if presence == quire_exact::Presence::Optional {
         return match raw {
             RawValue::Absent => Ok(FieldValue::Absent),
-            RawValue::Present(inner) => admit_scalar(inner, value_type).map(FieldValue::Present),
+            RawValue::Present(inner) => {
+                admit_scalar(views, inner, value_type).map(FieldValue::Present)
+            }
             // `object_field_kind_matches` already refused every other raw
             // form for an optional field before this is called.
             RawValue::Boolean(_)
@@ -790,14 +795,14 @@ fn admit_object_field(
             }
             let mut elements = Vec::with_capacity(items.len());
             for item in items {
-                elements.push(admit_scalar(item, collection.element())?);
+                elements.push(admit_scalar(views, item, collection.element())?);
             }
             Ok(FieldValue::Present(quire_exact::from_admitted(
                 (**collection).clone(),
                 elements,
             )))
         }
-        (raw, value_type) => admit_scalar(raw, value_type).map(FieldValue::Present),
+        (raw, value_type) => admit_scalar(views, raw, value_type).map(FieldValue::Present),
     }
 }
 
@@ -900,7 +905,7 @@ pub(super) fn admit_populations(
                     ));
                 }
                 let field_value =
-                    admit_object_field(raw, value_type, presence).map_err(|record| {
+                    admit_object_field(views, raw, value_type, presence).map_err(|record| {
                         refuse(
                             record
                                 .with("object", object.key.clone())
@@ -922,7 +927,7 @@ pub(super) fn admit_populations(
                 }
             }
 
-            let reference = object_reference(&entry.population, effective_type, &object.key)
+            let reference = object_reference(views, effective_type, &object.key)
                 .map_err(|_| fault("empty-object-identity"))?;
             population_of.insert(reference.clone(), entry.population.clone());
             objects.push((reference, attributes));
@@ -1008,8 +1013,15 @@ pub(super) fn resolve_self(
         .find(|(key, _)| key.node == context_name)
         .map(|(_, effective)| *effective)
         .ok_or_else(|| fault("context-type-unresolved"))?;
-    let reference = object_reference(&self_object.population, context_effective, &self_object.key)
-        .map_err(|_| fault("empty-object-identity"))?;
+    // `context_effective` is one of `context_view`'s own effective types
+    // (just resolved from it above), so `context_view` alone -- not the
+    // full re-derived `views` -- is enough to find its universe.
+    let reference = object_reference(
+        std::slice::from_ref(context_view),
+        context_effective,
+        &self_object.key,
+    )
+    .map_err(|_| fault("empty-object-identity"))?;
     if environment.contains(&reference) {
         Ok(reference)
     } else {
@@ -1026,6 +1038,7 @@ pub(super) fn resolve_self(
 pub(super) type AdmittedParametersAndResult = (Vec<(String, Value)>, Option<Value>);
 
 pub(super) fn admit_parameters_and_result(
+    views: &[ModelView],
     operation: &OperationDeclaration,
     parameters: &[(String, RawValue)],
     result: &ResultValue,
@@ -1044,7 +1057,7 @@ pub(super) fn admit_parameters_and_result(
                     .with("field", name.clone()),
             ));
         }
-        let value = admit_scalar(raw, value_type)
+        let value = admit_scalar(views, raw, value_type)
             .map_err(|record| refuse(record.with("field", name.clone())))?;
         admitted.push((name.clone(), value));
     }
@@ -1082,7 +1095,7 @@ pub(super) fn admit_parameters_and_result(
                     "wrong-value-kind",
                 )));
             }
-            Some(admit_scalar(raw, value_type).map_err(refuse)?)
+            Some(admit_scalar(views, raw, value_type).map_err(refuse)?)
         }
     };
     Ok((admitted, result_value))

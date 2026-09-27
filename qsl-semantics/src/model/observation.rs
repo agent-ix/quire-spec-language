@@ -30,7 +30,6 @@ use std::collections::BTreeMap;
 
 use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::InternalFault;
-use qsl_foundation::ByteDigest;
 use quire_exact::{EffectiveId, ObjectId, ObjectReference, UniverseId, Value};
 
 use crate::model::accounting::ModelNormalizationLimits;
@@ -427,15 +426,39 @@ fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
 // sha256-jcs digest (FR-056)
 // ---------------------------------------------------------------------------
 
-/// FR-106's digest-first rule: bytes that parse as JSON are digested over
-/// their RFC 8785 canonical encoding; bytes that do not are digested raw
-/// (FR-056).
-fn document_digest(bytes: &[u8]) -> [u8; 32] {
-    match serde_json::from_slice::<serde_json::Value>(bytes) {
-        Ok(value) => crate::value::semantic_node::preimage_digest(&value)
-            .unwrap_or_else(|_| ByteDigest::of(bytes).as_bytes()),
-        Err(_) => ByteDigest::of(bytes).as_bytes(),
-    }
+/// FR-106's digest-first rule, checked against `expected`: bytes that parse
+/// as JSON are digested over their RFC 8785 canonical encoding, through
+/// `quire-canonical` directly -- the one sanctioned encoder (ADR-013 §2);
+/// bytes that do not parse are digested raw. The raw fallback itself is
+/// `model::intake::check_package_digest` (widened, QSL-278, to serve this
+/// second caller) -- never an ad hoc `ByteDigest::of` here, and never a
+/// second call site of `model::key::raw_bytes_digest` outside that already-
+/// exempt function (ADR-013 §2 O-05: one RFC 8785 encoder, one raw-fallback
+/// call site). A value that parses as JSON but has no RFC 8785 encoding
+/// (e.g. a non-finite float) refuses `stale_dependency`/`byte-digest-
+/// mismatch` directly: admission cannot verify it against `expected` either
+/// way, so this is that same outcome, not a silently substituted raw-bytes
+/// fallback (the previous behavior).
+fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), AdmissionFailure> {
+    let mismatch = || {
+        refuse(AdmissionRecord::new(
+            "stale_dependency",
+            "byte-digest-mismatch",
+        ))
+    };
+    let parsed_digest = match serde_json::from_slice::<serde_json::Value>(bytes) {
+        Ok(value) => {
+            let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
+                .map_err(|_| fault("canonical-limits-invalid"))?;
+            let digest = quire_canonical::sha256(&value, limits)
+                .map(|digest| *digest.as_bytes())
+                .map_err(|_| mismatch())?;
+            Some(digest)
+        }
+        Err(_) => None,
+    };
+    crate::model::intake::check_package_digest(expected, bytes, parsed_digest)
+        .map_err(|_| mismatch())
 }
 
 // ---------------------------------------------------------------------------
@@ -480,6 +503,21 @@ pub fn admit_current_snapshot(
     check_model(&views, &snapshot.model)?;
     let admitted = document::admit_populations(&views, types, &snapshot.populations)?;
     Ok(admitted.environment)
+}
+
+/// FR-109's `Function` selection: `type_identity`'s own [`UniverseId`],
+/// re-deriving `views` the same way [`admit_current_snapshot`] does (the
+/// module doc's design note), for the caller to resolve an object
+/// argument's population into the exact same universe admission itself
+/// would assign that object.
+pub fn population_universe_for(
+    model_selections: &[DomainPackageRef],
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    model_limits: ModelNormalizationLimits,
+    type_identity: EffectiveId,
+) -> Result<UniverseId, AdmissionFailure> {
+    let views = model_views(model_selections, packages, model_limits)?;
+    population_universe(&views, type_identity)
 }
 
 // ---------------------------------------------------------------------------
@@ -745,6 +783,7 @@ fn admit_operation(
 
     // Check 10: parameters and result.
     let (parameters, result) = document::admit_parameters_and_result(
+        views,
         &operation.declaration,
         &invocation.parameters,
         &invocation.result,
@@ -781,34 +820,43 @@ fn admit_operation(
     })
 }
 
-/// A stable, deterministic per-population object universe: the SHA-256 of
-/// the population's own identity string. FR-106 admits objects into an
+/// `type_identity`'s own [`UniverseId`], the same one
+/// `crate::model::normalize` assigned its connected component when it
+/// built `views` (`EffectiveView::object_universe_of`) -- not an
+/// approximation of it. FR-106 admits objects into an
 /// [`ObjectEnvironment`], which identifies objects by `(universe, type,
-/// key)`; the universe distinguishes objects declared in one population
-/// from another of the same key, matching `crate::model::normalize`'s own
-/// "connected component" universes closely enough for FR-106's own checks
-/// (which never compare two documents' universes against each other --
-/// only object identity within one admitted environment matters here).
-/// `pub`: FR-109's `Function` selection (`qsl_replay::spine::clause`)
-/// resolves an object argument's population the same way admission does.
-pub fn population_universe(population: &str) -> UniverseId {
-    UniverseId::from_digest(ByteDigest::of(population.as_bytes()).as_bytes())
+/// key)`; admission and `qsl_replay::spine::clause` (FR-109's `Function`
+/// selection, which resolves an object argument's population the same way
+/// admission does) must agree with normalization exactly, or a reference
+/// to the same object admitted through a different path would compare
+/// unequal (a spurious `foreign_reference`/`DanglingReference`).
+/// `pub(crate)`: `qsl_replay::spine::clause` resolves an object argument
+/// the same way.
+fn population_universe(
+    views: &[ModelView],
+    type_identity: EffectiveId,
+) -> Result<UniverseId, AdmissionFailure> {
+    let view = view_of(views, type_identity).ok_or_else(|| fault("object-type-unresolved"))?;
+    let key = view
+        .declaration_key(type_identity)
+        .ok_or_else(|| fault("object-type-unresolved"))?;
+    view.view
+        .object_universe_of(key)
+        .map(|universe| universe.identity())
+        .ok_or_else(|| fault("object-universe-unresolved"))
 }
 
 mod helpers {
     use super::*;
 
     pub(crate) fn object_reference(
-        population: &str,
+        views: &[ModelView],
         type_identity: EffectiveId,
         key: &str,
     ) -> Result<ObjectReference, AdmissionFailure> {
         let object = ObjectId::new(key.to_owned()).map_err(|_| fault("empty-object-identity"))?;
-        Ok(ObjectReference::new(
-            population_universe(population),
-            type_identity,
-            object,
-        ))
+        let universe = population_universe(views, type_identity)?;
+        Ok(ObjectReference::new(universe, type_identity, object))
     }
 
     pub(crate) fn admission_record(code: &'static str, cause: &'static str) -> AdmissionRecord {

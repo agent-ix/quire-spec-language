@@ -225,7 +225,7 @@ pub(super) fn enforce(
                 .find_map(|view| view.view.type_identities().get(&object_key).copied())
                 .ok_or_else(|| super::fault("created-object-type-unresolved"))?;
             created.push(
-                object_reference(name, effective_type, key)
+                object_reference(views, effective_type, key)
                     .map_err(|_| super::fault("empty-object-identity"))?,
             );
         }
@@ -243,7 +243,7 @@ pub(super) fn enforce(
                 .find_map(|view| view.view.type_identities().get(&object_key).copied())
                 .ok_or_else(|| super::fault("deleted-object-type-unresolved"))?;
             deleted.push(
-                object_reference(name, effective_type, key)
+                object_reference(views, effective_type, key)
                     .map_err(|_| super::fault("empty-object-identity"))?,
             );
         }

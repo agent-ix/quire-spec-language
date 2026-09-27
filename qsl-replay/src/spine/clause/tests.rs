@@ -956,6 +956,79 @@ fn run_clause_reports_the_document_order_first_unknown_member_not_the_alphabetic
 }
 
 // ---------------------------------------------------------------------------
+// ADR-013 ruling (QSL-278 r6): `population_universe_for` must resolve the
+// real `UniverseId` `crate::model::normalize` assigns an object's type, not
+// an approximation over the population name -- a wrong universe gives a
+// wrong `foreign_reference` result.
+// ---------------------------------------------------------------------------
+
+/// `population_universe_for` (admission's own sanctioned entry point) and a
+/// direct, independent call to `crate::model::normalize::normalize` on the
+/// same package must assign the `Node` type the same `UniverseId`. This
+/// calls `normalize` itself, not `population_universe_for`'s internals, so
+/// it is not circular: it is the coordinator-required proof that admission
+/// and normalization agree over the same object type.
+#[trace("TC-465", "FR-106-AC-1")]
+#[test]
+fn population_universe_for_agrees_with_normalize_s_own_universe_assignment() {
+    let document = domain_document();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let model_selection = qsl_semantics::model::domain_package::DomainPackageRef {
+        identity: PACKAGE_IDENTITY.to_owned(),
+        version: "1.0.0".to_owned(),
+        digest: document_digest(&document),
+    };
+
+    // Admit and normalize the same package directly -- independent of
+    // `population_universe_for`'s own internal re-derivation -- to learn
+    // the `Node` type's real `EffectiveId` and the real `UniverseId`
+    // normalization assigns its universe.
+    let admitted = qsl_semantics::model::intake::admit_selections(
+        std::slice::from_ref(&model_selection),
+        qsl_semantics::model::key::SHA256_JCS_DIGEST_DOMAIN,
+        &packages,
+    )
+    .expect("the fixture package admits cleanly");
+    let (package_ref, package_document) =
+        admitted.into_iter().next().expect("one admitted package");
+    let records =
+        qsl_semantics::model::intake::read_records(&package_ref.identity, &package_document)
+            .expect("the fixture package reads cleanly");
+    let domain_package =
+        qsl_semantics::model::domain_package::DomainPackage::new(package_ref, records);
+    let limits = qsl_semantics::model::accounting::ModelNormalizationLimits::default();
+    let view = match qsl_semantics::model::normalize::normalize(&domain_package, limits) {
+        qsl_semantics::model::normalize::NormalizeOutcome::Completed(view) => view,
+        other => panic!("expected the fixture package to normalize cleanly, got {other:?}"),
+    };
+    let node_key = qsl_semantics::model::key::DeclarationKey {
+        package: PACKAGE_IDENTITY.to_owned(),
+        node: node_type(),
+    };
+    let node_effective = *view
+        .type_identities()
+        .get(&node_key)
+        .expect("Node is a declared object type");
+    let expected_universe = view
+        .object_universe_of(&node_key)
+        .expect("Node has a universe")
+        .identity();
+
+    let admitted_universe = qsl_semantics::model::observation::population_universe_for(
+        std::slice::from_ref(&model_selection),
+        &packages,
+        limits,
+        node_effective,
+    )
+    .expect("population_universe_for resolves the same object type's universe");
+
+    assert_eq!(
+        admitted_universe, expected_universe,
+        "admission's own universe resolution must agree with normalize's"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // FR-106 check 4: the `model` member's own reader (`document::read_model`)
 // refuses a missing or malformed member rather than silently defaulting to
 // an empty string.

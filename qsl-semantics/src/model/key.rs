@@ -502,10 +502,17 @@ pub fn hex(bytes: &[u8]) -> String {
 /// `serde_json` encoder this replaced aborted the process on; this panics
 /// with the encoder's reason instead.
 pub(super) fn sha256_and_len(preimage: &impl Serialize) -> ([u8; 32], u64) {
-    let bytes = quire_canonical::to_vec(preimage, LIMITS)
+    // ADR-013 §2 (arch-lint `canonical-encoder`, QSL-278): the digest goes
+    // through `quire-canonical`'s own `sha256` directly, never `to_vec` and
+    // then `ByteDigest::of` over the resulting bytes -- that pair is a
+    // second RFC 8785 encoder in every caller's own file, this module's own
+    // one exempted raw-bytes site aside. `canonical_len` (below) takes the
+    // same preimage's length the same way [`canonical_len`] always has, so
+    // this costs one extra discard-sink encode pass, never a second hash.
+    let digest = quire_canonical::sha256(preimage, LIMITS)
         .unwrap_or_else(|error| panic!("a typed identity preimage encodes: {error}"));
-    let len = quire_exact::length_amount(bytes.len());
-    (ByteDigest::of(&bytes).as_bytes(), len)
+    let len = quire_exact::length_amount(canonical_len(preimage) as usize);
+    (*digest.as_bytes(), len)
 }
 
 /// The length of `preimage`'s RFC 8785 bytes, counted by `quire-canonical`

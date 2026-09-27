@@ -18,7 +18,7 @@ use qsl_foundation::source::Source;
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
-    admit_current_snapshot, admit_observations, population_universe, AdmissionFailure,
+    admit_current_snapshot, admit_observations, population_universe_for, AdmissionFailure,
     AdmissionRecord, ClauseFacts, ClauseSelection, DocumentRef, ObservationLimits, OperationFacts,
     Provisions,
 };
@@ -500,8 +500,21 @@ fn run_function(
             (ClauseArgumentValue::Integer(value), ValueType::Integer | ValueType::Int(_)) => {
                 Value::Integer(quire_exact::Integer::from(*value))
             }
-            (ClauseArgumentValue::Reference { population, key }, ValueType::Reference(_)) => {
-                let universe = population_universe(population);
+            (
+                ClauseArgumentValue::Reference { population, key },
+                ValueType::Reference(type_identity),
+            ) => {
+                let universe = match population_universe_for(
+                    package.graph().model_selections(),
+                    packages,
+                    model_limits,
+                    *type_identity,
+                ) {
+                    Ok(universe) => universe,
+                    Err(failure) => {
+                        return Ok(report(ClauseDisposition::Admit(failure)));
+                    }
+                };
                 let Some(reference) = environment.find(universe, key) else {
                     let mut fields = BTreeMap::new();
                     fields.insert("population", population.clone());

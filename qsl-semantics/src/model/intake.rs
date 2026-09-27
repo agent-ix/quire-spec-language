@@ -625,7 +625,25 @@ pub fn admit(
         ) => return Err(refusal),
         Err(_) => None,
     };
-    check_package_digest(offered, bytes, document.as_ref())?;
+    check_package_digest(
+        offered.digest,
+        bytes,
+        document.as_ref().map(|document| document.jcs_digest),
+    )
+    .map_err(|actual_digest| ModelRefusal {
+        code: Code::StaleDependency,
+        cause: ModelRefusalCause::ByteDigestMismatch {
+            expected: offered.digest,
+            actual: actual_digest,
+        },
+        detail: format!(
+            "domain package {}@{} bytes hash to {}, not the selected {}",
+            offered.identity,
+            offered.version,
+            hex(&actual_digest),
+            hex(&offered.digest)
+        ),
+    })?;
     // The package's own declared identity/version, read defensively: bytes
     // that fail to parse or omit `package` simply supply no identity/version,
     // which check 4 below reports as a `wrong-model-selection` mismatch
@@ -678,32 +696,28 @@ pub fn admit(
 ///
 /// The parsed document's digest is the one [`PackageDocument::parse`] took
 /// through `quire-canonical` (ADR-013 §2, ADR-013:113).
-fn check_package_digest(
-    offered: &DomainPackageRef,
+///
+/// Generalized (QSL-278) to serve a second caller, `model::observation`'s
+/// own FR-106 admission: `parsed_digest` is the caller's own already-taken
+/// `sha256-jcs` digest (through `quire-canonical` directly) when its bytes
+/// parsed, or `None` when they did not -- this function never parses
+/// `bytes` itself and never names `serde_json`, so it stays the one place
+/// `raw_bytes_digest`'s non-parsing fallback is called for either caller
+/// (ADR-013 §2's one-encoder rule, QSL-194's own exemption for this
+/// function): `Err`'s digest is the mismatch to report, `Ok(())` a match.
+/// A caller constructs its own refusal from `Err`'s digest, since intake's
+/// [`ModelRefusal`] and FR-106's `AdmissionFailure` are different types.
+pub(super) fn check_package_digest(
+    expected: [u8; 32],
     bytes: &[u8],
-    document: Option<&PackageDocument>,
-) -> Result<(), ModelRefusal> {
-    let actual_digest: [u8; 32] = match document {
-        Some(document) => document.jcs_digest,
-        None => raw_bytes_digest(bytes),
-    };
-    if actual_digest == offered.digest {
-        return Ok(());
+    parsed_digest: Option<[u8; 32]>,
+) -> Result<(), [u8; 32]> {
+    let actual_digest = parsed_digest.unwrap_or_else(|| raw_bytes_digest(bytes));
+    if actual_digest == expected {
+        Ok(())
+    } else {
+        Err(actual_digest)
     }
-    Err(ModelRefusal {
-        code: Code::StaleDependency,
-        cause: ModelRefusalCause::ByteDigestMismatch {
-            expected: offered.digest,
-            actual: actual_digest,
-        },
-        detail: format!(
-            "domain package {}@{} bytes hash to {}, not the selected {}",
-            offered.identity,
-            offered.version,
-            hex(&actual_digest),
-            hex(&offered.digest)
-        ),
-    })
 }
 
 /// ADR-013 O-01: admits every selection in `offered`, in order, through
