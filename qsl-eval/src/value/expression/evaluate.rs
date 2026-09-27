@@ -1080,7 +1080,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     charge_named(self.meter, ChargePoint::ModelNavigate)?;
                 }
                 let slot = self
-                    .objects_for(node)
+                    .objects_for(node)?
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(invariant)?;
                 Self::project(slot, *optional, node.value_type())?
@@ -1454,14 +1454,31 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// (the clause's own `current`/`post` observation) otherwise. Always
     /// `objects` for the `Value` family, which carries neither `reads` nor
     /// `pre_objects`.
-    fn objects_for(&self, node: &Node) -> &'a ObjectEnvironment {
-        match (self.reads, self.pre_objects) {
-            (Some(reads), Some(pre))
+    ///
+    /// **A `pre` read reached with no pre observation refuses, never falls
+    /// back silently** (`FR-107-evaluate-state-clauses-at-s6a.md:102-105`:
+    /// "If a `pre(e)` is reached in a postcondition whose observations
+    /// carry no pre observation, then the evaluator SHALL return
+    /// `FamilyResult::Refused` with `wrong_snapshot`/`wrong-anchor`").
+    /// Admission makes this unreachable for a well-formed selection; the
+    /// arm exists so the case has a typed result, the same rationale
+    /// `select_anchor` above already documents for the population-read
+    /// case (SR-750 FND-013).
+    fn objects_for(&self, node: &Node) -> Result<&'a ObjectEnvironment, Halt> {
+        match self.reads {
+            Some(reads)
                 if reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre) =>
             {
-                pre
+                self.pre_objects.ok_or_else(|| {
+                    Halt::Family(FamilyResult::Refused(Box::new(
+                        ProtocolClauseSnapshot::WrongAnchor {
+                            required: "pre",
+                            supplied: "post",
+                        },
+                    )))
+                })
             }
-            _ => self.objects,
+            _ => Ok(self.objects),
         }
     }
 
@@ -1548,7 +1565,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             .ok_or_else(invariant)?;
         let field = attribute.field();
         let slot = self
-            .objects_for(node)
+            .objects_for(node)?
             .attribute(self.scope.types(), current, edge)
             .ok_or_else(invariant)?;
         match field.value_type() {
@@ -2206,6 +2223,115 @@ mod tests {
                         "lookup".to_owned()
                     )]))
                 );
+            }
+            other => panic!("expected FamilyEvaluated(Refused(_)), got {other:?}"),
+        }
+    }
+
+    /// SR-750 FND-013 (FR-107-evaluate-state-clauses-at-s6a.md:102-105): a
+    /// `pre` read reached with no pre observation refuses `wrong_snapshot`/
+    /// `wrong-anchor`, never silently falling back to `objects`
+    /// (`self.objects`). Admission makes this unreachable for a
+    /// well-formed selection (a `reads` entry marking a location `Pre`
+    /// always comes with an attached `pre_objects`); this test bypasses
+    /// admission the same way the two tests above do, to exercise the
+    /// guard itself.
+    #[trace("FR-107-AC-5")]
+    #[test]
+    fn a_pre_read_with_no_pre_observation_refuses_wrong_anchor() {
+        let a_with_field = qsl_semantics::model::domain_package::DomainPackage::new(
+            qsl_semantics::model::domain_package::DomainPackageRef::fixture("bundle.qsl278-fnd013"),
+            vec![
+                qsl_semantics::model::domain_package::DomainPackageRecord::ObjectType(
+                    qsl_semantics::model::domain_package::ObjectTypeRecord {
+                        key: DeclarationKey::fixture("model.A"),
+                        interface_features: None,
+                        abstract_type: false,
+                        supertypes: Vec::new(),
+                    },
+                ),
+            ],
+        );
+        let view = match normalize(&a_with_field, ModelNormalizationLimits::UNLIMITED) {
+            NormalizeOutcome::Completed(view) => view,
+            other => panic!("expected a completed effective view, got {other:?}"),
+        };
+        let a = view
+            .type_identities()
+            .get(&DeclarationKey::fixture("model.A"))
+            .copied()
+            .expect("model.A has a type-level effective declaration");
+        let types = qsl_semantics::value::declaration::TypeEnvironment::new(
+            [],
+            [
+                qsl_semantics::value::declaration::ObjectTypeDeclaration::new(
+                    a,
+                    "M::A",
+                    vec![qsl_semantics::value::declaration::FieldDeclaration::new(
+                        "x",
+                        quire_exact::ValueType::Integer,
+                        quire_exact::Presence::Required,
+                    )],
+                ),
+            ],
+        )
+        .expect("one object type with one field admits cleanly");
+        let model = qsl_semantics::check::AdmittedModel::new(&a_with_field, &view)
+            .expect("the view is the domain package's own");
+        let graph = PackageDeclarations {
+            types,
+            models: vec![model],
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        }
+        .check(CheckingLimits::default())
+        .expect("one type with one field checks cleanly");
+
+        let expression = graph
+            .check_expression(
+                vec![("r".to_owned(), ValueType::Reference(a))],
+                &Expression::Field {
+                    operand: Box::new(Expression::Deref(Box::new(Expression::Name(
+                        "r".to_owned(),
+                    )))),
+                    field: "x".to_owned(),
+                },
+                None,
+                CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .expect("deref(r).x checks as a standalone expression");
+        // `reads` marks the Attribute node's own location `Pre`, but
+        // `pre_objects` (below) is `None` -- exactly the caller-input
+        // defect `objects_for` must now refuse rather than silently read
+        // `objects` (the post/current environment) for.
+        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
+            std::collections::BTreeMap::from([(
+                expression.root().location().clone(),
+                qsl_semantics::check::Observation::Pre,
+            )]);
+        let objects = ObjectEnvironment::default();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let arguments = vec![Value::Reference(ObjectReference::new(
+            quire_exact::UniverseId::from_digest([9; 32]),
+            a,
+            quire_exact::ObjectId::new("a1".to_owned()).expect("non-empty key"),
+        ))];
+        let evaluation = Machine::with_pre(
+            graph.scope(),
+            &graph,
+            &objects,
+            None,
+            Some(&reads),
+            &mut meter,
+            graph.dispatch_tables(),
+        )
+        .run(expression.root(), expression.slots(), arguments)
+        .expect("a family-owned refusal is `Ok(FamilyEvaluated)`, never an `Err`");
+        match evaluation.outcome {
+            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause)) => {
+                let code = cause.catalog_code();
+                assert_eq!(code.code(), "wrong_snapshot");
+                assert_eq!(code.cause(), "wrong-anchor");
             }
             other => panic!("expected FamilyEvaluated(Refused(_)), got {other:?}"),
         }
