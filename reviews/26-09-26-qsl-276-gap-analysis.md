@@ -85,3 +85,11 @@ Round 3, reviewed at fe9224fcffc69700dd7467cabab243e76206f399.
 | FND-006 | fixed | fe9224fc: TC-457 step 3 now uses nested `not`s. It introduced the off-by-one in FND-008. |
 | FND-007 | deferred | QSL-277 |
 | FND-008 | still-open | new in round 3, low |
+
+## Dispositions (round 4)
+
+Round 4, reviewed at 481d22e79ff744389da5b2d5185ffa1b2eb8670b.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed | 481d22e7: TC-457 step 3 now builds `d - 1` nested `not`s (depth `d`), then `d`, which matches the expected result and protocol_clause_forms.rs:261-264. The change is spec text only. |
