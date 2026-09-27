@@ -37,19 +37,24 @@ QSL implements these parts of FR-181:
   cancellation with cause `cancelled`/`caller-cancelled`;
 - the `requires-bound` disposition returned before exploration begins.
 
-This requirement does not implement the model-level successor relation
-(operation × finite argument domains × frame post-states, QSpec
-FR-013-AC-1), the recording of an invariant-violating successor
-(FR-181-AC-4's last clause) or the refusal of evaluator effects
-(FR-181-AC-6); QSL-274 owns those. A `TransitionSystem` implementation
-supplies the successor relation; the engine orders, keys, explores and
-samples it.
+A `TransitionSystem` implementation supplies the successor relation and
+each expanded state's findings; the engine orders, keys, explores, samples
+and replays it, and records the findings. The model-level successor
+relation (operation × finite argument domains × frame post-states, QSpec
+FR-013-AC-1), the invariant findings of FR-181-AC-4's last clause and the
+effects of FR-181-AC-6 are
+[FR-120](FR-120-simulate-a-checked-package-s-state-family.md)'s, through its
+`ModelSystem` implementation of this trait. The trait's findings and
+`ExpansionStop`, `Outcome::Stopped`, `StopReason::Stopped` and the replay
+errors `FindingMismatch` and `Stopped` were added under QSL-274 (AC-12 to
+AC-14).
 
 ## Inputs
 
-- A `TransitionSystem`: its initial states and, per state, its successors,
-  each a transition identity and a post-state, both in the typed canonical
-  form of QSpec FR-181's exploration contract.
+- A `TransitionSystem`: its initial states and, per expanded state, an
+  `Expansion` (its successors, each a transition identity and a post-state
+  in the typed canonical form of QSpec FR-181's exploration contract, and
+  its findings) or an `ExpansionStop`.
 - The simulation request's parameter-domain and population types, as
   `domains: &[(WireNodeId, &ValueType)]`: each type with the wire id of the
   checked node that carries it.
@@ -63,9 +68,12 @@ samples it.
 
 ## Outputs
 
-- `Outcome::Exhaustive(Stats)`, `Outcome::Bounded{stats, frontier, limit}`
-  or `Outcome::Cancelled{stats, frontier, cause}`.
-- A sampled `Trace` with its `SampleProvenance{seed, trace, sampler, stopped}`.
+- `Exploration<F>{outcome, findings}`, whose `outcome` is
+  `Outcome::Exhaustive(Stats)`, `Outcome::Bounded{stats, frontier, limit}`,
+  `Outcome::Cancelled{stats, frontier, cause}` or
+  `Outcome::Stopped{stats, frontier, cause}`.
+- A sampled `Trace<T, F>` with its `SampleProvenance{seed, trace, sampler,
+  stopped}` and its findings.
 - `NotSimulated`, returned before any state is explored or sampled.
 - A replay result: success, or the first step that does not replay.
 
@@ -77,6 +85,40 @@ only the crates ADR-011 X-8 and TC-390 list; it gains no dependency on
 `qsl-replay` or `qsl-cst`.
 
 ```rust
+pub trait TransitionSystem {
+    type State;
+    type TransitionId: Clone + Eq + std::fmt::Debug + Serialize;
+    type Key: Serialize;
+    type Finding: Clone + Eq + std::fmt::Debug;
+
+    fn initial(&self) -> Vec<Self::State>;
+    fn key(&self, state: &Self::State) -> Self::Key;
+    fn successors(
+        &self,
+        state: &Self::State,
+    ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop>;
+}
+
+pub struct Expansion<T, S, F> {
+    pub successors: Vec<(T, S)>,
+    pub findings: Vec<F>,
+}
+
+pub struct ExpansionStop {
+    pub cause: CatalogCode,
+}
+
+pub struct Exploration<F> {
+    pub outcome: Outcome,
+    pub findings: Vec<StateFindings<F>>,
+}
+
+pub struct StateFindings<F> {
+    pub state: DigestRecord,
+    pub depth: usize,
+    pub findings: Vec<F>,
+}
+
 pub fn explore_request<S: TransitionSystem>(
     system: &S,
     domains: &[(WireNodeId, &ValueType)],
@@ -84,7 +126,7 @@ pub fn explore_request<S: TransitionSystem>(
     position_limit: u64,
     limits: Limits,
     poll: impl FnMut() -> bool,
-) -> Result<Outcome, NotSimulated>;
+) -> Result<Exploration<S::Finding>, NotSimulated>;
 
 pub fn sample_request<S: TransitionSystem>(
     system: &S,
@@ -95,7 +137,7 @@ pub fn sample_request<S: TransitionSystem>(
     seed: u64,
     trace: u64,
     max_steps: usize,
-) -> Result<Trace<S::TransitionId>, NotSimulated>;
+) -> Result<Trace<S::TransitionId, S::Finding>, NotSimulated>;
 
 pub enum NotSimulated {
     /// The request's extent is unbounded (ADR-014 §4).
@@ -223,7 +265,38 @@ reports `Exhaustive`. `Bounded` carries the limit that stopped it.
 `Cancelled` carries `cause: CatalogCode` (`qsl_foundation::diagnostic`),
 always `CatalogCode::new("cancelled", "caller-cancelled")`. Both carry the
 unexplored frontier in the order the run would have expanded it next.
-`Outcome::category()` stays FR-097-AC-5's map.
+`Outcome::category()` is FR-097-AC-5's map.
+
+**Findings and stopped expansions.** The engine calls `successors` once per
+expanded state. Each expanded state whose `Expansion` has at least one
+finding contributes one `StateFindings` to `Exploration.findings`, in
+expansion order, holding its state-key digest, its depth and its findings in
+the order the system returned them. The entries cover exactly the expanded
+states.
+
+An `Err(ExpansionStop)` ends exploration with `Outcome::Stopped{stats,
+frontier, cause}`. `ExpansionStop` carries its cause alone; the
+entries cover the states expanded before the stop. The frontier is the state whose expansion stopped, then
+the queued states in next-expansion order. `Outcome::category()` gives
+`Stopped` the ADR-013 O-16 category of `cause`'s code: incomplete for
+`resource_exhausted`, internal failure for `runtime_invariant`.
+
+Sampling expands every state on the trace, the last included, and records
+each expanded state's findings in `Trace.findings`, with depth equal to the
+state's step index (0 for the initial state). The last state's successors
+are not drawn from. An `ExpansionStop` at any state of the trace, the last
+included, ends the trace with `StopReason::Stopped(cause)` at that state.
+
+Replay expands each state of the trace again. It succeeds when every
+recomputed expansion matches the trace: the same findings, no stop before
+the trace's last state, and, at the last state, a stop with the same cause
+exactly when the trace ended `StopReason::Stopped(cause)`. It refuses
+`ReplayError::FindingMismatch{step}` at the first state whose recomputed
+findings differ from the recorded ones, and `ReplayError::Stopped{step,
+recorded, replayed}` at the first state where the recomputed expansion
+stops and the trace did not stop there, the trace stopped there and the
+recomputed expansion does not, or both stop with different causes;
+`recorded` and `replayed` are each that state's stop cause or none.
 
 **Requires-bound.** Before any `TransitionSystem` method is called,
 `explore_request` and `sample_request` classify `domains` with the ADR-014
@@ -256,6 +329,9 @@ disposition of each existing test is in the table below.
 | FR-101-AC-9 | Initial states are admitted in ascending state-key byte order, and equal keys coalesce into one state. A `max_states` cap reached during admission returns `Bounded` at `Limit::States` with frontier: admitted, then refused, then the rest, in canonical order; `max_states` 0 admits none and puts every initial state in the frontier. Exploring a system with no initial state returns `Exhaustive` with zero stats. | Test (TC-453) |
 | FR-101-AC-10 | `sample_request` refuses before any draw with `NotSimulated::GeneratorMismatch` when the supplied `DefinitionRef`'s identity is not `quire.simulation.sampler/v1` or its version is not `1-draft.1`, and with `NotSimulated::EmptyInitial` when the system has no initial state. A run that reaches `max_steps` stops with `StopReason::StepLimit`, whether or not the current state has successors. `GeneratorMismatch`'s catalog code is `invalid_runtime_input`/`invalid-value`. | Test (TC-454) |
 | FR-101-AC-11 | A `TransitionSystem::Key` or `TransitionId` with no RFC 8785 encoding -- for example a `u64` above `2^53` -- refuses `NotSimulated::KeyEncoding` from `explore_request` and `sample_request`, and `ReplayError::KeyEncoding` from `replay`, instead of aborting the process. | Test (TC-453) |
+| FR-101-AC-12 | On a test system `0 → {1, 2}`, `1 → 3`, whose expansion of `1` returns `ExpansionStop` with `resource_exhausted`/`insufficient-next-charge`, exploration returns `Outcome::Stopped` with that cause, frontier `[<1>, <2>]` (the stopped state, then the queue), category incomplete; with `runtime_invariant`/`established-invariant-broken` it returns `Stopped`, category internal failure. | Test (TC-474) |
+| FR-101-AC-13 | On a test system whose expansion of state `s` returns finding `f`, `Exploration.findings` holds one `StateFindings` for `s` with its digest, its depth and `[f]`, in expansion order; a system whose `s` sits in a `Bounded` frontier has no entry for it; the stopped state of AC-12 has no entry. | Test (TC-474) |
+| FR-101-AC-14 | Sampling the chain `0 → 1`, whose expansion of `1` stops with `resource_exhausted`/`insufficient-next-charge`, ends with `StopReason::Stopped(resource_exhausted/insufficient-next-charge)` at step 1, and that trace replays successfully. The same trace replayed against a system whose expansion of `1` does not stop refuses `ReplayError::Stopped{step: 1, recorded: Some(<cause>), replayed: None}`; against one that stops with `runtime_invariant`, `recorded` and `replayed` name the two causes; a trace sampled with `max_steps` 1 from a chain whose `1` does not stop ends `StepLimit` at `1`, and replayed against the stopping chain it refuses with `recorded: None`. A trace whose recorded findings differ from the recomputed ones refuses `ReplayError::FindingMismatch` at that step. | Test (TC-474) |
 
 ## Existing test disposition
 
@@ -310,7 +386,10 @@ and the new signatures where this requirement changes them.
 
 ## Status
 
-Implemented under QSL-272. `qsl-eval::simulation` exposes `explore_request`
+AC-1 to AC-11 implemented under QSL-272. AC-12 to AC-14 (findings,
+`ExpansionStop`, `Outcome::Stopped`, `StopReason::Stopped` and the replay
+errors `FindingMismatch` and `Stopped`) are specified under QSL-274 and not
+yet implemented; TC-474 is planned. `qsl-eval::simulation` exposes `explore_request`
 and `sample_request` as its only public entries; `explore`, `sample` and
 `Sampler` are `pub(crate)`. Exploration orders successors by ascending JCS
 transition-identity bytes, tie-broken by ascending post-state key bytes, and

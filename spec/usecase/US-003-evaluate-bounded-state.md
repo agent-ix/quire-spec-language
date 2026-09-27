@@ -17,6 +17,8 @@ relationships:
     type: exercises
   - target: "ix://agent-ix/quire-spec-language/FR-101"
     type: exercises
+  - target: "ix://agent-ix/quire-spec-language/FR-120"
+    type: exercises
 ---
 # US-003: Evaluate a bounded state with honest outcomes
 
