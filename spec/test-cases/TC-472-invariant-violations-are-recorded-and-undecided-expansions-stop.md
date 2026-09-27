@@ -73,7 +73,8 @@ Tag the tests `#[trace("TC-472", "FR-120-AC-n")]`.
   `insufficient-next-charge`, frontier `[<s0's digest>]`, category
   incomplete. Third, `Stopped` with the same cause.
 - Step 3: `wrong_snapshot`/`wrong-observation`; `wrong_snapshot`/
-  `wrong-anchor`; `wrong_snapshot`/`wrong-anchor`;
+  `wrong-anchor`; `invalid_runtime_input`/`wrong-value-kind` with field
+  `anchor`;
   `invalid_runtime_input`/`invalid-value` naming `counters` and `c3`;
   `invalid_runtime_input`/`conflicting-identity`;
   `invalid_runtime_input`/`wrong-role-mapping` naming

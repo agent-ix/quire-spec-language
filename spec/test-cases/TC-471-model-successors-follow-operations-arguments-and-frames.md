@@ -62,9 +62,11 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
   {`c1`} and {`c1`, `c2`}; none deletes `c2` alone. Each successor's
   created and deleted sets equal the delta `StateModel::check_frame`
   returns.
-- Step 4: `semantic` is exactly FR-120-AC-4's JCS value, with `<U>` the
-  `UniverseId` of `counters` and `<E>` the `EffectiveId` of `Counter`, each
-  as 64 lowercase hex digits; its population key is
+- Step 4: `semantic` is exactly FR-120-AC-4's JCS value, with `<U>` and
+  `<E>` the universe and effective type, each as 64 lowercase hex digits,
+  of the `ObjectReference` that FR-106 admission (`StateModel::
+  admit_initial`) gives `c1` in `s0`'s admitted `Observation`: the test
+  reads them from admission, not from the simulator's key; its population key is
   `{"type":"text","value":"{\"digest_domain\":\"sha256-jcs\",\"node\":\"test/counters/counters\",\"package\":\"test/counters\"}"}`
   and `c1`'s `identity` is `6331`. `control`, `queues`, `roles`,
   `observations` and `bounds` are `{"type":"map","entries":[]}`. The two

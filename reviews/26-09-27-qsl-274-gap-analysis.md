@@ -38,3 +38,24 @@ that no AC covers.
 Request changes. Fix FND-001 and FND-002 in this PR. FND-003 and FND-004
 are small TC edits. Every AC is testable once SR-753 FND-001 (the QSL-289
 dependency) is resolved.
+
+## Dispositions
+
+Round 2, reviewed at 58c0a42945f421271faffadd3b9c50499ca8e19a (fix commit
+58c0a429).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 58c0a429: FR-101-AC-12 to AC-14 and TC-474 steps 1 to 6 cover `Stopped` with both causes and their categories, a two-entry frontier `[<1>, <2>]`, `StopReason::Stopped`, both `ReplayError::Stopped` directions and `FindingMismatch`. The frontier and depth expectations match `explore.rs` (depth check at :195). The `runtime_invariant` case is tested at engine level only. Reaching it through `ModelSystem` needs a fault the construction rules out, so an engine-level test is enough. |
+| FND-002 | fixed | 58c0a429: FR-120-AC-9 and TC-472 step 6 test `ContractUndetermined` for pre and post, the candidate digest and independence from clause names. The `SumOutOfDomain` undefined value exists in `quire-exact/src/outcome.rs:114`. FR-120-AC-10 and TC-473 step 1 test the result order, the first result, `StepEffect.result` and the result root. |
+| FND-003 | fixed | 58c0a429: TC-473 builds each effect by replaying hand-written one-step traces, with no seeds. Step 3 names the child process (`current_exe`, a filter for the ignored test, `current_dir` set to a `TempDir`). |
+| FND-004 | fixed | 58c0a429: the `wrong-role-mapping` row is added. The new anchor-kind `other` row expects the wrong code; SR-753 R2-FND-001 tracks that. |
+
+Round 2 findings, new at 58c0a429:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| R2-FND-001 | low | TC-474 step 6 samples with "a seed that takes `2` (found by the test from the pinned sampler's draws and fixed in the test)". The TC names no seed, so the expected result depends on a value the TC does not state. Fix: pin the seed. The pinned `n = 2` vectors FR-101 already carries give one, or the step can replay a hand-written trace `0 → 2`. | spec/test-cases/TC-474-engine-findings-and-stopped-expansions.md (step 6) |
+
+Verdict at round 2: all four round-1 gaps are closed. TC-474 and
+FR-101-AC-12 to AC-14 are concrete apart from R2-FND-001.

@@ -41,9 +41,12 @@ test system is an integer graph whose `successors` returns a configured
    `established-invariant-broken`.
 5. Sample the non-stopping chain with `max_steps` 1 and replay the trace
    against the stopping chain.
-6. Sample step 2's graph from `0` with `max_steps` 2 and a seed that takes
-   `2` (found by the test from the pinned sampler's draws and fixed in the
-   test), then replay the trace with `"f"` removed from its findings.
+6. Sample step 2's graph from `0` with seed `424243`, trace `0` and
+   `max_steps` 2, then replay the trace with `"f"` removed from its
+   findings. Seed `424243`'s step-0 draw preimage
+   `{"draw":"0","seed":"424243","step":"0","trace":"0"}` hashes to a digest
+   whose big-endian value is odd, so with `n = 2` it selects index 1, the
+   successor `2` in canonical order.
 
 Tag the tests `#[trace("TC-474", "FR-101-AC-n")]` and, for step 1's
 categories, `#[trace("TC-474", "FR-097-AC-5")]`.
@@ -68,7 +71,9 @@ categories, `#[trace("TC-474", "FR-097-AC-5")]`.
 - Step 5: the trace ends `StepLimit` at step 1; replay refuses
   `ReplayError::Stopped { step: 1, recorded: None, replayed:
   Some(resource_exhausted/insufficient-next-charge) }`.
-- Step 6: `ReplayError::FindingMismatch { step: 1 }`.
+- Step 6: the trace is `0 → 2`, ending `NoSuccessors` at step 1 with
+  `"f"` in its findings; the edited trace refuses
+  `ReplayError::FindingMismatch { step: 1 }`.
 
 ## Status
 

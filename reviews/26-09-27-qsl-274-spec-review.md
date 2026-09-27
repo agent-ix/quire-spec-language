@@ -73,3 +73,38 @@ fixed by declaring the QSL-289 dependency. FND-007 to FND-013 are one-line
 edits and belong in the same round. Nothing is structurally wrong. The
 precondition reading, the reuse of the frame decision, the catalog codes and
 the S4-only scope are all sound.
+
+## Dispositions
+
+Round 2, reviewed at 58c0a42945f421271faffadd3b9c50499ca8e19a (fix commit
+58c0a429). Each outcome below was checked against the spec text at that
+head and, where the fix cites code, against that code on main.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 58c0a429: FR-120 Dependencies :512-516 and Status :533-535 name QSL-289 (PR #498). TC-471 to TC-473 are marked runnable once QSL-289 lands. Linear shows QSL-289 blocks QSL-274. |
+| FND-002 | fixed | 58c0a429: FR-101 carries the trait, `Exploration`, `Trace<T, F>`, "Findings and stopped expansions" and AC-12 to AC-14. FR-097-AC-5 maps `Stopped`. |
+| FND-003 | fixed | 58c0a429: FR-101's replay rule accepts a stop at the last state with the same cause. FR-101-AC-14 and FR-120-AC-8 test it. |
+| FND-004 | fixed | 58c0a429: FR-120:140-148 defines the identity text as the JCS `$defs.DeclarationKey` preimage (`key.rs` `wire()`). It is used for population keys, record names, operations and anchors, and AC-1 and AC-4 give it literally. `<U>` and `<E>` are covered by R2-FND-002. |
+| FND-005 | fixed | 58c0a429: FR-120:216-290 defines the public seam `qsl_semantics::model::state` (`StateModel`, `ModelState`, `StateDelta`). `check_frame` calls `population::decide_frame`, the one frame decision. The `Observation`, `DocumentRef` and `AdmittedObservations` construction is spelled out field by field. |
+| FND-006 | fixed | 58c0a429: FR-120:206-214 gives initial states `{initialization, name}` and reached states `{handler, <operation>}`, both labelled as QSL's choice. The finding records the anchor. See R2-FND-003 for the wording on sampled traces. |
+| FND-007 | fixed | 58c0a429: FR-120:317-328 marks the own-clause conjunction as QSL's inference and cites `checked_dispatch.rs:477` and `intake.rs:1444`. |
+| FND-008 | fixed | 58c0a429: FR-120:332-349 evaluates every applicable clause, and the result depends only on the set of outcomes. FR-120-AC-9 tests it with `Never` and `Aaa`. |
+| FND-009 | fixed | 58c0a429: FR-120:91-134 gives the `sample_model` signature. It samples and then replays, and `ModelTrace.effects` is derived by replay. |
+| FND-010 | fixed | 58c0a429: FR-120:432-437 derives each root's `WireNodeId`. TC-472 step 4 names both roots. |
+| FND-011 | fixed | 58c0a429: FR-120:461-463 cites `check.rs:1667-1673`. `self_reference` refuses at the `self` location; checked. |
+| FND-012 | fixed | 58c0a429: the listed sentences were restated positively (:302, :357-360, :526-529). |
+| FND-013 | fixed | 58c0a429: FR-120:415-417 and FR-101 "Findings and stopped expansions" state both. FR-101-AC-13 tests them. |
+
+Round 2 findings, new at 58c0a429:
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| R2-FND-001 | medium | FR-120-AC-7 and TC-472 step 3 expect `wrong_snapshot`/`wrong-anchor` for an initial snapshot whose anchor kind is `other`. The reader only accepts `initialization` and `handler` and refuses anything else with `wrong_kind("anchor")`, which is `invalid_runtime_input`/`wrong-value-kind` with field `anchor` (`qsl-semantics/src/model/observation/document.rs:525-528`, :401-403). That refusal comes at FR-106 check 1, the read, which `admit_initial` runs before check 3. The test as written fails. Fix: expect `invalid_runtime_input`/`wrong-value-kind` (field `anchor`) for that row, or drop it; the `{handler, validate}` row already covers `wrong-anchor`. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:494; spec/test-cases/TC-472-invariant-violations-are-recorded-and-undecided-expansions-stop.md (step 3, expected) |
+| R2-FND-002 | low | FR-120-AC-4 and TC-471 step 4 leave `<U>` and `<E>` as placeholders and do not say where the test gets them. If the test reads them from the simulator's own key encoding, those two members are asserted against themselves. Fix: take them from the `ObjectReference` that FR-106 admission gives `c1` in `s0`'s admitted `Observation`, which is independent of the simulator. Alternatively, pin the two hex values, as FR-101-AC-2 pins digests. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:491; spec/test-cases/TC-471-model-successors-follow-operations-arguments-and-frames.md (step 4, expected) |
+| R2-FND-003 | low | The anchor rule says "the transition by which exploration or the trace first reached it". That holds for exploration, whose engine keeps the first visited state (`explore.rs:219-235`). A sampled trace does not coalesce, and `successors` is pure, so a revisited state in a trace carries the anchor of the transition that produced it at that step, not the first one. Fix: for a trace, say the anchor is that step's transition. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:209-213 |
+| R2-FND-004 | low | `check_frame` calls `decide_frame` "with the computed delta as the declared delta". But `decide_frame` takes the declared lists as input (`FrameDecision.declared_created`/`declared_deleted`, `population.rs:1374-1385`). Fix: say that `check_frame` first computes each population's created and deleted keys as the key-set difference and passes those. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:265-272 |
+
+Verdict at round 2: all 13 round-1 findings are fixed. Fix R2-FND-001, a
+one-row expected-code edit, before merge. R2-FND-002 to R2-FND-004 are
+one-line edits for the same round.
