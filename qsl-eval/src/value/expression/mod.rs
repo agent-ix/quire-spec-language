@@ -26,6 +26,7 @@
 mod causes;
 mod evaluate;
 mod family;
+mod protocol_clause;
 mod s6a;
 
 use evaluate::Machine;
@@ -81,6 +82,15 @@ pub enum InputRefusal {
         /// The parameter index.
         parameter: usize,
     },
+    /// FR-107: `evaluate_clause`'s name resolves to no state clause of this
+    /// package: `missing_declaration` / `missing-name`.
+    #[error("no state clause named {0}")]
+    UnknownClause(String),
+    /// FR-107: `evaluate_clause`'s observations were admitted for a
+    /// different clause than the one named: `invalid_runtime_input` /
+    /// `wrong-role-mapping`.
+    #[error("the observations were admitted for another clause")]
+    ObservationsMismatch,
 }
 
 impl InputRefusal {
@@ -88,18 +98,20 @@ impl InputRefusal {
     pub fn code(&self) -> qsl_foundation::diagnostic::Code {
         use qsl_foundation::diagnostic::Code;
         match self {
-            Self::UnknownFunction(_) => Code::MissingDeclaration,
+            Self::UnknownFunction(_) | Self::UnknownClause(_) => Code::MissingDeclaration,
             Self::Arity { .. } | Self::WrongValueKind { .. } => Code::InvalidRuntimeInput,
             Self::DanglingReference { .. } => Code::DanglingReference,
+            Self::ObservationsMismatch => Code::InvalidRuntimeInput,
         }
     }
 
     /// The closed cause tag.
     pub fn cause(&self) -> &'static str {
         match self {
-            Self::UnknownFunction(_) => "missing-name",
+            Self::UnknownFunction(_) | Self::UnknownClause(_) => "missing-name",
             Self::Arity { .. } | Self::WrongValueKind { .. } => "wrong-value-kind",
             Self::DanglingReference { .. } => "absent-target-in-complete-population",
+            Self::ObservationsMismatch => "wrong-role-mapping",
         }
     }
 }
@@ -232,16 +244,47 @@ fn validate(
 /// `--cfg seam_probe` with `E0004`.
 #[deny(clippy::wildcard_enum_match_arm)]
 #[deny(clippy::match_wildcard_for_single_variants)]
+/// The evaluation environment `evaluate_declaration` runs `identity`
+/// against: exactly one variant per [`S6aFamilyKind`] family (FR-107,
+/// QSL-278), each carrying its own family's real `Env<'a>`. A caller always
+/// pairs a `family` with its own matching variant; the mismatched pairs
+/// `evaluate_declaration`'s own match handles are a broken invariant, never
+/// reachable through [`CheckedPackageEvaluation::call`] or
+/// [`CheckedPackageEvaluation::evaluate_clause`].
+enum EvaluationTarget<'e, 'a> {
+    Value(&'e mut family::EvaluationEnv<'a>),
+    ProtocolClause(&'e mut protocol_clause::ProtocolClauseEnv<'a>),
+}
+
 fn evaluate_declaration(
     family: S6aFamilyKind,
     identity: &NodeKey,
-    env: &mut family::EvaluationEnv<'_>,
+    env: EvaluationTarget<'_, '_>,
     meter: &mut Meter,
 ) -> Result<Evaluation, InternalFault> {
-    let outcome = match family {
-        S6aFamilyKind::Value => {
-            qsl_semantics::check::ValueFunctionFamily::evaluate(identity, env, meter)?
-        } // FR-063: no arm for `S6aFamilyKind::__SeamProbe` -- under
+    let mismatch = || InternalFault::new("S6a", "family-and-evaluation-environment-disagree");
+    let (outcome, location, losses) = match (family, env) {
+        (S6aFamilyKind::Value, EvaluationTarget::Value(env)) => {
+            let outcome =
+                qsl_semantics::check::ValueFunctionFamily::evaluate(identity, env, meter)?;
+            (
+                outcome.into(),
+                env.location.take(),
+                std::mem::take(&mut env.losses),
+            )
+        }
+        (S6aFamilyKind::ProtocolClause, EvaluationTarget::ProtocolClause(env)) => {
+            let outcome =
+                qsl_semantics::check::ProtocolClauseFamily::evaluate(identity, env, meter)?;
+            (
+                outcome.into(),
+                env.location.take(),
+                std::mem::take(&mut env.losses),
+            )
+        }
+        (S6aFamilyKind::Value, EvaluationTarget::ProtocolClause(_))
+        | (S6aFamilyKind::ProtocolClause, EvaluationTarget::Value(_)) => return Err(mismatch()),
+        // FR-063: no arm for `S6aFamilyKind::__SeamProbe` -- under
         // `--cfg seam_probe` this match is deliberately non-exhaustive
         // (`E0004`). Do not add a catch-all to make it compile.
         //
@@ -250,14 +293,14 @@ fn evaluate_declaration(
         // `qsl-replay` depends on this crate, so it must compile there
         // for the root crate's own seams to be reached at all.
         #[cfg(seam_probe_eval_downstream)]
-        S6aFamilyKind::__SeamProbe => {
+        (S6aFamilyKind::__SeamProbe, _) => {
             unreachable!("never constructed outside the probe build")
         }
     };
     Ok(Evaluation {
-        outcome: outcome.into(),
-        location: env.location.take(),
-        losses: std::mem::take(&mut env.losses),
+        outcome,
+        location,
+        losses,
     })
 }
 
@@ -318,6 +361,21 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         objects: &ObjectEnvironment,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
+
+    /// FR-107: evaluate one checked state clause over `observations`
+    /// (FR-106's `AdmittedObservations`), the `ProtocolClause` S6a family's
+    /// entry point beside [`Self::call`]'s `Value` one.
+    ///
+    /// Refuses `InputRefusal::UnknownClause` (naming `clause`) when the name
+    /// resolves to no state clause, or `InputRefusal::ObservationsMismatch`
+    /// when `observations` were admitted for a different clause, in either
+    /// case without charging `meter`.
+    fn evaluate_clause(
+        &self,
+        clause: &QualifiedName,
+        observations: &qsl_semantics::model::observation::AdmittedObservations,
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure>;
 }
 
 impl CheckedPackageEvaluation for CheckedPackage {
@@ -347,8 +405,13 @@ impl CheckedPackageEvaluation for CheckedPackage {
         // shape a denied charge inside the body takes.
         let identity = callable.identity;
         let mut env = family::EvaluationEnv::new(self, objects, arguments);
-        evaluate_declaration(S6aFamilyKind::Value, &identity, &mut env, meter)
-            .map_err(CallFailure::Fault)
+        evaluate_declaration(
+            S6aFamilyKind::Value,
+            &identity,
+            EvaluationTarget::Value(&mut env),
+            meter,
+        )
+        .map_err(CallFailure::Fault)
     }
 
     fn evaluate(
@@ -367,6 +430,77 @@ impl CheckedPackageEvaluation for CheckedPackage {
             self.graph().dispatch_tables(),
         )
         .run(expression.root(), expression.slots(), arguments)
+        .map_err(CallFailure::Fault)
+    }
+
+    fn evaluate_clause(
+        &self,
+        clause: &QualifiedName,
+        observations: &qsl_semantics::model::observation::AdmittedObservations,
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure> {
+        let name = clause
+            .as_unqualified()
+            .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
+        let declaration = self
+            .graph()
+            .state_clause(name)
+            .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
+        if declaration.identity() != observations.clause {
+            return Err(InputRefusal::ObservationsMismatch.into());
+        }
+        let current = observations
+            .current
+            .as_ref()
+            .or(observations.post.as_ref())
+            .ok_or_else(|| {
+                CallFailure::Fault(InternalFault::new(
+                    "S6a",
+                    "clause-observations-missing-current-or-post",
+                ))
+            })?;
+        let pre_environment = observations
+            .pre
+            .as_ref()
+            .map(|observation| &observation.environment);
+
+        let mut bindings = Vec::with_capacity(declaration.parameters().len());
+        bindings.push(Value::Reference(observations.self_object.clone()));
+        let mut remaining = declaration.parameters().get(1..).unwrap_or(&[]).iter();
+        if let Some((name, _)) = remaining.clone().next() {
+            if name == "result" {
+                remaining.next();
+                let result = observations.result.clone().ok_or_else(|| {
+                    CallFailure::Fault(InternalFault::new("S6a", "postcondition-result-missing"))
+                })?;
+                bindings.push(result);
+            }
+        }
+        for (parameter, _) in remaining {
+            let value = observations
+                .parameters
+                .iter()
+                .find(|(name, _)| name == parameter)
+                .map(|(_, value)| value.clone())
+                .ok_or_else(|| {
+                    CallFailure::Fault(InternalFault::new("S6a", "clause-parameter-not-admitted"))
+                })?;
+            bindings.push(value);
+        }
+
+        let identity = declaration.identity();
+        let mut env = protocol_clause::ProtocolClauseEnv::new(
+            self.graph(),
+            &current.environment,
+            pre_environment,
+            bindings,
+        );
+        evaluate_declaration(
+            S6aFamilyKind::ProtocolClause,
+            &identity,
+            EvaluationTarget::ProtocolClause(&mut env),
+            meter,
+        )
         .map_err(CallFailure::Fault)
     }
 }
@@ -499,6 +633,7 @@ mod tests {
     fn s6a_family_name(family: S6aFamilyKind) -> &'static str {
         match family {
             S6aFamilyKind::Value => "Value",
+            S6aFamilyKind::ProtocolClause => "ProtocolClause",
         }
     }
 
@@ -537,10 +672,33 @@ mod tests {
         let undeclared = NodeKey::from_digest([0xAB; 32]);
         for kind in S6aFamilyKind::ALL {
             let name = s6a_family_name(kind);
-            let mut env = family::EvaluationEnv::new(&empty, &objects, Vec::new());
             let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-            let fault = evaluate_declaration(kind, &undeclared, &mut env, &mut meter)
-                .expect_err("a package that declares no item of the family resolves no identity");
+            let fault = match kind {
+                S6aFamilyKind::Value => {
+                    let mut env = family::EvaluationEnv::new(&empty, &objects, Vec::new());
+                    evaluate_declaration(
+                        kind,
+                        &undeclared,
+                        EvaluationTarget::Value(&mut env),
+                        &mut meter,
+                    )
+                }
+                S6aFamilyKind::ProtocolClause => {
+                    let mut env = protocol_clause::ProtocolClauseEnv::new(
+                        empty.graph(),
+                        &objects,
+                        None,
+                        Vec::new(),
+                    );
+                    evaluate_declaration(
+                        kind,
+                        &undeclared,
+                        EvaluationTarget::ProtocolClause(&mut env),
+                        &mut meter,
+                    )
+                }
+            }
+            .expect_err("a package that declares no item of the family resolves no identity");
             assert_eq!(fault.stage(), "S6a", "{name}");
             assert_eq!(fault.category(), Category::InternalFailure, "{name}");
             assert_eq!(
@@ -566,9 +724,13 @@ mod tests {
             vec![Value::Integer(Integer::from(3_i64))],
         );
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let evaluation =
-            evaluate_declaration(S6aFamilyKind::Value, &identity, &mut env, &mut meter)
-                .expect("a declared identity evaluates");
+        let evaluation = evaluate_declaration(
+            S6aFamilyKind::Value,
+            &identity,
+            EvaluationTarget::Value(&mut env),
+            &mut meter,
+        )
+        .expect("a declared identity evaluates");
         assert_eq!(outcome_arm(&evaluation.outcome), "Evaluated");
         assert!(
             matches!(

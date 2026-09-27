@@ -124,16 +124,16 @@ impl StateClauseDeclaration {
 }
 
 /// The read-only declarations a state clause checks against.
-pub(crate) struct ClauseDeclarations<'a> {
-    pub(crate) scope: &'a Scope,
-    pub(crate) signatures: &'a Signatures,
-    pub(crate) dispatch_tables: &'a [DispatchTable],
-    pub(crate) models: &'a [AdmittedModel],
-    pub(crate) checking_limits: CheckingLimits,
+pub struct ClauseDeclarations<'a> {
+    pub scope: &'a Scope,
+    pub signatures: &'a Signatures,
+    pub dispatch_tables: &'a [DispatchTable],
+    pub models: &'a [AdmittedModel],
+    pub checking_limits: CheckingLimits,
     /// The clause body's root location.
-    pub(crate) location: &'a Location,
+    pub location: &'a Location,
     /// The package's running expression-node total before this clause.
-    pub(crate) nodes_used: u64,
+    pub nodes_used: u64,
 }
 
 /// One population domain of a requested item (FR-104 "Requirements"): the
@@ -149,7 +149,7 @@ pub struct PopulationDomain {
 
 /// What an `operation-contract` claim is about.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ClaimSubject {
+pub enum ClaimSubject {
     /// The clause itself, keyed by its `claim` occurrence.
     Clause,
     /// The frame of the operation a `pre` or `post` clause names, keyed by
@@ -160,23 +160,23 @@ pub(crate) enum ClaimSubject {
 /// One `operation-contract` claim of a checked state clause, before
 /// lowering keys it (ADR-012 §13.5).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ClauseClaim {
-    pub(crate) subject: ClaimSubject,
+pub struct ClauseClaim {
+    pub subject: ClaimSubject,
     /// The population domains the item ranges over.
-    pub(crate) populations: Vec<PopulationDomain>,
+    pub populations: Vec<PopulationDomain>,
 }
 
 /// A state clause checked by [`ProtocolClauseFamily::check`], before
 /// lowering keys it.
 #[derive(Debug)]
-pub(crate) struct TypedStateClause {
+pub struct TypedStateClause {
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) body: Node,
     pub(crate) slots: usize,
     pub(crate) slot_names: Vec<String>,
     pub(crate) observations: Observations,
     pub(crate) formed_units: crate::value::quantity::UnitTable,
-    pub(crate) nodes_used: u64,
+    pub nodes_used: u64,
     /// The object types whose population domains the claims name, the
     /// context's first.
     pub(crate) population_types: Vec<EffectiveId>,
@@ -185,7 +185,7 @@ pub(crate) struct TypedStateClause {
 
 /// The `ProtocolClause` family's state clause production (ADR-012 §15.2,
 /// FR-104).
-pub(crate) struct ProtocolClauseFamily;
+pub struct ProtocolClauseFamily;
 
 /// The one population with no maximum that covers `object`, by conformance
 /// (FR-104, FR-084's `allInstances<T>`: a member type or a proper supertype

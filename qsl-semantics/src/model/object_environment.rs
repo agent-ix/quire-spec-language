@@ -168,7 +168,30 @@ impl ObjectEnvironment {
         self.populations.get(&population_id).map(Arc::as_ref)
     }
 
-    /// Whether the referenced object is in the environment.
+    /// The environment's own reference whose universe is `universe` and
+    /// declared key is `object`, whatever its most-specific type is (FR-109:
+    /// a `Function` selection's object argument names an object by
+    /// population and key alone, with no declared type of its own to
+    /// narrow the search). `None` when no admitted object matches, or more
+    /// than one does (an object identity is unique within one universe, so
+    /// more than one match is a broken admission invariant, not a real
+    /// ambiguity).
+    pub fn find(
+        &self,
+        universe: quire_exact::UniverseId,
+        object: &str,
+    ) -> Option<&ObjectReference> {
+        let mut found = self.objects.keys().filter(|reference| {
+            reference.universe() == universe && reference.object().as_str() == object
+        });
+        let first = found.next()?;
+        match found.next() {
+            None => Some(first),
+            Some(_) => None,
+        }
+    }
+
+    /// Whether `reference` names an object of the environment.
     pub fn contains(&self, reference: &ObjectReference) -> bool {
         self.objects.contains_key(reference)
     }

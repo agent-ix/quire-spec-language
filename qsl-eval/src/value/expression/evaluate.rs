@@ -8,6 +8,7 @@
 //! make no charge.
 
 use std::cmp::Ordering;
+use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use super::causes::{
@@ -23,7 +24,7 @@ use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::population::PopulationBinding;
-use qsl_semantics::value::declaration::{operand_value, CompositeShape};
+use qsl_semantics::value::declaration::{operand_value, CompositeShape, FieldRef};
 use qsl_semantics::value::enumeration::{compare_enum, EnumMemberIndex};
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use qsl_semantics::value::quantity::{
@@ -33,7 +34,7 @@ use qsl_semantics::value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, FieldValue,
-    OptionValue, Value, ValueType,
+    ObjectReference, OptionValue, Value, ValueType,
 };
 use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
@@ -226,6 +227,13 @@ fn charge_element(meter: &mut Meter) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(ChargePoint::CollectionElement))?)
 }
 
+/// One charge at `point`, one work unit, no size or result units
+/// (FR-107: `model.deref`, `model.navigate`, `graph.expand`, `graph.edge`,
+/// `graph.result-retain`).
+fn charge_named(meter: &mut Meter, point: ChargePoint) -> Result<(), Stop> {
+    Ok(meter.charge(Charge::new(point))?)
+}
+
 /// `dispatch.select`: one dispatched `receiver.member(args)` call, sized by
 /// `candidates`, the table's total distinct-candidate count
 /// (`value-accounting.md`: `value_occurrences=c`; `work_units += c`).
@@ -345,6 +353,16 @@ pub(crate) struct Machine<'a, 'm> {
     /// `native-diagnostics.md`).
     graph: &'a CheckedGraph,
     objects: &'a ObjectEnvironment,
+    /// FR-107: a precondition's or postcondition's pre observation, distinct
+    /// from `objects` (the clause's own observation: `current` for an
+    /// invariant, `post` for a postcondition). `None` for the `Value`
+    /// family, which has no state-clause observations at all.
+    pre_objects: Option<&'a ObjectEnvironment>,
+    /// FR-107: every model read's own observation, by its checked
+    /// location (`CheckedStateClause::reads`), consulted only at an
+    /// `Attribute` node to choose `objects` or `pre_objects`. Empty for the
+    /// `Value` family.
+    reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
     meter: &'m mut Meter,
     dispatch_tables: &'a [DispatchTable],
     values: Vec<Value>,
@@ -379,11 +397,30 @@ impl<'a, 'm> Machine<'a, 'm> {
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
+        Self::with_pre(scope, graph, objects, None, None, meter, dispatch_tables)
+    }
+
+    /// [`Self::new`], additionally carrying a precondition's or
+    /// postcondition's pre observation and the clause's own model-read
+    /// observations (FR-107): `pre_objects` is consulted at an `Attribute`
+    /// node whose location `reads` maps to `Observation::Pre`. Both are
+    /// `None` for every caller but [`super::protocol_clause`]'s S6a hook.
+    pub(crate) fn with_pre(
+        scope: &'a Scope,
+        graph: &'a CheckedGraph,
+        objects: &'a ObjectEnvironment,
+        pre_objects: Option<&'a ObjectEnvironment>,
+        reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+        meter: &'m mut Meter,
+        dispatch_tables: &'a [DispatchTable],
+    ) -> Self {
         let enum_members = scope.enum_member_index();
         Self {
             scope,
             graph,
             objects,
+            pre_objects,
+            reads,
             meter,
             dispatch_tables,
             values: Vec::new(),
@@ -834,10 +871,17 @@ impl<'a, 'm> Machine<'a, 'm> {
             | NodeKind::If { .. }
             | NodeKind::Connective(..)
             | NodeKind::Pre(_) => return Err(invariant()),
-            // FR-104: `reaches` checks only inside a state clause, and no
-            // function body this evaluator runs is one; FR-107 (QSL-278)
-            // evaluates state clauses.
-            NodeKind::Reaches { .. } => return Err(invariant()),
+            // FR-107 (QSL-278): `reaches(source, target, edge)`, checked
+            // only inside a state clause.
+            NodeKind::Reaches { edge, .. } => {
+                let Value::Reference(target) = self.pop()? else {
+                    return Err(invariant());
+                };
+                let Value::Reference(source) = self.pop()? else {
+                    return Err(invariant());
+                };
+                Value::Boolean(self.evaluate_reaches(node, &source, &target, edge)?)
+            }
             // FR-063: no arm for the probe variant under `--cfg seam_probe`
             // alone (`E0004`, this seam's evidence). The arm below exists
             // only in the probe's build of the crates above `qsl-eval`
@@ -1025,8 +1069,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Reference(reference) = self.pop()? else {
                     return Err(invariant());
                 };
+                charge_named(self.meter, ChargePoint::ModelDeref)?;
+                charge_named(self.meter, ChargePoint::ModelNavigate)?;
                 let slot = self
-                    .objects
+                    .objects_for(node)
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(invariant)?;
                 Self::project(slot, *optional, node.value_type())?
@@ -1382,6 +1428,125 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         self.values.push(value);
         Ok(())
+    }
+
+    /// FR-107: the `ObjectEnvironment` a model read at `node` observes --
+    /// `pre_objects` when `reads` maps `node`'s location to
+    /// `Observation::Pre` and a pre environment is carried, `objects`
+    /// (the clause's own `current`/`post` observation) otherwise. Always
+    /// `objects` for the `Value` family, which carries neither `reads` nor
+    /// `pre_objects`.
+    fn objects_for(&self, node: &Node) -> &'a ObjectEnvironment {
+        match (self.reads, self.pre_objects) {
+            (Some(reads), Some(pre))
+                if reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre) =>
+            {
+                pre
+            }
+            _ => self.objects,
+        }
+    }
+
+    /// FR-107: `reaches(source, target, edge)`, evaluated as
+    /// `value-accounting.md`'s "Model and graph evaluation" paragraph
+    /// states: charge `graph.expand` for `source` and enqueue it; for each
+    /// dequeued node and each target `t` of `edge`, in the edge's own
+    /// order, charge one `graph.edge`, return `true` when `t` is `target`,
+    /// and otherwise charge `graph.expand` for an undiscovered `t` and
+    /// enqueue it; an empty queue gives `false`; then charge
+    /// `graph.result-retain`.
+    fn evaluate_reaches(
+        &mut self,
+        node: &'a Node,
+        source: &ObjectReference,
+        target: &ObjectReference,
+        edge: &FieldRef,
+    ) -> Result<bool, Halt> {
+        charge_named(self.meter, ChargePoint::GraphExpand)?;
+        let mut discovered: BTreeSet<ObjectReference> = BTreeSet::new();
+        discovered.insert(source.clone());
+        let mut queue: VecDeque<ObjectReference> = VecDeque::new();
+        queue.push_back(source.clone());
+        let mut found = false;
+        'walk: while let Some(current) = queue.pop_front() {
+            for next in self.edge_targets(node, &current, edge)? {
+                charge_named(self.meter, ChargePoint::GraphEdge)?;
+                if next == *target {
+                    found = true;
+                    break 'walk;
+                }
+                if discovered.insert(next.clone()) {
+                    charge_named(self.meter, ChargePoint::GraphExpand)?;
+                    queue.push_back(next);
+                }
+            }
+        }
+        charge_named(self.meter, ChargePoint::GraphResultRetain)?;
+        Ok(found)
+    }
+
+    /// The targets `edge` names on `current`, in the edge's own order: one
+    /// for a required `Reference<T>` field, zero or one for an optional
+    /// one, and each element in sequence order for a required sequence of
+    /// `Reference<T>` (FR-104's own restriction on `edge`'s declared kind,
+    /// `check.rs`'s `reaches` eligibility check).
+    ///
+    /// A field's presence (`Presence::Required`/`Presence::Optional`) is a
+    /// declaration-level property distinct from its `value_type()`
+    /// (`FieldDeclaration` keeps them as two fields, not one wrapping the
+    /// other, `model::intake::read_field_member`): an optional
+    /// `Reference<T>` field's `value_type()` is the bare
+    /// `ValueType::Reference(_)`, never `ValueType::Option(_)` -- that
+    /// variant names a genuinely `Option`-typed *value* (e.g. a checked
+    /// `NodeKind::Attribute` read's own synthesized static type), not model
+    /// field presence, and `reaches`'s own S3 eligibility check never
+    /// admits one. This reads `presence()` to decide whether an absent slot
+    /// is a valid zero-target read or a broken invariant.
+    fn edge_targets(
+        &self,
+        node: &'a Node,
+        current: &ObjectReference,
+        edge: &FieldRef,
+    ) -> Result<Vec<ObjectReference>, Halt> {
+        let declared = self
+            .scope
+            .types()
+            .attributes(current.object_type())
+            .ok_or_else(invariant)?;
+        let attribute = declared
+            .iter()
+            .find(|attribute| attribute.stands_for(edge))
+            .ok_or_else(invariant)?;
+        let field = attribute.field();
+        let slot = self
+            .objects_for(node)
+            .attribute(self.scope.types(), current, edge)
+            .ok_or_else(invariant)?;
+        match field.value_type() {
+            ValueType::Reference(_) => match (slot, field.presence()) {
+                (FieldValue::Present(Value::Reference(reference)), _) => {
+                    Ok(vec![reference.clone()])
+                }
+                (FieldValue::Absent | FieldValue::Null, quire_exact::Presence::Optional) => {
+                    Ok(Vec::new())
+                }
+                _ => Err(invariant()),
+            },
+            ValueType::Collection(collection) if collection.kind() == CollectionKind::Sequence => {
+                match slot {
+                    FieldValue::Present(Value::Collection(collection)) => collection
+                        .elements()
+                        .iter()
+                        .map(|element| match element {
+                            Value::Reference(reference) => Ok(reference.clone()),
+                            _ => Err(invariant()),
+                        })
+                        .collect(),
+                    _ => Err(invariant()),
+                }
+            }
+            _ => Err(invariant()),
+        }
     }
 
     fn project(slot: &FieldValue, optional: bool, value_type: &ValueType) -> Result<Value, Halt> {

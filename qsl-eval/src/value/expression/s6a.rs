@@ -94,6 +94,9 @@ macro_rules! s6a_family_kinds {
 s6a_family_kinds! {
     /// `Value`, through `ValueFunctionFamily`'s `evaluate` hook.
     Value,
+    /// `ProtocolClause` (FR-107, QSL-278), through
+    /// `ProtocolClauseFamily`'s `evaluate` hook.
+    ProtocolClause,
 }
 
 impl S6aFamilyKind {
@@ -110,6 +113,7 @@ impl S6aFamilyKind {
     pub(crate) const fn family(self) -> FamilyKind {
         match self {
             Self::Value => FamilyKind::Value,
+            Self::ProtocolClause => FamilyKind::ProtocolClause,
             // FR-063: no arm for `Self::__SeamProbe` -- under
             // `--cfg seam_probe` this match is deliberately non-exhaustive
             // (`E0004`). Do not add a catch-all to make it compile.

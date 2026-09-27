@@ -172,7 +172,9 @@ pub use checked_dispatch::{
 };
 pub use field_refinement::check_field_refinement_obligation;
 pub use region::DeclarationRegions;
-pub use state_clause::{CheckedStateClause, ClauseOperation, StateClauseDeclaration};
+pub use state_clause::{
+    CheckedStateClause, ClauseOperation, ProtocolClauseFamily, StateClauseDeclaration,
+};
 pub use type_form::TypeFormFault;
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
@@ -1464,6 +1466,20 @@ impl CheckedGraph {
     /// FR-104: every checked state clause, in declaration order.
     pub fn state_clauses(&self) -> &[CheckedStateClause] {
         &self.state_clauses
+    }
+
+    /// FR-107: the checked state clause whose minted node identity is
+    /// `identity` (`CheckedStateClause::identity`) -- the accessor the S6a
+    /// `ProtocolClause` evaluate hook resolves its bare identity key
+    /// against, node-id-keyed like every other S6a lookup (R-06). `None`
+    /// when no clause of this package mints that identity.
+    pub fn state_clause_by_identity(
+        &self,
+        identity: quire_exact::NodeKey,
+    ) -> Option<&CheckedStateClause> {
+        self.state_clauses
+            .iter()
+            .find(|clause| clause.identity() == identity)
     }
 
     /// The first function named `name`, with its signature.
