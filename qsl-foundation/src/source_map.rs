@@ -3,6 +3,22 @@
 use crate::source::provenance::SourceRegion;
 use crate::source::{LocatedSpan, Source, SourceIdentity, Span};
 
+/// The one language tag a mapped (I3 extracted) body may declare, decoded
+/// once from the caller's fence tag (ADR-012 section 9 source-lexing edge).
+/// Both native joins of an extracted body -- the root crate's
+/// `mapped::compile` and `qsl_replay::spine::run_clause` (FR-109) -- decode
+/// the tag here, so they refuse the same fences.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeLanguage;
+
+impl NativeLanguage {
+    /// `Some` exactly for the tag `ix:native`.
+    #[qsl_attrs::string_edge]
+    pub fn of(tag: &str) -> Option<Self> {
+        (tag == "ix:native").then_some(Self)
+    }
+}
+
 /// Hard ceiling on selected correspondence segments.
 pub const MAX_SEGMENTS: usize = 50_000;
 

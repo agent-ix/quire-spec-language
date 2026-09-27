@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::source::Source;
+use qsl_foundation::source_map::NativeLanguage;
 use qsl_foundation::{ByteDigest, SourceIdentity};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -74,7 +75,12 @@ pub enum ClauseRunSelection {
 }
 
 /// FR-109 Inputs' unit: the program source, or an I3 extracted source.
+///
+/// `#[non_exhaustive]`: the `Extracted` variant exists only under the
+/// `quire-extraction` feature, and Cargo unifies features across a build,
+/// so a downstream match must not rely on which variants it sees.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ClauseRunSource {
     /// The unit's source bytes and its four FR-001 labels.
     Program {
@@ -89,7 +95,9 @@ pub enum ClauseRunSource {
     /// `qsl_source::extract` returned. Its body, with the body's own
     /// identity and path, is the unit `compile` reads; its original
     /// document's identity and digest are reported as
-    /// [`ClauseRunProvenance::extraction`].
+    /// [`ClauseRunProvenance::extraction`]. Its declared fence language
+    /// must be `ix:native`, or the run reports
+    /// [`ClauseDisposition::UnknownLanguage`] at stage `compile`.
     #[cfg(feature = "quire-extraction")]
     Extracted(qsl_source::ExtractedSource),
 }
@@ -100,6 +108,9 @@ struct Unit<'a> {
     identity: &'a SourceIdentity,
     path: &'a str,
     bytes: &'a [u8],
+    /// The I3 extracted clause's declared fence language; `None` for a
+    /// program source, whose language is its own header's.
+    language: Option<&'a str>,
     extraction: Option<ExtractionOrigin>,
 }
 
@@ -114,6 +125,7 @@ impl ClauseRunSource {
                 identity,
                 path,
                 bytes,
+                language: None,
                 extraction: None,
             },
             #[cfg(feature = "quire-extraction")]
@@ -124,6 +136,7 @@ impl ClauseRunSource {
                     identity: body.identity(),
                     path: body.path(),
                     bytes: body.text().as_bytes(),
+                    language: Some(extracted.language()),
                     extraction: Some(ExtractionOrigin {
                         identity: map.original().identity().clone(),
                         digest: map.original().digest(),
@@ -201,6 +214,14 @@ pub enum ClauseDisposition {
     /// Stage `compile`: the spine compile refused, naming its own cause
     /// code.
     Compile(Box<CompileRefusal>),
+    /// Stage `compile`, category `refusal`, `unknown_language`: an I3
+    /// extracted clause whose declared fence language is not `ix:native`
+    /// (the same refusal the root crate's `mapped::compile` gives). Nothing
+    /// is compiled.
+    UnknownLanguage {
+        /// The declared fence language.
+        language: String,
+    },
     /// Stage `compile`, category `refusal`, `stale_dependency`: the
     /// recompiled `package_id` differs from the request's expected one.
     StalePackage {
@@ -238,7 +259,9 @@ impl ClauseDisposition {
     /// The FR-109 stage this disposition reports at.
     pub fn stage(&self) -> ClauseRunStage {
         match self {
-            Self::Compile(_) | Self::StalePackage { .. } => ClauseRunStage::Compile,
+            Self::Compile(_) | Self::UnknownLanguage { .. } | Self::StalePackage { .. } => {
+                ClauseRunStage::Compile
+            }
             Self::MissingName { .. } | Self::NotAPredicate { .. } => ClauseRunStage::Select,
             Self::Admit(_) | Self::ArgumentRefusal(_) => ClauseRunStage::Admit,
             Self::Evaluate(_) | Self::EvaluateFault(_) => ClauseRunStage::Evaluate,
@@ -257,6 +280,7 @@ impl ClauseDisposition {
         use qsl_foundation::diagnostic::Category;
         match self {
             Self::Compile(_)
+            | Self::UnknownLanguage { .. }
             | Self::StalePackage { .. }
             | Self::MissingName { .. }
             | Self::NotAPredicate { .. }
@@ -392,6 +416,7 @@ impl ClauseRunReport {
         use qsl_foundation::diagnostic::Code;
         match &self.disposition {
             ClauseDisposition::Compile(refusal) => refusal.code().exit_code(),
+            ClauseDisposition::UnknownLanguage { .. } => Code::UnknownLanguage.exit_code(),
             ClauseDisposition::StalePackage { .. } => Code::StaleDependency.exit_code(),
             ClauseDisposition::MissingName { .. } => Code::MissingDeclaration.exit_code(),
             ClauseDisposition::NotAPredicate { .. } => Code::IllTyped.exit_code(),
@@ -477,6 +502,19 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             usage: ClauseRunUsage::default(),
         }
     };
+
+    if let Some(language) = unit.language {
+        if NativeLanguage::of(language).is_none() {
+            return Ok(report(
+                None,
+                ClauseDisposition::UnknownLanguage {
+                    language: language.to_owned(),
+                },
+                Vec::new(),
+                Vec::new(),
+            ));
+        }
+    }
 
     let compiled = match compile(
         unit.identity.clone(),

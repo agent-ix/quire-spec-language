@@ -91,6 +91,11 @@ selection, admission or evaluation result is a report.
   the entry SHALL report stage `compile` with that code (for example
   `missing_import`/`missing-selection` for a model selection whose package is
   not supplied) and SHALL admit and evaluate nothing.
+- If the unit is an I3 extracted source whose declared language is not
+  `ix:native`, then the entry SHALL report stage `compile`, category
+  `refusal`, `unknown_language`, carrying the extraction's original identity
+  and digest, and SHALL compile, admit and evaluate nothing. This is the
+  refusal the CLI's extracted-clause join gives the same fence.
 - If an expected `package_id` is given and the recompiled one differs, then
   the entry SHALL report stage `compile`, category `refusal`,
   `stale_dependency`, naming both identities, with no admission or
@@ -154,7 +159,7 @@ selection, admission or evaluation result is a report.
 | FR-109-AC-3 | dangling-parent reports stage `admit`, `refusal`, `dangling_reference`, exit 20; incomplete-population reports stage `admit`, `incomplete`, `incomplete_population`, exit 22; exhausted-work (budget zero) reports stage `evaluate`, `incomplete`, FR-100's `{"kind": "incomplete", "limit": "work_units"}`, exit 22; none carries `truth`. | Test (TC-468) |
 | FR-109-AC-4 | A `Function` selection of `sameIdentity` with arguments `{b: child, a: root}` (given in that order) over the distinct-identities snapshot reports `violation`, `truth: false`; with `a` = `b` = `child`, `success`; with `b` naming `ghost`, stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; with an argument naming `c`, stage `admit`, FR-100's refusal for an unknown parameter; a function returning `Integer` reports stage `select`, `ill_typed`/`type-mismatch`, before any call. | Test (TC-468) |
 | FR-109-AC-5 | Running one request twice gives equal reports, including usage; a request whose snapshot bytes change after the selection digest was taken reports stage `admit`, `stale_dependency`/`byte-digest-mismatch`. For each S6a outcome other than `Completed`, the report's `outcome` member and exit code equal what FR-100's mapping gives for the same outcome (checked over the outcomes FR-100-AC-9 constructs); for the kernel `CheckedInvariant` and a `CallFailure::Fault`, which FR-100 handles as an internal failure, the report is stage `evaluate`, category `internal-failure`, carrying the fault's stage and invariant, with no `outcome` member and FR-100's internal-failure exit status. | Test (TC-468) |
-| FR-109-AC-6 | The healthy-parent request whose unit is an I3 extracted source reports `success`, exit 0, with the `package_id` its extracted body compiles to, the body's identity and digest as the source in its provenance, and the original document's identity and digest as the extraction's; violating-parent over the same source reports `violation`, exit 10; a compile refusal over it still carries the extraction's original identity and digest. A request with a program source carries no extraction. | Test (TC-468) |
+| FR-109-AC-6 | The healthy-parent request whose unit is an I3 extracted source reports `success`, exit 0, with the `package_id` its extracted body compiles to, the body's identity and digest as the source in its provenance, and the original document's identity and digest as the extraction's; violating-parent over the same source reports `violation`, exit 10; a compile refusal over it still carries the extraction's original identity and digest; the same unit in an `ix:formal` fence reports stage `compile`, `refusal`, `unknown_language`, exit 20, with no `package_id` and the extraction's original identity and digest. A request with a program source carries no extraction. | Test (TC-468) |
 
 ## Dependencies
 

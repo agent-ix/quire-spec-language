@@ -2403,27 +2403,39 @@ mod extracted {
 
     const QUIRE_PACKAGE: &str = "example/clause-run";
 
-    fn original_identity() -> SourceIdentity {
+    pub(super) fn original_identity() -> SourceIdentity {
         SourceIdentity::new("agent-ix", "ix://example/clause-run/spec", "git", "7")
     }
 
-    fn body_identity() -> SourceIdentity {
+    pub(super) fn body_identity() -> SourceIdentity {
         SourceIdentity::new("agent-ix", "clause-run-body", "git", "7")
     }
 
-    /// The authored Markdown document whose one `ix:native` fence under the
-    /// `no_cycle` heading is the `NoCycle` unit, plus an unselected fence.
-    fn original_text() -> String {
+    /// The authored Markdown document whose one fence under the `no_cycle`
+    /// heading, tagged `language`, is the `NoCycle` unit, plus an
+    /// unselected fence.
+    pub(super) fn original_text_in(language: &str) -> String {
         let (unit, _) = unit_and_packages();
         format!(
-            "# Clause run document\n\n## Invariants\n\n### no_cycle\n```ix:native\n{unit}```\n\n\
+            "# Clause run document\n\n## Invariants\n\n### no_cycle\n```{language}\n{unit}```\n\n\
              ### unselected\n```ix:native\nopaque body remains unparsed\n```\n"
         )
     }
 
-    /// `qsl_source::extract`'s verified body of the `no_cycle` fence.
+    fn original_text() -> String {
+        original_text_in("ix:native")
+    }
+
+    /// `qsl_source::extract`'s verified body of the `ix:native` `no_cycle`
+    /// fence.
     fn extracted() -> qsl_source::ExtractedSource {
-        let text = original_text();
+        extracted_in("ix:native")
+    }
+
+    /// `qsl_source::extract`'s verified body of the `no_cycle` fence tagged
+    /// `language`.
+    pub(super) fn extracted_in(language: &str) -> qsl_source::ExtractedSource {
+        let text = original_text_in(language);
         let original = Source::read(original_identity(), "rules.md", text.as_bytes(), text.len())
             .expect("the fixture document reads");
         let context = qsl_source::clause_context(QUIRE_PACKAGE, &original)
@@ -2524,4 +2536,46 @@ mod extracted {
         assert_eq!(report.provenance.extraction, Some(expected_origin()));
         assert!(report.provenance.documents.is_empty());
     }
+}
+
+/// TC-468 step 6 (FR-109-AC-6): an I3 extracted source whose fence declares
+/// a language other than `ix:native` reports stage `compile`, `refusal`,
+/// `unknown_language`, exit 20, with no `package_id` and the extraction's
+/// original still in provenance -- the same refusal the root crate's
+/// `mapped::compile` gives that fence.
+#[cfg(feature = "quire-extraction")]
+#[trace("TC-468", "FR-109-AC-6")]
+#[test]
+fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
+    use extracted::{body_identity, extracted_in, original_identity, original_text_in};
+    let (mut request, _) = no_cycle_request(&[("a", None)]);
+    let source = extracted_in("ix:formal");
+    assert_eq!(source.language(), "ix:formal");
+    request.source = ClauseRunSource::Extracted(source);
+    let report = run_clause(request).expect("a well-formed request always reports");
+    match &report.disposition {
+        ClauseDisposition::UnknownLanguage { language } => assert_eq!(language, "ix:formal"),
+        other => panic!("expected UnknownLanguage, got {other:?}"),
+    }
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
+    assert_eq!(
+        report.disposition.category(),
+        qsl_foundation::diagnostic::Category::Refusal
+    );
+    assert_eq!(report.disposition.truth(), None);
+    assert_eq!(
+        report.exit_code(),
+        qsl_foundation::diagnostic::Code::UnknownLanguage.exit_code()
+    );
+    assert_eq!(report.exit_code(), 20);
+    assert_eq!(report.package_id, None);
+    assert_eq!(report.provenance.source, body_identity());
+    assert_eq!(
+        report.provenance.extraction,
+        Some(crate::spine::ExtractionOrigin {
+            identity: original_identity(),
+            digest: qsl_foundation::ByteDigest::of(original_text_in("ix:formal").as_bytes()),
+        })
+    );
+    assert!(report.provenance.documents.is_empty());
 }

@@ -8,7 +8,7 @@ use crate::formal_source::FormalSource;
 use crate::native_model::NativeModel;
 use crate::package::{NativePackage, PackageCause, PackageError, PackageLimits};
 use crate::{link_native, parse_source, Limits, LinkLimits};
-use qsl_foundation::source_map::SourceMap;
+use qsl_foundation::source_map::{NativeLanguage, SourceMap};
 use qsl_foundation::{Code, Diagnostic, LocatedSpan, Phase, Span};
 
 /// Existing stage budgets; each stage retains its own implementation ceilings.
@@ -153,17 +153,6 @@ impl<'model> MappedPackage<'model> {
     pub fn original_spans(&self, span: Span) -> Result<Vec<LocatedSpan>, Box<Diagnostic>> {
         self.mapping
             .map_span(self.native.checked().linked().unit().source(), span)
-    }
-}
-
-/// The one language tag a mapped clause may declare, decoded once from the
-/// caller's fence tag (ADR-012 section 9 source-lexing edge).
-struct NativeLanguage;
-
-impl NativeLanguage {
-    #[qsl_attrs::string_edge]
-    fn of(tag: &str) -> Option<Self> {
-        (tag == "ix:native").then_some(Self)
     }
 }
 

@@ -38,7 +38,8 @@ Build `ClauseRunRequest`s from FR-108's fixtures, in memory.
 6. With feature `quire-extraction`: extract a Markdown document whose one
    selected fence holds the step 1 unit through `qsl_source::extract`, and
    run healthy-parent, violating-parent and missing-model with that
-   extracted source as the unit.
+   extracted source as the unit; then healthy-parent with the same unit
+   extracted from an `ix:formal` fence.
 
 Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
 
@@ -67,7 +68,9 @@ Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
 - Step 6: `success`, exit 0, the `package_id` of compiling the extracted
   body alone, the body's identity and digest as the source and the
   original document's identity and digest as the extraction; `violation`,
-  exit 10; `compile` with the extraction still in provenance. Step 1's
+  exit 10; `compile` with the extraction still in provenance; `compile`,
+  `refusal`, `unknown_language`, exit 20, no `package_id`, the extraction
+  still in provenance. Step 1's
   program-source report carries no extraction.
 
 ## Status
