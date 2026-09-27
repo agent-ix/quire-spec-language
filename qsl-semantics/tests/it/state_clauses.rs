@@ -1489,7 +1489,9 @@ fn attempt_update_refuses_a_declared_delta_mismatch() {
 const TC465_CLAUSES: &str = "invariant ParentOrder using v on Config::ConfigVersion at current { \
     present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }\n\
     post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { \
-    self.versionNumber = pre(self.versionNumber) }\n";
+    self.versionNumber = pre(self.versionNumber) }\n\
+    pre ReachesTarget using v on Config::ConfigVersion::probe { \
+    reaches(self, target, parent) }\n";
 
 fn tc465_document_with(operation: serde_json::Value) -> Vec<u8> {
     config_version_document_with_operations(vec![operation, probe_operation()])
@@ -1497,6 +1499,84 @@ fn tc465_document_with(operation: serde_json::Value) -> Vec<u8> {
 
 fn tc465_document() -> Vec<u8> {
     tc465_document_with(attempt_update_modifies_version_and_parent())
+}
+
+/// [`tc465_document`], with `attemptUpdate` modifying `[parent]` only
+/// (row 27: an authorized-elsewhere change outside `modifies` must still
+/// refuse).
+fn tc465_document_with_frame_modifies_parent_only() -> Vec<u8> {
+    tc465_document_with(operation(
+        "attemptUpdate",
+        json!([]),
+        Some("ix://quire/native/Boolean"),
+        json!({
+            "modifies": ["ix://example/config-version/ConfigVersion/parent"],
+            "creates": [],
+            "deletes": [],
+        }),
+    ))
+}
+
+/// [`tc465_document`], with `ConfigVersion` also declaring `tags`, a set
+/// of `ConfigVersion` (row 17: check 6.2's set/bag/ordered-set refusal).
+/// Mutated directly at the JSON level (`config_version_document_with_
+/// operations` has no set-field builder), matching the ad hoc envelope
+/// patching [`config_version_document_with_population`] already uses for
+/// its own extra population.
+fn tc465_document_with_set_field() -> Vec<u8> {
+    let document = tc465_document();
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let config_version = "ix://example/config-version/ConfigVersion";
+    let tags_identity = format!("{config_version}/tags");
+    envelope["types"][0]["fields"]
+        .as_array_mut()
+        .expect("ConfigVersion declares fields")
+        .push(json!({
+            "identity": tags_identity,
+            "name": "tags",
+            "typeRef": config_version,
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
+            "multiplicity": {"lower": 0, "upper": 5, "ordered": false, "unique": true},
+            "origin": {
+                "generated": {
+                    "generatorIdentity": tags_identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [tags_identity],
+                }
+            },
+        }));
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// [`tc465_document`], with an extra object type `Note` declared but named
+/// by no population's `members` (row 32: check 6.1's wrong-role-mapping
+/// for an object whose type is not a member type of its population).
+fn tc465_document_with_note_type() -> Vec<u8> {
+    let document = tc465_document();
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let note = "ix://example/config-version/Note";
+    envelope["types"].as_array_mut().unwrap().push(json!({
+        "identity": note,
+        "displayName": note,
+        "kind": {"module": "example/config-version", "name": "object_type"},
+        "roles": [],
+        "origin": {
+            "generated": {
+                "generatorIdentity": note,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [note],
+            }
+        },
+        "constraints": [],
+        "extensions": [],
+        "unknownPolicy": "reject",
+        "supertypes": [],
+        "fields": [],
+        "operations": [],
+    }));
+    serde_json::to_vec(&envelope).expect("valid JSON")
 }
 
 fn tc465_model_digest_hex(document: &[u8]) -> String {
@@ -1818,6 +1898,120 @@ fn run_tc465_invocation(
     run_tc465(
         document,
         "VersionUnchanged",
+        qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
+        snapshots,
+        invocations,
+    )
+}
+
+/// The healthy-parent object population, observed `pre` or `post` (no
+/// `anchor`, unlike [`tc465_healthy_parent`]'s `current` shape) -- rows
+/// 35 to 38's own pre/post snapshot, since a `probe` invocation's pre and
+/// post are checked as `pre`/`post` observations (check 3), never
+/// `current`.
+fn tc465_healthy_parent_observed(
+    label: &qsl_semantics::model::observation::DocumentRef,
+    model_digest_hex: &str,
+    observation: &str,
+) -> serde_json::Value {
+    let population = "ix://example/config-version/config_history";
+    let config_version = "ix://example/config-version/ConfigVersion";
+    json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": frame_identity_json(label),
+        "observation": observation,
+        "model": frame_model_header(model_digest_hex),
+        "populations": [{
+            "population": population,
+            "complete": true,
+            "objects": [
+                {"key": "root", "type": config_version,
+                 "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}}},
+                {"key": "child", "type": config_version,
+                 "fields": {"versionNumber": {"integer": "2"},
+                            "parent": {"present": {"reference": {"population": population, "key": "root"}}}}},
+            ],
+        }],
+    })
+}
+
+/// TC-465's own `probe` invocation (rows 35-38): `operation` `probe`,
+/// `self` `{config_history, child}`, `parameters` naming `root` as
+/// `target`, `result` `null`, healthy-parent as both pre and post.
+fn tc465_probe_invocation(
+    label: &qsl_semantics::model::observation::DocumentRef,
+    model_digest_hex: &str,
+    pre_ref: &qsl_semantics::model::observation::DocumentRef,
+    post_ref: &qsl_semantics::model::observation::DocumentRef,
+) -> serde_json::Value {
+    let population = "ix://example/config-version/config_history";
+    json!({
+        "format": "quire.state.invocation/v1",
+        "identity": frame_identity_json(label),
+        "model": frame_model_header(model_digest_hex),
+        "context": "ix://example/config-version/ConfigVersion",
+        "operation": "probe",
+        "self": {"population": population, "key": "child"},
+        "pre": {
+            "identity": frame_identity_json(pre_ref),
+            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&pre_ref.digest)),
+        },
+        "post": {
+            "identity": frame_identity_json(post_ref),
+            "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&post_ref.digest)),
+        },
+        "parameters": {"target": {"reference": {"population": population, "key": "root"}}},
+        "result": null,
+        "created": [],
+        "deleted": [],
+    })
+}
+
+/// Runs `ReachesTarget` (precondition) over `document`'s `probe`
+/// invocation, healthy-parent as both pre and post, `mutate_invocation`
+/// applied before digesting -- TC-465 rows 35 to 38's own harness.
+fn run_tc465_probe(
+    document: &[u8],
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    let model_digest_hex = tc465_model_digest_hex(document);
+    let pre_label = frame_label("pre-snap");
+    let pre_value = tc465_healthy_parent_observed(&pre_label, &model_digest_hex, "pre");
+    let pre_bytes = pre_value.to_string().into_bytes();
+    let pre = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&pre_bytes),
+        ..pre_label
+    };
+
+    let post_label = frame_label("post-snap");
+    let post_value = tc465_healthy_parent_observed(&post_label, &model_digest_hex, "post");
+    let post_bytes = post_value.to_string().into_bytes();
+    let post = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&post_bytes),
+        ..post_label
+    };
+
+    let invocation_label = frame_label("invocation");
+    let mut invocation_value =
+        tc465_probe_invocation(&invocation_label, &model_digest_hex, &pre, &post);
+    mutate_invocation(&mut invocation_value);
+    let invocation_bytes = invocation_value.to_string().into_bytes();
+    let invocation = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&invocation_bytes),
+        ..invocation_label
+    };
+
+    let mut snapshots = BTreeMap::new();
+    snapshots.insert(pre.digest, pre_bytes);
+    snapshots.insert(post.digest, post_bytes);
+    let mut invocations = BTreeMap::new();
+    invocations.insert(invocation.digest, invocation_bytes);
+    run_tc465(
+        document,
+        "ReachesTarget",
         qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
         snapshots,
         invocations,
@@ -2438,6 +2632,25 @@ fn tc465_row26_forbidden_parent_change_refuses_unauthorized_change() {
     );
 }
 
+/// Row 27 (check 11.3): `attemptUpdate` modifying `[parent]` only, over
+/// the changed-version invocation (post `child.versionNumber` 3) --
+/// refuses naming `child` and `versionNumber`.
+#[trace("TC-465", "FR-106-AC-5")]
+#[test]
+fn tc465_row27_change_outside_a_narrower_modifies_refuses_unauthorized_change() {
+    let document = tc465_document_with_frame_modifies_parent_only();
+    let result = run_tc465_invocation(&document, |_| {}, |_| {}, |_| {});
+    let record = assert_tc465_refused(result, "frame_violation", "unauthorized-change");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("child")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("versionNumber")
+    );
+}
+
 /// Row 28 (check 11.4): invocation `created: [{config_history, child}]`
 /// with nothing actually created.
 #[trace("TC-465", "FR-106-AC-5")]
@@ -2453,6 +2666,162 @@ fn tc465_row28_undeclared_creation_refuses_delta_disagreement() {
         },
     );
     assert_tc465_refused(result, "population_delta_mismatch", "delta-disagreement");
+}
+
+/// Row 29 (check 1.3 over 1.6): row 4's edit plus row 7's extra member,
+/// kept under the original digest -- `byte-digest-mismatch` wins (check
+/// 1.3 runs before 1.6).
+#[trace("TC-465", "FR-106-AC-7")]
+#[test]
+fn tc465_row29_a_digest_mismatch_beats_an_unknown_member() {
+    let document = tc465_document();
+    let model_digest_hex = tc465_model_digest_hex(&document);
+    let label = frame_label("current-snap");
+    let original = tc465_healthy_parent(&label, &model_digest_hex);
+    let original_digest = frame_document_digest(&original.to_string().into_bytes());
+    let mut edited = original;
+    edited["populations"][0]["objects"][1]["fields"]["versionNumber"] = json!({"integer": "3"});
+    edited["note"] = json!(true);
+    let result = run_tc465_current(
+        &document,
+        |value| *value = edited.clone(),
+        Some(original_digest),
+    );
+    assert_tc465_refused(result, "stale_dependency", "byte-digest-mismatch");
+}
+
+/// Row 31 (check 11.2 over 11.3): post deletes `root` and sets
+/// `child.parent` absent -- the deletion (11.2) is named, not the field
+/// change (11.3).
+#[trace("TC-465", "FR-106-AC-7")]
+#[test]
+fn tc465_row31_an_unauthorized_deletion_beats_a_field_change_in_the_same_population() {
+    // `attemptUpdate` modifies `[versionNumber]` only, so `child.parent`
+    // changing below is a real 11.3 candidate; `deletes` stays empty, so
+    // `root`'s deletion is a real 11.2 candidate in the same population.
+    let document = tc465_document_with(attempt_update_modifies_version_number());
+    let result = run_tc465_invocation(
+        &document,
+        |value| {
+            // Pre gains `root` (absent from the default changed-version
+            // pre snapshot): its deletion from post below is only a real
+            // deletion, over a real pre-existing object, if pre actually
+            // holds it.
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "key": "root", "type": "ix://example/config-version/ConfigVersion",
+                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": null}},
+                }));
+        },
+        |value| {
+            // `root` stays deleted (post already omits it); `child.parent`
+            // also changes outside `modifies` in the same population, to
+            // a target that still exists in post (`child` itself, so this
+            // stays a frame check, never a dangling-reference one) --
+            // 11.2 (the deletion) must be named, not 11.3.
+            value["populations"][0]["objects"][0]["fields"]["parent"] = json!({"present": {
+                "reference": {"population": "ix://example/config-version/config_history", "key": "child"}
+            }});
+        },
+        |_| {},
+    );
+    let record = assert_tc465_refused(result, "frame_violation", "unauthorized-change");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("root")
+    );
+}
+
+/// Row 32 (check 6.1): a package variant that adds object type `Note`, a
+/// member type of no population, and an object `n1` of type `Note` in
+/// `config_history`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn tc465_row32_an_object_of_an_undeclared_member_type_refuses_wrong_role_mapping() {
+    let document = tc465_document_with_note_type();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            value["populations"][0]["objects"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "key": "n1",
+                    "type": "ix://example/config-version/Note",
+                    "fields": {},
+                }));
+        },
+        None,
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "wrong-role-mapping");
+    assert_eq!(record.fields.get("object").map(String::as_str), Some("n1"));
+}
+
+/// Row 17 (check 6.2): a package variant whose `ConfigVersion` has field
+/// `tags` typed a set of `ConfigVersion`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn tc465_row17_set_typed_field_refuses_unsupported_feature() {
+    let document = tc465_document_with_set_field();
+    let result = run_tc465_current(&document, |_| {}, None);
+    let record = assert_tc465_refused(result, "unknown_required_feature", "unsupported-feature");
+    assert_eq!(record.fields.get("field").map(String::as_str), Some("tags"));
+}
+
+/// Row 35 (check 10): probe invocation with `parameters` `{}` (missing
+/// `target`).
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn tc465_row35_missing_parameter_refuses_missing_member() {
+    let document = tc465_document();
+    let result = run_tc465_probe(&document, |value| value["parameters"] = json!({}));
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "missing-member");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("target")
+    );
+}
+
+/// Row 36 (check 10): probe invocation with an extra parameter `other`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn tc465_row36_unknown_parameter_refuses_unknown_member() {
+    let document = tc465_document();
+    let result = run_tc465_probe(&document, |value| {
+        value["parameters"]["other"] = json!({
+            "reference": {"population": "ix://example/config-version/config_history", "key": "root"}
+        });
+    });
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "unknown-member");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("other")
+    );
+}
+
+/// Row 37 (check 10): probe invocation with `target` `{"integer": "1"}`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn tc465_row37_wrong_parameter_kind_refuses_wrong_value_kind() {
+    let document = tc465_document();
+    let result = run_tc465_probe(&document, |value| {
+        value["parameters"]["target"] = json!({"integer": "1"});
+    });
+    assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
+}
+
+/// Row 38 (check 10): probe invocation with `result` `{"boolean": true}`
+/// for an operation with no declared result.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn tc465_row38_result_for_a_no_result_operation_refuses_unknown_member() {
+    let document = tc465_document();
+    let result = run_tc465_probe(&document, |value| {
+        value["result"] = json!({"boolean": true})
+    });
+    assert_tc465_refused(result, "invalid_runtime_input", "unknown-member");
 }
 
 /// Row 33 (check 6.4): `root` without its `parent` field.
