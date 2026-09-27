@@ -4,7 +4,7 @@ mod cli;
 
 use cli::{Command, SyntaxCommand};
 use qsl_cst::CompleteDiagnostic;
-use qsl_foundation::source::render_offered;
+use qsl_foundation::source::{render_offered, SourceReadCause};
 use qsl_foundation::{Code, Diagnostic, LocatedSpan, Phase, SourceIdentity};
 use quire_spec_language::{format::format, parse, Limits};
 use serde_json::json;
@@ -20,6 +20,8 @@ struct Refusal<'a> {
     path: &'a str,
     /// The rendered region; `None` for a refusal FR-001 locates nowhere.
     span: Option<LocatedSpan>,
+    /// FR-001: the `invalid_source_identity` cause, when this is one.
+    identity_cause: Option<SourceReadCause>,
     message: &'a str,
 }
 
@@ -30,12 +32,17 @@ impl Refusal<'_> {
                 "start": {"byte":span.start.byte,"line":span.start.line,"column":span.start.column},
                 "end": {"byte":span.end.byte,"line":span.end.line,"column":span.end.column}})
         });
-        let output =
-            json!({ "status": if self.code.is_incomplete() { "incomplete" } else { "refused" },
+        let mut output = json!({ "status": if self.code.is_incomplete() { "incomplete" } else { "refused" },
             "phase": self.phase.as_str(), "code": self.code.as_str(),
             "source": self.source, "path": self.path, "span": span,
-            "message": self.message })
-            .to_string();
+            "message": self.message });
+        if let Some(cause) = self.identity_cause {
+            output["cause"] = json!(cause.identity_tag());
+            if let Some(label) = cause.blank_label() {
+                output["label"] = json!(label.as_str());
+            }
+        }
+        let output = output.to_string();
         // FR-301's contract, via Code::exit_code(): a recognized construct this
         // profile does not admit is unsupported (21); other incomplete work is
         // 22; a refused syntax request is otherwise invalid input (20).
@@ -50,6 +57,7 @@ fn diagnostic(value: &Diagnostic) -> (u8, String) {
         source: &value.source,
         path: &value.path,
         span: Some(value.span),
+        identity_cause: value.identity_cause(),
         message: &value.message,
     }
     .render()
@@ -67,6 +75,7 @@ fn complete_diagnostic(value: &CompleteDiagnostic, bytes: &[u8]) -> (u8, String)
             .region
             .as_ref()
             .and_then(|region| render_offered(bytes, region)),
+        identity_cause: value.cause.identity_cause(),
         message: &value.message,
     }
     .render()
@@ -98,13 +107,14 @@ fn syntax(
     let display_path = path.to_string_lossy();
     // FR-010: a blank label refuses as `invalid_source_identity` before the
     // file is opened, so it is never reported as a file error.
-    if !source_identity.is_named() {
+    if let Some(label) = source_identity.first_blank_label() {
         return Err(Refusal {
             code: Code::InvalidSourceIdentity,
             phase: Phase::Source,
             source: &source_identity,
             path: display_path.as_ref(),
             span: None,
+            identity_cause: Some(SourceReadCause::BlankLabel { label }),
             message: "source authority, identity, revision namespace and revision must be explicit",
         }
         .render());

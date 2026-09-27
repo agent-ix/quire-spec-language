@@ -111,6 +111,13 @@ pub(super) struct Diagnostic<'a> {
     pub span: LocatedSpan,
     pub upstream: Option<&'a ir::Diagnostic>,
     pub runtime: Option<RuntimeLocation<'a>>,
+    /// FR-001: `blank-label` or `empty-path`, on an `invalid_source_identity`
+    /// refusal only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause: Option<&'static str>,
+    /// FR-001: the first blank label, on a `blank-label` refusal only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<&'static str>,
 }
 
 #[derive(Serialize)]

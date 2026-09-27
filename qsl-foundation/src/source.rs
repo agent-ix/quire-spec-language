@@ -222,6 +222,33 @@ pub enum SourceReadCause {
     DigestMismatch,
 }
 
+impl SourceReadCause {
+    /// The catalog cause tag of an `invalid_source_identity` refusal
+    /// (`blank-label`, `empty-path`); `None` for every other cause.
+    pub const fn identity_tag(self) -> Option<&'static str> {
+        match self {
+            Self::BlankLabel { .. } => Some("blank-label"),
+            Self::EmptyPath => Some("empty-path"),
+            Self::ByteBudget | Self::InvalidUtf8 | Self::Bom | Self::Nul | Self::DigestMismatch => {
+                None
+            }
+        }
+    }
+
+    /// The `label` payload of a `blank-label` refusal.
+    pub const fn blank_label(self) -> Option<SourceLabel> {
+        match self {
+            Self::BlankLabel { label } => Some(label),
+            Self::EmptyPath
+            | Self::ByteBudget
+            | Self::InvalidUtf8
+            | Self::Bom
+            | Self::Nul
+            | Self::DigestMismatch => None,
+        }
+    }
+}
+
 /// Cause-specific location and message for a source refusal, before
 /// `diagnostic` (later in this layer's order) maps it onto a stable `Code`.
 /// `source` does not construct a `Diagnostic` (ADR-011 §6.1). `pub`: see

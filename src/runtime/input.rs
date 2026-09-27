@@ -5,6 +5,7 @@ use quire_contract_ir as ir;
 use serde::{Deserialize, Serialize, Serializer};
 
 use qsl_foundation::serde_object::Object;
+use qsl_foundation::source::SourceReadCause;
 use qsl_foundation::{ByteDigest, Code, SourceIdentity};
 
 pub(super) mod wire;
@@ -359,6 +360,9 @@ pub struct InputError {
     pub usage: ArtifactUsage,
     /// Bounded explanation; this is not parsed to recover structured fields.
     pub message: &'static str,
+    /// FR-001: `BlankLabel` naming the first blank label, on an
+    /// `invalid_source_identity` refusal; `None` otherwise.
+    pub identity_cause: Option<SourceReadCause>,
 }
 
 impl InputError {

@@ -696,6 +696,19 @@ fn tc_444_a_blank_label_refuses_at_the_source_stage() {
     };
     assert_eq!(refusal.stage(), SpineStage::Source);
     assert_eq!(refusal.code(), Code::InvalidSourceIdentity);
+    // FR-001-AC-6: the cause is `blank-label` and names the whitespace-only
+    // authority; the refusal names no region.
+    let CompileRefusal::Source(diagnostic) = &**refusal else {
+        panic!("expected an S1 refusal, got {refusal:?}");
+    };
+    assert_eq!(
+        diagnostic.cause,
+        qsl_cst::CompleteCause::Host(qsl_cst::HostCause::BlankLabel {
+            label: qsl_foundation::SourceLabel::Authority
+        })
+    );
+    assert_eq!(diagnostic.cause.as_str(), "blank-label");
+    assert_eq!(diagnostic.region, None);
 }
 
 /// FR-098-AC-1: the package reference names exactly one source, and only

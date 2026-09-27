@@ -383,6 +383,8 @@ fn parse_and_format_take_the_four_source_labels() {
     assert_eq!(blank.status.code(), Some(20));
     let value: serde_json::Value = serde_json::from_slice(&blank.stderr).unwrap();
     assert_eq!(value["code"], "invalid_source_identity");
+    assert_eq!(value["cause"], "blank-label");
+    assert_eq!(value["label"], "revision_namespace");
     assert!(value["span"].is_null());
 
     let format = |extra: &[&str]| {

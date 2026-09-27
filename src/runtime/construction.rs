@@ -11,7 +11,8 @@ use super::input::{
     InvocationDraft, ModelBinding, ObjectIdentity, QualifiedName, SnapshotDraft, ValueBinding,
     ValueId, ValueNode,
 };
-use qsl_foundation::{ByteDigest, Code, SourceIdentity};
+use qsl_foundation::source::SourceReadCause;
+use qsl_foundation::{ByteDigest, Code, SourceIdentity, SourceLabel};
 
 type Result<T> = std::result::Result<T, Failure>;
 
@@ -20,6 +21,7 @@ pub(super) struct Failure {
     code: Code,
     path: Vec<DraftPathSegment>,
     message: &'static str,
+    identity_cause: Option<SourceReadCause>,
 }
 
 impl Failure {
@@ -30,6 +32,7 @@ impl Failure {
             path: self.path,
             usage,
             message: self.message,
+            identity_cause: self.identity_cause,
         })
     }
 }
@@ -130,6 +133,7 @@ impl Budget {
             code,
             path: self.path.clone(),
             message,
+            identity_cause: None,
         }
     }
 
@@ -202,19 +206,17 @@ impl Budget {
     fn identity(&mut self, identity: &SourceIdentity) -> Result<()> {
         // FR-018: the four labels of FR-001, each non-empty and not only
         // whitespace.
-        for (name, value) in [
-            ("authority", identity.authority.as_str()),
-            ("identity", identity.identity.as_str()),
-            ("revision_namespace", identity.revision_namespace.as_str()),
-            ("revision", identity.revision.as_str()),
-        ] {
-            self.field(name, |budget| {
+        for label in SourceLabel::ALL {
+            let value = identity.label(label);
+            self.field(label.as_str(), |budget| {
                 budget.text(value)?;
                 if value.trim().is_empty() {
-                    return Err(budget.failure(
+                    let mut failure = budget.failure(
                         Code::InvalidSourceIdentity,
                         "native input authority, identity, revision namespace and revision must be nonempty",
-                    ));
+                    );
+                    failure.identity_cause = Some(SourceReadCause::BlankLabel { label });
+                    return Err(failure);
                 }
                 Ok(())
             })?;

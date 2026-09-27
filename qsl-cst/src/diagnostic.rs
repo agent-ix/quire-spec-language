@@ -140,6 +140,18 @@ impl CompleteCause {
         }
     }
 
+    /// The `invalid_source_identity` cause of a blank label or empty path,
+    /// as the reader produced it; `None` for every other cause.
+    pub fn identity_cause(self) -> Option<SourceReadCause> {
+        match self {
+            Self::Host(HostCause::BlankLabel { label }) => {
+                Some(SourceReadCause::BlankLabel { label })
+            }
+            Self::Host(HostCause::EmptyPath) => Some(SourceReadCause::EmptyPath),
+            _ => None,
+        }
+    }
+
     /// Whether the catalog admits this cause for `code`.
     pub fn is_cause_of(self, code: CompleteCode) -> bool {
         match self {
