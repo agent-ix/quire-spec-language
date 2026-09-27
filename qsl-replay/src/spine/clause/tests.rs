@@ -1052,6 +1052,52 @@ fn run_clause_refuses_an_empty_source() {
     ));
 }
 
+/// TC-468 step 2 (FR-109-AC-2): no domain package bytes supplied for the
+/// unit's `model` declaration refuses at stage `compile`,
+/// `missing_import`/`missing-selection`, exit 20, with no snapshot in
+/// provenance (FR-109-AC-2's own worked example: a compile-stage failure
+/// never read a document, so `provenance.documents` stays empty --
+/// `FR-109-run-a-state-clause-through-the-spine.md:81-84`).
+#[trace("TC-468", "FR-109-AC-2")]
+#[test]
+fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
+    let label = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "snap".to_owned(),
+        revision_namespace: "ns".to_owned(),
+        revision: "1".to_owned(),
+        digest: [0; 32],
+    };
+    let mut request = request(ClauseRunSelection::Function {
+        name: "seven".to_owned(),
+        arguments: Vec::new(),
+        snapshot: label,
+    });
+    // No snapshot bytes are inserted either: the request never gets past
+    // compile, so nothing would be read even if a snapshot were named.
+    request.packages = BTreeMap::new();
+    let report = run_clause(request).unwrap();
+    match &report.disposition {
+        ClauseDisposition::Compile(refusal) => {
+            assert_eq!(refusal.code(), qsl_foundation::diagnostic::Code::MissingImport);
+            assert!(
+                matches!(
+                    refusal.as_ref(),
+                    super::CompileRefusal::Intake { .. }
+                ),
+                "expected an Intake refusal, got {refusal:?}"
+            );
+        }
+        other => panic!("expected Compile(Intake(..)), got {other:?}"),
+    }
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
+    assert_eq!(report.exit_code(), 20);
+    assert!(
+        report.provenance.documents.is_empty(),
+        "a compile-stage failure never read a document"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // FR-106 check 1.6: unknown top-level members report document order, not
 // alphabetical order.
@@ -1493,7 +1539,10 @@ fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{digest}\";\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
-         present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n"
+         present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
+         function sameIdentity using v(a: Config::ConfigVersion, b: Config::ConfigVersion): \
+         Boolean pure {{ a = b }}\n\
+         function n using v(a: Config::ConfigVersion): Integer pure {{ 1 }}\n"
     );
     (unit, packages)
 }
@@ -1628,6 +1677,505 @@ fn boolean_disposition(disposition: &ClauseDisposition) -> bool {
             value,
         ))) => *value,
         other => panic!("expected Evaluate(Completed(Boolean(_))), got {other:?}"),
+    }
+}
+
+/// A `ClauseRunRequest` selecting `Function { name, arguments, snapshot }`
+/// over `config_version_snapshot`'s distinct-identities case (`root` at
+/// version 1, `child` at version 2).
+fn config_version_function_request(
+    name: &str,
+    arguments: Vec<ClauseArgument>,
+) -> ClauseRunRequest {
+    let model_digest_hex = config_version_model_digest_hex();
+    let label = config_version_document_ref("distinct-identities");
+    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, Some(2));
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+
+    let mut request = config_version_request(ClauseRunSelection::Function {
+        name: name.to_owned(),
+        arguments,
+        snapshot: label,
+    });
+    request.snapshots.insert(digest, bytes);
+    request
+}
+
+fn config_version_reference(key: &str) -> ClauseArgumentValue {
+    ClauseArgumentValue::Reference {
+        population: config_version_population_identity(),
+        key: key.to_owned(),
+    }
+}
+
+/// TC-468 step 2 (FR-109-AC-2): a `Clause` selection naming `Absent` (no
+/// such clause is declared) refuses `select`, `missing_declaration`/
+/// `missing-name`.
+#[trace("TC-468", "FR-109-AC-2")]
+#[test]
+fn run_clause_reports_missing_name_selecting_absent_clause() {
+    let model_digest_hex = config_version_model_digest_hex();
+    let label = config_version_document_ref("current-snap");
+    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, None);
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = config_version_current_selection("Absent", label, "root");
+
+    let mut request = config_version_request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, bytes);
+    let report = run_clause(request).unwrap();
+    assert!(matches!(
+        report.disposition,
+        ClauseDisposition::MissingName { .. }
+    ));
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
+}
+
+/// TC-468 step 2 (FR-109-AC-2): a `Clause` selection naming the function
+/// `sameIdentity` (declared `function`, not `invariant`/`protocol`) refuses
+/// `select`, `missing_declaration`/`missing-name`: no state clause named
+/// `sameIdentity` is declared, only a function.
+#[trace("TC-468", "FR-109-AC-2")]
+#[test]
+fn run_clause_reports_missing_name_for_a_clause_selection_naming_a_function() {
+    let model_digest_hex = config_version_model_digest_hex();
+    let label = config_version_document_ref("current-snap");
+    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, None);
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = config_version_current_selection("sameIdentity", label, "root");
+
+    let mut request = config_version_request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, bytes);
+    let report = run_clause(request).unwrap();
+    assert!(matches!(
+        report.disposition,
+        ClauseDisposition::MissingName { .. }
+    ));
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
+}
+
+/// TC-468 step 2 (FR-109-AC-2): an `expected_package_id` taken from
+/// compiling a different unit (the `test/model` fixture, not
+/// `test/config-version`) refuses `compile`, `stale_dependency`, naming
+/// both identities.
+#[trace("TC-468", "FR-109-AC-2")]
+#[test]
+fn run_clause_reports_a_stale_package_naming_another_units_package_id() {
+    let other = compiled();
+    let other_id = other.emitted.package_id();
+
+    let mut request = config_version_request(ClauseRunSelection::Function {
+        name: "n".to_owned(),
+        arguments: vec![ClauseArgument {
+            parameter: "a".to_owned(),
+            value: config_version_reference("root"),
+        }],
+        snapshot: config_version_document_ref("current-snap"),
+    });
+    request.expected_package_id = Some(other_id);
+    let report = run_clause(request).unwrap();
+    match &report.disposition {
+        ClauseDisposition::StalePackage {
+            expected, actual, ..
+        } => {
+            assert_eq!(*expected, other_id);
+            assert_ne!(*actual, other_id, "the config-version package differs");
+        }
+        other => panic!("expected StalePackage {{ .. }}, got {other:?}"),
+    }
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
+    assert_eq!(report.exit_code(), 20);
+}
+
+/// TC-468 step 3 (FR-109-AC-2): a dangling `parent` reference (naming a key
+/// no admitted population holds) refuses `admit`, `refusal`,
+/// `dangling_reference`, exit 20.
+#[trace("TC-468", "FR-109-AC-2")]
+#[test]
+fn run_clause_refuses_a_dangling_parent_reference() {
+    let model_digest_hex = config_version_model_digest_hex();
+    let label = config_version_document_ref("dangling-parent");
+    let population = config_version_population_identity();
+    let config_version = config_version_type();
+    let value = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": label.authority, "identity": label.identity,
+            "revision_namespace": label.revision_namespace, "revision": label.revision,
+        },
+        "observation": "current",
+        "anchor": {"kind": "handler", "name": "validate"},
+        "model": {
+            "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
+            "digest": format!("sha256-jcs:{model_digest_hex}"),
+        },
+        "populations": [{
+            "population": population,
+            "complete": true,
+            "objects": [{
+                "key": "child", "type": config_version,
+                "fields": {
+                    "versionNumber": {"integer": "2"},
+                    "parent": {"present": {"reference": {"population": population, "key": "ghost"}}},
+                },
+            }],
+        }],
+    });
+    let bytes = value.to_string().into_bytes();
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = config_version_current_selection("ParentOrder", label, "child");
+
+    let mut request = config_version_request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, bytes);
+    let report = run_clause(request).unwrap();
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
+    match &report.disposition {
+        ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
+            record,
+        )) => {
+            assert_eq!(record.code, "dangling_reference");
+        }
+        other => panic!("expected Admit(Refused(dangling_reference)), got {other:?}"),
+    }
+    assert_eq!(report.exit_code(), 20);
+}
+
+/// TC-468 step 3 (FR-109-AC-2): an incomplete population (`complete:
+/// false`, missing the referenced `root` member) refuses `admit`,
+/// `incomplete`, `incomplete_population`, exit 22.
+#[trace("TC-468", "FR-109-AC-2")]
+#[test]
+fn run_clause_reports_incomplete_for_an_incomplete_population() {
+    let model_digest_hex = config_version_model_digest_hex();
+    let label = config_version_document_ref("incomplete-population");
+    let population = config_version_population_identity();
+    let config_version = config_version_type();
+    let value = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": label.authority, "identity": label.identity,
+            "revision_namespace": label.revision_namespace, "revision": label.revision,
+        },
+        "observation": "current",
+        "anchor": {"kind": "handler", "name": "validate"},
+        "model": {
+            "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
+            "digest": format!("sha256-jcs:{model_digest_hex}"),
+        },
+        "populations": [{
+            "population": population,
+            "complete": false,
+            "objects": [{
+                "key": "child", "type": config_version,
+                "fields": {
+                    "versionNumber": {"integer": "2"},
+                    "parent": {"present": {"reference": {"population": population, "key": "root"}}},
+                },
+            }],
+        }],
+    });
+    let bytes = value.to_string().into_bytes();
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = config_version_current_selection("ParentOrder", label, "child");
+
+    let mut request = config_version_request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, bytes);
+    let report = run_clause(request).unwrap();
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
+    match &report.disposition {
+        ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Incomplete(
+            record,
+        )) => {
+            assert_eq!(record.code, "incomplete_population");
+        }
+        other => panic!("expected Admit(Incomplete(incomplete_population)), got {other:?}"),
+    }
+    assert_eq!(
+        report.disposition.category(),
+        qsl_foundation::diagnostic::Category::Incomplete
+    );
+    assert_eq!(report.exit_code(), 22);
+}
+
+/// TC-468 step 3 (FR-109-AC-2): a `work_units` budget of 0 exhausts before
+/// `ParentOrder` completes: `evaluate`, `incomplete`, limit `work_units`,
+/// exit 22, no `truth`.
+#[trace("TC-468", "FR-109-AC-2")]
+#[test]
+fn run_clause_reports_incomplete_when_work_units_are_exhausted() {
+    let model_digest_hex = config_version_model_digest_hex();
+    let label = config_version_document_ref("current-snap");
+    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, Some(2));
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = config_version_current_selection("ParentOrder", label, "child");
+
+    let mut request = config_version_request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, bytes);
+    request.accounting = default_accounting(0);
+    let report = run_clause(request).unwrap();
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
+    match &report.disposition {
+        ClauseDisposition::Evaluate(super::CallOutcome::Incomplete { limit }) => {
+            assert_eq!(*limit, quire_exact::LimitKind::WorkUnits.as_str());
+        }
+        other => panic!("expected Evaluate(Incomplete {{ .. }}), got {other:?}"),
+    }
+    assert_eq!(
+        report.disposition.category(),
+        qsl_foundation::diagnostic::Category::Incomplete
+    );
+    assert_eq!(report.disposition.truth(), None);
+    assert_eq!(report.exit_code(), 22);
+}
+
+/// TC-468 step 4 (FR-109-AC-4): the `sameIdentity` family over
+/// distinct-identities (`root` v1, `child` v2, arguments given
+/// out-of-declaration-order, `b` before `a`, matched by name).
+#[trace("TC-468", "FR-109-AC-4")]
+#[test]
+fn run_clause_evaluates_the_same_identity_family() {
+    // b: child, a: root -- distinct objects, violation.
+    let request = config_version_function_request(
+        "sameIdentity",
+        vec![
+            ClauseArgument {
+                parameter: "b".to_owned(),
+                value: config_version_reference("child"),
+            },
+            ClauseArgument {
+                parameter: "a".to_owned(),
+                value: config_version_reference("root"),
+            },
+        ],
+    );
+    let report = run_clause(request).expect("well-formed request reports");
+    assert!(!boolean_disposition(&report.disposition), "root != child");
+    assert_eq!(
+        report.disposition.category(),
+        qsl_foundation::diagnostic::Category::Violation
+    );
+
+    // a = b = child -- same object, success.
+    let request = config_version_function_request(
+        "sameIdentity",
+        vec![
+            ClauseArgument {
+                parameter: "b".to_owned(),
+                value: config_version_reference("child"),
+            },
+            ClauseArgument {
+                parameter: "a".to_owned(),
+                value: config_version_reference("child"),
+            },
+        ],
+    );
+    let report = run_clause(request).expect("well-formed request reports");
+    assert!(boolean_disposition(&report.disposition), "child = child");
+    assert_eq!(
+        report.disposition.category(),
+        qsl_foundation::diagnostic::Category::Success
+    );
+
+    // b names `ghost`, no admitted object -- admit refusal, wrong-role-mapping.
+    let request = config_version_function_request(
+        "sameIdentity",
+        vec![
+            ClauseArgument {
+                parameter: "b".to_owned(),
+                value: config_version_reference("ghost"),
+            },
+            ClauseArgument {
+                parameter: "a".to_owned(),
+                value: config_version_reference("root"),
+            },
+        ],
+    );
+    let report = run_clause(request).expect("well-formed request reports");
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
+    match &report.disposition {
+        ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
+            record,
+        )) => {
+            assert_eq!(record.code, "invalid_runtime_input");
+            assert_eq!(record.cause, "wrong-role-mapping");
+        }
+        other => panic!("expected Admit(Refused(wrong-role-mapping)), got {other:?}"),
+    }
+
+    // An extra argument `c` -- FR-100's refusal for an unknown parameter,
+    // stage admit.
+    let request = config_version_function_request(
+        "sameIdentity",
+        vec![
+            ClauseArgument {
+                parameter: "b".to_owned(),
+                value: config_version_reference("child"),
+            },
+            ClauseArgument {
+                parameter: "a".to_owned(),
+                value: config_version_reference("root"),
+            },
+            ClauseArgument {
+                parameter: "c".to_owned(),
+                value: config_version_reference("root"),
+            },
+        ],
+    );
+    let report = run_clause(request).expect("well-formed request reports");
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
+    assert_eq!(
+        report.disposition.category(),
+        qsl_foundation::diagnostic::Category::Refusal
+    );
+
+    // `n(a: Config::ConfigVersion): Integer`, selected the same way, is not
+    // a predicate -- stage select, ill_typed/type-mismatch, uncharged meter.
+    let request = config_version_function_request(
+        "n",
+        vec![ClauseArgument {
+            parameter: "a".to_owned(),
+            value: config_version_reference("root"),
+        }],
+    );
+    let report = run_clause(request).expect("well-formed request reports");
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
+    assert!(matches!(
+        report.disposition,
+        ClauseDisposition::NotAPredicate { .. }
+    ));
+    assert_eq!(report.usage.evaluation_admissions, 0, "meter never charged");
+}
+
+/// TC-468 step 5 (FR-109-AC-5): editing the snapshot bytes after the
+/// selection's digest was taken (so the stored digest no longer matches the
+/// bytes it labels) refuses `admit`, `stale_dependency`/
+/// `byte-digest-mismatch`.
+#[trace("TC-468", "FR-109-AC-5")]
+#[test]
+fn run_clause_refuses_a_snapshot_edited_after_its_digest_was_taken() {
+    let model_digest_hex = config_version_model_digest_hex();
+    let label = config_version_document_ref("current-snap");
+    let bytes = config_version_snapshot(&label, &model_digest_hex, 1, None);
+    let digest = document_digest(&bytes);
+    let label = DocumentRef { digest, ..label };
+    let selection = config_version_current_selection("ParentOrder", label, "root");
+
+    // The selection's digest was taken over `bytes`; store different bytes
+    // (root at a different version) under that same digest key.
+    let edited = config_version_snapshot(
+        &DocumentRef {
+            digest: [0; 32],
+            ..config_version_document_ref("current-snap")
+        },
+        &model_digest_hex,
+        99,
+        None,
+    );
+
+    let mut request = config_version_request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(digest, edited);
+    let report = run_clause(request).unwrap();
+    assert_eq!(report.disposition.stage(), ClauseRunStage::Admit);
+    match &report.disposition {
+        ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
+            record,
+        )) => {
+            assert_eq!(record.code, "stale_dependency");
+            assert_eq!(record.cause, "byte-digest-mismatch");
+        }
+        other => panic!("expected Admit(Refused(byte-digest-mismatch)), got {other:?}"),
+    }
+}
+
+/// TC-468 step 5 (FR-109-AC-5): `FR-100`'s outcome mapping
+/// ([`super::call::convert_outcome`]) maps the kernel `CheckedInvariant`
+/// refusal to `Err(RunRefusal::Fault(InternalFault { stage: "S6a",
+/// invariant: "checked-program-invariant", .. }))`
+/// (`qsl-replay/src/spine/call.rs:526-528`); `run_clause`'s own further
+/// wrapping (`clause.rs`'s `EvaluateFault` arm) reports stage `evaluate`,
+/// category `internal-failure`, no `outcome` member, and FR-100's
+/// internal-failure exit status (30) for both this kernel invariant and a
+/// `CallFailure::Fault` reaching the same arm
+/// (`clause.rs:523-524`) -- confirmed directly against the mapping
+/// functions themselves, since `CheckedInvariant` is deliberately
+/// unreachable through any legitimate evaluation
+/// (`qsl-eval/src/value/expression/evaluate.rs:623`, "reserved for a broken
+/// evaluator invariant, never actually reachable in production").
+#[trace("TC-468", "FR-109-AC-5")]
+#[test]
+fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape() {
+    let compiled = compiled();
+    let sources = std::slice::from_ref(&compiled.source);
+
+    let checked_invariant_evaluation = qsl_eval::value::Evaluation {
+        outcome: FamilyOutcome::Evaluated(quire_exact::Outcome::Refused(
+            quire_exact::Refusal::CheckedInvariant,
+        )),
+        location: None,
+        losses: Vec::new(),
+    };
+    let mapped = super::super::call::convert_outcome(
+        checked_invariant_evaluation,
+        compiled.package.graph(),
+        sources,
+    );
+    let fault = match mapped {
+        Err(fault) => match *fault {
+            super::super::RunRefusal::Fault(fault) => fault,
+            other => panic!("expected RunRefusal::Fault, got {other:?}"),
+        },
+        Ok(outcome) => panic!("expected Err(Fault(..)), got {outcome:?}"),
+    };
+    assert_eq!(fault.stage(), "S6a");
+    assert_eq!(fault.invariant(), "checked-program-invariant");
+
+    let disposition = ClauseDisposition::EvaluateFault(fault);
+    assert_eq!(disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(
+        disposition.category(),
+        qsl_foundation::diagnostic::Category::InternalFailure
+    );
+    assert_eq!(disposition.truth(), None);
+    assert_eq!(report_for(disposition).exit_code(), 30);
+
+    // A `CallFailure::Fault` reaches `run_clause`'s own `EvaluateFault` arm
+    // the same way (`clause.rs:523-524`), with the same reported shape.
+    let call_failure_fault = qsl_foundation::diagnostic::InternalFault::new("call", "fault-kind");
+    let disposition_from_call_failure = ClauseDisposition::EvaluateFault(call_failure_fault);
+    assert_eq!(
+        disposition_from_call_failure.stage(),
+        ClauseRunStage::Evaluate
+    );
+    assert_eq!(
+        disposition_from_call_failure.category(),
+        qsl_foundation::diagnostic::Category::InternalFailure
+    );
+    assert_eq!(disposition_from_call_failure.truth(), None);
+    assert_eq!(report_for(disposition_from_call_failure).exit_code(), 30);
+}
+
+/// Wraps a bare [`ClauseDisposition`] in a minimal [`ClauseRunReport`], for
+/// `exit_code` (an inherent method of the report, not the disposition).
+fn report_for(disposition: ClauseDisposition) -> super::ClauseRunReport {
+    super::ClauseRunReport {
+        source_digest: String::new(),
+        package_id: None,
+        disposition,
+        provenance: super::ClauseRunProvenance {
+            model_selections: Vec::new(),
+            selection: ClauseRunSelection::Function {
+                name: String::new(),
+                arguments: Vec::new(),
+                snapshot: config_version_document_ref("unused"),
+            },
+            documents: Vec::new(),
+        },
+        usage: super::ClauseRunUsage::default(),
     }
 }
 
