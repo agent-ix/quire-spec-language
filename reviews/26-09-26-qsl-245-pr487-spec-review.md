@@ -57,3 +57,12 @@ Approve with changes. Fix FND-001 in this PR by stating that AC-8 is backed
 for `CardinalityOutOfBound` only, and that `ForeignReference`'s record is
 built but its `cause()` is planned. FND-002 is a recommendation for the owner
 to rule on.
+
+## Dispositions
+
+Verified against `git diff 913375e2..e0d028af` on 2026-09-26.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e0d028af: FR-096 Status, TC-428, `tests.md` and `spec.md` now say AC-8 is backed for `CardinalityOutOfBound` only, and that `ForeignReference`'s `cause()` returns `None`. |
+| FND-002 | fixed | e0d028af: FR-001-OQ-1 is replaced by the ruling. The three host causes now refuse with `invalid_source_map`, keep their host cause and name no region. New FR-001-AC-12 is backed by TC-424 step 7 and marked planned. It matches the catalog's retained `invalid_source_map` meaning and the three call sites. |

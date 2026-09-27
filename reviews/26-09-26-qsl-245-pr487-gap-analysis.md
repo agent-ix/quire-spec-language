@@ -42,3 +42,12 @@ Status is recorded as planned for everything not built.
 Approve. Every new AC maps to a TC with a planned test, and the status
 columns do not overclaim, except for the `ForeignReference` `cause()` noted
 in SR-724 FND-001.
+
+## Dispositions
+
+Verified against `git diff 913375e2..e0d028af` on 2026-09-26.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e0d028af: TC-444 step 5 now expects `blank-label` with `label` `authority`, its Status and `tests.md` row are Partial, and the cause and field are marked planned. |
+| FND-002 | deferred | The `quire-exact` code is outside this spec-only PR. e0d028af records the stale TC-318 tag and comment in FR-096 Status, for the coder who builds AC-8 to retag and correct. |
