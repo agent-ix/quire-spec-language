@@ -488,7 +488,10 @@ fn resolve_locus(locus: &Locus, sources: &[Source]) -> Result<CallLocus, Box<Run
 /// `record` is `None` with `fallback` also `None` only for a kernel refusal
 /// with no catalog code; since [`convert_outcome`] never calls this for
 /// `CheckedInvariant` (the only kernel refusal `kernel_refusal_record`
-/// builds no record for), that combination cannot occur here.
+/// builds no record for), that combination cannot occur today. If it ever
+/// did, it is an internal failure (FR-100 "Internal failure at S6a"), the
+/// same typed fault [`CheckedInvariant`](Refusal::CheckedInvariant) itself
+/// takes, never a panic.
 fn convert_refusal(
     record: Option<RefusalRecord>,
     fallback: Option<CatalogCode>,
@@ -507,11 +510,12 @@ fn convert_refusal(
             location,
         });
     }
-    let code = fallback.expect(
-        "a family cause with no FR-096 record always supplies a fallback catalog code; a \
-         kernel refusal's record is None only for CheckedInvariant, which convert_outcome \
-         never routes here",
-    );
+    let Some(code) = fallback else {
+        return Err(Box::new(RunRefusal::Fault(InternalFault::new(
+            "call",
+            "kernel-refusal-with-no-record",
+        ))));
+    };
     Ok(CallRefusal::Family { code, location })
 }
 
