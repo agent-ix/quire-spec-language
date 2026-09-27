@@ -250,9 +250,9 @@ operational validation remains outside this audit-only plan.
 | TC-468 | The spine clause run entry reports typed dispositions with provenance and exit codes | Integration | P1 | FR-109-AC-1, FR-109-AC-2, FR-109-AC-3, FR-109-AC-4, FR-109-AC-5 | 🚧 Planned; QSL-273 |
 | TC-469 | The ConfigVersion spine corpus gives native-equal typed dispositions | Integration | P1 | FR-108-AC-1, FR-108-AC-2, FR-108-AC-3, FR-108-AC-4, FR-108-AC-5, FR-108-AC-6 | 🚧 Planned; QSL-273; step 6 pending STD-111 |
 | TC-470 | runtime_invariant exits 30 and outranks other diagnostics | Unit | P1 | FR-096-AC-12 | ✅ Implemented; QSL-282 |
-| TC-471 | Model successors follow operations, arguments, frames and contracts | Integration | P1 | FR-120-AC-1, FR-120-AC-2, FR-120-AC-3, FR-120-AC-4 | 🚧 Planned; QSL-274; runnable once QSL-289 lands |
-| TC-472 | Invariant-violating successors are recorded, and undecided expansions stop the run | Integration | P1 | FR-120-AC-5, FR-120-AC-6, FR-120-AC-7, FR-120-AC-8, FR-120-AC-9 | 🚧 Planned; QSL-274; runnable once QSL-289 lands |
-| TC-473 | Model effects and results are trace data, and ambient-state reads refuse at S3 | Integration | P1 | FR-120-AC-10, FR-120-AC-11, FR-120-AC-12 | 🚧 Planned; QSL-274; runnable once QSL-289 lands |
+| TC-471 | Model successors follow operations, arguments, frames and contracts | Integration | P1 | FR-120-AC-1, FR-120-AC-2, FR-120-AC-3, FR-120-AC-4 | 🚧 Planned; QSL-274 |
+| TC-472 | Invariant-violating successors are recorded, and undecided expansions stop the run | Integration | P1 | FR-120-AC-5, FR-120-AC-6, FR-120-AC-7, FR-120-AC-8, FR-120-AC-9 | 🚧 Planned; QSL-274 |
+| TC-473 | Model effects and results are trace data, and ambient-state reads refuse at S3 | Integration | P1 | FR-120-AC-10, FR-120-AC-11, FR-120-AC-12 | 🚧 Planned; QSL-274 |
 | TC-474 | The engine records findings, stops on an expansion stop, and replays a stopped trace | Integration | P1 | FR-101-AC-12, FR-101-AC-13, FR-101-AC-14, FR-097-AC-5 | 🚧 Planned; QSL-274 |
 | TC-480 | S2 builds enum and predicate forms | Unit | P1 | FR-091-AC-25, FR-091-AC-26 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-481 | The assembler admits source enums and predicates, which check and lowering then use | Integration | P1 | FR-091-AC-27, FR-091-AC-28, FR-091-AC-29, FR-091-AC-30, FR-092-AC-13 | ✅ Passed locally (`qsl-semantics` `check::assemble` tests, `qsl-eval/tests/it/source_call.rs`) |
@@ -634,7 +634,8 @@ FR-115's frame check), invariant-violating successors recorded rather than
 pruned (FR-181-AC-4), and effects and results as typed trace data with
 ambient-state reads refused at S3 (FR-181-AC-6). TC-471 backs AC-1 to AC-4,
 TC-472 AC-5 to AC-9 and TC-473 AC-10 to AC-12, all `🚧 Planned` under
-QSL-274 and runnable once QSL-289 (FR-056's bound scalar reader) lands.
+QSL-274. Their bound scalar fixtures use FR-056's scalar reader, on main
+(QSL-289).
 TC-474 backs FR-101-AC-12 to AC-14 and FR-097-AC-5's `Stopped` arm, the
 engine's findings and stopped expansions. The tests build the S4 package in
 memory.

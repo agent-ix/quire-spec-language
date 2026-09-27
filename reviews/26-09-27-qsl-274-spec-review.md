@@ -1,5 +1,5 @@
 ---
-id: SR-753
+id: SR-758
 title: "Spec review of QSL-274 FR-120 model simulation and the FR-101 engine amendment"
 type: SpecReview
 analysis: base
@@ -108,3 +108,16 @@ Round 2 findings, new at 58c0a429:
 Verdict at round 2: all 13 round-1 findings are fixed. Fix R2-FND-001, a
 one-row expected-code edit, before merge. R2-FND-002 to R2-FND-004 are
 one-line edits for the same round.
+
+Round 3, reviewed at bcd6d6da6758def26b4e304406662b195d3a55c5 (fix commit
+bcd6d6da). This file was renumbered from SR-753 to SR-758, because #498
+merged SR-753 on main. Its round-2 findings are listed here as R2-FND-nnn.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| R2-FND-001 | fixed | bcd6d6da: FR-120-AC-7 (:499) and TC-472 step 3 now expect `invalid_runtime_input`/`wrong-value-kind` with field `anchor` for anchor kind `other`, citing `document.rs:525-528`. That matches `wrong_kind` at `document.rs:401-403`. |
+| R2-FND-002 | fixed | bcd6d6da: in AC-4 and TC-471 step 4, `<U>` and `<E>` now come from the `ObjectReference` that `StateModel::admit_initial` gives `c1`, which is independent of the simulator's key encoding. |
+| R2-FND-003 | fixed | bcd6d6da: FR-120 limits "first reached" to exploration. A sampled step is anchored to its own transition. |
+| R2-FND-004 | fixed | bcd6d6da: `check_frame` first computes each population's created and deleted keys as the key-set difference, then passes them as `FrameDecision.declared_created` and `declared_deleted`. |
+
+Verdict at round 3: no open findings. Approve.

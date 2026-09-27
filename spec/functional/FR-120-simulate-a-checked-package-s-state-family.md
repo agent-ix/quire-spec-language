@@ -514,11 +514,10 @@ identity text of operation `op`.
 - [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md):
   the engine, its `TransitionSystem` trait, findings, `Outcome::Stopped`,
   `StopReason::Stopped` and replay.
-- [FR-056](FR-056-admit-domain-package-model-declarations.md) through QSL-289
-  (PR #498): the spine reads bound scalar field, parameter and result types
-  such as `Int[0, 2]` through FR-056's `value-type/v1` scalar reader, which
-  QSL-289 adds. Every AC's fixture uses bound scalars, so the ACs are
-  verifiable once QSL-289 lands.
+- [FR-056](FR-056-admit-domain-package-model-declarations.md): the spine
+  reads bound scalar field, parameter and result types such as `Int[0, 2]`
+  through FR-056's `value-type/v1` scalar reader, which is on main (QSL-289,
+  #498). Every AC's fixture uses bound scalars.
 - [FR-103](FR-103-admit-model-operations-and-frames-on-the-spine.md)
   (operations and effects), [FR-104](FR-104-check-state-clauses.md) (checked
   clauses and their S3 refusals),
@@ -536,5 +535,5 @@ identity text of operation `op`.
 ## Status
 
 Specified under QSL-274 (A05-4); not yet implemented. TC-471 to TC-473
-planned. The ACs are verifiable once QSL-289 (PR #498, FR-056's bound
-scalar reader) lands.
+planned. FR-056's bound scalar reader, which every AC's fixture uses, is
+on main (QSL-289, #498).
