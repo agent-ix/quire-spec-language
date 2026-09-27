@@ -55,6 +55,12 @@ typed family refusal. Item 9 is confirmed in `object_field_kind_matches` and
 | FND-010 | low | When `pre(e)` has no pre environment, `objects_for` silently reads the current environment. FR-107 requires `FamilyResult::Refused` `wrong_snapshot`/`wrong-anchor` for that case. | qsl-eval/src/value/expression/evaluate.rs:1449-1457 |
 | FND-011 | low | String-dispatch residue. `AnchorKind` values are compared through `as_str()`. `exit_code` maps the record's `&str` code back through a `Code::all()` string search, with a silent `map_or(20)` default. `AdmissionRecord.code` should be a typed `Code`. `is_protocol_clause` is the sentinel `reads.is_some()`. | qsl-semantics/src/model/observation.rs:642; qsl-replay/src/spine/clause.rs:205; qsl-replay/src/spine/clause.rs:224-227; qsl-eval/src/value/expression/evaluate.rs:1467 |
 | FND-012 | low | Minor items. `canonical_len(..) as usize` is a lossy cast (use `try_from`). `check_model` accepts a model that matches any selection, not the clause alias's. `ClauseDeclarations`, `ClauseClaim` and `ClaimSubject` became `pub` with `pub` fields, wider than needed. The cause `protocol-clause-population-read` is not a `native-diagnostics` 1-draft.8 cause. | qsl-semantics/src/model/key.rs:514; qsl-semantics/src/model/observation.rs:688-700; qsl-semantics/src/check/state_clause.rs:127; qsl-eval/src/value/expression/causes.rs:155 |
+| FND-013 | low | Round 2 (reviewed 0b7bc758): `read_raw_value` accepts `{"absent": <any payload>}`, for example `{"absent": null}` or `{"absent": 5}`, where FR-106 spells the form `{"absent": {}}`. Checked by running it: `{"absent": 5}` admits. | qsl-semantics/src/model/observation.rs:337 |
+| FND-014 | low | Round 2 (reviewed 0b7bc758): `check_population_completeness` declares `let mut required` twice, with its explanatory comment duplicated (a copy-paste leftover). Several new code comments also cite the wrong SR-750 FND numbers: the per-document limits cite "FND-011" (it is FND-009), and the `pre` fallback cites "FND-013" (it is FND-010). | qsl-semantics/src/model/observation/document.rs:1073-1095 |
+| FND-015 | low | Round 2 (reviewed 0b7bc758): bytes that are not JSON, or JSON that is not an object, now refuse `missing-member` at `format`. FR-106 runs check 1.4 (format, `unknown_wire`/`unsupported-wire`) before check 1.5, and a document with no readable `format` fails 1.4 first. | qsl-semantics/src/model/observation/document.rs:217-221 |
+| FND-016 | medium | Round 3 (reviewed 488a2c30): `ObjectEnvironment::new_tolerating_incomplete_population_dangling` turns off the closure check for every reference, not only those into incomplete populations. `admit_scalar` still types a reference by the field's declared type and ignores the wire `population`, so the wire-level check 8 and the typed environment can disagree. I ran a case to confirm. `child.parent` is set to `{archive, k}`, where `archive` is complete and holds `k` of type `Sub`, and `config_history` has no `k`. That snapshot now admits with a typed reference `(U, ConfigVersion, k)` that names no admitted object. At round 2 it was refused. Any `deref` of it at S6a is then an InternalFault (exit 30) instead of an admission refusal. Use one constructor that takes the exact set of dangling targets check 8 tolerated, so closure stays enforced for everything else. Also resolve a reference against the wire population's admitted object. | qsl-semantics/src/model/object_environment.rs:123-152; qsl-semantics/src/model/observation/document.rs:1230; qsl-semantics/src/model/observation/document.rs:740-750 |
+| FND-017 | low | Round 3 (reviewed 488a2c30): in the reordered check 6.4, the undeclared-field test (`unknown-member`) runs before the missing-field test (`missing-member`). FR-106 check 6.4 lists missing first, and "inside a check, the conditions run in the order listed". | qsl-semantics/src/model/observation/document.rs:1032-1042 |
+| FND-018 | low | Round 3 (reviewed 488a2c30): `Code::parse_str`, added in round 2, duplicates the existing `Code::from_code`, which has the same body. Delete `parse_str` and call `from_code`. | qsl-foundation/src/diagnostic.rs:230; qsl-foundation/src/diagnostic.rs:288 |
 
 ## Verdict
 
@@ -63,78 +69,45 @@ result and a panic on untrusted input. FND-003 to FND-009 are real FR-106 and
 FR-107 deviations and should be fixed in this PR. FND-010 to FND-012 can be
 fixed in this PR or deferred with a ticket.
 
-## Round 2 Dispositions
+## Dispositions
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-750 pr=quire-spec-language#495 round=2 reviewed=0b7bc7581582f5d87d6bb2430e0cd460c53b1c76 date=2026-09-27 -->
+Round 2, reviewed 0b7bc7581582f5d87d6bb2430e0cd460c53b1c76. The caller's `make ci` log
+(qsl-278-ci-r10.log) has that SHA as its first line and exit 0 as its last. Every item
+below was checked against the code at that head, not taken from the coder's
+claims. Three items were checked by running scratch tests in a throwaway
+worktree, since removed: the dangling reference into an incomplete
+population, the empty key and `model` given as a string.
 
-| FND | Outcome | sha/reason |
-| --- | --- | --- |
-| FND-001 | open | Partly fixed cc72b43c/10ffb4cd. A dangling reference in a non-required incomplete population is still refused by `ObjectEnvironment::new` (document.rs:1184-1189); confirmed by running it |
-| FND-002 | fixed | cc72b43c |
-| FND-003 | fixed | cc72b43c |
-| FND-004 | open | `"model": "x"` and `"key": ""` still return InternalFault (document.rs:351, observation.rs:950); confirmed by running both |
-| FND-005 | open | Cross-document order fixed in 10ffb4cd. Inside check 6, the order is still 6.3 before 6.1/6.2 and undeclared-field after 6.5 (document.rs:947, 1033) |
-| FND-006 | fixed | 10ffb4cd |
-| FND-007 | open | Type-scoped `modifies` and unseen-population deltas fixed in 5ff4dbba. Still not `enforce_frame` via `admit_invocation`; no cross-type test |
-| FND-008 | open | Value family now matches main (fe94f9ae), but `model.deref` is now never charged (evaluate.rs:1079-1081) |
-| FND-009 | fixed | 8b715594 (the per-argument re-normalize is accepted-no-change) |
-| FND-010 | fixed | 1f61cdb4 |
-| FND-011 | open | The `&str` code with `map_or(20)` (clause.rs:319) and the `reads.is_some()` sentinel (evaluate.rs:1492) remain |
-| FND-012 | open | `as usize`, alias and cause fixed (06a30ea3, 0b7bc758, 4de15b0d); the `pub` widening remains (state_clause.rs:127,152,163) |
+| ID | Disposition |
+| --- | --- |
+| FND-001 | open (partly fixed cc72b43c, 10ffb4cd). Fixed: required populations now come from the wire's `reference.population` plus `self`'s population; check 8 reads `keys_by_population`; rows 23 and 24 pass. Still open: a dangling reference in an incomplete population that is not required is still refused. Check 8 skips it correctly, but `finish_populations` then calls `ObjectEnvironment::new`, which refuses every dangling reference (document.rs:1184-1189, 1221-1230). Running it confirmed this: `archive` with `complete: false` and `a1.parent` to `{archive, missing}` gives `Refused dangling_reference`, where FR-106 says "skip the dangling check over an incomplete population". |
+| FND-002 | fixed cc72b43c: `hex_bytes` now works over `as_bytes()` and checks `is_ascii_hexdigit` first; `a_non_ascii_digest_refuses_rather_than_panics` covers it (document.rs:1358). |
+| FND-003 | fixed cc72b43c: `read_document_ref` uses `strip_prefix` (document.rs:439-443). The labels, `population`, `complete`, `key`, `type`, `context` and `operation` all refuse `missing-member` rather than defaulting. |
+| FND-004 | open (mostly fixed cc72b43c). Two document defects still return `AdmissionFailure::Fault`, both confirmed by running them: `"model": "x"` gives `Fault model-member-not-an-object` (document.rs:351), and an object with `"key": ""` gives `Fault empty-object-identity` (observation.rs:950, reached from document.rs:1047). |
+| FND-005 | open (partly fixed 10ffb4cd). Fixed: all documents are read (check 1) before checks 3 to 5; check 4 runs over each document in read order; checks 6, 7 and 8 interleave across pre and post; `tc465_check_order_reports_the_earlier_numbered_check_across_pre_and_post` covers it. Still open: the order inside check 6 for each object is unchanged. 6.3 (duplicate key, document.rs:947) runs before 6.1 and 6.2, and 6.4's undeclared-field test (document.rs:1033) runs after the 6.5 value checks. |
+| FND-006 | fixed 10ffb4cd: `post_self_population` and the post `resolve_self` apply to a postcondition only (observation.rs:830-873); `precondition_does_not_require_self_in_the_post_snapshot` covers it. |
+| FND-007 | open (partly fixed 5ff4dbba). Fixed: `modifies` is matched against the object's declaring type by conformance (frame.rs:56-73), and `created`/`deleted` entries for a population in neither snapshot now go through 11.4 (test `undeclared_population_in_created_still_refuses_delta_disagreement`). Still open: check 11 is still a reimplementation, not `enforce_frame` through `admit_invocation` (population.rs:1259, 1381), as FR-106 check 11 states. No test covers the cross-type grant this finding named. |
+| FND-008 | open (partly fixed fe94f9ae). Fixed: Value-family attribute reads charge nothing, the same as main, and `model_reference_queries.rs:1277` covers it. Still open: `model.deref` is now never charged anywhere (the only `ModelDeref` reference left is a test comment). A protocol-clause `deref(r).f` charges only `model.navigate` (evaluate.rs:1079-1081), where FR-107 says "charge `model.deref` for each `deref(...)`". The `Attribute` node needs to tell `deref(r).f` apart from `self.f`, so that the deref charge applies only to the first. |
+| FND-009 | fixed 8b715594: `objects_per_document` and `values_per_document` are enforced (document.rs:937-1030), with tests at state_clauses.rs:2413 and 2429. The check-8 scan uses a key set now. The per-argument re-normalization in `run_function` remains (clause.rs:681). That is low impact, accepted-no-change. |
+| FND-010 | fixed 1f61cdb4: `objects_for` refuses `wrong_snapshot`/`wrong-anchor` (evaluate.rs:1467-1480); `a_pre_read_with_no_pre_observation_refuses_wrong_anchor` covers it. |
+| FND-011 | open (partly fixed 4c1da0a0). Fixed: `AnchorKind` is compared as an enum, and `Code::parse_str` is shared. Still open: `AdmissionRecord.code` is still a `&'static str` that goes back through a string lookup with a silent `map_or(20)` (clause.rs:319). `is_protocol_clause` is still the `reads.is_some()` sentinel (evaluate.rs:1492-1494), and it now also gates charging. |
+| FND-012 | open (mostly fixed). Fixed: `usize::try_from` (06a30ea3), `check_model` scoped to the clause alias (0b7bc758), and the catalog cause `unknown_required_feature`/`unsupported-feature` per the coordinator's ruling (4de15b0d). Still open: `ClauseDeclarations`, `ClaimSubject` and `ClauseClaim` are still `pub` with `pub` fields (state_clause.rs:127, 152, 163). |
 
-New in round 2: FND-013 (low) `{"absent": <any>}` accepted (observation.rs:337); FND-014 (low) duplicated `required` block (document.rs:1073-1095); FND-015 (low) a non-object document refuses 1.5 `missing-member` rather than 1.4 `unsupported-wire` (document.rs:217-221).
+### Round 3 (reviewed 488a2c3036da167de416faf0562f1c54a879c929)
 
-+++ [reviewer data]
+The caller's `make ci` log (qsl-278-ci-r11.log) starts with the head SHA and
+ends `exit=0`. I checked every item against the code. FND-016 was confirmed
+by running a scratch test in a throwaway worktree, since removed.
 
-```yaml
-dispositions:
-  - {fnd: FND-001, outcome: open, partial_fix_shas: [cc72b43c, 10ffb4cd], reason: "dangling reference in a non-required incomplete population still refused via ObjectEnvironment::new (document.rs:1184-1189, 1221-1230); confirmed by running it"}
-  - fnd: FND-002
-    outcome: fixed
-    fix_sha: cc72b43c
-    after_excerpt: |-
-      let bytes = text.as_bytes();
-          if !bytes.len().is_multiple_of(2) || !bytes.iter().all(u8::is_ascii_hexdigit) {
-              return None;
-          }
-  - fnd: FND-003
-    outcome: fixed
-    fix_sha: cc72b43c
-    after_excerpt: |-
-      let digest_hex = digest_raw
-              .strip_prefix("sha256-jcs:")
-              .ok_or_else(|| wrong_kind(field))?;
-  - {fnd: FND-004, outcome: open, partial_fix_shas: [cc72b43c], reason: "model non-object (document.rs:351) and empty key (observation.rs:950) still Fault; confirmed by running both"}
-  - {fnd: FND-005, outcome: open, partial_fix_shas: [10ffb4cd], reason: "order inside check 6 unchanged (document.rs:947, 1033)"}
-  - fnd: FND-006
-    outcome: fixed
-    fix_sha: 10ffb4cd
-    after_excerpt: |-
-      let post_self_population = match kind {
-              StateClauseKind::Postcondition => Some(self_object.population.as_str()),
-              StateClauseKind::Invariant | StateClauseKind::Precondition => None,
-          };
-  - {fnd: FND-007, outcome: open, partial_fix_shas: [5ff4dbba], reason: "frame check still reimplemented, not enforce_frame via admit_invocation (population.rs:1259); no cross-type grant test"}
-  - {fnd: FND-008, outcome: open, partial_fix_shas: [fe94f9ae], reason: "model.deref never charged; FR-107 requires it for each deref(...) (evaluate.rs:1079-1081)"}
-  - fnd: FND-009
-    outcome: fixed
-    fix_sha: 8b715594
-    after_excerpt: |-
-      object_count += 1;
-                  if object_count > limits.objects_per_document {
-  - fnd: FND-010
-    outcome: fixed
-    fix_sha: 1f61cdb4
-    after_excerpt: |-
-      self.pre_objects.ok_or_else(|| {
-                          Halt::Family(FamilyResult::Refused(Box::new(
-                              ProtocolClauseSnapshot::WrongAnchor {
-  - {fnd: FND-011, outcome: open, partial_fix_shas: [4c1da0a0], reason: "&str code + map_or(20) at clause.rs:319; reads.is_some() sentinel at evaluate.rs:1492"}
-  - {fnd: FND-012, outcome: open, partial_fix_shas: [06a30ea3, 0b7bc758, 4de15b0d], reason: "pub widening remains at state_clause.rs:127,152,163"}
-new_findings:
-  - {fnd: FND-013, severity: low, path: qsl-semantics/src/model/observation.rs, lines: "337", finding: "absent tag accepts any payload"}
-  - {fnd: FND-014, severity: low, path: qsl-semantics/src/model/observation/document.rs, lines: "1073-1095", finding: "duplicated required-set block and comment; stale FND numbers in comments"}
-  - {fnd: FND-015, severity: low, path: qsl-semantics/src/model/observation/document.rs, lines: "217-221", finding: "non-object document refuses 1.5 missing-member instead of 1.4 unsupported-wire"}
-```
-
-+++
+| ID | Disposition |
+| --- | --- |
+| FND-001 | fixed 0c4d86d1: a dangling reference in an incomplete population that nothing requires now admits (`a_dangling_reference_into_an_incomplete_population_still_admits`). The mechanism has a problem of its own, recorded as new FND-016. |
+| FND-004 | fixed 503e16d3: `model` of the wrong kind now refuses `wrong-value-kind` (a missing `model` refuses `missing-member`), and an empty key refuses `invalid-value` at `key` (observation.rs, `helpers::object_reference`). |
+| FND-005 | fixed e9ba0e46: each object now runs 6.1, 6.2, 6.3, 6.4 and 6.5 in that order. The two halves of 6.4 are swapped, recorded as new FND-017 (low). |
+| FND-007 | open. Of the coder's three blockers to delegating, two are real. `PopulationMember.field_values` holds reference identities only (`Vec<String>`, population.rs:466-483), and `admit_invocation` requires a check-time `GeneralizationClosure` (population.rs:1164-1176). The third is not a blocker: `enforce_frame` already computes `computed_created`/`computed_deleted` itself (population.rs:1399-1480), so returning them is a signature change. The two implementations have also already drifted. `frame.rs` authorizes `creates`/`deletes` by exact type-name match (frame.rs:146-147, 181, 204), while `enforce_frame` uses conformance (population.rs:1409, 1455). It authorizes `modifies` by display name plus owner conformance (frame.rs:97-111), while `enforce_frame` uses `redefinition_reaches` (population.rs:1348-1354). So the module doc's claim that it "matches `enforce_frame`'s documented behavior and order exactly" is false. A documented separate copy is not acceptable, because it has already diverged. Extract the frame decision (created/deleted/retype/field-write/delta over a neutral per-object view of key, most-specific type, and comparable field values, with `ModelIndex` conformance) into one function that both `enforce_frame` and `frame::enforce` call and that returns `(created, deleted)`. The admission-specific inputs (`PopulationDocument` shape, `GeneralizationClosure`) stay in their callers. |
+| FND-008 | fixed 82fba19f: `NodeKind::Attribute { derefed }` is set by the checker. Only an explicit `deref(...)` charges `model.deref`; every protocol-clause attribute read charges `model.navigate`. The Value family charges nothing. `a_protocol_clause_deref_charges_model_deref_then_model_navigate` covers it. |
+| FND-011 | open. `is_protocol_clause` now reads a typed `EvaluationFamily`, which is fixed (82fba19f). But the silent `map_or(20)` became `unreachable!()` inside `ClauseRunReport::exit_code` (qsl-replay/src/spine/clause.rs:346-349). That is production code, not test-only, so it is a panic path where the standing rule wants a typed exit-30 fault. Every admission code literal parses today (checked against `Code::as_str`), so the panic is latent, but nothing enforces that. Make `AdmissionRecord.code` a `qsl_foundation::diagnostic::Code` so the lookup and the panic both go away. `evaluate_exit_code` still uses `map_or(20)` (clause.rs:370, 373), which does match FR-100's own `refusal_exit_code` (src/command/output.rs:391-392). |
+| FND-012 | fixed 7dcb3a75: the fields of `ClauseDeclarations` and `ClauseClaim` are `pub(crate)`. The types stay `pub` because they are `FamilyContract` associated types (E0446). That reason holds. |
+| FND-013 | fixed eb92b61e: `absent` requires an empty-object payload (observation.rs, `read_raw_value`). |
+| FND-014 | fixed 70d2e06e: the duplicated `required` block is removed. |
+| FND-015 | fixed 70d2e06e: bytes that are not JSON or not an object refuse `unknown_wire`/`unsupported-wire` (check 1.4). |
