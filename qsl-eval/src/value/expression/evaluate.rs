@@ -510,16 +510,19 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// against `self.meter` (`charge_call`, called directly at those sites)
     /// -- those are genuinely separate calls.
     ///
-    /// **`Err(InternalFault)` (FR-090-AC-10).** [`Self::resolve_population`]
+    /// **`Err(InternalFault)` (FR-090-AC-10, FR-096-AC-15).** Two distinct
+    /// invariant breaks return `Err` from here, never `Ok(Evaluation {
+    /// outcome: Outcome::Refused(_), .. })`: [`Self::resolve_population`]
     /// returns `Err(Stop::Fault(_))` rather than a `Refusal` when a
     /// `Value::Population` argument reaches it unresolved or with a
     /// mismatched declared maximum -- a condition admission already rules
     /// out for any checked program reached through `CheckedPackage::call` or
-    /// `CheckedPackage::evaluate`. This loop matches `Stop::Fault` out the
-    /// moment a task fails, before `Self::stopped` ever converts the
-    /// remaining `Stop` shapes into an `Outcome`, so that broken invariant
-    /// surfaces as `Err`, never as `Ok(Evaluation { outcome:
-    /// Outcome::Refused(_), .. })`.
+    /// `CheckedPackage::evaluate` -- and this loop matches `Stop::Fault` out
+    /// the moment a task fails, before `Self::stopped` ever converts the
+    /// remaining `Stop` shapes into an `Outcome`; and a kernel
+    /// `Stop::Refused(Refusal::CheckedInvariant)`, which `Self::stopped`
+    /// itself turns into `Err(InternalFault)` rather than an `Outcome`
+    /// (FR-096-AC-15).
     pub(crate) fn run(
         mut self,
         root: &'a Node,
@@ -558,14 +561,14 @@ impl<'a, 'm> Machine<'a, 'm> {
                         location: Some(located.location().clone()),
                         losses: Vec::new(),
                     }),
-                    Halt::Stop(stop) => Ok(Self::stopped(stop, located.location())),
+                    Halt::Stop(stop) => Self::stopped(stop, located.location()),
                     // An imported call site still locates at that call.
-                    Halt::Located(at) => Ok(Self::stopped(
+                    Halt::Located(at) => Self::stopped(
                         at.stop,
                         self.imported
                             .first()
                             .map_or(&at.location, |call| call.location()),
-                    )),
+                    ),
                 };
             }
         }
@@ -575,16 +578,23 @@ impl<'a, 'm> Machine<'a, 'm> {
                 location: None,
                 losses: self.losses,
             }),
-            _ => Ok(Self::stopped(checked_invariant(), root.location())),
+            _ => Self::stopped(checked_invariant(), root.location()),
         }
     }
 
-    fn stopped(stop: Stop, location: &Location) -> Evaluation {
-        Evaluation {
+    /// Converts a stop to an `Evaluation`. A kernel `CheckedInvariant` is an
+    /// S6a invariant break, an `InternalFault` and never a refusal record
+    /// (FR-096-AC-15, observed through
+    /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`]).
+    fn stopped(stop: Stop, location: &Location) -> Result<Evaluation, InternalFault> {
+        if matches!(stop, Stop::Refused(Refusal::CheckedInvariant)) {
+            return Err(InternalFault::new("S6a", "checked-program-invariant"));
+        }
+        Ok(Evaluation {
             outcome: FamilyOutcome::Evaluated(outcome_from_stop(Err(stop))),
             location: Some(location.clone()),
             losses: Vec::new(),
-        }
+        })
     }
 
     fn pop(&mut self) -> Result<Value, Halt> {

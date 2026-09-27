@@ -329,13 +329,17 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// it; it never falls back to a display-name string comparison.
     ///
     /// FR-090: returns `Ok(Evaluation { outcome: FamilyOutcome::Evaluated(o),
-    /// .. })` for the kernel evaluation outcome unchanged,
+    /// .. })` for the kernel evaluation outcome unchanged -- except a kernel
+    /// `Refusal::CheckedInvariant`, which never reaches this `Ok` arm at all
+    /// (FR-096-AC-15): S6a's own seam turns it into `Err(InternalFault)`
+    /// before an `Outcome` is ever built --,
     /// `Ok(Evaluation { outcome: FamilyOutcome::FamilyEvaluated(r), .. })`
     /// for a family-owned evaluation-time result, or
-    /// `Err(CallFailure::Fault(_))` for a broken S6a invariant -- the same
-    /// three outcomes [`Self::evaluate`] returns. `location` and `losses`
-    /// are the ones the `ValueFunctionFamily::evaluate` hook records in its
-    /// `EvaluationEnv` (FR-090-OQ-3 ruling).
+    /// `Err(CallFailure::Fault(_))` for a broken S6a invariant, including
+    /// that `CheckedInvariant` case -- the same three outcomes
+    /// [`Self::evaluate`] returns. `location` and `losses` are the ones the
+    /// `ValueFunctionFamily::evaluate` hook records in its `EvaluationEnv`
+    /// (FR-090-OQ-3 ruling).
     fn call(
         &self,
         function: &QualifiedName,
@@ -352,7 +356,9 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// kernel evaluation outcome, or `Ok(Evaluation { outcome:
     /// FamilyOutcome::FamilyEvaluated(r), .. })` for a family-owned
     /// evaluation-time result (FR-090-AC-7, AC-8, AC-11, AC-12) -- and an S6a
-    /// `Err(InternalFault)` as `Err(CallFailure::Fault(_))`.
+    /// `Err(InternalFault)` as `Err(CallFailure::Fault(_))`, which is where a
+    /// kernel `Refusal::CheckedInvariant` surfaces (FR-096-AC-15): it is
+    /// never part of the unchanged `o` above.
     fn evaluate(
         &self,
         expression: &CheckedExpression,
@@ -635,6 +641,57 @@ mod tests {
             S6aFamilyKind::Value => "Value",
             S6aFamilyKind::ProtocolClause => "ProtocolClause",
         }
+    }
+
+    /// TC-428 (FR-096-AC-15): `not x` over `x: Boolean`, called through the S6a
+    /// seam with an Integer argument that admission would have refused, breaks
+    /// the checked-program invariant. The kernel `CheckedInvariant` stop is an
+    /// `Err(InternalFault)` naming `S6a`/`checked-program-invariant`, never an
+    /// `Ok` evaluation carrying a refusal.
+    #[trace("FR-096-AC-15", "TC-428")]
+    #[test]
+    fn checked_invariant_is_an_internal_fault_at_s6a() {
+        let boolean = || {
+            TypeForm::builtin(
+                qsl_forms::BuiltinType::Boolean,
+                qsl_foundation::Span { start: 0, end: 0 },
+            )
+        };
+        let graph = PackageDeclarations {
+            functions: vec![FunctionDeclaration::new(
+                "flip",
+                vec![("x".to_owned(), boolean())],
+                boolean(),
+                None,
+                Expression::Not(Box::new(Expression::Name("x".to_owned()))),
+            )],
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        }
+        .check(CheckingLimits::default())
+        .expect("flip(x: Boolean): Boolean = not x checks cleanly");
+        let flip = graph.function_identity("flip").expect("flip is declared");
+        let package = qsl_package::CheckedPackage::link(graph);
+        let objects = ObjectEnvironment::default();
+        let mut env = family::EvaluationEnv::new(
+            &package,
+            &objects,
+            vec![Value::Integer(Integer::from(3_i64))],
+        );
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let fault =
+            qsl_semantics::check::ValueFunctionFamily::evaluate(&flip, &mut env, &mut meter)
+                .expect_err("a checked-program invariant break is an internal fault");
+        assert_eq!(fault.stage(), "S6a");
+        assert_eq!(fault.category(), Category::InternalFailure);
+        assert_eq!(fault.invariant(), "checked-program-invariant");
+        assert_eq!(
+            fault.catalog_code(),
+            qsl_foundation::diagnostic::CatalogCode::new(
+                "runtime_invariant",
+                "established-invariant-broken"
+            ),
+            "FR-096-AC-15 names the code runtime_invariant"
+        );
     }
 
     /// TC-385 step 2: an exhaustive `match` with no `_` arm over a

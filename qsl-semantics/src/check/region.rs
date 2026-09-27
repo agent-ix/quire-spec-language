@@ -20,7 +20,6 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use qsl_forms::DeclarationSpans;
-use qsl_foundation::diagnostic::{LimitExceeded, Locus};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::Span;
@@ -137,22 +136,6 @@ impl DeclarationRegions {
             _ => self.region(&refusal.location),
         }
     }
-
-    /// FR-096: a `CheckingLimits` stop as T-4's [`LimitExceeded`], carrying
-    /// the `Locus::Region` of [`Self::refusal_region`]: the node whose
-    /// entry failed the charge for `Typer` and lowering, or the declaration
-    /// charged for package checking. `None` when `refusal` is not a
-    /// checking-limit stop. The locus is absent when the position resolves
-    /// to no region.
-    pub fn limit_exceeded(&self, refusal: &CheckRefusal) -> Option<LimitExceeded> {
-        let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
-            return None;
-        };
-        Some(
-            LimitExceeded::new(limit.kind.foundation_kind(), limit.limit, limit.actual)
-                .at(self.refusal_region(refusal).map(Locus::Region)),
-        )
-    }
 }
 
 impl PackageDeclarations {
@@ -207,13 +190,14 @@ mod tests {
         BinaryOperator, BuiltinType, DeclarationSpans, DeclaredClauseKind, Expression,
         ExpressionSpans, FunctionDeclaration, TypeForm,
     };
-    use qsl_foundation::diagnostic::{LimitKind, Locus};
+    use qsl_foundation::diagnostic::Code;
     use qsl_foundation::source::provenance::SourceRegion;
     use qsl_foundation::source_map::{Layout, Segment, SourceMap};
     use qsl_foundation::{Source, SourceIdentity, Span};
 
     use super::super::family::fixtures::{admitted_source, empty_scope, measure_resolved};
-    use super::super::{CheckingLimits, Location, Origin, PackageDeclarations};
+    use super::super::refusal::CheckingLimitKind;
+    use super::super::{CheckCause, CheckingLimits, Location, Origin, PackageDeclarations};
     use super::Arc;
 
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -692,65 +676,259 @@ mod tests {
         .is_some());
     }
 
-    /// FR-096, QSL-245: each `CheckingLimits` ceiling `Typer` reaches
-    /// (package-wide node count, nesting depth) and each declaration-level
-    /// ceiling (input bytes, work budget) surfaces as a T-4
-    /// `LimitExceeded` with its kind, bound and counter, located by the
-    /// `Locus::Region` of the node whose entry failed. A refusal that is
-    /// no limit stop is none. The declaration-level input-bytes and work
-    /// stops are located at the declaration.
+    /// FR-096, QSL-245 (SR-745 FND-003): each of nesting depth, node count,
+    /// input bytes and work budget is a `CheckRefusal` with code
+    /// `stage_limit_exceeded`, carrying its kind, bound and counter, located
+    /// at a specific source text. Depth is located at the node whose entry
+    /// failed the charge (`Typer`'s own per-node check); node count, input
+    /// bytes and work budget are the family's own per-declaration precheck
+    /// (`check_node_count`/`check_input_bytes`/`ValueFunctionFamily::check`'s
+    /// own work charge), fired before `Typer` starts, and located at the
+    /// whole declaration's span. `Typer`'s own package-wide node count and
+    /// lowering's own work charge, which locate at a node rather than the
+    /// declaration, are separate cases below
+    /// (`a_typer_stop_reaches_the_package_wide_node_count`,
+    /// `a_lowering_stop_is_located_by_its_location`).
     #[trace("TC-427", "FR-096-AC-4", "FR-096-AC-5", "FR-096-AC-11")]
     #[test]
-    fn a_checking_limit_stop_is_a_limit_exceeded_located_at_its_node() {
+    fn a_checking_limit_stop_is_located_at_its_node() {
         let metrics = measure_resolved(&empty_scope(), &unit().functions[0]);
-        for (limits, kind, bound, actual) in [
+        let declaration_text = &UNIT[UNIT.find("function").unwrap()..UNIT.rfind(" }").unwrap() + 2];
+        for (limits, kind, code, bound, actual, expected_text) in [
             (
                 CheckingLimits::default().with_input_bytes(metrics.input_bytes - 1),
-                LimitKind::InputBytes,
+                CheckingLimitKind::InputBytes,
+                "input-bytes-exceeded",
                 metrics.input_bytes - 1,
                 u128::from(metrics.input_bytes),
+                declaration_text,
             ),
             (
                 CheckingLimits::default().with_work_budget(metrics.work_budget - 1),
-                LimitKind::WorkBudget,
+                CheckingLimitKind::WorkBudget,
+                "work-budget-exceeded",
                 metrics.work_budget - 1,
                 u128::from(metrics.work_budget),
+                declaration_text,
             ),
             (
                 CheckingLimits::new(2, 64).unwrap(),
-                LimitKind::NodeCount,
+                CheckingLimitKind::Nodes,
+                "node-count-exceeded",
                 2,
                 7,
+                declaration_text,
             ),
             (
                 CheckingLimits::new(u64::MAX, 1).unwrap(),
-                LimitKind::NestingDepth,
+                CheckingLimitKind::Depth,
+                "nesting-depth-exceeded",
                 1,
                 2,
+                "a",
             ),
         ] {
             let unit = unit();
             let regions = unit.regions();
-            let declaration = regions.declaration_region(0);
             let refusals = unit.check(limits).expect_err("the limit stops checking");
             let [refusal] = refusals.as_slice() else {
                 panic!("one refusal, got {refusals:?}");
             };
-            let exceeded = regions
-                .limit_exceeded(refusal)
-                .expect("a checking limit stop");
-            assert_eq!(exceeded.kind(), kind);
-            assert_eq!(exceeded.configured_bound(), bound);
-            assert_eq!(exceeded.actual(), actual);
-            let expected = regions
+            let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+                panic!("a stage limit, got {refusal:?}");
+            };
+            assert_eq!(limit.kind, kind);
+            assert_eq!(limit.limit, bound);
+            assert_eq!(limit.actual, actual);
+            assert_eq!(refusal.cause.code(), Code::StageLimitExceeded, "{kind:?}");
+            assert_eq!(refusal.cause.cause(), Some(code), "{kind:?}");
+            let region = regions
                 .refusal_region(refusal)
                 .expect("the position was read from the unit");
-            assert!(!text(&expected).is_empty());
-            if matches!(kind, LimitKind::InputBytes | LimitKind::WorkBudget) {
-                // FR-096: a declaration-level limit is at the declaration.
-                assert_eq!(Some(expected.clone()), declaration);
-            }
-            assert_eq!(exceeded.locus(), Some(&Locus::Region(expected)));
+            assert_eq!(text(&region), expected_text, "{kind:?}");
         }
+    }
+
+    /// FR-096, QSL-245 (SR-745 FND-004): the second budget below is
+    /// discovered, not a hard-coded offset. It is the smallest work budget
+    /// past `declared` whose lowering stop locates at the `c + d` node
+    /// (path `[2]`), found by scanning upward from `declared + 1` -- so a
+    /// change to the lowering cost model that moves this budget shows up as
+    /// a bound scan finding a different value, not as a silently-passing
+    /// magic number.
+    fn budget_located_at_c_plus_d(declared: u64) -> u64 {
+        for budget in (declared + 1)..(declared + 1000) {
+            let unit = unit();
+            let regions = unit.regions();
+            let Err(refusals) = unit.check(CheckingLimits::default().with_work_budget(budget))
+            else {
+                continue;
+            };
+            let [refusal] = refusals.as_slice() else {
+                continue;
+            };
+            let Some(region) = regions.refusal_region(refusal) else {
+                continue;
+            };
+            if text(&region) == "c + d" {
+                return budget;
+            }
+        }
+        panic!("no budget in range locates the lowering stop at c + d");
+    }
+
+    /// FR-096, QSL-245: a lowering stop (`CheckingLimits` work budget spent
+    /// past the declaration's own charge) carries no region of its own
+    /// (`StageLimitCause::region` is `None`) and is located by its
+    /// `location`: the body root for the first lowering charge past the
+    /// declaration's, and the `c + d` node (path `[2]`) for a later one.
+    #[trace("TC-427", "FR-096-AC-16")]
+    #[test]
+    fn a_lowering_stop_is_located_by_its_location() {
+        let declared = measure_resolved(&empty_scope(), &unit().functions[0]).work_budget;
+        let c_plus_d = budget_located_at_c_plus_d(declared);
+        for (budget, path, node_text) in [
+            (declared, &[][..], "if a then b else c + d"),
+            (c_plus_d, &[2][..], "c + d"),
+        ] {
+            let unit = unit();
+            let regions = unit.regions();
+            let refusals = unit
+                .check(CheckingLimits::default().with_work_budget(budget))
+                .expect_err("lowering spends past the budget");
+            let [refusal] = refusals.as_slice() else {
+                panic!("one refusal, got {refusals:?}");
+            };
+            let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+                panic!("a stage limit, got {refusal:?}");
+            };
+            assert_eq!(limit.kind, CheckingLimitKind::WorkBudget);
+            assert_eq!(limit.region, None, "a lowering stop names no region");
+            assert_eq!(refusal.location, body(path));
+            assert_eq!(regions.refusal_region(refusal), regions.region(&body(path)));
+            let region = regions.refusal_region(refusal).expect("a node of the unit");
+            assert_eq!(text(&region), node_text);
+        }
+    }
+
+    /// FR-096, QSL-245 (SR-746 FND-001): `Typer`'s package-wide node count
+    /// (`check.rs`'s `enter`), not the family's own per-declaration preimage
+    /// `check_node_count` precheck (which the previous case above
+    /// exercises, and which the region.rs QSL-245 review found this file
+    /// had no test past). `g1` and `g2` each preimage-measure 3 nodes,
+    /// individually under the bound, so each passes its own precheck; with
+    /// the bound one past `g1`'s count, `Typer`'s package-wide counter,
+    /// seeded from `g1`'s final total, crosses the bound two nodes into
+    /// `g2`'s own body walk, at `not a` (`g2`'s inner `not`), not at `g1`'s
+    /// or `g2`'s declaration span.
+    #[trace("TC-427", "FR-096-AC-17")]
+    #[test]
+    fn a_typer_stop_reaches_the_package_wide_node_count() {
+        const TWO_FUNCTIONS: &str = "language \"ix:native\" edition \"1-draft\";\n\
+            profile \"ix:value\" as v;\n\
+            function g1 using v(a: Boolean): Boolean pure { not not a }\n\
+            function g2 using v(a: Boolean): Boolean pure { not not a }\n";
+
+        fn find_in(text: &str, from: usize) -> Span {
+            let start = from
+                + TWO_FUNCTIONS[from..]
+                    .find(text)
+                    .expect("fixture text is in the unit");
+            Span {
+                start,
+                end: start + text.len(),
+            }
+        }
+
+        /// `not not a`: `Not(Not(Name("a")))`, 3 nodes, at `name`'s own
+        /// occurrence of the shared body text starting at or after `from`.
+        fn not_not_a(name: &str, from: usize) -> FunctionDeclaration {
+            let whole = find_in("not not a", from);
+            let mut body_spans = ExpressionSpans::new(whole).unwrap();
+            let root = body_spans.root();
+            let inner = body_spans
+                .push_child(root, find_in("not a", whole.start))
+                .unwrap();
+            body_spans
+                .push_child(inner, find_in("a", whole.start + "not ".len()))
+                .unwrap();
+            let declaration_start = find_in(&format!("function {name}"), 0).start;
+            let spans = DeclarationSpans {
+                declaration: Span {
+                    start: declaration_start,
+                    end: whole.end + " }".len(),
+                },
+                body: body_spans,
+                measure: None,
+            };
+            let boolean = || TypeForm::builtin(BuiltinType::Boolean, Span { start: 0, end: 0 });
+            FunctionDeclaration::new(
+                name,
+                vec![("a".to_owned(), boolean())],
+                boolean(),
+                None,
+                Expression::Not(Box::new(Expression::Not(Box::new(Expression::Name(
+                    "a".to_owned(),
+                ))))),
+            )
+            .with_spans(spans)
+            .expect("the spans match not not a's shape")
+        }
+
+        let g2_from = TWO_FUNCTIONS.find("function g2").unwrap();
+        let g1_count = measure_resolved(&empty_scope(), &not_not_a("g1", 0)).node_count;
+        let g2_count = measure_resolved(&empty_scope(), &not_not_a("g2", g2_from)).node_count;
+        assert_eq!(
+            (g1_count, g2_count),
+            (3, 3),
+            "sanity: both fixtures are 3 nodes each"
+        );
+
+        let source = admitted_source(
+            SourceIdentity::new("a", "u", "git", "1"),
+            TWO_FUNCTIONS.as_bytes(),
+        );
+        let declarations = PackageDeclarations {
+            functions: vec![not_not_a("g1", 0), not_not_a("g2", g2_from)],
+            ..PackageDeclarations::new(source)
+        };
+        let regions = declarations.regions();
+        // One past g1's own count: g1 passes its precheck (3 <= 4) and
+        // fully types; g2 also passes its own precheck (3 <= 4) in
+        // isolation, but Typer's package-wide counter, seeded at g1's
+        // final 3, crosses 4 on g2's second node.
+        let refusals = declarations
+            .check(CheckingLimits::new(g1_count + 1, 64).unwrap())
+            .expect_err("g2's Typer walk crosses the package-wide node bound");
+        let [refusal] = refusals.as_slice() else {
+            panic!("one refusal, got {refusals:?}");
+        };
+        let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+            panic!("a stage limit, got {refusal:?}");
+        };
+        assert_eq!(limit.kind, CheckingLimitKind::Nodes);
+        assert_eq!(limit.limit, g1_count + 1);
+        assert_eq!(limit.actual, u128::from(g1_count + 2));
+        assert_eq!(limit.region, None, "Typer's own node stop names no region");
+        assert_eq!(
+            refusal.location,
+            Location {
+                origin: Origin::Body {
+                    function: "g2".into(),
+                    index: 1,
+                },
+                path: vec![0],
+            }
+        );
+        let region = regions
+            .refusal_region(refusal)
+            .expect("the position was read from the unit");
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        assert_eq!(
+            &TWO_FUNCTIONS[start..end],
+            "not a",
+            "g2's inner not, not either declaration"
+        );
     }
 }

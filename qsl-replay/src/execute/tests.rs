@@ -1140,3 +1140,21 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
         "{refused:?}"
     );
 }
+
+/// SR-746 FND-002 (FR-096-AC-15): `call_failure_to_replay_refusal`, the
+/// mapping `replay`'s own `package.call` site applies, turns a
+/// `CallFailure::Fault` -- which is what a kernel `Refusal::CheckedInvariant`
+/// becomes at the S6a seam, never an `Ok` `Refused` outcome -- into
+/// `ReplayRefusal::Fault`, never a settled `ProofCategory::Refusal` result.
+#[test]
+fn a_call_fault_settles_as_a_replay_fault_not_a_refusal() {
+    let fault = InternalFault::new("S6a", "checked-program-invariant");
+    let refusal = call_failure_to_replay_refusal(CallFailure::Fault(fault));
+    match refusal {
+        ReplayRefusal::Fault(fault) => {
+            assert_eq!(fault.stage(), "S6a");
+            assert_eq!(fault.invariant(), "checked-program-invariant");
+        }
+        other => panic!("expected ReplayRefusal::Fault, got {other:?}"),
+    }
+}

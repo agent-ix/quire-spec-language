@@ -170,7 +170,7 @@ mod tests {
     /// reports `stage_limit_exceeded` with its own cause, and a
     /// `LimitExceeded` reports its kind's code with the bound and actual
     /// counter.
-    #[trace("TC-427", "FR-096-AC-2")]
+    #[trace("TC-427", "FR-096-AC-2", "TC-428", "FR-096-AC-7")]
     #[test]
     fn limit_exceeded_reports_stage_limit_exceeded_per_kind() {
         let causes = [
@@ -192,9 +192,14 @@ mod tests {
             assert_eq!(exceeded.actual(), 11);
             assert_eq!(exceeded.locus(), None);
             let fields = exceeded.catalog_fields().expect("a key-table row");
-            assert_eq!(fields["kind"], cause);
-            assert_eq!(fields["bound"], "10");
-            assert_eq!(fields["actual"], "11");
+            assert_eq!(
+                fields.into_iter().collect::<Vec<_>>(),
+                [
+                    ("actual", "11".to_owned()),
+                    ("bound", "10".to_owned()),
+                    ("kind", cause.to_owned()),
+                ]
+            );
         }
     }
 }

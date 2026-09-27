@@ -16,7 +16,7 @@ the evaluation's resolved locus and the catalog payload, and every cause's
 fields match the keys fixed for it. This catches a record that drops the
 payload, reads it from a message, or invents a locus.
 
-Scope: FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13.
+Scope: FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13, FR-096-AC-15.
 
 ## Test Procedure
 
@@ -36,6 +36,8 @@ Scope: FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13.
 5. Build a `DivisionPairOutOfDomain` record for consumer domain `Int[0, 9]`
    with only the quotient outside, only the remainder outside, and both
    outside.
+6. Evaluate `not x` for `x: Boolean` through the S6a seam with an Integer
+   argument (FR-096-AC-15).
 
 Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
 
@@ -55,15 +57,17 @@ Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
   `actual` `binary64`. `CheckedInvariant` builds no record.
 - Step 5: causes `quotient-outside-domain`, `remainder-outside-domain` and
   `both-outside-domain`, each with `expected` `Int[0, 9]`.
+- Step 6: `Err(InternalFault)` naming `S6a` and `checked-program-invariant`,
+  and no `Evaluation`.
 
 ## Status
 
-Passing locally (QSL-245), steps 1 to 5. Steps 1 to 3 cover FR-096-AC-6 and
+Passing locally (QSL-245), steps 1 to 6. Steps 1 to 3 cover FR-096-AC-6 and
 FR-096-AC-7. Step 4 (FR-096-AC-8) covers all twelve kernel causes: each
 variant carries the target domain or width its record renders,
 `Refusal::code()` and `Refusal::cause()` return the key table's code and
 cause (`ForeignReference` returns `foreign-universe`), and
 `kernel_refusal_record` builds each record, with a `CheckedInvariant`
 building none. Step 5 (FR-096-AC-13) covers the three
-`DivisionPairOutOfDomain` causes. The kernel `CheckedInvariant` to internal
-fault conversion is not built.
+`DivisionPairOutOfDomain` causes. Step 6 (FR-096-AC-15): `Machine::run`
+returns a kernel `CheckedInvariant` as `Err(InternalFault)`.
