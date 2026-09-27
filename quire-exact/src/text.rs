@@ -469,7 +469,9 @@ fn prepare<const N: usize>(
 fn check_length(bound: Option<&TextType>, sequences: &[&str]) -> Result<(), Stop> {
     match bound {
         Some(text_type) if !sequences.iter().all(|sequence| text_type.admits(sequence)) => {
-            Err(Stop::Refused(Refusal::TextLengthOutOfDomain))
+            Err(Stop::Refused(Refusal::TextLengthOutOfDomain {
+                target: *text_type,
+            }))
         }
         _ => Ok(()),
     }
@@ -522,7 +524,7 @@ mod tests {
         let outcome = admit_text(&payload, &text_type, &mut meter);
         assert!(matches!(
             outcome,
-            Outcome::Refused(Refusal::TextLengthOutOfDomain)
+            Outcome::Refused(Refusal::TextLengthOutOfDomain { target }) if target == text_type
         ));
     }
 }

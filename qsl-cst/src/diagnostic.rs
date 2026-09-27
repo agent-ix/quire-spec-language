@@ -12,7 +12,7 @@ pub type CompleteCode = qsl_foundation::Code;
 
 /// The closed typed cause of a complete-source diagnostic, selected by its
 /// producer at the failing operation under `quire.native.diagnostics/v1`
-/// revision `1-draft.7`.
+/// revision `1-draft.8`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CompleteCause {
     /// `invalid_syntax`: a token the grammar does not admit at its position.
@@ -66,7 +66,7 @@ pub enum CompleteCause {
     EstablishedInvariantBroken,
     /// A retained host or source code with its original structured cause.
     Host(HostCause),
-    /// `stage_limit_exceeded` (catalog revision `1-draft.7`): a
+    /// `stage_limit_exceeded` (catalog revision `1-draft.8`): a
     /// [`SyntaxLimit`], named by its [`LimitKind`]. The token ceiling is
     /// `token-count-exceeded`.
     StageLimit(LimitKind),
@@ -390,7 +390,7 @@ pub fn error_without_region(
 
 /// The one constructor for a complete-V1 syntax-ceiling refusal, at `span`:
 /// `stage_limit_exceeded`/[`CompleteCause::StageLimit`] naming every
-/// [`SyntaxLimit`] kind's catalog cause (revision `1-draft.7`), and a
+/// [`SyntaxLimit`] kind's catalog cause (revision `1-draft.8`), and a
 /// message rendered from `limit`.
 pub fn resource_exhausted(
     source: &Source,
@@ -428,7 +428,7 @@ mod tests {
     }
 
     /// Every `SyntaxLimit` kind reports `stage_limit_exceeded/<kind>-exceeded`
-    /// (catalog revision `1-draft.7`); the token ceiling is
+    /// (catalog revision `1-draft.8`); the token ceiling is
     /// `token-count-exceeded`.
     #[test]
     fn resource_exhausted_reports_the_kind_that_maps_to_the_catalog() {

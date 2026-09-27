@@ -429,30 +429,79 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         }
     }
 
-    // Every other kernel refusal but `CheckedInvariant`: bare, with location.
-    let kernel_no_record = [
-        Refusal::InexactDecimal,
-        Refusal::DecimalOutOfDomain,
-        Refusal::DivisionPairOutOfDomain {
-            quotient_admitted: false,
-            remainder_admitted: false,
-        },
-        Refusal::ModuloOutOfDomain,
-        Refusal::TextLengthOutOfDomain,
-        Refusal::IntegerOutOfDomain,
-        Refusal::RationalOutOfDomain,
-        Refusal::IeeeNotExact {
-            would_be: quire_exact::IeeeFlags::EMPTY,
-        },
-        Refusal::IeeeNanPayloadNotRepresentable,
-        Refusal::IeeeRationalOutOfDomain,
-    ];
-    for refusal in kernel_no_record {
-        match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal))).unwrap() {
-            CallOutcome::Refused(CallRefusal::Kernel { location: got }) => {
-                assert_location(&got);
+    // The ten kernel value refusals (QSL-245): each is a record with the
+    // refusal's own code and cause, an `expected` field, and the location.
+    {
+        use quire_exact::{
+            DecimalType, IeeeFlags, IeeeWidth, InexactTarget, Integer, IntegerInterval,
+            RationalDomain, RoundingMode, TextProfile, TextType,
+        };
+        let interval = || IntegerInterval::spanning(Integer::zero(), Integer::from(9_i64));
+        let rational = || {
+            Box::new(
+                RationalDomain::new(
+                    interval(),
+                    IntegerInterval::spanning(Integer::one(), Integer::from(9_i64)),
+                )
+                .unwrap(),
+            )
+        };
+        let kernel_value_refusals = [
+            Refusal::InexactDecimal {
+                target: InexactTarget::Integer(Box::new(interval())),
+            },
+            Refusal::DecimalOutOfDomain {
+                target: Box::new(
+                    DecimalType::new(
+                        Integer::zero(),
+                        Integer::from(100_i64),
+                        0,
+                        2,
+                        RoundingMode::Exact,
+                    )
+                    .unwrap(),
+                ),
+            },
+            Refusal::DivisionPairOutOfDomain {
+                domain: Box::new(interval()),
+                quotient_admitted: false,
+                remainder_admitted: false,
+            },
+            Refusal::ModuloOutOfDomain {
+                domain: Box::new(interval()),
+            },
+            Refusal::TextLengthOutOfDomain {
+                target: TextType::new(1, 8, TextProfile::Nfc).unwrap(),
+            },
+            Refusal::IntegerOutOfDomain {
+                target: Box::new(interval()),
+            },
+            Refusal::RationalOutOfDomain { target: rational() },
+            Refusal::IeeeNotExact {
+                target: IeeeWidth::Binary32,
+                would_be: IeeeFlags::EMPTY,
+            },
+            Refusal::IeeeNanPayloadNotRepresentable {
+                target: IeeeWidth::Binary32,
+                source: IeeeWidth::Binary64,
+            },
+            Refusal::IeeeRationalOutOfDomain { target: rational() },
+        ];
+        for refusal in kernel_value_refusals {
+            let expected = CatalogCode::new(refusal.code().unwrap(), refusal.cause().unwrap());
+            match convert(FamilyOutcome::Evaluated(Outcome::Refused(refusal.clone()))).unwrap() {
+                CallOutcome::Refused(CallRefusal::Record {
+                    code,
+                    fields,
+                    location: got,
+                    ..
+                }) => {
+                    assert_eq!(code, expected, "{refusal:?}");
+                    assert!(fields.contains_key("expected"), "{refusal:?}");
+                    assert_location(&got);
+                }
+                other => panic!("{refusal:?}: {other:?}"),
             }
-            other => panic!("{refusal:?}: {other:?}"),
         }
     }
 
@@ -502,12 +551,13 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
             if fault.stage() == "S6a" && fault.invariant() == "checked-program-invariant"
     ));
 
-    // Kernel undefined: each of the four reasons.
+    // Kernel undefined: each of the five reasons.
     for (reason, spelling) in [
         (Undefined::DivisionByZero, "division-by-zero"),
         (Undefined::IeeeNotFinite, "ieee-not-finite"),
         (Undefined::EmptyReduction, "empty-reduction"),
         (Undefined::NoneValue, "none-value"),
+        (Undefined::SumOutOfDomain, "sum-out-of-domain"),
     ] {
         match convert(FamilyOutcome::Evaluated(Outcome::Undefined(reason))).unwrap() {
             CallOutcome::Undefined { reason } => assert_eq!(reason, spelling),

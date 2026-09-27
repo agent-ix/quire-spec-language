@@ -6,6 +6,7 @@ use ix_trace_rs::trace;
 use qsl_eval::value::CheckedPackageEvaluation;
 use qsl_forms::{Accumulation, BinaryOperator, BinderQuery, Expression, FunctionDeclaration};
 use qsl_package::CheckedPackage;
+use qsl_semantics::check::Location;
 use qsl_semantics::check::{
     CheckCause, CheckMode, CheckRefusal, CheckingLimits, CollectionLoss, CollectionProperty,
     Obligation, PackageDeclarations, ProvedInterval,
@@ -146,6 +147,8 @@ fn aliases() -> Vec<(String, ValueType)> {
         ("Small".to_owned(), int_type(0, 30)),
         ("Flag".to_owned(), ValueType::Boolean),
         ("Tiny".to_owned(), int_type(0, 5)),
+        ("Three".to_owned(), int_type(0, 3)),
+        ("Positive".to_owned(), int_type(1, 3)),
     ]
 }
 
@@ -1080,9 +1083,10 @@ fn q13_sum_proves_every_prefix_inside_its_domain_for_every_order() {
         vec![collection(&sequence, ints(&[2, 2, 2]))],
         UNLIMITED,
     );
+    // FR-096: a running total outside `N` is undefined, never refused.
     assert!(matches!(
         over.outcome,
-        Outcome::Refused(Refusal::IntegerOutOfDomain)
+        Outcome::Undefined(Undefined::SumOutOfDomain)
     ));
     assert_eq!(
         ill_typed(&package, &[("q", sequence)], &sum("Flag", "q", name("x"))),
@@ -1297,4 +1301,208 @@ fn tc_441_an_unbounded_source_has_no_proved_size_maximum() {
             }),
         })
     );
+}
+
+/// One kernel-mode `sum<Three>(x in q: x)` evaluation: its outcome, its
+/// location, the summand's and the `sum` node's own locations, and every
+/// admitted charge point.
+struct SumRun {
+    outcome: FamilyOutcome<Value>,
+    location: Option<Location>,
+    sum: Location,
+    summand: Location,
+    charges: Vec<ChargePoint>,
+}
+
+fn run_three_sum(source: ValueType, values: &[i64]) -> SumRun {
+    let package = plain();
+    let parameters = [("q", source.clone())];
+    let checked = check(&package, &parameters, &sum("Three", "q", name("x"))).unwrap();
+    let mut meter = Meter::new(UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![collection(&source, ints(values))],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .unwrap();
+    SumRun {
+        outcome: evaluation.outcome,
+        location: evaluation.location,
+        sum: checked.root().location().clone(),
+        summand: checked.root().children()[1].location().clone(),
+        charges: meter.admitted_charges().to_vec(),
+    }
+}
+
+/// TC-500 step 1 (FR-096-AC-14): `sum<Three>` over `2, 2` leaves `Int[0, 3]`
+/// at its one addition: undefined at the `sum` node, not refused, with the
+/// addition's `arithmetic` charge the last and no `result-retain`.
+#[trace("TC-500", "FR-096-AC-14")]
+#[test]
+fn tc_500_a_running_total_outside_the_domain_is_undefined_at_the_sum_node() {
+    let run = run_three_sum(of(CollectionKind::Sequence, int_type(0, 3), 0, 2), &[2, 2]);
+    assert!(
+        matches!(
+            run.outcome,
+            FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))
+        ),
+        "{:?}",
+        run.outcome
+    );
+    assert_eq!(run.location.as_ref(), Some(&run.sum));
+    assert_ne!(run.sum, run.summand);
+    assert_eq!(
+        run.charges.last(),
+        Some(&ChargePoint::IntegerArithmeticArithmetic)
+    );
+    assert!(!run
+        .charges
+        .contains(&ChargePoint::IntegerArithmeticResultRetain));
+    assert!(!run.charges.contains(&ChargePoint::CollectionResultRetain));
+}
+
+/// TC-500 step 2 (FR-096-AC-14): the same `sum` over `1, 2` completes with
+/// `3`.
+#[trace("TC-500", "FR-096-AC-14")]
+#[test]
+fn tc_500_a_running_total_inside_the_domain_completes() {
+    let run = run_three_sum(of(CollectionKind::Sequence, int_type(0, 3), 0, 2), &[1, 2]);
+    match run.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(value)) => {
+            assert_eq!(format!("{value:?}"), format!("{:?}", int(3)));
+        }
+        other => panic!("a completed 3, not {other:?}"),
+    }
+}
+
+/// TC-500 step 3 (FR-096-AC-14): a seed outside `Int[0, 3]` (`5`, from a
+/// `Sequence<Int[0, 9]>`) is undefined at the summand node, before any
+/// addition is charged, even though the next summand would bring the total
+/// back.
+#[trace("TC-500", "FR-096-AC-14")]
+#[test]
+fn tc_500_a_seed_outside_the_domain_is_undefined_at_the_summand_node() {
+    let run = run_three_sum(of(CollectionKind::Sequence, int_type(0, 9), 0, 2), &[5, 0]);
+    assert!(
+        matches!(
+            run.outcome,
+            FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))
+        ),
+        "{:?}",
+        run.outcome
+    );
+    assert_eq!(run.location.as_ref(), Some(&run.summand));
+    assert!(!run.charges.iter().any(|point| matches!(
+        point,
+        ChargePoint::IntegerArithmeticOperands
+            | ChargePoint::IntegerArithmeticArithmetic
+            | ChargePoint::IntegerArithmeticResultRetain
+    )));
+}
+
+fn count(result_type: &str, source: &str, predicate: Expression) -> Expression {
+    Expression::Count {
+        result_type_span: qsl_foundation::Span { start: 0, end: 0 },
+        result_type: result_type.to_owned(),
+        binder: "x".to_owned(),
+        source: Box::new(name(source)),
+        predicate: Box::new(predicate),
+    }
+}
+
+/// The `Int[..]` domain a real kernel evaluation's `IntegerOutOfDomain`
+/// refusal names, or a failed test.
+fn refused_domain(outcome: &Outcome<Value>) -> IntegerInterval {
+    match outcome {
+        Outcome::Refused(Refusal::IntegerOutOfDomain { target }) => (**target).clone(),
+        other => panic!("an IntegerOutOfDomain refusal, not {other:?}"),
+    }
+}
+
+/// TC-428 (FR-096-AC-8): a `Coerce` into `Int[0, 3]` refuses with that
+/// declared domain, and `count<Three>` past `3` refuses with its own.
+#[trace("TC-428", "FR-096-AC-8")]
+#[test]
+fn coerce_and_count_refusals_carry_the_declared_domain() {
+    let package = plain();
+    let three = IntegerInterval::spanning(Integer::from(0_i64), Integer::from(3_i64));
+
+    let parameters = [("a", ValueType::Integer)];
+    let checked = check_as(&package, &parameters, &name("a"), Some(&int_type(0, 3))).unwrap();
+    let coerced = evaluate_checked(
+        &package,
+        &checked,
+        vec![int(7)],
+        UNLIMITED,
+        &ObjectEnvironment::default(),
+    );
+    assert_eq!(refused_domain(&coerced.outcome), three);
+
+    // AC-8: the record built from that S6a `Evaluation` renders the domain.
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![int(7)],
+            &ObjectEnvironment::default(),
+            &mut Meter::new(UNLIMITED),
+        )
+        .unwrap();
+    let record = evaluation
+        .refusal_record(package.graph())
+        .expect("integer_out_of_domain has a record");
+    assert_eq!(
+        (record.code().code(), record.code().cause()),
+        ("integer_out_of_domain", "outside-domain")
+    );
+    assert_eq!(
+        record.fields().get("expected").map(String::as_str),
+        Some("Int[0, 3]")
+    );
+
+    let source = of(CollectionKind::Sequence, ValueType::Boolean, 0, 5);
+    let counted = run(
+        &package,
+        &[("q", source.clone())],
+        &count("Three", "q", name("x")),
+        vec![collection(&source, vec![Value::Boolean(true); 5])],
+        UNLIMITED,
+    );
+    assert_eq!(refused_domain(&counted.outcome), three);
+}
+
+/// TC-500 / FR-100-AC-10: `sum<Int[1, 3]>` over an empty sequence checks
+/// under `CheckMode::Kernel` and the seed `0` is outside `N`: undefined at
+/// the `sum` node, with no addition and no retain charged.
+#[trace("TC-500", "FR-096-AC-14")]
+#[test]
+fn tc_500_an_empty_sum_whose_domain_excludes_zero_is_undefined_at_the_sum_node() {
+    let package = plain();
+    let source = of(CollectionKind::Sequence, int_type(1, 3), 0, 2);
+    let parameters = [("q", source.clone())];
+    let checked = check(&package, &parameters, &sum("Positive", "q", name("x"))).unwrap();
+    let mut meter = Meter::new(UNLIMITED);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![collection(&source, ints(&[]))],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .unwrap();
+    assert!(matches!(
+        evaluation.outcome,
+        FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))
+    ));
+    assert_eq!(
+        evaluation.location.as_ref(),
+        Some(checked.root().location())
+    );
+    assert!(!meter
+        .admitted_charges()
+        .contains(&ChargePoint::CollectionResultRetain));
+    assert!(!meter
+        .admitted_charges()
+        .contains(&ChargePoint::IntegerArithmeticArithmetic));
 }

@@ -527,7 +527,7 @@ pub struct BundleRefusal {
 }
 
 /// The closed catalogued cause tag of a bundle refusal, under
-/// `quire.native.diagnostics/v1` revision `1-draft.7`. Layer 3's own subset of
+/// `quire.native.diagnostics/v1` revision `1-draft.8`. Layer 3's own subset of
 /// the cause vocabulary: the parser's `qsl_cst::CompleteCause` is layer 1's,
 /// and linking never sees a syntax cause.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

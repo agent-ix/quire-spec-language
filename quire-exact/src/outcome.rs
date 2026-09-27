@@ -36,8 +36,12 @@
 
 use crate::accounting::Incomplete;
 use crate::collection::{CardinalityBound, CollectionKind};
+use crate::decimal::DecimalType;
 use crate::identity::UniverseId;
-use crate::ieee::IeeeFlags;
+use crate::ieee::{IeeeFlags, IeeeWidth};
+use crate::integer::IntegerInterval;
+use crate::rational::RationalDomain;
+use crate::text::TextType;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -103,45 +107,85 @@ pub enum Undefined {
     /// `value(e)` of `none`. Only direct kernel evaluation of an unlinked
     /// expression can meet it.
     NoneValue,
+    /// A `sum<N>` seed or running total is not a member of `N`'s domain, so
+    /// the fold has no value in `N` (QSpec FR-145). It names no catalog
+    /// undefined reason and builds no record. Only a `sum` checked under
+    /// `CheckMode::Kernel` can meet it.
+    SumOutOfDomain,
 }
 
 /// Why a defined result is refused. Refusals never carry the refused value.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+///
+/// Each of the ten value refusals carries the declared target domain or IEEE
+/// width its catalog record renders (FR-096, QSL-245), so the record is built
+/// from the variant and never from a message. Bigint domains are boxed, which
+/// keeps `Refusal` small; it is `Clone`, not `Copy`.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Refusal {
     /// Strict `exact` rounding would discard a nonzero digit.
-    InexactDecimal,
+    InexactDecimal {
+        /// The declared target the value was placed at.
+        target: InexactTarget,
+    },
     /// The normalized decimal coefficient is outside the target domain.
-    DecimalOutOfDomain,
+    DecimalOutOfDomain {
+        /// The declared `Decimal[..]` target.
+        target: Box<DecimalType>,
+    },
     /// At least one member of a quotient/remainder pair is outside the
     /// consumer domain; neither member is exposed.
     DivisionPairOutOfDomain {
+        /// The bounded consumer's `Int[..]` domain.
+        domain: Box<IntegerInterval>,
         /// Whether the quotient is a domain member.
         quotient_admitted: bool,
         /// Whether the remainder is a domain member.
         remainder_admitted: bool,
     },
     /// The Euclidean `mod` remainder is outside the consumer domain.
-    ModuloOutOfDomain,
+    ModuloOutOfDomain {
+        /// The bounded consumer's `Int[..]` domain.
+        domain: Box<IntegerInterval>,
+    },
     /// The profile length (scalars, or bytes for `binary-utf8`) is outside
     /// the declared `Text[min,max; profile]` bounds.
-    TextLengthOutOfDomain,
+    TextLengthOutOfDomain {
+        /// The declared text type.
+        target: TextType,
+    },
     /// An exact conversion or arithmetic result is outside the target
     /// integer domain.
-    IntegerOutOfDomain,
+    IntegerOutOfDomain {
+        /// The target `Int[..]` domain.
+        target: Box<IntegerInterval>,
+    },
     /// An exact rational arithmetic result is outside its `Rational[..]`
     /// result domain.
-    RationalOutOfDomain,
+    RationalOutOfDomain {
+        /// The `Rational[..]` result domain.
+        target: Box<RationalDomain>,
+    },
     /// Strict IEEE `exact` found an inexact, overflowing or tiny-and-inexact
     /// result; only its would-be flags are reported, never rounded bits.
     IeeeNotExact {
+        /// The result width.
+        target: IeeeWidth,
         /// The flags the rounded result would have raised.
         would_be: IeeeFlags,
     },
     /// A NaN payload does not fit the explicit conversion's target width.
-    IeeeNanPayloadNotRepresentable,
+    IeeeNanPayloadNotRepresentable {
+        /// The conversion's target width.
+        target: IeeeWidth,
+        /// The conversion's source width.
+        source: IeeeWidth,
+    },
     /// An exact rational converted from an IEEE value is outside the
     /// `Rational[..]` target domain.
-    IeeeRationalOutOfDomain,
+    IeeeRationalOutOfDomain {
+        /// The grammar-named `Rational[..]` conversion target.
+        target: Box<RationalDomain>,
+    },
     /// A comparison met two references of different universes (FR-096: the
     /// `foreign_reference`/`foreign-universe` key-table row, `required` and
     /// `supplied` rendered as lowercase hex). `required` is the universe
@@ -178,46 +222,69 @@ pub enum Refusal {
 }
 
 impl Refusal {
-    /// The closed `refused { code }` spelling, where the language defines
-    /// one. The kernel names only its own codes; a caller mapping this to a
-    /// wider catalog (QSL `diagnostic`, ADR-013 O-17) does so above the
-    /// kernel.
-    pub fn code(self) -> Option<&'static str> {
+    /// The catalog `refused { code }` spelling, `None` only for
+    /// `CheckedInvariant`, which is an internal fault and never a refusal
+    /// record. The kernel names its own codes; QSL `diagnostic` maps them to
+    /// its catalog (ADR-013 O-17).
+    pub fn code(&self) -> Option<&'static str> {
         match self {
-            Self::IeeeNanPayloadNotRepresentable => Some("ieee_nan_payload_not_representable"),
-            Self::IeeeRationalOutOfDomain => Some("ieee_rational_out_of_domain"),
+            Self::InexactDecimal { .. } => Some("inexact_decimal"),
+            Self::DecimalOutOfDomain { .. } => Some("decimal_out_of_domain"),
+            Self::DivisionPairOutOfDomain { .. } => Some("division_pair_out_of_domain"),
+            Self::ModuloOutOfDomain { .. } => Some("modulo_out_of_domain"),
+            Self::TextLengthOutOfDomain { .. } => Some("text_length_out_of_domain"),
+            Self::IntegerOutOfDomain { .. } => Some("integer_out_of_domain"),
+            Self::RationalOutOfDomain { .. } => Some("rational_out_of_domain"),
+            Self::IeeeNotExact { .. } => Some("ieee_not_exact"),
+            Self::IeeeNanPayloadNotRepresentable { .. } => {
+                Some("ieee_nan_payload_not_representable")
+            }
+            Self::IeeeRationalOutOfDomain { .. } => Some("ieee_rational_out_of_domain"),
             Self::ForeignReference { .. } => Some("foreign_reference"),
             Self::CardinalityOutOfBound { .. } => Some("cardinality_out_of_bound"),
-            Self::InexactDecimal
-            | Self::DecimalOutOfDomain
-            | Self::DivisionPairOutOfDomain { .. }
-            | Self::ModuloOutOfDomain
-            | Self::TextLengthOutOfDomain
-            | Self::IntegerOutOfDomain
-            | Self::RationalOutOfDomain
-            | Self::IeeeNotExact { .. }
-            | Self::CheckedInvariant => None,
+            Self::CheckedInvariant => None,
         }
     }
 
-    /// The closed cause tag, where the code has one.
-    pub fn cause(self) -> Option<&'static str> {
+    /// The closed cause tag its code's catalog row gives, `None` only for
+    /// `CheckedInvariant`.
+    pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::InexactDecimal { .. } => Some("nonzero-discarded-digit"),
+            Self::DecimalOutOfDomain { .. }
+            | Self::ModuloOutOfDomain { .. }
+            | Self::TextLengthOutOfDomain { .. }
+            | Self::IntegerOutOfDomain { .. }
+            | Self::RationalOutOfDomain { .. }
+            | Self::IeeeRationalOutOfDomain { .. } => Some("outside-domain"),
+            Self::DivisionPairOutOfDomain {
+                quotient_admitted,
+                remainder_admitted,
+                ..
+            } => Some(match (quotient_admitted, remainder_admitted) {
+                (false, true) => "quotient-outside-domain",
+                (true, false) => "remainder-outside-domain",
+                // The kernel raises the refusal only when a member is
+                // outside, so `(true, true)` cannot occur; it reads as the
+                // widest cause rather than inventing a fourth.
+                (false, false) | (true, true) => "both-outside-domain",
+            }),
+            Self::IeeeNotExact { .. } => Some("rounding-required"),
+            Self::IeeeNanPayloadNotRepresentable { .. } => Some("payload-exceeds-target"),
+            Self::ForeignReference { .. } => Some("foreign-universe"),
             Self::CardinalityOutOfBound { violation, .. } => Some(violation.as_str()),
-            Self::InexactDecimal
-            | Self::DecimalOutOfDomain
-            | Self::DivisionPairOutOfDomain { .. }
-            | Self::ModuloOutOfDomain
-            | Self::TextLengthOutOfDomain
-            | Self::IntegerOutOfDomain
-            | Self::RationalOutOfDomain
-            | Self::IeeeNotExact { .. }
-            | Self::IeeeNanPayloadNotRepresentable
-            | Self::IeeeRationalOutOfDomain
-            | Self::ForeignReference { .. }
-            | Self::CheckedInvariant => None,
+            Self::CheckedInvariant => None,
         }
     }
+}
+
+/// The declared target an inexact decimal placement was refused at.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InexactTarget {
+    /// A `Decimal[lo, hi; smin, smax]` target.
+    Decimal(Box<DecimalType>),
+    /// An integer target (scale zero), rendered as its declared `Int[lo, hi]`.
+    Integer(Box<IntegerInterval>),
 }
 
 /// The side of a cardinality bound a formed collection violates.
@@ -291,19 +358,148 @@ mod tests {
         );
     }
 
-    /// TC-318: `CardinalityOutOfBound` is the only refusal with a `code`,
-    /// and its `cause` names which bound side was violated.
-    #[trace("TC-318")]
+    /// TC-428 (FR-096-AC-8): every kernel refusal but `CheckedInvariant`
+    /// returns the catalog code and cause of its key-table row, and
+    /// `CheckedInvariant` returns neither.
+    #[trace("TC-428", "FR-096-AC-8")]
     #[test]
-    fn tc_318_cardinality_refusal_names_code_and_cause() {
-        let bound = CardinalityBound::new(0, 1).unwrap();
-        let refusal = Refusal::CardinalityOutOfBound {
-            violation: BoundViolation::AboveMaximum,
-            kind: CollectionKind::Sequence,
-            bound,
-            count: 2,
+    fn tc_428_every_record_building_refusal_names_code_and_cause() {
+        use crate::integer::Integer;
+        use crate::text::TextProfile;
+
+        let interval = || Box::new(IntegerInterval::spanning(Integer::zero(), Integer::one()));
+        let rational = || {
+            Box::new(
+                RationalDomain::new(
+                    IntegerInterval::spanning(Integer::zero(), Integer::one()),
+                    IntegerInterval::spanning(Integer::one(), Integer::one()),
+                )
+                .unwrap(),
+            )
         };
-        assert_eq!(refusal.code(), Some("cardinality_out_of_bound"));
-        assert_eq!(refusal.cause(), Some("above-maximum"));
+        let decimal = || {
+            Box::new(
+                DecimalType::new(
+                    Integer::zero(),
+                    Integer::one(),
+                    0,
+                    0,
+                    crate::decimal::RoundingMode::Exact,
+                )
+                .unwrap(),
+            )
+        };
+        let pair = |quotient_admitted, remainder_admitted| Refusal::DivisionPairOutOfDomain {
+            domain: interval(),
+            quotient_admitted,
+            remainder_admitted,
+        };
+        let universe = UniverseId::from_digest([0; 32]);
+        let cases: [(Refusal, &str, &str); 15] = [
+            (
+                Refusal::InexactDecimal {
+                    target: InexactTarget::Integer(interval()),
+                },
+                "inexact_decimal",
+                "nonzero-discarded-digit",
+            ),
+            (
+                Refusal::DecimalOutOfDomain { target: decimal() },
+                "decimal_out_of_domain",
+                "outside-domain",
+            ),
+            (
+                pair(false, true),
+                "division_pair_out_of_domain",
+                "quotient-outside-domain",
+            ),
+            (
+                pair(true, false),
+                "division_pair_out_of_domain",
+                "remainder-outside-domain",
+            ),
+            (
+                pair(false, false),
+                "division_pair_out_of_domain",
+                "both-outside-domain",
+            ),
+            (
+                Refusal::ModuloOutOfDomain { domain: interval() },
+                "modulo_out_of_domain",
+                "outside-domain",
+            ),
+            (
+                Refusal::TextLengthOutOfDomain {
+                    target: TextType::new(1, 8, TextProfile::Nfc).unwrap(),
+                },
+                "text_length_out_of_domain",
+                "outside-domain",
+            ),
+            (
+                Refusal::IntegerOutOfDomain { target: interval() },
+                "integer_out_of_domain",
+                "outside-domain",
+            ),
+            (
+                Refusal::RationalOutOfDomain { target: rational() },
+                "rational_out_of_domain",
+                "outside-domain",
+            ),
+            (
+                Refusal::IeeeNotExact {
+                    target: IeeeWidth::Binary32,
+                    would_be: IeeeFlags::EMPTY,
+                },
+                "ieee_not_exact",
+                "rounding-required",
+            ),
+            (
+                Refusal::IeeeNanPayloadNotRepresentable {
+                    target: IeeeWidth::Binary32,
+                    source: IeeeWidth::Binary64,
+                },
+                "ieee_nan_payload_not_representable",
+                "payload-exceeds-target",
+            ),
+            (
+                Refusal::IeeeRationalOutOfDomain { target: rational() },
+                "ieee_rational_out_of_domain",
+                "outside-domain",
+            ),
+            (
+                Refusal::ForeignReference {
+                    required: universe,
+                    supplied: universe,
+                },
+                "foreign_reference",
+                "foreign-universe",
+            ),
+            (
+                Refusal::CardinalityOutOfBound {
+                    violation: BoundViolation::AboveMaximum,
+                    kind: CollectionKind::Sequence,
+                    bound: CardinalityBound::new(0, 1).unwrap(),
+                    count: 2,
+                },
+                "cardinality_out_of_bound",
+                "above-maximum",
+            ),
+            (
+                Refusal::CardinalityOutOfBound {
+                    violation: BoundViolation::BelowMinimum,
+                    kind: CollectionKind::Sequence,
+                    bound: CardinalityBound::new(1, 2).unwrap(),
+                    count: 0,
+                },
+                "cardinality_out_of_bound",
+                "below-minimum",
+            ),
+        ];
+        for (refusal, code, cause) in cases {
+            assert_eq!(refusal.code(), Some(code), "{refusal:?}");
+            assert_eq!(refusal.cause(), Some(cause), "{refusal:?}");
+        }
+        assert_eq!(Refusal::CheckedInvariant.code(), None);
+        assert_eq!(Refusal::CheckedInvariant.cause(), None);
     }
 }

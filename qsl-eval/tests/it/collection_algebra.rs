@@ -228,11 +228,11 @@ fn c03_bound_violations_refuse_after_the_bound_charge() {
     );
     let sequence = collection_type(CollectionKind::Sequence, ValueType::Integer, 1, 3);
     let refusal = out_of_bound(BoundViolation::BelowMinimum, &sequence, 0);
+    assert_eq!(refusal.code(), Some("cardinality_out_of_bound"));
     assert_outcome(
         &construct(&sequence, vec![], &mut Meter::new(UNLIMITED)),
         &Outcome::Refused(refusal),
     );
-    assert_eq!(refusal.code(), Some("cardinality_out_of_bound"));
     assert_eq!(BoundViolation::BelowMinimum.as_str(), "below-minimum");
     assert_eq!(BoundViolation::AboveMaximum.as_str(), "above-maximum");
     assert!(CardinalityBound::new(3, 1).is_err());

@@ -198,7 +198,7 @@ pub use numeric::{
     rational_arithmetic_bits, retain_boolean, ArithmeticOperator, BooleanConnective,
     IntegerArithmetic, OrderedOperands, OrderingOperator, RationalArithmetic,
 };
-pub use outcome::{BoundViolation, Outcome, Refusal, Undefined};
+pub use outcome::{BoundViolation, InexactTarget, Outcome, Refusal, Undefined};
 pub use quantity::{compare_quantity, evaluate_quantity_arithmetic, Quantity, QuantityArithmetic};
 pub use rational::{NonPositiveDenominatorBound, Rational, RationalDomain, ZeroDenominator};
 pub use reference::ObjectReference;

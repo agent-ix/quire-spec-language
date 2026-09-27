@@ -161,7 +161,7 @@ pub enum Code {
     /// already selected at a different (or the same) version.
     DuplicateSelection,
     /// QSL-236: a stage-entry limit was reached (`stage_limit_exceeded`,
-    /// catalog revision `1-draft.7`). The exhausted kind is a `SyntaxLimit`
+    /// catalog revision `1-draft.8`). The exhausted kind is a `SyntaxLimit`
     /// or [`LimitKind`] carried alongside, not part of this code.
     StageLimitExceeded,
 }
@@ -367,7 +367,7 @@ pub enum SyntaxLimit {
     },
     /// Token (complete-V1: retained CST leaf) ceiling:
     /// `stage_limit_exceeded`/`token-count-exceeded` (catalog revision
-    /// `1-draft.7`).
+    /// `1-draft.8`).
     Tokens {
         /// Selected token ceiling.
         bound: usize,
@@ -408,7 +408,7 @@ impl std::fmt::Display for SyntaxLimit {
 
 impl SyntaxLimit {
     /// The T-4 [`LimitKind`] this ceiling names (catalog revision
-    /// `1-draft.7`).
+    /// `1-draft.8`).
     pub const fn stage_kind(self) -> LimitKind {
         match self {
             Self::NestingDepth { .. } => LimitKind::NestingDepth,
@@ -422,7 +422,7 @@ impl SyntaxLimit {
 
 /// The one constructor for a syntax-ceiling refusal, at `span`: code
 /// `stage_limit_exceeded` for every [`SyntaxLimit`] kind (catalog revision
-/// `1-draft.7`), and a message rendered from `limit`.
+/// `1-draft.8`), and a message rendered from `limit`.
 pub fn resource_exhausted(
     source: &Source,
     phase: Phase,
@@ -660,7 +660,7 @@ impl From<crate::source_map::SourceMapError> for Diagnostic {
 // S-5b (QSL-160) adds T-4's `LimitKind`, `LimitExceeded`, `Staged` and
 // `StageFailure` in `stage`, and O-17's `RefusalRecord` below, each naming
 // its position by T-5's `Locus`. This build claims catalog revision
-// `1-draft.7`, whose `stage_limit_exceeded` has one cause per `LimitKind`.
+// `1-draft.8`, whose `stage_limit_exceeded` has one cause per `LimitKind`.
 
 /// ADR-013 O-16: the outcome category every evaluation, negotiation and proof
 /// result maps into. Exactly the eight values ADR-013 §3 O-16's category
@@ -833,7 +833,7 @@ impl InternalFault {
 /// [`Code::is_incomplete`] and [`Code::is_unsupported`] are the native-v1
 /// exit-code ladder (FR-301), not the O-16 category, so they may differ
 /// from this table.
-const CATALOG_CATEGORIES: [(&str, Category); 38] = [
+const CATALOG_CATEGORIES: [(&str, Category); 48] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -852,6 +852,16 @@ const CATALOG_CATEGORIES: [(&str, Category); 38] = [
     ("undefined_expression", Category::Refusal),
     ("ambiguous_dispatch", Category::Refusal),
     ("cardinality_out_of_bound", Category::Refusal),
+    ("inexact_decimal", Category::Refusal),
+    ("decimal_out_of_domain", Category::Refusal),
+    ("division_pair_out_of_domain", Category::Refusal),
+    ("modulo_out_of_domain", Category::Refusal),
+    ("text_length_out_of_domain", Category::Refusal),
+    ("integer_out_of_domain", Category::Refusal),
+    ("rational_out_of_domain", Category::Refusal),
+    ("ieee_not_exact", Category::Refusal),
+    ("ieee_nan_payload_not_representable", Category::Refusal),
+    ("ieee_rational_out_of_domain", Category::Refusal),
     ("wrong_snapshot", Category::Refusal),
     ("invalid_runtime_input", Category::Refusal),
     ("unavailable_observation", Category::Refusal),
@@ -921,29 +931,27 @@ pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
 }
 
 /// FR-096-AC-8: a kernel [`quire_exact::Refusal`] as O-17's
-/// [`RefusalRecord`] raised at `locus`, for the kernel causes the catalog
-/// gives a code and fields: `CardinalityOutOfBound` is
-/// `cardinality_out_of_bound`/`below-minimum` or `above-maximum`, with
-/// `collection`, `bound` (`[minimum, maximum]`) and `count`; `ForeignReference`
-/// is `foreign_reference`/`foreign-universe`, with `required` and `supplied`
-/// rendered as lowercase hex, exactly as [`quire_exact::UniverseId`]'s own
-/// `Display` renders them (QSL-281).
+/// [`RefusalRecord`] raised at `locus`, for each of the twelve kernel causes
+/// the key table gives a code and fields. The code and cause are the
+/// refusal's own [`quire_exact::Refusal::code`]/[`cause`](quire_exact::Refusal::cause);
+/// the fields are read from the variant, never from a message: each domain
+/// or width is spelled exactly as the catalog spells it (FR-096 "A kernel
+/// value refusal carries what its record renders"), and
+/// `CardinalityOutOfBound`/`ForeignReference` keep their own fields
+/// (QSL-281).
 ///
-/// `None` for every other kernel cause. `CheckedInvariant` is an
-/// [`InternalFault`], never a refusal record (a record is always category
-/// refusal). The remaining causes have no catalog code yet.
+/// `None` for `CheckedInvariant`: it is an [`InternalFault`], never a
+/// refusal record (a record is always category refusal).
 #[deny(clippy::wildcard_enum_match_arm)]
 pub fn kernel_refusal_record(
     refusal: &quire_exact::Refusal,
     locus: Option<Locus>,
 ) -> Option<RefusalRecord> {
-    use quire_exact::{CollectionKind, Refusal};
-    match refusal {
+    use quire_exact::{CollectionKind, InexactTarget, Refusal};
+    let code = CatalogCode::new(refusal.code()?, refusal.cause()?);
+    let fields = match refusal {
         Refusal::CardinalityOutOfBound {
-            violation,
-            kind,
-            bound,
-            count,
+            kind, bound, count, ..
         } => {
             let collection = match kind {
                 CollectionKind::Sequence => "sequence",
@@ -951,42 +959,91 @@ pub fn kernel_refusal_record(
                 CollectionKind::Bag => "bag",
                 CollectionKind::OrderedSet => "ordered-set",
             };
-            Some(RefusalRecord::new(
-                CatalogCode::new("cardinality_out_of_bound", violation.as_str()),
-                BTreeMap::from([
-                    ("collection", collection.to_owned()),
-                    (
-                        "bound",
-                        format!("[{}, {}]", bound.minimum(), bound.maximum()),
-                    ),
-                    ("count", count.to_string()),
-                ]),
-                locus,
-            ))
-        }
-        // FR-096's `foreign_reference`/`foreign-universe` key-table row,
-        // exactly as `ModelRefusalCause::ForeignUniverse`'s own
-        // `catalog_fields` arm renders it (QSL-281).
-        Refusal::ForeignReference { required, supplied } => Some(RefusalRecord::new(
-            CatalogCode::new("foreign_reference", "foreign-universe"),
             BTreeMap::from([
-                ("required", required.to_string()),
-                ("supplied", supplied.to_string()),
-            ]),
-            locus,
-        )),
-        Refusal::InexactDecimal
-        | Refusal::DecimalOutOfDomain
-        | Refusal::DivisionPairOutOfDomain { .. }
-        | Refusal::ModuloOutOfDomain
-        | Refusal::TextLengthOutOfDomain
-        | Refusal::IntegerOutOfDomain
-        | Refusal::RationalOutOfDomain
-        | Refusal::IeeeNotExact { .. }
-        | Refusal::IeeeNanPayloadNotRepresentable
-        | Refusal::IeeeRationalOutOfDomain
-        | Refusal::CheckedInvariant => None,
-    }
+                ("collection", collection.to_owned()),
+                (
+                    "bound",
+                    format!("[{}, {}]", bound.minimum(), bound.maximum()),
+                ),
+                ("count", count.to_string()),
+            ])
+        }
+        Refusal::ForeignReference { required, supplied } => BTreeMap::from([
+            ("required", required.to_string()),
+            ("supplied", supplied.to_string()),
+        ]),
+        Refusal::InexactDecimal { target } => BTreeMap::from([(
+            "expected",
+            match target {
+                InexactTarget::Decimal(decimal) => spell_decimal(decimal),
+                InexactTarget::Integer(interval) => spell_int(interval),
+            },
+        )]),
+        Refusal::DecimalOutOfDomain { target } => {
+            BTreeMap::from([("expected", spell_decimal(target))])
+        }
+        Refusal::DivisionPairOutOfDomain { domain, .. } | Refusal::ModuloOutOfDomain { domain } => {
+            BTreeMap::from([("expected", spell_int(domain))])
+        }
+        Refusal::IntegerOutOfDomain { target } => BTreeMap::from([("expected", spell_int(target))]),
+        Refusal::TextLengthOutOfDomain { target } => BTreeMap::from([(
+            "expected",
+            format!(
+                "Text[{}, {}; {}]",
+                target.min(),
+                target.max(),
+                target.profile().as_str()
+            ),
+        )]),
+        Refusal::RationalOutOfDomain { target } | Refusal::IeeeRationalOutOfDomain { target } => {
+            BTreeMap::from([("expected", spell_rational(target))])
+        }
+        Refusal::IeeeNotExact { target, would_be } => BTreeMap::from([
+            ("expected", target.as_str().to_owned()),
+            (
+                "flags",
+                would_be
+                    .iter()
+                    .map(quire_exact::IeeeFlag::as_str)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+        ]),
+        Refusal::IeeeNanPayloadNotRepresentable { target, source } => BTreeMap::from([
+            ("expected", target.as_str().to_owned()),
+            ("actual", source.as_str().to_owned()),
+        ]),
+        Refusal::CheckedInvariant => return None,
+    };
+    Some(RefusalRecord::new(code, fields, locus))
+}
+
+/// `Int[lo, hi]`, each bound as QSpec FR-038 writes an integer.
+fn spell_int(interval: &quire_exact::IntegerInterval) -> String {
+    format!("Int[{}, {}]", interval.lower(), interval.upper())
+}
+
+/// `Decimal[lo, hi; smin, smax]`; no rounding mode is written.
+fn spell_decimal(decimal: &quire_exact::DecimalType) -> String {
+    format!(
+        "Decimal[{}, {}; {}, {}]",
+        decimal.lower(),
+        decimal.upper(),
+        decimal.min_scale(),
+        decimal.max_scale()
+    )
+}
+
+/// `Rational[lo, hi; dmin, dmax]`.
+fn spell_rational(domain: &quire_exact::RationalDomain) -> String {
+    let (numerator, denominator) = (domain.numerator(), domain.denominator());
+    format!(
+        "Rational[{}, {}; {}, {}]",
+        numerator.lower(),
+        numerator.upper(),
+        denominator.lower(),
+        denominator.upper()
+    )
 }
 
 /// ADR-013 O-17 (FR-096): a refusal as a consumer outside its producer
@@ -1141,7 +1198,7 @@ mod foundation_tests {
     }
 
     /// Every `SyntaxLimit` kind reports `Code::StageLimitExceeded`, and
-    /// names its catalog `LimitKind` (revision `1-draft.7`): the token
+    /// names its catalog `LimitKind` (revision `1-draft.8`): the token
     /// ceiling is `token-count-exceeded`. The native-v1 `Diagnostic` has no
     /// typed cause field, so the kind is named in the rendered message.
     #[test]

@@ -58,12 +58,12 @@ Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
 
 ## Status
 
-Partial (QSL-245). Steps 1 to 3 pass locally (FR-096-AC-6, FR-096-AC-7).
-Step 4 (FR-096-AC-8) passes for `CardinalityOutOfBound` only.
-`ForeignReference` (QSL-281) builds its record, but `Refusal::cause()`
-returns `None` for it, not `foreign-universe`; `CheckedInvariant` builds no record, and its
-conversion to an internal fault is not built. Step 4 for the ten kernel
-value refusals that catalog revision `1-draft.8` (QSpec STD-110) codes, and
-step 5 (FR-096-AC-13), are planned: the variants do not yet carry their
-target domain or width, and `kernel_refusal_record` builds no record for
-them.
+Passing locally (QSL-245), steps 1 to 5. Steps 1 to 3 cover FR-096-AC-6 and
+FR-096-AC-7. Step 4 (FR-096-AC-8) covers all twelve kernel causes: each
+variant carries the target domain or width its record renders,
+`Refusal::code()` and `Refusal::cause()` return the key table's code and
+cause (`ForeignReference` returns `foreign-universe`), and
+`kernel_refusal_record` builds each record, with a `CheckedInvariant`
+building none. Step 5 (FR-096-AC-13) covers the three
+`DivisionPairOutOfDomain` causes. The kernel `CheckedInvariant` to internal
+fault conversion is not built.

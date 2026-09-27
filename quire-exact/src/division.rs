@@ -14,7 +14,7 @@
 //! that same profile plus the now-dropped negotiation state).
 
 use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
-use crate::integer::{Integer, IntegerDomain};
+use crate::integer::{Integer, IntegerDomain, IntegerInterval};
 use crate::outcome::{Outcome, Refusal, Stop, Undefined};
 
 /// A selectable `div`/`rem` law.
@@ -120,6 +120,16 @@ fn reject_zero_divisor(divisor: &Integer) -> Result<(), Stop> {
     }
 }
 
+/// The bounded consumer interval a failed membership decision was made
+/// against. Only a bounded domain can refuse a member, so a mathematical
+/// domain here is a checked-program invariant failure.
+fn refused_interval(domain: &IntegerDomain) -> Result<Box<IntegerInterval>, Stop> {
+    match domain {
+        IntegerDomain::Bounded(interval) => Ok(Box::new(interval.clone())),
+        IntegerDomain::Mathematical => Err(Stop::Refused(Refusal::CheckedInvariant)),
+    }
+}
+
 /// Charge, compute and admit the pair. Membership of both members is
 /// decided after `integer-division.domain-pair` and before the atomic
 /// retention.
@@ -148,6 +158,7 @@ fn paired(
     let remainder_admitted = domain.contains(&remainder);
     if !(quotient_admitted && remainder_admitted) {
         return Err(Stop::Refused(Refusal::DivisionPairOutOfDomain {
+            domain: refused_interval(domain)?,
             quotient_admitted,
             remainder_admitted,
         }));
@@ -180,7 +191,9 @@ fn euclidean_remainder(
         Charge::new(ChargePoint::IntegerModulusDomain).size(LimitKind::ValueOccurrences, 1),
     )?;
     if !domain.contains(&remainder) {
-        return Err(Stop::Refused(Refusal::ModuloOutOfDomain));
+        return Err(Stop::Refused(Refusal::ModuloOutOfDomain {
+            domain: refused_interval(domain)?,
+        }));
     }
     meter.charge(Charge::new(ChargePoint::IntegerModulusResultRetain).results(1))?;
     Ok(remainder)

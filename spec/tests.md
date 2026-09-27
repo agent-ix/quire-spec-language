@@ -211,7 +211,7 @@ operational validation remains outside this audit-only plan.
 | TC-425 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | ✅ Passed locally; QSL-233 (S-4b), QSL-245 step 3's `blank-label` cause and `label` field |
 | TC-426 | A check location resolves to the region of the unit it was read from, or to none | Unit | P1 | FR-096-AC-1 | 🚧 Partial; steps 2 and 4 pass locally (`qsl-semantics/src/check/region.rs`, QSL-239); step 3 (a body embedded in a document, C-21) is not built |
 | TC-427 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5 | ✅ Passed locally; QSL-160 (S-5b) |
-| TC-428 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13 | 🚧 Partial; QSL-245: AC-6 and AC-7 pass locally; AC-8 passes for `CardinalityOutOfBound` only (`ForeignReference` builds its record, but `Refusal::cause()` returns `None` for it); the ten kernel value refusals catalog `1-draft.8` (STD-110) codes, and AC-13, are planned: their variants carry no target domain or width and `kernel_refusal_record` builds no record for them; a kernel `CheckedInvariant` builds no record and its internal-fault conversion is not built |
+| TC-428 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13 | ✅ Passing locally (QSL-245): steps 1 to 5; all twelve kernel refusals with a record carry their target domain or width and `Refusal::code()`/`cause()` return the key table's code and cause (`ForeignReference` included); a kernel `CheckedInvariant` builds no record, and its internal-fault conversion is not built |
 | TC-429 | The I2 reader locates its version refusal and its limits in the artifact | Integration | P1 | FR-096-AC-9, FR-096-AC-10 | ✅ Passed locally; QSL-160 (S-5b), on IR-281 |
 | TC-430 | Native run and compile requests and their outputs carry the four source labels | Integration | P1 | FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 | 🚧 Partial; QSL-233 (S-4b): steps 2 to 5 pass locally; step 1 passes only with the model source's revision value `draft:1`, not `1`, because the program's model import pins the model artifact that binds it; QSL-245 step 2's `blank-label` cause and `label` field |
 | TC-431 | Runtime input artifacts carry the four labels, and two-label bytes refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | ✅ Passed locally; QSL-233 (S-4b), QSL-245 step 2's `blank-label` cause and `label` field |
@@ -254,7 +254,7 @@ operational validation remains outside this audit-only plan.
 | TC-481 | The assembler admits source enums and predicates, which check and lowering then use | Integration | P1 | FR-091-AC-27, FR-091-AC-28, FR-091-AC-29, FR-091-AC-30, FR-092-AC-13 | ✅ Passed locally (`qsl-semantics` `check::assemble` tests, `qsl-eval/tests/it/source_call.rs`) |
 | TC-482 | S2 builds dimension and unit forms | Unit | P1 | FR-091-AC-31 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-483 | The assembler admits source dimensions and units into a UnitGraph and refuses each source error | Unit | P1 | FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35 | 🚧 Partial: AC-32 to AC-34 and AC-35's errors pass locally (`qsl-semantics` `check::assemble` tests); AC-35's catalog code awaits STD-112 |
-| TC-500 | A sum seed or running total outside its domain is a located undefined outcome | Unit | P1 | FR-096-AC-14 | 🚧 Planned; QSL-245: S6a's `sum` refuses `IntegerOutOfDomain`, and `quire_exact::Undefined` has no `SumOutOfDomain` |
+| TC-500 | A sum seed or running total outside its domain is a located undefined outcome | Unit | P1 | FR-096-AC-14 | ✅ Passing locally (QSL-245): `Undefined::SumOutOfDomain` at the `sum` node for a running total and at the summand node for a seed, no charge after the failed decision |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -268,10 +268,10 @@ caller-named `RawSourceRef` (TC-424) and
 `format` grammar that supplies it (TC-425). Check-stage regions, stage
 limits, refusal records and the I2 reader's loci are slice S-5b (QSL-160,
 [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md),
-TC-426 to TC-429). TC-427, TC-429 and TC-378 pass; TC-428 (refusal
-record fields at S6a, including the ten kernel value refusals catalog
-revision `1-draft.8` codes) and TC-500 (a `sum` running total outside its
-domain is undefined) remain.
+TC-426 to TC-429). TC-427, TC-429, TC-378, TC-428 (refusal record fields
+at S6a, including the ten kernel value refusals catalog revision
+`1-draft.8` codes) and TC-500 (a `sum` running total outside its domain is
+undefined) pass locally.
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
 

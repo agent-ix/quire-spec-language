@@ -513,7 +513,7 @@ fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
 }
 
 /// The T-4 [`LimitKind`] each of IR's reader limits carries (catalog
-/// revision `1-draft.7`'s `stage_limit_exceeded` row).
+/// revision `1-draft.8`'s `stage_limit_exceeded` row).
 fn limit_kind(kind: CheckedPackageLimit) -> LimitKind {
     match kind {
         CheckedPackageLimit::Bytes => LimitKind::InputBytes,

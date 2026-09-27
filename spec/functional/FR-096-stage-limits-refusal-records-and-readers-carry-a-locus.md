@@ -120,7 +120,7 @@ budget. Its `catalog_code()` SHALL be `stage_limit_exceeded` with cause
 `input-bytes-exceeded`, `nesting-depth-exceeded`, `token-count-exceeded`,
 `node-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`,
 `diagnostic-count-exceeded` or `work-budget-exceeded` respectively
-(revision `1-draft.7`).
+(revision `1-draft.8`).
 
 `LimitExceeded` SHALL carry its `LimitKind`, the configured bound, the
 actual counter at the failed charge, and an optional `Locus`. Its catalog
@@ -134,7 +134,7 @@ accounting-contract limits type (`ModelNormalizationLimitsV1`,
 meter wherever it is read and keeps `resource_exhausted`
 ([ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
 §1). The `quire.native.diagnostics/v1`
-`stage_limit_exceeded` row (revision `1-draft.7`) names these surfaces,
+`stage_limit_exceeded` row (revision `1-draft.8`) names these surfaces,
 together with S1, `replay` and `route`, and the catalog keeps `resource_exhausted` for the caller's
 work-budget meter, adding that a semantic maximum is not a caller work
 budget. The check stage's `CheckingLimits` ceilings (nesting depth, node
@@ -279,10 +279,9 @@ family reasons `absent-key` and `precondition-false`, so it builds no
 `UndefinedRecord`. Like the other kernel undefined reasons, it reaches the
 consumer as `FamilyOutcome::Evaluated(Outcome::Undefined(_))` with
 `Evaluation.location`. QSL's kernel reason spelling for it is
-`sum-out-of-domain`. The owner of
-[FR-100](FR-100-run-a-named-function-through-the-spine.md) adds that
-spelling to FR-100's kernel undefined-reason table, which does not list it
-today (planned, QSL-245).
+`sum-out-of-domain`, the row in
+[FR-100](FR-100-run-a-named-function-through-the-spine.md)'s kernel
+undefined-reason table, which owns the spelling (FR-100-AC-10).
 
 A linked `sum` whose prefixes are not all proved members is refused at
 checking (QSpec FR-145, `undefined_expression`/`unproved-range`), so only a
@@ -450,36 +449,31 @@ Implemented under QSL-281:
   (`quire-exact` fields `required`/`supplied`), and `kernel_refusal_record`
   builds the record from them.
 
-Specified against catalog revision `1-draft.8` (QSpec STD-110, merged) and
-not built (QSL-245):
+Implemented under QSL-245 against catalog revision `1-draft.8` (QSpec
+STD-110, merged):
 
-- AC-8 is backed for `CardinalityOutOfBound` only. `ForeignReference`
-  builds its record with its code, fields and locus, but
-  `Refusal::cause()` returns `None` for it, not `foreign-universe`.
-  Revision `1-draft.8` gives the other ten kernel causes their codes, causes
-  and fields (the key table), but the code does not build them:
-  `kernel_refusal_record` builds no record for `InexactDecimal`,
-  `DecimalOutOfDomain`, `DivisionPairOutOfDomain`, `ModuloOutOfDomain`,
-  `TextLengthOutOfDomain`, `IntegerOutOfDomain`, `RationalOutOfDomain`,
-  `IeeeNotExact`, `IeeeNanPayloadNotRepresentable` or
-  `IeeeRationalOutOfDomain`. Those variants carry no target domain or width
-  (`IeeeNotExact` carries only its would-be flags, and
-  `DivisionPairOutOfDomain` only its two admitted flags).
-  `Refusal::code()` returns `None` for the first eight, and
-  `Refusal::cause()` returns `None` for every cause but
-  `CardinalityOutOfBound` (`quire-exact/src/outcome.rs`). The code still
-  claims revision `1-draft.7`. The `quire-exact/src/outcome.rs` test
-  tagged `TC-318`, and its doc comment saying `CardinalityOutOfBound` is the
-  only refusal with a code, are stale: no TC-318 artifact exists, and the
-  coder building AC-8 retags that test `TC-428`/`FR-096-AC-8` and corrects
-  the comment.
-- AC-13 is not built: no record gives `DivisionPairOutOfDomain` a cause.
-- AC-14 is not built: S6a's `sum` refuses a running total outside an `Int`
-  domain with `Refusal::IntegerOutOfDomain`, checks the final total rather
-  than the seed (`qsl-eval/src/value/expression/evaluate.rs`), and
-  `quire_exact::Undefined` has no `SumOutOfDomain` variant. FR-100's
-  kernel undefined-reason table has no `sum-out-of-domain` row yet (planned,
-  FR-100's owner).
+- AC-8 is backed for all twelve kernel causes. Each of the ten value
+  refusals carries the target domain or IEEE width its `expected` field
+  renders from (`quire-exact` `Refusal`; bigint domains are boxed, so
+  `Refusal` is `Clone`, not `Copy`), `IeeeNotExact` its would-be flags and
+  `IeeeNanPayloadNotRepresentable` its source width. `Refusal::code()` and
+  `Refusal::cause()` return the key table's code and cause for every cause
+  but `CheckedInvariant`, `ForeignReference` included (`foreign-universe`).
+  `kernel_refusal_record` builds the twelve records, and the ten codes are in
+  the catalog category table.
+- AC-13: `DivisionPairOutOfDomain` takes its cause from its
+  `quotient_admitted`/`remainder_admitted` flags.
+- AC-14: S6a's `sum` checks the seed and each running total, returns
+  `Undefined::SumOutOfDomain` located at the summand (seed) or the `sum`
+  node (addition), charges nothing after the failed decision, and makes no
+  final-total decision for a non-empty sum. An empty `sum` whose `N` does
+  not admit `0` is the same undefined outcome at the `sum` node: `sum<Int[1, 3]>`
+  over an empty sequence checks under `CheckMode::Kernel` and reaches it
+  (FR-100-AC-10). FR-100's kernel undefined-reason table owns the
+  `sum-out-of-domain` spelling, and `qsl-replay` renders it.
+- The build claims catalog revision `1-draft.8` (the definition lock, the
+  checked-package emitter's diagnostics catalog and the native Diagnostics
+  registration), and conformance passes against QSpec's `1-draft.8`.
 
 Not built, independent of the catalog revision:
 
