@@ -67,6 +67,16 @@ impl super::ReferenceEvaluation for ProtocolClauseFamily {
     /// current observations and the clause's own per-read observation map
     /// (`CheckedStateClause::reads`), so a read under `pre(..)` observes
     /// `env.pre` and every other read observes `env.current`.
+    ///
+    /// FR-063 seam (QSL-278, mirroring `family.rs`'s own
+    /// `ValueFunctionFamily::evaluate` seam exactly, the S6a family kind's
+    /// own "one variant per family that implements `ReferenceEvaluation`"
+    /// rule, FR-090 lines 44-45): this match's own probe arm below is
+    /// `ProtocolClause`'s family growing that same, already-established
+    /// per-family seam by one, not a new kind of seam -- registered in
+    /// `xtask::seam_probe::checked_in_locations`.
+    #[deny(clippy::wildcard_enum_match_arm)]
+    #[deny(clippy::match_wildcard_for_single_variants)]
     fn evaluate<'a>(
         checked: &NodeKey,
         env: &mut ProtocolClauseEnv<'a>,
