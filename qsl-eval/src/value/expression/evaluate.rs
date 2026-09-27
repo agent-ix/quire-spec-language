@@ -1069,8 +1069,16 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Reference(reference) = self.pop()? else {
                     return Err(invariant());
                 };
-                charge_named(self.meter, ChargePoint::ModelDeref)?;
-                charge_named(self.meter, ChargePoint::ModelNavigate)?;
+                // FR-107's own model.deref/model.navigate charges are an
+                // S6a accounting rule (`value-accounting.md`, cited by
+                // FR-107's Behavior section), never a `Value`-family one:
+                // this `Attribute` arm is shared by both families, and
+                // charging it unconditionally would add two charge units
+                // to every `Value`-family attribute read that had none
+                // before FR-107 (SR-750 FND-008).
+                if self.is_protocol_clause() {
+                    charge_named(self.meter, ChargePoint::ModelNavigate)?;
+                }
                 let slot = self
                     .objects_for(node)
                     .attribute(self.scope.types(), &reference, field)

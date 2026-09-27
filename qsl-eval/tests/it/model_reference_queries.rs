@@ -1274,6 +1274,70 @@ fn l11_deref_through_a_supertype_reference_reads_an_inherited_field() {
     );
 }
 
+/// SR-750 FND-008 regression: `deref(r).x`, a `Value`-family read (not S6a
+/// evaluation of a `ProtocolClause`), charges no `model.deref`/
+/// `model.navigate` -- those are FR-107's own S6a accounting rule
+/// (`value-accounting.md`), never a `Value`-family one
+/// (`qsl-eval/src/value/expression/evaluate.rs:1072-1081`). Before the fix
+/// this `Attribute` node charged both unconditionally, adding two charge
+/// units to every `Value`-family attribute read that had none before FR-107.
+#[test]
+#[trace("TC-198", "FR-153-AC-6")]
+fn deref_field_read_charges_no_model_family_charge_outside_a_protocol_clause() {
+    let scenario = scenario();
+    let (package, objects) = attribute_world(
+        &scenario,
+        vec![integer_field("x")],
+        vec![integer_field("y")],
+        vec![("x", present(7)), ("y", present(8))],
+    );
+    let (value, meter) = {
+        let parameters = [
+            ("p", ValueType::Population(Some(3))),
+            ("r", ValueType::Reference(scenario.b)),
+        ];
+        let expression = Expression::Field {
+            operand: Box::new(Expression::Deref(Box::new(lookup(
+                ValueType::Reference(scenario.a),
+                AbsenceMode::Refused,
+            )))),
+            field: "x".to_owned(),
+        };
+        run(
+            &package,
+            &parameters,
+            &expression,
+            vec![
+                population_argument(&scenario),
+                Value::Reference(object_reference(&scenario.universe, &scenario.b, "b1")),
+            ],
+            SCALAR_UNLIMITED,
+            &objects,
+        )
+    };
+    assert_eq!(
+        integer_of(match value {
+            Outcome::Completed(value) => value,
+            other => panic!("expected Completed, got {other:?}"),
+        }),
+        Integer::from(7_i64)
+    );
+    // The baseline this call always charged, unrelated to the attribute
+    // read: `FunctionCall` (the call itself) and `DispatchSelect` (the
+    // dynamic-dispatch generalization lookup `deref(r)` resolves through).
+    // Neither `ChargePoint::ModelDeref` nor `ChargePoint::ModelNavigate`
+    // (FR-107's own S6a accounting rule) adds to it outside a
+    // `ProtocolClause` evaluation (SR-750 FND-008); a regression that
+    // re-adds either unconditionally raises this total above 2.
+    assert_eq!(
+        meter.consumed(LimitKind::WorkUnits),
+        2,
+        "a Value-family attribute read's charge total is unchanged from \
+         main: FunctionCall + DispatchSelect only, no model.deref/ \
+         model.navigate (SR-750 FND-008)"
+    );
+}
+
 /// TC-198 L11 with FR-151 redefinition (QSL-57 item 2): `B.x` redefines
 /// `A.x`, so `deref(r).x` for a `Reference<M::A>` holding `b1` reads `B.x`'s
 /// one slot. With the redefinition renamed, `B.z` redefining `A.x`, the same

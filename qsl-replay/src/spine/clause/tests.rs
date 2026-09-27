@@ -625,11 +625,9 @@ fn request(selection: ClauseRunSelection) -> ClauseRunRequest {
     }
 }
 
-/// TC-468 (FR-109-AC-1): a `Clause` selection over a `current` snapshot of
-/// an acyclic chain evaluates `NoCycle` to `Completed(Boolean(true))`.
-#[trace("TC-468", "FR-109-AC-1")]
-#[test]
-fn run_clause_evaluates_a_clause_selection() {
+/// A healthy-parent (acyclic) or violating-parent (cyclic) `NoCycle`
+/// request, for FR-109-AC-1 and FR-109-AC-5.
+fn no_cycle_request(chain: &[(&str, Option<&str>)]) -> (ClauseRunRequest, DocumentRef) {
     let model_digest = model_digest_hex();
     let label = DocumentRef {
         authority: "test".to_owned(),
@@ -638,13 +636,27 @@ fn run_clause_evaluates_a_clause_selection() {
         revision: "1".to_owned(),
         digest: [0; 32],
     };
-    let bytes = snapshot_bytes(&label, &model_digest, &[("a", Some("b")), ("b", None)]);
+    let bytes = snapshot_bytes(&label, &model_digest, chain);
     let digest = document_digest(&bytes);
     let label = DocumentRef { digest, ..label };
     let selection = no_cycle_selection(label.clone(), "a");
 
     let mut request = request(ClauseRunSelection::Clause(selection));
     request.snapshots.insert(digest, bytes);
+    (request, label)
+}
+
+/// TC-468 (FR-109-AC-1): a `Clause` selection over a `current` snapshot of
+/// an acyclic chain evaluates `NoCycle` to `Completed(Boolean(true))`, and
+/// a cyclic chain to `Completed(Boolean(false))`; both carry the source
+/// digest, `package_id`, model selection, selection and the one snapshot's
+/// identity and digest in their provenance
+/// (`FR-109-run-a-state-clause-through-the-spine.md:149,81-84`).
+#[trace("TC-468", "FR-109-AC-1")]
+#[test]
+fn run_clause_evaluates_a_clause_selection() {
+    let (request, label) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    let expected_digest = qsl_foundation::ByteDigest::of(&request.bytes).to_string();
     let report = run_clause(request).expect("a well-formed request always reports");
     match report.disposition {
         ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
@@ -655,7 +667,94 @@ fn run_clause_evaluates_a_clause_selection() {
         other => panic!("expected Evaluate(Completed(Boolean(true))), got {other:?}"),
     }
     assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
+    assert_eq!(
+        report.disposition.category(),
+        qsl_foundation::diagnostic::Category::Success
+    );
+    assert_eq!(report.disposition.truth(), Some(true));
     assert_eq!(report.exit_code(), 0);
+
+    // Provenance: source digest, package_id, model selection, selection and
+    // the one snapshot's identity and digest.
+    assert_eq!(report.source_digest, expected_digest);
+    assert!(report.package_id.is_some());
+    assert!(
+        !report.provenance.model_selections.is_empty(),
+        "the model selection the compiled package resolved is reported"
+    );
+    match &report.provenance.selection {
+        super::ClauseRunSelection::Clause(selection) => {
+            assert_eq!(selection.name, "NoCycle");
+        }
+        other => panic!("expected the Clause selection back, got {other:?}"),
+    }
+    assert_eq!(report.provenance.documents, [label]);
+}
+
+/// TC-468 (FR-109-AC-1): the violating-parent case (a cycle) reports
+/// `violation`, `truth: false`, exit 10.
+#[trace("TC-468", "FR-109-AC-1")]
+#[test]
+fn run_clause_reports_a_violation_over_a_cyclic_chain() {
+    let (request, _label) = no_cycle_request(&[("a", Some("b")), ("b", Some("a"))]);
+    let report = run_clause(request).expect("a well-formed request always reports");
+    match report.disposition {
+        ClauseDisposition::Evaluate(super::CallOutcome::Completed(super::CallValue::Boolean(
+            value,
+        ))) => {
+            assert!(!value, "a -> b -> a reaches a");
+        }
+        other => panic!("expected Evaluate(Completed(Boolean(false))), got {other:?}"),
+    }
+    assert_eq!(
+        report.disposition.category(),
+        qsl_foundation::diagnostic::Category::Violation
+    );
+    assert_eq!(report.disposition.truth(), Some(false));
+    assert_eq!(report.exit_code(), 10);
+}
+
+/// TC-468 (FR-109-AC-5): running one request twice gives equal reports,
+/// including usage.
+#[trace("TC-468", "FR-109-AC-5")]
+#[test]
+fn running_the_same_request_twice_gives_equal_reports_including_usage() {
+    let (request_one, _) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    let (request_two, _) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    let report_one = run_clause(request_one).expect("a well-formed request always reports");
+    let report_two = run_clause(request_two).expect("a well-formed request always reports");
+
+    assert_eq!(report_one.source_digest, report_two.source_digest);
+    assert_eq!(report_one.package_id, report_two.package_id);
+    assert_eq!(
+        report_one.disposition.truth(),
+        report_two.disposition.truth()
+    );
+    assert_eq!(
+        report_one.disposition.category(),
+        report_two.disposition.category()
+    );
+    assert_eq!(report_one.exit_code(), report_two.exit_code());
+    assert_eq!(
+        report_one.provenance.documents,
+        report_two.provenance.documents
+    );
+    assert_eq!(
+        report_one.provenance.model_selections.len(),
+        report_two.provenance.model_selections.len()
+    );
+    assert_eq!(
+        report_one.usage.evaluation_admissions,
+        report_two.usage.evaluation_admissions
+    );
+    assert_eq!(
+        report_one.usage.evaluation_consumed,
+        report_two.usage.evaluation_consumed
+    );
+    assert!(
+        report_one.usage.evaluation_admissions > 0,
+        "evaluating NoCycle admits at least one charge"
+    );
 }
 
 /// TC-468 (FR-109-AC-2): a `Clause` selection naming an undeclared clause
