@@ -18,7 +18,8 @@ use super::dispatch::{Construct, FormsFailure, FormsLimits};
 use super::spans::DeclarationSpans;
 use super::syntax::{
     AnchorForm, AnchorSegment, AnchorSite, DeclarationForm, DeclaredName, ProtocolDeclarationForm,
-    ScopeName, ScopedAnchorForm, StateClauseForm, StateClauseKind, UsingAlias,
+    ProtocolNodeDeclaration, ProtocolNodeKind, ScopeName, ScopedAnchorForm, StateClauseForm,
+    StateClauseKind, UsingAlias,
 };
 use super::value::{
     declared_name, expression, items, name_form, nodes_of, only, production_node, text, tokens_of,
@@ -109,8 +110,9 @@ pub(crate) fn protocol_declaration(
     let name = declared_name(&clause_items, node)?;
 
     let mut scoped_anchors = Vec::new();
+    let mut declarations = Vec::new();
     for compensation in nodes_of(&clause_items, Production::Compensation) {
-        compensation_anchors(cst, compensation, &mut scoped_anchors)?;
+        compensation_anchors(cst, compensation, &mut scoped_anchors, &mut declarations)?;
     }
     let run = only(&clause_items, Production::Control, node)?;
     control_anchors(
@@ -118,28 +120,46 @@ pub(crate) fn protocol_declaration(
         run,
         &mut Vec::new(),
         &mut scoped_anchors,
+        &mut declarations,
         construct.limits,
         1,
     )?;
+    let finish = only(&clause_items, Production::Finish, node)?;
+    let finish_items = items(cst, finish);
+    declarations.push(ProtocolNodeDeclaration {
+        kind: ProtocolNodeKind::Finish,
+        name: declared_name(&finish_items, finish)?,
+        scope: Vec::new(),
+        channel: None,
+    });
 
     Ok(DeclarationForm::Protocol(ProtocolDeclarationForm {
         name,
         scoped_anchors,
+        declarations,
     }))
 }
 
 /// `compensate N for R as (p) by role on Op using alias clock "c" { ...
-/// commit (R2 | never); ... }`: the `for` reference (`compensate-for`,
-/// FR-112 site list) and, when `commit` names a reference rather than
-/// `never`, the `commit` reference (`compensate-commit`). Both are
-/// protocol-level: neither is written inside `run`'s control tree, so both
-/// carry the empty scope.
+/// commit (R2 | never); ... }`: the template's own declaration (FR-113
+/// Inputs: the top level declares the protocol's `compensate` templates),
+/// the `for` reference (`compensate-for`, FR-112 site list) and, when
+/// `commit` names a reference rather than `never`, the `commit` reference
+/// (`compensate-commit`). All three are protocol-level: neither is written
+/// inside `run`'s control tree, so all carry the empty scope.
 fn compensation_anchors(
     cst: &LosslessCst,
     node: &CstNode,
     out: &mut Vec<ScopedAnchorForm>,
+    out_decls: &mut Vec<ProtocolNodeDeclaration>,
 ) -> Result<(), FormsFailure> {
     let compensation_items = items(cst, node);
+    out_decls.push(ProtocolNodeDeclaration {
+        kind: ProtocolNodeKind::CompensateTemplate,
+        name: declared_name(&compensation_items, node)?,
+        scope: Vec::new(),
+        channel: None,
+    });
     let references = nodes_of(&compensation_items, Production::NodeReference);
     let for_reference = references.first().ok_or_else(|| unexpected(node))?;
     out.push(scoped_anchor(
@@ -147,6 +167,7 @@ fn compensation_anchors(
         for_reference,
         AnchorSite::CompensateFor,
         &[],
+        None,
     )?);
     // `commit never;` names no reference: `references` then holds only the
     // `for` target, and this site builds no anchor (FR-112 "Behavior").
@@ -156,6 +177,7 @@ fn compensation_anchors(
             commit_reference,
             AnchorSite::CompensateCommit,
             &[],
+            None,
         )?);
     }
     Ok(())
@@ -200,6 +222,7 @@ fn control_anchors(
     control: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
+    out_decls: &mut Vec<ProtocolNodeDeclaration>,
     limits: FormsLimits,
     depth: u64,
 ) -> Result<(), FormsFailure> {
@@ -213,13 +236,18 @@ fn control_anchors(
     if depth > limits.nesting_depth {
         return Err(FormsFailure::depth(limits, matched.span()));
     }
+    // Every arm below declares `matched` itself, directly in `scope` (the
+    // scope enclosing it, before its own name -- if any -- is pushed): this
+    // is the single place a control becomes a name other scopes and
+    // anchors can resolve (FR-113 Inputs).
     match matched.production() {
         Production::Sequence => {
             let sequence_items = items(cst, matched);
             let name = declared_name(&sequence_items, matched)?;
+            declare(out_decls, ProtocolNodeKind::Sequence, name.clone(), scope);
             with_scope(scope, name, |scope| {
                 for child in nodes_of(&sequence_items, Production::Control) {
-                    control_anchors(cst, child, scope, out, limits, depth + 1)?;
+                    control_anchors(cst, child, scope, out, out_decls, limits, depth + 1)?;
                 }
                 Ok(())
             })
@@ -227,9 +255,10 @@ fn control_anchors(
         Production::Choice => {
             let choice_items = items(cst, matched);
             let name = declared_name(&choice_items, matched)?;
+            declare(out_decls, ProtocolNodeKind::Choice, name.clone(), scope);
             with_scope(scope, name, |scope| {
                 for case in nodes_of(&choice_items, Production::Case) {
-                    case_anchors(cst, case, scope, out, limits, depth)?;
+                    case_anchors(cst, case, scope, out, out_decls, limits, depth)?;
                 }
                 Ok(())
             })
@@ -237,9 +266,10 @@ fn control_anchors(
         Production::Parallel => {
             let parallel_items = items(cst, matched);
             let name = declared_name(&parallel_items, matched)?;
+            declare(out_decls, ProtocolNodeKind::Parallel, name.clone(), scope);
             with_scope(scope, name, |scope| {
                 for branch in nodes_of(&parallel_items, Production::Branch) {
-                    branch_anchors(cst, branch, scope, out, limits, depth)?;
+                    branch_anchors(cst, branch, scope, out, out_decls, limits, depth)?;
                 }
                 Ok(())
             })
@@ -247,22 +277,51 @@ fn control_anchors(
         Production::Repetition => {
             let repetition_items = items(cst, matched);
             let name = declared_name(&repetition_items, matched)?;
+            declare(out_decls, ProtocolNodeKind::Repeat, name.clone(), scope);
             with_scope(scope, name, |scope| {
                 for child in nodes_of(&repetition_items, Production::Control) {
-                    control_anchors(cst, child, scope, out, limits, depth + 1)?;
+                    control_anchors(cst, child, scope, out, out_decls, limits, depth + 1)?;
                 }
                 Ok(())
             })
         }
-        Production::AwaitControl => await_control_anchors(cst, matched, scope, out, limits, depth),
-        Production::EventNode => event_node_anchors(cst, matched, scope, out),
-        // `check` and `commit` (the bare control, distinct from a
-        // compensation's `commit`) hold no `NodeReference` and enclose no
-        // further control (FR-112 "Behavior": "No other position yields
-        // one").
-        Production::Check | Production::Commit => Ok(()),
+        Production::AwaitControl => {
+            await_control_anchors(cst, matched, scope, out, out_decls, limits, depth)
+        }
+        Production::EventNode => event_node_anchors(cst, matched, scope, out, out_decls),
+        Production::Check => {
+            let check_items = items(cst, matched);
+            let name = declared_name(&check_items, matched)?;
+            declare(out_decls, ProtocolNodeKind::Check, name, scope);
+            // `check` holds no `NodeReference` and encloses no further
+            // control (FR-112 "Behavior": "No other position yields one").
+            Ok(())
+        }
+        Production::Commit => {
+            let commit_items = items(cst, matched);
+            let name = declared_name(&commit_items, matched)?;
+            declare(out_decls, ProtocolNodeKind::Commit, name, scope);
+            Ok(())
+        }
         _ => Err(unexpected(matched)),
     }
+}
+
+/// Records `name` as a static node `kind` declares directly in `scope`
+/// (FR-113 Inputs), with no channel: every kind but `send` and `receive`
+/// carries none.
+fn declare(
+    out_decls: &mut Vec<ProtocolNodeDeclaration>,
+    kind: ProtocolNodeKind,
+    name: DeclaredName,
+    scope: &[ScopeName],
+) {
+    out_decls.push(ProtocolNodeDeclaration {
+        kind,
+        name,
+        scope: scope.to_vec(),
+        channel: None,
+    });
 }
 
 /// `case N when { c } Control`: the case's own name encloses its one
@@ -275,14 +334,16 @@ fn case_anchors(
     node: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
+    out_decls: &mut Vec<ProtocolNodeDeclaration>,
     limits: FormsLimits,
     depth: u64,
 ) -> Result<(), FormsFailure> {
     let case_items = items(cst, node);
     let name = declared_name(&case_items, node)?;
+    declare(out_decls, ProtocolNodeKind::Case, name.clone(), scope);
     with_scope(scope, name, |scope| {
         let control = only(&case_items, Production::Control, node)?;
-        control_anchors(cst, control, scope, out, limits, depth + 1)
+        control_anchors(cst, control, scope, out, out_decls, limits, depth + 1)
     })
 }
 
@@ -295,14 +356,16 @@ fn branch_anchors(
     node: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
+    out_decls: &mut Vec<ProtocolNodeDeclaration>,
     limits: FormsLimits,
     depth: u64,
 ) -> Result<(), FormsFailure> {
     let branch_items = items(cst, node);
     let name = declared_name(&branch_items, node)?;
+    declare(out_decls, ProtocolNodeKind::Branch, name.clone(), scope);
     with_scope(scope, name, |scope| {
         let control = only(&branch_items, Production::Control, node)?;
-        control_anchors(cst, control, scope, out, limits, depth + 1)
+        control_anchors(cst, control, scope, out, out_decls, limits, depth + 1)
     })
 }
 
@@ -327,6 +390,7 @@ fn await_control_anchors(
     node: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
+    out_decls: &mut Vec<ProtocolNodeDeclaration>,
     limits: FormsLimits,
     depth: u64,
 ) -> Result<(), FormsFailure> {
@@ -337,13 +401,15 @@ fn await_control_anchors(
         after_reference,
         AnchorSite::AwaitAfter,
         scope,
+        None,
     )?);
     let name = declared_name(&await_items, node)?;
+    declare(out_decls, ProtocolNodeKind::Await, name.clone(), scope);
     with_scope(scope, name, |scope| {
         let matched_event = only(&await_items, Production::EventNode, node)?;
-        event_node_anchors(cst, matched_event, scope, out)?;
+        event_node_anchors(cst, matched_event, scope, out, out_decls)?;
         for branch in nodes_of(&await_items, Production::Control) {
-            control_anchors(cst, branch, scope, out, limits, depth + 1)?;
+            control_anchors(cst, branch, scope, out, out_decls, limits, depth + 1)?;
         }
         Ok(())
     })
@@ -359,19 +425,47 @@ fn event_node_anchors(
     node: &CstNode,
     scope: &[ScopeName],
     out: &mut Vec<ScopedAnchorForm>,
+    out_decls: &mut Vec<ProtocolNodeDeclaration>,
 ) -> Result<(), FormsFailure> {
     let event_items = items(cst, node);
-    let site = match event_items.first() {
-        Some(Item::Token(token)) if token.spelling() == b"receive" => Some(AnchorSite::ReceiveOf),
-        Some(Item::Token(token)) if token.spelling() == b"effect" => Some(AnchorSite::EffectOf),
-        Some(Item::Token(token)) if token.spelling() == b"event" => Some(AnchorSite::EventFor),
-        Some(Item::Token(token))
-            if token.spelling() == b"send" || token.spelling() == b"attempt" =>
-        {
-            None
+    let (kind, site) = match event_items.first() {
+        Some(Item::Token(token)) if token.spelling() == b"send" => (ProtocolNodeKind::Send, None),
+        Some(Item::Token(token)) if token.spelling() == b"receive" => {
+            (ProtocolNodeKind::Receive, Some(AnchorSite::ReceiveOf))
+        }
+        Some(Item::Token(token)) if token.spelling() == b"attempt" => {
+            (ProtocolNodeKind::Attempt, None)
+        }
+        Some(Item::Token(token)) if token.spelling() == b"effect" => {
+            (ProtocolNodeKind::Effect, Some(AnchorSite::EffectOf))
+        }
+        Some(Item::Token(token)) if token.spelling() == b"event" => {
+            (ProtocolNodeKind::Event, Some(AnchorSite::EventFor))
         }
         Some(Item::Token(_) | Item::Node(_)) | None => return Err(unexpected(node)),
     };
+    let identifiers = tokens_of(&event_items, TokenKind::Identifier);
+    let name_token = identifiers.first().ok_or_else(|| unexpected(node))?;
+    let name = DeclaredName {
+        name: text(name_token, node)?,
+        span: name_token.span(),
+    };
+    // Only `send` and `receive` are written `via` a channel (FR-113's
+    // channel-mismatch check); every other kind's second identifier, when
+    // one exists, is a role or a `contracts` entry, never a channel.
+    let channel = match kind {
+        ProtocolNodeKind::Send | ProtocolNodeKind::Receive => {
+            let channel_token = identifiers.get(1).ok_or_else(|| unexpected(node))?;
+            Some(text(channel_token, node)?)
+        }
+        _ => None,
+    };
+    out_decls.push(ProtocolNodeDeclaration {
+        kind,
+        name,
+        scope: scope.to_vec(),
+        channel: channel.clone(),
+    });
     let Some(site) = site else {
         return Ok(());
     };
@@ -380,7 +474,15 @@ fn event_node_anchors(
     // `effect`'s `of R` are both mandatory, so this is always exactly one
     // when present.
     if let Some(reference) = nodes_of(&event_items, Production::NodeReference).first() {
-        out.push(scoped_anchor(cst, reference, site, scope)?);
+        // Only `receive-of` carries the owning event node's own channel
+        // (FR-113's channel-mismatch check): `receive`'s `of` reference is
+        // the only site whose site check compares a channel.
+        let owner_channel = if site == AnchorSite::ReceiveOf {
+            channel.clone()
+        } else {
+            None
+        };
+        out.push(scoped_anchor(cst, reference, site, scope, owner_channel)?);
     }
     Ok(())
 }
@@ -394,6 +496,7 @@ fn scoped_anchor(
     reference: &CstNode,
     site: AnchorSite,
     scope: &[ScopeName],
+    channel: Option<String>,
 ) -> Result<ScopedAnchorForm, FormsFailure> {
     let reference_items = items(cst, reference);
     let mut segments = Vec::new();
@@ -413,5 +516,6 @@ fn scoped_anchor(
             span: reference.span(),
         },
         scope: scope.to_vec(),
+        channel,
     })
 }

@@ -417,28 +417,21 @@ fn each_assembler_cause_has_its_catalog_code() {
             },
             "ambiguous_declaration/ambiguous-name",
         ),
-        (
-            AssemblyCause::UnimplementedProtocol {
-                name: "Flow".into(),
-            },
-            "unsupported_construct/not-yet-implemented",
-        ),
     ];
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
     }
 }
 
-/// SR-753/SR-754 FND-002: FR-113's scoped-anchor resolution has no S3
-/// checker yet (QSL-298), so the assembler refuses a `protocol`
-/// declaration rather than silently drop it from the package -- on main,
-/// S2 itself refused `protocol` as `unsupported_construct` before this
-/// ticket taught S2 to build its form; the refusal moves here so the
-/// cutover never lets an unchecked construct through.
+/// FR-113 (QSL-298): the assembler keeps a `protocol` declaration's form
+/// rather than refusing it -- resolving its scoped anchors is
+/// `check::protocol_clause`'s job at S3, not the assembler's at E3, so a
+/// protocol with an anchor naming no declaration (`effect Applied of
+/// Missing`) still assembles.
 #[trace("TC-510", "FR-112")]
 #[test]
-fn a_protocol_declaration_refuses_unimplemented_rather_than_silently_dropping() {
-    let (text, found) = errors(
+fn a_protocol_declaration_assembles_leaving_anchor_resolution_to_s3() {
+    let (_, assembled) = assemble(
         "protocol Flow using v over (input: M::Input) on origin {\n\
          role R on M::Actor;\n\
          run sequence Main {\n\
@@ -448,18 +441,9 @@ fn a_protocol_declaration_refuses_unimplemented_rather_than_silently_dropping() 
          finish End as (outcome: Boolean) { true };\n\
          }",
     );
-    assert_eq!(found.len(), 1, "{found:?}");
-    assert_eq!(
-        found[0].cause,
-        AssemblyCause::UnimplementedProtocol {
-            name: "Flow".into()
-        }
-    );
-    assert_eq!(found[0].span.start, text.find("protocol Flow").unwrap());
-    assert_eq!(
-        found[0].cause.catalog_code().to_string(),
-        "unsupported_construct/not-yet-implemented"
-    );
+    let package = assembled.unwrap_or_else(|refusal| panic!("{refusal:?}"));
+    assert_eq!(package.protocols.len(), 1);
+    assert_eq!(package.protocols[0].name.name, "Flow");
 }
 
 /// FR-104 "Resolution" (TC-460 row 1's shape, over a unit with no `model`

@@ -34,7 +34,7 @@ use qsl_package::{
 };
 use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal,
-    CheckingLimits, PackageDeclarations, ProfileRefusal,
+    CheckingLimits, PackageDeclarations, ProfileRefusal, ProtocolAnchorCause,
 };
 use qsl_semantics::library::{ImportView, LibraryName, PackageId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -392,10 +392,6 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        AssemblyCause::UnimplementedProtocol { name } => format!(
-            "`protocol {name}` is not checked yet (FR-113/QSL-298), so it is refused rather than \
-             silently accepted"
-        ),
     };
     with_more(message, refusal.errors.len())
 }
@@ -427,6 +423,35 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
             message = match operation {
                 Some(operation) => format!("{message}: {clause} of `{operation}`"),
                 None => format!("{message}: {clause}"),
+            };
+        }
+        // FR-113: name the anchor's failing segment or ambiguous/mismatched
+        // name so a protocol refusal reads like a state clause's.
+        CheckCause::ProtocolAnchor(cause) => {
+            message = match cause.as_ref() {
+                ProtocolAnchorCause::Missing { segment, .. } => {
+                    format!("{message}: `{segment}`")
+                }
+                ProtocolAnchorCause::Ambiguous { name, .. } => {
+                    format!("{message}: `{name}`")
+                }
+                ProtocolAnchorCause::WrongKind {
+                    site,
+                    actual,
+                    admitted,
+                    ..
+                } => format!(
+                    "{message}: `{site}` names a `{actual}`, not {}",
+                    admitted.join(" or ")
+                ),
+                ProtocolAnchorCause::ChannelMismatch {
+                    receive_channel,
+                    send_channel,
+                    ..
+                } => format!(
+                    "{message}: `receive` via `{receive_channel}` names a `send` via \
+                     `{send_channel}`"
+                ),
             };
         }
         _ => {}

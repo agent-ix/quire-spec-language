@@ -1196,12 +1196,104 @@ pub struct ScopedAnchorForm {
     /// enclosing control. Empty for a reference in a protocol-level
     /// requirement (a `compensate` declaration).
     pub scope: Vec<ScopeName>,
+    /// The channel the owning `receive` event node is written `via`, for a
+    /// `receive-of` anchor (FR-113's channel-mismatch check); `None` for
+    /// every other site.
+    pub channel: Option<String>,
+}
+
+/// The kind of static protocol node a [`ProtocolNodeDeclaration`] names, or
+/// a [`ScopedAnchorForm`] resolves to (FR-113 Inputs and its wrong-kind
+/// table). Each variant's [`Self::label`] is the construct's own keyword,
+/// the word FR-113's refusals name a target's kind by.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProtocolNodeKind {
+    /// A `send` event node.
+    Send,
+    /// A `receive` event node.
+    Receive,
+    /// An `attempt` event node.
+    Attempt,
+    /// An `effect` event node.
+    Effect,
+    /// An `event` event node.
+    Event,
+    /// A bare `commit` node inside a control tree.
+    Commit,
+    /// The protocol's `finish` node.
+    Finish,
+    /// A top-level `compensate` template.
+    CompensateTemplate,
+    /// A `sequence` structural control.
+    Sequence,
+    /// A `choice` structural control.
+    Choice,
+    /// A `parallel` structural control.
+    Parallel,
+    /// A `repeat` structural control.
+    Repeat,
+    /// A `branch` of a `parallel`.
+    Branch,
+    /// A `case` of a `choice`.
+    Case,
+    /// An `await` structural control.
+    Await,
+    /// A `check` control.
+    Check,
+}
+
+impl ProtocolNodeKind {
+    /// The construct's own keyword (FR-113's refusals name a target's kind
+    /// by this word).
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Send => "send",
+            Self::Receive => "receive",
+            Self::Attempt => "attempt",
+            Self::Effect => "effect",
+            Self::Event => "event",
+            Self::Commit => "commit",
+            Self::Finish => "finish",
+            Self::CompensateTemplate => "compensate",
+            Self::Sequence => "sequence",
+            Self::Choice => "choice",
+            Self::Parallel => "parallel",
+            Self::Repeat => "repeat",
+            Self::Branch => "branch",
+            Self::Case => "case",
+            Self::Await => "await",
+            Self::Check => "check",
+        }
+    }
+}
+
+/// One static protocol node a scope declares directly (FR-113 Inputs: "for
+/// each scope ..., the names of the static nodes it declares directly,
+/// with their spans"). `scope` follows the same convention as
+/// [`ScopedAnchorForm::scope`]: the named controls that enclose this
+/// declaration, outermost first, empty for a top-level declaration (the
+/// `run` control itself, the `finish` node and each `compensate`
+/// template). A `send` or `receive` event node also carries the channel it
+/// is written `via`, for FR-113's channel-mismatch check; every other kind
+/// carries `None`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtocolNodeDeclaration {
+    /// The kind of node this declaration is.
+    pub kind: ProtocolNodeKind,
+    /// The declared name and its span.
+    pub name: DeclaredName,
+    /// The named controls enclosing this declaration, outermost first.
+    pub scope: Vec<ScopeName>,
+    /// The channel a `send` or `receive` is written `via`; `None` for
+    /// every other kind.
+    pub channel: Option<String>,
 }
 
 /// `protocol Name using p over (params) activation { ... run Control
-/// Finish }` (FR-112 "Outputs", ADR-012 §12.2). S2 builds only the scoped
-/// anchors: the declaration's roles, channels, requirements and control
-/// tree beyond the anchors they hold are not read at this stage.
+/// Finish }` (FR-112 "Outputs", ADR-012 §12.2). S2 builds the scoped
+/// anchors and the declaration collection FR-113 resolves them against; the
+/// declaration's roles, channels (as top-level declarations) and
+/// requirements beyond these are not read at this stage.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolDeclarationForm {
     /// The declared protocol name.
@@ -1209,6 +1301,9 @@ pub struct ProtocolDeclarationForm {
     /// Every scoped anchor the declaration holds, in source order of their
     /// references (FR-112-AC-1).
     pub scoped_anchors: Vec<ScopedAnchorForm>,
+    /// Every static node the declaration's scopes declare directly, in
+    /// source order (FR-113 Inputs).
+    pub declarations: Vec<ProtocolNodeDeclaration>,
 }
 
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
