@@ -117,8 +117,7 @@ fn check_refusals(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<Check
 /// `span`, rather than `check`'s packed catalog-code tuple.
 fn assembly_refusals(document: &[u8], body: &str) -> Vec<AssemblyError> {
     admit_and_assemble_with_body(document, body)
-        .err()
-        .expect("assembly refused")
+        .expect_err("assembly refused")
         .errors
 }
 
