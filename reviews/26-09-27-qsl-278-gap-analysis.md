@@ -59,3 +59,45 @@ AC-5 are not delivered as the spec states. Write the missing TC rows over the
 ConfigVersion corpus (they will expose SR-750 FND-001 and FND-005). Add
 FR-109's provenance and usage to `ClauseRunReport`. Or split the missing
 parts onto a follow-up ticket, with an honest FR Status line for each.
+
+## Round 2 Dispositions
+
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-751 pr=quire-spec-language#495 round=2 reviewed=0b7bc7581582f5d87d6bb2430e0cd460c53b1c76 date=2026-09-27 -->
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | open | Rows 1-19, 21-29 and 31-42 are tested; rows 20/30 are deferred to QSL-289 per ruling. The row 25 test asserts a refusal where the TC says it admits (new FND-007) |
+| FND-002 | open | category, truth, provenance and evaluation usage added (fe94f9ae, 9e25d0f4). Invocation pre/post are missing from provenance (clause.rs:472,484); admission usage is always empty (clause.rs:268); there is no I3 input |
+| FND-003 | deferred | QSL-279. I confirmed the dependency by running it: any clause on `attemptUpdate` fails `spine::compile` with `Emit(UnlocatedOccurrence{role: Generated})` |
+| FND-004 | fixed | 88d70d0d |
+| FND-005 | open | TC-468 step 5's comparison over the FR-100-AC-9 outcomes is absent |
+| FND-006 | fixed | 8d7db4c1 |
+
+New in round 2: FND-007 (medium) the row 25 test asserts `Refused wrong-role-mapping` instead of "admitted" (state_clauses.rs:2885-2907; with the archive package variant it admits, confirmed by running it); FND-008 (low) the step 5 `CallFailure::Fault` half is constructed, not run (tests.rs:2148-2161).
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+  - {fnd: FND-001, outcome: open, partial_fix_shas: [cc72b43c, 10ffb4cd, 0a766777, 2dc630bb], reason: "row 25 asserts refusal; rows 20/30 deferred QSL-289 by coordinator ruling"}
+  - {fnd: FND-002, outcome: open, partial_fix_shas: [fe94f9ae, 9e25d0f4], reason: "no pre/post in provenance, empty admission usage, no I3 input/provenance"}
+  - {fnd: FND-003, outcome: deferred, reason: "QSL-279; confirmed by running it: any attemptUpdate clause fails spine::compile with Emit(UnlocatedOccurrence{role: Generated, ordinal: 0}), qsl-package/src/emit.rs:35-42,142"}
+  - fnd: FND-004
+    outcome: fixed
+    fix_sha: 88d70d0d
+    after_excerpt: |-
+      assert_eq!(observations.self_object.object().as_str(), "child");
+          assert!(observations.parameters.is_empty(), "no parameters");
+          assert!(observations.created.is_empty(), "empty created");
+  - {fnd: FND-005, outcome: open, partial_fix_shas: [9f947362, a236e64e], reason: "no FR-100-AC-9 outcome comparison for TC-468 step 5"}
+  - fnd: FND-006
+    outcome: fixed
+    fix_sha: 8d7db4c1
+    after_excerpt: |-
+      #[trace("TC-465", "FR-106-AC-5")]
+new_findings:
+  - {fnd: FND-007, severity: medium, path: qsl-semantics/tests/it/state_clauses.rs, lines: "2885-2907", finding: "row 25 test asserts Refused wrong-role-mapping; TC says admitted; archive variant admits"}
+  - {fnd: FND-008, severity: low, path: qsl-replay/src/spine/clause/tests.rs, lines: "2148-2161", finding: "CallFailure::Fault half constructs the disposition rather than running run_clause"}
+```
+
++++
