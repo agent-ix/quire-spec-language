@@ -2147,7 +2147,26 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     assert_eq!(report_for(disposition).exit_code(), 30);
 
     // A `CallFailure::Fault` reaches `run_clause`'s own `EvaluateFault` arm
-    // the same way (`clause.rs:523-524`), with the same reported shape.
+    // the same way (`clause.rs:523-524`), with the same reported shape --
+    // constructed directly here, not run through `package.evaluate_clause`
+    // (SR-751 FND-008 round 2, disclosed, not attempted): every
+    // `CallFailure::Fault` `evaluate_clause` can itself construct
+    // (`qsl-eval/src/value/expression/mod.rs:456,475,486`,
+    // "clause-observations-missing-current-or-post"/
+    // "postcondition-result-missing"/"clause-parameter-not-admitted") is
+    // unreachable once admission has actually succeeded: FR-106's
+    // `admit_operation` unconditionally sets both `pre` and `post` on
+    // success (never leaving both `current` and `post` `None`), always
+    // admits a `result` for an operation `binds_result()` declares
+    // (refusing at admission otherwise, never reaching evaluate), and
+    // always admits every one of the clause's own declared parameters
+    // (check 10) -- the same "broken invariant, not a document defect"
+    // shape `CheckedInvariant` above already is. This test file also has
+    // no compiled package with a precondition/postcondition clause to
+    // attempt it against in the first place: any clause on `attemptUpdate`
+    // fails `spine::compile` (SR-751 FND-003, deferred to QSL-279, a
+    // dependency this round does not touch), and `binds_result()`/`pre`/
+    // `post` are meaningful only for a precondition or postcondition.
     let call_failure_fault = qsl_foundation::diagnostic::InternalFault::new("call", "fault-kind");
     let disposition_from_call_failure = ClauseDisposition::EvaluateFault(call_failure_fault);
     assert_eq!(
