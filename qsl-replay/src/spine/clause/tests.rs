@@ -527,6 +527,10 @@ fn evaluate_clause_refuses_observations_admitted_for_another_clause() {
         failure,
         CallFailure::Input(InputRefusal::ObservationsMismatch)
     ));
+    assert!(
+        meter.admitted_charges().is_empty(),
+        "no charge before the identity check"
+    );
 }
 
 /// FR-107 determinism: the same observations evaluate to the same outcome
@@ -541,12 +545,11 @@ fn evaluate_clause_is_deterministic() {
     let node_effective = clause.context();
     let types = graph.scope().types();
 
-    let run = || {
-        let environment = node_environment(types, node_effective, &["a", "b", "c"]);
+    let run = |environment: ObjectEnvironment, self_key: &str| {
         let observations = no_cycle_observations(
             clause.identity(),
             environment,
-            node_reference(node_effective, "a"),
+            node_reference(node_effective, self_key),
         );
         let mut meter = Meter::new(default_accounting(1_000_000));
         let name = QualifiedName::unqualified("NoCycle").unwrap();
@@ -558,11 +561,52 @@ fn evaluate_clause_is_deterministic() {
             meter.admitted_charges().to_vec(),
         )
     };
-    assert_eq!(run(), run());
+    // Every `test/nodes` case that reaches S6a (TC-467 step 3): the
+    // acyclic chain (`Completed(true)`) and a two-node cycle
+    // (`Completed(false)`), each run twice, giving equal outcomes and equal
+    // charge logs.
+    assert_eq!(
+        run(
+            node_environment(types, node_effective, &["a", "b", "c"]),
+            "a"
+        ),
+        run(
+            node_environment(types, node_effective, &["a", "b", "c"]),
+            "a"
+        )
+    );
+    let cycle = || {
+        ObjectEnvironment::new(
+            types,
+            vec![
+                (
+                    node_reference(node_effective, "a"),
+                    vec![(
+                        "next",
+                        FieldValue::Present(Value::Reference(node_reference(node_effective, "b"))),
+                    )],
+                ),
+                (
+                    node_reference(node_effective, "b"),
+                    vec![(
+                        "next",
+                        FieldValue::Present(Value::Reference(node_reference(node_effective, "a"))),
+                    )],
+                ),
+            ],
+        )
+        .expect("the two-node cycle is internally closed")
+    };
+    assert_eq!(run(cycle(), "a"), run(cycle(), "a"));
 }
 
-/// FR-090/FR-107: an exhausted `work_units` budget completes `incomplete`,
-/// never a fault or a silent truncation.
+/// TC-467 step 1 (FR-107-AC-4): a zero-budget meter completes `Incomplete`
+/// -- an S6a `Outcome::Incomplete` is, by FR-107's own Behavior section
+/// (`FR-107-evaluate-state-clauses-at-s6a.md:95-100`), always catalog code
+/// `resource_exhausted`/`insufficient-next-charge` with no truth value, the
+/// same charge point the zero-budget meter first denies (`WorkUnits`, the
+/// only limit `default_accounting` sets); the same call with the default
+/// budget then completes `true`, never a fault or a silent truncation.
 #[trace("TC-467", "FR-107-AC-4")]
 #[test]
 fn evaluate_clause_reports_incomplete_when_the_meter_is_exhausted() {
@@ -578,18 +622,30 @@ fn evaluate_clause_reports_incomplete_when_the_meter_is_exhausted() {
         environment,
         node_reference(node_effective, "a"),
     );
-    let mut meter = Meter::new(default_accounting(0));
     let name = QualifiedName::unqualified("NoCycle").unwrap();
-    let evaluation = package
-        .evaluate_clause(&name, &observations, &mut meter)
+
+    let mut exhausted_meter = Meter::new(default_accounting(0));
+    let exhausted = package
+        .evaluate_clause(&name, &observations, &mut exhausted_meter)
         .expect("an exhausted meter is a kernel outcome, not a fault");
+    match exhausted.outcome {
+        FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
+            assert_eq!(
+                incomplete.limit_kind,
+                quire_exact::LimitKind::WorkUnits,
+                "a zero work_units budget denies the first work_units charge"
+            );
+        }
+        other => panic!("expected Incomplete, got {other:?}"),
+    }
+
+    let mut default_meter = Meter::new(default_accounting(1_000_000));
+    let completed = package
+        .evaluate_clause(&name, &observations, &mut default_meter)
+        .expect("the default budget evaluates cleanly");
     assert!(
-        matches!(
-            evaluation.outcome,
-            FamilyOutcome::Evaluated(Outcome::Incomplete(_))
-        ),
-        "expected Incomplete, got {:?}",
-        evaluation.outcome
+        boolean_outcome(completed),
+        "a -> b -> c never reaches a, with the default budget"
     );
 }
 
