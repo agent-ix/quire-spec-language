@@ -2,7 +2,7 @@
 //! FR-010: stable source-bound native diagnostics and standard error propagation.
 //!
 //! [`Locus`] is ADR-013 T-5's foundation diagnostic locus.
-use crate::source::{LocatedSpan, Source, SourceIdentity, Span};
+use crate::source::{LocatedSpan, Source, SourceIdentity, SourceReadCause, Span};
 
 mod locus;
 mod stage;
@@ -346,6 +346,10 @@ pub struct Diagnostic {
     /// Set only by [`resource_exhausted`], so it never disagrees with
     /// `code`; read through [`Diagnostic::limit`].
     limit: Option<SyntaxLimit>,
+    /// Set only for an `invalid_source_identity` refusal: `BlankLabel`
+    /// (which label) or `EmptyPath` (`quire.native.diagnostics/v1`,
+    /// FR-001); read through [`Diagnostic::identity_cause`].
+    identity_cause: Option<SourceReadCause>,
 }
 
 /// The syntax resource ceiling a `resource_exhausted` refusal names
@@ -453,6 +457,11 @@ impl Diagnostic {
     pub fn limit(&self) -> Option<SyntaxLimit> {
         self.limit
     }
+    /// The `invalid_source_identity` cause (`BlankLabel` naming its label,
+    /// or `EmptyPath`); `None` for every other diagnostic.
+    pub fn identity_cause(&self) -> Option<SourceReadCause> {
+        self.identity_cause
+    }
     /// Whether incomplete work, rather than invalid input, caused this diagnostic.
     pub fn is_incomplete(&self) -> bool {
         self.code.is_incomplete()
@@ -496,6 +505,7 @@ pub fn error(
             .expect("internal offsets are UTF-8 boundaries"),
         message: message.into(),
         limit: None,
+        identity_cause: None,
     })
 }
 
@@ -544,9 +554,11 @@ fn source_refusal(
     bytes: &[u8],
     byte_limit: usize,
 ) -> Box<Diagnostic> {
-    use crate::source::SourceReadCause;
     let code = match refusal.cause {
-        SourceReadCause::UnnamedSource => Code::InvalidSourceIdentity,
+        SourceReadCause::BlankLabel { .. } | SourceReadCause::EmptyPath => {
+            Code::InvalidSourceIdentity
+        }
+        SourceReadCause::ReferenceInvariant => Code::RuntimeInvariant,
         // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
         // one of the four kinds the catalog admits.
         SourceReadCause::ByteBudget => Code::StageLimitExceeded,
@@ -580,6 +592,11 @@ fn source_refusal(
         span,
         message: refusal.error.message,
         limit,
+        identity_cause: matches!(
+            refusal.cause,
+            SourceReadCause::BlankLabel { .. } | SourceReadCause::EmptyPath
+        )
+        .then_some(refusal.cause),
     })
 }
 
@@ -626,6 +643,7 @@ impl From<crate::source_map::SourceMapError> for Diagnostic {
             span: error.span,
             message: error.message,
             limit: None,
+            identity_cause: None,
         }
     }
 }
@@ -1142,6 +1160,32 @@ mod foundation_tests {
         category_of, resource_exhausted, CatalogCode, Category, Code, InternalFault, Phase, Source,
         SourceIdentity, Span, SyntaxLimit, CATALOG_CATEGORIES,
     };
+
+    /// FR-001-AC-11: the native `Diagnostic` of `Source::read` carries
+    /// `blank-label` with its label, or `empty-path`, on
+    /// `invalid_source_identity`.
+    #[ix_trace_rs::trace("TC-424", "FR-001-AC-11")]
+    #[test]
+    fn the_native_diagnostic_carries_the_identity_cause() {
+        use crate::source::{SourceLabel, SourceReadCause};
+        let read = |identity, path| {
+            *Source::read(identity, path, b"x", crate::source::MAX_SOURCE_BYTES)
+                .expect_err("refused")
+        };
+        let blank = read(SourceIdentity::new("a", "u", " ", "1"), "");
+        let empty = read(SourceIdentity::new("a", "u", "git", "1"), "");
+        assert_eq!(
+            blank.identity_cause(),
+            Some(SourceReadCause::BlankLabel {
+                label: SourceLabel::RevisionNamespace
+            })
+        );
+        assert_eq!(empty.identity_cause(), Some(SourceReadCause::EmptyPath));
+        assert!(matches!(
+            (blank.code, empty.code),
+            (Code::InvalidSourceIdentity, Code::InvalidSourceIdentity)
+        ));
+    }
 
     fn source() -> Source {
         Source::read(

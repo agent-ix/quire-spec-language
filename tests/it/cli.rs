@@ -383,7 +383,19 @@ fn parse_and_format_take_the_four_source_labels() {
     assert_eq!(blank.status.code(), Some(20));
     let value: serde_json::Value = serde_json::from_slice(&blank.stderr).unwrap();
     assert_eq!(value["code"], "invalid_source_identity");
+    assert_eq!(value["cause"], "blank-label");
+    assert_eq!(value["label"], "revision_namespace");
     assert!(value["span"].is_null());
+
+    // An empty file operand is a file error, not an `empty-path` refusal:
+    // the file is opened before any source is admitted, so `empty-path` is
+    // reachable only through a library read (FR-001).
+    let empty = Command::new(executable)
+        .args(["parse", "agent-ix", "specs/a.quire", "git", "3f2a", ""])
+        .output()
+        .unwrap();
+    assert_eq!(empty.status.code(), Some(20));
+    assert!(!String::from_utf8_lossy(&empty.stderr).contains("invalid_source_identity"));
 
     let format = |extra: &[&str]| {
         Command::new(executable)

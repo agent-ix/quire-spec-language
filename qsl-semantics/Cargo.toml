@@ -24,6 +24,7 @@ test-support = []
 # `model::intake` alone. The root crate's `tests/it/family_outcome_layering.rs`
 # (TC-390) asserts that this table names no other workspace crate.
 [dependencies]
+qsl-attrs = { path = "../qsl-attrs" }
 qsl-forms = { path = "../qsl-forms" }
 qsl-foundation = { path = "../qsl-foundation" }
 quire-exact = { path = "../quire-exact" }

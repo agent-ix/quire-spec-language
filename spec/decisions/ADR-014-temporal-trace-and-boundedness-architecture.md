@@ -44,7 +44,7 @@ relationships:
 
 ## Status
 
-Proposed, 2026-09-24. Owning ticket: Linear QSL-17 (GitHub #222, ARCH-42),
+Accepted, 2026-09-24. Owning ticket: Linear QSL-17 (GitHub #222, ARCH-42),
 epic QSL-34 (#205), Layer 2. It answers ADR-013 Q222-1, Q222-2 and Q222-3,
 the ADR-013 O-20 owner row, and the "available finite bound" predicate that
 ADR-012 §1.1 defers. It is the prerequisite of QSL-140 (ADR-013 §7 S-6),

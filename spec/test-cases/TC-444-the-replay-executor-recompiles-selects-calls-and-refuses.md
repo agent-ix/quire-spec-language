@@ -122,6 +122,6 @@ steps 1 to 6. Step 7 (FR-098-AC-6, FR-098-AC-7) passes locally (QSL-255
 part b): `tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one`
 and `tc_444_dependency_entries_refuse_by_the_d4_rules`.
 
-Partial for step 5's whitespace-only authority: the `invalid_source_identity`
-code passes locally; its `blank-label` cause and `label` field (catalog
-revision `1-draft.8`, FR-001) are planned (QSL-245).
+Step 5's whitespace-only authority passes locally with `invalid_source_identity`,
+cause `blank-label` and `label` `authority` (catalog revision `1-draft.8`,
+FR-001, QSL-245).

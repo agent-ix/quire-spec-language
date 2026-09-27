@@ -54,13 +54,14 @@ mod units;
 
 use super::CheckedGraph;
 use crate::model::domain_package::{
-    DomainPackageRecord, FieldMemberRecord, NativeValueType, ValueTypeRef,
+    DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, OperationMemberRecord,
+    ValueTypeRef,
 };
 use crate::model::intake::{member_identity_name, type_identity_segment, SelectedModel};
 use crate::model::key::DeclarationKey;
 use crate::value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
-    InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+    InvalidDeclaration, ObjectTypeDeclaration, OperationDeclaration, TypeEnvironment,
 };
 use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
 use crate::value::semantic_node::{InvalidSemanticGraph, OwnerSelection};
@@ -237,14 +238,26 @@ pub enum AssemblyCause {
         node: String,
     },
     /// An admitted domain package's record has no type environment form
-    /// yet: an operation, a record value type, a systems part, port or
-    /// allocation, or a field whose value type or multiplicity no kernel
-    /// type represents.
+    /// yet: a record value type, a systems part, port or allocation, or a
+    /// field whose value type or multiplicity no kernel type represents.
+    /// (FR-103, QSL-273: an operation is no longer refused here -- see
+    /// `model_operation`.)
     UnsupportedModelMember {
         /// The declaration's alias.
         alias: String,
         /// The record's IR node identity.
         node: String,
+    },
+    /// A state clause (`invariant`/`pre`/`post`) declared in the `1-draft`
+    /// unit. FR-102 (QSL-273) builds the form at S2; FR-104 (QSL-277) is
+    /// the ticket that checks it (context, anchor, observation-keyed facts,
+    /// body typing) and declares it on the assembled package. Until then
+    /// the assembler refuses it here rather than silently dropping it, so
+    /// a unit holding one never checks and emits as if the clause said
+    /// nothing.
+    UnsupportedStateClause {
+        /// The clause's declared name.
+        name: String,
     },
 }
 
@@ -268,9 +281,9 @@ impl AssemblyCause {
             // FR-091-OQ-12: STD-112 has not published the topology causes.
             Self::UnitGraphTopology { .. } => Code::InvalidPackage,
             Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
-            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
-                Code::UnknownRequiredFeature
-            }
+            Self::FloatingType { .. }
+            | Self::UnsupportedModelMember { .. }
+            | Self::UnsupportedStateClause { .. } => Code::UnknownRequiredFeature,
             Self::AliasCycle { .. } => Code::InvalidPackage,
             Self::InvalidTypeDeclaration(invalid) => match &invalid.cause {
                 DeclarationCause::DuplicateMember(_) => Code::AmbiguousDeclaration,
@@ -310,9 +323,9 @@ impl AssemblyCause {
             Self::UnitGraphTopology { .. } => "unit-graph-topology",
             Self::IllFormedBounds(_) => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
-            Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
-                "unsupported-feature"
-            }
+            Self::FloatingType { .. }
+            | Self::UnsupportedModelMember { .. }
+            | Self::UnsupportedStateClause { .. } => "unsupported-feature",
             Self::AliasCycle { .. } => "definition-cycle",
             Self::UndeclaredAlias { .. }
             | Self::UnadmittedModel { .. }
@@ -387,6 +400,10 @@ struct Unit {
     functions: Vec<FunctionDeclaration>,
     /// Each declared type name's declarations, with the span of each name.
     declared: BTreeMap<String, Vec<(Declared, Span)>>,
+    /// Each state clause's declared name and declaration span, refused as
+    /// [`AssemblyCause::UnsupportedStateClause`] by the caller (FR-104,
+    /// QSL-277, is not built yet).
+    state_clauses: Vec<(String, Span)>,
 }
 
 impl Unit {
@@ -399,6 +416,7 @@ impl Unit {
             enums: Vec::new(),
             functions: Vec::new(),
             declared: BTreeMap::new(),
+            state_clauses: Vec::new(),
         };
         for form in forms {
             match form.into_form() {
@@ -426,6 +444,18 @@ impl Unit {
                 DeclarationForm::Enum(enumeration) => {
                     unit.declare(&enumeration.name, Declared::Enum);
                     unit.enums.push(enumeration);
+                }
+                // FR-102 (QSL-273) builds the form; FR-104 (QSL-277) is the
+                // ticket that checks it (context, anchor, observation-keyed
+                // facts, body typing) and declares it on the assembled
+                // package. Nothing downstream of this assembler reads a
+                // state clause yet, so `assemble_with_limits` refuses each
+                // one as `AssemblyCause::UnsupportedStateClause` rather than
+                // silently dropping it -- a checked, emittable package must
+                // never say nothing about a clause the unit declared.
+                DeclarationForm::StateClause(clause) => {
+                    unit.state_clauses
+                        .push((clause.name.name, clause.spans.declaration));
                 }
             }
         }
@@ -472,12 +502,12 @@ impl TypeNames for Names {
 /// The object types of the domain package admitted for the `model`
 /// declaration `alias`, each named `alias::T` with `T` its artifact id, and
 /// declaring its supertypes by their effective identities and its fields
-/// with their value types, presences and redefinitions. Every other record
-/// an object type's shape would need and the type environment cannot hold
-/// (an operation, a record value type, a systems part, port or allocation)
-/// refuses as [`AssemblyCause::UnsupportedModelMember`]. Relationship and
-/// population records name no type environment entry; they stay in the
-/// admitted model `check` keys model nodes from.
+/// with their value types, presences and redefinitions, and its operations
+/// (FR-103). Every other record an object type's shape would need and the
+/// type environment cannot hold (a record value type, a systems part, port
+/// or allocation) refuses as [`AssemblyCause::UnsupportedModelMember`].
+/// Relationship and population records name no type environment entry;
+/// they stay in the admitted model `check` keys model nodes from.
 fn model_object_types(
     alias: &str,
     model: &SelectedModel,
@@ -505,6 +535,7 @@ fn model_object_types(
         .collect();
     let mut errors = Vec::new();
     let mut fields: BTreeMap<&DeclarationKey, Vec<FieldDeclaration>> = BTreeMap::new();
+    let mut operations: BTreeMap<&DeclarationKey, Vec<OperationDeclaration>> = BTreeMap::new();
     for record in &package.records {
         match record {
             DomainPackageRecord::FieldMember(field) => {
@@ -521,8 +552,24 @@ fn model_object_types(
                     }
                 }
             }
+            DomainPackageRecord::OperationMember(operation) => {
+                match model_operation(operation, &records, identities) {
+                    Ok(declaration) => operations
+                        .entry(&operation.owner)
+                        .or_default()
+                        .push(declaration),
+                    Err(Unmapped::Unsupported) => errors.push(unsupported(&operation.key.node)),
+                    Err(Unmapped::Broken) => errors.push(broken(&operation.key.node)),
+                    Err(Unmapped::Float(width)) => {
+                        errors.push(error(AssemblyCause::FloatingType {
+                            width,
+                            rounding: RoundingMode::Exact,
+                            profile: None,
+                        }))
+                    }
+                }
+            }
             DomainPackageRecord::RecordValueType(_)
-            | DomainPackageRecord::OperationMember(_)
             | DomainPackageRecord::Component(_)
             | DomainPackageRecord::Endpoint(_)
             | DomainPackageRecord::Allocation(_) => errors.push(unsupported(&record.key().node)),
@@ -558,8 +605,16 @@ fn model_object_types(
                 format!("{alias}::{artifact}"),
                 fields.remove(key).unwrap_or_default(),
             )
-            .with_supertypes(supertypes),
+            .with_supertypes(supertypes)
+            .with_operations(operations.remove(key).unwrap_or_default()),
         );
+    }
+    // An operation whose owner is no object type: a broken record (every
+    // operation record is read from inside an object type's own
+    // `operations[]`, so its owner always resolves here unless I1 is
+    // broken).
+    for (owner, _) in operations {
+        errors.push(broken(&owner.node));
     }
     // A field whose owner is no object type: its owner is a record value
     // type, already refused above, or a broken record.
@@ -603,13 +658,24 @@ enum Unmapped {
 /// unwrapped element or collection type; `check`'s `attribute`/`field`
 /// readers wrap it in `Option` from `presence()` alone, as they already do
 /// for every other `FieldDeclaration`.
-fn model_field(
-    field: &FieldMemberRecord,
+/// A domain package's `value_type`/`multiplicity` pair as a kernel
+/// [`ValueType`] (FR-056's field rule, reused by [`model_field`] and
+/// [`model_operation`] for a parameter's or a result's own value type,
+/// FR-103): a native `Boolean`/`Integer`, a scalar type as its `Int[lower,
+/// upper]`, an object type as `Reference<M::T>`. `[1, 1]` gives the
+/// element type `E`; any other multiplicity gives the collection its
+/// `ordered`/`unique` flags name (`Set`, `Bag`, `Sequence` or
+/// `OrderedSet`), bounded when the upper bound is finite, and unbounded
+/// only when the lower bound is `0` -- an unbounded multiplicity with a
+/// lower bound above `0` has no kernel type (QSpec FR-322's "Model-owned
+/// members" step 4).
+fn model_value_type(
+    value_type: &ValueTypeRef,
+    multiplicity: Multiplicity,
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
     identities: &BTreeMap<DeclarationKey, EffectiveId>,
-) -> Result<FieldDeclaration, Unmapped> {
-    let name = member_identity_name(&field.owner.node, &field.key.node).ok_or(Unmapped::Broken)?;
-    let element = match &field.value_type {
+) -> Result<ValueType, Unmapped> {
+    let element = match value_type {
         ValueTypeRef::Native(native) => match native {
             NativeValueType::Boolean => ValueType::Boolean,
             NativeValueType::Integer => ValueType::Integer,
@@ -633,8 +699,7 @@ fn model_field(
             None => return Err(Unmapped::Broken),
         },
     };
-    let multiplicity = field.multiplicity;
-    let value_type = match (multiplicity.lower, multiplicity.upper) {
+    Ok(match (multiplicity.lower, multiplicity.upper) {
         (1, Some(1)) => element,
         (lower, upper) => {
             let kind = match (multiplicity.ordered, multiplicity.unique) {
@@ -652,7 +717,25 @@ fn model_field(
             };
             ValueType::collection(CollectionType::new(kind, element, bound))
         }
-    };
+    })
+}
+
+/// `field` as an object type's field: named by its member name, typed by
+/// [`model_value_type`], and made `Optional` exactly when the domain
+/// package's own `presence` is `optional` -- never by a lower bound of `0`
+/// (QSpec's `model-complete.md` Presence row: "a lower bound of `0` makes
+/// an empty collection legal and never makes a field optional"). The
+/// returned declaration's own `value_type` is always the unwrapped element
+/// or collection type; `check`'s `attribute`/`field` readers wrap it in
+/// `Option` from `presence()` alone, as they already do for every other
+/// `FieldDeclaration`.
+fn model_field(
+    field: &FieldMemberRecord,
+    records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
+    identities: &BTreeMap<DeclarationKey, EffectiveId>,
+) -> Result<FieldDeclaration, Unmapped> {
+    let name = member_identity_name(&field.owner.node, &field.key.node).ok_or(Unmapped::Broken)?;
+    let value_type = model_value_type(&field.value_type, field.multiplicity, records, identities)?;
     let declaration = FieldDeclaration::new(name, value_type, field.presence);
     let Some(target) = &field.redefines else {
         return Ok(declaration);
@@ -664,6 +747,45 @@ fn model_field(
     let redefined_name =
         member_identity_name(&redefined.owner.node, &redefined.key.node).ok_or(Unmapped::Broken)?;
     Ok(declaration.with_redefines(FieldRef::new(*owner, redefined_name)))
+}
+
+/// `operation` as an object type's operation (FR-103): named by its member
+/// name, its parameters and result typed by [`model_value_type`] (FR-056's
+/// field rule), and its effect frame carried unchanged -- I1 already
+/// resolved every key it names against the whole domain package
+/// (`resolve_effect`), so the assembler does no further resolution over it.
+fn model_operation(
+    operation: &OperationMemberRecord,
+    records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
+    identities: &BTreeMap<DeclarationKey, EffectiveId>,
+) -> Result<OperationDeclaration, Unmapped> {
+    let name =
+        member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
+    let mut parameters = Vec::with_capacity(operation.parameters.len());
+    for parameter in &operation.parameters {
+        let parameter_name = member_identity_name(&operation.key.node, &parameter.key.node)
+            .ok_or(Unmapped::Broken)?;
+        let value_type = model_value_type(
+            &parameter.value_type,
+            parameter.multiplicity,
+            records,
+            identities,
+        )?;
+        parameters.push((parameter_name.to_owned(), value_type));
+    }
+    let result = operation
+        .result
+        .as_ref()
+        .map(|result| {
+            model_value_type(&result.value_type, result.multiplicity, records, identities)
+        })
+        .transpose()?;
+    Ok(OperationDeclaration::new(
+        name,
+        parameters,
+        result,
+        operation.effect.clone(),
+    ))
 }
 
 /// A function signature's type forms: its parameters' and its result's,
@@ -728,7 +850,10 @@ fn body_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
                 | Expression::Contains { .. }
                 | Expression::Lookup { .. }
                 | Expression::Dispatch { .. }
-                | Expression::Pre(_) => {}
+                | Expression::Pre(_)
+                | Expression::SelfRef
+                | Expression::Result
+                | Expression::Reaches { .. } => {}
                 // Not the S2 seam (`Typer::infer_form`'s own doc,
                 // `qsl-semantics/src/check/check/typing.rs`): an
                 // unconditional probe arm so this match keeps compiling
@@ -1003,6 +1128,17 @@ impl PackageDeclarations {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
+
+        // FR-102/FR-104: a state clause builds at S2 but has no checker or
+        // declaration yet (QSL-277 owns FR-104). Refuse it here, at its own
+        // declaration span, rather than admitting a package that silently
+        // says nothing about a clause the unit declared.
+        for (name, span) in &unit.state_clauses {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::UnsupportedStateClause { name: name.clone() },
+                span: *span,
+            });
+        }
 
         // Each `model` declaration's admitted domain package, and its
         // object types by name.

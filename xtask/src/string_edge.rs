@@ -8,29 +8,32 @@
 //! type inference): it reports an equality/ordering comparison where at
 //! least one operand is a string *literal* (`x == "foo"`), a `match` whose
 //! scrutinee has at least one string-literal arm pattern (`"foo" => ...`),
-//! and (PR #262 review, finding F5; extended round 2) a
-//! `starts_with`/`ends_with`/`contains`/`eq_ignore_ascii_case`/
+//! and a `starts_with`/`ends_with`/`contains`/`eq_ignore_ascii_case`/
 //! `strip_prefix`/`trim_start_matches` method call with a string-literal
-//! argument -- method calls a `syn::ExprBinary` walk cannot see, and this
-//! PR's own new `xtask::seam_probe::offline_registry_unavailable`
-//! (`stderr.contains("--offline")`) was exactly this blind spot, invisible
-//! until this scan grew a method-call form to find it. It does not detect
-//! a comparison between two `&str` bindings with no literal on either side (`x == y`,
-//! both variables), or a comparison against a named `const` rather than a
-//! literal -- both need a real type checker, not an AST walk, to know
-//! either side is a string at all. ADR-012 §9's own named violation sites
-//! (ADR-010 §4.3's five production dispatch strings) are all literal-based,
-//! so this scope covers the real violations this ticket's own ACs exercise;
-//! it is not a claim of completeness against every possible `&str`
-//! comparison in the crate.
+//! argument.
+//!
+//! It does **not** detect a comparison against a named `const NAME: &str`
+//! (`x == NAME`) or between two `&str` bindings with no literal on either
+//! side: both need a real type checker, not an AST walk, to know either
+//! side is a string at all. FR-064's Behavior asks for those forms too; that
+//! clause is not yet built (see FR-064 Status). A mark or a typed conversion
+//! that hides a literal behind a named constant therefore leaves the scan
+//! blind to it, so a reader must not take a clean scan as proof that no
+//! named-constant dispatch remains.
+//!
+//! **Test code.** The scan skips a `tests/` directory, a `#[cfg(test)]`
+//! item, and a file declared by `#[cfg(test)] mod name;` (with the files
+//! below it). A file is never skipped by its name alone.
 //!
 //! **Branch-gating detection.** A comparison found while walking an
 //! `if`/`while` condition or a `match` scrutinee/guard is marked
 //! branch-gating; the allow-list rejects any entry at such a location
-//! (FR-064-AC-5). This is a structural (syntactic-nesting) check, not a
-//! dataflow analysis: a comparison assigned to a variable that is *later*
-//! used in a branch is not detected as branch-gating here, the same
-//! honestly-scoped limit as the literal-only detection above.
+//! (FR-064-AC-5). QSL-268 widened this: a comparison that is a term of a
+//! `&&`/`||` chain, a comparison that is a match arm's own value, and a
+//! `strip_prefix` call (whose `Some` is the dispatch) are also
+//! branch-gating, because the combined result is what an outer branch
+//! reads. Still structural, not dataflow: a comparison bound to a variable
+//! that is later used in a branch is not detected as branch-gating here.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -180,19 +183,26 @@ fn is_string_edge_method(method: &syn::Ident) -> bool {
     STRING_EDGE_METHODS.contains(&method.to_string().as_str())
 }
 
-fn pattern_has_string_literal(pat: &syn::Pat) -> bool {
-    match pat {
-        syn::Pat::Lit(syn::PatLit {
-            lit: syn::Lit::Str(_),
-            ..
-        }) => true,
-        syn::Pat::Or(pat_or) => pat_or.cases.iter().any(pattern_has_string_literal),
-        _ => false,
+fn peel_parens(expr: &syn::Expr) -> &syn::Expr {
+    match expr {
+        syn::Expr::Paren(paren) => peel_parens(&paren.expr),
+        other => other,
     }
+}
+
+/// The `Option`-returning prefix methods: a `Some` arm is the dispatch.
+const PREFIX_GATE_METHODS: [&str; 1] = ["strip_prefix"];
+
+fn is_prefix_gate_method(method: &syn::Ident) -> bool {
+    PREFIX_GATE_METHODS.contains(&method.to_string().as_str())
 }
 
 struct Scanner {
     file: String,
+    /// Whether a `#[string_edge]` mark silences its function. `false` only
+    /// for the raw scan the real-site test uses, so a site stays visible to
+    /// it whether or not the sweep has marked it.
+    honor_marks: bool,
     string_edge_depth: usize,
     condition_depth: usize,
     /// The innermost enclosing `impl` block's `Self` type name, if any --
@@ -209,6 +219,33 @@ struct Scanner {
 }
 
 impl Scanner {
+    /// Whether `expr` is a string literal.
+    fn is_string_operand(&self, expr: &syn::Expr) -> bool {
+        is_string_lit(expr)
+    }
+
+    /// Whether `expr` is a comparison with a string operand.
+    fn is_string_comparison(&self, expr: &syn::Expr) -> bool {
+        matches!(expr, syn::Expr::Binary(binary)
+            if is_comparison_op(binary.op)
+                && (self.is_string_operand(&binary.left) || self.is_string_operand(&binary.right)))
+    }
+
+    /// Whether `pat` is a string literal pattern.
+    fn pattern_has_string_operand(&self, pat: &syn::Pat) -> bool {
+        match pat {
+            syn::Pat::Lit(syn::PatLit {
+                lit: syn::Lit::Str(_),
+                ..
+            }) => true,
+            syn::Pat::Or(pat_or) => pat_or
+                .cases
+                .iter()
+                .any(|case| self.pattern_has_string_operand(case)),
+            _ => false,
+        }
+    }
+
     /// The name an occurrence found right now should be keyed on (F8): the
     /// innermost enclosing function/method, or `"<module scope>"` for a
     /// string comparison found outside any function (e.g. a `const`
@@ -258,13 +295,13 @@ impl<'ast> Visit<'ast> for Scanner {
         if has_cfg_test(&node.attrs) {
             return;
         }
-        if marked {
+        if marked && self.honor_marks {
             self.string_edge_depth += 1;
         }
         self.item_stack.push(node.sig.ident.to_string());
         syn::visit::visit_item_fn(self, node);
         self.item_stack.pop();
-        if marked {
+        if marked && self.honor_marks {
             self.string_edge_depth -= 1;
         }
     }
@@ -274,7 +311,7 @@ impl<'ast> Visit<'ast> for Scanner {
         if has_cfg_test(&node.attrs) {
             return;
         }
-        if marked {
+        if marked && self.honor_marks {
             self.string_edge_depth += 1;
         }
         let name = match &self.current_impl_self {
@@ -284,7 +321,7 @@ impl<'ast> Visit<'ast> for Scanner {
         self.item_stack.push(name);
         syn::visit::visit_impl_item_fn(self, node);
         self.item_stack.pop();
-        if marked {
+        if marked && self.honor_marks {
             self.string_edge_depth -= 1;
         }
     }
@@ -298,9 +335,17 @@ impl<'ast> Visit<'ast> for Scanner {
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
         if is_string_edge_method(&node.method)
-            && (is_string_lit(&node.receiver) || node.args.iter().any(is_string_lit))
+            && (self.is_string_operand(&node.receiver)
+                || node.args.iter().any(|arg| self.is_string_operand(arg)))
         {
-            self.record(line_of(node));
+            if is_prefix_gate_method(&node.method) {
+                // `strip_prefix` yields `Some` only for a matching string, so
+                // its result is itself the branch (QSL-268: the `clock:`
+                // dispatch reads it through `ok_or_else`).
+                self.record_forced_branch_gating(line_of(node));
+            } else {
+                self.record(line_of(node));
+            }
         }
         syn::visit::visit_expr_method_call(self, node);
     }
@@ -327,7 +372,7 @@ impl<'ast> Visit<'ast> for Scanner {
         self.visit_expr(&node.expr);
         self.condition_depth -= 1;
         for arm in &node.arms {
-            if pattern_has_string_literal(&arm.pat) {
+            if self.pattern_has_string_operand(&arm.pat) {
                 // A match arm's own literal pattern is inherently the
                 // dispatch decision -- always branch-gating, independent
                 // of `condition_depth` (already unwound by this point).
@@ -338,20 +383,42 @@ impl<'ast> Visit<'ast> for Scanner {
                 self.visit_expr(guard);
                 self.condition_depth -= 1;
             }
+            // A comparison that is itself the arm's value: the match's
+            // result carries the string decision to whatever reads it
+            // (QSL-268), so it is branch-gating.
+            let value_is_comparison = self.is_string_comparison(peel_parens(&arm.body));
+            if value_is_comparison {
+                self.condition_depth += 1;
+            }
             self.visit_expr(&arm.body);
+            if value_is_comparison {
+                self.condition_depth -= 1;
+            }
         }
     }
 
     fn visit_expr_binary(&mut self, node: &'ast syn::ExprBinary) {
-        if is_comparison_op(node.op) && (is_string_lit(&node.left) || is_string_lit(&node.right)) {
+        if is_comparison_op(node.op)
+            && (self.is_string_operand(&node.left) || self.is_string_operand(&node.right))
+        {
             self.record(line_of(node));
         }
-        syn::visit::visit_expr_binary(self, node);
+        if matches!(node.op, syn::BinOp::And(_) | syn::BinOp::Or(_)) {
+            // A term of a boolean combinator: the combined result is what an
+            // outer `if`/`match` reads (QSL-268), so every comparison inside
+            // is branch-gating.
+            self.condition_depth += 1;
+            syn::visit::visit_expr_binary(self, node);
+            self.condition_depth -= 1;
+        } else {
+            syn::visit::visit_expr_binary(self, node);
+        }
     }
 }
 
-/// Every non-test `.rs` file under `root` (skipping any path component
-/// named `tests`, and `target`/`.git`), relative to `workspace_root`. A
+/// Every non-test `.rs` file under `root` (skipping any directory named
+/// `tests`, `target` or `.git`, and every file a `#[cfg(test)] mod x;`
+/// declares), relative to `workspace_root`. A
 /// filesystem-walk edge: converts directory-entry names into an
 /// include/exclude decision, not a family dispatch.
 #[string_edge]
@@ -379,27 +446,105 @@ fn source_files(root: &Path, workspace_root: &Path) -> Result<Vec<PathBuf>> {
             }
         }
     }
+    let excluded = cfg_test_module_paths(&files, workspace_root)?;
+    files.retain(|file| !excluded.iter().any(|test_path| file.starts_with(test_path)));
     files.sort();
     Ok(files)
 }
 
-fn scan_file(workspace_root: &Path, relative: &Path) -> Result<Vec<Occurrence>> {
-    let full_path = workspace_root.join(relative);
-    let source = fs::read_to_string(&full_path).map_err(|source| Error::io(&full_path, source))?;
-    let parsed = syn::parse_file(&source).map_err(|source| Error::StringEdgeParse {
-        path: full_path.clone(),
-        source,
-    })?;
-    let mut scanner = Scanner {
-        file: relative.to_string_lossy().replace('\\', "/"),
-        string_edge_depth: 0,
-        condition_depth: 0,
-        current_impl_self: None,
-        item_stack: Vec::new(),
-        occurrences: Vec::new(),
-    };
-    scanner.visit_file(&parsed);
-    Ok(scanner.occurrences)
+/// The paths of every `#[cfg(test)] mod name;` file module declared by one
+/// of `files` (FR-064 "excludes test code"): `<dir>/name.rs` (and its
+/// `<dir>/name/` children) or `<dir>/name/mod.rs`'s directory. `<dir>` is
+/// the declaring file's directory for `mod.rs`/`lib.rs`/`main.rs`, else the
+/// directory named after the declaring file.
+fn cfg_test_module_paths(files: &[PathBuf], workspace_root: &Path) -> Result<Vec<PathBuf>> {
+    let mut excluded = Vec::new();
+    for relative in files {
+        let full_path = workspace_root.join(relative);
+        let source =
+            fs::read_to_string(&full_path).map_err(|source| Error::io(&full_path, source))?;
+        let parsed = syn::parse_file(&source).map_err(|source| Error::StringEdgeParse {
+            path: full_path.clone(),
+            source,
+        })?;
+        let declared: Vec<String> = parsed
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                syn::Item::Mod(module)
+                    if module.content.is_none() && has_cfg_test(&module.attrs) =>
+                {
+                    Some(module.ident.to_string())
+                }
+                _ => None,
+            })
+            .collect();
+        if declared.is_empty() {
+            continue;
+        }
+        let parent = relative.parent().unwrap_or_else(|| Path::new(""));
+        let stem = relative.file_stem().map(PathBuf::from).unwrap_or_default();
+        let base = if is_module_root_stem(&stem) {
+            parent.to_path_buf()
+        } else {
+            parent.join(&stem)
+        };
+        for name in declared {
+            excluded.push(base.join(format!("{name}.rs")));
+            excluded.push(base.join(&name));
+        }
+    }
+    Ok(excluded)
+}
+
+/// `mod.rs`, `lib.rs` and `main.rs` own their own directory; any other file
+/// `foo.rs` owns `foo/`. A filesystem-name edge, not a family dispatch.
+#[string_edge]
+fn is_module_root_stem(stem: &Path) -> bool {
+    matches!(stem.to_str(), Some("mod" | "lib" | "main"))
+}
+
+/// Scan the parsed `files` of one crate. `honor_marks == false` ignores
+/// `#[string_edge]` marks.
+fn scan_parsed(files: &[(String, syn::File)], honor_marks: bool) -> Vec<Occurrence> {
+    let mut occurrences = Vec::new();
+    for (relative, file) in files {
+        let mut scanner = Scanner {
+            file: relative.clone(),
+            honor_marks,
+            string_edge_depth: 0,
+            condition_depth: 0,
+            current_impl_self: None,
+            item_stack: Vec::new(),
+            occurrences: Vec::new(),
+        };
+        scanner.visit_file(file);
+        occurrences.extend(scanner.occurrences);
+    }
+    occurrences
+}
+
+/// Scan every crate root under `workspace_root`.
+fn scan_workspace(workspace_root: &Path, honor_marks: bool) -> Result<Vec<Occurrence>> {
+    let mut all_occurrences = Vec::new();
+    for root in crate_roots(workspace_root) {
+        if !root.exists() {
+            return Err(Error::StringEdgeMissingRoot { path: root });
+        }
+        let mut files = Vec::new();
+        for relative in source_files(&root, workspace_root)? {
+            let full_path = workspace_root.join(&relative);
+            let source =
+                fs::read_to_string(&full_path).map_err(|source| Error::io(&full_path, source))?;
+            let parsed = syn::parse_file(&source).map_err(|source| Error::StringEdgeParse {
+                path: full_path.clone(),
+                source,
+            })?;
+            files.push((relative.to_string_lossy().replace('\\', "/"), parsed));
+        }
+        all_occurrences.extend(scan_parsed(&files, honor_marks));
+    }
+    Ok(all_occurrences)
 }
 
 /// Every crate root this scan covers: the QSL root crate, `xtask`,
@@ -453,15 +598,7 @@ pub fn run(workspace_root: &Path) -> Result<String> {
             item: entry.item,
         });
     }
-    let mut all_occurrences = Vec::new();
-    for root in crate_roots(workspace_root) {
-        if !root.exists() {
-            return Err(Error::StringEdgeMissingRoot { path: root });
-        }
-        for relative in source_files(&root, workspace_root)? {
-            all_occurrences.extend(scan_file(workspace_root, &relative)?);
-        }
-    }
+    let all_occurrences = scan_workspace(workspace_root, true)?;
     let reported: Vec<Occurrence> = unreported_occurrences(&all_occurrences, &allow_list)
         .into_iter()
         .cloned()
@@ -548,15 +685,7 @@ fn branch_gating_entries<'a>(
 /// Re-scans the real occurrences and checks the real, checked-in
 /// [`allow_list`] against them via [`branch_gating_entries`].
 fn allow_list_branch_gating_check(workspace_root: &Path) -> Result<Vec<AllowListEntry>> {
-    let mut all_occurrences = Vec::new();
-    for root in crate_roots(workspace_root) {
-        if !root.exists() {
-            return Err(Error::StringEdgeMissingRoot { path: root });
-        }
-        for relative in source_files(&root, workspace_root)? {
-            all_occurrences.extend(scan_file(workspace_root, &relative)?);
-        }
-    }
+    let all_occurrences = scan_workspace(workspace_root, true)?;
     let allow_list = allow_list();
     Ok(branch_gating_entries(&all_occurrences, &allow_list))
 }
@@ -624,16 +753,7 @@ mod tests {
 
     fn scan_source(source: &str) -> Vec<Occurrence> {
         let parsed = syn::parse_file(source).expect("fixture parses");
-        let mut scanner = Scanner {
-            file: "fixture.rs".to_owned(),
-            string_edge_depth: 0,
-            condition_depth: 0,
-            current_impl_self: None,
-            item_stack: Vec::new(),
-            occurrences: Vec::new(),
-        };
-        scanner.visit_file(&parsed);
-        scanner.occurrences
+        scan_parsed(&[("fixture.rs".to_owned(), parsed)], true)
     }
 
     /// FR-064-AC-1: a marked function's comparison is not reported; an
@@ -668,16 +788,9 @@ mod tests {
 
     /// FR-064-AC-5's branch-gating/non-branching distinction: a comparison
     /// feeding an `if` condition is branch-gating; one feeding only a
-    /// logged message is not. Real, not synthetic-in-the-flagged sense
-    /// (`branch_gating_entries` actually distinguishes the two fixtures
-    /// here by their recorded `branch_gating` flag) -- but AC-5 also
-    /// requires the five named ADR-010 §4.3 sites specifically, which this
-    /// test does not touch, so it stays untagged alongside
-    /// `none_of_the_five_adr010_production_sites_can_be_allow_listed`
-    /// (PR #262 review, coordinator round 3, finding 7): FR-064's own
-    /// Status section records the whole criterion unbacked, and a tag on
-    /// only part of a criterion's requirement reads as backing the whole
-    /// of it.
+    /// logged message is not. The real ADR-010 §4.3 sites are covered by
+    /// `real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`.
+    #[trace("TC-162", "FR-064-AC-5")]
     #[test]
     fn branch_gating_is_distinguished_from_a_non_branching_sink() {
         let occurrences = scan_source(
@@ -724,10 +837,7 @@ mod tests {
     /// rejected; one at a non-branching occurrence's item is not.
     /// Constructs its own `AllowListEntry` fixtures rather than going
     /// through the real (permanently empty) [`allow_list`], so this
-    /// rejection is actually exercised, not only claimed -- real, but (same
-    /// reason as the two tests above, PR #262 review, coordinator round 3,
-    /// finding 7) not the five named ADR-010 §4.3 sites AC-5 also
-    /// requires, so untagged alongside them.
+    /// rejection is actually exercised, not only claimed.
     ///
     /// The branch-gating and non-branching comparisons live in two
     /// *different* functions (PR #262 review, finding F8): keying on the
@@ -735,6 +845,7 @@ mod tests {
     /// item are no longer distinguishable from each other -- a real,
     /// accepted coarsening (`AllowListEntry::item`'s own doc) this fixture
     /// must respect to still name one occurrence at a time.
+    #[trace("TC-162", "FR-064-AC-5")]
     #[test]
     fn allow_list_entry_at_a_branch_gating_occurrence_is_rejected() {
         let occurrences = scan_source(
@@ -880,27 +991,14 @@ mod tests {
         assert!(occurrences.is_empty());
     }
 
-    /// **Untagged (PR #262 review, coordinator round 3, finding 7).**
-    /// Constructs one *synthetic* fixture occurrence shaped like each of
-    /// ADR-010 §4.3's five named production dispatch sites (a string
-    /// comparison selecting between two branches) and asserts
-    /// `branch_gating_entries` rejects an allow-list entry naming it -- but
-    /// `branch_gating_entries` filters only on `(file, item,
-    /// branch_gating)`, never on the literal string compared
-    /// (`branch_gating_entries`'s own doc/body above), so this test passes
-    /// identically for five arbitrary branch-gating strings; it never reads
-    /// `label`/`literal` past constructing the fixture source text with
-    /// them. It demonstrates the rejection *mechanism* works on
-    /// branch-gating occurrences in general, not that these five *named,
-    /// real* sites specifically are rejected. FR-064-AC-5 requires
-    /// attempting each of the five real sites (real file, real line, real
-    /// source), which this synthetic-fixture shape cannot show; FR-064's
-    /// own Status section now records this criterion unbacked. (One of the
-    /// five, the `"allocation"` relationship-category site ADR-010 §4.3
-    /// itself flags "PR-sensitive", is already gone from `src/model/
-    /// systems.rs` on this branch -- confirmed by grep -- so a real,
-    /// current-tree version of this test could not reject all five as
-    /// currently named regardless.)
+    /// FR-064-AC-5's five-site fixture half: one synthetic fixture shaped
+    /// like each of ADR-010 §4.3's five named dispatch strings (a string
+    /// comparison selecting between two branches), each asserted rejected as
+    /// an allow-list entry. `branch_gating_entries` filters on `(file, item,
+    /// branch_gating)`, never on the literal, so this shows the rejection
+    /// mechanism for each spelling; the real sites are covered by
+    /// `real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`.
+    #[trace("TC-162", "FR-064-AC-5")]
     #[test]
     fn none_of_the_five_adr010_production_sites_can_be_allow_listed() {
         let sites = [
@@ -938,54 +1036,21 @@ mod tests {
         }
     }
 
-    /// **`#[ignore]`d -- this is why FR-064-AC-5's "each of the five
-    /// ADR-010 §4.3 production dispatch sites" half stays unbacked
-    /// (QSL-150), not evidence that it is (PR #434 review, LOW-3).** Written
-    /// against the *desired* rejection behavior -- an allow-list entry at
-    /// any of these four real sites should be rejected, per FR-064-AC-5 --
-    /// so it currently fails for the reason its `#[ignore = "..."]` message
-    /// gives, rather than passing by asserting the current, wrong,
-    /// not-rejected behavior. Runs the real scan (not a synthetic fixture)
-    /// over the four of the five named sites still present in the current
-    /// tree at their real file and line -- `Graph::profile`
-    /// (`src/protocol_artifact/validate.rs`, the
-    /// `"quire.protocol.finite-global/v1"` profile string),
-    /// `valid_digest`/`valid_adapter` (`src/state/evaluation.rs`, the
-    /// `"filament-canonical-json-1"` canonicalization string and the
-    /// `"quire.state.authority-adapter"` adapter string) and
-    /// `expected_definition`
-    /// (`src/protocol_artifact/native_temporal/request.rs`, the `clock:`
-    /// prefix, found through `strip_prefix`). The fifth, the `"allocation"`
-    /// relationship-category site, is confirmed gone from the tree already
-    /// (FR-064's own Status section; only the reverse `Self::Allocation =>
-    /// "allocation"` encoding arms remain, which this scan's `&str`-scrutinee
-    /// detection does not even see).
-    ///
-    /// Every one of the four real occurrences this test finds comes back
-    /// `branch_gating: false`. Each site's comparison is a term of a
-    /// `&&`/`||` boolean expression (or a `let valid = match ... { arm =>
-    /// state || ... || name == "..." }` arm body) whose *result* selects a
-    /// branch further up the function -- exactly the "assigned to a
-    /// variable [or expression] that is later used in a branch" limit this
-    /// module's own doc already names as out of the structural (syntactic-
-    /// nesting-only) detector's scope, not a dataflow analysis. Since
-    /// [`branch_gating_entries`] rejects an allow-list entry only when its
-    /// occurrence's `branch_gating` flag is `true`, attempting to allow-list
-    /// any of these four real sites at their real `(file, item)` is *not*
-    /// rejected today -- the opposite of what FR-064-AC-5 requires. Backing
-    /// AC-5's real-site half needs the detector to see these shapes (a
-    /// dataflow extension, or widening the structural walk to boolean
-    /// combinators feeding an outer `if`), which is new scanner behavior
-    /// this ticket does not build; QSL-150 records the criterion unbacked
-    /// with this concrete reason rather than a synthetic pass.
+    /// FR-064-AC-5's real-site half (QSL-268): runs the real scan (not a
+    /// synthetic fixture, and ignoring `#[string_edge]` marks so a mark cannot
+    /// hide a site) over the ADR-010 section 4.3 dispatch strings still
+    /// compared in the tree, at the one typed conversion each now lives in:
+    /// `CanonicalizationDomain::from_str` (`"filament-canonical-json-1"`),
+    /// `AdapterArtifact::try_from` (`"quire.state.authority-adapter"`) and
+    /// `clock_binding_name` (the `"clock:"` prefix, a `strip_prefix`). Each
+    /// must come back branch-gating and an allow-list entry at it must be
+    /// rejected. The `"quire.protocol.finite-global/v1"` profile string is now
+    /// only registry data (`RegisteredDefinition::identity`), matched by the
+    /// registry's own table, and the `"allocation"` site is gone from the
+    /// tree. Fails if a site's file/item vanishes without this list being
+    /// updated, and if the detector stops seeing a real site.
+    #[trace("TC-162", "FR-064-AC-5")]
     #[test]
-    #[ignore = "FR-064-AC-5's real-site half is unbacked (QSL-150): the \
-                structural (syntactic-nesting-only) detector does not see a \
-                comparison whose *result* feeds a boolean combinator or \
-                match arm that a branch further up the function then reads \
-                -- exactly these four sites' shape. Backing this needs the \
-                detector widened to a dataflow extension, not a test change. \
-                Re-enable once that widening lands."]
     fn real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector() {
         let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -993,52 +1058,204 @@ mod tests {
             .to_path_buf();
         let sites = [
             (
-                "src/protocol_artifact/validate.rs",
-                "Graph::profile",
-                "quire.protocol.finite-global/v1",
-            ),
-            (
-                "src/state/evaluation.rs",
-                "valid_digest",
+                "src/state/input.rs",
+                "CanonicalizationDomain::from_str",
                 "filament-canonical-json-1",
             ),
             (
-                "src/state/evaluation.rs",
-                "valid_adapter",
+                "src/state/input.rs",
+                "AdapterArtifact::try_from",
                 "quire.state.authority-adapter",
             ),
             (
-                "src/protocol_artifact/native_temporal/request.rs",
-                "expected_definition",
+                "src/protocol_artifact/mod.rs",
+                "clock_binding_name",
                 "clock:",
             ),
         ];
+        let all = scan_workspace(&workspace_root, false)
+            .unwrap_or_else(|error| panic!("the workspace scan: {error}"));
         for (file, item, label) in sites {
-            let occurrences = scan_file(&workspace_root, Path::new(file))
-                .unwrap_or_else(|error| panic!("{file}: {error}"));
-            let occurrence = occurrences
+            let occurrences: Vec<Occurrence> = all
                 .iter()
-                .find(|occurrence| occurrence.item == item)
-                .unwrap_or_else(|| {
-                    panic!("{file}::{item} ({label}) is no longer found by the scan")
-                });
+                .filter(|occurrence| occurrence.file == file)
+                .cloned()
+                .collect();
+            let site: Vec<&Occurrence> = occurrences
+                .iter()
+                .filter(|occurrence| occurrence.item == item)
+                .collect();
             assert!(
-                occurrence.branch_gating,
+                !site.is_empty(),
+                "{file}::{item} ({label}) is no longer found by the scan"
+            );
+            assert!(
+                site.iter().all(|occurrence| occurrence.branch_gating),
                 "{file}::{item} ({label}) is not flagged branch-gating -- FR-064-AC-5 \
-                 requires a real ADR-010 §4.3 production dispatch site to be rejected"
+                 requires a real ADR-010 section 4.3 dispatch site to be rejected"
             );
             let candidate = AllowListEntry {
-                file: occurrence.file.clone(),
-                item: occurrence.item.clone(),
-                reason: "test: a real ADR-010 §4.3 production dispatch site",
+                file: file.to_owned(),
+                item: item.to_owned(),
+                reason: "test: a real ADR-010 section 4.3 production dispatch site",
             };
             let rejected = branch_gating_entries(&occurrences, [&candidate]);
-            assert!(
-                !rejected.is_empty(),
-                "{file}::{item} ({label}) is not rejected -- FR-064-AC-5 requires a real \
-                 ADR-010 §4.3 production dispatch site to be rejected as an allow-list entry"
+            assert_eq!(
+                rejected.len(),
+                1,
+                "{file}::{item} ({label}) is not rejected as an allow-list entry"
             );
         }
+    }
+
+    /// QSL-268: a comparison that is a term of a `&&`/`||` chain, a match
+    /// arm's own value, or a `strip_prefix` call is branch-gating; a bare
+    /// comparison bound to a variable stays non-branching.
+    #[trace("TC-162", "FR-064-AC-5")]
+    #[test]
+    fn combinator_terms_arm_values_and_prefix_gates_are_branch_gating() {
+        let occurrences = scan_source(
+            r#"
+            fn chain(v: &str) -> bool { v.len() == 1 && v == "a" }
+            fn either(v: &str) -> bool { !(v == "a") || v.is_empty() }
+            fn arm(v: &str, k: u8) -> bool { match k { 0 => v == "a", _ => false } }
+            fn prefix(v: &str) -> Option<&str> { v.strip_prefix("p:") }
+            fn bound(v: &str) { let f = v == "a"; log(f); }
+            "#,
+        );
+        let gating = |item: &str| {
+            occurrences
+                .iter()
+                .find(|o| o.item == item)
+                .unwrap_or_else(|| panic!("{item} found"))
+                .branch_gating
+        };
+        assert!(gating("chain"));
+        assert!(gating("either"));
+        assert!(gating("arm"));
+        assert!(gating("prefix"));
+        assert!(!gating("bound"));
+    }
+
+    /// FR-064-AC-3: file-level test modules are not scanned -- a file under
+    /// `tests/` and a file declared by `#[cfg(test)] mod x;` (with its
+    /// children) are skipped. A file is never skipped by its name: a
+    /// production `plain_tests.rs` or `emit/tests.rs` is scanned.
+    #[trace("TC-162", "FR-064-AC-3")]
+    #[test]
+    fn file_level_test_modules_are_skipped_only_when_declared_cfg_test() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let root = dir.path();
+        let src = root.join("src");
+        fs::create_dir_all(src.join("tests")).expect("mkdir");
+        fs::create_dir_all(src.join("emit/checks")).expect("mkdir");
+        fs::write(
+            src.join("lib.rs"),
+            "mod real;\nmod plain_tests;\nmod emit;\n#[cfg(test)]\nmod unit;\n#[cfg(test)]\nmod tests;\n",
+        )
+        .expect("write");
+        for file in [
+            "real.rs",
+            "unit.rs",
+            "tests.rs",
+            "plain_tests.rs",
+            "tests/it.rs",
+            "emit/checks.rs",
+            "emit/checks/deep.rs",
+            "emit/keep.rs",
+            "emit/tests.rs",
+        ] {
+            fs::write(src.join(file), "").expect("write");
+        }
+        fs::write(
+            src.join("emit.rs"),
+            "#[cfg(test)]\nmod checks;\nmod tests;\n",
+        )
+        .expect("write");
+        let files = source_files(&src, root).expect("files");
+        let names: Vec<String> = files
+            .iter()
+            .map(|f| f.to_string_lossy().replace('\\', "/"))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "src/emit/keep.rs",
+                "src/emit/tests.rs",
+                "src/emit.rs",
+                "src/lib.rs",
+                "src/plain_tests.rs",
+                "src/real.rs"
+            ]
+        );
+    }
+
+    /// FR-064-AC-6: the real `Makefile` names `string-edge` as a prerequisite
+    /// of `ci` and its recipe runs `cargo xtask string-edge`.
+    #[trace("TC-162", "FR-064-AC-6")]
+    #[test]
+    fn the_real_makefile_wires_string_edge_into_ci() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("xtask lives one level below the workspace root");
+        let makefile =
+            fs::read_to_string(workspace_root.join("Makefile")).expect("the Makefile reads");
+        let ci = makefile
+            .lines()
+            .find_map(|line| line.strip_prefix("ci:"))
+            .expect("the Makefile has a `ci:` target");
+        assert!(
+            ci.split_whitespace().any(|target| target == "string-edge"),
+            "`ci:` must list string-edge as a prerequisite: {ci}"
+        );
+        let mut lines = makefile.lines();
+        assert!(
+            lines.any(|line| line == "string-edge:"),
+            "the Makefile must define a `string-edge:` target"
+        );
+        assert_eq!(
+            lines.next(),
+            Some("\tcargo xtask string-edge"),
+            "the recipe must run `cargo xtask string-edge`"
+        );
+    }
+
+    /// FR-064-AC-6: a `.PHONY` aggregate depending on a prerequisite whose
+    /// recipe can fail fails when the prerequisite fails, and not when it
+    /// succeeds -- `make`'s ordinary semantics, shown on a fixture of the
+    /// same aggregate/prerequisite shape.
+    #[trace("TC-162", "FR-064-AC-6")]
+    #[test]
+    fn a_failed_prerequisite_fails_the_aggregate_target() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let makefile = dir.path().join("Makefile");
+        fs::write(
+            &makefile,
+            ".PHONY: gate-fail gate-ok scan-fail scan-ok\n\
+             gate-fail: scan-fail\n\
+             gate-ok: scan-ok\n\
+             scan-fail:\n\tfalse\n\
+             scan-ok:\n\ttrue\n",
+        )
+        .expect("write the fixture Makefile");
+        let run = |target: &str| {
+            std::process::Command::new("make")
+                .arg("-f")
+                .arg(&makefile)
+                .arg(target)
+                .output()
+                .expect("make runs")
+                .status
+                .success()
+        };
+        assert!(
+            !run("gate-fail"),
+            "a failed prerequisite must fail the gate"
+        );
+        assert!(
+            run("gate-ok"),
+            "a passing prerequisite must not fail the gate"
+        );
     }
 
     /// FR-064-AC-4: `xtask string-edge` exits non-zero when its report is

@@ -73,6 +73,7 @@ pub struct DeclaredEdition {
 /// `language "ix:native" edition "<edition>"`, read from the first four
 /// significant tokens and nothing after them. `None` when the source does
 /// not open with that header; the parser that reads the source reports why.
+#[qsl_attrs::string_edge]
 pub fn declared_edition(text: &str) -> Option<DeclaredEdition> {
     let mut tokens = Kind::lexer(text)
         .spanned()

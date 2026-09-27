@@ -28,6 +28,7 @@
 //! ADR-013 O-14/C-26). See `syntax::TypeForm`'s own doc.
 
 mod dispatch;
+mod protocol_clause;
 mod spans;
 mod syntax;
 mod value;
@@ -41,6 +42,6 @@ pub use syntax::{
     Accumulation, AliasForm, BinaryOperator, BinderQuery, BuiltinType, ClauseKind, DeclarationForm,
     DeclarationKind, DeclaredClauseKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm,
     EnumMemberForm, ExactNumberForm, ExactNumberKind, Expression, FieldInitializer,
-    FunctionDeclaration, NameForm, RecordFieldForm, RecordForm, TermOperator, TupleForm, TypeForm,
-    TypeFormHead, UnitForm, UsingAlias,
+    FunctionDeclaration, NameForm, RecordFieldForm, RecordForm, StateClauseForm, StateClauseKind,
+    TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
 };

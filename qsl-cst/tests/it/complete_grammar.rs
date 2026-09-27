@@ -607,7 +607,9 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
             "unnamed",
             Vec::new(),
             CompleteCode::InvalidSourceIdentity,
-            CompleteCause::Host(HostCause::UnnamedSource),
+            CompleteCause::Host(HostCause::BlankLabel {
+                label: qsl_foundation::SourceLabel::Identity,
+            }),
         ),
     ];
     for (id, bytes, code, cause) in cases {
@@ -637,4 +639,36 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
         "invalid-digest"
     );
     assert!(!CompleteCause::UnexpectedEnd.is_cause_of(CompleteCode::ResourceExhausted));
+}
+
+/// FR-001-AC-6, AC-11: the complete reader carries `blank-label` with the
+/// first blank label, and `empty-path` only when every label is non-blank;
+/// neither names a region.
+#[trace("TC-424", "FR-001-AC-11")]
+#[test]
+fn the_reader_reports_blank_label_before_empty_path() {
+    let read = |identity: SourceIdentity, path: &str| {
+        *qsl_cst::diagnostic::read_source(identity, path, b"b", 1024).expect_err("a refused source")
+    };
+    let labels = |authority: &str, identity: &str| SourceIdentity {
+        authority: authority.into(),
+        identity: identity.into(),
+        revision_namespace: "git".into(),
+        revision: "1".into(),
+    };
+    let blank = read(labels("a", "\u{3000}"), "");
+    assert_eq!(
+        blank.cause,
+        CompleteCause::Host(HostCause::BlankLabel {
+            label: qsl_foundation::SourceLabel::Identity
+        })
+    );
+    assert_eq!(blank.cause.as_str(), "blank-label");
+    let empty = read(labels("a", "u"), "");
+    assert_eq!(empty.cause, CompleteCause::Host(HostCause::EmptyPath));
+    assert_eq!(empty.cause.as_str(), "empty-path");
+    for refused in [blank, empty] {
+        assert_eq!(refused.code, CompleteCode::InvalidSourceIdentity);
+        assert_eq!(refused.region, None);
+    }
 }

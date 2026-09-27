@@ -73,6 +73,7 @@ impl Witness {
     /// bytes). A cover-playback block, zero blocks, more than one block, or
     /// extra surrounding bytes each refuse; none produces a
     /// partially-built `Witness`.
+    #[qsl_attrs::string_edge]
     pub fn parse(transcript: impl Into<String>) -> Result<Self, MalformedTranscript> {
         let transcript = transcript.into();
         let blocks = find_blocks(&transcript);
@@ -241,6 +242,7 @@ fn find_blocks(text: &str) -> Vec<&str> {
     blocks
 }
 
+#[qsl_attrs::string_edge]
 fn parse_block(block: &str) -> Option<BlockFields<'_>> {
     let inner = block.strip_prefix("<<<")?.strip_suffix(">>>")?;
     let mut parts = inner.splitn(4, '|');

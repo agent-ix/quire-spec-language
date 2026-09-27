@@ -69,6 +69,7 @@ impl<'ast> Visit<'ast> for AmbientStateVisitor {
         syn::visit::visit_item_static(self, node);
     }
 
+    #[qsl_attrs::string_edge]
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
         if let Some(segment) = node.path.segments.last() {
             let (kind, name): (&'static str, &'static str) = if segment.ident == "thread_local" {
@@ -136,6 +137,7 @@ pub fn scan_source(source: &str) -> std::result::Result<Vec<Finding>, syn::Error
 
 /// Every `.rs` file under `dir`, recursively, sorted. A missing `dir` is
 /// an error, not an empty scan.
+#[qsl_attrs::string_edge]
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(dir).map_err(|source| Error::io(dir, source))? {
         let path = entry.map_err(|source| Error::io(dir, source))?.path();

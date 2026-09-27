@@ -396,10 +396,39 @@ fn each_assembler_cause_has_its_catalog_code() {
             },
             "ambiguous_declaration/ambiguous-name",
         ),
+        (
+            AssemblyCause::UnsupportedStateClause { name: "X".into() },
+            "unknown_required_feature/unsupported-feature",
+        ),
     ];
     for (cause, code) in cases {
         assert_eq!(cause.catalog_code().to_string(), code, "{cause:?}");
     }
+}
+
+/// SR-722 FND-009: a state clause builds at S2 (FR-102) but has no checker
+/// or declaration until FR-104 (QSL-277), so the assembler refuses it at its
+/// own declaration span rather than silently dropping it (FND-001's fix).
+/// This guards that refusal directly, since going back to a silent drop
+/// would otherwise still leave every other gate green.
+#[trace("FR-091-AC-21")]
+#[test]
+fn a_state_clause_refuses_unsupported_until_fr_104() {
+    let clause = "invariant Foo using v on Config::ConfigVersion at current { true }";
+    let (text, found) = errors(&format!(
+        "{clause}\nfunction ok using v(): Boolean pure {{ true }}\n"
+    ));
+    assert_eq!(
+        found,
+        [AssemblyError {
+            cause: AssemblyCause::UnsupportedStateClause { name: "Foo".into() },
+            span: last(&text, clause),
+        }]
+    );
+    assert_eq!(
+        found[0].cause.catalog_code().to_string(),
+        "unknown_required_feature/unsupported-feature"
+    );
 }
 
 #[trace("FR-091-AC-22", "TC-412")]

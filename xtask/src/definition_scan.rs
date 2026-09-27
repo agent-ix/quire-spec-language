@@ -177,6 +177,7 @@ impl<'ast> Visit<'ast> for DefScanner {
 /// relative to `workspace_root` (`tests`, `target` and `.git` directory
 /// entries excluded, matching `xtask::string_edge::source_files`'s own
 /// exclusion list).
+#[qsl_attrs::string_edge]
 pub(crate) fn source_files(workspace_root: &Path, dir: &str) -> Result<Vec<String>> {
     let root = workspace_root.join(dir);
     let mut files = Vec::new();

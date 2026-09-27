@@ -126,6 +126,7 @@ impl NativeValueType {
 impl std::str::FromStr for NativeValueType {
     type Err = ();
 
+    #[qsl_attrs::string_edge]
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         match name {
             "Boolean" => Ok(Self::Boolean),

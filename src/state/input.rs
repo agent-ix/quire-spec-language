@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-049: immutable typed state inputs and closed outcomes.
 
+use std::str::FromStr;
 use std::sync::Arc;
+
+use qsl_foundation::digest::ByteDigest;
 
 use crate::protocol_artifact::{wire, ProtocolNumber};
 
@@ -49,15 +52,81 @@ pub struct ObjectKey {
     pub identifier: String,
 }
 
-/// Producer canonical digest tuple, at the authority's static selection.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// The canonicalization domain a producer digest is computed over: the one
+/// spelling the state input contract admits, decoded once at the edge
+/// ([`FromStr`]) so no later code compares the wire string.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CanonicalizationDomain {
+    /// `filament-canonical-json-1`.
+    FilamentCanonicalJson1,
+}
+
+/// The offered canonicalization domain is not one the contract admits.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("unsupported canonicalization domain")]
+pub struct UnsupportedCanonicalizationDomain;
+
+impl FromStr for CanonicalizationDomain {
+    type Err = UnsupportedCanonicalizationDomain;
+
+    #[qsl_attrs::string_edge]
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text {
+            "filament-canonical-json-1" => Ok(Self::FilamentCanonicalJson1),
+            _ => Err(UnsupportedCanonicalizationDomain),
+        }
+    }
+}
+
+/// Producer canonical digest at the authority's static selection: a
+/// `sha256` digest ([`ByteDigest`] is the algorithm-prefixed SHA-256 spelling,
+/// checked when parsed) in a closed canonicalization domain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CanonicalDigest {
-    /// Digest algorithm identifier, e.g. `sha256`.
-    pub algorithm: String,
-    /// Canonicalization domain the digest was computed over, e.g. `filament-canonical-json-1`.
-    pub domain: String,
-    /// Computed digest value, in the algorithm's own encoding.
-    pub value: String,
+    /// Canonicalization domain the digest was computed over.
+    pub domain: CanonicalizationDomain,
+    /// Computed `sha256` digest value.
+    pub value: ByteDigest,
+}
+
+/// The artifact reference is not the authority-adapter artifact the state
+/// input contract admits.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("not a state authority-adapter artifact reference")]
+pub struct InvalidAdapterArtifact;
+
+/// A reference to the published authority-adapter artifact: the wire
+/// reference, checked once at construction to be the binding-kind
+/// `quire.state.authority-adapter` version `1` reference the contract names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdapterArtifact(wire::ArtifactRef);
+
+impl AdapterArtifact {
+    /// The checked wire reference.
+    pub fn as_reference(&self) -> &wire::ArtifactRef {
+        &self.0
+    }
+}
+
+impl TryFrom<wire::ArtifactRef> for AdapterArtifact {
+    type Error = InvalidAdapterArtifact;
+
+    #[qsl_attrs::string_edge]
+    fn try_from(value: wire::ArtifactRef) -> Result<Self, Self::Error> {
+        let admitted = value.ref_version == "ix.artifact-ref/3-draft"
+            && value.kind == wire::ArtifactKind::Binding
+            && value.wire.identity == "quire.state.authority-adapter"
+            && value.wire.version == "1"
+            && !value.authority.is_empty()
+            && !value.identity.is_empty()
+            && !value.revision.namespace.is_empty()
+            && !value.revision.value.is_empty();
+        if admitted {
+            Ok(Self(value))
+        } else {
+            Err(InvalidAdapterArtifact)
+        }
+    }
 }
 
 /// F-owned digest spelling, kept distinct from Producer canonical and compiled-byte digests.
@@ -68,8 +137,8 @@ pub struct ObservationDigest(pub String);
 /// required by composed evaluation.
 ///
 /// Each identity is paired with a `sha256` digest in the
-/// `filament-canonical-json-1` domain, checked by `valid_digest` in
-/// `crate::state::evaluation`. `StaticAuthority` is a plain Rust struct the
+/// `filament-canonical-json-1` domain, typed by [`CanonicalDigest`].
+/// `StaticAuthority` is a plain Rust struct the
 /// caller builds directly from those checked identities and digests.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StaticAuthority {
@@ -137,7 +206,7 @@ pub struct AuthorityEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorityAdapter {
     /// Reference to the independently published adapter artifact itself.
-    pub artifact: wire::ArtifactRef,
+    pub artifact: AdapterArtifact,
     /// Reference to the compiled requirement artifact the adapter grounds.
     pub compiled: wire::ArtifactRef,
     /// Reference to the requirement artifact the adapter grounds.

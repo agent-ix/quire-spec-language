@@ -54,7 +54,7 @@ use quire_exact::{
 
 use super::check::{EnumBinding, Scope};
 use super::claims::BinderSite;
-use super::family::OccurrenceMap;
+use super::family::{OccurrenceMap, OccurrenceRole};
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::node_key::{
     group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
@@ -446,7 +446,7 @@ pub(crate) struct Lowering<'a> {
     /// bucket through [`Self::with_content_hash`].
     content_hash: ContentHash,
     /// Occurrences of drafts, recorded once the drafts are keyed.
-    draft_occurrences: Vec<(NodeKey, &'static str, Location)>,
+    draft_occurrences: Vec<(NodeKey, OccurrenceRole, Location)>,
     /// Each binder's parameter node, by its [`BinderSite`].
     binders: BTreeMap<BinderSite, NodeKey>,
     /// Binders whose parameter node is a draft, recorded once it is keyed.
@@ -1258,7 +1258,8 @@ impl<'a> Lowering<'a> {
         for key in self.graph.nodes.keys() {
             if !self.occurrences.has(*key) {
                 let at = enclosing.get(key).unwrap_or(root);
-                self.occurrences.record(*key, "generated", at.clone());
+                self.occurrences
+                    .record(*key, OccurrenceRole::Generated, at.clone());
             }
         }
         Lowered {
@@ -1270,7 +1271,7 @@ impl<'a> Lowering<'a> {
     }
 
     /// Record an occurrence of `key`: a draft's waits until it is keyed.
-    fn record(&mut self, key: NodeKey, role: &'static str, location: Location) {
+    fn record(&mut self, key: NodeKey, role: OccurrenceRole, location: Location) {
         if self.pending(key) {
             self.draft_occurrences.push((key, role, location));
         } else {
@@ -1864,7 +1865,7 @@ impl<'a> Lowering<'a> {
         )?;
         // FR-322: a node carrying `declaration` has a `declaration`
         // occurrence.
-        self.record(key, "declaration", site);
+        self.record(key, OccurrenceRole::Declaration, site);
         if let Some(placeholder) = self.composite_placeholders.remove(&declaration) {
             self.placeholders.insert(placeholder, Some(key));
         }
@@ -1928,7 +1929,7 @@ impl<'a> Lowering<'a> {
         // Two bindings of one admitted declaration are one node, declared
         // once.
         if inserted {
-            self.record(declaration, "declaration", site.clone());
+            self.record(declaration, OccurrenceRole::Declaration, site.clone());
         }
         for member in &binding.members {
             let key = member.member();
@@ -2115,7 +2116,7 @@ impl<'a> Lowering<'a> {
                 ],
             },
         )?;
-        self.record(key, "anchor", location.clone());
+        self.record(key, OccurrenceRole::Anchor, location.clone());
         Ok(key)
     }
 
@@ -2426,7 +2427,7 @@ impl<'a> Lowering<'a> {
             let target = function.population_targets.get(level).copied().flatten();
             let type_key = self.binder_type(value_type, target, function.location)?;
             let key = self.parameter(name, level, type_key, function.location)?;
-            self.record(type_key, "type", function.location.clone());
+            self.record(type_key, OccurrenceRole::Type, function.location.clone());
             self.record_binder(
                 BinderSite {
                     binder: function.location.clone(),
@@ -2441,7 +2442,7 @@ impl<'a> Lowering<'a> {
             });
         }
         let result = self.type_node(function.result, function.location)?;
-        self.record(result, "type", function.location.clone());
+        self.record(result, OccurrenceRole::Type, function.location.clone());
         let mut members = vec![SemanticTerm::binding(
             FUNCTION_PARAMETERS,
             SemanticTerm::Aggregate {
@@ -2495,7 +2496,7 @@ impl<'a> Lowering<'a> {
                     Some(declaration),
                     SemanticTerm::Aggregate { members },
                 )?;
-                self.record(key, "declaration", function.location.clone());
+                self.record(key, OccurrenceRole::Declaration, function.location.clone());
                 key
             }
         };
@@ -2599,7 +2600,7 @@ impl<'a> Lowering<'a> {
                 arguments,
             },
         )?;
-        self.record(key, "expression", location.clone());
+        self.record(key, OccurrenceRole::Expression, location.clone());
         Ok(SemanticTerm::reference(key))
     }
 
@@ -2619,7 +2620,7 @@ impl<'a> Lowering<'a> {
             None,
             body,
         )?;
-        self.record(key, "expression", node.location.clone());
+        self.record(key, OccurrenceRole::Expression, node.location.clone());
         Ok(SemanticTerm::reference(key))
     }
 
@@ -2709,7 +2710,7 @@ impl<'a> Lowering<'a> {
                             CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
                         )
                     })?;
-                self.record(key, "expression", node.location.clone());
+                self.record(key, OccurrenceRole::Expression, node.location.clone());
                 return Ok(LowerStep::Lowered(SemanticTerm::reference(key)));
             }
             NodeKind::Coerce(operand, interval) => {
@@ -3625,7 +3626,7 @@ impl<'a> Lowering<'a> {
                 // FR-093: the enum member's QSpec `enum_value` node, whose
                 // key is its `VariantId` (ADR-013 O-14).
                 let key = NodeKey::from_digest(*member.variant().as_bytes());
-                self.record(key, "expression", node.location.clone());
+                self.record(key, OccurrenceRole::Expression, node.location.clone());
                 return Ok(SemanticTerm::reference(key));
             }
             Value::Decimal(_)

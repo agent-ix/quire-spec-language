@@ -785,7 +785,11 @@ fn open<'s, 't>(
     pending: &mut Vec<Rewrite<'s, 't>>,
 ) {
     match source {
-        Expression::Boolean(_) | Expression::Integer(_) | Expression::Rational(..) => {
+        Expression::Boolean(_)
+        | Expression::Integer(_)
+        | Expression::Rational(..)
+        | Expression::SelfRef
+        | Expression::Result => {
             *target = source.clone();
         }
         Expression::Name(name) => *target = Expression::Name(scope.resolve(name, rename)),
@@ -1205,6 +1209,35 @@ fn open<'s, 't>(
         Expression::Pre(operand) => {
             write_shell!(target, Expression::Pre(hole()), Expression::Pre(hole));
             pending.push(Rewrite::Node(operand, hole));
+        }
+        Expression::Reaches {
+            source: reaches_source,
+            target: reaches_target,
+            edge,
+            edge_span,
+        } => {
+            write_shell!(
+                target,
+                Expression::Reaches {
+                    source: hole(),
+                    target: hole(),
+                    edge: edge.clone(),
+                    edge_span: *edge_span,
+                },
+                Expression::Reaches {
+                    source: source_hole,
+                    target: target_hole,
+                    ..
+                }
+            );
+            operands(
+                pending,
+                [
+                    (&**reaches_source, &mut **source_hole),
+                    (&**reaches_target, &mut **target_hole),
+                ]
+                .into_iter(),
+            );
         }
         // Not the S2 seam (`Typer::infer_form`'s own doc,
         // `qsl-semantics/src/check/check/typing.rs`): an unconditional probe
@@ -2086,12 +2119,20 @@ mod tests {
                 arguments: vec![*boxed(), *boxed()],
             },
             Expression::Pre(boxed()),
+            Expression::SelfRef,
+            Expression::Result,
+            Expression::Reaches {
+                source: boxed(),
+                target: boxed(),
+                edge: "e".to_owned(),
+                edge_span: qsl_foundation::Span { start: 0, end: 0 },
+            },
         ]);
         forms
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 28] = [
+    const FORM_NAMES: [&str; 31] = [
         "Boolean",
         "Integer",
         "Rational",
@@ -2120,6 +2161,9 @@ mod tests {
         "Lookup",
         "Dispatch",
         "Pre",
+        "SelfRef",
+        "Result",
+        "Reaches",
     ];
 
     /// `expression`'s form, as named in [`FORM_NAMES`]. The match is
@@ -2156,6 +2200,9 @@ mod tests {
             Expression::Lookup { .. } => "Lookup",
             Expression::Dispatch { .. } => "Dispatch",
             Expression::Pre(_) => "Pre",
+            Expression::SelfRef => "SelfRef",
+            Expression::Result => "Result",
+            Expression::Reaches { .. } => "Reaches",
         }
     }
 

@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 
 use super::value_graph::ValueGraph;
 use super::{intake, wire::*, work::Work, Dimension, Error, Invalid, ProtocolNumber, Unsupported};
+use crate::linking::composed::definition_source::RegisteredDefinition as Registered;
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
@@ -171,6 +172,9 @@ enum Local {
 
 pub(super) struct Graph<'a, 'w> {
     package: &'a Package,
+    /// Per definition: the compiler-registered definition it resolved to at
+    /// intake, so no identity string is re-read here.
+    registered: &'a [Registered],
     work: &'w mut Work,
     type_seen: Vec<bool>,
     next_type: usize,
@@ -267,28 +271,29 @@ impl<'a> Graph<'a, '_> {
 
     fn profile(&mut self, index: u32, family: Family) -> Result {
         self.work.visit()?;
-        let definition = self
-            .package
-            .definitions
+        let registered = *self
+            .registered
             .get(index as usize)
             .ok_or(Error::Invalid(Invalid::Reference))?;
-        let name = definition.identity.as_str();
         let state = matches!(
-            name,
-            "quire.state.core/v1" | "quire.state.queries/v1" | "quire.state.graph/v1"
+            registered,
+            Registered::StateCore | Registered::StateQueries | Registered::StateGraph
         );
         let temporal = matches!(
-            name,
-            "quire.temporal.event-position.false-extension/v1"
-                | "quire.temporal.fixed-sample.false-extension/v1"
-                | "quire.temporal.timestamped-event.finite-window/v1"
+            registered,
+            Registered::EventPosition | Registered::FixedSample | Registered::TimestampedWindow
         );
         let valid = match family {
-            Family::Value => state || temporal || name == "quire.protocol.finite-global/v1",
+            Family::Value => state || temporal || registered == Registered::Protocol,
             Family::State => state,
-            Family::Predicate => matches!(name, "quire.state.queries/v1" | "quire.state.graph/v1"),
+            Family::Predicate => {
+                matches!(
+                    registered,
+                    Registered::StateQueries | Registered::StateGraph
+                )
+            }
             Family::Temporal => temporal,
-            Family::Protocol => name == "quire.protocol.finite-global/v1",
+            Family::Protocol => registered == Registered::Protocol,
         };
         if valid {
             Ok(())
@@ -1385,9 +1390,59 @@ fn types(package: &Package, work: &mut Work) -> Result {
     acyclic(&graph, work)
 }
 
-fn feature(set: &mut BTreeSet<&'static str>, name: &'static str, work: &mut Work) -> Result {
+/// A declaration-family feature of the compiled protocol package. Variants are
+/// declared in the wire spelling's sorted order, so the derived order is the
+/// order the wire lists them in.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum FamilyFeature {
+    Predicate,
+    Protocol,
+    State,
+    Temporal,
+}
+
+impl FamilyFeature {
+    /// The feature a wire spelling names, decoded once.
+    #[qsl_attrs::string_edge]
+    fn from_wire(wire: &str) -> Option<Self> {
+        match wire {
+            "declaration.predicate" => Some(Self::Predicate),
+            "family.protocol" => Some(Self::Protocol),
+            "family.state" => Some(Self::State),
+            "family.temporal" => Some(Self::Temporal),
+            _ => None,
+        }
+    }
+}
+
+/// A protocol feature a package requires, in the wire spelling's sorted order.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum RequiredFeature {
+    Bindings,
+    Control,
+    Numeric,
+    Temporal,
+    Values,
+}
+
+impl RequiredFeature {
+    /// The required feature a wire spelling names, decoded once.
+    #[qsl_attrs::string_edge]
+    fn from_wire(wire: &str) -> Option<Self> {
+        match wire {
+            "quire.protocol.bindings/1" => Some(Self::Bindings),
+            "quire.protocol.control/1" => Some(Self::Control),
+            "quire.protocol.numeric/1" => Some(Self::Numeric),
+            "quire.protocol.temporal/1" => Some(Self::Temporal),
+            "quire.protocol.values/1" => Some(Self::Values),
+            _ => None,
+        }
+    }
+}
+
+fn feature<T: Ord>(set: &mut BTreeSet<T>, name: T, work: &mut Work) -> Result {
     work.visit()?;
-    if !set.contains(name) {
+    if !set.contains(&name) {
         work.charge(Dimension::Entries, 1)?;
         set.insert(name);
     }
@@ -1397,76 +1452,55 @@ fn feature(set: &mut BTreeSet<&'static str>, name: &'static str, work: &mut Work
 fn features(package: &Package, work: &mut Work) -> Result {
     let mut families = BTreeSet::new();
     let mut required = BTreeSet::new();
-    feature(&mut required, "quire.protocol.bindings/1", work)?;
-    feature(&mut required, "quire.protocol.numeric/1", work)?;
+    feature(&mut required, RequiredFeature::Bindings, work)?;
+    feature(&mut required, RequiredFeature::Numeric, work)?;
     for declaration in &package.declarations {
         work.visit()?;
         let family = match declaration.body {
-            Body::Predicate { .. } => "declaration.predicate",
-            Body::State { .. } => "family.state",
-            Body::Temporal { .. } => "family.temporal",
-            Body::Protocol { .. } => "family.protocol",
+            Body::Predicate { .. } => FamilyFeature::Predicate,
+            Body::State { .. } => FamilyFeature::State,
+            Body::Temporal { .. } => FamilyFeature::Temporal,
+            Body::Protocol { .. } => FamilyFeature::Protocol,
         };
         feature(&mut families, family, work)?;
         if !declaration.values.is_empty() {
-            feature(&mut required, "quire.protocol.values/1", work)?;
+            feature(&mut required, RequiredFeature::Values, work)?;
         }
         if !declaration.temporal.is_empty() {
-            feature(&mut required, "quire.protocol.temporal/1", work)?;
+            feature(&mut required, RequiredFeature::Temporal, work)?;
         }
         if let Body::Protocol { controls, .. } = &declaration.body {
             if !controls.is_empty() {
-                feature(&mut required, "quire.protocol.control/1", work)?;
+                feature(&mut required, RequiredFeature::Control, work)?;
             }
         }
     }
-    if !families.contains("family.protocol") {
+    if !families.contains(&FamilyFeature::Protocol) {
         return Err(Error::Invalid(Invalid::Feature));
     }
+    let mut declared = Vec::with_capacity(package.features.declarations.len());
     for value in &package.features.declarations {
         work.visit()?;
-        if !matches!(
-            value.as_str(),
-            "declaration.predicate" | "family.state" | "family.temporal" | "family.protocol"
-        ) {
-            return Err(Error::Unsupported(Unsupported::Feature));
-        }
+        declared
+            .push(FamilyFeature::from_wire(value).ok_or(Error::Unsupported(Unsupported::Feature))?);
     }
+    let mut needed = Vec::with_capacity(package.features.required.len());
     for value in &package.features.required {
         work.visit()?;
-        if !matches!(
-            value.as_str(),
-            "quire.protocol.bindings/1"
-                | "quire.protocol.numeric/1"
-                | "quire.protocol.values/1"
-                | "quire.protocol.temporal/1"
-                | "quire.protocol.control/1"
-        ) {
-            return Err(Error::Unsupported(Unsupported::Feature));
-        }
+        needed.push(
+            RequiredFeature::from_wire(value).ok_or(Error::Unsupported(Unsupported::Feature))?,
+        );
     }
     if !package.features.optional.is_empty() {
         return Err(Error::Unsupported(Unsupported::Feature));
     }
-    if !package
-        .features
-        .declarations
-        .iter()
-        .map(String::as_str)
-        .eq(families)
-        || !package
-            .features
-            .required
-            .iter()
-            .map(String::as_str)
-            .eq(required)
-    {
+    if !declared.iter().eq(families.iter()) || !needed.iter().eq(required.iter()) {
         return Err(Error::Invalid(Invalid::Feature));
     }
     Ok(())
 }
 
-pub(super) fn package(package: &Package, work: &mut Work) -> Result {
+pub(super) fn package(package: &Package, registered: &[Registered], work: &mut Work) -> Result {
     numbers(package, work)?;
     types(package, work)?;
     features(package, work)?;
@@ -1482,6 +1516,7 @@ pub(super) fn package(package: &Package, work: &mut Work) -> Result {
     let dependencies = edges(package.declarations.len(), work)?;
     let mut graph = Graph {
         package,
+        registered,
         work,
         type_seen: vec![false; package.types.len()],
         next_type: 0,

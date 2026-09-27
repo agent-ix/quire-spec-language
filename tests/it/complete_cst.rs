@@ -531,3 +531,38 @@ fn an_edit_that_changes_a_source_label_refuses() {
     )
     .is_ok());
 }
+
+/// FR-001-AC-12: an edit whose expected revision is not the source's refuses
+/// `invalid_source_map`, keeps the `EditPredecessor` cause and names no
+/// region.
+#[trace("TC-424", "FR-001-AC-12")]
+#[test]
+fn a_stale_edit_predecessor_refuses_as_a_source_map_with_no_region() {
+    let parsed = qsl_cst::parse(
+        identity("r1"),
+        "complete.native",
+        SOURCE.as_bytes(),
+        Limits::default(),
+    )
+    .unwrap();
+    let edit = SourceEdit {
+        range: Span { start: 0, end: 0 },
+        replacement: " ".into(),
+    };
+    let refused = complete::apply_edits(
+        &parsed,
+        "stale",
+        identity("r2"),
+        std::slice::from_ref(&edit),
+        Limits::default(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        (refused.code, refused.cause, refused.region.is_none()),
+        (
+            CompleteCode::InvalidSourceMap,
+            CompleteCause::Host(HostCause::EditPredecessor),
+            true
+        )
+    );
+}

@@ -72,6 +72,7 @@ impl std::error::Error for InvalidDigest {}
 
 impl FromStr for ByteDigest {
     type Err = InvalidDigest;
+    #[qsl_attrs::string_edge]
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         let hex = text.strip_prefix("sha256:").ok_or(InvalidDigest)?;
         Self::from_hex(hex)

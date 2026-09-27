@@ -24,6 +24,7 @@ use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Locus};
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Source, Span};
 
+use super::protocol_clause;
 use super::syntax::DeclarationForm;
 use super::value;
 
@@ -174,6 +175,16 @@ pub enum LeadingTokenKind {
     Dimension,
     /// `unit`: the `Value` unit form.
     Unit,
+    /// `invariant`: the `ProtocolClause` state clause form (FR-102, ADR-012
+    /// §15.3).
+    Invariant,
+    /// `pre`: the `ProtocolClause` state clause form, kind `Precondition`
+    /// (FR-102). `pre(e)` in an expression stays `Expression::Pre`: this
+    /// variant selects only the declaration-head spelling.
+    Pre,
+    /// `post`: the `ProtocolClause` state clause form, kind
+    /// `Postcondition` (FR-102).
+    Post,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -411,6 +422,9 @@ fn dispatch(
         LeadingTokenKind::Predicate => value::predicate(construct),
         LeadingTokenKind::Dimension => value::dimension(construct),
         LeadingTokenKind::Unit => value::unit(construct),
+        LeadingTokenKind::Invariant => protocol_clause::state_clause(construct),
+        LeadingTokenKind::Pre => protocol_clause::state_clause(construct),
+        LeadingTokenKind::Post => protocol_clause::state_clause(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -448,6 +462,9 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"predicate" => Some(LeadingTokenKind::Predicate),
         b"dimension" => Some(LeadingTokenKind::Dimension),
         b"unit" => Some(LeadingTokenKind::Unit),
+        b"invariant" => Some(LeadingTokenKind::Invariant),
+        b"pre" => Some(LeadingTokenKind::Pre),
+        b"post" => Some(LeadingTokenKind::Post),
         _ => None,
     }
 }
@@ -610,6 +627,7 @@ mod tests {
         // `compile_fail` doctest on `ParsedForm` itself.
     }
 
+    #[trace("TC-457", "FR-102-AC-4")]
     #[test]
     fn dispatch_entry_is_a_single_thin_call() {
         let source = include_str!("dispatch.rs");
@@ -693,17 +711,19 @@ mod tests {
         assert_eq!(form20[0].declared_extent(), Some("20"));
     }
 
-    /// FR-091: the `record` entry replaced the M-3a no-entry fixture token,
-    /// so FR-067-AC-3's no-entry case uses a spelling no family claims.
+    /// FR-091: the `record` entry replaced the M-3a no-entry fixture token;
+    /// FR-102 (QSL-273, TC-457) claims `invariant`, so FR-067-AC-3's
+    /// no-entry case moves to `temporal`, a spelling no family claims.
     #[trace("TC-167", "FR-067-AC-3")]
+    #[trace("TC-457", "FR-102-AC-4")]
     #[test]
     fn no_dispatch_entry_refuses_a_clean_cst_with_no_matching_leading_token() {
-        let cst = LosslessCst::fixture(&HEADER, &["invariant"], Vec::new());
-        let failure = build(&cst).expect_err("no entry matches \"invariant\"");
+        let cst = LosslessCst::fixture(&HEADER, &["temporal"], Vec::new());
+        let failure = build(&cst).expect_err("no entry matches \"temporal\"");
         assert_eq!(
             cause(failure),
             FormsCause::NoDispatchEntry {
-                spelling: "invariant".into()
+                spelling: "temporal".into()
             }
         );
     }

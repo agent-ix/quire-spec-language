@@ -9,7 +9,8 @@ mod limits;
 mod values;
 
 use ix_trace_rs::trace;
-use qsl_foundation::{ByteDigest, Code, SourceIdentity};
+use qsl_foundation::source::SourceReadCause;
+use qsl_foundation::{ByteDigest, Code, SourceIdentity, SourceLabel};
 use quire_contract_ir as ir;
 use quire_spec_language::runtime::{
     ArtifactLimits, DraftPathSegment, FieldBinding, Invocation, InvocationDraft, InvocationRef,
@@ -188,12 +189,23 @@ fn snapshots_carry_the_four_labels() {
     assert_ne!(git.bytes(), semver.bytes());
     assert_ne!(git.digest(), semver.digest());
 
-    for labels in [
-        SourceIdentity::new("", "s", "git", "1"),
-        SourceIdentity::new("agent-ix", "s", " ", "1"),
+    for (labels, label) in [
+        (
+            SourceIdentity::new("", "s", "git", "1"),
+            SourceLabel::Authority,
+        ),
+        (
+            SourceIdentity::new("agent-ix", "s", " ", "1"),
+            SourceLabel::RevisionNamespace,
+        ),
     ] {
         let error = snapshot(labels.clone()).unwrap_err();
         assert_eq!(error.code, Code::InvalidSourceIdentity, "{labels:?}");
+        assert_eq!(
+            error.identity_cause,
+            Some(SourceReadCause::BlankLabel { label }),
+            "{labels:?}"
+        );
         assert_eq!(error.identity, labels);
     }
 }

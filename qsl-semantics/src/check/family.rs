@@ -579,6 +579,22 @@ fn encode_expression(
                 out.write_str("pre");
                 pending.push(operand);
             }
+            Expression::SelfRef => {
+                out.write_str("self_ref");
+            }
+            Expression::Result => {
+                out.write_str("result");
+            }
+            Expression::Reaches {
+                source,
+                target,
+                edge,
+                ..
+            } => {
+                out.write_str("reaches");
+                out.write_str(edge);
+                pending.extend([&**source, &**target]);
+            }
             // Not the S2 seam (`Typer::infer_form`'s own doc,
             // `qsl-semantics/src/check/check/typing.rs`): an unconditional
             // probe arm so this match keeps compiling under `--cfg
@@ -1141,7 +1157,57 @@ pub(crate) fn check_declaration_body(
 /// entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OccurrenceMap<S> {
-    spans: BTreeMap<(NodeKey, Role), Vec<S>>,
+    spans: BTreeMap<(NodeKey, OccurrenceRole), Vec<S>>,
+}
+
+/// The role an occurrence plays for its node (FR-322): a closed set, so no
+/// code compares a role's spelling to choose behaviour. Variants are declared
+/// in the spelling's alphabetical order, which is the order the kernel's
+/// string roles sorted in. The kernel's [`Role`] stays an open string carrier;
+/// this enum is what QSL code records and selects by.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum OccurrenceRole {
+    /// A declaration-anchored node.
+    Anchor,
+    /// A requirement claim.
+    Claim,
+    /// A declaration site.
+    Declaration,
+    /// An expression node.
+    Expression,
+    /// A node no source region denotes.
+    Generated,
+    /// A type node.
+    Type,
+}
+
+impl OccurrenceRole {
+    /// The kernel role this role is carried as.
+    fn kernel_role(self) -> Role {
+        Role::new(match self {
+            Self::Anchor => "anchor",
+            Self::Claim => "claim",
+            Self::Declaration => "declaration",
+            Self::Expression => "expression",
+            Self::Generated => "generated",
+            Self::Type => "type",
+        })
+    }
+
+    /// The role a kernel role carries, or `None` for a spelling QSL never
+    /// records. The one place a kernel role's spelling is read.
+    #[qsl_attrs::string_edge]
+    fn of(role: &Role) -> Option<Self> {
+        match role.as_str() {
+            "anchor" => Some(Self::Anchor),
+            "claim" => Some(Self::Claim),
+            "declaration" => Some(Self::Declaration),
+            "expression" => Some(Self::Expression),
+            "generated" => Some(Self::Generated),
+            "type" => Some(Self::Type),
+            _ => None,
+        }
+    }
 }
 
 // A hand-written `Default`, not `#[derive(Default)]`: the derive macro adds
@@ -1161,25 +1227,24 @@ impl<S> OccurrenceMap<S> {
     /// ordinal disambiguating repeated occurrences of that role on the same
     /// node") -- reordering *other* nodes' occurrences never changes this
     /// one's ordinal, only its own role's own repeat count does.
-    pub(crate) fn record(&mut self, identity: NodeKey, role: &str, span: S) -> Origin {
-        let role = Role::new(role);
+    pub(crate) fn record(&mut self, identity: NodeKey, role: OccurrenceRole, span: S) -> Origin {
         // Most (identity, role) pairs occur once; a capacity of one keeps a
         // single occurrence from reserving a vector's default four slots.
         let spans = self
             .spans
-            .entry((identity, role.clone()))
+            .entry((identity, role))
             .or_insert_with(|| Vec::with_capacity(1));
         let ordinal = u64::try_from(spans.len()).unwrap_or(u64::MAX);
         spans.push(span);
-        Origin::new(role, ordinal)
+        Origin::new(role.kernel_role(), ordinal)
     }
 
     /// Whether any occurrence of `identity` is recorded.
     pub(crate) fn has(&self, identity: NodeKey) -> bool {
-        // The empty role sorts first, so the first key at or after it is
+        // `Anchor` sorts first, so the first key at or after it is
         // `identity`'s first recorded role, if it has one.
         self.spans
-            .range((identity, Role::new(""))..)
+            .range((identity, OccurrenceRole::Anchor)..)
             .next()
             .is_some_and(|((node, _), _)| *node == identity)
     }
@@ -1188,17 +1253,33 @@ impl<S> OccurrenceMap<S> {
     /// occurrences in ordinal order.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeKey, Origin, &S)> {
         self.spans.iter().flat_map(|((identity, role), spans)| {
-            (0_u64..)
-                .zip(spans)
-                .map(move |(ordinal, span)| (*identity, Origin::new(role.clone(), ordinal), span))
+            (0_u64..).zip(spans).map(move |(ordinal, span)| {
+                (*identity, Origin::new(role.kernel_role(), ordinal), span)
+            })
         })
+    }
+
+    /// Every recorded occurrence of exactly `role`, ascending by identity,
+    /// each identity's occurrences in ordinal order.
+    pub(crate) fn iter_role(
+        &self,
+        role: OccurrenceRole,
+    ) -> impl Iterator<Item = (NodeKey, Origin, &S)> {
+        self.spans
+            .iter()
+            .filter(move |((_, recorded), _)| *recorded == role)
+            .flat_map(|((identity, role), spans)| {
+                (0_u64..).zip(spans).map(move |(ordinal, span)| {
+                    (*identity, Origin::new(role.kernel_role(), ordinal), span)
+                })
+            })
     }
 
     /// The span recorded for `identity` at exactly `origin`, if any.
     pub(crate) fn resolve(&self, identity: NodeKey, origin: &Origin) -> Option<&S> {
         let ordinal = usize::try_from(origin.ordinal()).ok()?;
         self.spans
-            .get(&(identity, origin.role().clone()))?
+            .get(&(identity, OccurrenceRole::of(origin.role())?))?
             .get(ordinal)
     }
 }
@@ -3122,9 +3203,9 @@ pub(crate) mod checking_tests {
         let mut map = OccurrenceMap::default();
         let a = NodeKey::from_digest([1; 32]);
         let b = NodeKey::from_digest([2; 32]);
-        let first = map.record(a, "reference", (0, 3));
-        let second = map.record(a, "reference", (4, 7));
-        let other = map.record(b, "reference", (8, 11));
+        let first = map.record(a, OccurrenceRole::Expression, (0, 3));
+        let second = map.record(a, OccurrenceRole::Expression, (4, 7));
+        let other = map.record(b, OccurrenceRole::Expression, (8, 11));
         assert_eq!(first.ordinal(), 0);
         assert_eq!(second.ordinal(), 1);
         assert_eq!(other.ordinal(), 0);
@@ -3144,9 +3225,13 @@ pub(crate) mod checking_tests {
         let keys: Vec<NodeKey> = (1..=5)
             .map(|byte| NodeKey::from_digest([byte; 32]))
             .collect();
-        let roles = ["declaration", "reference", "generated"];
+        let roles = [
+            OccurrenceRole::Declaration,
+            OccurrenceRole::Expression,
+            OccurrenceRole::Generated,
+        ];
         let mut map = OccurrenceMap::default();
-        let mut recorded: Vec<(NodeKey, &str, Origin)> = Vec::new();
+        let mut recorded: Vec<(NodeKey, OccurrenceRole, Origin)> = Vec::new();
         // A fixed linear congruential sequence: deterministic, and it
         // interleaves every (identity, role) pair many times.
         let mut state = 7_u64;
@@ -3162,7 +3247,7 @@ pub(crate) mod checking_tests {
                 .count();
             let origin = map.record(key, role, span);
             assert_eq!(origin.ordinal(), u64::try_from(expected).unwrap());
-            assert_eq!(origin.role().as_str(), role);
+            assert_eq!(OccurrenceRole::of(origin.role()), Some(role));
             recorded.push((key, role, origin));
         }
         for (span, (key, _, origin)) in (0_u64..).zip(&recorded) {
@@ -3172,10 +3257,10 @@ pub(crate) mod checking_tests {
         let unrecorded = NodeKey::from_digest([9; 32]);
         assert!(!map.has(unrecorded));
         assert_eq!(
-            map.resolve(unrecorded, &Origin::new(Role::new("reference"), 0)),
+            map.resolve(unrecorded, &Origin::new(Role::new("expression"), 0)),
             None
         );
-        let past_the_end = Origin::new(Role::new("reference"), u64::MAX);
+        let past_the_end = Origin::new(Role::new("expression"), u64::MAX);
         assert_eq!(map.resolve(keys[0], &past_the_end), None);
     }
 

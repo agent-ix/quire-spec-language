@@ -4,4 +4,5 @@
 //! `qsl-source`.
 
 mod identity_free_forms;
+mod protocol_clause_forms;
 mod value_forms;

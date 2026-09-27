@@ -112,6 +112,7 @@ impl UseEdge {
 /// Flatten one `syn::UseTree` into zero or more [`UseEdge`]s, appending to
 /// `prefix` as the walk descends and reporting `leaf` as each branch's own
 /// terminal name (its original ident, not its rename).
+#[qsl_attrs::string_edge]
 fn flatten_use_tree(tree: &syn::UseTree, prefix: &[String], file: &str, out: &mut Vec<UseEdge>) {
     let named = |ident: &syn::Ident, rename: Option<&syn::Ident>| {
         let written = ident.to_string();
@@ -218,6 +219,7 @@ pub struct ValueReexports {
 
 /// Read `qsl-semantics/src/value/mod.rs` and extract [`ValueReexports`] by
 /// finding the one `use` item whose path starts `crate::check`.
+#[qsl_attrs::string_edge]
 pub fn value_reexports(workspace_root: &Path) -> Result<ValueReexports> {
     let value_mod = format!("{LAYER3_SRC}/value/mod.rs");
     let parsed = parse_file(workspace_root, &value_mod)?;
@@ -240,6 +242,7 @@ pub fn value_reexports(workspace_root: &Path) -> Result<ValueReexports> {
 /// `model`'s own submodule layouts are both flat, one file per module, so a
 /// recursive walk is not needed and would only pick up unrelated sibling
 /// trees if either module ever grew a nested one).
+#[qsl_attrs::string_edge]
 fn files_in(workspace_root: &Path, dir: &str) -> Result<Vec<String>> {
     let full = workspace_root.join(dir);
     let mut files = Vec::new();
@@ -258,6 +261,7 @@ fn files_in(workspace_root: &Path, dir: &str) -> Result<Vec<String>> {
 
 /// Whether `path` resolves, directly or through `value`'s flat aggregate,
 /// into `crate::check`.
+#[qsl_attrs::string_edge]
 fn resolves_into_check(path: &[String], leaf: &str, reexports: &ValueReexports) -> bool {
     let normalized = strip_leading_crate(path);
     match normalized {
@@ -267,6 +271,7 @@ fn resolves_into_check(path: &[String], leaf: &str, reexports: &ValueReexports) 
     }
 }
 
+#[qsl_attrs::string_edge]
 fn strip_leading_crate(path: &[String]) -> &[String] {
     match path.first().map(String::as_str) {
         Some(root) if root == "crate" || root == LAYER3_CRATE => &path[1..],
@@ -485,6 +490,7 @@ fn in_layer_rule_scope(workspace_root: &Path, top: &str) -> bool {
 /// (`UnitTable` in `crate::value::UnitTable`) -- that case falls
 /// back to a filesystem check and then `value::mod.rs`'s own re-export
 /// table, the same two-step resolution the flat-`use` case already needed.
+#[qsl_attrs::string_edge]
 fn resolve_layer_module(
     workspace_root: &Path,
     submodule_reexports: &BTreeMap<String, String>,
@@ -515,6 +521,7 @@ fn resolve_layer_module(
 /// (`self::super::x`). A path rooted at anything else (an extern crate name,
 /// the crates on [`LAYER_PERMITTED_MODULES`] included) is returned unchanged -- it
 /// needs no crate-relative substitution.
+#[qsl_attrs::string_edge]
 fn resolve_relative_path(raw: &[String], current_module: &[String]) -> Vec<String> {
     let (mut base, mut rest) = match raw.split_first() {
         Some((first, rest)) if first == "crate" || first == LAYER3_CRATE => (Vec::new(), rest),
@@ -633,6 +640,7 @@ fn classify_use_edge(
 /// `src/check/mod.rs` -> `["check"]`; `src/lib.rs` -> `[]`) -- Rust's own
 /// `mod.rs`/`foo.rs` file-to-module convention, needed to resolve a
 /// `super::`/`self::` path relative to its file.
+#[qsl_attrs::string_edge]
 fn module_segments_of(relative_file: &str) -> Vec<String> {
     let mut segments: Vec<String> = Path::new(relative_file)
         .with_extension("")
@@ -663,6 +671,7 @@ fn files_in_recursive(workspace_root: &Path, dir: &str) -> Result<Vec<String>> {
     Ok(files)
 }
 
+#[qsl_attrs::string_edge]
 fn walk_rs_files_recursive(dir: &Path, workspace_root: &Path, out: &mut Vec<String>) -> Result<()> {
     let entries = fs::read_dir(dir).map_err(|source| Error::io(dir, source))?;
     for entry in entries {

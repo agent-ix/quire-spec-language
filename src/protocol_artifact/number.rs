@@ -276,6 +276,7 @@ impl<'de> Deserialize<'de> for ExactRational {
     }
 }
 
+#[qsl_attrs::string_edge]
 fn parse_component(text: &str, component: NumberComponent) -> Result<i64, NumberError> {
     let digits = text.strip_prefix('-').unwrap_or(text).as_bytes();
     let canonical = text == "0"
