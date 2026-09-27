@@ -39,7 +39,7 @@ use std::cmp::Ordering;
 use crate::accounting::{length_amount, Charge, ChargePoint, LimitKind, Meter};
 use crate::comparison::{IllTyped, IllTypedCause};
 use crate::integer::Integer;
-use crate::outcome::{Outcome, Refusal, Stop, Undefined};
+use crate::outcome::{InexactTarget, Outcome, Refusal, Stop, Undefined};
 use crate::rational::Rational;
 
 /// An authored or computed `(coefficient, scale)` pair denoting
@@ -766,14 +766,14 @@ fn evaluate(
             let mode = target.rounding();
             // Strict `exact` refuses here, before any charge or loss record.
             if mode == RoundingMode::Exact {
-                return Err(Stop::Refused(Refusal::InexactDecimal));
+                return Err(Stop::Refused(target.inexact()));
             }
             meter.charge(
                 Charge::new(ChargePoint::DecimalRounding)
                     .exact_size(LimitKind::IntegerBits, bits)
                     .exact_size(LimitKind::DecimalDigits, digits),
             )?;
-            let rounded = round(&units, mode).ok_or(Stop::Refused(Refusal::InexactDecimal))?;
+            let rounded = round(&units, mode).ok_or_else(|| Stop::Refused(target.inexact()))?;
             Coefficient {
                 loss: Some(DecimalLoss {
                     exact: intermediate.exact_loss_value(target.max_scale()),
@@ -801,6 +801,20 @@ struct Coefficient {
 }
 
 impl DecimalType {
+    /// The strict-`exact` refusal for this declared target.
+    fn inexact(&self) -> Refusal {
+        Refusal::InexactDecimal {
+            target: InexactTarget::Decimal(Box::new(self.clone())),
+        }
+    }
+
+    /// The refusal for a value outside this target's membership.
+    fn out_of_domain(&self) -> Refusal {
+        Refusal::DecimalOutOfDomain {
+            target: Box::new(self.clone()),
+        }
+    }
+
     /// Decide how `value` is placed at this type's scale `T` under its
     /// rounding mode, without materializing a coefficient larger than the
     /// inputs. Strict `exact` refuses a nonzero discarded digit. The
@@ -822,7 +836,7 @@ impl DecimalType {
         } else if self.rounding == RoundingMode::Exact {
             // A reduced value that is not a multiple of `10^-T` always
             // discards a nonzero digit.
-            return Err(Refusal::InexactDecimal);
+            return Err(self.inexact());
         } else {
             Placing::Deferred(value.clone())
         };
@@ -841,8 +855,8 @@ impl DecimalType {
             numerator.mul(&Integer::power_of_ten(u64::from(self.max_scale))),
         )
         .div(&Rational::from_integer(denominator.clone()))
-        .ok_or(Refusal::InexactDecimal)?;
-        let rounded = round(&units, self.rounding).ok_or(Refusal::InexactDecimal)?;
+        .ok_or_else(|| self.inexact())?;
+        let rounded = round(&units, self.rounding).ok_or_else(|| self.inexact())?;
         Ok(Coefficient {
             loss: Some(DecimalLoss {
                 exact: ExactLossValue::scaled(value, 0),
@@ -967,7 +981,7 @@ impl Coefficient {
         if target.contains(&Decimal::new(self.coefficient.clone(), self.scale)) {
             Ok(())
         } else {
-            Err(Refusal::DecimalOutOfDomain)
+            Err(target.out_of_domain())
         }
     }
 
@@ -1217,7 +1231,12 @@ mod tests {
             .unwrap()
             .materialize()
             .unwrap();
-        assert_eq!(placed.admit().unwrap_err(), Refusal::DecimalOutOfDomain);
+        assert_eq!(
+            placed.admit().unwrap_err(),
+            Refusal::DecimalOutOfDomain {
+                target: Box::new(target.clone())
+            }
+        );
 
         let half = Rational::new(integer(1), integer(2)).unwrap();
         let result = target

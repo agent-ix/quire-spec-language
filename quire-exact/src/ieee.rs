@@ -742,7 +742,9 @@ fn to_exact(
     };
     // Membership charges nothing and refuses before the result is retained.
     if !domain.contains(&exact.value) {
-        return Err(Stop::Refused(Refusal::IeeeRationalOutOfDomain));
+        return Err(Stop::Refused(Refusal::IeeeRationalOutOfDomain {
+            target: Box::new(domain.clone()),
+        }));
     }
     charge_result(meter)?;
     Ok(exact)
@@ -1151,7 +1153,10 @@ fn finish_rounding(
     // `value-accounting.md`: strict `exact` refuses after `ieee.round` and
     // before `ieee.result-retain`.
     if rounding == RoundingMode::Exact && !flags.is_empty() {
-        return Err(Stop::Refused(Refusal::IeeeNotExact { would_be: flags }));
+        return Err(Stop::Refused(Refusal::IeeeNotExact {
+            target: width,
+            would_be: flags,
+        }));
     }
     charge_result(meter)?;
     Ok(IeeeResult {
@@ -1665,7 +1670,10 @@ fn convert_width(
             // with no flags, before the NaN is consumed.
             let payload = value.bits & (source.quiet_bit() - 1);
             if payload >= format.quiet_bit() {
-                return Err(Stop::Refused(Refusal::IeeeNanPayloadNotRepresentable));
+                return Err(Stop::Refused(Refusal::IeeeNanPayloadNotRepresentable {
+                    target,
+                    source: value.width,
+                }));
             }
             Classified {
                 bits: format.sign(negative) | format.canonical_nan() | payload,

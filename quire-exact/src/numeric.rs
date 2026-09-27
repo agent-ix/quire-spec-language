@@ -282,8 +282,10 @@ fn integer_arithmetic(
         IntegerArithmetic::Negate(operand) => operand.neg(),
         IntegerArithmetic::Multiply(left, right) => left.mul(right),
     };
-    if bound.is_some_and(|bound| !bound.contains(&result)) {
-        return Err(Stop::Refused(Refusal::IntegerOutOfDomain));
+    if let Some(bound) = bound.filter(|bound| !bound.contains(&result)) {
+        return Err(Stop::Refused(Refusal::IntegerOutOfDomain {
+            target: Box::new(bound.clone()),
+        }));
     }
     meter.charge(Charge::new(ChargePoint::IntegerArithmeticResultRetain).results(1))?;
     Ok(result)
@@ -377,8 +379,10 @@ fn rational_arithmetic(
     ))?;
     let result = Rational::new(numerator, denominator)
         .map_err(|_| Stop::Undefined(Undefined::DivisionByZero))?;
-    if domain.is_some_and(|domain| !domain.contains(&result)) {
-        return Err(Stop::Refused(Refusal::RationalOutOfDomain));
+    if let Some(domain) = domain.filter(|domain| !domain.contains(&result)) {
+        return Err(Stop::Refused(Refusal::RationalOutOfDomain {
+            target: Box::new(domain.clone()),
+        }));
     }
     meter.charge(Charge::new(ChargePoint::RationalArithmeticResultRetain).results(1))?;
     Ok(result)
