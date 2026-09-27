@@ -3,9 +3,27 @@ id: SR-712
 title: "Delta code review of the PR #484 fix round"
 type: SpecReview
 analysis: code-review
+scope: "agent-ix/quire-spec-language@bee599c7a2f174864f0e90ed3911b2aec5d39e6c; qsl-semantics/src/check/assemble/tests.rs; qsl-forms/tests/it/value_forms.rs; spec/test-cases/TC-402-assembler-reads-no-cst.md; reviews/"
+review_set: subset
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-091
+    type: reviews
 ---
+## Summary
 
-Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-c6de6739.
+Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-c6de6739. Ticket QSL-141, PR quire-spec-language#484.
+
+Delta review of the fix round, `5a51beb0..bee599c7`. It covers new tests added for SR-707 and SR-708.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | medium | (test-intent) `no_qsl_cst_type_is_re_exported_from_qsl_semantics` scans a crate that cannot re-export `qsl_cst` at all. qsl-cst is only a dev-dependency there. The re-export that can compile is one in qsl-forms, and it passes this test. | Reviewer comment below |
+| FND-002 | medium | (test-intent) `the_assembler_tests_reach_qsl_cst_only_to_run_s1` visits only `syn::Path`. A `use qsl_cst::CstNode` in the assembler's tests, or a `qsl_cst::` path inside a macro, passes it. | Reviewer comment below |
+| FND-003 | low | (coverage) The TC-403 step-3 walk asserts `seen >= 7`, but the two bodies have 9 non-root nodes. The walk also follows the span tree, so a node with no span ends the walk without failing. | Reviewer comment below |
+
+## Reviewer comment (verbatim)
 
 <!-- reviewer repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-712 method=code-review lang=rust pr=quire-spec-language#484 reviewed=bee599c7a2f174864f0e90ed3911b2aec5d39e6c date=2026-09-26 -->
 
@@ -95,6 +113,75 @@ findings:
       non-root nodes: If with a, b and Add(c, d), and Multiply with Add(a, b) and c.
       So up to two nodes can lack a span and the test still passes. Fix: assert
       seen == 9, or walk the Expression tree and require a span at each node's path."
+```
+
++++
+
+
+## Dispositions
+
+Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-8fafb046.
+
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-712 pr=quire-spec-language#484 reviewed=5e11d336ab776ceafd592ce12802a3f5c3f99d2a date=2026-09-26 -->
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5e11d336 |
+| FND-002 | fixed | 5e11d336 |
+| FND-003 | fixed | 5e11d336 |
+
+Each fix was verified by mutation in a scratch worktree at 5e11d336. Each mutation that the finding said went undetected now fails its test. At the unmutated head, the check::assemble tests passed 41 of 41, and the qsl-forms every_expression and value_module tests passed 3 of 3.
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+  - fnd: FND-001
+    outcome: fixed
+    fix_sha: 5e11d336ab776ceafd592ce12802a3f5c3f99d2a
+    path: qsl-semantics/src/check/assemble/tests.rs
+    lines: "547-624"
+    after_excerpt: |-
+      fn no_qsl_cst_type_is_re_exported_to_the_assembler() {
+          let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+          let mut found = Vec::new();
+          let mut names = Vec::new();
+          for dir in [manifest.join("src"), manifest.join("../qsl-forms/src")] {
+              let (lines, exported) = cst_re_exports(&dir);
+              found.extend(lines);
+              names.extend(exported);
+          }
+          assert!(found.is_empty(), "qsl_cst is re-exported: {found:?}");
+    evidence: "`pub use qsl_cst::Production as CstProduction;` in qsl-forms/src/lib.rs + `use qsl_forms::CstProduction as _P;` in assemble.rs -> FAILED, qsl_cst is re-exported: [.../qsl-forms/src/lib.rs:48]"
+  - fnd: FND-002
+    outcome: fixed
+    fix_sha: 5e11d336ab776ceafd592ce12802a3f5c3f99d2a
+    path: qsl-semantics/src/check/assemble/tests.rs
+    lines: "631-720"
+    after_excerpt: |-
+      impl<'ast> syn::visit::Visit<'ast> for Reach {
+          fn visit_path(&mut self, path: &'ast syn::Path) {
+              let names: Vec<String> = path.segments.iter().map(|s| s.ident.to_string()).collect();
+              self.judge(&names);
+              syn::visit::visit_path(self, path);
+          }
+          fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
+              self.use_tree(&item.tree, &mut Vec::new());
+          }
+          fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+              self.tokens(mac.tokens.clone());
+              syn::visit::visit_macro(self, mac);
+          }
+      }
+    evidence: "`use qsl_cst::CstNode as _Mutant;` in tests.rs -> FAILED, beyond S1: [qsl_cst::CstNode]; `stringify!(qsl_cst::CstNode)` in a test in tests.rs -> FAILED the same way"
+  - fnd: FND-003
+    outcome: fixed
+    fix_sha: 5e11d336ab776ceafd592ce12802a3f5c3f99d2a
+    path: qsl-forms/tests/it/value_forms.rs
+    lines: "634"
+    after_excerpt: |-
+      assert_eq!(seen, 9, "every non-root node of both bodies carries a span");
+    evidence: "ExpressionSpans::child mutated to drop child index 2 (qsl-forms/src/spans.rs:150) -> FAILED, left: 6, right: 9"
 ```
 
 +++

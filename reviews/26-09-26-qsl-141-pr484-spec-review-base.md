@@ -129,3 +129,54 @@ dispositions:
 
 +++
 
+
+## Dispositions, round 2
+
+Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-f16a8ec6 (SR-708 round 2).
+
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-708 pr=quire-spec-language#484 reviewed=5e11d336ab776ceafd592ce12802a3f5c3f99d2a date=2026-09-26 -->
+
+Second disposition pass at 5e11d336. This updates FND-002 only. FND-001, FND-003 and FND-004 stay fixed at bee599c7, as recorded in the earlier SR-708 dispositions comment.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-002 | fixed | 5e11d336. This supersedes the earlier still-open outcome. A `pub type` alias gap remains and is a low finding in SR-721 FND-001. |
+
++++ [reviewer data]
+
+```yaml
+dispositions:
+  - fnd: FND-002
+    outcome: fixed
+    fix_sha: 5e11d336ab776ceafd592ce12802a3f5c3f99d2a
+    supersedes: "still-open (SR-708 dispositions at bee599c7)"
+    path: qsl-semantics/src/check/assemble/tests.rs
+    lines: "600-624, 631-720"
+    after_excerpt: |-
+      #[trace("FR-091-AC-20", "TC-402")]
+      #[test]
+      fn no_qsl_cst_type_is_re_exported_to_the_assembler() {
+          let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+          ...
+          for dir in [manifest.join("src"), manifest.join("../qsl-forms/src")] {
+          ...
+          assert!(found.is_empty(), "qsl_cst is re-exported: {found:?}");
+      ...
+              fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
+                  self.use_tree(&item.tree, &mut Vec::new());
+              }
+              fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+                  self.tokens(mac.tokens.clone());
+    evidence: >-
+      Mutations in a scratch worktree at 5e11d336. (1) `pub use qsl_cst::Production as CstProduction;`
+      in qsl-forms/src/lib.rs plus `use qsl_forms::CstProduction as _P;` in check/assemble.rs fails
+      no_qsl_cst_type_is_re_exported_to_the_assembler ("qsl_cst is re-exported: [.../qsl-forms/src/lib.rs:48]").
+      (2) `use qsl_cst::CstNode as _Mutant;` in assemble/tests.rs fails
+      the_assembler_tests_reach_qsl_cst_only_to_run_s1 ("beyond S1: [qsl_cst::CstNode]").
+      (3) `stringify!(qsl_cst::CstNode)` in a new test in tests.rs fails it the same way.
+      TC-402 Status names both tests, and they are traced FR-091-AC-20 / TC-402.
+    residual: "A `pub type X = qsl_cst::...;` alias in qsl-forms still passes. Recorded as SR-721 FND-001 (low)."
+```
+
++++
+

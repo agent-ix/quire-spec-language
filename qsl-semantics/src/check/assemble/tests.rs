@@ -540,36 +540,36 @@ fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
     }
 }
 
-/// The `qsl_cst` re-exports (`pub use` of a path rooted at `qsl_cst`) in the
-/// crates that can make them: `qsl-forms` (a normal dependency that depends
-/// on `qsl-cst`) and `qsl-semantics` itself. Returns `path:line` findings and
-/// the exported names.
-fn cst_re_exports(dir: &std::path::Path) -> (Vec<String>, Vec<String>) {
-    struct ReExports {
-        lines: Vec<usize>,
-        names: Vec<String>,
-    }
-    fn exported(tree: &syn::UseTree, under_cst: bool, out: &mut Vec<String>) {
-        match tree {
-            syn::UseTree::Path(path) => {
-                exported(&path.tree, under_cst || path.ident == "qsl_cst", out);
+/// The `qsl_cst` re-exports in `dir`: a non-private `use` of a path rooted at
+/// `qsl_cst`, or a non-private `type` alias whose type names a `qsl_cst`
+/// path. Returns `path:line` findings.
+fn cst_re_exports(dir: &std::path::Path) -> Vec<String> {
+    /// Whether a type names a path rooted at `qsl_cst`.
+    struct NamesCst(bool);
+    impl<'ast> syn::visit::Visit<'ast> for NamesCst {
+        fn visit_path(&mut self, path: &'ast syn::Path) {
+            if path
+                .segments
+                .first()
+                .is_some_and(|first| first.ident == "qsl_cst")
+            {
+                self.0 = true;
             }
-            syn::UseTree::Name(name) if under_cst => out.push(name.ident.to_string()),
-            syn::UseTree::Rename(rename) if under_cst => out.push(rename.rename.to_string()),
-            syn::UseTree::Glob(_) if under_cst => out.push("*".to_owned()),
-            syn::UseTree::Group(group) => {
-                for item in &group.items {
-                    exported(item, under_cst, out);
-                }
-            }
-            _ => {}
+            syn::visit::visit_path(self, path);
         }
     }
+    struct ReExports(Vec<usize>);
     impl<'ast> syn::visit::Visit<'ast> for ReExports {
         fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
             if !matches!(item.vis, syn::Visibility::Inherited) && use_tree_names_cst(&item.tree) {
-                self.lines.push(item.use_token.span.start().line);
-                exported(&item.tree, false, &mut self.names);
+                self.0.push(item.use_token.span.start().line);
+            }
+        }
+        fn visit_item_type(&mut self, item: &'ast syn::ItemType) {
+            let mut names = NamesCst(false);
+            syn::visit::Visit::visit_type(&mut names, &item.ty);
+            if !matches!(item.vis, syn::Visibility::Inherited) && names.0 {
+                self.0.push(item.type_token.span.start().line);
             }
         }
     }
@@ -577,50 +577,36 @@ fn cst_re_exports(dir: &std::path::Path) -> (Vec<String>, Vec<String>) {
     let mut files = Vec::new();
     rust_files(dir, &mut files);
     assert!(files.len() > 3, "the scan reads {}", dir.display());
-    let (mut found, mut names) = (Vec::new(), Vec::new());
+    let mut found = Vec::new();
     for path in &files {
         let source = std::fs::read_to_string(path).expect("a source file reads");
         let file = syn::parse_file(&source).expect("a source file parses");
-        let mut visitor = ReExports {
-            lines: Vec::new(),
-            names: Vec::new(),
-        };
+        let mut visitor = ReExports(Vec::new());
         visitor.visit_file(&file);
         found.extend(
             visitor
-                .lines
+                .0
                 .iter()
                 .map(|line| format!("{}:{line}", path.display())),
         );
-        names.extend(visitor.names);
     }
-    (found, names)
+    found
 }
 
 /// TC-402 step 2, re-exported types: neither `qsl-forms` (through which the
-/// assembler reaches the forms types) nor `qsl-semantics` re-exports (`pub
-/// use`) anything from `qsl_cst`, and the assembler's own files name no
-/// item a `qsl_cst` re-export could carry.
+/// assembler reaches the forms types) nor `qsl-semantics` re-exports a
+/// `qsl_cst` item, by `pub use` or by a `pub type` alias. With no such
+/// re-export in either crate, the assembler has no path to a CST type
+/// except `qsl_cst` itself, which `the_assembler_reads_no_cst` refuses.
 #[trace("FR-091-AC-20", "TC-402")]
 #[test]
 fn no_qsl_cst_type_is_re_exported_to_the_assembler() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut found = Vec::new();
-    let mut names = Vec::new();
     for dir in [manifest.join("src"), manifest.join("../qsl-forms/src")] {
-        let (lines, exported) = cst_re_exports(&dir);
-        found.extend(lines);
-        names.extend(exported);
+        found.extend(cst_re_exports(&dir));
     }
     assert!(found.is_empty(), "qsl_cst is re-exported: {found:?}");
-    for source in [include_str!("../assemble.rs"), include_str!("units.rs")] {
-        for name in &names {
-            assert!(
-                !source.contains(name.as_str()),
-                "the assembler names re-export {name}"
-            );
-        }
-    }
 }
 
 /// TC-402 step 3: the assembler's test code reaches `qsl_cst` only to run
