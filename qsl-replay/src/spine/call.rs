@@ -9,12 +9,13 @@
 //! `qsl_foundation`/`qsl_semantics`/`quire_exact` vocabulary below, are both
 //! private to this module.
 //!
-//! FR-096 (QSL-245, PR #465/#469) governs how a refused outcome renders: a
-//! refusal with an FR-096 record renders its `code`, `cause`, `fields` and
-//! `locus`; a family refusal with no record renders `code`/`cause` alone; a
-//! kernel refusal with no record renders bare; `CheckedInvariant` and a
-//! broken S6a invariant are internal failures ([`RunRefusal::Fault`]), never
-//! a `refused` outcome.
+//! FR-096 (QSL-245, PR #465/#469, #490) governs how a refused outcome
+//! renders: a refusal with an FR-096 record renders its `code`, `cause`,
+//! `fields` and `locus` -- every kernel refusal but `CheckedInvariant` has
+//! one (`kernel_refusal_record`, catalog revision `1-draft.8`); a family
+//! refusal with no record renders `code`/`cause` alone; `CheckedInvariant`
+//! and a broken S6a invariant are internal failures ([`RunRefusal::Fault`]),
+//! never a `refused` outcome.
 
 use std::collections::BTreeMap;
 
@@ -121,12 +122,6 @@ pub enum CallRefusal {
     Family {
         /// The cause's catalog code and cause.
         code: CatalogCode,
-        /// Where the outcome arose, when known.
-        location: Option<Location>,
-    },
-    /// A kernel refusal other than `CardinalityOutOfBound` and
-    /// `CheckedInvariant`: no code, cause or fields.
-    Kernel {
         /// Where the outcome arose, when known.
         location: Option<Location>,
     },
@@ -487,8 +482,16 @@ fn resolve_locus(locus: &Locus, sources: &[Source]) -> Result<CallLocus, Box<Run
 }
 
 /// Build [`CallRefusal`] from a refusal's FR-096 record (when FR-096 built
-/// one), its fallback catalog code (family causes with no record; `None` for
-/// a kernel refusal), and its location.
+/// one), its fallback catalog code (a family cause with no record), and its
+/// location.
+///
+/// `record` is `None` with `fallback` also `None` only for a kernel refusal
+/// with no catalog code; since [`convert_outcome`] never calls this for
+/// `CheckedInvariant` (the only kernel refusal `kernel_refusal_record`
+/// builds no record for), that combination cannot occur today. If it ever
+/// did, it is an internal failure (FR-100 "Internal failure at S6a"), the
+/// same typed fault [`CheckedInvariant`](Refusal::CheckedInvariant) itself
+/// takes, never a panic.
 fn convert_refusal(
     record: Option<RefusalRecord>,
     fallback: Option<CatalogCode>,
@@ -507,10 +510,13 @@ fn convert_refusal(
             location,
         });
     }
-    Ok(match fallback {
-        Some(code) => CallRefusal::Family { code, location },
-        None => CallRefusal::Kernel { location },
-    })
+    let Some(code) = fallback else {
+        return Err(Box::new(RunRefusal::Fault(InternalFault::new(
+            "call",
+            "kernel-refusal-with-no-record",
+        ))));
+    };
+    Ok(CallRefusal::Family { code, location })
 }
 
 /// FR-100's outcome mapping, for every category `run` returns as `Ok`

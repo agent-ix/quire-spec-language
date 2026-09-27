@@ -425,8 +425,8 @@ pub(super) fn spine_run_result(
         }) => (
             refusal_exit_code(code),
             types::SpineOutcome::Refused {
-                code: Some(code.code()),
-                cause: Some(code.cause()),
+                code: code.code(),
+                cause: code.cause(),
                 fields: Some(fields),
                 locus: locus.map(spine_locus),
                 location: location.as_ref().map(spine_location),
@@ -435,18 +435,8 @@ pub(super) fn spine_run_result(
         CallOutcome::Refused(CallRefusal::Family { code, location }) => (
             refusal_exit_code(code),
             types::SpineOutcome::Refused {
-                code: Some(code.code()),
-                cause: Some(code.cause()),
-                fields: None,
-                locus: None,
-                location: location.as_ref().map(spine_location),
-            },
-        ),
-        CallOutcome::Refused(CallRefusal::Kernel { location }) => (
-            20,
-            types::SpineOutcome::Refused {
-                code: None,
-                cause: None,
+                code: code.code(),
+                cause: code.cause(),
                 fields: None,
                 locus: None,
                 location: location.as_ref().map(spine_location),
@@ -811,20 +801,6 @@ mod tests {
         );
     }
 
-    /// FR-100-AC-9 (TC-452 step 4, FND-013): a bare kernel refusal with no
-    /// code, cause, fields or locus exits 20.
-    #[test]
-    #[trace("TC-452", "FR-100-AC-9")]
-    fn refused_kernel_with_no_record_exits_20() {
-        use qsl_replay::spine::CallRefusal;
-        let result = render(CallOutcome::Refused(CallRefusal::Kernel { location: None }));
-        assert_eq!(result.exit_code, 20);
-        assert_eq!(
-            result.value.as_value()["outcome"],
-            serde_json::json!({"kind": "refused"})
-        );
-    }
-
     /// FR-100-AC-9 (TC-452 step 4, FND-013): every `location.origin` kind
     /// renders its kebab-case tag, including `type-declaration`.
     #[test]
@@ -866,7 +842,8 @@ mod tests {
             ),
         ];
         for (origin, expected) in cases {
-            let result = render(CallOutcome::Refused(CallRefusal::Kernel {
+            let result = render(CallOutcome::Refused(CallRefusal::Family {
+                code: qsl_foundation::diagnostic::CatalogCode::new("ill_typed", "type-mismatch"),
                 location: Some(Location {
                     origin,
                     path: vec![2, 0],
