@@ -86,7 +86,7 @@ pub struct BoundAttempt {
 /// copied here (FR-114: "SHALL record the attempt's frame only by the
 /// frame node's identity, and SHALL NOT copy the frame's entries into the
 /// attempt"). `check::mod`'s own pipeline fills this in once S4 (lowering)
-/// mints the identities; [`check`] itself returns an empty list here (see
+/// mints the identities; `check` itself returns an empty list here (see
 /// its own `Vec<BoundAttempt>` return value for the S3-level binding).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedAttempt {
@@ -104,7 +104,7 @@ pub struct CheckedAttempt {
 
 /// One protocol declaration FR-113 has checked: every scoped anchor's
 /// resolved target, in the same order as the form's own `scoped_anchors`.
-/// `attempts` starts empty: [`check`] checks FR-114's `contracts` binding
+/// `attempts` starts empty: `check` checks FR-114's `contracts` binding
 /// (its own `Vec<BoundAttempt>` return value) but mints no node identity,
 /// since that needs S4 (lowering); `check::mod`'s own pipeline fills
 /// `attempts` in once it does (QSL-309).
