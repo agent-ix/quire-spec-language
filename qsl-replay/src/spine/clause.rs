@@ -915,6 +915,21 @@ fn run_frame(
                 "frame-witness-without-a-false-verdict",
             )),
         },
+        // FR-115: a violation always carries its witness. A false verdict
+        // without one is a broken S6a invariant, never a witness-less
+        // violation.
+        Ok(FrameEvaluation {
+            evaluation:
+                qsl_eval::value::Evaluation {
+                    outcome:
+                        FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(false))),
+                    ..
+                },
+            witness: None,
+        }) => ClauseDisposition::EvaluateFault(InternalFault::new(
+            "S6a",
+            "frame-false-verdict-without-a-witness",
+        )),
         Ok(FrameEvaluation {
             evaluation,
             witness: None,

@@ -44,7 +44,8 @@ clause under test.
 ## Inputs
 
 - A `ClauseRunRequest` (FR-109) whose selection is `Frame { operation,
-  invocation }`: `operation` is the `QualifiedName` `M::T::op`, and
+  invocation }`: `operation` is the `OperationName` `M::T::op` (model
+  alias, object type and operation, a type the spine owns), and
   `invocation` a `DocumentRef` (FR-106) naming a `quire.state.invocation/v1`
   document, with its pre and post snapshots in the provision.
 

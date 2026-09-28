@@ -289,6 +289,41 @@ fn a_creation_outside_the_frame_is_a_violation_naming_it() {
     assert_eq!(report.exit_code(), 10);
 }
 
+/// TC-514 step 2 (FR-115 Behavior, "the created or deleted object and its
+/// type"): a post that drops `c2` from `config_history` is a violation
+/// whose witness names the deletion of `c2` against the frame's empty
+/// `deletes`.
+#[trace("TC-514", "FR-115-AC-2")]
+#[test]
+fn a_deletion_outside_the_frame_is_a_violation_naming_it() {
+    let report = run(frame_input(
+        config_version_request,
+        "attemptUpdate",
+        &[
+            object("root", 1, None),
+            object("child", 2, Some("root")),
+            object("c2", 3, Some("root")),
+        ],
+        &[object("root", 1, None), object("child", 2, Some("root"))],
+        |_| {},
+    ));
+    let ClauseDisposition::FrameViolation(witness) = &report.disposition else {
+        panic!("expected FrameViolation, got {:?}", report.disposition);
+    };
+    let FrameChange::Deleted {
+        object,
+        type_name,
+        deletes,
+    } = &witness.change
+    else {
+        panic!("expected a deletion, got {:?}", witness.change);
+    };
+    assert_eq!(object, "c2");
+    assert_eq!(type_name.node, config_version_type());
+    assert!(deletes.is_empty(), "{deletes:?}");
+    assert_eq!(report.exit_code(), 10);
+}
+
 /// TC-514 step 2 (FR-115-AC-2): changed-version declaring `created:
 /// [child]` disagrees with the computed empty delta: `evaluate`, `refusal`,
 /// `population_delta_mismatch`/`delta-disagreement`, exit 20.
