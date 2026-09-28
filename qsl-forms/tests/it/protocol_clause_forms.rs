@@ -6,9 +6,10 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, AnchorSite, DeclarationForm, Expression, ExpressionSpans, FormsCause, FormsFailure,
-    FormsLimits, ParsedUnit, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
-    ScopedAnchorForm, SpanId, StateClauseForm, StateClauseKind,
+    build_unit, AnchorSite, BinderForm, BinderKind, DeclarationForm, Expression, ExpressionSpans,
+    FormsCause, FormsFailure, FormsLimits, ParsedUnit, ProtocolDeclarationForm,
+    ProtocolNodeDeclaration, ProtocolNodeKind, ScopedAnchorForm, SpanId, StateClauseForm,
+    StateClauseKind,
 };
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::{SourceIdentity, Span};
@@ -230,6 +231,111 @@ fn s2_builds_four_scoped_anchors_in_source_order() {
             );
         }
     }
+}
+
+fn binder<'a>(
+    form: &'a ProtocolDeclarationForm,
+    name: &str,
+    kind: BinderKind,
+    scope: &[&str],
+) -> &'a BinderForm {
+    form.binders
+        .iter()
+        .find(|binder| {
+            binder.name.name == name
+                && binder.kind == kind
+                && binder
+                    .scope
+                    .iter()
+                    .map(|s| s.name.as_str())
+                    .eq(scope.iter().copied())
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "no {kind:?} named {name} in scope {scope:?}: {:?}",
+                form.binders
+            )
+        })
+}
+
+/// SR-766 FND-003: every binder position FR-113's no-shadowing rule reaches
+/// -- the protocol's own `over (p)` input parameter, its `activation on
+/// each (p) when (...)` parameter, a top-level `capture`, a `compensate`
+/// declaration's own record binder, trigger, capture and retry/recovery
+/// parameters, an event node's record binder and `finish`'s own record
+/// binder -- is collected, in source order, with the scope FR-113 gives it.
+/// Dropping any one binder position from the S2 walk (SR-766's mutations
+/// M3/M4: the `finish` binder, the protocol's own top-level captures, or
+/// `Scope::named_types`'s own type check downstream) leaves every other
+/// qsl-forms and qsl-semantics test green; this test would not be, since it
+/// names every position directly rather than only asserting "no refusal".
+#[trace("TC-510", "FR-113")]
+#[test]
+fn s2_builds_every_binder_position_in_source_order() {
+    let source = "protocol Recording using v over (input: Config::ConfigVersion) \
+         on each (activated: Config::ConfigVersion) when (true) {\n\
+         capture logged: Config::ConfigVersion = input;\n\
+         role R on Config::ConfigVersion;\n\
+         compensate Undo for Main::Applied as (failure: Config::ConfigVersion) by R \
+         on Config::ConfigVersion::attemptUpdate using v clock \"ticks\" {\n\
+         activate first (trigger: Config::ConfigVersion) when { true } \
+         { capture noted: Config::ConfigVersion = trigger; }\n\
+         within [0,10]; attempts 2 of Config::ConfigVersion;\n\
+         retry (current_attempt: Config::ConfigVersion, prior: Config::ConfigVersion) { true };\n\
+         commit Main::Committed; recover (recovery: Config::ConfigVersion) { true }; }\n\
+         run sequence Main {\n\
+         attempt Tried by R on Config::ConfigVersion::attemptUpdate contracts [] \
+         as (tried: Config::ConfigVersion) { true };\n\
+         effect Applied of Tried as (applied: Config::ConfigVersion) { true };\n\
+         event Recovered by R for Undo as (notice: Config::ConfigVersion) { true };\n\
+         commit Committed by R as (committed: Config::ConfigVersion) { true };\n\
+         }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }";
+    let (_, unit) = build(source);
+    let form = protocol_form(unit.forms()[0].form());
+
+    binder(form, "input", BinderKind::Input, &[]);
+    binder(form, "activated", BinderKind::ActivationParameter, &[]);
+    binder(form, "logged", BinderKind::Capture, &[]);
+    binder(form, "failure", BinderKind::RecordBinder, &[]);
+    binder(form, "trigger", BinderKind::Trigger, &["Undo"]);
+    binder(form, "noted", BinderKind::Capture, &["Undo"]);
+    binder(
+        form,
+        "current_attempt",
+        BinderKind::RetryParameter,
+        &["Undo"],
+    );
+    binder(form, "prior", BinderKind::RetryParameter, &["Undo"]);
+    binder(form, "recovery", BinderKind::RecoveryParameter, &["Undo"]);
+    binder(form, "tried", BinderKind::RecordBinder, &["Main"]);
+    binder(form, "applied", BinderKind::RecordBinder, &["Main"]);
+    binder(form, "notice", BinderKind::RecordBinder, &["Main"]);
+    binder(form, "committed", BinderKind::RecordBinder, &["Main"]);
+    binder(form, "outcome", BinderKind::RecordBinder, &[]);
+
+    // Every position is collected exactly once, and `finish`'s own record
+    // binder is last: dropping it (SR-766 M4) would leave `outcome`
+    // missing entirely rather than merely reordered.
+    assert_eq!(form.binders.len(), 14, "{:?}", form.binders);
+    assert_eq!(form.binders.last().unwrap().name.name, "outcome");
+
+    // Source order: the protocol's own input and activation parameters
+    // precede its top-level capture, which precedes the whole `compensate`
+    // declaration, which precedes `run`'s own control-tree binders, which
+    // precede `finish`'s.
+    let starts: Vec<usize> = form
+        .binders
+        .iter()
+        .map(|binder| binder.name.span.start)
+        .collect();
+    let mut sorted = starts.clone();
+    sorted.sort_unstable();
+    assert_eq!(
+        starts, sorted,
+        "binders are not in source order: {starts:?}"
+    );
 }
 
 #[trace("TC-510", "FR-112-AC-2")]

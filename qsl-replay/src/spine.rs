@@ -34,7 +34,7 @@ use qsl_package::{
 };
 use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal,
-    CheckingLimits, PackageDeclarations, ProfileRefusal, ProtocolAnchorCause,
+    CheckingLimits, PackageDeclarations, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration,
 };
 use qsl_semantics::library::{ImportView, LibraryName, PackageId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -454,10 +454,20 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ),
                 ProtocolAnchorCause::Unimplemented { name, .. } => format!(
                     "{message}: `protocol {name}` resolves but is not checked or emitted yet \
-                     (QSL-306)"
+                     (QSL-309, QSL-299)"
                 ),
-                ProtocolAnchorCause::Shadow { name, .. } => {
-                    format!("{message}: `{name}`")
+                ProtocolAnchorCause::Shadow { name, shadowed, .. } => {
+                    let shadowed = match shadowed {
+                        ShadowedDeclaration::ProfileAlias => "the unit's own profile alias",
+                        ShadowedDeclaration::ModelAlias => "the unit's own model alias",
+                        ShadowedDeclaration::Function => {
+                            "a native function or predicate declaration"
+                        }
+                        ShadowedDeclaration::Type => "a native type declaration",
+                        ShadowedDeclaration::Quantity => "a native dimension or unit declaration",
+                        ShadowedDeclaration::Binder(_) => "another binder",
+                    };
+                    format!("{message}: `{name}` shadows {shadowed}")
                 }
             };
         }

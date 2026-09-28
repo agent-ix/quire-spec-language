@@ -194,7 +194,7 @@ pub use identity::{
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use protocol_clause::{CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
+    AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
     InvalidDispatchDeclaration, KeyFault, Location, MeasureObligation, Obligation, Origin,
     ProtocolAnchorCause, ProvedInterval, ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
 };
@@ -1042,7 +1042,13 @@ impl PackageDeclarations {
         // protocol's own content is checked from its own form alone.
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
         for protocol in &self.protocols {
-            match protocol_clause::check(protocol, &self.alias_names, &scope, &signatures) {
+            match protocol_clause::check(
+                protocol,
+                &self.alias_names,
+                &self.native_names,
+                &scope,
+                &signatures,
+            ) {
                 Ok(checked) => {
                     // FR-113 checks only anchor resolution; the rest of a
                     // protocol's content and its emission (QSL-299) have no

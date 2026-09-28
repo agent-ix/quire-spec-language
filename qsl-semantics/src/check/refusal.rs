@@ -91,16 +91,37 @@ pub enum ProtocolAnchorCause {
     },
 }
 
+/// Which selection alias a [`ShadowedDeclaration::ProfileAlias`] or
+/// [`ShadowedDeclaration::ModelAlias`] names (FR-091: `profile p = ...;` and
+/// `model M = ...;`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum AliasKind {
+    /// A `profile p = ...;` selection alias.
+    Profile,
+    /// A `model M = ...;` selection alias.
+    Model,
+}
+
 /// What a binder shadows (FR-113 "Refusals"): named as the checker holds
-/// it.
+/// it. FR-113 says "naming the declaration it would shadow", and AC-5 says
+/// "naming the alias" -- a consumer needs the *kind* of the shadowed
+/// declaration, not just that one exists (SR-765 FND-005). The first five
+/// variants live outside the protocol form this checker reads (a
+/// package-wide alias or native declaration), so none of them carry a
+/// span; only [`Self::Binder`] does.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ShadowedDeclaration {
-    /// A model or profile alias, or a native declaration (`function`,
-    /// `type`, `record`, `tuple`, `enum`, `dimension` or `unit`) of the
-    /// package. Neither lives in the protocol form this checker reads, and
-    /// FR-113 asks only that the refusal name what is shadowed, not where
-    /// it is declared, so this carries no span.
-    Package,
+    /// The unit's own `profile p = ...;` selection alias.
+    ProfileAlias,
+    /// The unit's own `model M = ...;` selection alias.
+    ModelAlias,
+    /// A native `function` or `predicate` declaration of the package.
+    Function,
+    /// A native `type`, `record`, `tuple` or `enum` declaration of the
+    /// package.
+    Type,
+    /// A native `dimension` or `unit` declaration of the package.
+    Quantity,
     /// Another binder visible where the shadowing binder is declared, by
     /// that binder's own span.
     Binder(Span),
