@@ -28,7 +28,7 @@ use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{decide_frame, FrameDecision, FrameObject};
 use crate::value::declaration::TypeEnvironment;
-use qsl_foundation::diagnostic::InternalFault;
+use qsl_foundation::diagnostic::{Code, InternalFault};
 
 /// What check 11 reads besides the documents: the re-derived model views,
 /// the checked type environment, and the operation's frame.
@@ -176,12 +176,16 @@ enum FrameStop<'a> {
     /// A wire object check 6 should already have admitted did not resolve,
     /// or a delta object's key was not a valid object identity.
     Admission(AdmissionFailure),
-    /// [`decide_frame`]'s first finding, in `population`.
-    Decision {
-        refusal: ModelRefusal,
-        population: &'a str,
-        pre: WireSide<'a>,
-    },
+    /// [`decide_frame`]'s first finding.
+    Decision(Box<Decision<'a>>),
+}
+
+/// [`decide_frame`]'s first finding, in `population`, with the pre side it
+/// was decided over (for the field's wire name).
+struct Decision<'a> {
+    refusal: ModelRefusal,
+    population: &'a str,
+    pre: WireSide<'a>,
 }
 
 impl From<AdmissionFailure> for FrameStop<'_> {
@@ -250,11 +254,11 @@ fn run<'a>(
         }) {
             Ok(delta) => delta,
             Err(refusal) => {
-                return Err(FrameStop::Decision {
+                return Err(FrameStop::Decision(Box::new(Decision {
                     refusal,
                     population: name,
                     pre,
-                })
+                })))
             }
         };
 
@@ -292,11 +296,11 @@ pub(super) fn enforce(
     )
     .map_err(|stop| match stop {
         FrameStop::Admission(failure) => failure,
-        FrameStop::Decision {
-            refusal,
-            population,
-            pre,
-        } => refuse(admission_record(&refusal, population, &pre)),
+        FrameStop::Decision(decision) => refuse(admission_record(
+            &decision.refusal,
+            decision.population,
+            &decision.pre,
+        )),
     })
 }
 
@@ -330,7 +334,7 @@ pub(super) fn verdict(
         Ok(_) => return Ok(FrameVerdict::Holds),
         Err(stop) => stop,
     };
-    let (refusal, population, pre) = match stop {
+    let decision = match stop {
         FrameStop::Admission(AdmissionFailure::Refused(record)) => {
             return Ok(FrameVerdict::Refused(record))
         }
@@ -341,12 +345,21 @@ pub(super) fn verdict(
             ))
         }
         FrameStop::Admission(AdmissionFailure::Fault(fault)) => return Err(fault),
-        FrameStop::Decision {
-            refusal,
-            population,
-            pre,
-        } => (refusal, population, pre),
+        FrameStop::Decision(decision) => *decision,
     };
+    let Decision {
+        refusal,
+        population,
+        pre,
+    } = decision;
+    // Only `frame_violation` is a change outside the frame. Step 4's delta
+    // disagreement and a conformance-walk limit found none, so nothing is
+    // violated: the frame cannot be evaluated over this input.
+    if refusal.code != Code::FrameViolation {
+        return Ok(FrameVerdict::Refused(admission_record(
+            &refusal, population, &pre,
+        )));
+    }
     let effect = context.effect;
     let change = match &refusal.cause {
         ModelRefusalCause::FrameFieldWriteOutsideGrant { object, field } => {
@@ -375,12 +388,13 @@ pub(super) fn verdict(
             pre_type: pre_type.clone(),
             post_type: post_type.clone(),
         },
-        // Step 4's delta disagreement and a conformance-walk limit: no
-        // change outside the frame was found, so nothing is violated.
+        // `decide_frame` raises `frame_violation` with the four causes above
+        // alone; any other is a broken invariant, never a verdict.
         _ => {
-            return Ok(FrameVerdict::Refused(admission_record(
-                &refusal, population, &pre,
-            )))
+            return Err(InternalFault::new(
+                "observation-admission",
+                "frame-violation-cause-has-no-witness",
+            ))
         }
     };
     Ok(FrameVerdict::Violation(Box::new(FrameWitness {
