@@ -54,10 +54,14 @@ Partial (QSL-279). Step 2's double-compile identity case is covered by
 (`s4_state_package_reads_back_through_i2`) is implemented but `#[ignore]`d:
 it reproduces `invalid_semantic_graph` because the pinned
 `quire-contract-model` crate's `ApplicationOperator` vocabulary has not yet
-absorbed STD-111's `state_clause` member; tracked by QSL-307. The rest of
-step 2 (rename, `<=`, `ParentOrder2`, second `post`) and step 3
-(inherited-operation anchor sharing) are not yet implemented; tracked by
-QSL-308. Step 4 (fault-injected all-or-nothing emission) is covered
+absorbed STD-111's `state_clause` member; tracked by QSL-307. QSL-312 covers
+the rest of step 2 (`s4_renaming_parent_order_changes_no_node_id`,
+`s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id`,
+`s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim`,
+`s4_a_second_post_on_attempt_update_adds_one_clause_node_and_no_anchor_or_frame`)
+and step 3
+(`s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version`).
+Step 4 (fault-injected all-or-nothing emission) is covered
 (QSL-313): `qsl-package`'s `a_fault_injected_partway_through_node_emission_writes_nothing`
 proves the mechanism generically, and `qsl-replay`'s
 `a_fault_on_the_frame_node_refuses_the_whole_config_version_package` drives

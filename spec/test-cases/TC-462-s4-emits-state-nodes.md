@@ -61,7 +61,14 @@ through `resolve_declaration`, each invariant's anchor argument, the
 forbidden forms); `s4_emitted_frame_node_lists_configversion_in_dependencies`
 covers the frame's own emitted `dependencies`, decoding the wire directly.
 `triple_mapping_is_total_and_injective_over_all_seven_variants` covers step
-4. Step 3 (the `VersionUnchanged`/`NoCycle`/`ParentOrder` condition-term
-walk) and the remainder of step 2 (each non-frame node's own `dependencies`
-and occurrences, the `state_clause` `semantic_type`, `VersionUnchanged`'s
-anchor argument) are not yet covered; tracked by QSL-308.
+4. QSL-312 covers the rest of step 2 and step 3:
+`s4_state_clause_and_anchor_dependencies_beyond_the_frame` (each clause's
+parameter aggregate and exact emitted `dependencies`, the anchor's, and the
+`versionNumber` field read's),
+`s4_state_clause_anchor_and_frame_occurrences_match_the_outputs_table`,
+`s4_state_clause_semantic_type_is_the_boolean_scalar_type_node`,
+`s4_version_unchanged_condition_holds_a_pre_application_over_the_versionnumber_field_read`,
+`s4_no_cycle_condition_holds_a_reaches_field_application_naming_parent` and
+`s4_parent_order_self_parent_read_shares_no_cycles_member_shape`.
+`VersionUnchanged`'s anchor argument is asserted by
+`s4_a_second_post_on_attempt_update_adds_one_clause_node_and_no_anchor_or_frame`.

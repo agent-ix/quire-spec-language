@@ -241,8 +241,8 @@ operational validation remains outside this audit-only plan.
 | TC-459 | S3 checks the ConfigVersion state clauses and types self, result and pre | Unit | P1 | FR-104-AC-1, FR-104-AC-2, FR-104-AC-7, FR-104-AC-8 | ✅ Passed locally (QSL-277, QSL-304); AC-1's `Int[0, 1000]` half is verified over the shared `ConfigVersion` fixture itself |
 | TC-460 | S3 refuses ill-formed state clauses with their catalog codes | Unit | P1 | FR-104-AC-3, FR-104-AC-4 | ✅ Passed locally (QSL-277) |
 | TC-461 | S3 records one operation-contract requirement per state clause and frame | Unit | P1 | FR-104-AC-5, FR-104-AC-6 | ✅ Passed locally (QSL-277) |
-| TC-462 | S4 emits state clause, operation anchor and frame nodes with their bodies | Integration | P1 | FR-105-AC-1, FR-105-AC-2, FR-105-AC-5 | 🚧 Planned; QSL-273; steps 1 to 3 pending STD-111 |
-| TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | 🚧 Partial; QSL-273; step 1 `#[ignore]`d pending STD-111 (QSL-307), steps 2 to 3 remainder tracked by QSL-308; step 4 covered (QSL-313) |
+| TC-462 | S4 emits state clause, operation anchor and frame nodes with their bodies | Integration | P1 | FR-105-AC-1, FR-105-AC-2, FR-105-AC-5 | ✅ Covered; QSL-279, QSL-312 |
+| TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | 🚧 Partial; QSL-273; step 1 `#[ignore]`d pending STD-111 (QSL-307); steps 2 to 3 covered (QSL-279, QSL-312); step 4 covered (QSL-313) |
 | TC-464 | Snapshot and invocation documents read and admit into an observation set | Unit | P1 | FR-106-AC-1, FR-106-AC-2, FR-106-AC-6 | 🚧 Planned; QSL-273 |
 | TC-465 | Admission refuses or reports incomplete for each input defect, in check order | Unit | P1 | FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7 | 🚧 Planned; QSL-273 |
 | TC-466 | S6a evaluates state clauses over their observations, pre reads and reaches | Integration | P1 | FR-107-AC-1, FR-107-AC-2, FR-107-AC-3 | ✅ Passed locally; QSL-310, QSL-311 |
