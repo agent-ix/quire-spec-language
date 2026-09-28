@@ -499,10 +499,13 @@ fn evaluate_exit_code(outcome: &CallOutcome) -> u8 {
 /// What every report of one [`run_clause`] call carries about its unit:
 /// its byte digest, its identity and, for an I3 source, the original
 /// document.
-struct UnitProvenance {
-    digest: String,
-    source: SourceIdentity,
-    extraction: Option<ExtractionOrigin>,
+pub(crate) struct UnitProvenance {
+    /// The unit's `sha256:` byte digest.
+    pub(crate) digest: String,
+    /// The unit's four FR-001 labels.
+    pub(crate) source: SourceIdentity,
+    /// The I3 extraction's original document, when one was used.
+    pub(crate) extraction: Option<ExtractionOrigin>,
 }
 
 /// FR-106 admission of `selection` for `clause`, one checked state clause of
@@ -800,19 +803,33 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     }
 }
 
-/// What [`run_frame`] reads besides the selection itself.
-struct FrameRun<'a> {
-    packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
-    model_limits: ModelNormalizationLimits,
-    provisions: Provisions<'a>,
-    observation_limits: ObservationLimits,
-    accounting: ScalarLimits,
-    package: &'a qsl_package::CheckedPackage,
-    package_id: PackageId,
-    unit: &'a UnitProvenance,
-    sources: &'a [Source],
-    model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
-    selection: ClauseRunSelection,
+/// What an FR-115 frame run reads besides the operation and invocation:
+/// [`run_clause`]'s `Frame` arm builds it from its request, and FR-116's
+/// frame replay (`crate::execute`) from its recompiled package and byte
+/// provision.
+pub(crate) struct FrameRun<'a> {
+    /// FR-056's package input.
+    pub(crate) packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    /// The limits admission re-normalizes the domain packages under.
+    pub(crate) model_limits: ModelNormalizationLimits,
+    /// FR-106's snapshot and invocation provisions.
+    pub(crate) provisions: Provisions<'a>,
+    /// FR-106's observation limits.
+    pub(crate) observation_limits: ObservationLimits,
+    /// The evaluation meter's accounting limits.
+    pub(crate) accounting: ScalarLimits,
+    /// The compiled package.
+    pub(crate) package: &'a qsl_package::CheckedPackage,
+    /// The compiled `package_id`.
+    pub(crate) package_id: PackageId,
+    /// The compiled unit's provenance.
+    pub(crate) unit: &'a UnitProvenance,
+    /// The unit's and every resolved library's source, for loci.
+    pub(crate) sources: &'a [Source],
+    /// Every model selection the compiled package resolved.
+    pub(crate) model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
+    /// The selection, as reported in provenance.
+    pub(crate) selection: ClauseRunSelection,
 }
 
 impl FrameRun<'_> {
@@ -847,18 +864,7 @@ fn run_frame(
     operation: &OperationName,
     invocation: &DocumentRef,
 ) -> ClauseRunReport {
-    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, FrameEvaluation};
-    use qsl_semantics::family::FamilyOutcome;
-
-    let graph = run.package.graph();
-    // FR-104's Resolution: `M::T::op` names an operation of `M::T`'s
-    // effective view, and the package holds its frame node only when a
-    // clause or attempt names it (FR-105).
-    let resolved = graph.operation_frame(
-        &format!("{}::{}", operation.model, operation.object),
-        &operation.operation,
-    );
-    let Some((context, operation_frame)) = resolved else {
+    let Some((context, operation_frame)) = resolve_frame(run.package.graph(), operation) else {
         return run.report(
             ClauseDisposition::MissingName {
                 name: operation.to_string(),
@@ -867,6 +873,40 @@ fn run_frame(
             None,
         );
     };
+    check_frame(run, context, operation_frame, invocation)
+}
+
+/// FR-104's Resolution of a `Frame` selection: `M::T::op` names an
+/// operation of `M::T`'s effective view, and the package holds its frame
+/// node only when a clause or attempt names it (FR-105). `None` when it
+/// names none.
+pub(crate) fn resolve_frame<'g>(
+    graph: &'g CheckedGraph,
+    operation: &OperationName,
+) -> Option<(
+    quire_exact::EffectiveId,
+    &'g qsl_semantics::check::CheckedOperationFrame,
+)> {
+    graph.operation_frame(
+        &format!("{}::{}", operation.model, operation.object),
+        &operation.operation,
+    )
+}
+
+/// FR-115 over a resolved operation frame: admit `invocation` by FR-106's
+/// checks 1 and 3 to 10, and check it against the frame through the
+/// `ProtocolClause` S6a `evaluate` arm (FR-106's check 11). `context` and
+/// `operation_frame` are [`resolve_frame`]'s answer over `run.package`.
+pub(crate) fn check_frame(
+    run: &FrameRun<'_>,
+    context: quire_exact::EffectiveId,
+    operation_frame: &qsl_semantics::check::CheckedOperationFrame,
+    invocation: &DocumentRef,
+) -> ClauseRunReport {
+    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, FrameEvaluation};
+    use qsl_semantics::family::FamilyOutcome;
+
+    let graph = run.package.graph();
     let frame = operation_frame.frame();
     let facts = FrameFacts {
         context,

@@ -36,7 +36,10 @@ pub mod spine;
 mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
-pub use execute::{replay, DependencySelectionsCause, LimitAboveReader, ReplayRefusal};
+pub use execute::{
+    replay, replay_frame, DependencySelectionsCause, FrameIdentityMismatch, FrameReplayResult,
+    LimitAboveReader, ReplayRefusal,
+};
 pub use identity::{
     Backend, DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection,
     QualifiedName, RawSourceRef, TracePosition,
@@ -61,8 +64,16 @@ pub use result::{
     SeparatingWitnessRecord, Verdict, WitnessArmResult, WitnessSettlement,
 };
 pub use witness::{
-    CanonicalAssignment, DecodeRefusal, FamilyPayload, MalformedTranscript, NoPayload,
-    ReplaySource, Witness, WitnessEnvelope, WitnessPacket, WitnessRefusal,
+    CanonicalAssignment, ClaimedChange, DecodeRefusal, FamilyPayload, FrameCounterexample,
+    FrameOperation, MalformedTranscript, NoPayload, ReplaySource, Witness, WitnessEnvelope,
+    WitnessPacket, WitnessRefusal,
+};
+// FR-116: the FR-106 document, object and FR-115 frame witness types a
+// frame counterexample and its replay result carry, re-exported so CG can
+// name and build them through this crate alone (ADR-011 FB-05).
+pub use qsl_semantics::model::key::DeclarationKey;
+pub use qsl_semantics::model::observation::{
+    AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, SelectedObject,
 };
 
 #[cfg(test)]

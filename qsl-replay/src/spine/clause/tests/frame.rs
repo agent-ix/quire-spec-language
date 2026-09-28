@@ -18,7 +18,7 @@ fn operation(name: &str) -> OperationName {
 
 /// One `config_history` object: `key` at `version`, naming `parent` when
 /// `Some`.
-fn object(key: &str, version: i64, parent: Option<&str>) -> serde_json::Value {
+pub(super) fn object(key: &str, version: i64, parent: Option<&str>) -> serde_json::Value {
     let parent = match parent {
         Some(parent) => json!({"present": {"reference": {
             "population": config_version_population_identity(), "key": parent,
@@ -32,7 +32,11 @@ fn object(key: &str, version: i64, parent: Option<&str>) -> serde_json::Value {
 }
 
 /// A pre or post snapshot holding `objects` in `config_history`.
-fn snapshot(label: &DocumentRef, observation: &str, objects: &[serde_json::Value]) -> Vec<u8> {
+pub(super) fn snapshot(
+    label: &DocumentRef,
+    observation: &str,
+    objects: &[serde_json::Value],
+) -> Vec<u8> {
     json!({
         "format": "quire.state.snapshot/v1",
         "identity": document_identity_json(label),
