@@ -17,12 +17,13 @@ use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::source::Source;
 use qsl_foundation::source_map::NativeLanguage;
 use qsl_foundation::{ByteDigest, SourceIdentity};
+use qsl_semantics::check::{CheckedGraph, CheckedStateClause};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
     admit_current_snapshot, admit_observations, population_universe_for, AdmissionFailure,
-    AdmissionRecord, ClauseFacts, ClauseSelection, ClauseSelectionInput, DocumentRef,
-    ObservationLimits, OperationFacts, Provisions,
+    AdmissionRecord, AdmittedObservations, ClauseFacts, ClauseSelection, ClauseSelectionInput,
+    DocumentRef, ObservationLimits, OperationFacts, Provisions,
 };
 use quire_exact::{Meter, ScalarLimits, Value, ValueType};
 
@@ -460,6 +461,46 @@ struct UnitProvenance {
     extraction: Option<ExtractionOrigin>,
 }
 
+/// FR-106 admission of `selection` for `clause`, one checked state clause of
+/// `graph`: [`run_clause`]'s own admission step, shared with the tests that
+/// evaluate an admitted clause under a caller-supplied `Meter`.
+///
+/// The model -> check edge must stay empty (FR-074-AC-3):
+/// `admit_observations` (FR-106) is a `model`-layer function, so this
+/// caller reads the checked clause's own facts out of
+/// `check::CheckedStateClause` here, into model-level
+/// `ClauseFacts`/`OperationFacts`, rather than that module importing
+/// `check` itself.
+pub(crate) fn admit_clause_observations(
+    graph: &CheckedGraph,
+    clause: &CheckedStateClause,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    model_limits: ModelNormalizationLimits,
+    provisions: &Provisions<'_>,
+    selection: &ClauseSelection,
+    observation_limits: ObservationLimits,
+) -> Result<AdmittedObservations, AdmissionFailure> {
+    let clause_facts = ClauseFacts {
+        identity: clause.identity(),
+        kind: clause.kind(),
+        context: clause.context(),
+        operation: clause.operation().map(|operation| OperationFacts {
+            declaring: operation.declaring,
+            declaration: operation.declaration.clone(),
+        }),
+    };
+    admit_observations(
+        graph.model_selections(),
+        graph.scope().types(),
+        &clause_facts,
+        packages,
+        model_limits,
+        provisions,
+        selection,
+        observation_limits,
+    )
+}
+
 /// FR-109: `qsl_replay::spine::run_clause`.
 pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRunRefusal> {
     let unit = request.source.unit();
@@ -574,25 +615,9 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                 snapshots: &request.snapshots,
                 invocations: &request.invocations,
             };
-            // The model -> check edge must stay empty (FR-074-AC-3):
-            // `admit_observations` (FR-106) is a `model`-layer function, so
-            // this caller reads the checked clause's own facts out of
-            // `check::CheckedStateClause` here, into model-level
-            // `ClauseFacts`/`OperationFacts`, rather than that module
-            // importing `check` itself.
-            let clause_facts = ClauseFacts {
-                identity: clause.identity(),
-                kind: clause.kind(),
-                context: clause.context(),
-                operation: clause.operation().map(|operation| OperationFacts {
-                    declaring: operation.declaring,
-                    declaration: operation.declaration.clone(),
-                }),
-            };
-            let observations = match admit_observations(
-                package.graph().model_selections(),
-                package.graph().scope().types(),
-                &clause_facts,
+            let observations = match admit_clause_observations(
+                package.graph(),
+                clause,
                 &request.packages,
                 request.model_limits,
                 &provisions,

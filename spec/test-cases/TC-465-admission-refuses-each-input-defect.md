@@ -68,6 +68,7 @@ mutated document except where the row says otherwise.
 | 40 | 11, population order | pre and post list `archive` (complete, object `a1` with `parent` absent) before `config_history`; post sets `a1.parent` to a present reference and `child.parent` absent | `frame_violation`/`unauthorized-change` naming `a1` and `parent` in `archive` |
 | 41 | 11, one-sided population | post adds a population `archive` absent from pre, holding object `a1` (`parent` absent), with `created` unchanged | `frame_violation`/`unauthorized-change` naming the creation of `a1` in `archive` (pre side admitted as empty) |
 | 42 | 1.7 label order | blank `revision_namespace` and blank `revision` in document and selection | `invalid_source_identity`/`blank-label`, `label` `revision_namespace` |
+| 43 | 8 over a parameter | probe invocation with `target` `{config_history, missing}` | `dangling_reference`/`absent-target-in-complete-population`, naming `missing` and `config_history` |
 
 Rows 25, 40 and 41 need the fixture package to declare a second population
 `archive`. Every population declaration is an unbounded `Population(None)`
@@ -87,7 +88,7 @@ reference field's target is admitted under the field's own declared type,
 never the referenced object's own possibly-subtyped admitted type
 (`qsl-semantics/src/model/observation/document.rs`'s `admit_scalar`,
 `Reference` arm), so a `Sub`-typed object can never itself be validly
-referenced by a `ConfigVersion`-typed field. Rows 35 to 38 use
+referenced by a `ConfigVersion`-typed field. Rows 35 to 38 and 43 use
 TC-466 step 3's `probe` package variant: `probe(target: ConfigVersion)` on
 `ConfigVersion`, no result, empty frame, with `ReachesTarget` selected. Their
 base invocation has `operation` `probe`, `self` `{config_history, child}`,

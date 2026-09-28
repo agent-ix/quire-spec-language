@@ -3885,6 +3885,35 @@ fn tc465_row38_result_for_a_no_result_operation_refuses_unknown_member() {
     assert_tc465_refused(result, "invalid_runtime_input", "unknown-member");
 }
 
+/// Row 43 (check 8 over a check-10 value; SR-771 FND-001): probe
+/// invocation with `target` naming `missing`, a key absent from the
+/// complete pre `config_history` -- `dangling_reference`, naming `missing`
+/// and `config_history`, exactly as row 24 does for an object field. Before
+/// the fix this admitted and `ReachesTarget` evaluated `false`.
+#[trace("TC-465", "FR-106-AC-4")]
+#[test]
+fn tc465_row43_dangling_reference_parameter_refuses_dangling_reference() {
+    let document = tc465_document();
+    let population = "ix://example/config-version/config_history";
+    let result = run_tc465_probe(&document, |value| {
+        value["parameters"]["target"] =
+            json!({"reference": {"population": population, "key": "missing"}});
+    });
+    let record = assert_tc465_refused(
+        result,
+        "dangling_reference",
+        "absent-target-in-complete-population",
+    );
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("missing")
+    );
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some(population)
+    );
+}
+
 /// Row 33 (check 6.4): `root` without its `parent` field.
 #[trace("TC-465", "FR-106-AC-3")]
 #[test]

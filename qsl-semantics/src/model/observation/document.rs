@@ -812,6 +812,9 @@ pub(super) struct References<'a> {
     /// Every object of the snapshot whose type and key resolve, by its wire
     /// `(population, key)`.
     admitted: BTreeMap<(&'a str, &'a str), ObjectReference>,
+    /// Each listed population's `complete` flag, as check 7 reads it (the
+    /// same last-entry-wins insert [`admit_population_values`] makes).
+    completeness: BTreeMap<&'a str, bool>,
     /// Each reference that named no object of the snapshot, with the wire
     /// population it named, in walk order.
     unresolved: Vec<(String, ObjectReference)>,
@@ -823,7 +826,9 @@ impl<'a> References<'a> {
     /// reference to it is used.
     pub(super) fn over(views: &'a [ModelView], populations: &'a [RawPopulation]) -> Self {
         let mut admitted = BTreeMap::new();
+        let mut completeness = BTreeMap::new();
         for population in populations {
+            completeness.insert(population.population.as_str(), population.complete);
             for object in &population.objects {
                 let Some((view, key)) = find_declaration(views, object.type_identity.as_str())
                 else {
@@ -843,8 +848,38 @@ impl<'a> References<'a> {
         Self {
             views,
             admitted,
+            completeness,
             unresolved: Vec::new(),
         }
+    }
+
+    /// FR-106 check 8 over one check-10 value (a parameter or the result):
+    /// every reference inside `raw` must name an object of this snapshot,
+    /// unless the snapshot lists its population as incomplete (check 7
+    /// skips the dangling check there). A population the snapshot does not
+    /// list is not tolerated, the same rule [`finish_populations`] applies
+    /// to object fields (SR-750 FND-019). Object fields get this check from
+    /// [`check_population_closure`]; this is the same rule for the values
+    /// check 10 admits (SR-771 FND-001).
+    fn check_closure(&self, raw: &RawValue) -> Result<(), AdmissionRecord> {
+        let mut refs = Vec::new();
+        collect_references(raw, &mut refs);
+        for (population, key) in refs {
+            if self
+                .admitted
+                .contains_key(&(population.as_str(), key.as_str()))
+                || self.completeness.get(population.as_str()).copied() == Some(false)
+            {
+                continue;
+            }
+            return Err(admission_record(
+                Code::DanglingReference,
+                "absent-target-in-complete-population",
+            )
+            .with("population", population)
+            .with("object", key));
+        }
+        Ok(())
     }
 
     /// The typed reference `reference` names, for a value of declared type
@@ -1416,8 +1451,15 @@ pub(super) fn resolve_self(
 /// with no declared result).
 pub(super) type AdmittedParametersAndResult = (Vec<(String, Value)>, Option<Value>);
 
+/// FR-106 check 10, with check 8's closure rule applied to every reference
+/// value it admits ([`References::check_closure`]). A parameter resolves
+/// against the pre snapshot (`parameter_references`): the operation reads
+/// its arguments before it runs. The result resolves against the post
+/// snapshot (`result_references`): it is observed after the operation, so
+/// it can name an object the operation created.
 pub(super) fn admit_parameters_and_result(
-    references: &mut References<'_>,
+    parameter_references: &mut References<'_>,
+    result_references: &mut References<'_>,
     operation: &OperationDeclaration,
     parameters: &[(String, RawValue)],
     result: &ResultValue,
@@ -1436,8 +1478,9 @@ pub(super) fn admit_parameters_and_result(
                     .with("field", name.clone()),
             ));
         }
-        let value = admit_scalar(references, raw, value_type)
+        let value = admit_scalar(parameter_references, raw, value_type)
             .map_err(|record| refuse(record.with("field", name.clone())))?;
+        parameter_references.check_closure(raw).map_err(refuse)?;
         admitted.push((name.clone(), value));
     }
     for (name, _) in parameters {
@@ -1474,7 +1517,9 @@ pub(super) fn admit_parameters_and_result(
                     "wrong-value-kind",
                 )));
             }
-            Some(admit_scalar(references, raw, value_type).map_err(refuse)?)
+            let value = admit_scalar(result_references, raw, value_type).map_err(refuse)?;
+            result_references.check_closure(raw).map_err(refuse)?;
+            Some(value)
         }
     };
     Ok((admitted, result_value))
@@ -1555,5 +1600,58 @@ mod tests {
         collect_references(&RawValue::Absent, &mut found);
         collect_references(&RawValue::Integer("1".to_owned()), &mut found);
         assert!(found.is_empty());
+    }
+
+    fn reference(population: &str, key: &str) -> RawValue {
+        RawValue::Reference(RawRef {
+            population: population.to_owned(),
+            key: key.to_owned(),
+        })
+    }
+
+    fn empty_population(population: &str, complete: bool) -> RawPopulation {
+        RawPopulation {
+            population: population.to_owned(),
+            complete,
+            objects: Vec::new(),
+        }
+    }
+
+    /// SR-771 FND-001: `References::check_closure` (check 8 over a check-10
+    /// value) refuses a reference naming no object of a complete population
+    /// and of a population the snapshot does not list, and tolerates one
+    /// into a population listed incomplete -- the same rule
+    /// `check_population_closure` plus `finish_populations` apply to object
+    /// fields. The refusal names the reference's population and key, and a
+    /// reference nested under `present` or a `sequence` is found.
+    #[test]
+    fn check_closure_refuses_dangling_and_tolerates_incomplete() {
+        let populations = vec![
+            empty_population("complete", true),
+            empty_population("partial", false),
+        ];
+        let references = References::over(&[], &populations);
+
+        let record = references
+            .check_closure(&RawValue::Present(Box::new(reference("complete", "k"))))
+            .expect_err("a key absent from a complete population refuses");
+        assert_eq!(record.code, Code::DanglingReference);
+        assert_eq!(record.cause, "absent-target-in-complete-population");
+        assert_eq!(
+            record.fields.get("population").map(String::as_str),
+            Some("complete")
+        );
+        assert_eq!(record.fields.get("object").map(String::as_str), Some("k"));
+
+        let record = references
+            .check_closure(&reference("unlisted", "k"))
+            .expect_err("a population the snapshot does not list refuses");
+        assert_eq!(record.code, Code::DanglingReference);
+
+        assert_eq!(
+            references.check_closure(&RawValue::Sequence(vec![reference("partial", "k")])),
+            Ok(())
+        );
+        assert_eq!(references.check_closure(&RawValue::Boolean(true)), Ok(()));
     }
 }
