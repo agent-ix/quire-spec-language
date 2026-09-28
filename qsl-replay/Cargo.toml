@@ -52,6 +52,12 @@ quire-exact = { path = "../quire-exact", features = ["test-support"] }
 # `document_digest` does, over the one RFC 8785 implementation, rather than
 # guessing or duplicating that logic.
 quire-canonical = { workspace = true }
+# QSL-313 (FR-105-AC-6): the fault-injection seam
+# (`emit_checked_with_fault`/`checked_node_id_of`) is public only under
+# `test-support` (qsl-package's own Cargo.toml); this dev-dependency edge is
+# how `spine::clause`'s own tests reach it to fault the `frame` node of a
+# compiled state-clause package.
+qsl-package = { path = "../qsl-package", features = ["test-support"] }
 
 [lints.rust]
 unsafe_code = "forbid"

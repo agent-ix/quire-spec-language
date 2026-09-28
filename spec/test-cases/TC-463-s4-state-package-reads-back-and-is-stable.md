@@ -55,6 +55,10 @@ Partial (QSL-279). Step 2's double-compile identity case is covered by
 it reproduces `invalid_semantic_graph` because the pinned
 `quire-contract-model` crate's `ApplicationOperator` vocabulary has not yet
 absorbed STD-111's `state_clause` member; tracked by QSL-307. The rest of
-step 2 (rename, `<=`, `ParentOrder2`, second `post`), step 3
-(inherited-operation anchor sharing) and step 4 (fault-injected all-or-
-nothing emission) are not yet implemented; tracked by QSL-308.
+step 2 (rename, `<=`, `ParentOrder2`, second `post`) and step 3
+(inherited-operation anchor sharing) are not yet implemented; tracked by
+QSL-308. Step 4 (fault-injected all-or-nothing emission) is covered
+(QSL-313): `qsl-package`'s `a_fault_injected_partway_through_node_emission_writes_nothing`
+proves the mechanism generically, and `qsl-replay`'s
+`a_fault_on_the_frame_node_refuses_the_whole_config_version_package` drives
+it at the `frame` node of a compiled ConfigVersion state-clause package.

@@ -25,6 +25,13 @@ pub use emit::{
     diagnostics_catalog, emit_checked, Emission, EmitRefusal, OmissionCause, OmittedNode,
 };
 
+// QSL-313: the FR-105-AC-6 fault-injection seam. Public only under
+// `test-support` (see `emit.rs`'s doc comments and this crate's
+// `Cargo.toml`), so a dependent crate's own tests can reach it while it
+// compiles into no shipped build.
+#[cfg(feature = "test-support")]
+pub use emit::{checked_node_id_of, emit_checked_with_fault};
+
 // ADR-011 §4 I2: `read_checked_package_v2`, its outcome type
 // (`V2ReadOutcome`) and its refusal/incomplete types (`V2ReadRefusal`,
 // `V2ReadIncomplete`) are all `pub(crate)` on `checked_v2` itself (QSL-6
