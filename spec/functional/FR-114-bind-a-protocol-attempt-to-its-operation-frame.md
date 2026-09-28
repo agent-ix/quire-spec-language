@@ -111,7 +111,9 @@ AC-4 are tested (TC-513), including through `emit_checked`.
 
 A protocol holding the attempt compiles only when every other part of it is
 checked (FR-113 Status lists what is and what still refuses
-`unsupported_construct`/`not-yet-implemented`). So TC-513's own fixture
+`unsupported_construct`/`not-yet-implemented`). The package then holds the
+attempt's anchor, frame and frame record, and no node for the protocol
+itself. So TC-513's own fixture
 body `{ updated }`, which reads the binder, still refuses until protocol
 bodies are checked. The tests use `{ true }`. The emitted spellings follow
 FR-105's and are pending STD-111, as FR-105's are.

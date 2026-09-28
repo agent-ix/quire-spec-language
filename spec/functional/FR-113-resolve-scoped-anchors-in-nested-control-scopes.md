@@ -156,7 +156,12 @@ its content. It checks and compiles only when it consists of a `using`
 profile alias, roles written `role R on M::T`, a `run` tree of `sequence`
 controls and `attempt` nodes, and a `finish` node, with every body a bare
 Boolean literal. In that case the `using` alias, each role's object type,
-each attempt's `by` role and each binder's declared type are resolved. Any
+each attempt's `by` role and each binder's declared type are resolved, and
+two roles of one name refuse `ambiguous_declaration`/`ambiguous-name` at
+each. Such a protocol compiles, but nothing emits the protocol itself: the
+package holds no node for its name, roles, `run` tree or `finish`. Only
+each attempt's operation anchor, frame and frame record reach the package
+(FR-114, ADR-012 §12.2 Package row). Any
 other construct is still refused `unsupported_construct`/
 `not-yet-implemented` at the earliest occurrence, because no checker reads
 it yet:
