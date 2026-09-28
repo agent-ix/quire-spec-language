@@ -3,17 +3,12 @@
 //! against TC-458's `ConfigVersion` fixture package
 //! (`crate::model_operations`).
 //!
-//! **Scope note** (mirrors `model_operations.rs`'s own): `versionNumber` is
-//! typed as native `Integer`, not the bound `Int[0, 1000]` scalar FR-104-AC-1
-//! describes. FR-056's `value-type/v1` scalar reader (QSL-289) now exists
-//! and is verified end to end by `model_operations`'s own
-//! `bound_integer_value_type_admits_and_assembles`; the shared
-//! `ConfigVersion` fixture this file's tests use still substitutes the
-//! native `Integer` field, since switching it changes S3's own already-
-//! verified checking behavior for a bounded field -- a separate, larger
-//! follow-up, not this ticket's (QSL-277) or QSL-289's own scope. Every
-//! assertion below that would otherwise read `Int[0, 1000]` reads `Integer`
-//! instead.
+//! `versionNumber` is the package-declared bound `VersionNumber` scalar
+//! (`Int[0, 1000]`, FR-104-AC-1), declared by the shared `ConfigVersion`
+//! fixture ([`crate::model_operations::version_number_value_type`]) and read
+//! by FR-056's `value-type/v1` scalar reader (QSL-289). An out-of-bound
+//! `versionNumber` in a snapshot therefore refuses at admission (TC-465 rows
+//! 20 and 30).
 
 use std::collections::BTreeMap;
 
@@ -26,13 +21,14 @@ use qsl_semantics::check::{
     NodeKind, Observation, Origin, WrongSnapshotCause,
 };
 use qsl_semantics::family::{ClaimExtent, DomainKind};
-use quire_exact::{Integer, IntegerInterval, ValueType};
+use quire_exact::ValueType;
 
 use crate::model_operations::{
     admit_and_assemble_with_body, ambiguous_operation_document, archive_population,
     config_unit_with_body, config_version_document, config_version_document_with_operations,
     config_version_document_with_population, config_version_identity, empty_frame, operation,
     operation_parameter, subtype_document, subtype_document_with_two_member_population,
+    version_number_bound, version_number_identity,
 };
 use serde_json::json;
 
@@ -189,9 +185,7 @@ fn the_configversion_state_clauses_check() {
         .filter(|node| matches!(node.kind(), NodeKind::Attribute { .. }))
         .map(|node| node.value_type())
         .collect();
-    let version_number_type = ValueType::Int(
-        IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64)).unwrap(),
-    );
+    let version_number_type = version_number_bound();
     assert!(
         attribute_types.contains(&&version_number_type),
         "self.versionNumber: Int[0, 1000]: {attribute_types:?}"
@@ -2047,11 +2041,12 @@ fn tc465_document_with_sub_redefining_version_number() -> Vec<u8> {
     sub_type["fields"] = json!([{
         "identity": version,
         "name": "version",
-        // Same bound scalar `ConfigVersion::versionNumber` itself declares
-        // (`ix://example/config-version/VersionNumber`, `Int[0, 1000]`): a
-        // `redefines` that widens the type it redefines refuses
-        // `RedefinitionWidens`.
-        "typeRef": "ix://example/config-version/VersionNumber",
+        // The same bound `VersionNumber` (`Int[0, 1000]`) that
+        // `ConfigVersion::versionNumber` declares, so this redefinition does
+        // not widen it and the package admits. A native `Integer` here would
+        // widen it and refuse `RedefinitionWidens` at assembly, which is
+        // covered in `type_environment_model.rs`, not here.
+        "typeRef": version_number_identity(),
         "presence": "required",
         "nullable": false,
         "defaultKind": "none",

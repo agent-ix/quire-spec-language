@@ -17,9 +17,8 @@
 //! [`bound_integer_value_type_admits_and_assembles`] below exercises the
 //! same reader end to end over a second, dedicated fixture (a `Widget`
 //! object type with a `VersionNumber`-typed field), independent of
-//! `ConfigVersion`. AC-3's second parameter type, `delta`, stays the native
-//! `Integer` -- it is an operation parameter, not the `versionNumber` field
-//! itself.
+//! `ConfigVersion`. AC-3's second parameter, `delta`, is typed by the same
+//! `VersionNumber` declaration and assembles to the same `Int[0, 1000]`.
 
 use std::collections::BTreeMap;
 
@@ -171,6 +170,20 @@ pub(super) fn config_version_identity(suffix: &str) -> String {
     format!("ix://{PACKAGE_IDENTITY}/ConfigVersion/{suffix}")
 }
 
+/// `VersionNumber`'s node identity, `ix://example/config-version/VersionNumber`.
+pub(super) fn version_number_identity() -> String {
+    format!("ix://{PACKAGE_IDENTITY}/VersionNumber")
+}
+
+/// The `ValueType` a `VersionNumber`-typed field or parameter assembles to:
+/// `Int[0, 1000]`.
+pub(super) fn version_number_bound() -> ValueType {
+    ValueType::Int(
+        IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64))
+            .expect("0 <= 1000 is a nonempty interval"),
+    )
+}
+
 /// `ix://example/config-version/VersionNumber`: the package-declared bound
 /// integer scalar (`Int[0, 1000]`) `versionNumber` is really typed as, per
 /// TC-458's own fixture text and the shape QSL-279's
@@ -180,11 +193,23 @@ pub(super) fn config_version_identity(suffix: &str) -> String {
 /// `read_value_type` (`qsl-semantics/src/model/intake.rs`) is what admits
 /// this shape.
 pub(super) fn version_number_value_type() -> (Value, Value, String) {
-    let identity = format!("ix://{PACKAGE_IDENTITY}/VersionNumber");
+    let identity = version_number_identity();
+    // `agent-ix-semantic-ir`'s own `CONSTRAINT_MEMBERS` requires every
+    // constraint's `identity`/`appliesTo`/`diagnosticCode`/`origin` present
+    // (this module's own tests all route through the full
+    // `validate_with_semantic_ir` schema check, not just this reader's own
+    // hand-rolled one), unlike `intake.rs`'s own direct-reader unit tests.
     // `appliesTo` names the native scalar the value type binds
-    // (`ix://quire/native/Integer`), not `VersionNumber`'s own identity --
-    // see [`bound_integer_value_type_admits_and_assembles`]'s own doc
-    // comment for why.
+    // (`ix://quire/native/Integer`), not `VersionNumber`'s own identity:
+    // `agent-ix-semantic-ir`'s own applicability table (`rules.rs::applies_to`)
+    // only ever resolves a construct-kind node's own `kind`/`shape` to
+    // `"construct"`, never `"scalar"` (no `Shape` variant means "scalar" at
+    // this pinned rev) -- a constraint whose `appliesTo` named `VersionNumber`
+    // itself would refuse `CONSTRAINT_NOT_APPLICABLE` even though this is
+    // exactly the bound `VersionNumber` names. Naming the native scalar
+    // directly is what actually resolves to `Resolved::Native("integer")`,
+    // and is what `VALUE_TYPE`'s own meaning describes: "naming the value
+    // type and its bound native value type".
     let constraint = |keyword: &str, value: i64| {
         json!({
             "identity": format!("{identity}/constraints/{keyword}"),
@@ -906,12 +931,7 @@ fn an_operation_and_its_frame_admit_and_assemble() {
         .iter()
         .find(|field| field.name() == "versionNumber")
         .expect("versionNumber is an attribute");
-    assert_eq!(
-        version_number.value_type(),
-        &ValueType::Int(
-            IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64)).unwrap()
-        )
-    );
+    assert_eq!(version_number.value_type(), &version_number_bound());
     assert_eq!(version_number.presence(), Presence::Required);
 
     let parent = declared
@@ -940,66 +960,26 @@ fn an_operation_and_its_frame_admit_and_assemble() {
     assert_eq!(operation.effect().deletes, Vec::new());
 }
 
-/// FR-103-AC-1's own bound-scalar half (this module's own scope note): not
-/// the shared `ConfigVersion` fixture every other test in this file uses,
-/// but a small dedicated one -- a package-declared `VersionNumber` value
-/// type, integer `0..=1000`, and an object type `Widget` with one required
-/// field of that type -- proving FR-056's `value-type/v1` scalar reader
-/// (QSL-289) all the way through this file's own `admit_unit`/
-/// `PackageDeclarations::assemble` pipeline: `Widget.num` assembles to
-/// `Int[0, 1000]`, not the native `Integer` this file's other tests
-/// substitute.
+/// FR-103-AC-1's own bound-scalar half, over a small dedicated fixture
+/// independent of `ConfigVersion`: the same package-declared `VersionNumber`
+/// value type ([`version_number_value_type`]) and an object type `Widget`
+/// with one required field of that type -- proving FR-056's `value-type/v1`
+/// scalar reader (QSL-289) all the way through this file's own
+/// `admit_unit`/`PackageDeclarations::assemble` pipeline with no other
+/// declaration beside it: `Widget.num` assembles to `Int[0, 1000]`.
 #[trace("TC-458", "FR-103-AC-1")]
 #[test]
 fn bound_integer_value_type_admits_and_assembles() {
-    let version_number = format!("ix://{PACKAGE_IDENTITY}/VersionNumber");
+    let (version_number_construct, version_number_type, version_number) =
+        version_number_value_type();
     let widget = format!("ix://{PACKAGE_IDENTITY}/Widget");
-    // `agent-ix-semantic-ir`'s own `CONSTRAINT_MEMBERS` requires every
-    // constraint's `identity`/`appliesTo`/`diagnosticCode`/`origin` present
-    // (this module's own tests all route through the full
-    // `validate_with_semantic_ir` schema check, not just this reader's own
-    // hand-rolled one), unlike `intake.rs`'s own direct-reader unit tests.
-    // `appliesTo` names the native scalar the value type binds
-    // (`ix://quire/native/Integer`), not `VersionNumber`'s own identity:
-    // `agent-ix-semantic-ir`'s own applicability table (`rules.rs::applies_to`)
-    // only ever resolves a construct-kind node's own `kind`/`shape` to
-    // `"construct"`, never `"scalar"` (no `Shape` variant means "scalar" at
-    // this pinned rev) -- a constraint whose `appliesTo` named `VersionNumber`
-    // itself would refuse `CONSTRAINT_NOT_APPLICABLE` even though this is
-    // exactly the bound `VersionNumber` names. Naming the native scalar
-    // directly is what actually resolves to `Resolved::Native("integer")`,
-    // and is what `VALUE_TYPE`'s own meaning describes: "naming the value
-    // type and its bound native value type".
-    let constraint = |keyword: &str, value: i64| {
-        json!({
-            "identity": format!("{version_number}/constraints/{keyword}"),
-            "keyword": keyword,
-            "operands": {"value": value},
-            "appliesTo": "ix://quire/native/Integer",
-            "diagnosticCode": format!("bound.{keyword}"),
-            "origin": {
-                "generated": {
-                    "generatorIdentity": version_number.clone(),
-                    "generatorVersion": "1.0.0",
-                    "inputIdentities": [version_number.clone()],
-                }
-            },
-        })
-    };
     let document = wire_envelope(
         json!([
             wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
-            wire_construct("value_type", meaning::VALUE_TYPE, json!({})),
+            version_number_construct,
         ]),
         json!([
-            wire_type(
-                &version_number,
-                "value_type",
-                json!({
-                    "scalar": "integer",
-                    "constraints": [constraint("min", 0), constraint("max", 1000)],
-                }),
-            ),
+            version_number_type,
             wire_type(
                 &widget,
                 "object_type",
@@ -1046,12 +1026,7 @@ fn bound_integer_value_type_admits_and_assembles() {
         .iter()
         .find(|field| field.name() == "num")
         .expect("num is an attribute");
-    assert_eq!(
-        num.value_type(),
-        &ValueType::Int(
-            IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64)).unwrap()
-        )
-    );
+    assert_eq!(num.value_type(), &version_number_bound());
     assert_eq!(num.presence(), Presence::Required);
 }
 
@@ -1314,7 +1289,7 @@ fn a_version_number_typed_parameter_admits_and_is_typed_bound_integer() {
     // `config_version_document` already declares `VersionNumber`
     // (`version_number_value_type`) for `versionNumber` itself; `delta`
     // reuses that same declaration by identity rather than redeclaring it.
-    let version_number = format!("ix://{PACKAGE_IDENTITY}/VersionNumber");
+    let version_number = version_number_identity();
     let document = config_version_document(
         attempt_update(
             json!([parameter("delta", &version_number)]),
@@ -1349,12 +1324,7 @@ fn a_version_number_typed_parameter_admits_and_is_typed_bound_integer() {
         .expect("attemptUpdate is declared");
     assert_eq!(
         operation.parameters(),
-        &[(
-            "delta".to_owned(),
-            ValueType::Int(
-                IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64)).unwrap()
-            )
-        )]
+        &[("delta".to_owned(), version_number_bound())]
     );
 }
 
