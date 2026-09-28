@@ -58,6 +58,7 @@ mod composed_temporal_mapping_v2;
 mod composed_type_pipeline;
 mod composed_types;
 mod config_version;
+mod config_version_spine;
 mod configversion_backends;
 mod contract_model_architecture;
 mod domain_protocol_emission;

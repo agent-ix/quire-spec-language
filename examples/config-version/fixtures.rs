@@ -24,6 +24,10 @@ mod cases;
 pub use cases::Case;
 use cases::{CaseSpec, Input, Row};
 
+/// FR-108 (QSL-314): the spine counterpart of this module's native files.
+#[path = "spine.rs"]
+pub mod spine;
+
 /// Every declared case, in deterministic generation order.
 pub const CASES: &[Case] = cases::CASES;
 
@@ -383,5 +387,6 @@ pub fn write(directory: &Path, model: &NativeModel, case: Case) -> io::Result<()
     let models = write_model(directory, model, case.spec())?;
     let program = write_program(directory, model, case)?;
     let inputs = write_inputs(directory, model, case)?;
-    write_requests(directory, case, models, program, inputs)
+    write_requests(directory, case, models, program, inputs)?;
+    spine::write(directory, case)
 }

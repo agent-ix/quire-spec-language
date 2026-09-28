@@ -37,15 +37,18 @@ all under `ParentOrder` with self `child`.
 3. For below-range and above-range, read the refusal's locus in both
    outputs.
 4. Generate the corpus into two temporary directories and compare every
-   file; run every case twice and compare reports; check each report's
-   provenance members; then, for healthy-parent, changed-version and
-   forbidden-parent-change, run again with the expected `package_id` set to
-   the `package_id` spine `compile` emits for the unit, and compare.
+   file, in both directions (identical file sets, not just one direction's
+   files present in the other); run every one of the 17 cases twice and
+   compare the full report; check each report's provenance members; then,
+   for every case that reaches compile, run again with the expected
+   `package_id` set to the `package_id` spine `compile` emits for the unit,
+   and compare.
 5. With `--features quire-extraction`, embed each case's unit in a
    `rules.md` fence, extract it through `qsl-source`, and run the extracted
    source.
-6. Read the `package_id` pinned in the expected table, compare it with every
-   report's, and read the emitted package bytes through QSpec's I04 `read`.
+6. Independently re-derive the unit's `package_id` via a direct `spine::
+   compile` call, compare it with every report's, and read the emitted
+   package bytes through QSpec's I04 `read`.
 
 Extend `tests/it/config_version.rs`'s `expected()` with the four new cases
 (`Completed(true)` twice, `Validation { code: "invalid_runtime_input",
@@ -71,6 +74,7 @@ incomplete: false }` twice). Tag the tests `#[trace("TC-469",
 
 ## Status
 
-Planned (QSL-273). Step 6 is pending STD-111 (FR-108-AC-6). Step 2 and the
+Implemented (QSL-314). Step 6's I04 `read` half is pending QSL-315
+(FR-108-AC-6); its `package_id`-agreement half runs today. Step 2 and the
 native test's four new cases run until M-6c retires the `0-draft` native
 path; that PR deletes step 2 with it (ADR-012 §15.8).
