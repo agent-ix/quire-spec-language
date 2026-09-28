@@ -477,6 +477,26 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `{entry}` names `{clause_anchor}`, not the attempt's own anchor \
                      `{attempt_anchor}`"
                 ),
+                ProtocolAnchorCause::Unimplemented {
+                    name, construct, ..
+                } => format!(
+                    "{message}: `protocol {name}` holds a `{construct}`, which is not checked \
+                     or emitted yet"
+                ),
+                ProtocolAnchorCause::MissingProfile { alias, .. } => {
+                    format!("{message}: `using {alias}` names no profile selection of the unit")
+                }
+                ProtocolAnchorCause::MissingRoleType { role, context, .. } => {
+                    format!(
+                        "{message}: role `{role}` is on `{context}`, which names no object type"
+                    )
+                }
+                ProtocolAnchorCause::MissingRole { role, .. } => {
+                    format!("{message}: `by {role}` names no role of the protocol")
+                }
+                ProtocolAnchorCause::BinderType { binder, fault, .. } => {
+                    format!("{message}: binder `{binder}`'s type does not resolve ({fault:?})")
+                }
             };
         }
         _ => {}
@@ -1268,6 +1288,54 @@ mod tests {
                 );
             }
             other => panic!("an Assembly refusal, got {other:?}"),
+        }
+    }
+
+    /// SR-771 FND-005 (SR-770 FND-001): the check-stage guard the rename
+    /// above no longer gave. A protocol that names no model at all (so the
+    /// assembler has nothing to refuse) but holds unchecked garbage -- an
+    /// undeclared input and role type, a `send` via an undeclared channel,
+    /// an undeclared binder type and ill-typed bodies -- still refuses at
+    /// check, through the whole `compile` pipeline, rather than compiling
+    /// with the protocol silently missing from the emitted package.
+    #[trace("FR-113", "FR-114")]
+    #[test]
+    fn a_protocol_with_unchecked_garbage_content_does_not_compile_silently() {
+        let unit = "language \"ix:native\" edition \"1-draft\";\n\
+            profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+            \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+            function f using v(): Boolean pure { true }\n\
+            protocol Flow using v over (input: Nope::Input) on origin {\n\
+            role R on Nope::Actor;\n\
+            run sequence Main {\n\
+            send S via Nope as (x: Undeclared) { 1 + true };\n\
+            }\n\
+            finish End as (outcome: Boolean) { 1 + true };\n\
+            }\n";
+        let refusal = compile(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .expect_err("a protocol with unchecked content must not compile to a package");
+        match refusal.as_ref() {
+            CompileRefusal::Check { refusals, .. } => {
+                assert!(
+                    refusals.iter().any(|refusal| matches!(
+                        &refusal.cause,
+                        qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
+                            if matches!(
+                                cause.as_ref(),
+                                qsl_semantics::check::ProtocolAnchorCause::Unimplemented { name, .. } if name == "Flow"
+                            )
+                    )),
+                    "{refusals:?}"
+                );
+            }
+            other => panic!("a Check refusal, got {other:?}"),
         }
     }
 

@@ -103,6 +103,75 @@ pub enum ProtocolAnchorCause {
         /// The entry's own span.
         span: Span,
     },
+    /// QSL-309: a protocol whose anchors, binders and attempt bindings all
+    /// check, but which holds a construct no checker reads yet (a node kind
+    /// other than `sequence`, `attempt` and `finish`, a channel, a
+    /// relationship, a requirement, a capture, an `activation on each`, a
+    /// replicated role, a `related by` clause, or a body other than a bare
+    /// Boolean literal). Refused rather than compiled with unchecked content
+    /// and silently missing from the emitted package (SR-753 FND-002,
+    /// SR-761 FND-001, SR-770 FND-001).
+    Unimplemented {
+        /// The declared protocol name.
+        name: String,
+        /// The construct's own keyword, e.g. `"channel"` or `"send"`.
+        construct: &'static str,
+        /// The construct's own span: the earliest such construct in the
+        /// protocol.
+        span: Span,
+    },
+    /// QSL-309: the protocol's `using` alias names no profile selection of
+    /// the unit.
+    MissingProfile {
+        /// The alias as written.
+        alias: String,
+        /// The alias's own span.
+        span: Span,
+    },
+    /// QSL-309: a role's `on`/`each` object type names no object type of
+    /// the package.
+    MissingRoleType {
+        /// The role's declared name.
+        role: String,
+        /// The object type as written.
+        context: String,
+        /// The object type's own span.
+        span: Span,
+    },
+    /// QSL-309: an `attempt`'s `by` role names no role of the protocol.
+    MissingRole {
+        /// The role as written.
+        role: String,
+        /// The role reference's own span.
+        span: Span,
+    },
+    /// QSL-309: a binder's declared type does not resolve against the
+    /// package scope.
+    BinderType {
+        /// The binder's declared name.
+        binder: String,
+        /// Why the type did not resolve.
+        fault: super::type_form::TypeFormFault,
+        /// The span of the type form (or nested argument form) at fault.
+        span: Span,
+    },
+}
+
+/// The catalog code and tag a [`ProtocolAnchorCause::BinderType`] refuses
+/// with: the same classes `type_form::TypeFormError`'s own refusal uses
+/// (a missing or ambiguous name, else a type mismatch).
+fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code, &'static str) {
+    use super::type_form::TypeFormFault as F;
+    match fault {
+        F::MissingName(_) => (Code::MissingDeclaration, "missing-name"),
+        F::AmbiguousName(_) => (Code::AmbiguousDeclaration, "ambiguous-name"),
+        F::Malformed
+        | F::EmptyInterval
+        | F::DenominatorBelowOne
+        | F::MalformedDecimal
+        | F::EmptyTextBounds
+        | F::EmptyCardinality => (Code::IllTyped, "type-mismatch"),
+    }
 }
 
 /// Which selection alias a [`ShadowedDeclaration::ProfileAlias`] or
@@ -152,17 +221,28 @@ impl ProtocolAnchorCause {
             | Self::ChannelMismatch { span, .. }
             | Self::Shadow { span, .. }
             | Self::MissingContract { span, .. }
-            | Self::WrongContractAnchor { span, .. } => *span,
+            | Self::WrongContractAnchor { span, .. }
+            | Self::Unimplemented { span, .. }
+            | Self::MissingProfile { span, .. }
+            | Self::MissingRoleType { span, .. }
+            | Self::MissingRole { span, .. }
+            | Self::BinderType { span, .. } => *span,
         }
     }
 
     /// This cause's catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::Missing { .. } | Self::MissingContract { .. } => Code::MissingDeclaration,
+            Self::Missing { .. }
+            | Self::MissingContract { .. }
+            | Self::MissingProfile { .. }
+            | Self::MissingRoleType { .. }
+            | Self::MissingRole { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => Code::IllTyped,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
+            Self::Unimplemented { .. } => Code::UnsupportedConstruct,
+            Self::BinderType { fault, .. } => type_fault_class(fault).0,
         }
     }
 
@@ -171,10 +251,16 @@ impl ProtocolAnchorCause {
     /// protocol-specific catalog code exists).
     pub fn tag(&self) -> &'static str {
         match self {
-            Self::Missing { .. } | Self::MissingContract { .. } => "missing-name",
+            Self::Missing { .. }
+            | Self::MissingContract { .. }
+            | Self::MissingProfile { .. }
+            | Self::MissingRoleType { .. }
+            | Self::MissingRole { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => "type-mismatch",
             Self::WrongContractAnchor { .. } => "wrong-anchor",
+            Self::Unimplemented { .. } => "not-yet-implemented",
+            Self::BinderType { fault, .. } => type_fault_class(fault).1,
         }
     }
 }

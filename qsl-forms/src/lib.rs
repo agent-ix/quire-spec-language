@@ -43,7 +43,8 @@ pub use syntax::{
     BinderForm, BinderKind, BinderQuery, BuiltinType, ClauseKind, DeclarationForm, DeclarationKind,
     DeclaredClauseKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
     ExactNumberForm, ExactNumberKind, Expression, FieldInitializer, FunctionDeclaration, NameForm,
-    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm,
-    RecordForm, ScopeName, ScopedAnchorForm, StateClauseForm, StateClauseKind, TermOperator,
-    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm,
+    ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm, RecordForm, RoleForm, ScopeName,
+    ScopedAnchorForm, StateClauseForm, StateClauseKind, TermOperator, TupleForm, TypeForm,
+    TypeFormHead, UnitForm, UsingAlias,
 };

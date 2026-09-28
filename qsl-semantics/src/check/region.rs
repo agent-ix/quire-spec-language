@@ -133,7 +133,7 @@ pub struct DeclarationRegions {
     /// index-aligned with the package's own `protocols`/`protocol_attempts`.
     /// `pub(super)`: `check::mod`'s own pipeline copies it onto the final
     /// `CheckedGraph`, which needs the same table `Self::region` reads.
-    pub(super) attempt_spans: Vec<Vec<Span>>,
+    pub(super) attempt_spans: Vec<Vec<Option<Span>>>,
 }
 
 impl DeclarationRegions {
@@ -146,7 +146,7 @@ impl DeclarationRegions {
             |index| self.spans.get(index)?.as_ref(),
             |index| self.clause_spans.get(index),
             &self.type_spans,
-            |protocol, attempt| self.attempt_spans.get(protocol)?.get(attempt).copied(),
+            |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
             location,
         )
     }
@@ -193,13 +193,14 @@ impl PackageDeclarations {
                 .map(|clause| clause.spans.clone())
                 .collect(),
             type_spans: self.declared_type_spans.clone(),
+            // SR-770 FND-007: `None` for an attempt whose declaration index
+            // names no declaration of its protocol (a hand-built form, never
+            // one S2 built), so its region is simply unresolved instead of
+            // a panic in library code.
             attempt_spans: (0..self.protocols.len())
                 .map(|protocol| {
                     (0..self.protocol_attempts.get(protocol).map_or(0, Vec::len))
-                        .map(|attempt| {
-                            self.attempt_span(protocol, attempt)
-                                .expect("every protocol attempt names its own declaration")
-                        })
+                        .map(|attempt| self.attempt_span(protocol, attempt))
                         .collect()
                 })
                 .collect(),
@@ -218,7 +219,7 @@ impl CheckedGraph {
             |index| self.form_spans.get(index)?.as_ref(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             &self.type_spans,
-            |protocol, attempt| self.attempt_spans.get(protocol)?.get(attempt).copied(),
+            |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
             location,
         )
     }

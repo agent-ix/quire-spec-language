@@ -99,6 +99,19 @@ requirement record.
 
 ## Status
 
-Specified under QSL-296 (QSL-21a). Not yet implemented; QSL-298 (QSL-21c)
-implements the check and QSL-299 (QSL-21d) the emission. The emission half of
-AC-1, AC-2 and AC-4 is pending STD-111, as FR-105's is.
+Specified under QSL-296 (QSL-21a). Implemented under QSL-309 (QSL-21c): the
+assembler resolves an attempt's operation as FR-104 resolves a clause's.
+S3 checks the `contracts` list, and refuses a list entry that names two
+state clauses of one name. S4 binds the operation's one anchor and frame
+node, and gives each clause or attempt naming the operation an `anchor`
+occurrence, with ordinals in source order. The attempt's frame record is
+computed by the same function a clause's frame record uses. An operation
+named only by an attempt emits its anchor, frame and frame record. AC-1 to
+AC-4 are tested (TC-513), including through `emit_checked`.
+
+A protocol holding the attempt compiles only when every other part of it is
+checked (FR-113 Status lists what is and what still refuses
+`unsupported_construct`/`not-yet-implemented`). So TC-513's own fixture
+body `{ updated }`, which reads the binder, still refuses until protocol
+bodies are checked. The tests use `{ true }`. The emitted spellings follow
+FR-105's and are pending STD-111, as FR-105's are.

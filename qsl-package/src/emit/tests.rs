@@ -2773,8 +2773,10 @@ fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
 
 /// `Config::ConfigVersion`, with a `versionNumber` field and an
 /// `attemptUpdate` operation whose effect frame modifies it: a real,
-/// non-trivial frame for a real attempt to bind against.
-fn config_version_model() -> qsl_semantics::model::intake::SelectedModel {
+/// non-trivial frame for a real attempt to bind against. With `with_sub`,
+/// the package also declares `Sub`, specializing `ConfigVersion` and
+/// inheriting `attemptUpdate` (FR-114-AC-4).
+fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::SelectedModel {
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::domain_package::{
         DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
@@ -2787,48 +2789,57 @@ fn config_version_model() -> qsl_semantics::model::intake::SelectedModel {
         package: "example/config-version".to_owned(),
         node: format!("ix://example/config-version/{name}"),
     };
+    let mut records = vec![
+        DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: key("ConfigVersion"),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: Vec::new(),
+        }),
+        DomainPackageRecord::FieldMember(FieldMemberRecord {
+            key: key("ConfigVersion/versionNumber"),
+            owner: key("ConfigVersion"),
+            value_type: ValueTypeRef::Native(NativeValueType::Integer),
+            multiplicity: Multiplicity {
+                lower: 1,
+                upper: Some(1),
+                ordered: false,
+                unique: true,
+            },
+            presence: Presence::Required,
+            subsets: Vec::new(),
+            redefines: None,
+        }),
+        DomainPackageRecord::OperationMember(OperationMemberRecord {
+            key: key("ConfigVersion/attemptUpdate"),
+            owner: key("ConfigVersion"),
+            parameters: Vec::new(),
+            result: None,
+            effect: OperationEffect {
+                modifies: vec![key("ConfigVersion/versionNumber")],
+                creates: Vec::new(),
+                deletes: Vec::new(),
+            },
+            own_postcondition_clauses: Vec::new(),
+            has_body: false,
+            redefines: None,
+        }),
+    ];
+    if with_sub {
+        records.push(DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: key("Sub"),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: vec![key("ConfigVersion")],
+        }));
+    }
     let package = DomainPackage::new(
         DomainPackageRef {
             identity: "example/config-version".to_owned(),
             version: "1".to_owned(),
             digest: [0_u8; 32],
         },
-        vec![
-            DomainPackageRecord::ObjectType(ObjectTypeRecord {
-                key: key("ConfigVersion"),
-                interface_features: None,
-                abstract_type: false,
-                supertypes: Vec::new(),
-            }),
-            DomainPackageRecord::FieldMember(FieldMemberRecord {
-                key: key("ConfigVersion/versionNumber"),
-                owner: key("ConfigVersion"),
-                value_type: ValueTypeRef::Native(NativeValueType::Integer),
-                multiplicity: Multiplicity {
-                    lower: 1,
-                    upper: Some(1),
-                    ordered: false,
-                    unique: true,
-                },
-                presence: Presence::Required,
-                subsets: Vec::new(),
-                redefines: None,
-            }),
-            DomainPackageRecord::OperationMember(OperationMemberRecord {
-                key: key("ConfigVersion/attemptUpdate"),
-                owner: key("ConfigVersion"),
-                parameters: Vec::new(),
-                result: None,
-                effect: OperationEffect {
-                    modifies: vec![key("ConfigVersion/versionNumber")],
-                    creates: Vec::new(),
-                    deletes: Vec::new(),
-                },
-                own_postcondition_clauses: Vec::new(),
-                has_body: false,
-                redefines: None,
-            }),
-        ],
+        records,
     );
     let NormalizeOutcome::Completed(view) =
         normalize(&package, ModelNormalizationLimits::UNLIMITED)
@@ -2842,39 +2853,43 @@ fn config_version_model() -> qsl_semantics::model::intake::SelectedModel {
     }
 }
 
-/// A unit declaring [`config_version_model`], a `post` clause and a
-/// protocol whose `run sequence` `attempt`s `Config::ConfigVersion::attemptUpdate`
-/// and names that same `post` clause in its `contracts` list.
-const ATTEMPT_FRAME_UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\" version \"1\" digest \
-    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
-    model Config = \"example/config-version\" version \"1\" digest \
-    \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
-    post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { true }\n\
-    protocol Flow using v over (input: Boolean) on origin {\n\
-    role R on Config::ConfigVersion;\n\
-    run sequence Main {\n\
-    attempt Update by R on Config::ConfigVersion::attemptUpdate contracts [VersionUnchanged] \
-    as (tried: Boolean) { true };\n\
-    }\n\
-    finish End as (outcome: Boolean) { true };\n\
-    }";
+/// A unit declaring [`config_version_model`]'s `Config` alias, then
+/// `declarations`, then a protocol whose `run sequence` holds one `attempt
+/// Update by R on {operation} contracts [{contracts}]`, every body the bare
+/// literal `true` (the protocol content QSL-309's checker covers in full).
+fn attempt_frame_unit(declarations: &str, operation: &str, contracts: &str) -> String {
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\" version \"1\" digest \
+         \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+         model Config = \"example/config-version\" version \"1\" digest \
+         \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
+         {declarations}\n\
+         protocol Flow using v over (input: Boolean) on origin {{\n\
+         role R on Config::ConfigVersion;\n\
+         run sequence Main {{\n\
+         attempt Update by R on {operation} contracts [{contracts}] \
+         as (tried: Boolean) {{ true }};\n\
+         }}\n\
+         finish End as (outcome: Boolean) {{ true }};\n\
+         }}"
+    )
+}
 
-/// TC-513/FR-114-AC-1: a protocol's `attempt`, bound to its operation's
-/// `operation_anchor`/`frame` nodes and to a `post` clause naming the same
-/// operation, goes through S1-S4, `CheckedPackage::link` and
-/// `emit_checked` with nothing omitted -- QSL-299's "emit.rs needs no new
-/// code" claim, now exercised against real nodes rather than their
-/// absence -- and the wire carries exactly one `operation_anchor` node and
-/// one `frame` node (FR-105's dedup: the clause and the attempt share one
-/// frame occurrence, not two).
-#[trace("TC-513", "FR-114-AC-1")]
-#[test]
-fn an_attempt_and_its_clause_share_one_frame_node_through_emission() {
+/// The `post` clause FR-114-AC-1's unit names in its attempt's `contracts`.
+const VERSION_UNCHANGED: &str =
+    "post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { true }";
+
+/// S1, S2 and the assembler over `unit` against [`config_version_model`],
+/// then `check`, or its refusals.
+fn check_attempt_unit(
+    unit: &str,
+    with_sub: bool,
+) -> Result<qsl_semantics::check::CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1"),
         "program.native",
-        ATTEMPT_FRAME_UNIT.as_bytes(),
+        unit.as_bytes(),
         qsl_cst::Limits::default(),
     )
     .expect("S1 admits the unit");
@@ -2882,27 +2897,310 @@ fn an_attempt_and_its_clause_share_one_frame_node_through_emission() {
     let raw = parsed.source().reference().clone();
     let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
         .expect("S2 builds the unit");
-    let graph = PackageDeclarations::assemble(raw, unit, vec![config_version_model()], Vec::new())
+    PackageDeclarations::assemble(raw, unit, vec![config_version_model(with_sub)], Vec::new())
         .expect("the unit assembles")
         .check(CheckingLimits::default())
-        .expect("the package checks");
+}
+
+/// What FR-114's emission assertions read from one attempt unit: the
+/// checked attempt, each state clause's identity, the number of
+/// requirement records keyed at the attempt's frame node, and the wire.
+struct AttemptEmission {
+    attempt: qsl_semantics::check::CheckedAttempt,
+    clauses: Vec<quire_exact::NodeKey>,
+    frame_records: usize,
+    wire: Value,
+}
+
+/// [`check_attempt_unit`], then `CheckedPackage::link` and `emit_checked`
+/// with nothing omitted.
+fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
+    let graph = check_attempt_unit(unit, with_sub)
+        .unwrap_or_else(|refusals| panic!("{unit}: the package checks: {refusals:?}"));
+    let [protocol] = graph.protocols() else {
+        panic!("one protocol: {:?}", graph.protocols());
+    };
+    let [attempt] = protocol.attempts.as_slice() else {
+        panic!("one attempt: {:?}", protocol.attempts);
+    };
+    let attempt = attempt.clone();
+    let clauses = graph
+        .state_clauses()
+        .iter()
+        .map(|clause| clause.identity())
+        .collect();
+    let frame = qsl_foundation::digest::WireNodeId::from_digest(*attempt.frame.as_bytes());
+    let frame_records = graph
+        .requirements()
+        .keys()
+        .filter(|key| key.node() == frame)
+        .count();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
+    AttemptEmission {
+        attempt,
+        clauses,
+        frame_records,
+        wire: wire(&emission),
+    }
+}
 
-    // `config_version_model` is built directly from the Rust domain-package
-    // API (QSL-309's own test pattern, shared with
-    // `qsl_semantics::check::protocol_clause`'s tests), not from a real
-    // Semantic IR document, so there is no genuine document to hand a full
-    // I2 read as evidence for the model's declared digest; the node count
-    // below is this test's oracle instead, exercising the emitter's own
-    // node-shape handling end to end.
-    let wire = wire(&emission);
-    let matching = |semantic_form: &str| {
-        nodes(&wire)
-            .iter()
-            .filter(|node| node["semantic_form"] == semantic_form)
-            .count()
+/// The one wire node of `semantic_form`, expecting exactly one.
+fn only_node<'w>(wire: &'w Value, semantic_form: &str) -> &'w Value {
+    let matching: Vec<&Value> = nodes(wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == semantic_form)
+        .collect();
+    let [node] = matching[..] else {
+        panic!("one {semantic_form} node: {:#?}", nodes(wire));
     };
-    assert_eq!(matching("operation_anchor"), 1, "{:#?}", nodes(&wire));
-    assert_eq!(matching("frame"), 1, "{:#?}", nodes(&wire));
+    node
+}
+
+/// `key`'s wire node id digest, as `node_id.digest` spells it.
+fn digest_of(key: quire_exact::NodeKey) -> String {
+    qsl_foundation::digest::WireNodeId::from_digest(*key.as_bytes()).to_string()
+}
+
+/// TC-513 step 1/FR-114-AC-1: the checked attempt holds the identities of
+/// `attemptUpdate`'s anchor node, its frame node and `VersionUnchanged`'s
+/// clause node; the compiled package holds exactly one anchor node and one
+/// frame node for `attemptUpdate` -- the very nodes the attempt names, the
+/// frame's `modifies` exactly `versionNumber` -- and exactly one
+/// `operation-contract` record for the frame. QSL-299's "emit.rs needs no
+/// new code" claim, exercised against real nodes rather than their absence.
+#[trace("TC-513", "FR-114-AC-1")]
+#[test]
+fn an_attempt_and_its_clause_share_one_frame_node_through_emission() {
+    let emitted = emit_attempt_unit(
+        &attempt_frame_unit(
+            VERSION_UNCHANGED,
+            "Config::ConfigVersion::attemptUpdate",
+            "VersionUnchanged",
+        ),
+        false,
+    );
+    assert_eq!(emitted.attempt.contracts, emitted.clauses);
+    assert_eq!(emitted.clauses.len(), 1);
+    let anchor = only_node(&emitted.wire, "operation_anchor");
+    let frame = only_node(&emitted.wire, "frame");
+    assert_eq!(
+        anchor["node_id"]["digest"],
+        digest_of(emitted.attempt.anchor)
+    );
+    assert_eq!(frame["node_id"]["digest"], digest_of(emitted.attempt.frame));
+    assert_frame_modifies_version_number(frame);
+    assert_eq!(emitted.frame_records, 1);
+}
+
+/// The frame body's `modifies` is exactly the `versionNumber` field, and it
+/// creates and deletes nothing.
+fn assert_frame_modifies_version_number(frame: &Value) {
+    let modifies: Vec<&Value> = frame["body"]["modifies"]
+        .as_array()
+        .expect("a frame body lists `modifies`")
+        .iter()
+        .map(|entry| &entry["name"])
+        .collect();
+    assert_eq!(modifies, [&json!("versionNumber")], "{frame:#}");
+    assert_eq!(frame["body"]["creates"], json!([]), "{frame:#}");
+    assert_eq!(frame["body"]["deletes"], json!([]), "{frame:#}");
+}
+
+/// TC-513 step 2/FR-114-AC-2 (SR-770 FND-002, SR-771 FND-002): with no
+/// clause naming `attemptUpdate` -- only the attempt, `contracts []` --
+/// the package still checks, emits with nothing omitted, and holds exactly
+/// one anchor node, one frame node and one frame record for it. The
+/// attempt's own occurrences are the only ones placing these nodes, so this
+/// fails if an attempt's generated occurrences have no enclosing region.
+#[trace("TC-513", "FR-114-AC-2")]
+#[test]
+fn an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record() {
+    let emitted = emit_attempt_unit(
+        &attempt_frame_unit("", "Config::ConfigVersion::attemptUpdate", ""),
+        false,
+    );
+    assert!(emitted.attempt.contracts.is_empty());
+    assert!(emitted.clauses.is_empty());
+    let anchor = only_node(&emitted.wire, "operation_anchor");
+    let frame = only_node(&emitted.wire, "frame");
+    assert_eq!(
+        anchor["node_id"]["digest"],
+        digest_of(emitted.attempt.anchor)
+    );
+    assert_eq!(frame["node_id"]["digest"], digest_of(emitted.attempt.frame));
+    assert_frame_modifies_version_number(frame);
+    assert_eq!(emitted.frame_records, 1);
+}
+
+/// TC-513 step 4/FR-114-AC-4 (SR-771 FND-004): over a package where `Sub`
+/// specializes `ConfigVersion`, an attempt on `Config::Sub::attemptUpdate`
+/// and a `post` on `Config::ConfigVersion::attemptUpdate` share one anchor
+/// node and one frame node, whose context is `ConfigVersion`'s own object
+/// node -- the same one the unit without `Sub` binds.
+#[trace("TC-513", "FR-114-AC-4")]
+#[test]
+fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
+    let emitted = emit_attempt_unit(
+        &attempt_frame_unit(VERSION_UNCHANGED, "Config::Sub::attemptUpdate", ""),
+        true,
+    );
+    let anchor = only_node(&emitted.wire, "operation_anchor");
+    let frame = only_node(&emitted.wire, "frame");
+    assert_eq!(
+        anchor["node_id"]["digest"],
+        digest_of(emitted.attempt.anchor)
+    );
+    assert_eq!(frame["node_id"]["digest"], digest_of(emitted.attempt.frame));
+    // The context both nodes name is `ConfigVersion`'s own object node:
+    // the node the same unit binds over the package without `Sub`, where no
+    // other object type exists for it to be.
+    let context = &frame["semantic_type"]["digest"];
+    assert_eq!(
+        anchor["body"]["members"][0]["value"]["target"]["digest"],
+        *context
+    );
+    let without_sub = emit_attempt_unit(
+        &attempt_frame_unit(
+            VERSION_UNCHANGED,
+            "Config::ConfigVersion::attemptUpdate",
+            "",
+        ),
+        false,
+    );
+    let config_version = &only_node(&without_sub.wire, "frame")["semantic_type"]["digest"];
+    assert_eq!(context, config_version);
+    assert_eq!(
+        only_node(&without_sub.wire, "object_type")["node_id"]["digest"],
+        *context
+    );
+}
+
+/// SR-770 FND-001 (the reviewer's own probe): a unit with a function and a
+/// protocol whose content no checker reads -- undeclared types
+/// (`Nope::Input`, `Nope::Actor`, `Undeclared`), a `send` via an undeclared
+/// channel and ill-typed bodies (`1 + true`) -- refuses at check, rather
+/// than checking and emitting a package the protocol is silently missing
+/// from.
+#[trace("TC-513", "FR-114")]
+#[test]
+fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
+    let unit = "language \"ix:native\" edition \"1-draft\";\n\
+        profile v = \"quire.value.complete/v1\" version \"1\" digest \
+        \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+        model Config = \"example/config-version\" version \"1\" digest \
+        \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
+        function f using v (): Boolean pure { true }\n\
+        protocol Flow using v over (input: Nope::Input) on origin {\n\
+        role R on Nope::Actor;\n\
+        run sequence Main {\n\
+        send S via Nope as (x: Undeclared) { 1 + true };\n\
+        }\n\
+        finish End as (outcome: Boolean) { 1 + true };\n\
+        }";
+    let refusals = check_attempt_unit(unit, false)
+        .map(|_| ())
+        .expect_err("a protocol with unchecked content must not check");
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| refusal.cause.code().as_str() == "unsupported_construct"),
+        "{refusals:?}"
+    );
+}
+
+/// SR-770 FND-001/SR-771 FND-005 (probe C): the same garbage beside a
+/// valid, resolving attempt still refuses at check. Each part is refused on
+/// its own: an ill-typed body as not yet implemented, and an undeclared
+/// role or binder type as a missing name.
+#[trace("TC-513", "FR-114")]
+#[test]
+fn a_valid_attempt_does_not_let_garbage_content_through() {
+    let valid = attempt_frame_unit("", "Config::ConfigVersion::attemptUpdate", "");
+    for (from, to, code) in [
+        ("{ true };\n}", "{ 1 + true };\n}", "unsupported_construct"),
+        (
+            "role R on Config::ConfigVersion;",
+            "role R on Nope::Actor;",
+            "missing_declaration",
+        ),
+        (
+            "(tried: Boolean)",
+            "(tried: Undeclared)",
+            "missing_declaration",
+        ),
+        (
+            "over (input: Boolean)",
+            "over (input: Nope::Input)",
+            "missing_declaration",
+        ),
+    ] {
+        let unit = valid.replacen(from, to, 1);
+        assert_ne!(unit, valid, "{from}");
+        let refusals = check_attempt_unit(&unit, false)
+            .map(|_| ())
+            .expect_err("garbage content beside a valid attempt must not check");
+        assert!(
+            refusals
+                .iter()
+                .all(|refusal| refusal.cause.code().as_str() == code),
+            "{unit}: {refusals:?}"
+        );
+    }
+}
+
+/// FR-114 "Behavior" (SR-770 FND-004): the operation's anchor node gets
+/// one `anchor` occurrence per clause or attempt naming it, ordinals in
+/// source order -- whichever is written first, the protocol's attempt or
+/// the `post` clause, gets ordinal 0.
+#[trace("TC-513", "FR-114")]
+#[test]
+fn anchor_occurrence_ordinals_follow_source_order() {
+    let protocol = attempt_frame_unit(
+        "",
+        "Config::ConfigVersion::attemptUpdate",
+        "VersionUnchanged",
+    );
+    let protocol_first = format!("{protocol}\n{VERSION_UNCHANGED}");
+    let clause_first = attempt_frame_unit(
+        VERSION_UNCHANGED,
+        "Config::ConfigVersion::attemptUpdate",
+        "VersionUnchanged",
+    );
+    // Each unit's second declaration: the first anchor occurrence lies
+    // before it, the second one inside it.
+    for (unit, second) in [
+        (&protocol_first, "post VersionUnchanged"),
+        (&clause_first, "protocol Flow"),
+    ] {
+        let emitted = emit_attempt_unit(unit, false);
+        let anchor = &only_node(&emitted.wire, "operation_anchor")["node_id"];
+        let mut entries: Vec<(u64, usize)> = emitted.wire["source_map"]
+            .as_array()
+            .expect("the source map is a list")
+            .iter()
+            .filter(|entry| entry["node_id"] == *anchor && entry["role"] == "anchor")
+            .map(|entry| {
+                let start = entry["regions"][0]["start"]
+                    .as_u64()
+                    .expect("a region start");
+                (
+                    entry["ordinal"].as_u64().expect("an ordinal"),
+                    usize::try_from(start).expect("a region start fits usize"),
+                )
+            })
+            .collect();
+        entries.sort_unstable();
+        let starts: Vec<usize> = entries.iter().map(|(_, start)| *start).collect();
+        assert_eq!(entries.len(), 2, "{unit}: {entries:?}");
+        assert!(
+            starts.windows(2).all(|pair| pair[0] < pair[1]),
+            "{unit}: {entries:?}"
+        );
+        let boundary = unit.find(second).expect("the unit holds both declarations");
+        assert!(
+            starts[0] < boundary && boundary <= starts[1],
+            "{unit}: {entries:?}"
+        );
+    }
 }

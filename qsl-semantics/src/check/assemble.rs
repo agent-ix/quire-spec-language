@@ -1544,15 +1544,28 @@ impl PackageDeclarations {
         let mut type_spans = object_spans;
         type_spans.extend(declared_type_spans.clone());
         let types = admit_types(declarations, &object_types, &type_spans)?;
+        // SR-770 FND-006: both resolved before either refuses, so a unit
+        // with a bad state clause and a bad attempt reports both in one
+        // refusal (clause errors first, then attempt errors).
         let state_clauses = state_clauses(
             unit.state_clauses,
             &selections.profiles,
             &object_names,
             &types,
             &admitted,
-        )?;
+        );
         let protocol_attempts =
-            protocol_attempts(&unit.protocols, &object_names, &types, &admitted)?;
+            protocol_attempts(&unit.protocols, &object_names, &types, &admitted);
+        let (state_clauses, protocol_attempts) = match (state_clauses, protocol_attempts) {
+            (Ok(clauses), Ok(attempts)) => (clauses, attempts),
+            (clauses, attempts) => {
+                let mut errors = Vec::new();
+                for refusal in [clauses.err(), attempts.err()].into_iter().flatten() {
+                    errors.extend(refusal.errors);
+                }
+                return refuse(errors);
+            }
+        };
 
         let mut package = PackageDeclarations::new(source);
         package.types = types;

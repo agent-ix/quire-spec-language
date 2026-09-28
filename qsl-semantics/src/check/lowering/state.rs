@@ -229,18 +229,30 @@ impl Lowering<'_> {
     /// `operation_anchor` and `frame` node, reusing exactly the machinery a
     /// `pre`/`post` clause's own binding calls -- no second frame node
     /// concept. Records the same `Anchor` occurrence `state_clause` records
-    /// for a clause naming an operation, at `input.location`.
+    /// for a clause naming an operation, at `input.location`, and a `Type`
+    /// occurrence of each type node the attempt's own record names.
     pub(crate) fn protocol_attempt(
         &mut self,
         input: &AttemptInput<'_>,
     ) -> Result<LoweredAttempt, CheckRefusal> {
         let (anchor, frame, frame_origin) = self.operation_anchor(&input.anchor, input.location)?;
         self.record(anchor, OccurrenceRole::Anchor, input.location.clone());
+        // SR-770 FND-002: the attempt's own record names these two nodes
+        // (its population domain's object type and its result type), but no
+        // node of the attempt does -- unlike a clause, whose `state_clause`
+        // node names its `Boolean` -- so neither is reachable for a
+        // generated occurrence to be placed under. Each gets a `Type`
+        // occurrence at the attempt itself instead, the same role a clause
+        // parameter's type node records.
         let population_object = input
             .frame_population
             .map(|domain| self.object_node(domain.object, input.location))
             .transpose()?;
+        if let Some(object) = population_object {
+            self.record(object, OccurrenceRole::Type, input.location.clone());
+        }
         let boolean = self.type_node(&ValueType::Boolean, input.location)?;
+        self.record(boolean, OccurrenceRole::Type, input.location.clone());
         Ok(LoweredAttempt {
             anchor,
             frame: (frame, frame_origin),

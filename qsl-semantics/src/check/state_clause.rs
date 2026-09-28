@@ -492,7 +492,7 @@ impl CheckedStateClause {
 /// ADR-014 §4 classifies, FR-097) and its population domains, each keyed
 /// by its member object type's model node and its ordinal. The record's
 /// result is the clause's `Boolean`.
-pub(crate) fn record(
+fn record(
     roots: &[(NodeKey, &ValueType)],
     root_prefix: Option<NodeKey>,
     populations: &[(PopulationDomain, NodeKey)],
@@ -557,6 +557,61 @@ pub(crate) fn record(
     ))
 }
 
+/// `failure` as a refusal at `location`. `limit_cause` is `check`'s one
+/// mapping from a stage limit to a checking cause (QSL-236), reused here
+/// rather than hand-built, so a state clause's or an attempt's
+/// resource-exhausted refusal carries the same kind and region a
+/// function's would.
+fn classify_refusal(failure: ClassifyFailure, location: &Location) -> CheckRefusal {
+    match failure {
+        ClassifyFailure::Limit(exceeded) => CheckRefusal {
+            location: location.clone(),
+            cause: super::limit_cause(&exceeded),
+        },
+        ClassifyFailure::Fault(fault) => CheckRefusal {
+            location: location.clone(),
+            cause: CheckCause::InternalFault(Box::new(KeyFault::UnclassifiedExtent(fault))),
+        },
+    }
+}
+
+/// The `operation-contract` record of `operation`'s `frame` node (FR-104
+/// "Requirements", FR-114 "Requirements"): its roots are the declaring
+/// type's `self`, the operation's result and its parameters, each keyed
+/// under the frame node. The one function both a `pre`/`post` clause's
+/// `ClaimSubject::Frame` claim and a protocol `attempt` compute this record
+/// with (SR-770 FND-003), so a clause and an attempt naming one operation
+/// always build equal records and the caller's dedup keeps one.
+pub(crate) fn frame_record(
+    operation: &ClauseOperation,
+    frame: NodeKey,
+    populations: &[(PopulationDomain, NodeKey)],
+    boolean: NodeKey,
+    types: &TypeEnvironment,
+    position_limit: u64,
+    location: &Location,
+) -> Result<RequirementRecord, CheckRefusal> {
+    let receiver = ValueType::Reference(operation.declaring);
+    let mut roots: Vec<(NodeKey, &ValueType)> = vec![(frame, &receiver)];
+    roots.extend(operation.declaration.result().map(|result| (frame, result)));
+    roots.extend(
+        operation
+            .declaration
+            .parameters()
+            .iter()
+            .map(|(_, value_type)| (frame, value_type)),
+    );
+    record(
+        &roots,
+        Some(frame),
+        populations,
+        boolean,
+        types,
+        position_limit,
+    )
+    .map_err(|failure| classify_refusal(failure, location))
+}
+
 /// A lowered state clause's claims, each with the node and the `Origin` of
 /// the occurrence that keys its record: the clause's own `state_clause`
 /// node at its `claim` occurrence, or its operation's `frame` node at that
@@ -594,20 +649,7 @@ pub(crate) fn clause_records(
         location: location.clone(),
         cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
     };
-    // `limit_cause` is `check`'s one mapping from a stage limit to a
-    // checking cause (QSL-236); reused here rather than hand-built, so a
-    // state clause's resource-exhausted refusal carries the same kind and
-    // region a function's would.
-    let classify = |failure: ClassifyFailure| match failure {
-        ClassifyFailure::Limit(exceeded) => CheckRefusal {
-            location: location.clone(),
-            cause: super::limit_cause(&exceeded),
-        },
-        ClassifyFailure::Fault(fault) => CheckRefusal {
-            location: location.clone(),
-            cause: CheckCause::InternalFault(Box::new(KeyFault::UnclassifiedExtent(fault))),
-        },
-    };
+    let classify = |failure: ClassifyFailure| classify_refusal(failure, location);
     let mut keyed = Vec::with_capacity(claims.len());
     for entry in claims {
         let populations: Vec<(PopulationDomain, NodeKey)> = entry
@@ -645,27 +687,15 @@ pub(crate) fn clause_records(
                 else {
                     return Err(unkeyable());
                 };
-                // The frame's own roots: the declaring type's `self`, the
-                // operation's result and its parameters.
-                let receiver = ValueType::Reference(operation.declaring);
-                let mut roots: Vec<(NodeKey, &ValueType)> = vec![(frame, &receiver)];
-                roots.extend(operation.declaration.result().map(|result| (frame, result)));
-                roots.extend(
-                    operation
-                        .declaration
-                        .parameters()
-                        .iter()
-                        .map(|(_, value_type)| (frame, value_type)),
-                );
-                let record = record(
-                    &roots,
-                    Some(frame),
+                let record = frame_record(
+                    operation,
+                    frame,
                     &populations,
                     lowered.boolean,
                     types,
                     position_limit,
-                )
-                .map_err(classify)?;
+                    location,
+                )?;
                 keyed.push(KeyedClaim {
                     node: frame,
                     origin: frame_origin,

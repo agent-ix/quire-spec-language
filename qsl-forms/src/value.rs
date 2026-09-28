@@ -74,7 +74,7 @@ pub(crate) fn tokens_of<'c>(items: &[Item<'c>], kind: TokenKind) -> Vec<&'c CstT
 }
 
 /// Whether `node` has an own token spelled `spelling`.
-fn has_token(items: &[Item<'_>], spelling: &[u8]) -> bool {
+pub(crate) fn has_token(items: &[Item<'_>], spelling: &[u8]) -> bool {
     items
         .iter()
         .any(|item| matches!(item, Item::Token(token) if token.spelling() == spelling))
@@ -105,7 +105,7 @@ pub(crate) fn text(token: &CstToken, node: &CstNode) -> Result<String, FormsFail
 /// Every significant token inside `node`'s span, spelled and joined with
 /// no separator: a qualified name `M::T`, a signed integer `-2`, a
 /// rounding mode `nearest-even`.
-fn spelled(cst: &LosslessCst, node: &CstNode) -> Result<String, FormsFailure> {
+pub(crate) fn spelled(cst: &LosslessCst, node: &CstNode) -> Result<String, FormsFailure> {
     let span = node.span();
     let first = cst
         .tokens()
@@ -447,7 +447,7 @@ pub(crate) fn tuple(construct: Construct<'_>) -> Result<DeclarationForm, FormsFa
 /// A `TypeReference` (or a `Reference<Q>` argument's `QualifiedName`) as a
 /// type form: its head, its bounds as spelled, and its argument forms,
 /// built bottom-up on an explicit stack.
-fn type_form(
+pub(crate) fn type_form(
     cst: &LosslessCst,
     root: &CstNode,
     limits: FormsLimits,
