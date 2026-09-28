@@ -2450,6 +2450,7 @@ fn report_for(disposition: ClauseDisposition) -> super::ClauseRunReport {
                 snapshot: config_version_document_ref("unused"),
             },
             documents: Vec::new(),
+            frame: None,
         },
         usage: super::ClauseRunUsage::default(),
     }
