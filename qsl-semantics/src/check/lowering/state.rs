@@ -247,7 +247,11 @@ impl Lowering<'_> {
         input: &AttemptInput<'_>,
     ) -> Result<LoweredAttempt, CheckRefusal> {
         let binding = self.operation_anchor(&input.anchor, input.location)?;
-        self.record(binding.anchor, OccurrenceRole::Anchor, input.location.clone());
+        self.record(
+            binding.anchor,
+            OccurrenceRole::Anchor,
+            input.location.clone(),
+        );
         // SR-770 FND-002: the attempt's own record names these two nodes
         // (its population domain's object type and its result type), but no
         // node of the attempt does -- unlike a clause, whose `state_clause`
