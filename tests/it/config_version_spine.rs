@@ -148,6 +148,19 @@ fn disposition_code(disposition: &ClauseDisposition) -> Option<Code> {
     }
 }
 
+/// [`disposition_code`] without the panic, for callers (step 4's own
+/// determinism check) comparing every disposition regardless of stage,
+/// including `evaluate`'s own outcomes that carry no catalog code.
+fn maybe_disposition_code(disposition: &ClauseDisposition) -> Option<Code> {
+    use qsl_semantics::model::observation::AdmissionFailure;
+    match disposition {
+        ClauseDisposition::Compile(refusal) => Some(refusal.code()),
+        ClauseDisposition::Admit(AdmissionFailure::Refused(record))
+        | ClauseDisposition::Admit(AdmissionFailure::Incomplete(record)) => Some(record.code),
+        _ => None,
+    }
+}
+
 fn run_case(directory: &Path, case: Case) -> qsl_replay::spine::ClauseRunReport {
     std::fs::create_dir_all(directory).unwrap();
     let request = build(directory, case);
@@ -208,11 +221,104 @@ fn run_native(directory: &Path) -> NativeRun {
     }
 }
 
+/// Native's own `stage`/`status`/`truth`/code JSON fields, mapped onto
+/// FR-109's spine vocabulary so [`tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus`]
+/// can compare the two directly rather than by exit code alone (SR-768
+/// FND-001): native `validate`→spine `admit`, native `link`/`quire`→spine
+/// `compile`, native `evaluate`→spine `evaluate`.
+struct NativeSummary {
+    stage: ClauseRunStage,
+    category: Category,
+    truth: Option<bool>,
+    /// Every catalog code native's own top-level `code` or `diagnostics[]`
+    /// carries. Empty for `completed` (no code at all).
+    codes: BTreeSet<String>,
+}
+
+fn native_summary(value: &Value) -> NativeSummary {
+    let stage = match value["stage"].as_str().unwrap() {
+        "validate" => ClauseRunStage::Admit,
+        "link" | "quire" => ClauseRunStage::Compile,
+        "evaluate" => ClauseRunStage::Evaluate,
+        other => panic!("unknown native stage {other:?}: {value}"),
+    };
+    let truth = value.get("truth").and_then(Value::as_bool);
+    let category = match value["status"].as_str().unwrap() {
+        "completed" => {
+            if truth.expect("a completed status always carries truth") {
+                Category::Success
+            } else {
+                Category::Violation
+            }
+        }
+        "refused" => Category::Refusal,
+        "incomplete" => Category::Incomplete,
+        other => panic!("unknown native status {other:?}: {value}"),
+    };
+    let mut codes = BTreeSet::new();
+    if let Some(code) = value.get("code").and_then(Value::as_str) {
+        codes.insert(code.to_owned());
+    }
+    if let Some(diagnostics) = value.get("diagnostics").and_then(Value::as_array) {
+        codes.extend(
+            diagnostics
+                .iter()
+                .map(|entry| entry["code"].as_str().unwrap().to_owned()),
+        );
+    }
+    NativeSummary {
+        stage,
+        category,
+        truth,
+        codes,
+    }
+}
+
+/// The same shape as [`native_summary`], read from spine's own report.
+/// `codes` is `None` where spine's disposition carries no catalog code
+/// comparable to native's own vocabulary (the `evaluate`-stage `work_units`
+/// resource limit, which step 1 already pins precisely) -- comparing `None`
+/// against native's codes would be meaningless, so that case skips the code
+/// comparison rather than asserting an empty set.
+fn spine_summary(
+    report: &qsl_replay::spine::ClauseRunReport,
+) -> (
+    ClauseRunStage,
+    Category,
+    Option<bool>,
+    Option<BTreeSet<String>>,
+) {
+    use qsl_semantics::model::observation::AdmissionFailure;
+    let disposition = &report.disposition;
+    let codes = match disposition {
+        ClauseDisposition::Compile(refusal) => {
+            Some(BTreeSet::from([refusal.code().as_str().to_owned()]))
+        }
+        ClauseDisposition::Admit(AdmissionFailure::Refused(record))
+        | ClauseDisposition::Admit(AdmissionFailure::Incomplete(record)) => {
+            Some(BTreeSet::from([record.code.as_str().to_owned()]))
+        }
+        _ => None,
+    };
+    (
+        disposition.stage(),
+        disposition.category(),
+        disposition.truth(),
+        codes,
+    )
+}
+
 /// FR-108-AC-2 (TC-469 step 2): native `quire-spec run` and `run_clause`
-/// agree on exit code for all 17 cases, under FR-108's own stage/category
-/// map (native `validate`→spine `admit`, native `link`→spine `compile`).
-/// FR-108-AC-3 (TC-469 step 3): `below-range`/`above-range` name `root`/
-/// `child` and `versionNumber` in both outputs' locus.
+/// agree on stage, category, truth, code and exit code for all 17 cases,
+/// under FR-108's own stage/category map (native `validate`→spine `admit`,
+/// native `link`→spine `compile`). Comparing more than the exit code alone
+/// matters because exit 20 is shared by `dangling_reference`,
+/// `frame_violation`, `invalid_runtime_input` and `missing_import` (SR-768
+/// FND-001): a spine refusal with the wrong code at the wrong stage would
+/// still pass an exit-code-only check.
+/// FR-108-AC-3 (TC-469 step 3): `below-range`/`above-range` name exactly
+/// `root`/`child` (not either, for either case -- SR-768 FND-002) and
+/// `versionNumber` in both outputs' locus.
 #[trace("TC-469", "FR-108-AC-2", "FR-108-AC-3", "FR-032-AC-1")]
 #[test]
 fn tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus() {
@@ -230,24 +336,80 @@ fn tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus() {
             native.value,
             spine_report.disposition,
         );
+        let native_summary = native_summary(&native.value);
+        let (spine_stage, spine_category, spine_truth, spine_codes) = spine_summary(&spine_report);
+        assert_eq!(
+            native_summary.stage,
+            spine_stage,
+            "{}: stage; native {}",
+            case.id(),
+            native.value
+        );
+        assert_eq!(
+            native_summary.category,
+            spine_category,
+            "{}: category; native {}",
+            case.id(),
+            native.value
+        );
+        assert_eq!(
+            native_summary.truth,
+            spine_truth,
+            "{}: truth; native {}",
+            case.id(),
+            native.value
+        );
+        if let Some(spine_codes) = spine_codes {
+            assert_eq!(
+                native_summary.codes,
+                spine_codes,
+                "{}: code; native {}",
+                case.id(),
+                native.value
+            );
+        }
     }
 
+    // The boundary object below-range/above-range's own object, taken from
+    // native's `diagnostics[0].runtime.path` array entry that carries an
+    // `object` key (verified live: `{"object":"root"}` for below-range,
+    // `{"object":"child"}` for above-range), and from spine's own
+    // `record.fields["object"]`. Neither side accepts the other case's
+    // object.
     for case in [Case::BelowRange, Case::AboveRange] {
+        let expected_object = match case {
+            Case::BelowRange => "root",
+            Case::AboveRange => "child",
+            _ => unreachable!("only the two boundary cases are iterated"),
+        };
         let path = directory.path().join(format!("{}-locus", case.id()));
         let spine_request = build(&path, case);
         let spine_report = run_clause(spine_request).unwrap();
         let native = run_native(&path);
-        let native_text = native.value.to_string();
-        assert!(
-            native_text.contains("versionNumber"),
-            "{}: native locus {native_text}",
-            case.id()
+        let runtime_path = native.value["diagnostics"][0]["runtime"]["path"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{}: native locus {}", case.id(), native.value));
+        let native_field = runtime_path
+            .iter()
+            .find_map(|entry| entry.get("field").and_then(Value::as_str));
+        assert_eq!(
+            native_field,
+            Some("versionNumber"),
+            "{}: native locus {}",
+            case.id(),
+            native.value
         );
-        assert!(
-            native_text.contains("root") || native_text.contains("child"),
-            "{}: native locus {native_text}",
-            case.id()
+        let native_object = runtime_path
+            .iter()
+            .find_map(|entry| entry.get("object").and_then(Value::as_str));
+        assert_eq!(
+            native_object,
+            Some(expected_object),
+            "{}: native locus {}",
+            case.id(),
+            native.value
         );
+
         let ClauseDisposition::Admit(qsl_semantics::model::observation::AdmissionFailure::Refused(
             record,
         )) = &spine_report.disposition
@@ -266,9 +428,9 @@ fn tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus() {
             case.id(),
             record.fields
         );
-        let object = record.fields.get("object").map(String::as_str);
-        assert!(
-            matches!(object, Some("root") | Some("child")),
+        assert_eq!(
+            record.fields.get("object").map(String::as_str),
+            Some(expected_object),
             "{}: {:?}",
             case.id(),
             record.fields
@@ -276,10 +438,46 @@ fn tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus() {
     }
 }
 
+/// The two variants of a [`ClauseRunSelection`] compared for equality.
+/// `ClauseRunSelection` itself carries no `PartialEq` (its `Function`
+/// variant's `ClauseArgument`/`ClauseArgumentValue` don't either), so this
+/// compares the `Clause` variant's own `PartialEq` and the `Function`
+/// variant's `name`/`snapshot` (both `PartialEq`) plus its `arguments` by
+/// `Debug` text -- a test-only comparator, not a reason to add derives to
+/// production types nothing else needs them for.
+fn selections_match(
+    a: &qsl_replay::spine::ClauseRunSelection,
+    b: &qsl_replay::spine::ClauseRunSelection,
+) -> bool {
+    use qsl_replay::spine::ClauseRunSelection::{Clause, Function};
+    match (a, b) {
+        (Clause(a), Clause(b)) => a == b,
+        (
+            Function {
+                name: name_a,
+                arguments: arguments_a,
+                snapshot: snapshot_a,
+            },
+            Function {
+                name: name_b,
+                arguments: arguments_b,
+                snapshot: snapshot_b,
+            },
+        ) => {
+            name_a == name_b
+                && snapshot_a == snapshot_b
+                && format!("{arguments_a:?}") == format!("{arguments_b:?}")
+        }
+        _ => false,
+    }
+}
+
 /// FR-108-AC-4 (TC-469 step 4): generating the corpus twice gives identical
-/// files, running it twice gives identical reports, and a request carrying
-/// spine `compile`'s own emitted `package_id` for the unit gives the same
-/// report.
+/// files (bidirectionally: same file sets, not just every file in the first
+/// generation present in the second -- SR-768 FND-003), running every one of
+/// the 17 cases twice gives identical reports (the full disposition, not a
+/// field subset), and a request carrying spine `compile`'s own emitted
+/// `package_id` for the unit gives the same report.
 #[trace("TC-469", "FR-108-AC-4")]
 #[test]
 fn tc_469_step_4_generation_and_reports_are_deterministic() {
@@ -290,25 +488,73 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
     for &case in crate::support::config_version::CASES {
         crate::support::config_version::write(&first.join(case.id()), &model, case).unwrap();
         crate::support::config_version::write(&second.join(case.id()), &model, case).unwrap();
-        for entry in std::fs::read_dir(first.join(case.id())).unwrap() {
-            let entry = entry.unwrap();
+        let names = |directory: &Path| -> BTreeSet<std::ffi::OsString> {
+            std::fs::read_dir(directory)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect()
+        };
+        let first_names = names(&first.join(case.id()));
+        let second_names = names(&second.join(case.id()));
+        assert_eq!(
+            first_names,
+            second_names,
+            "{}: the two generations wrote different file sets",
+            case.id()
+        );
+        for name in &first_names {
             assert_eq!(
-                std::fs::read(entry.path()).unwrap(),
-                std::fs::read(second.join(case.id()).join(entry.file_name())).unwrap(),
-                "{}: {:?} differs between generations",
-                case.id(),
-                entry.file_name()
+                std::fs::read(first.join(case.id()).join(name)).unwrap(),
+                std::fs::read(second.join(case.id()).join(name)).unwrap(),
+                "{}: {name:?} differs between generations",
+                case.id()
             );
         }
     }
 
-    for case in [Case::Healthy, Case::Changed, Case::ForbiddenParent] {
+    for &case in crate::support::config_version::CASES {
         let path = first.join(case.id());
         let request_a = spine::request(&path, case).unwrap();
+        let limits_a = (
+            request_a.limits,
+            request_a.observation_limits,
+            request_a.model_limits,
+            request_a.accounting,
+        );
         let report_a = run_clause(request_a).unwrap();
         let request_b = spine::request(&path, case).unwrap();
+        let limits_b = (
+            request_b.limits,
+            request_b.observation_limits,
+            request_b.model_limits,
+            request_b.accounting,
+        );
         let report_b = run_clause(request_b).unwrap();
+
+        // The full report: exit code, disposition (stage/category/truth/
+        // code via the same summary step 2 uses), source digest, package_id
+        // and usage all agree between the two runs.
         assert_eq!(report_a.exit_code(), report_b.exit_code(), "{}", case.id());
+        assert_eq!(
+            (
+                report_a.disposition.stage(),
+                report_a.disposition.category(),
+                report_a.disposition.truth()
+            ),
+            (
+                report_b.disposition.stage(),
+                report_b.disposition.category(),
+                report_b.disposition.truth()
+            ),
+            "{}",
+            case.id()
+        );
+        assert_eq!(
+            maybe_disposition_code(&report_a.disposition),
+            maybe_disposition_code(&report_b.disposition),
+            "{}",
+            case.id()
+        );
         assert_eq!(
             report_a.source_digest,
             report_b.source_digest,
@@ -317,47 +563,106 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
         );
         assert_eq!(report_a.package_id, report_b.package_id, "{}", case.id());
         assert_eq!(
-            report_a.provenance.documents,
-            report_b.provenance.documents,
+            report_a.usage.admission_consumed,
+            report_b.usage.admission_consumed,
+            "{}",
+            case.id()
+        );
+        assert_eq!(
+            report_a.usage.evaluation_admissions,
+            report_b.usage.evaluation_admissions,
+            "{}",
+            case.id()
+        );
+        assert_eq!(
+            report_a.usage.evaluation_consumed,
+            report_b.usage.evaluation_consumed,
             "{}",
             case.id()
         );
 
         // Provenance names the source digest, package_id, the domain
         // package's own sha256-jcs digest, every observation's identity
-        // and digest, the selection and the limits.
+        // and digest, the selection and the limits -- verified as content
+        // (not vacuously present) and as agreeing between the two runs, so
+        // the case is fixed by its inputs (FR-108-AC-4).
         assert!(!report_a.source_digest.is_empty(), "{}", case.id());
-        let package_id = report_a.package_id.expect("compile reached E4");
-        assert!(
-            report_a
-                .provenance
-                .model_selections
-                .iter()
-                .any(|selection| selection.identity == spine::PACKAGE_IDENTITY
-                    && qsl_semantics::model::key::hex(&selection.digest)
-                        == spine::model_digest_hex()),
-            "{}: {:?}",
-            case.id(),
-            report_a.provenance.model_selections
-        );
-        assert!(
-            !report_a.provenance.documents.is_empty(),
-            "{}: an admitted case names every observation it read",
-            case.id()
-        );
-
-        // A request carrying spine `compile`'s own emitted `package_id`
-        // gives the same report (FR-032-AC-4's package half).
-        let mut pinned_request = spine::request(&path, case).unwrap();
-        pinned_request.expected_package_id = Some(package_id);
-        let pinned_report = run_clause(pinned_request).unwrap();
         assert_eq!(
-            pinned_report.exit_code(),
-            report_a.exit_code(),
+            report_a.provenance.documents,
+            report_b.provenance.documents,
             "{}",
             case.id()
         );
-        assert_eq!(pinned_report.package_id, Some(package_id), "{}", case.id());
+        assert_eq!(
+            report_a.provenance.extraction,
+            report_b.provenance.extraction,
+            "{}",
+            case.id()
+        );
+        assert!(
+            selections_match(
+                &report_a.provenance.selection,
+                &report_b.provenance.selection
+            ),
+            "{}: {:?} vs {:?}",
+            case.id(),
+            report_a.provenance.selection,
+            report_b.provenance.selection
+        );
+        assert_eq!(limits_a, limits_b, "{}", case.id());
+        assert_eq!(
+            report_a.provenance.model_selections,
+            report_b.provenance.model_selections,
+            "{}",
+            case.id()
+        );
+        if matches!(case, Case::MissingModel) {
+            assert!(
+                report_a.provenance.model_selections.is_empty(),
+                "{}: no package to name",
+                case.id()
+            );
+        } else {
+            assert!(
+                report_a
+                    .provenance
+                    .model_selections
+                    .iter()
+                    .any(|selection| selection.identity == spine::PACKAGE_IDENTITY
+                        && qsl_semantics::model::key::hex(&selection.digest)
+                            == spine::model_digest_hex()),
+                "{}: {:?}",
+                case.id(),
+                report_a.provenance.model_selections
+            );
+        }
+        if matches!(
+            report_a.disposition.stage(),
+            ClauseRunStage::Evaluate | ClauseRunStage::Admit
+        ) && !matches!(case, Case::Dangling)
+        {
+            assert!(
+                !report_a.provenance.documents.is_empty(),
+                "{}: an admitted case names every observation it read",
+                case.id()
+            );
+        }
+
+        // A request carrying spine `compile`'s own emitted `package_id`
+        // gives the same report (FR-032-AC-4's package half). Only cases
+        // that reach compile have one to pin.
+        if let Some(package_id) = report_a.package_id {
+            let mut pinned_request = spine::request(&path, case).unwrap();
+            pinned_request.expected_package_id = Some(package_id);
+            let pinned_report = run_clause(pinned_request).unwrap();
+            assert_eq!(
+                pinned_report.exit_code(),
+                report_a.exit_code(),
+                "{}",
+                case.id()
+            );
+            assert_eq!(pinned_report.package_id, Some(package_id), "{}", case.id());
+        }
     }
 }
 
@@ -394,13 +699,10 @@ mod extraction {
     /// The extracted body's own text and digest for `case`'s already-built
     /// `request`'s unit source.
     fn extracted(case: Case, request: &ClauseRunRequest) -> (qsl_source::ExtractedSource, String) {
-        let unit = match &request.source {
-            qsl_replay::spine::ClauseRunSource::Program { bytes, .. } => {
-                String::from_utf8(bytes.clone()).unwrap()
-            }
-            #[allow(unreachable_patterns)]
-            _ => unreachable!("fixtures always build a Program source"),
+        let qsl_replay::spine::ClauseRunSource::Program { bytes, .. } = &request.source else {
+            unreachable!("fixtures always build a Program source")
         };
+        let unit = String::from_utf8(bytes.clone()).unwrap();
         // Quire's `extract_clauses` (FR-071) only reads fences under a
         // `## Invariants` section, each owned by its own `### <clauseId>`
         // heading -- a bare `## <case>` heading with no `### ` clause id
@@ -495,16 +797,6 @@ mod extraction {
     }
 }
 
-/// FR-108-AC-6 (TC-469 step 6): the expected table pins the FR-108 unit's
-/// `package_id` (the one spine `compile` emits for it), every case's report
-/// carries exactly that value, and the emitted package bytes admit through
-/// QSpec I04 `read` (`quire_contract_ir::read_checked_package`, the pinned
-/// `quire-contract-model` revision's own reader -- STD-111's `state_clause`/
-/// `operation_anchor`/frame wire spellings are present at this repo's
-/// pinned revision `48ab5dc`, confirmed against
-/// `crates/quire-contract-model/src/checked_package/v2/vocabulary.rs`'s
-/// `StateForm`, so this is genuinely runnable now, not still blocked on
-/// STD-111).
 /// Records every artifact reference found anywhere in `value` (an object
 /// carrying `authority`/`identity`/`revision`/`digest_domain`/`digest`) into
 /// `evidence` under its own claimed digest, recursing through arrays and
@@ -549,6 +841,13 @@ fn record_locked_artifacts(
     }
 }
 
+/// FR-108-AC-6 (TC-469 step 6), its package_id half: the expected table
+/// pins the FR-108 unit's `package_id` (the one spine `compile` emits for
+/// it), and every case's report carries exactly that value. This half needs
+/// no STD-111 wire spellings and runs today; the I04 `read` half is a
+/// separate, currently-`#[ignore]`d test below, blocked on QSL-315 (a
+/// `qsl-semantics`/`qsl-package` emitter defect the pinned
+/// `quire-contract-model` reader rejects), not on STD-111.
 #[trace("TC-469", "FR-108-AC-6")]
 #[test]
 fn tc_469_step_6_package_id_is_pinned_across_every_case() {
@@ -581,12 +880,7 @@ fn tc_469_step_6_package_id_is_pinned_across_every_case() {
     // any one case's request, share the same pinned `package_id`.
     let unit = spine::unit_text();
     let compiled = qsl_replay::spine::compile(
-        qsl_foundation::SourceIdentity::new(
-            "agent-ix",
-            "ix://example/config-version/spine/unit",
-            "example",
-            "1",
-        ),
+        spine::unit_identity(),
         "spine-unit.native",
         unit.as_bytes(),
         &spine::domain_packages(),
@@ -621,12 +915,7 @@ fn tc_469_step_6_package_id_is_pinned_across_every_case() {
 fn tc_469_step_6_the_emitted_package_admits_via_i04() {
     let unit = spine::unit_text();
     let compiled = qsl_replay::spine::compile(
-        qsl_foundation::SourceIdentity::new(
-            "agent-ix",
-            "ix://example/config-version/spine/unit",
-            "example",
-            "1",
-        ),
+        spine::unit_identity(),
         "spine-unit.native",
         unit.as_bytes(),
         &spine::domain_packages(),

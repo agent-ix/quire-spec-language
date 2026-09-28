@@ -38,7 +38,7 @@ no case at the domain boundaries QSpec FR-180-AC-4 names (0, 1000, -1,
   boundary cases below. It stays the one catalog both paths generate from.
 - `examples/config-version/model.semantic-ir.json`: a newly authored,
   AGPL-3.0-only Semantic IR 2.0.0 domain package `example/config-version`
-  version `1`, the spine counterpart of `model.json`, with the declarations
+  version `1.0.0`, the spine counterpart of `model.json`, with the declarations
   FR-103-AC-1 lists. It and the generated unit carry `AGPL-3.0-only`, not the
   repository's `AGPL-3.0-or-later`, because they are example content beside
   `model.json` and the generated `program.native`, which FR-032 authors as
@@ -49,7 +49,7 @@ no case at the domain boundaries QSpec FR-180-AC-4 names (0, 1000, -1,
 // SPDX-License-Identifier: AGPL-3.0-only
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1" version "1-draft.2" digest "sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16";
-model Config = "example/config-version" version "1" digest "sha256-jcs:<the package's digest>";
+model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:<the package's digest>";
 invariant ParentOrder using v on Config::ConfigVersion at current { present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }
 invariant NoCycle using v on Config::ConfigVersion at current { not reaches(self, self, parent) }
 post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = pre(self.versionNumber) }
@@ -128,7 +128,7 @@ the same two objects through `sameIdentity`, over the same snapshot data
 | FR-108-AC-3 | below-range and above-range refuse at admission in both paths with `invalid_runtime_input`, and both name the object (`root`, `child`) and the field `versionNumber`; boundary-zero and boundary-max complete with `true` in both (QSpec FR-180-AC-4, QSL's share). | Test (TC-469) |
 | FR-108-AC-4 | Generating the corpus twice gives identical files, and running it twice gives identical reports; each report's provenance names the source digest, `package_id`, the domain package's `sha256-jcs` digest, every observation's identity and digest, the selection and the limits, so the case is fixed by its inputs (QSpec FR-180-AC-5). A run whose request carries the `package_id` that spine `compile` emits for the unit gives the same report (FR-032-AC-4's package half). | Test (TC-469) |
 | FR-108-AC-5 | With `quire-extraction`, the Markdown run of each case gives the direct run's disposition, a different source identity and digest, and the extraction's original identity and digest in its provenance. | Test (TC-469) |
-| FR-108-AC-6 | The expected table pins the unit's `package_id`, the one spine `compile` emits for the FR-108 unit and package, and every case's report carries exactly that value; the emitted package bytes admit through QSpec I04 `read` (QSpec FR-180's reference verdict contract). | Test (TC-469); pending STD-111 |
+| FR-108-AC-6 | Every case's report agrees on the unit's `package_id` (the one spine `compile` emits for the FR-108 unit and package, independently re-derived and compared against every case's report); the emitted package bytes admit through QSpec I04 `read` (QSpec FR-180's reference verdict contract). | Test (TC-469); the package_id half is implemented, the I04 `read` half is pending QSL-315 |
 
 ## Dependencies
 
@@ -138,12 +138,15 @@ the same two objects through `sameIdentity`, over the same snapshot data
   generated-oracle, property and proof consumers of FR-180-AC-1 are CG's and
   IR's, and IR admits no `state` node at 48ab5dc (ADR-012 §15.7).
 - STD-111 (QSpec), which FR-105 names, for the emitted package's `state`
-  bodies, frame entries and `reaches_field` member. Only AC-6, the pinned
-  `package_id` and its I04 `read`, waits on it; AC-1 to AC-5 run over the
-  in-process `CheckedPackage`.
+  bodies, frame entries and `reaches_field` member; AC-1 to AC-6's
+  `package_id` half run over the in-process `CheckedPackage` and need none of
+  it. AC-6's I04 `read` half instead waits on QSL-315 (an emitter defect in
+  `modifies` frame entries), not on STD-111.
 
 ## Status
 
-Specified under QSL-273. AC-6 is pending STD-111: the pinned `package_id` is
-fixed once the QSpec spellings of the `state` bodies land, because those
-spellings enter every `state` node's id.
+Specified under QSL-273. AC-1 to AC-5, and AC-6's `package_id`-agreement
+half, are implemented (QSL-314). AC-6's I04 `read` half is pending QSL-315:
+`qsl-semantics`' emitted `modifies` frame entries are rejected by the pinned
+`quire-contract-model` reader, a genuine emitter defect unrelated to
+STD-111.

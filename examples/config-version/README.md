@@ -20,6 +20,13 @@ snapshot/invocation files, and `request.json`, `markdown-run.json`, `compile.jso
 All selected digests are computed from the actual files. Native and extracted
 bodies have distinct source identities; each case has its own runtime identities.
 
+FR-108 (QSL-314) writes the spine counterpart of every native file into the
+same directory: `spine-unit.native` (the shared `1-draft` unit),
+`spine-model.semantic-ir.json` (the Semantic IR 2.0.0 domain package),
+`spine-*` snapshot/invocation documents, and `clause-run-request.json` (the
+`ClauseRunRequest` inputs `tests/it/config_version_spine.rs` reads through
+`run_clause`, FR-109).
+
 | Directory | Expected outcome |
 | --- | --- |
 | healthy-parent | completed true: parent version 1 precedes child 2 |
@@ -35,6 +42,10 @@ bodies have distinct source identities; each case has its own runtime identities
 | incomplete-population | incomplete: the offered population is not complete |
 | missing-model | refused: the selected model import is unavailable |
 | exhausted-work | incomplete: expression work is limited to zero |
+| boundary-zero | completed true: root version 0, child 1 (QSpec FR-180-AC-4's lower bound) |
+| boundary-max | completed true: root version 999, child 1000 (QSpec FR-180-AC-4's upper bound) |
+| below-range | refused: root version -1 is outside the domain's nominal bounds |
+| above-range | refused: child version 1001 is outside the domain's nominal bounds |
 
 Completed false and refusal exit 1; incomplete exits 3. Only completed execution
 includes truth. The Markdown path retains Quire's unchecked-language advisory

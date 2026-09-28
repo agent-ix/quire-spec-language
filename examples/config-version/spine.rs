@@ -93,6 +93,20 @@ pub fn domain_packages() -> BTreeMap<[u8; 32], Vec<u8>> {
     qsl_semantics::model::intake::package_input([DOMAIN_PACKAGE.as_bytes()])
 }
 
+/// FR-108's own fixed `SourceIdentity` for the compiled unit, shared by
+/// every case (see [`request`]'s own doc for why it must not be
+/// case-suffixed) and by every direct `spine::compile` call comparing
+/// against it (`tests/it/config_version_spine.rs`'s step 6 tests). One
+/// function, not three copies of the same literal (SR-768 FND-005).
+pub fn unit_identity() -> qsl_foundation::SourceIdentity {
+    qsl_foundation::SourceIdentity::new(
+        "agent-ix",
+        "ix://example/config-version/spine/unit",
+        "example",
+        "1",
+    )
+}
+
 /// FR-108's own `1-draft` unit text: one fixed unit, shared by every case
 /// (the corpus table selects different clauses and functions *within* it,
 /// never a different unit).
@@ -408,12 +422,7 @@ pub fn request(directory: &Path, case: Case) -> io::Result<ClauseRunRequest> {
         // `tests/it/config_version_spine.rs`'s own independent
         // `spine::compile` call uses for its direct-compile comparison.
         source: ClauseRunSource::Program {
-            identity: qsl_foundation::SourceIdentity::new(
-                "agent-ix",
-                "ix://example/config-version/spine/unit",
-                "example",
-                "1",
-            ),
+            identity: unit_identity(),
             path: "spine-unit.native".to_owned(),
             bytes: unit,
         },
