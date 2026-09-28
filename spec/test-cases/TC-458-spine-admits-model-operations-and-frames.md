@@ -61,11 +61,11 @@ Tag the tests `#[trace("TC-458", "FR-103-AC-n")]`.
 
 - Step 1: `Config::ConfigVersion` has `versionNumber: Int[0, 1000]` (the
   `value-type/v1` scalar reader, QSL-289, exists and is verified against
-  this exact bound end to end by a dedicated fixture,
-  `model_operations.rs::bound_integer_value_type_admits_and_assembles`; this
-  step's own `ConfigVersion`-fixture tests still substitute a native
-  `Integer` field, deferred separately -- see the `versionNumber` field row
-  above) and `parent: Option<Reference<Config::ConfigVersion>>`; operation
+  this exact bound end to end, both by a dedicated fixture,
+  `model_operations.rs::bound_integer_value_type_admits_and_assembles`, and
+  by the shared `ConfigVersion` fixture itself, which declares
+  `versionNumber` as that same bound `VersionNumber` scalar) and
+  `parent: Option<Reference<Config::ConfigVersion>>`; operation
   `attemptUpdate` has no parameters, result `Boolean`, and effect
   `modifies == [versionNumber's key]`, `creates == []`, `deletes == []`.
 - Step 2: `missing_declaration`/`missing-name` at the entry; then
@@ -76,9 +76,8 @@ Tag the tests `#[trace("TC-458", "FR-103-AC-n")]`.
 - Step 3: `unsupported_construct`/`declaration-form` at the parameter, at I1
   (intake) -- the same stage and cause a field of that type refuses at, per
   FR-103's own Behavior ("as a field of that type does"); then
-  `delta: Int[0, 1000]` (the `value-type/v1` scalar reader now exists,
-  QSL-289; this step's own `ConfigVersion`-fixture test still substitutes a
-  native `Integer` parameter, deferred separately -- see Step 1).
+  `delta: Int[0, 1000]`, over the same shared `ConfigVersion` fixture's
+  `VersionNumber` declaration.
 - Step 4: `UnsupportedModelMember` naming the record value type's node.
 - Step 5: equal `PackageDeclarations` and effect key lists in all three.
 
