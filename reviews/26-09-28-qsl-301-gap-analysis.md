@@ -55,5 +55,5 @@ weaknesses, not missing behaviour. Both are fixed in-PR.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | `a_stale_envelope_package_id_refuses_by_the_stale_package_rule`: the request's `package_id` is current and the envelope's is the parent-modifying package's; asserts `PackageIdMismatch{requested: envelope's, recompiled: current}` |
-| FND-002 | fixed | the end-to-end test asserts `of_witness(witness) == child_change("parent")` before replaying |
+| FND-001 | fixed | 975993fd: `a_stale_envelope_package_id_refuses_by_the_stale_package_rule`: the request's `package_id` is current and the envelope's is the parent-modifying package's; asserts `PackageIdMismatch{requested: envelope's, recompiled: current}` |
+| FND-002 | fixed | 975993fd: the end-to-end test asserts `of_witness(witness) == child_change("parent")` before replaying |

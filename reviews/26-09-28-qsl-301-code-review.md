@@ -74,8 +74,8 @@ test now takes all three identities from the other package. The shared
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | see QSL-301 dispositions comment: `check_identities` checks frame, occurrence, anchor; AC-3 test takes anchor, frame and occurrence from the parent-modifying package and asserts the anchors differ |
-| FND-002 | fixed | spec.md FR-116 row: implemented under QSL-301 (QSL-21f), TC-515 passed locally |
-| FND-003 | fixed | FR-116 Inputs: "the four change kinds of FR-106's check 11, which FR-115 runs" |
-| FND-004 | fixed | lib.rs comment names the qsl_foundation and quire_exact types CG also needs |
-| FND-005 | deferred: FR-116 names only the `package_id` cross-check. What CG puts in the envelope's `occurrence_key`/`clause_node` for a frame counterexample is not defined until quire-contract-codegen#49 lands, so there is nothing to check against yet |
+| FND-001 | fixed | 975993fd: `check_identities` checks frame, occurrence, anchor; AC-3 test takes anchor, frame and occurrence from the parent-modifying package and asserts the anchors differ |
+| FND-002 | fixed | 975993fd: spec.md FR-116 row: implemented under QSL-301 (QSL-21f), TC-515 passed locally |
+| FND-003 | fixed | 975993fd: FR-116 Inputs: "the four change kinds of FR-106's check 11, which FR-115 runs" |
+| FND-004 | fixed | 975993fd: lib.rs comment names the qsl_foundation and quire_exact types CG also needs |
+| FND-005 | deferred | FR-116 names only the `package_id` cross-check. What CG puts in the envelope's `occurrence_key`/`clause_node` for a frame counterexample is not defined until quire-contract-codegen#49 lands, so there is nothing to check against yet |
