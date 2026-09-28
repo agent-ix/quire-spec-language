@@ -17,8 +17,8 @@ use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
 use super::dispatch::{Construct, FormsFailure, FormsLimits};
 use super::spans::DeclarationSpans;
 use super::syntax::{
-    AnchorForm, AnchorSegment, AnchorSite, BinderForm, BinderKind, DeclarationForm, DeclaredName,
-    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, ScopeName,
+    AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind, DeclarationForm,
+    DeclaredName, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, ScopeName,
     ScopedAnchorForm, StateClauseForm, StateClauseKind, UsingAlias,
 };
 use super::value::{
@@ -39,6 +39,9 @@ struct Collector<'a> {
     declarations: &'a mut Vec<ProtocolNodeDeclaration>,
     /// FR-113's binder collection, in source order.
     binders: &'a mut Vec<BinderForm>,
+    /// FR-114's attempt operation/contracts collection, in source order
+    /// (QSL-309).
+    attempts: &'a mut Vec<AttemptForm>,
     /// The S2 nesting-depth bound `control_anchors` charges `depth`
     /// against.
     limits: FormsLimits,
@@ -130,6 +133,7 @@ pub(crate) fn protocol_declaration(
     let mut scoped_anchors = Vec::new();
     let mut declarations = Vec::new();
     let mut binders = Vec::new();
+    let mut attempts = Vec::new();
     // The protocol's own `over (p)` input parameter (FR-113 "Refusals"
     // binder no-shadowing rule): visible everywhere in the protocol, at the
     // empty top-level scope (composed lane: `BinderKind::Input`).
@@ -160,6 +164,7 @@ pub(crate) fn protocol_declaration(
             anchors: &mut scoped_anchors,
             declarations: &mut declarations,
             binders: &mut binders,
+            attempts: &mut attempts,
             limits: construct.limits,
         };
         for compensation in nodes_of(&clause_items, Production::Compensation) {
@@ -183,6 +188,7 @@ pub(crate) fn protocol_declaration(
         scoped_anchors,
         declarations,
         binders,
+        attempts,
     }))
 }
 
@@ -638,6 +644,7 @@ fn event_node_anchors(
         }
         _ => None,
     };
+    let declaration_index = collector.declarations.len();
     collector.declarations.push(ProtocolNodeDeclaration {
         kind,
         name,
@@ -649,6 +656,16 @@ fn event_node_anchors(
     collector
         .binders
         .push(record_binder(cst, &event_items, node, scope)?);
+    // `attempt`'s own `on M::T::op` operation name and `contracts [...]`
+    // list (FR-114 "Inputs"): kept spelled and unresolved here, the same
+    // contract `state_clause`'s own `operation` capture keeps (FR-102) --
+    // the assembler resolves the operation, mirroring FR-104's resolution
+    // of a state clause's own operation.
+    if kind == ProtocolNodeKind::Attempt {
+        collector
+            .attempts
+            .push(attempt_form(cst, &event_items, node, declaration_index)?);
+    }
     let Some(site) = site else {
         return Ok(());
     };
@@ -670,6 +687,52 @@ fn event_node_anchors(
             .push(scoped_anchor(cst, reference, site, scope, owner_channel)?);
     }
     Ok(())
+}
+
+/// An `attempt`'s own `on M::T::op` operation name and `contracts [...]`
+/// list (FR-114 "Inputs"), read from the attempt event node's own
+/// `event_items`: the operation's `M::T` context and `op` member from its
+/// `OperationName` child node (the same shape [`state_clause`] reads), and
+/// every `contracts` entry from the event node's own identifier tokens
+/// after the attempt's own name and role (`OperationName` is a nested node,
+/// so its tokens are not among `event_items`'s own -- the name, then the
+/// role, then each contracts entry, in that fixed grammar order).
+fn attempt_form(
+    cst: &LosslessCst,
+    event_items: &[Item<'_>],
+    node: &CstNode,
+    declaration_index: usize,
+) -> Result<AttemptForm, FormsFailure> {
+    let operation_name = only(event_items, Production::OperationName, node)?;
+    let operation_items = items(cst, operation_name);
+    let type_name = only(&operation_items, Production::TypeName, operation_name)?;
+    let context = name_form(cst, type_name)?;
+    let member = tokens_of(&operation_items, TokenKind::Identifier)
+        .first()
+        .copied()
+        .ok_or_else(|| unexpected(operation_name))?;
+    let operation = DeclaredName {
+        name: text(member, operation_name)?,
+        span: member.span(),
+    };
+    let identifiers = tokens_of(event_items, TokenKind::Identifier);
+    let contracts = identifiers
+        .get(2..)
+        .unwrap_or_default()
+        .iter()
+        .map(|token| {
+            Ok(DeclaredName {
+                name: text(token, node)?,
+                span: token.span(),
+            })
+        })
+        .collect::<Result<Vec<_>, FormsFailure>>()?;
+    Ok(AttemptForm {
+        declaration: declaration_index,
+        context,
+        operation,
+        contracts,
+    })
 }
 
 /// One `ScopedAnchorForm` from a `NodeReference` CST node: its segments

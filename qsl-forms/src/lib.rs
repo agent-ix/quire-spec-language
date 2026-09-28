@@ -39,8 +39,8 @@ pub use dispatch::{
 };
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
-    Accumulation, AliasForm, AnchorForm, AnchorSegment, AnchorSite, BinaryOperator, BinderForm,
-    BinderKind, BinderQuery, BuiltinType, ClauseKind, DeclarationForm, DeclarationKind,
+    Accumulation, AliasForm, AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinaryOperator,
+    BinderForm, BinderKind, BinderQuery, BuiltinType, ClauseKind, DeclarationForm, DeclarationKind,
     DeclaredClauseKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
     ExactNumberForm, ExactNumberKind, Expression, FieldInitializer, FunctionDeclaration, NameForm,
     ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm,

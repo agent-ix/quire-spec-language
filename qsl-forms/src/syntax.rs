@@ -1350,6 +1350,29 @@ pub struct BinderForm {
     pub scope: Vec<ScopeName>,
 }
 
+/// One `attempt`'s `on M::T::op` operation name and `contracts [...]` list
+/// (FR-114 "Inputs"), captured alongside its own `ProtocolNodeKind::Attempt`
+/// static declaration. S2 keeps the context and operation member spelled
+/// and unresolved, the same contract [`StateClauseForm::operation`] keeps
+/// (FR-102): the assembler resolves the operation (FR-114 "Behavior",
+/// mirroring FR-104's own resolution of a state clause's operation), and S3
+/// checks each `contracts` entry against the resolved anchor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttemptForm {
+    /// The index into [`ProtocolDeclarationForm::declarations`] of this
+    /// attempt's own static declaration (`ProtocolNodeKind::Attempt`), so a
+    /// later stage locates the declaration this operation and these
+    /// contracts belong to without a second name lookup.
+    pub declaration: usize,
+    /// The `M::T` context of `on M::T::op`, as spelled.
+    pub context: NameForm,
+    /// The operation member name `op`, as spelled.
+    pub operation: DeclaredName,
+    /// The `contracts [...]` list, in source order; empty when written
+    /// `contracts []`.
+    pub contracts: Vec<DeclaredName>,
+}
+
 /// `protocol Name using p over (params) activation { ... run Control
 /// Finish }` (FR-112 "Outputs", ADR-012 §12.2). S2 builds the scoped
 /// anchors and the declaration collection FR-113 resolves them against; the
@@ -1368,6 +1391,9 @@ pub struct ProtocolDeclarationForm {
     /// Every binder the declaration holds, in source order (FR-113
     /// "Refusals" binder no-shadowing rule; QSL-306).
     pub binders: Vec<BinderForm>,
+    /// Every `attempt`'s operation name and `contracts` list, in source
+    /// order (FR-114 "Inputs"; QSL-309).
+    pub attempts: Vec<AttemptForm>,
 }
 
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form

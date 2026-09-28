@@ -338,6 +338,50 @@ fn s2_builds_every_binder_position_in_source_order() {
     );
 }
 
+/// FR-114 "Inputs" (QSL-309): the attempt's own `on M::T::op` operation
+/// name and `contracts [...]` list are captured into `ProtocolDeclarationForm
+/// ::attempts`, alongside its `ProtocolNodeKind::Attempt` declaration, with
+/// no name resolved yet (the assembler's job, FR-114 "Behavior"). Naming
+/// `declaration` by index rather than only asserting "one attempt form
+/// exists" catches a mutation that pushes the wrong declaration's index.
+#[trace("TC-513")]
+#[test]
+fn s2_captures_an_attempts_operation_name_and_contracts_list() {
+    let source = recovery_flow("Main::Committed", true, "").replacen(
+        "attempt Tried by R on Config::ConfigVersion::attemptUpdate contracts []",
+        "attempt Tried by R on Config::ConfigVersion::attemptUpdate \
+         contracts [VersionUnchanged, AnotherClause]",
+        1,
+    );
+    let (_, unit) = build(&source);
+    let form = protocol_form(unit.forms()[0].form());
+    assert_eq!(form.attempts.len(), 1, "{:?}", form.attempts);
+    let attempt = &form.attempts[0];
+    assert_eq!(attempt.context.name, "Config::ConfigVersion");
+    assert_eq!(attempt.operation.name, "attemptUpdate");
+    let contract_names: Vec<&str> = attempt
+        .contracts
+        .iter()
+        .map(|name| name.name.as_str())
+        .collect();
+    assert_eq!(contract_names, ["VersionUnchanged", "AnotherClause"]);
+
+    let declaration = &form.declarations[attempt.declaration];
+    assert_eq!(declaration.kind, ProtocolNodeKind::Attempt);
+    assert_eq!(declaration.name.name, "Tried");
+}
+
+/// FR-114-AC-2 (QSL-309): `contracts []` still builds an `AttemptForm`, with
+/// an empty `contracts` list rather than none at all.
+#[trace("TC-513")]
+#[test]
+fn s2_admits_an_empty_contracts_list() {
+    let (_, unit) = build(&recovery_flow("Main::Committed", true, ""));
+    let form = protocol_form(unit.forms()[0].form());
+    assert_eq!(form.attempts.len(), 1, "{:?}", form.attempts);
+    assert!(form.attempts[0].contracts.is_empty());
+}
+
 #[trace("TC-510", "FR-112-AC-2")]
 #[test]
 fn a_reference_in_a_nested_control_records_every_enclosing_named_control() {
