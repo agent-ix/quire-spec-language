@@ -23,12 +23,13 @@ use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
-    AdmittedObservations, ClauseSelection, ClauseSelectionInput, DocumentRef, Observation,
-    ObservationLimits, SelectedAnchor, SelectedObject,
+    admit_observations, AdmittedObservations, ClauseFacts, ClauseSelection, ClauseSelectionInput,
+    DocumentRef, Observation, ObservationLimits, OperationFacts, Provisions, SelectedAnchor,
+    SelectedObject,
 };
 use quire_exact::{
-    ChargePoint, EffectiveId, FieldValue, Meter, ObjectId, ObjectReference, Outcome, UniverseId,
-    Value,
+    ChargePoint, EffectiveId, FieldValue, InjectedDenial, Meter, ObjectId, ObjectReference,
+    Outcome, UniverseId, Value,
 };
 use serde_json::json;
 
@@ -1390,6 +1391,16 @@ fn version_number_type() -> String {
 /// [versionNumber]` only, no parameters, returns `Boolean`), one closed
 /// population `config_history`.
 fn config_version_domain_document() -> Vec<u8> {
+    config_version_domain_document_with_operations(Vec::new())
+}
+
+/// [`config_version_domain_document`], with `extra_operations` appended
+/// after `attemptUpdate` (TC-466 step 3, QSL-311): the one fact "what
+/// `ConfigVersion` operations exist" stays in this one builder rather than
+/// a second, hand-duplicated envelope for step 3's `probe`.
+fn config_version_domain_document_with_operations(
+    extra_operations: Vec<serde_json::Value>,
+) -> Vec<u8> {
     let config_version = config_version_type();
     let version_number = version_number_type();
     let version_number_identity = format!("{config_version}/versionNumber");
@@ -1412,6 +1423,34 @@ fn config_version_domain_document() -> Vec<u8> {
             },
         })
     };
+    let mut operations = vec![json!({
+        "identity": operation_identity,
+        "name": "attemptUpdate",
+        "params": [],
+        "returns": {
+            "typeRef": "ix://quire/native/Boolean",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "nullable": false,
+        },
+        "pre": [],
+        "post": [],
+        "origin": {
+            "source": {
+                "sourceIdentity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
+                "path": "spec.qspec",
+                "startLine": 1,
+                "startColumn": 1,
+            },
+        },
+        // FR-105-AC-1: `attemptUpdate`'s frame modifies exactly
+        // `versionNumber`, never `parent`.
+        "frame": {
+            "modifies": [version_number_identity],
+            "creates": [],
+            "deletes": [],
+        },
+    })];
+    operations.extend(extra_operations);
     let envelope = json!({
         "contractVersion": "2.0.0",
         "source": {
@@ -1533,35 +1572,7 @@ fn config_version_domain_document() -> Vec<u8> {
                         },
                     },
                 ],
-                "operations": [
-                    {
-                        "identity": operation_identity,
-                        "name": "attemptUpdate",
-                        "params": [],
-                        "returns": {
-                            "typeRef": "ix://quire/native/Boolean",
-                            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
-                            "nullable": false,
-                        },
-                        "pre": [],
-                        "post": [],
-                        "origin": {
-                            "source": {
-                                "sourceIdentity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
-                                "path": "spec.qspec",
-                                "startLine": 1,
-                                "startColumn": 1,
-                            },
-                        },
-                        // FR-105-AC-1: `attemptUpdate`'s frame modifies
-                        // exactly `versionNumber`, never `parent`.
-                        "frame": {
-                            "modifies": [version_number_identity],
-                            "creates": [],
-                            "deletes": [],
-                        },
-                    },
-                ],
+                "operations": operations,
             },
         ],
         "populations": [
@@ -2778,6 +2789,529 @@ fn tc466_step2_pre_parent_implies_version_one_false_when_pre_root_is_not_one() {
         )),
         "pre(present(self.parent) implies deref(value(self.parent)).versionNumber = 1); root is 5 in pre, 1 in post"
     );
+}
+
+// ---------------------------------------------------------------------------
+// TC-466 step 3 (FR-107-AC-3, QSL-311): `ReachesTarget` over a `probe`
+// invocation -- a variant of the `config-version` fixture package above
+// that adds one operation, `probe(target: ConfigVersion)`, with no result
+// and an empty frame (TC-466's own step 3 wording), and one precondition,
+// `pre ReachesTarget using v on Config::ConfigVersion::probe { reaches(self,
+// target, parent) }`. A distinct unit/package pair from step 1/2's (a
+// different domain document, since `probe` is a new operation, not a new
+// clause over `attemptUpdate`), so this section builds its own digest,
+// request builder and snapshot/invocation shapes rather than reusing
+// `config_version_unit_and_packages`/`config_version_request`.
+// ---------------------------------------------------------------------------
+
+/// The `probe` operation entry TC-466 step 3 adds to the `config-version`
+/// package: one parameter `target: ConfigVersion`, no `returns` (the JSON
+/// envelope's `operations[].returns` member is entirely absent for a
+/// no-result operation -- `qsl-semantics`' own `model::intake` reads
+/// `returns` as `Option`), and an empty frame (`modifies`/`creates`/
+/// `deletes` all empty: `probe` reads, it never writes).
+fn config_version_probe_operation() -> serde_json::Value {
+    let config_version = config_version_type();
+    let operation_identity = format!("{config_version}/probe");
+    let target_identity = format!("{operation_identity}/target");
+    json!({
+        "identity": operation_identity,
+        "name": "probe",
+        "params": [
+            {
+                "identity": target_identity,
+                "name": "target",
+                "typeRef": config_version,
+                "presence": "required",
+                "nullable": false,
+                "defaultKind": "none",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                "origin": {
+                    "generated": {
+                        "generatorIdentity": target_identity,
+                        "generatorVersion": "1.0.0",
+                        "inputIdentities": [target_identity],
+                    }
+                },
+            },
+        ],
+        "pre": [],
+        "post": [],
+        "origin": {
+            "source": {
+                "sourceIdentity": format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/spec"),
+                "path": "spec.qspec",
+                "startLine": 1,
+                "startColumn": 1,
+            },
+        },
+        "frame": {"modifies": [], "creates": [], "deletes": []},
+    })
+}
+
+/// [`config_version_domain_document`] plus [`config_version_probe_operation`].
+fn config_version_step3_domain_document() -> Vec<u8> {
+    config_version_domain_document_with_operations(vec![config_version_probe_operation()])
+}
+
+/// The unit text selecting [`config_version_step3_domain_document`] as
+/// model alias `Config`, with one precondition: `ReachesTarget`.
+fn config_version_step3_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let document = config_version_step3_domain_document();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let digest = hex(digest);
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"{PROFILE_DIGEST}\";\n\
+         model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
+         digest \"sha256-jcs:{digest}\";\n\
+         pre ReachesTarget using v on Config::ConfigVersion::probe {{ \
+         reaches(self, target, parent) }}\n"
+    );
+    (unit, packages)
+}
+
+fn config_version_step3_model_digest_hex() -> String {
+    let (unit, packages) = config_version_step3_unit_and_packages();
+    let _ = unit;
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    hex(digest)
+}
+
+fn config_version_step3_request(selection: ClauseRunSelection) -> ClauseRunRequest {
+    let (unit, packages) = config_version_step3_unit_and_packages();
+    config_version_request_for(
+        unit,
+        packages,
+        "clause-run-config-version-step3.native",
+        selection,
+    )
+}
+
+/// A `ConfigVersion` snapshot for a `probe` invocation's `pre`/`post`
+/// observation (no `anchor`, matching [`config_version_invocation_snapshot`]'s
+/// own shape) over an arbitrary object graph, rather than the fixed
+/// `root`/`child` pair invocation snapshots elsewhere in this file use --
+/// step 3's `chain`/`loop` graphs need more than two objects and a
+/// self-loop, which `config_version_objects` cannot express.
+fn config_version_step3_snapshot(
+    label: &DocumentRef,
+    model_digest_hex: &str,
+    observation: &str,
+    objects: &[serde_json::Value],
+) -> Vec<u8> {
+    let population = config_version_population_identity();
+    let value = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": document_identity_json(label),
+        "observation": observation,
+        "model": {
+            "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
+            "digest": format!("sha256-jcs:{model_digest_hex}"),
+        },
+        "populations": [
+            {"population": population, "complete": true, "objects": objects},
+        ],
+    });
+    value.to_string().into_bytes()
+}
+
+/// One `ConfigVersion` object at `key`, `versionNumber` `1` (the shape
+/// TC-466 step 3 needs cares only about `parent`, never `versionNumber`),
+/// `parent` naming `parent_key` when `Some`, absent when `None`.
+fn config_version_step3_object(key: &str, parent_key: Option<&str>) -> serde_json::Value {
+    let population = config_version_population_identity();
+    let config_version = config_version_type();
+    let parent = match parent_key {
+        Some(parent_key) => {
+            json!({"present": {"reference": {"population": population, "key": parent_key}}})
+        }
+        None => json!({"absent": {}}),
+    };
+    json!({
+        "key": key,
+        "type": config_version,
+        "fields": {"versionNumber": {"integer": "1"}, "parent": parent},
+    })
+}
+
+/// The acyclic chain `a -> b -> c` (`a.parent = b`, `b.parent = c`,
+/// `c.parent` absent) TC-466 step 3 (a)-(c) evaluates `ReachesTarget` over.
+fn config_version_step3_chain_objects() -> Vec<serde_json::Value> {
+    vec![
+        config_version_step3_object("a", Some("b")),
+        config_version_step3_object("b", Some("c")),
+        config_version_step3_object("c", None),
+    ]
+}
+
+/// The self-loop `a -> a` (`a.parent = a`) TC-466 step 3 (d) evaluates
+/// `ReachesTarget` over.
+fn config_version_step3_loop_objects() -> Vec<serde_json::Value> {
+    vec![config_version_step3_object("a", Some("a"))]
+}
+
+/// A `probe` invocation naming `self_key`/`target_key`, `pre`/`post` both
+/// `pre_ref`/`post_ref` (TC-466 step 3: "each invocation uses the same
+/// snapshot as pre and post"), no result (`probe` has none): `parameters`
+/// carries `target` as a bare `{"reference": {...}}`, not the `present`/
+/// `absent`-wrapped shape an optional *field* value uses, because an
+/// operation parameter's `(name, ValueType)` signature carries no separate
+/// presence of its own (`qsl-semantics`' own `document::field_kind_matches`
+/// doc comment).
+fn config_version_probe_invocation_bytes(
+    label: &DocumentRef,
+    model_digest_hex: &str,
+    pre_ref: &DocumentRef,
+    post_ref: &DocumentRef,
+    self_key: &str,
+    target_key: &str,
+) -> Vec<u8> {
+    let population = config_version_population_identity();
+    let value = json!({
+        "format": "quire.state.invocation/v1",
+        "identity": document_identity_json(label),
+        "model": {
+            "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
+            "digest": format!("sha256-jcs:{model_digest_hex}"),
+        },
+        "context": config_version_type(),
+        "operation": "probe",
+        "self": {"population": population, "key": self_key},
+        "pre": {
+            "identity": document_identity_json(pre_ref),
+            "digest": format!("sha256-jcs:{}", hex(&pre_ref.digest)),
+        },
+        "post": {
+            "identity": document_identity_json(post_ref),
+            "digest": format!("sha256-jcs:{}", hex(&post_ref.digest)),
+        },
+        "parameters": {"target": {"reference": {"population": population, "key": target_key}}},
+        "result": serde_json::Value::Null,
+        "created": [],
+        "deleted": [],
+    });
+    value.to_string().into_bytes()
+}
+
+/// Runs `ReachesTarget` over a `probe` invocation through `run_clause` end
+/// to end (genuine FR-106 admission, then S6a): `objects` is the graph
+/// (chain or loop), `self_key`/`target_key` name the probe's `self` and
+/// `target`, and the same graph snapshot is used for both `pre` and `post`.
+fn run_config_version_probe(
+    objects: &[serde_json::Value],
+    self_key: &str,
+    target_key: &str,
+) -> ClauseDisposition {
+    let model_digest_hex = config_version_step3_model_digest_hex();
+
+    let (pre_label, pre_bytes) = document_ref_and_bytes("probe-pre", |label| {
+        config_version_step3_snapshot(label, &model_digest_hex, "pre", objects)
+    });
+    let (post_label, post_bytes) = document_ref_and_bytes("probe-post", |label| {
+        config_version_step3_snapshot(label, &model_digest_hex, "post", objects)
+    });
+    let (invocation_label, invocation_bytes) =
+        document_ref_and_bytes("probe-invocation", |label| {
+            config_version_probe_invocation_bytes(
+                label,
+                &model_digest_hex,
+                &pre_label,
+                &post_label,
+                self_key,
+                target_key,
+            )
+        });
+
+    let selection = config_version_invocation_selection("ReachesTarget", invocation_label.clone());
+    let mut request = config_version_step3_request(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(pre_label.digest, pre_bytes);
+    request.snapshots.insert(post_label.digest, post_bytes);
+    request
+        .invocations
+        .insert(invocation_label.digest, invocation_bytes);
+    run_clause(request)
+        .expect("a well-formed request always reports")
+        .disposition
+}
+
+/// TC-466 step 3(a) (FR-107-AC-3): `self` `a`, `target` `c`, over the chain
+/// `a -> b -> c` -- `a` reaches `c` through `parent`.
+#[trace("TC-466", "FR-107-AC-3")]
+#[test]
+fn tc466_step3_reaches_target_true_self_a_target_c_over_the_chain() {
+    assert!(
+        boolean_disposition(&run_config_version_probe(
+            &config_version_step3_chain_objects(),
+            "a",
+            "c",
+        )),
+        "a -> b -> c: a reaches c through parent"
+    );
+}
+
+/// TC-466 step 3(a)'s own charge-log assertion: `Completed(true)`, and the
+/// `reaches` walk's own charges (filtered out of the full log, which also
+/// carries the enclosing precondition's own accounting) are exactly
+/// `[graph.expand, graph.edge, graph.expand, graph.edge,
+/// graph.result-retain]` -- one expansion to enqueue `a` itself, then one
+/// expand-and-edge pair per BFS step (`a` to `b`, `b` to `c`), and `c` (the
+/// target) is found on that second edge, so the walk never expands `c`
+/// itself before the closing retain. Uses [`evaluate_step3_case_a_with_meter`]
+/// (below, TC-466 step 3(e)'s own seam) with a fresh, undenied meter, so
+/// this is the one test in the file that names step 3(a)'s exact charge
+/// log over a real `probe` invocation, distinct from the `NoCycle`
+/// charge-log test above (a different clause, over a "never reaches"
+/// exhaustive walk that ends in a third expansion, not a result found
+/// early).
+#[trace("TC-466", "FR-107-AC-3")]
+#[test]
+fn tc466_step3_reaches_target_charge_log_over_the_chain() {
+    let mut meter = Meter::new(default_accounting(1_000_000));
+    let evaluation = evaluate_step3_case_a_with_meter(&mut meter);
+    assert!(
+        boolean_outcome(evaluation),
+        "a -> b -> c: a reaches c through parent"
+    );
+    let graph_charges: Vec<_> = meter
+        .admitted_charges()
+        .iter()
+        .copied()
+        .filter(|point| {
+            matches!(
+                point,
+                ChargePoint::GraphExpand | ChargePoint::GraphEdge | ChargePoint::GraphResultRetain
+            )
+        })
+        .collect();
+    assert_eq!(
+        graph_charges,
+        [
+            ChargePoint::GraphExpand,
+            ChargePoint::GraphEdge,
+            ChargePoint::GraphExpand,
+            ChargePoint::GraphEdge,
+            ChargePoint::GraphResultRetain,
+        ]
+    );
+}
+
+/// TC-466 step 3(b): `self` `a`, `target` `a`, over the chain -- `a` never
+/// reaches itself (the chain is acyclic).
+#[trace("TC-466", "FR-107-AC-3")]
+#[test]
+fn tc466_step3_reaches_target_false_self_a_target_a_over_the_chain() {
+    assert!(
+        !boolean_disposition(&run_config_version_probe(
+            &config_version_step3_chain_objects(),
+            "a",
+            "a",
+        )),
+        "a -> b -> c: a does not reach itself"
+    );
+}
+
+/// TC-466 step 3(c): `self` `c`, `target` `a`, over the chain -- `c` has no
+/// `parent`, so it reaches nothing.
+#[trace("TC-466", "FR-107-AC-3")]
+#[test]
+fn tc466_step3_reaches_target_false_self_c_target_a_over_the_chain() {
+    assert!(
+        !boolean_disposition(&run_config_version_probe(
+            &config_version_step3_chain_objects(),
+            "c",
+            "a",
+        )),
+        "a -> b -> c: c has no parent, so c never reaches a"
+    );
+}
+
+/// TC-466 step 3(d): `self` `a`, `target` `a`, over the self-loop `a -> a`
+/// -- `a` reaches itself through its own `parent`.
+#[trace("TC-466", "FR-107-AC-3")]
+#[test]
+fn tc466_step3_reaches_target_true_self_a_target_a_over_the_loop() {
+    assert!(
+        boolean_disposition(&run_config_version_probe(
+            &config_version_step3_loop_objects(),
+            "a",
+            "a",
+        )),
+        "a -> a: a reaches itself through its own parent"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// TC-466 step 3(e) (FR-107-AC-3, QSL-311): a charge-denial `Meter` over
+// step 3(a)'s own chain/self/target shape, denying the `reaches` walk's
+// 1st through 5th charge in turn. `ClauseRunRequest` builds its own
+// `Meter::new(request.accounting)` internally (`qsl-replay/src/spine/
+// clause.rs`'s own `run_clause`) with no seam for a caller-supplied one, so
+// this section calls the same two functions `run_clause` calls --
+// `qsl_semantics::model::observation::admit_observations` (FR-106) and
+// `CheckedPackage::evaluate_clause` (S6a) -- directly, exactly as the
+// existing `no_cycle_completes_true_with_the_expected_reaches_charge_log`
+// charge-log test above (this file's established seam for a hand-supplied
+// `Meter`) does for `NoCycle`, but over a real FR-106-admitted `probe`
+// invocation instead of a hand-built `AdmittedObservations`.
+//
+// Step 3(a)'s own chain (`self` `a`, `target` `c`) charges the `reaches`
+// walk exactly `[graph.expand, graph.edge, graph.expand, graph.edge,
+// graph.result-retain]` (TC-466's own Expected Results for step 3(a)):
+// expand `a`, edge `a` to `b`, expand `b`, edge `b` to `c` -- which finds
+// `target`, so the walk never expands `c` itself -- then the closing
+// result retain. Its five charges are, in order: `graph.expand` occurrence
+// 1, `graph.edge` occurrence 1, `graph.expand` occurrence 2, `graph.edge`
+// occurrence 2, `graph.result-retain` occurrence 1 -- exactly what
+// `quire_exact::InjectedDenial { point, occurrence }` denies.
+// ---------------------------------------------------------------------------
+
+/// Evaluates TC-466 step 3(a)'s `ReachesTarget` (`self` `a`, `target` `c`,
+/// over the chain) through real FR-106 admission, charging `meter` instead
+/// of a fresh one -- the seam sub-case (e) needs.
+fn evaluate_step3_case_a_with_meter(meter: &mut Meter) -> qsl_eval::value::Evaluation {
+    let model_digest_hex = config_version_step3_model_digest_hex();
+    let objects = config_version_step3_chain_objects();
+
+    let (pre_label, pre_bytes) = document_ref_and_bytes("probe-pre", |label| {
+        config_version_step3_snapshot(label, &model_digest_hex, "pre", &objects)
+    });
+    let (post_label, post_bytes) = document_ref_and_bytes("probe-post", |label| {
+        config_version_step3_snapshot(label, &model_digest_hex, "post", &objects)
+    });
+    let (invocation_label, invocation_bytes) =
+        document_ref_and_bytes("probe-invocation", |label| {
+            config_version_probe_invocation_bytes(
+                label,
+                &model_digest_hex,
+                &pre_label,
+                &post_label,
+                "a",
+                "c",
+            )
+        });
+
+    let (unit, packages) = config_version_step3_unit_and_packages();
+    let compiled = compile(
+        source(),
+        "clause-run-config-version-step3-denial.native",
+        unit.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("compile refused: {refusal:?}"));
+    let package = &compiled.package;
+    let clause = package
+        .graph()
+        .state_clause("ReachesTarget")
+        .expect("ReachesTarget is declared");
+
+    let clause_facts = ClauseFacts {
+        identity: clause.identity(),
+        kind: clause.kind(),
+        context: clause.context(),
+        operation: clause.operation().map(|operation| OperationFacts {
+            declaring: operation.declaring,
+            declaration: operation.declaration.clone(),
+        }),
+    };
+
+    let mut snapshots = BTreeMap::new();
+    snapshots.insert(pre_label.digest, pre_bytes);
+    snapshots.insert(post_label.digest, post_bytes);
+    let mut invocations = BTreeMap::new();
+    invocations.insert(invocation_label.digest, invocation_bytes);
+    let provisions = Provisions {
+        snapshots: &snapshots,
+        invocations: &invocations,
+    };
+    let selection = config_version_invocation_selection("ReachesTarget", invocation_label);
+
+    let observations = admit_observations(
+        package.graph().model_selections(),
+        package.graph().scope().types(),
+        &clause_facts,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &provisions,
+        &selection,
+        ObservationLimits::default(),
+    )
+    .expect("step 3(a)'s own invocation is well-formed");
+
+    let name = QualifiedName::unqualified("ReachesTarget").unwrap();
+    package
+        .evaluate_clause(&name, &observations, meter)
+        .expect("ReachesTarget evaluates")
+}
+
+/// Asserts that denying `point`'s `occurrence`th admission makes step 3(a)
+/// `Incomplete` (never a fault, never a wrong Boolean) -- one of TC-466 step
+/// 3(e)'s five sub-cases.
+fn assert_step3_denial_is_incomplete(point: ChargePoint, occurrence: u64) {
+    let mut meter = Meter::new(default_accounting(1_000_000))
+        .with_injected_denial(InjectedDenial { point, occurrence });
+    let evaluation = evaluate_step3_case_a_with_meter(&mut meter);
+    assert!(
+        matches!(
+            evaluation.outcome,
+            FamilyOutcome::Evaluated(Outcome::Incomplete(_))
+        ),
+        "denying {point:?} occurrence {occurrence} (one of the reaches walk's first \
+         five charges) should make ReachesTarget Incomplete, got {:?}",
+        evaluation.outcome
+    );
+}
+
+/// TC-466 step 3(e), sub-case 1: deny the `reaches` walk's 1st charge
+/// (`graph.expand` occurrence 1, the enqueue of `a` itself).
+#[trace("TC-466", "FR-107-AC-3")]
+#[test]
+fn tc466_step3_incomplete_when_the_first_reaches_charge_is_denied() {
+    assert_step3_denial_is_incomplete(ChargePoint::GraphExpand, 1);
+}
+
+/// TC-466 step 3(e), sub-case 2: deny the `reaches` walk's 2nd charge
+/// (`graph.edge` occurrence 1, the edge from `a` to `b`).
+#[trace("TC-466", "FR-107-AC-3")]
+#[test]
+fn tc466_step3_incomplete_when_the_second_reaches_charge_is_denied() {
+    assert_step3_denial_is_incomplete(ChargePoint::GraphEdge, 1);
+}
+
+/// TC-466 step 3(e), sub-case 3: deny the `reaches` walk's 3rd charge
+/// (`graph.expand` occurrence 2, the enqueue of `b`).
+#[trace("TC-466", "FR-107-AC-3")]
+#[test]
+fn tc466_step3_incomplete_when_the_third_reaches_charge_is_denied() {
+    assert_step3_denial_is_incomplete(ChargePoint::GraphExpand, 2);
+}
+
+/// TC-466 step 3(e), sub-case 4: deny the `reaches` walk's 4th charge
+/// (`graph.edge` occurrence 2, the edge from `b` to `c`).
+#[trace("TC-466", "FR-107-AC-3")]
+#[test]
+fn tc466_step3_incomplete_when_the_fourth_reaches_charge_is_denied() {
+    assert_step3_denial_is_incomplete(ChargePoint::GraphEdge, 2);
+}
+
+/// TC-466 step 3(e), sub-case 5: deny the `reaches` walk's 5th and final
+/// charge (`graph.result-retain` occurrence 1). Step 3(a)'s own charge log
+/// is exactly `[graph.expand, graph.edge, graph.expand, graph.edge,
+/// graph.result-retain]` -- unlike the `NoCycle` "never reaches" charge-log
+/// test above, `target` (`c`) is found on the second edge (`b` to `c`), so
+/// the walk never expands `c` itself; it goes straight to the closing
+/// retain.
+#[trace("TC-466", "FR-107-AC-3")]
+#[test]
+fn tc466_step3_incomplete_when_the_fifth_reaches_charge_is_denied() {
+    assert_step3_denial_is_incomplete(ChargePoint::GraphResultRetain, 1);
 }
 
 // ---------------------------------------------------------------------------
