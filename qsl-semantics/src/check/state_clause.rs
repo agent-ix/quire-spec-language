@@ -52,6 +52,29 @@ pub struct ClauseOperation {
     pub declaration: OperationDeclaration,
 }
 
+/// FR-115: one operation that a state clause or a protocol attempt of the
+/// unit names, with the identity of its FR-105 `state`/`frame` node. There
+/// is one per (declaring object type, operation name), however many
+/// clauses and attempts name the operation; an operation that none names
+/// has none, since the package holds no frame node for it (FR-105).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedOperationFrame {
+    pub(crate) operation: ClauseOperation,
+    pub(crate) frame: NodeKey,
+}
+
+impl CheckedOperationFrame {
+    /// The operation, resolved as FR-104 resolves a clause's operation.
+    pub fn operation(&self) -> &ClauseOperation {
+        &self.operation
+    }
+
+    /// The operation's `state`/`frame` node identity.
+    pub fn frame(&self) -> NodeKey {
+        self.frame
+    }
+}
+
 /// One protocol `attempt` the FR-091 assembler admitted (FR-114 "Behavior",
 /// QSL-309): its operation resolved exactly as a `pre`/`post` clause's own
 /// (FR-104), by the same assembler pass that resolves

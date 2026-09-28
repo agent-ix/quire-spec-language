@@ -21,11 +21,12 @@ use qsl_semantics::check::{CheckedGraph, CheckedStateClause};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
-    admit_current_snapshot, admit_observations, population_universe_for, AdmissionFailure,
-    AdmissionRecord, AdmittedObservations, ClauseFacts, ClauseSelection, ClauseSelectionInput,
-    DocumentRef, ObservationLimits, OperationFacts, Provisions,
+    admit_current_snapshot, admit_frame_invocation, admit_observations, population_universe_for,
+    AdmissionFailure, AdmissionRecord, AdmittedObservations, ClauseFacts, ClauseSelection,
+    ClauseSelectionInput, DocumentRef, FrameFacts, FrameWitness, ObservationLimits, OperationFacts,
+    Provisions,
 };
-use quire_exact::{Meter, ScalarLimits, Value, ValueType};
+use quire_exact::{Meter, NodeKey, ScalarLimits, Value, ValueType};
 
 use super::call::{convert_call_failure, convert_outcome, select};
 pub use super::call::{CallOutcome, CallValue, RunRefusal};
@@ -57,8 +58,8 @@ pub struct ClauseArgument {
     pub value: ClauseArgumentValue,
 }
 
-/// FR-109's selection: a state clause (FR-106's [`ClauseSelection`]), or a
-/// Boolean function run as a claim.
+/// FR-109's selection: a state clause (FR-106's [`ClauseSelection`]), a
+/// Boolean function run as a claim, or (FR-115) an operation frame.
 #[derive(Clone, Debug)]
 pub enum ClauseRunSelection {
     /// A state clause, admitted per FR-106.
@@ -73,6 +74,35 @@ pub enum ClauseRunSelection {
         /// The current snapshot each object argument resolves against.
         snapshot: DocumentRef,
     },
+    /// FR-115: an operation's frame, checked over one invocation. The
+    /// request carries no frame and no permission: the frame comes only from
+    /// the compiled package (QSpec FR-013-AC-3).
+    Frame {
+        /// The operation `M::T::op`.
+        operation: OperationName,
+        /// The `quire.state.invocation/v1` document, with its pre and post
+        /// snapshots in the provision.
+        invocation: DocumentRef,
+    },
+}
+
+/// FR-115: the operation a `Frame` selection names, `M::T::op`: model
+/// alias `M`, object type `T` and operation `op`, as FR-104 spells a
+/// clause's operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationName {
+    /// The model alias `M`.
+    pub model: String,
+    /// The object type `T`.
+    pub object: String,
+    /// The operation `op`.
+    pub operation: String,
+}
+
+impl std::fmt::Display for OperationName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}::{}::{}", self.model, self.object, self.operation)
+    }
 }
 
 /// FR-109 Inputs' unit: the program source, or an I3 extracted source.
@@ -250,6 +280,11 @@ pub enum ClauseDisposition {
     ArgumentRefusal(Box<RunRefusal>),
     /// Stage `evaluate`: the mapped S6a outcome.
     Evaluate(CallOutcome),
+    /// Stage `evaluate`, category `violation`, `truth: false` (FR-115): a
+    /// `Frame` run found a change outside the frame. Carries the evaluated
+    /// frame witness, whose cause is `frame_violation`/`unauthorized-change`.
+    /// A verdict that evaluated, not a refusal.
+    FrameViolation(Box<FrameWitness>),
     /// Stage `evaluate`, category `internal-failure`: a broken S6a
     /// invariant reached outside the outcome mapping (FR-100's own
     /// internal-failure exit status).
@@ -265,7 +300,9 @@ impl ClauseDisposition {
             }
             Self::MissingName { .. } | Self::NotAPredicate { .. } => ClauseRunStage::Select,
             Self::Admit(_) | Self::ArgumentRefusal(_) => ClauseRunStage::Admit,
-            Self::Evaluate(_) | Self::EvaluateFault(_) => ClauseRunStage::Evaluate,
+            Self::Evaluate(_) | Self::FrameViolation(_) | Self::EvaluateFault(_) => {
+                ClauseRunStage::Evaluate
+            }
         }
     }
 
@@ -291,6 +328,7 @@ impl ClauseDisposition {
             Self::Admit(AdmissionFailure::Fault(_)) | Self::EvaluateFault(_) => {
                 Category::InternalFailure
             }
+            Self::FrameViolation(_) => Category::Violation,
             Self::Evaluate(outcome) => match outcome {
                 CallOutcome::Completed(CallValue::Boolean(true)) => Category::Success,
                 CallOutcome::Completed(CallValue::Boolean(false)) => Category::Violation,
@@ -306,6 +344,7 @@ impl ClauseDisposition {
     pub fn truth(&self) -> Option<bool> {
         match self {
             Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(value))) => Some(*value),
+            Self::FrameViolation(_) => Some(false),
             _ => None,
         }
     }
@@ -330,6 +369,9 @@ pub struct ClauseRunProvenance {
     /// Every snapshot or invocation document admission actually read, in
     /// read order.
     pub documents: Vec<DocumentRef>,
+    /// FR-115: the identity of the selected operation's frame node, once a
+    /// `Frame` selection resolved it; `None` for every other selection.
+    pub frame: Option<NodeKey>,
 }
 
 /// FR-109 Outputs' usage: "the admission work and the evaluation meter
@@ -408,6 +450,7 @@ fn selection_documents(selection: &ClauseRunSelection) -> Vec<DocumentRef> {
             ClauseSelectionInput::Invocation { invocation } => vec![invocation.clone()],
         },
         ClauseRunSelection::Function { snapshot, .. } => vec![snapshot.clone()],
+        ClauseRunSelection::Frame { invocation, .. } => vec![invocation.clone()],
     }
 }
 
@@ -430,6 +473,7 @@ impl ClauseRunReport {
                 other => other.code().exit_code(),
             },
             ClauseDisposition::Evaluate(outcome) => evaluate_exit_code(outcome),
+            ClauseDisposition::FrameViolation(_) => 10,
             ClauseDisposition::EvaluateFault(_) => 30,
         }
     }
@@ -539,6 +583,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
                 model_selections,
                 selection: selection_for_provenance.clone(),
                 documents,
+                frame: None,
             },
             usage: ClauseRunUsage::default(),
         }
@@ -729,7 +774,183 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             request.selection.clone(),
             selection_documents,
         ),
+        ClauseRunSelection::Frame {
+            ref operation,
+            ref invocation,
+        } => Ok(run_frame(
+            &FrameRun {
+                packages: &request.packages,
+                model_limits: request.model_limits,
+                provisions: Provisions {
+                    snapshots: &request.snapshots,
+                    invocations: &request.invocations,
+                },
+                observation_limits: request.observation_limits,
+                accounting: request.accounting,
+                package,
+                package_id,
+                unit: &unit_provenance,
+                sources: &sources,
+                model_selections,
+                selection: request.selection.clone(),
+            },
+            operation,
+            invocation,
+        )),
     }
+}
+
+/// What [`run_frame`] reads besides the selection itself.
+struct FrameRun<'a> {
+    packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
+    model_limits: ModelNormalizationLimits,
+    provisions: Provisions<'a>,
+    observation_limits: ObservationLimits,
+    accounting: ScalarLimits,
+    package: &'a qsl_package::CheckedPackage,
+    package_id: PackageId,
+    unit: &'a UnitProvenance,
+    sources: &'a [Source],
+    model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
+    selection: ClauseRunSelection,
+}
+
+impl FrameRun<'_> {
+    fn report(
+        &self,
+        disposition: ClauseDisposition,
+        documents: Vec<DocumentRef>,
+        frame: Option<NodeKey>,
+    ) -> ClauseRunReport {
+        ClauseRunReport {
+            source_digest: self.unit.digest.clone(),
+            package_id: Some(self.package_id),
+            disposition,
+            provenance: ClauseRunProvenance {
+                source: self.unit.source.clone(),
+                extraction: self.unit.extraction.clone(),
+                model_selections: self.model_selections.clone(),
+                selection: self.selection.clone(),
+                documents,
+                frame,
+            },
+            usage: ClauseRunUsage::default(),
+        }
+    }
+}
+
+/// FR-115: resolve `operation` to its frame, admit `invocation` by FR-106's
+/// checks 1 and 3 to 10, and check it against the frame through the
+/// `ProtocolClause` S6a `evaluate` arm (FR-106's check 11).
+fn run_frame(
+    run: &FrameRun<'_>,
+    operation: &OperationName,
+    invocation: &DocumentRef,
+) -> ClauseRunReport {
+    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, FrameEvaluation};
+    use qsl_semantics::family::FamilyOutcome;
+
+    let graph = run.package.graph();
+    // FR-104's Resolution: `M::T::op` names an operation of `M::T`'s
+    // effective view, and the package holds its frame node only when a
+    // clause or attempt names it (FR-105).
+    let resolved = graph.operation_frame(
+        &format!("{}::{}", operation.model, operation.object),
+        &operation.operation,
+    );
+    let Some((context, operation_frame)) = resolved else {
+        return run.report(
+            ClauseDisposition::MissingName {
+                name: operation.to_string(),
+            },
+            Vec::new(),
+            None,
+        );
+    };
+    let frame = operation_frame.frame();
+    let facts = FrameFacts {
+        context,
+        frame,
+        operation: OperationFacts {
+            declaring: operation_frame.operation().declaring,
+            declaration: operation_frame.operation().declaration.clone(),
+        },
+    };
+    let admitted = match admit_frame_invocation(
+        graph.model_selections(),
+        graph.scope().types(),
+        &facts,
+        run.packages,
+        run.model_limits,
+        &run.provisions,
+        invocation,
+        run.observation_limits,
+    ) {
+        Ok(admitted) => admitted,
+        Err(failure) => {
+            return run.report(
+                ClauseDisposition::Admit(failure),
+                vec![invocation.clone()],
+                Some(frame),
+            )
+        }
+    };
+    let documents = vec![
+        admitted.invocation.clone(),
+        admitted.pre.clone(),
+        admitted.post.clone(),
+    ];
+
+    let mut meter = Meter::new(run.accounting);
+    let disposition = match run.package.evaluate_frame(frame, &admitted, &mut meter) {
+        Ok(FrameEvaluation {
+            evaluation,
+            witness: Some(witness),
+        }) => match evaluation.outcome {
+            FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(false))) => {
+                ClauseDisposition::FrameViolation(witness)
+            }
+            _ => ClauseDisposition::EvaluateFault(InternalFault::new(
+                "S6a",
+                "frame-witness-without-a-false-verdict",
+            )),
+        },
+        // FR-115: a violation always carries its witness. A false verdict
+        // without one is a broken S6a invariant, never a witness-less
+        // violation.
+        Ok(FrameEvaluation {
+            evaluation:
+                qsl_eval::value::Evaluation {
+                    outcome:
+                        FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(false))),
+                    ..
+                },
+            witness: None,
+        }) => ClauseDisposition::EvaluateFault(InternalFault::new(
+            "S6a",
+            "frame-false-verdict-without-a-witness",
+        )),
+        Ok(FrameEvaluation {
+            evaluation,
+            witness: None,
+        }) => match convert_outcome(evaluation, graph, run.sources) {
+            Ok(outcome) => ClauseDisposition::Evaluate(outcome),
+            Err(refusal) => match *refusal {
+                RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
+                other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+            },
+        },
+        // Unreachable in this flow: `admitted` was admitted for `frame`
+        // just above, so `evaluate_frame`'s own mismatch check cannot fire.
+        Err(CallFailure::Input(_)) => ClauseDisposition::EvaluateFault(InternalFault::new(
+            "call",
+            "frame-invocation-mismatch",
+        )),
+        Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+    };
+    let mut report = run.report(disposition, documents, Some(frame));
+    report.usage = ClauseRunUsage::from_meter(&meter, admitted.usage);
+    report
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -765,6 +986,7 @@ fn run_function(
             model_selections: model_selections.clone(),
             selection: selection.clone(),
             documents: documents_read.borrow().clone(),
+            frame: None,
         },
         usage: ClauseRunUsage::default(),
     };

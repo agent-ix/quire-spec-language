@@ -86,9 +86,10 @@ pub enum InputRefusal {
     #[error("no state clause named {0}")]
     UnknownClause(String),
     /// FR-107: `evaluate_clause`'s observations were admitted for a
-    /// different clause than the one named: `invalid_runtime_input` /
+    /// different clause than the one named, or (FR-115) `evaluate_frame`'s
+    /// invocation for a different frame: `invalid_runtime_input` /
     /// `wrong-role-mapping`.
-    #[error("the observations were admitted for another clause")]
+    #[error("the observations were admitted for another clause or frame")]
     ObservationsMismatch,
 }
 
@@ -132,6 +133,20 @@ pub enum CallFailure {
     /// `Ok(Evaluation { outcome: Outcome::Refused(_), .. })`.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(qsl_foundation::diagnostic::InternalFault),
+}
+
+/// FR-115: [`CheckedPackageEvaluation::evaluate_frame`]'s result: the S6a
+/// evaluation, unchanged, and the evaluated frame witness when the frame
+/// check found a change outside the frame.
+#[derive(Debug)]
+pub struct FrameEvaluation {
+    /// The S6a evaluation: `Completed(true)` when nothing changed outside
+    /// the frame, `Completed(false)` when something did, or the family's
+    /// refusal when the frame cannot be evaluated over the invocation.
+    pub evaluation: Evaluation,
+    /// The frame witness: present exactly when the outcome is
+    /// `Completed(false)`.
+    pub witness: Option<Box<qsl_semantics::model::observation::FrameWitness>>,
 }
 
 /// Argument admission for [`CheckedPackage::call`] and
@@ -381,6 +396,21 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         observations: &qsl_semantics::model::observation::AdmittedObservations,
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
+
+    /// FR-115: check `invocation` (admitted by FR-106's checks 1 and 3 to
+    /// 10) against the operation frame whose frame node identity is
+    /// `frame`, through the `ProtocolClause` S6a family's `evaluate` hook.
+    ///
+    /// Refuses `InputRefusal::ObservationsMismatch` when `invocation` was
+    /// admitted for a different frame, without charging `meter`. A frame
+    /// identity this package does not resolve is `Err(CallFailure::Fault)`
+    /// naming S6a, as for every S6a key.
+    fn evaluate_frame(
+        &self,
+        frame: NodeKey,
+        invocation: &qsl_semantics::model::observation::AdmittedInvocation<'_>,
+        meter: &mut Meter,
+    ) -> Result<FrameEvaluation, CallFailure>;
 }
 
 impl CheckedPackageEvaluation for CheckedPackage {
@@ -508,6 +538,29 @@ impl CheckedPackageEvaluation for CheckedPackage {
             meter,
         )
         .map_err(CallFailure::Fault)
+    }
+
+    fn evaluate_frame(
+        &self,
+        frame: NodeKey,
+        invocation: &qsl_semantics::model::observation::AdmittedInvocation<'_>,
+        meter: &mut Meter,
+    ) -> Result<FrameEvaluation, CallFailure> {
+        if invocation.frame != frame {
+            return Err(InputRefusal::ObservationsMismatch.into());
+        }
+        let mut env = s6a::protocol_clause::ProtocolClauseEnv::frame(self.graph(), invocation);
+        let evaluation = evaluate_declaration(
+            S6aFamilyKind::ProtocolClause,
+            &frame,
+            EvaluationTarget::ProtocolClause(&mut env),
+            meter,
+        )
+        .map_err(CallFailure::Fault)?;
+        Ok(FrameEvaluation {
+            evaluation,
+            witness: env.witness.take(),
+        })
     }
 }
 

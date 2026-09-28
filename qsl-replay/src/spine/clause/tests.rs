@@ -10,9 +10,9 @@
 //! **Scope note** (disclosed simplification, not a TC-465/468 gap this file
 //! silently narrows): every FR-106 document here is a `current` snapshot
 //! for `NoCycle`, an invariant. FR-106 check 11 (frame and delta) applies
-//! only to a precondition's or postcondition's invocation document, which
-//! no test in this file builds; `qsl-semantics/src/model/observation/
-//! frame.rs` is exercised only by its own unit tests, not from here.
+//! only to an invocation document: the ConfigVersion sections below build
+//! them for TC-466, and the `frame` submodule (TC-514, FR-115) runs check 11
+//! as the thing under test through the `Frame` selection.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -2450,6 +2450,7 @@ fn report_for(disposition: ClauseDisposition) -> super::ClauseRunReport {
                 snapshot: config_version_document_ref("unused"),
             },
             documents: Vec::new(),
+            frame: None,
         },
         usage: super::ClauseRunUsage::default(),
     }
@@ -4912,3 +4913,5 @@ fn s4_state_package_reads_back_through_i2() {
     .unwrap_or_else(|refusal| panic!("I2 read refused: {refusal:?}"));
     let _ = view;
 }
+
+mod frame;

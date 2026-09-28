@@ -371,6 +371,10 @@ pub fn write(directory: &Path, case: Case) -> io::Result<()> {
                 },
             })).collect::<Vec<_>>(),
         }),
+        ClauseRunSelection::Frame { operation, .. } => json!({
+            "kind": "frame",
+            "operation": operation.to_string(),
+        }),
     };
     let request = json!({"format": "clause-run/1", "request": {
         "source": {"file": "spine-unit.native", "identity": "example/config-version-spine-unit"},
