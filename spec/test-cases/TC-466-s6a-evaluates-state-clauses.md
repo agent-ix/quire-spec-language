@@ -57,21 +57,11 @@ Tag the tests `#[trace("TC-466", "FR-107-AC-n")]`.
 
 ## Status
 
-Planned (QSL-273). Step 1's `ParentOrder` and `NoCycle` sub-cases and step 3's
-`reaches` charge-log sub-case (a in the acyclic-chain form) are built and
-passing (`qsl-replay/src/spine/clause/tests.rs`). Steps 2 and 3 (the
-`VersionUnchanged` sub-case of step 1 included) are **Pending QSL-279**:
-`evaluate_clause` is sealed to `qsl_package::checked::CheckedPackage`
-(`qsl-eval/src/value/expression/mod.rs:314`), reachable only by compiling a
-unit all the way through S4 emission, and any clause that references a
-domain-package operation (`VersionUnchanged`'s `attemptUpdate`, or step 3's
-own `ReachesTarget`/`probe` when evaluated rather than merely admitted)
-refuses emission today: FR-105's own text states "Today QSL emits no `state`
-node" (`spec/functional/FR-105-emit-state-nodes.md`), and a hand-authored
-domain-package operation's `origin.source` is never a real byte source S1/S2
-parsed, so `qsl_package::emit`'s occurrence-placement rule refuses
-`EmitRefusal::UnlocatedOccurrence` (`qsl-package/src/emit.rs:35-42,142`) the
-moment any clause referencing the operation is compiled through to S4.
-QSL-279 ("A05-8: S4 state node emission and the ConfigVersion spine corpus,
-FR-105, FR-108") is the ticket that implements the missing emission this
-depends on.
+Planned (QSL-273). Step 1 (`ParentOrder`, `NoCycle` and the `VersionUnchanged`
+sub-case) and step 2 (all three postconditions) are built and passing
+(`qsl-replay/src/spine/clause/tests.rs`), both over a real `attemptUpdate`
+invocation admitted end to end through `run_clause` (QSL-279 built the S4
+`state` node emission this depended on; QSL-310 built step 1's
+`VersionUnchanged` sub-case and step 2). Step 3's `reaches` charge-log
+sub-case (a in the acyclic-chain form) is also built and passing. Only step 3
+(b)-(e) remains, tracked by QSL-311.
