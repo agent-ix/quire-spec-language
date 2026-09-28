@@ -46,7 +46,9 @@ use super::check::{EnumBinding, PackageDeclarations, ResolvedSignature};
 use super::lowering::{strongly_connected, AdmittedModel};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::refusal::AliasKind;
-use super::state_clause::{population_of, ClauseOperation, StateClauseDeclaration};
+use super::state_clause::{
+    population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
+};
 use super::type_form::{
     parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
@@ -278,6 +280,27 @@ pub enum AssemblyCause {
         /// The populations, in ascending `DeclarationKey` order.
         populations: Vec<DeclarationKey>,
     },
+    /// A protocol `attempt`'s `contracts` entry names no state clause of the
+    /// unit (FR-114 "Behavior").
+    MissingContractClause {
+        /// The entry as written.
+        entry: String,
+    },
+    /// A protocol `attempt`'s `contracts` entry names an invariant, or a
+    /// `pre`/`post` clause anchored at a different operation than the
+    /// attempt's own (FR-114 "Behavior", QSpec "Listed state pre/
+    /// postcondition declarations must match this operation and its
+    /// invocation anchors").
+    WrongContractAnchor {
+        /// The entry as written.
+        entry: String,
+        /// The attempt's own anchor, `Context::operation`.
+        attempt_anchor: String,
+        /// The named clause's own anchor: `Context::operation` for a
+        /// `pre`/`post` clause anchored elsewhere, or just `Context` for an
+        /// invariant (which names no operation).
+        clause_anchor: String,
+    },
 }
 
 impl AssemblyCause {
@@ -286,7 +309,9 @@ impl AssemblyCause {
         match self {
             Self::UnresolvedTypeName { .. }
             | Self::UndeclaredAlias { .. }
-            | Self::UnresolvedOperation { .. } => Code::MissingDeclaration,
+            | Self::UnresolvedOperation { .. }
+            | Self::MissingContractClause { .. } => Code::MissingDeclaration,
+            Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
             Self::UnadmittedModel { .. } | Self::UnsuppliedImport { .. } => Code::MissingImport,
             Self::ModelType { .. } => Code::RuntimeInvariant,
             Self::AmbiguousTypeName { .. }
@@ -330,7 +355,10 @@ impl AssemblyCause {
     /// ADR-013 O-17).
     pub fn catalog_code(&self) -> CatalogCode {
         let cause = match self {
-            Self::UnresolvedTypeName { .. } | Self::UnresolvedOperation { .. } => "missing-name",
+            Self::UnresolvedTypeName { .. }
+            | Self::UnresolvedOperation { .. }
+            | Self::MissingContractClause { .. } => "missing-name",
+            Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::AmbiguousTypeName { .. }
             | Self::DuplicateAlias { .. }
             | Self::DuplicateEnumMember { .. }
@@ -1549,6 +1577,8 @@ impl PackageDeclarations {
             &types,
             &admitted,
         )?;
+        let protocol_attempts =
+            protocol_attempts(&unit.protocols, &object_names, &types, &state_clauses)?;
 
         let mut package = PackageDeclarations::new(source);
         package.types = types;
@@ -1588,6 +1618,7 @@ impl PackageDeclarations {
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
         package.protocols = unit.protocols;
+        package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
         package.imports = qualified;
         Ok(package)
@@ -1714,6 +1745,140 @@ fn state_clauses(
     }
     if errors.is_empty() {
         Ok(clauses)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-114 "Behavior": each protocol's `attempt`s' operations, resolved
+/// exactly as [`state_clauses`] resolves a `pre`/`post` clause's operation
+/// (`types.operation`), and each `contracts` entry checked against
+/// `state_clauses` (already resolved above): an entry naming no clause of
+/// the unit refuses `missing_declaration`/`missing-name`; one naming an
+/// invariant or a `pre`/`post` clause anchored at a different operation
+/// refuses `wrong_snapshot`/`wrong-anchor`, naming both anchors. Mirrors
+/// `state_clauses`'s own resolution loop rather than building a parallel
+/// one (QSL-309).
+fn protocol_attempts(
+    protocols: &[qsl_forms::ProtocolDeclarationForm],
+    object_names: &BTreeMap<String, EffectiveId>,
+    types: &TypeEnvironment,
+    state_clauses: &[StateClauseDeclaration],
+) -> Result<Vec<Vec<AttemptDeclaration>>, AssemblyRefusal> {
+    let mut errors = Vec::new();
+    let mut by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (index, clause) in state_clauses.iter().enumerate() {
+        by_name.entry(clause.name.as_str()).or_default().push(index);
+    }
+    let anchor_label = |declaring: EffectiveId, operation: &str| -> String {
+        let context = types
+            .object_type(declaring)
+            .map(ObjectTypeDeclaration::name)
+            .unwrap_or("?");
+        format!("{context}::{operation}")
+    };
+    let mut resolved = Vec::with_capacity(protocols.len());
+    for protocol in protocols {
+        let mut attempts = Vec::with_capacity(protocol.attempts.len());
+        for attempt in &protocol.attempts {
+            let error = |cause, span| AssemblyError { cause, span };
+            let context = object_names.get(&attempt.context.name).copied();
+            let Some(context) = context else {
+                errors.push(error(
+                    AssemblyCause::UnresolvedTypeName {
+                        name: attempt.context.name.clone(),
+                    },
+                    attempt.context.span,
+                ));
+                continue;
+            };
+            let operation = match types.operation(context, &attempt.operation.name) {
+                OperationLookup::Declared {
+                    declaring,
+                    operation,
+                } => ClauseOperation {
+                    declaring,
+                    declaration: operation.clone(),
+                },
+                OperationLookup::Missing => {
+                    errors.push(error(
+                        AssemblyCause::UnresolvedOperation {
+                            context: attempt.context.name.clone(),
+                            operation: attempt.operation.name.clone(),
+                        },
+                        attempt.operation.span,
+                    ));
+                    continue;
+                }
+                OperationLookup::Ambiguous(_) => {
+                    errors.push(error(
+                        AssemblyCause::AmbiguousOperation {
+                            context: attempt.context.name.clone(),
+                            operation: attempt.operation.name.clone(),
+                        },
+                        attempt.operation.span,
+                    ));
+                    continue;
+                }
+            };
+            let attempt_anchor = anchor_label(operation.declaring, operation.declaration.name());
+            let mut contracts = Vec::with_capacity(attempt.contracts.len());
+            let mut failed = false;
+            for entry in &attempt.contracts {
+                let Some(indices) = by_name.get(entry.name.as_str()) else {
+                    errors.push(error(
+                        AssemblyCause::MissingContractClause {
+                            entry: entry.name.clone(),
+                        },
+                        entry.span,
+                    ));
+                    failed = true;
+                    continue;
+                };
+                let clause_index = indices[0];
+                let clause = &state_clauses[clause_index];
+                let matches = clause
+                    .operation
+                    .as_ref()
+                    .is_some_and(|clause_operation| *clause_operation == operation);
+                if !matches {
+                    let clause_anchor = match &clause.operation {
+                        Some(clause_operation) => anchor_label(
+                            clause_operation.declaring,
+                            clause_operation.declaration.name(),
+                        ),
+                        None => types
+                            .object_type(clause.context)
+                            .map(ObjectTypeDeclaration::name)
+                            .unwrap_or("?")
+                            .to_owned(),
+                    };
+                    errors.push(error(
+                        AssemblyCause::WrongContractAnchor {
+                            entry: entry.name.clone(),
+                            attempt_anchor: attempt_anchor.clone(),
+                            clause_anchor,
+                        },
+                        entry.span,
+                    ));
+                    failed = true;
+                    continue;
+                }
+                contracts.push(clause_index);
+            }
+            if failed {
+                continue;
+            }
+            attempts.push(AttemptDeclaration {
+                declaration: attempt.declaration,
+                operation,
+                contracts,
+            });
+        }
+        resolved.push(attempts);
+    }
+    if errors.is_empty() {
+        Ok(resolved)
     } else {
         refuse(errors)
     }

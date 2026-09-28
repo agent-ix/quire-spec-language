@@ -438,16 +438,77 @@ mod tests {
         CheckCause, CheckRefusal, CheckingLimits, PackageDeclarations, Scope, Signatures,
     };
     use super::{CheckedProtocol, ProtocolAnchorCause, ProtocolNodeId, ShadowedDeclaration};
+    use crate::model::accounting::ModelNormalizationLimits;
+    use crate::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
+        OperationMemberRecord,
+    };
+    use crate::model::intake::SelectedModel;
+    use crate::model::key::DeclarationKey;
+    use crate::model::normalize::{normalize, NormalizeOutcome};
     use crate::value::declaration::TypeEnvironment;
 
     const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
         profile v = \"quire.value.complete/v1\" version \"1\" digest \
-        \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+        \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+        model M = \"example/protocol-fixture\" version \"1\" digest \
+        \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n";
 
-    /// S1, S2 and the assembler over `declarations`, no `model` declared:
-    /// FR-113's checker resolves protocol node references only, never a
-    /// model type, so a bare profile is enough (assemble.rs reads no type
-    /// or operation name a protocol declaration holds).
+    /// `M::Actor` and its own `op` operation (no parameters, no result, an
+    /// empty frame), normalized to a [`SelectedModel`] aliased `M` --
+    /// QSL-309's own fixture, so every `attempt ... on M::Actor::op` this
+    /// module's fixtures already write (FR-114's own assembler resolution,
+    /// which now runs for every protocol) resolves rather than refusing at
+    /// assembly. This module's FR-113 tests still exercise anchor
+    /// resolution and binder shadowing only; QSL-309 touches neither.
+    fn m_actor_model() -> SelectedModel {
+        let key = |name: &str| DeclarationKey {
+            package: "example/protocol-fixture".to_owned(),
+            node: format!("ix://example/protocol-fixture/{name}"),
+        };
+        let package = DomainPackage::new(
+            DomainPackageRef {
+                identity: "example/protocol-fixture".to_owned(),
+                version: "1".to_owned(),
+                digest: [0_u8; 32],
+            },
+            vec![
+                DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                    key: key("Actor"),
+                    interface_features: None,
+                    abstract_type: false,
+                    supertypes: Vec::new(),
+                }),
+                DomainPackageRecord::OperationMember(OperationMemberRecord {
+                    key: key("Actor/op"),
+                    owner: key("Actor"),
+                    parameters: Vec::new(),
+                    result: None,
+                    effect: OperationEffect::default(),
+                    own_postcondition_clauses: Vec::new(),
+                    has_body: false,
+                    redefines: None,
+                }),
+            ],
+        );
+        let NormalizeOutcome::Completed(view) =
+            normalize(&package, ModelNormalizationLimits::UNLIMITED)
+        else {
+            panic!("the M::Actor fixture normalizes");
+        };
+        SelectedModel {
+            alias: "M".to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+            view,
+        }
+    }
+
+    /// S1, S2 and the assembler over `declarations`, against
+    /// [`m_actor_model`]'s own `M::Actor::op` (QSL-309): FR-113's checker
+    /// itself resolves protocol node references only, never a model type,
+    /// but FR-114's own assembler resolution now runs for every attempt
+    /// regardless, so this module's fixtures need a real admitted model
+    /// even though FR-113's own checks do not read it.
     fn assemble(declarations: &str) -> (String, PackageDeclarations) {
         let text = format!("{HEADER}{declarations}\n");
         let parsed = qsl_cst::parse(
@@ -462,7 +523,7 @@ mod tests {
         let assembled = PackageDeclarations::assemble(
             parsed.source().reference().clone(),
             unit,
-            Vec::new(),
+            vec![m_actor_model()],
             Vec::new(),
         )
         .unwrap_or_else(|refusal| panic!("{declarations}: the assembler refuses: {refusal:?}"));

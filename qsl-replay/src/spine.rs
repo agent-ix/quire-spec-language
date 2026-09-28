@@ -392,6 +392,17 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        AssemblyCause::MissingContractClause { entry } => {
+            format!("the `contracts` entry `{entry}` names no state clause of the unit")
+        }
+        AssemblyCause::WrongContractAnchor {
+            entry,
+            attempt_anchor,
+            clause_anchor,
+        } => format!(
+            "the `contracts` entry `{entry}` names `{clause_anchor}`, not the attempt's own \
+             anchor `{attempt_anchor}`"
+        ),
     };
     with_more(message, refusal.errors.len())
 }

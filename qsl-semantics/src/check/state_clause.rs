@@ -52,6 +52,25 @@ pub struct ClauseOperation {
     pub declaration: OperationDeclaration,
 }
 
+/// One protocol `attempt` the FR-091 assembler admitted (FR-114 "Behavior",
+/// QSL-309): its operation resolved exactly as a `pre`/`post` clause's own
+/// (FR-104), and each `contracts` entry checked against the unit's own
+/// state clauses -- both by the same assembler pass that resolves
+/// [`StateClauseDeclaration`]s, so an attempt's operation and a clause's
+/// operation naming the same `M::T::op` always agree on identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttemptDeclaration {
+    /// The index into the owning `ProtocolDeclarationForm::declarations` of
+    /// this attempt's own static declaration (`ProtocolNodeKind::Attempt`),
+    /// the same index [`qsl_forms::AttemptForm::declaration`] carries.
+    pub declaration: usize,
+    /// The resolved operation `on M::T::op` names.
+    pub operation: ClauseOperation,
+    /// Each `contracts` entry, resolved to the index of the unit's own
+    /// [`StateClauseDeclaration`] it names, in source order.
+    pub contracts: Vec<usize>,
+}
+
 /// One state clause the FR-091 assembler admitted (FR-104 "Inputs"): every
 /// name of its header resolved, its body as S2 built it.
 #[derive(Clone, Debug)]
