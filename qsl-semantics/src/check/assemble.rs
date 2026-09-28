@@ -1558,6 +1558,12 @@ impl PackageDeclarations {
             .zip(resolved)
             .filter_map(|(alias, value_type)| Some((alias.name.name.clone(), value_type?)))
             .collect();
+        package.alias_names = selections
+            .profiles
+            .iter()
+            .map(|profile| profile.alias.clone())
+            .chain(selections.models.iter().map(|model| model.alias.clone()))
+            .collect();
         for (index, signature) in signatures.into_iter().enumerate() {
             package.resolved_signatures.insert(index, signature);
         }

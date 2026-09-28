@@ -136,10 +136,12 @@ unresolved or ambiguous scope fails before S4, with no partial substitute.
 
 Specified under QSL-296 (QSL-21a). QSL-298 (QSL-21c) implements anchor
 resolution: nested-scope resolution, missing and ambiguous refusals, and
-the wrong-kind and channel-mismatch refusals of every site. Binder
-no-shadowing (the shadowing clause of "Refusals" and its AC-5, and the
-shadowing half of AC-6) is not yet implemented; QSL-306 tracks it, and also
-FR-114's check half. A protocol whose anchors all resolve is still refused
-`unsupported_construct`/`not-yet-implemented`, since its other content has
-no checker and nothing emits it yet (QSL-299), until QSL-306 completes
-protocol checking and emission.
+the wrong-kind and channel-mismatch refusals of every site. QSL-306
+implements binder no-shadowing (the shadowing clause of "Refusals", AC-5
+and the shadowing half of AC-6), over a further S2 extension
+(`qsl_forms::protocol_clause::BinderForm`) that walks every binder position
+FR-112 itself does not capture. FR-114's check half remains open (QSL-306's
+own report). A protocol whose anchors and binders all resolve is still
+refused `unsupported_construct`/`not-yet-implemented`, since its other
+content has no checker and nothing emits it yet (QSL-299), until a future
+ticket completes protocol checking and emission.

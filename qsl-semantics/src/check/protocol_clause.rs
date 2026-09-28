@@ -14,19 +14,26 @@
 //! actual kind. A `receive` whose channel disagrees with the `send` its
 //! `receive-of` anchor names refuses the same way, naming both channels.
 //!
-//! FR-113's binder no-shadowing rule (record binders, captures, retry and
-//! recovery parameters shadowing a model/profile alias, a native
-//! declaration or another visible binder) is not implemented here: no S2
-//! form carries a binder's name today (FR-112 builds only scoped anchors),
-//! so checking it needs a further S2 extension this ticket does not make.
-//! See QSL-298's PR description for this boundary.
+//! FR-113's binder no-shadowing rule (a record binder, a capture, a
+//! compensation trigger or a retry or recovery parameter shadowing a
+//! model/profile alias, a native declaration of the package or another
+//! visible binder) is checked here too (QSL-306), over the `BinderForm`s
+//! QSL-306's own S2 extension (`qsl_forms::protocol_clause::BinderForm`)
+//! now builds for every binder position. A binder's own scope resolves the
+//! same way an anchor's does (innermost first, then each enclosing scope
+//! outward): a binder shadows the nearest enclosing binder of its name, or
+//! a package-level alias or native declaration when no enclosing binder
+//! names it. Only one refusal is raised, at the shadowing binder, naming
+//! what it shadows -- unlike a duplicate declaration, shadowing is
+//! directional, so the shadowed declaration is not itself refused.
 
 use std::collections::BTreeMap;
 
 use qsl_forms::{AnchorSite, ProtocolDeclarationForm, ProtocolNodeKind};
 use qsl_foundation::Span;
 
-use super::refusal::{CheckCause, CheckRefusal, Origin, ProtocolAnchorCause};
+use super::refusal::{CheckCause, CheckRefusal, Origin, ProtocolAnchorCause, ShadowedDeclaration};
+use super::{Scope, Signatures};
 
 /// The identity of one static protocol node: its index into the
 /// declaration's own [`ProtocolDeclarationForm::declarations`] (FR-113
@@ -94,8 +101,19 @@ fn admitted_kinds(site: AnchorSite) -> (&'static str, &'static [ProtocolNodeKind
 
 /// FR-113: the protocol node `protocol`'s scoped anchors resolve to, or the
 /// refusals below, in source position order (declaration-order duplicate
-/// refusals first at equal span, then per-anchor refusals).
-pub fn check(protocol: &ProtocolDeclarationForm) -> Result<CheckedProtocol, Vec<CheckRefusal>> {
+/// refusals first at equal span, then binder-shadow refusals, then
+/// per-anchor refusals). `alias_names` (the unit's own `profile`/`model`
+/// selection aliases), `scope` (the package's native type declarations:
+/// `type`, `record`, `tuple` and `enum`) and `signatures` (its native
+/// function declarations) are the only package-wide state this checker
+/// reads, for FR-113 "Refusals" binder no-shadowing rule; every other
+/// check is over the protocol's own form.
+pub fn check(
+    protocol: &ProtocolDeclarationForm,
+    alias_names: &std::collections::BTreeSet<String>,
+    scope: &Scope,
+    signatures: &Signatures,
+) -> Result<CheckedProtocol, Vec<CheckRefusal>> {
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
 
     // Every static node by (its scope, its name): the declaration
@@ -129,6 +147,8 @@ pub fn check(protocol: &ProtocolDeclarationForm) -> Result<CheckedProtocol, Vec<
             ));
         }
     }
+
+    refusals.extend(shadow_refusals(protocol, alias_names, scope, signatures));
 
     let mut resolved = Vec::with_capacity(protocol.scoped_anchors.len());
     for anchor in &protocol.scoped_anchors {
@@ -303,6 +323,62 @@ fn check_kind(
     None
 }
 
+/// FR-113 "Refusals" binder no-shadowing rule: every binder that shadows a
+/// model/profile alias, a native declaration of the package or another
+/// binder visible where it is declared, in source order.
+///
+/// Binders are checked in `protocol.binders`' own order (source order,
+/// QSL-306's S2 walk), each against every binder built before it: a later
+/// binder shadows an earlier one, never the other way round, so only the
+/// later binder is refused (FR-113: "refuse ... at that binder, naming the
+/// declaration it would shadow"). A binder's own scope resolves exactly as
+/// an anchor's does: the nearest enclosing scope (innermost first) that
+/// holds an earlier binder of the same name decides, and a package-level
+/// alias or native declaration is checked only when no enclosing scope
+/// does.
+fn shadow_refusals(
+    protocol: &ProtocolDeclarationForm,
+    alias_names: &std::collections::BTreeSet<String>,
+    scope: &Scope,
+    signatures: &Signatures,
+) -> Vec<(Span, CheckRefusal)> {
+    let mut refusals = Vec::new();
+    // Earlier binders, by (their scope, their name): looked up at each
+    // enclosing scope, innermost first, the same walk `resolve` runs over
+    // `by_scope_name`.
+    let mut seen: BTreeMap<(ScopeKey, String), Span> = BTreeMap::new();
+    for binder in &protocol.binders {
+        let binder_scope = scope_key(&binder.scope);
+        let mut shadowed = None;
+        for depth in (0..=binder_scope.len()).rev() {
+            let key = (binder_scope[..depth].to_vec(), binder.name.name.clone());
+            if let Some(&span) = seen.get(&key) {
+                shadowed = Some(ShadowedDeclaration::Binder(span));
+                break;
+            }
+        }
+        let shadowed = shadowed.or_else(|| {
+            let name = binder.name.name.as_str();
+            (alias_names.contains(name)
+                || !scope.named_types(name).is_empty()
+                || signatures.declares(name))
+            .then_some(ShadowedDeclaration::Package)
+        });
+        if let Some(shadowed) = shadowed {
+            refusals.push((
+                binder.name.span,
+                refusal(ProtocolAnchorCause::Shadow {
+                    name: binder.name.name.clone(),
+                    shadowed,
+                    span: binder.name.span,
+                }),
+            ));
+        }
+        seen.insert((binder_scope, binder.name.name.clone()), binder.name.span);
+    }
+    refusals
+}
+
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
@@ -311,8 +387,11 @@ mod tests {
     };
     use qsl_foundation::SourceIdentity;
 
-    use super::super::{CheckCause, CheckRefusal, CheckingLimits, PackageDeclarations};
-    use super::{CheckedProtocol, ProtocolAnchorCause, ProtocolNodeId};
+    use super::super::{
+        CheckCause, CheckRefusal, CheckingLimits, PackageDeclarations, Scope, Signatures,
+    };
+    use super::{CheckedProtocol, ProtocolAnchorCause, ProtocolNodeId, ShadowedDeclaration};
+    use crate::value::declaration::TypeEnvironment;
 
     const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
         profile v = \"quire.value.complete/v1\" version \"1\" digest \
@@ -343,6 +422,24 @@ mod tests {
         (text, assembled)
     }
 
+    /// An empty `Scope` and `Signatures`: no alias, type or function names
+    /// for a binder to shadow, so [`resolve_protocol`]'s fixtures (which
+    /// carry no shadowing binder) resolve exactly as the anchor-resolution
+    /// algorithm alone would.
+    fn empty_scope_and_signatures() -> (Scope, Signatures) {
+        (
+            Scope::new(
+                TypeEnvironment::default(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                None,
+                Vec::new(),
+            ),
+            Signatures::new(Vec::new()),
+        )
+    }
+
     /// `super::check` called directly on the one protocol `declarations`
     /// holds, bypassing `PackageDeclarations::check`'s whole-package pass
     /// (and its FND-001 `Unimplemented` refusal, always added once anchor
@@ -357,7 +454,13 @@ mod tests {
     ) {
         let (text, assembled) = assemble(declarations);
         let protocol = assembled.protocols[0].clone();
-        let result = super::check(&protocol);
+        let (scope, signatures) = empty_scope_and_signatures();
+        let result = super::check(
+            &protocol,
+            &std::collections::BTreeSet::new(),
+            &scope,
+            &signatures,
+        );
         (text, protocol, result)
     }
 
@@ -701,18 +804,19 @@ mod tests {
         assert_ambiguous_loci_order(&swapped_refusals, [swapped_first, swapped_second]);
     }
 
-    /// FR-113-AC-6 (TC-512), non-shadowing half only: a protocol with a
-    /// duplicate declaration (physically inside `run`, so later in source)
-    /// and an unrelated missing anchor (physically before `run`) reports
-    /// both, ordered strictly by source position -- not by the order the
-    /// checker happens to build them in, which is the opposite: the
-    /// up-front duplicate-declaration pass runs before the per-anchor
-    /// pass, so without the sort this test's own refusals would come back
-    /// in exactly the wrong order. Checking it twice gives the same
-    /// refusals in the same order. This test carries no `FR-113-AC-6`
-    /// trace tag: AC-6's own fixture pairs a missing anchor with a
-    /// shadowing binder, which this checker does not implement (QSL-306,
-    /// see this module's own doc comment), so AC-6 is not fully covered.
+    /// A regression fixture distinct from FR-113-AC-6's own (a duplicate
+    /// declaration, not a shadowing binder, paired with a missing anchor):
+    /// a protocol with a duplicate declaration (physically inside `run`,
+    /// so later in source) and an unrelated missing anchor (physically
+    /// before `run`) reports both, ordered strictly by source position --
+    /// not by the order the checker happens to build them in, which is the
+    /// opposite: the up-front duplicate-declaration pass runs before the
+    /// per-anchor pass, so without the sort this test's own refusals would
+    /// come back in exactly the wrong order. Checking it twice gives the
+    /// same refusals in the same order.
+    /// [`a_missing_anchor_and_a_later_shadowing_binder_report_in_source_order`]
+    /// carries AC-6's own trace tag, over its own fixture (a missing anchor
+    /// paired with a shadowing binder, QSL-306).
     #[trace("TC-512")]
     #[test]
     fn a_missing_anchor_and_a_later_duplicate_declaration_report_in_source_order() {
@@ -954,5 +1058,203 @@ mod tests {
         }
         assert_eq!(refusals[0].cause.code().as_str(), "unsupported_construct");
         assert_eq!(refusals[0].cause.cause(), Some("not-yet-implemented"));
+    }
+
+    /// The `Shadow` cause of `refusals`, expecting exactly one.
+    fn shadow_cause(refusals: &[CheckRefusal]) -> (&str, &ShadowedDeclaration) {
+        assert_eq!(refusals.len(), 1, "{refusals:?}");
+        match protocol_causes(refusals)[0] {
+            ProtocolAnchorCause::Shadow { name, shadowed, .. } => (name, shadowed),
+            other => panic!("a Shadow cause, got {other:?}"),
+        }
+    }
+
+    /// FR-113-AC-5 (TC-512), first case: a `capture` named `forward` inside
+    /// `Undo`, where `forward` is already the template's own bound
+    /// parameter (`as (forward: Boolean)`, renamed from the fixture's own
+    /// `failure`), refuses `ambiguous_declaration`/`ambiguous-name` at the
+    /// capture, naming the parameter it shadows.
+    #[trace("TC-512", "FR-113-AC-5")]
+    #[test]
+    fn a_capture_shadowing_its_templates_own_bound_parameter_refuses() {
+        let source = recovery_flow("Main::Committed", "")
+            .replacen("as (failure: Boolean)", "as (forward: Boolean)", 1)
+            .replacen(
+                "clock \"ticks\" {\nactivate first",
+                "clock \"ticks\" {\ncapture forward: Boolean = true;\nactivate first",
+                1,
+            );
+        assert!(
+            source.contains("capture forward: Boolean = true;"),
+            "fixture sanity: the capture must be inserted"
+        );
+        let (_, found) = refusals(&source);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].cause.code().as_str(), "ambiguous_declaration");
+        assert_eq!(found[0].cause.cause(), Some("ambiguous-name"));
+        let (name, shadowed) = shadow_cause(&found);
+        assert_eq!(name, "forward");
+        assert!(
+            matches!(shadowed, ShadowedDeclaration::Binder(_)),
+            "{shadowed:?}"
+        );
+    }
+
+    /// FR-113-AC-5 (TC-512), second case: an event record binder named
+    /// after the unit's own `v` profile alias (FR-113 "Refusals" reaches a
+    /// model or profile alias the same way; this fixture declares no
+    /// `model`, so its `v` profile alias stands in for a model alias)
+    /// refuses at the binder, naming the alias. A second, unrelated
+    /// protocol in the same unit whose own record binder is also `v`
+    /// checks (FR-113 "Refusals": "Two separate protocols may reuse a
+    /// binder name" -- this asserts the alias/native-declaration half is
+    /// package-wide while a binder's own shadow check stays local to its
+    /// protocol).
+    #[trace("TC-512", "FR-113-AC-5")]
+    #[test]
+    fn a_record_binder_shadowing_the_units_profile_alias_refuses() {
+        let source = recovery_flow("Main::Committed", "").replacen(
+            "as (applied: Boolean)",
+            "as (v: Boolean)",
+            1,
+        );
+        let (_, found) = refusals(&source);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].cause.code().as_str(), "ambiguous_declaration");
+        let (name, shadowed) = shadow_cause(&found);
+        assert_eq!(name, "v");
+        assert!(
+            matches!(shadowed, ShadowedDeclaration::Package),
+            "{shadowed:?}"
+        );
+
+        // A second protocol, naming its own `effect`'s record binder `v`
+        // too: this protocol's own anchors and declarations are entirely
+        // separate from the first, but `v` is still package-wide, so it
+        // still refuses -- the "two separate protocols" carve-out is about
+        // reusing a binder name *between* protocols, not about escaping the
+        // package-level alias/native-declaration check.
+        let second = recovery_flow("Main::Committed", "")
+            .replacen("protocol RecoveryFlow", "protocol RecoveryFlowTwo", 1)
+            .replacen("as (applied: Boolean)", "as (v: Boolean)", 1);
+        let combined = format!("{source}\n{second}");
+        let (_, found) = refusals(&combined);
+        let shadow_causes: Vec<&ProtocolAnchorCause> = protocol_causes(&found)
+            .into_iter()
+            .filter(|cause| matches!(cause, ProtocolAnchorCause::Shadow { .. }))
+            .collect();
+        assert_eq!(shadow_causes.len(), 2, "{shadow_causes:?}");
+        for cause in shadow_causes {
+            match cause {
+                ProtocolAnchorCause::Shadow { name, shadowed, .. } => {
+                    assert_eq!(name, "v");
+                    assert!(matches!(shadowed, ShadowedDeclaration::Package));
+                }
+                other => panic!("a Shadow cause, got {other:?}"),
+            }
+        }
+    }
+
+    /// A `compensate` declaration's `activate first (p)` trigger parameter
+    /// shadowing a native `predicate` declaration of the package (FR-113
+    /// "Refusals": a native declaration is checked the same way an alias
+    /// is, `ShadowedDeclaration::Package`).
+    #[trace("TC-512")]
+    #[test]
+    fn a_trigger_parameter_shadowing_a_native_function_declaration_refuses() {
+        let source = format!(
+            "predicate forward using v(): Boolean {{ true }}\n{}",
+            recovery_flow("Main::Committed", "").replacen(
+                "(trigger: Boolean)",
+                "(forward: Boolean)",
+                1
+            )
+        );
+        let (_, found) = refusals(&source);
+        assert_eq!(found.len(), 1, "{found:?}");
+        let (name, shadowed) = shadow_cause(&found);
+        assert_eq!(name, "forward");
+        assert!(
+            matches!(shadowed, ShadowedDeclaration::Package),
+            "{shadowed:?}"
+        );
+    }
+
+    /// A `retry (a, b)` parameter shadowing another binder visible where it
+    /// is declared: `Undo`'s own record binder, renamed `shared`, and
+    /// `retry`'s first parameter, also renamed `shared` -- both inside the
+    /// same `compensate` declaration, the retry parameter one scope level
+    /// inside the declaration's own record binder.
+    #[trace("TC-512")]
+    #[test]
+    fn a_retry_parameter_shadowing_its_declarations_own_record_binder_refuses() {
+        let source = recovery_flow("Main::Committed", "")
+            .replacen("as (failure: Boolean)", "as (shared: Boolean)", 1)
+            .replacen("current_attempt: Boolean", "shared: Boolean", 1);
+        let (_, found) = refusals(&source);
+        assert_eq!(found.len(), 1, "{found:?}");
+        let (name, shadowed) = shadow_cause(&found);
+        assert_eq!(name, "shared");
+        assert!(
+            matches!(shadowed, ShadowedDeclaration::Binder(_)),
+            "{shadowed:?}"
+        );
+    }
+
+    /// A bare `commit` control's own record binder shadowing the unit's `v`
+    /// profile alias, spreading FR-113-AC-5's coverage across a binder
+    /// position AC-5's own fixture does not exercise.
+    #[trace("TC-512")]
+    #[test]
+    fn a_commit_controls_record_binder_shadowing_an_alias_refuses() {
+        let source = recovery_flow("Main::Committed", "").replacen(
+            "as (committed: Boolean)",
+            "as (v: Boolean)",
+            1,
+        );
+        let (_, found) = refusals(&source);
+        assert_eq!(found.len(), 1, "{found:?}");
+        let (name, shadowed) = shadow_cause(&found);
+        assert_eq!(name, "v");
+        assert!(
+            matches!(shadowed, ShadowedDeclaration::Package),
+            "{shadowed:?}"
+        );
+    }
+
+    /// FR-113-AC-6 (TC-512): a protocol with one missing anchor
+    /// (physically before `run`) and one shadowing binder (physically
+    /// inside `run`, so later in source) reports both refusals, ordered by
+    /// source position, and emits no checked protocol node (the full
+    /// pipeline refuses). Checking it twice gives the same refusals in the
+    /// same order.
+    #[trace("TC-512", "FR-113-AC-6")]
+    #[test]
+    fn a_missing_anchor_and_a_later_shadowing_binder_report_in_source_order() {
+        let source = recovery_flow("Main::Committed", "")
+            .replacen("for Main::Applied", "for Main::Missing", 1)
+            .replacen("as (applied: Boolean)", "as (v: Boolean)", 1);
+        let (text, refusals_a) = refusals(&source);
+        let (_, refusals_b) = refusals(&source);
+        assert_eq!(refusals_a, refusals_b, "checking twice must agree");
+        assert_eq!(refusals_a.len(), 2, "{refusals_a:?}");
+
+        let missing_span = text.find("Main::Missing").unwrap();
+        let shadow_span = text.find("as (v: Boolean)").unwrap();
+        assert!(
+            missing_span < shadow_span,
+            "fixture sanity: the missing anchor must come first in source"
+        );
+        let causes = protocol_causes(&refusals_a);
+        assert!(
+            matches!(causes[0], ProtocolAnchorCause::Missing { .. }),
+            "the earliest refusal must be the Missing one, {:?}",
+            refusals_a[0]
+        );
+        assert!(
+            matches!(causes[1], ProtocolAnchorCause::Shadow { .. }),
+            "the later refusal must be the Shadow one, {:?}",
+            refusals_a[1]
+        );
     }
 }

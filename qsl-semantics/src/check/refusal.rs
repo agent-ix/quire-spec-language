@@ -77,6 +77,33 @@ pub enum ProtocolAnchorCause {
         /// The protocol's declared name span.
         span: Span,
     },
+    /// FR-113 "Refusals": a record binder, a capture, a compensation
+    /// trigger or a retry or recovery parameter names a model or profile
+    /// alias, a native declaration of the package, or another binder
+    /// visible where it is declared.
+    Shadow {
+        /// The shadowing binder's own name.
+        name: String,
+        /// What the binder shadows.
+        shadowed: ShadowedDeclaration,
+        /// The shadowing binder's own span.
+        span: Span,
+    },
+}
+
+/// What a binder shadows (FR-113 "Refusals"): named as the checker holds
+/// it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ShadowedDeclaration {
+    /// A model or profile alias, or a native declaration (`function`,
+    /// `type`, `record`, `tuple`, `enum`, `dimension` or `unit`) of the
+    /// package. Neither lives in the protocol form this checker reads, and
+    /// FR-113 asks only that the refusal name what is shadowed, not where
+    /// it is declared, so this carries no span.
+    Package,
+    /// Another binder visible where the shadowing binder is declared, by
+    /// that binder's own span.
+    Binder(Span),
 }
 
 impl ProtocolAnchorCause {
@@ -88,7 +115,8 @@ impl ProtocolAnchorCause {
             | Self::Ambiguous { span, .. }
             | Self::WrongKind { span, .. }
             | Self::ChannelMismatch { span, .. }
-            | Self::Unimplemented { span, .. } => *span,
+            | Self::Unimplemented { span, .. }
+            | Self::Shadow { span, .. } => *span,
         }
     }
 
@@ -96,7 +124,7 @@ impl ProtocolAnchorCause {
     pub fn code(&self) -> Code {
         match self {
             Self::Missing { .. } => Code::MissingDeclaration,
-            Self::Ambiguous { .. } => Code::AmbiguousDeclaration,
+            Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => Code::IllTyped,
             Self::Unimplemented { .. } => Code::UnsupportedConstruct,
         }
@@ -108,7 +136,7 @@ impl ProtocolAnchorCause {
     pub fn tag(&self) -> &'static str {
         match self {
             Self::Missing { .. } => "missing-name",
-            Self::Ambiguous { .. } => "ambiguous-name",
+            Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => "type-mismatch",
             Self::Unimplemented { .. } => "not-yet-implemented",
         }

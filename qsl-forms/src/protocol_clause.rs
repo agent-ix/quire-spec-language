@@ -17,9 +17,9 @@ use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
 use super::dispatch::{Construct, FormsFailure, FormsLimits};
 use super::spans::DeclarationSpans;
 use super::syntax::{
-    AnchorForm, AnchorSegment, AnchorSite, DeclarationForm, DeclaredName, ProtocolDeclarationForm,
-    ProtocolNodeDeclaration, ProtocolNodeKind, ScopeName, ScopedAnchorForm, StateClauseForm,
-    StateClauseKind, UsingAlias,
+    AnchorForm, AnchorSegment, AnchorSite, BinderForm, BinderKind, DeclarationForm, DeclaredName,
+    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, ScopeName,
+    ScopedAnchorForm, StateClauseForm, StateClauseKind, UsingAlias,
 };
 use super::value::{
     declared_name, expression, items, name_form, nodes_of, only, production_node, text, tokens_of,
@@ -111,8 +111,21 @@ pub(crate) fn protocol_declaration(
 
     let mut scoped_anchors = Vec::new();
     let mut declarations = Vec::new();
+    let mut binders = Vec::new();
+    // The protocol's own top-level captures (FR-113 "Refusals" binder
+    // no-shadowing rule): written before the declaration's roles, at the
+    // empty top-level scope every other top-level binder shares.
+    for capture in nodes_of(&clause_items, Production::Capture) {
+        binders.push(capture_binder(cst, capture, &[])?);
+    }
     for compensation in nodes_of(&clause_items, Production::Compensation) {
-        compensation_anchors(cst, compensation, &mut scoped_anchors, &mut declarations)?;
+        compensation_anchors(
+            cst,
+            compensation,
+            &mut scoped_anchors,
+            &mut declarations,
+            &mut binders,
+        )?;
     }
     let run = only(&clause_items, Production::Control, node)?;
     control_anchors(
@@ -121,6 +134,7 @@ pub(crate) fn protocol_declaration(
         &mut Vec::new(),
         &mut scoped_anchors,
         &mut declarations,
+        &mut binders,
         construct.limits,
         1,
     )?;
@@ -132,12 +146,57 @@ pub(crate) fn protocol_declaration(
         scope: Vec::new(),
         channel: None,
     });
+    binders.push(record_binder(cst, &finish_items, finish, &[])?);
 
     Ok(DeclarationForm::Protocol(ProtocolDeclarationForm {
         name,
         scoped_anchors,
         declarations,
+        binders,
     }))
+}
+
+/// The one `as (x: T)` bound parameter directly among `items` (FR-113
+/// "Refusals": a record binder, "the `as (x: T)` of an event node", plus
+/// the same-shaped binder of a `commit`, a `finish` or a `compensate`
+/// declaration), scoped at `scope`.
+fn record_binder(
+    cst: &LosslessCst,
+    items: &[Item<'_>],
+    node: &CstNode,
+    scope: &[ScopeName],
+) -> Result<BinderForm, FormsFailure> {
+    let parameter = only(items, Production::Parameter, node)?;
+    parameter_binder(cst, parameter, BinderKind::RecordBinder, scope)
+}
+
+/// One `capture p = e;`'s own parameter, scoped at `scope` (FR-113
+/// "Refusals").
+fn capture_binder(
+    cst: &LosslessCst,
+    node: &CstNode,
+    scope: &[ScopeName],
+) -> Result<BinderForm, FormsFailure> {
+    let capture_items = items(cst, node);
+    let parameter = only(&capture_items, Production::Parameter, node)?;
+    parameter_binder(cst, parameter, BinderKind::Capture, scope)
+}
+
+/// One `Parameter` node's own declared name as a binder of `kind`, scoped
+/// at `scope`: a `Parameter` (`ident : ParameterType`) names itself with
+/// its one identifier token, the same shape [`declared_name`] reads.
+fn parameter_binder(
+    cst: &LosslessCst,
+    parameter: &CstNode,
+    kind: BinderKind,
+    scope: &[ScopeName],
+) -> Result<BinderForm, FormsFailure> {
+    let parameter_items = items(cst, parameter);
+    Ok(BinderForm {
+        kind,
+        name: declared_name(&parameter_items, parameter)?,
+        scope: scope.to_vec(),
+    })
 }
 
 /// `compensate N for R as (p) by role on Op using alias clock "c" { ...
@@ -152,11 +211,13 @@ fn compensation_anchors(
     node: &CstNode,
     out: &mut Vec<ScopedAnchorForm>,
     out_decls: &mut Vec<ProtocolNodeDeclaration>,
+    out_binders: &mut Vec<BinderForm>,
 ) -> Result<(), FormsFailure> {
     let compensation_items = items(cst, node);
+    let name = declared_name(&compensation_items, node)?;
     out_decls.push(ProtocolNodeDeclaration {
         kind: ProtocolNodeKind::CompensateTemplate,
-        name: declared_name(&compensation_items, node)?,
+        name: name.clone(),
         scope: Vec::new(),
         channel: None,
     });
@@ -180,6 +241,52 @@ fn compensation_anchors(
             None,
         )?);
     }
+    // The declaration's own binders (FR-113 "Refusals"): its record binder
+    // (`as (p)`) at the empty top-level scope its own declaration lives in,
+    // the trigger and retry/recovery parameters and every capture (both
+    // written directly in the declaration's body and inside `activate`'s
+    // guard block) one level inside it, scoped by the declaration's own
+    // name -- this production has no wrapping node for `activate`'s guard,
+    // so its captures and the declaration's own top-level captures are the
+    // same flat `star(Capture)` child list, and its trigger, the two retry
+    // parameters and the recovery parameter are the only `Parameter` nodes
+    // directly under it, in that fixed grammar order.
+    let parameters = nodes_of(&compensation_items, Production::Parameter);
+    let [own, trigger, retry_first, retry_second, recover] = parameters.as_slice() else {
+        return Err(unexpected(node));
+    };
+    out_binders.push(parameter_binder(cst, own, BinderKind::RecordBinder, &[])?);
+    let inner_scope = vec![ScopeName {
+        name: name.name,
+        span: name.span,
+    }];
+    for capture in nodes_of(&compensation_items, Production::Capture) {
+        out_binders.push(capture_binder(cst, capture, &inner_scope)?);
+    }
+    out_binders.push(parameter_binder(
+        cst,
+        trigger,
+        BinderKind::Trigger,
+        &inner_scope,
+    )?);
+    out_binders.push(parameter_binder(
+        cst,
+        retry_first,
+        BinderKind::RetryParameter,
+        &inner_scope,
+    )?);
+    out_binders.push(parameter_binder(
+        cst,
+        retry_second,
+        BinderKind::RetryParameter,
+        &inner_scope,
+    )?);
+    out_binders.push(parameter_binder(
+        cst,
+        recover,
+        BinderKind::RecoveryParameter,
+        &inner_scope,
+    )?);
     Ok(())
 }
 
@@ -217,12 +324,14 @@ where
 /// `repeat ... exhausted <Control>` nest with no bracket, so the CST's own
 /// nesting ceiling does not bound them, and unbounded native recursion on
 /// untrusted source would abort the process rather than refuse.
+#[allow(clippy::too_many_arguments)]
 fn control_anchors(
     cst: &LosslessCst,
     control: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
     out_decls: &mut Vec<ProtocolNodeDeclaration>,
+    out_binders: &mut Vec<BinderForm>,
     limits: FormsLimits,
     depth: u64,
 ) -> Result<(), FormsFailure> {
@@ -247,7 +356,16 @@ fn control_anchors(
             declare(out_decls, ProtocolNodeKind::Sequence, name.clone(), scope);
             with_scope(scope, name, |scope| {
                 for child in nodes_of(&sequence_items, Production::Control) {
-                    control_anchors(cst, child, scope, out, out_decls, limits, depth + 1)?;
+                    control_anchors(
+                        cst,
+                        child,
+                        scope,
+                        out,
+                        out_decls,
+                        out_binders,
+                        limits,
+                        depth + 1,
+                    )?;
                 }
                 Ok(())
             })
@@ -258,7 +376,7 @@ fn control_anchors(
             declare(out_decls, ProtocolNodeKind::Choice, name.clone(), scope);
             with_scope(scope, name, |scope| {
                 for case in nodes_of(&choice_items, Production::Case) {
-                    case_anchors(cst, case, scope, out, out_decls, limits, depth)?;
+                    case_anchors(cst, case, scope, out, out_decls, out_binders, limits, depth)?;
                 }
                 Ok(())
             })
@@ -269,7 +387,16 @@ fn control_anchors(
             declare(out_decls, ProtocolNodeKind::Parallel, name.clone(), scope);
             with_scope(scope, name, |scope| {
                 for branch in nodes_of(&parallel_items, Production::Branch) {
-                    branch_anchors(cst, branch, scope, out, out_decls, limits, depth)?;
+                    branch_anchors(
+                        cst,
+                        branch,
+                        scope,
+                        out,
+                        out_decls,
+                        out_binders,
+                        limits,
+                        depth,
+                    )?;
                 }
                 Ok(())
             })
@@ -280,15 +407,33 @@ fn control_anchors(
             declare(out_decls, ProtocolNodeKind::Repeat, name.clone(), scope);
             with_scope(scope, name, |scope| {
                 for child in nodes_of(&repetition_items, Production::Control) {
-                    control_anchors(cst, child, scope, out, out_decls, limits, depth + 1)?;
+                    control_anchors(
+                        cst,
+                        child,
+                        scope,
+                        out,
+                        out_decls,
+                        out_binders,
+                        limits,
+                        depth + 1,
+                    )?;
                 }
                 Ok(())
             })
         }
-        Production::AwaitControl => {
-            await_control_anchors(cst, matched, scope, out, out_decls, limits, depth)
+        Production::AwaitControl => await_control_anchors(
+            cst,
+            matched,
+            scope,
+            out,
+            out_decls,
+            out_binders,
+            limits,
+            depth,
+        ),
+        Production::EventNode => {
+            event_node_anchors(cst, matched, scope, out, out_decls, out_binders)
         }
-        Production::EventNode => event_node_anchors(cst, matched, scope, out, out_decls),
         Production::Check => {
             let check_items = items(cst, matched);
             let name = declared_name(&check_items, matched)?;
@@ -301,6 +446,7 @@ fn control_anchors(
             let commit_items = items(cst, matched);
             let name = declared_name(&commit_items, matched)?;
             declare(out_decls, ProtocolNodeKind::Commit, name, scope);
+            out_binders.push(record_binder(cst, &commit_items, matched, scope)?);
             Ok(())
         }
         _ => Err(unexpected(matched)),
@@ -329,12 +475,14 @@ fn declare(
 /// "Outputs": "the named controls that enclose the reference"). `depth` is
 /// the enclosing `choice`'s own depth: the case's inner `Control` is one
 /// level deeper, charged where [`control_anchors`] recurses into it.
+#[allow(clippy::too_many_arguments)]
 fn case_anchors(
     cst: &LosslessCst,
     node: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
     out_decls: &mut Vec<ProtocolNodeDeclaration>,
+    out_binders: &mut Vec<BinderForm>,
     limits: FormsLimits,
     depth: u64,
 ) -> Result<(), FormsFailure> {
@@ -343,7 +491,16 @@ fn case_anchors(
     declare(out_decls, ProtocolNodeKind::Case, name.clone(), scope);
     with_scope(scope, name, |scope| {
         let control = only(&case_items, Production::Control, node)?;
-        control_anchors(cst, control, scope, out, out_decls, limits, depth + 1)
+        control_anchors(
+            cst,
+            control,
+            scope,
+            out,
+            out_decls,
+            out_binders,
+            limits,
+            depth + 1,
+        )
     })
 }
 
@@ -351,12 +508,14 @@ fn case_anchors(
 /// (FR-112-AC-2: `branch left await Wait after Sent` records scope
 /// `[..., left]`). `depth` is the enclosing `parallel`'s own depth, the
 /// same convention [`case_anchors`] follows.
+#[allow(clippy::too_many_arguments)]
 fn branch_anchors(
     cst: &LosslessCst,
     node: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
     out_decls: &mut Vec<ProtocolNodeDeclaration>,
+    out_binders: &mut Vec<BinderForm>,
     limits: FormsLimits,
     depth: u64,
 ) -> Result<(), FormsFailure> {
@@ -365,7 +524,16 @@ fn branch_anchors(
     declare(out_decls, ProtocolNodeKind::Branch, name.clone(), scope);
     with_scope(scope, name, |scope| {
         let control = only(&branch_items, Production::Control, node)?;
-        control_anchors(cst, control, scope, out, out_decls, limits, depth + 1)
+        control_anchors(
+            cst,
+            control,
+            scope,
+            out,
+            out_decls,
+            out_binders,
+            limits,
+            depth + 1,
+        )
     })
 }
 
@@ -385,12 +553,14 @@ fn branch_anchors(
 /// symbol (`src/linking/composed/scopes/protocol.rs` `ControlKind::Await`).
 /// A reference inside any of them therefore resolves as if nested one
 /// level inside this await.
+#[allow(clippy::too_many_arguments)]
 fn await_control_anchors(
     cst: &LosslessCst,
     node: &CstNode,
     scope: &mut Vec<ScopeName>,
     out: &mut Vec<ScopedAnchorForm>,
     out_decls: &mut Vec<ProtocolNodeDeclaration>,
+    out_binders: &mut Vec<BinderForm>,
     limits: FormsLimits,
     depth: u64,
 ) -> Result<(), FormsFailure> {
@@ -407,9 +577,18 @@ fn await_control_anchors(
     declare(out_decls, ProtocolNodeKind::Await, name.clone(), scope);
     with_scope(scope, name, |scope| {
         let matched_event = only(&await_items, Production::EventNode, node)?;
-        event_node_anchors(cst, matched_event, scope, out, out_decls)?;
+        event_node_anchors(cst, matched_event, scope, out, out_decls, out_binders)?;
         for branch in nodes_of(&await_items, Production::Control) {
-            control_anchors(cst, branch, scope, out, out_decls, limits, depth + 1)?;
+            control_anchors(
+                cst,
+                branch,
+                scope,
+                out,
+                out_decls,
+                out_binders,
+                limits,
+                depth + 1,
+            )?;
         }
         Ok(())
     })
@@ -426,6 +605,7 @@ fn event_node_anchors(
     scope: &[ScopeName],
     out: &mut Vec<ScopedAnchorForm>,
     out_decls: &mut Vec<ProtocolNodeDeclaration>,
+    out_binders: &mut Vec<BinderForm>,
 ) -> Result<(), FormsFailure> {
     let event_items = items(cst, node);
     let (kind, site) = match event_items.first() {
@@ -466,6 +646,9 @@ fn event_node_anchors(
         scope: scope.to_vec(),
         channel: channel.clone(),
     });
+    // Every event node kind (`send` and `attempt` included) carries its own
+    // `as (x: T)` record binder (FR-113 "Refusals").
+    out_binders.push(record_binder(cst, &event_items, node, scope)?);
     let Some(site) = site else {
         return Ok(());
     };
