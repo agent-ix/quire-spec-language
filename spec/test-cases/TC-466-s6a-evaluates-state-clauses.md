@@ -57,11 +57,15 @@ Tag the tests `#[trace("TC-466", "FR-107-AC-n")]`.
 
 ## Status
 
-Planned (QSL-273). Step 1 (`ParentOrder`, `NoCycle` and the `VersionUnchanged`
-sub-case) and step 2 (all three postconditions) are built and passing
-(`qsl-replay/src/spine/clause/tests.rs`), both over a real `attemptUpdate`
-invocation admitted end to end through `run_clause` (QSL-279 built the S4
-`state` node emission this depended on; QSL-310 built step 1's
-`VersionUnchanged` sub-case and step 2). Step 3's `reaches` charge-log
-sub-case (a in the acyclic-chain form) is also built and passing. Only step 3
-(b)-(e) remains, tracked by QSL-311.
+Passed locally. Steps 1 to 3 are all built and passing, in
+`qsl-replay/src/spine/clause/tests.rs`. Steps 1 and 2 run over a real
+`attemptUpdate` invocation admitted end to end through `run_clause`. QSL-279
+built the S4 `state` node emission they depend on, and QSL-310 built step 1's
+`VersionUnchanged` sub-case and step 2. Step 3 (QSL-311) runs over a real
+FR-106-admitted `probe` invocation. Sub-cases (a) to (d) go through
+`run_clause`, and (a)'s exact five-charge `reaches` log is asserted. Each of
+(e)'s five denials is asserted to go `Incomplete` at its own charge point,
+with the admitted prefix before it; a sixth denial that the walk never
+reaches completes `true`. The (e) tests read the evaluation's `Incomplete`
+directly. Its `resource_exhausted` code is attached by `run_clause`'s outcome
+conversion, which FR-107 fixes for every denial.

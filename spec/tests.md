@@ -245,7 +245,7 @@ operational validation remains outside this audit-only plan.
 | TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | 🚧 Partial; QSL-273; step 1 `#[ignore]`d pending STD-111 (QSL-307), steps 2 to 3 remainder tracked by QSL-308; step 4 covered (QSL-313) |
 | TC-464 | Snapshot and invocation documents read and admit into an observation set | Unit | P1 | FR-106-AC-1, FR-106-AC-2, FR-106-AC-6 | 🚧 Planned; QSL-273 |
 | TC-465 | Admission refuses or reports incomplete for each input defect, in check order | Unit | P1 | FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7 | 🚧 Planned; QSL-273 |
-| TC-466 | S6a evaluates state clauses over their observations, pre reads and reaches | Integration | P1 | FR-107-AC-1, FR-107-AC-2, FR-107-AC-3 | 🚧 Planned; QSL-273 |
+| TC-466 | S6a evaluates state clauses over their observations, pre reads and reaches | Integration | P1 | FR-107-AC-1, FR-107-AC-2, FR-107-AC-3 | ✅ Passed locally; QSL-310, QSL-311 |
 | TC-467 | S6a clause entry refuses bad selections, reports exhaustion and is deterministic | Integration | P1 | FR-107-AC-4, FR-107-AC-5, FR-107-AC-6 | 🚧 Planned; QSL-273 |
 | TC-468 | The spine clause run entry reports typed dispositions with provenance and exit codes | Integration | P1 | FR-109-AC-1, FR-109-AC-2, FR-109-AC-3, FR-109-AC-4, FR-109-AC-5 | 🚧 Planned; QSL-273 |
 | TC-469 | The ConfigVersion spine corpus gives native-equal typed dispositions | Integration | P1 | FR-108-AC-1, FR-108-AC-2, FR-108-AC-3, FR-108-AC-4, FR-108-AC-5, FR-108-AC-6 | 🚧 Planned; QSL-273; step 6 pending STD-111 |
@@ -648,7 +648,8 @@ operations and frames at I1 and E3 (FR-103), the S3 `ProtocolClause` check
 and its requirement records (FR-104), S4 `state` node emission (FR-105), the
 snapshot and invocation input (FR-106), S6a clause evaluation (FR-107), the
 ConfigVersion spine corpus (FR-108) and the layer-6 run entry (FR-109).
-TC-456 to TC-469 back every AC and are all `🚧 Planned`. FR-105-AC-1 to AC-4
+TC-456 to TC-469 back every AC. TC-466 has passed locally; the rest are
+`🚧 Planned`. FR-105-AC-1 to AC-4
 and FR-108-AC-6 are pending STD-111, the QSpec wire changes; nothing else
 waits on it. TC-469's native parity step retires when M-6c retires the
 `0-draft` native path (ADR-012 §15.8); its check against the independent

@@ -925,10 +925,15 @@ fn admit_operation(
     }
 
     // Check 10: parameters and result.
-    // A reference parameter resolves against the pre snapshot's objects.
+    // A reference parameter resolves against the pre snapshot's objects, a
+    // reference result against the post snapshot's; either one naming a key
+    // absent from its complete population refuses `dangling_reference`
+    // (check 8's closure rule, SR-771 FND-001).
     let mut parameter_references = document::References::over(views, &pre_snapshot.populations);
+    let mut result_references = document::References::over(views, &post_snapshot.populations);
     let (parameters, result) = document::admit_parameters_and_result(
         &mut parameter_references,
+        &mut result_references,
         &operation.declaration,
         &invocation.parameters,
         &invocation.result,
