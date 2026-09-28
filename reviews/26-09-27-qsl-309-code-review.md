@@ -71,3 +71,16 @@ Status), keeping FR-114's binding, or (b) a ruling from the ticket owner that
 the lift is intended now, with FR-113/FR-114 Status updated to say so. The
 QSL-309 ticket text asks for the lift, but the spec condition it relies on is
 not met.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 005647d6 (plus fbb63d61 for the string-edge gate): `protocol_clause::content` refuses every uncovered node kind, construct and non-literal body, and checks the grammar-mandatory rest. The split was verified complete against the grammar (SR-772) |
+| FND-002 | fixed | 005647d6: the `Origin::ProtocolAttempt` arm and the `Boolean` `Type` record. Reverting either reproduces `UnlocatedOccurrence` (SR-772 FND-001 covers the population record) |
+| FND-003 | fixed | 005647d6: one `state_clause::frame_record` used by both the clause and the attempt |
+| FND-004 | fixed | 005647d6: one source-ordered lowering pass, tested by `anchor_occurrence_ordinals_follow_source_order` |
+| FND-005 | fixed | 005647d6: `let [clause_index] = indices[..] else` refuses `Ambiguous`, reached directly in `a_contract_entry_naming_two_clauses_of_one_name_refuses` |
+| FND-006 | fixed | 005647d6: clause and attempt assembly errors gathered into one refusal |
+| FND-007 | fixed | 005647d6: zips and `.get()` with an `InternalFault` for an empty slot; `attempt_spans` is `Option<Span>` |
+| FND-008 | fixed | 005647d6: `contracts` read between `contracts [` and `]`, role read after `by` |

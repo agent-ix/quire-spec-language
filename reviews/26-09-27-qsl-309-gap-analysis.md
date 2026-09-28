@@ -63,3 +63,15 @@ Not complete. Only one of the four ACs has a test that could fail on a real
 defect in the new code (AC-3, partly). Write the AC-1, AC-2 and AC-4 tests
 and the two missing AC-3 variants, restore a garbage-content regression
 guard, and update the Status text.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 005647d6: the AC-1 emission test asserts the attempt's anchor and frame on the wire, `contracts == [VersionUnchanged]`, `modifies == [versionNumber]` and one frame record |
+| FND-002 | fixed | 005647d6: `an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record` |
+| FND-003 | fixed | 005647d6: tests for `contracts [ProbePre]` and `on ...::missing` |
+| FND-004 | fixed | 005647d6: `an_inherited_operation_binds_its_declaring_types_anchor_and_frame` |
+| FND-005 | fixed | 005647d6: qsl-replay `a_protocol_with_unchecked_garbage_content_does_not_compile_silently` plus two emission probes |
+| FND-006 | rejected | An attempt under case/branch/await sits in a refused node kind, so the protocol cannot compile whatever S2 captures there. The capture shares one `event_node_anchors` path at every depth |
+| FND-007 | fixed | 005647d6, completed by f976743e (SR-773 FND-001) |
