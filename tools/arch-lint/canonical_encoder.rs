@@ -219,15 +219,6 @@ pub(crate) const EXEMPT: &[Exemption] = &[
     },
     Exemption {
         crate_src: "src",
-        module: "protocol_artifact::checked_handoff",
-        functions: &["build"],
-        calls: &[],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "the FR-051 `ByteDigest` of the checked-handoff document bytes it has just \
-                 emitted; the document's content identity is `quire-canonical`'s (QSL-220)",
-    },
-    Exemption {
-        crate_src: "src",
         module: "protocol_artifact::handoff::writer",
         functions: &[
             "reference",
@@ -255,15 +246,6 @@ pub(crate) const EXEMPT: &[Exemption] = &[
                  construct, not a canonical form of it. Pinned to those two calls so this \
                  exemption cannot silently widen if either function grows a local hash or a \
                  JSON call of its own.",
-    },
-    Exemption {
-        crate_src: "src",
-        module: "protocol_artifact::native_temporal::common",
-        functions: &["raw_digest"],
-        calls: &[],
-        kind: ExemptionKind::NotAnIdentity,
-        reason: "the FR-052 `ByteDigest` of native-temporal document bytes, emitted or \
-                 supplied; the documents' content identities are `quire-canonical`'s (QSL-220)",
     },
 ];
 
@@ -1680,7 +1662,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         let dir = tree();
         write(
             dir.path(),
-            "src/protocol_artifact/checked_handoff.rs",
+            "src/runtime/construction.rs",
             "pub fn encode(v: &V) -> Vec<u8> { quire_canonical::to_vec(v, L).unwrap() }\n",
         );
         write(
@@ -1701,7 +1683,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
             stale,
             vec![
                 ("package", Some("NativePackageIdentity::of")),
-                ("protocol_artifact::checked_handoff", None),
+                ("runtime::construction", None),
             ]
         );
     }
