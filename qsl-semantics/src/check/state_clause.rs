@@ -53,14 +53,18 @@ pub struct ClauseOperation {
 }
 
 /// FR-115: one operation that a state clause or a protocol attempt of the
-/// unit names, with the identity of its FR-105 `state`/`frame` node. There
-/// is one per (declaring object type, operation name), however many
-/// clauses and attempts name the operation; an operation that none names
-/// has none, since the package holds no frame node for it (FR-105).
+/// unit names, with the identities of its FR-105 `state`/`operation_anchor`
+/// and `state`/`frame` nodes and the frame's own `generated` occurrence
+/// (FR-104). There is one per (declaring object type, operation name),
+/// however many clauses and attempts name the operation; an operation that
+/// none names has none, since the package holds no frame node for it
+/// (FR-105).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedOperationFrame {
     pub(crate) operation: ClauseOperation,
+    pub(crate) anchor: NodeKey,
     pub(crate) frame: NodeKey,
+    pub(crate) frame_origin: Origin,
 }
 
 impl CheckedOperationFrame {
@@ -69,9 +73,22 @@ impl CheckedOperationFrame {
         &self.operation
     }
 
+    /// The operation's `state`/`operation_anchor` node identity.
+    pub fn anchor(&self) -> NodeKey {
+        self.anchor
+    }
+
     /// The operation's `state`/`frame` node identity.
     pub fn frame(&self) -> NodeKey {
         self.frame
+    }
+
+    /// The `Origin` of the frame node's own `generated` occurrence
+    /// (FR-104-AC-5): with the frame node's wire identity, the occurrence
+    /// key the frame's `operation-contract` requirement is recorded under
+    /// and a frame counterexample names (FR-116).
+    pub fn frame_origin(&self) -> &Origin {
+        &self.frame_origin
     }
 }
 
@@ -705,14 +722,13 @@ pub(crate) fn clause_records(
                 });
             }
             ClaimSubject::Frame => {
-                let (Some((frame, frame_origin)), Some(operation)) =
-                    (lowered.frame.clone(), &form.operation)
+                let (Some(binding), Some(operation)) = (lowered.binding.as_ref(), &form.operation)
                 else {
                     return Err(unkeyable());
                 };
                 let record = frame_record(
                     operation,
-                    frame,
+                    binding.frame,
                     &populations,
                     lowered.boolean,
                     types,
@@ -720,8 +736,8 @@ pub(crate) fn clause_records(
                     location,
                 )?;
                 keyed.push(KeyedClaim {
-                    node: frame,
-                    origin: frame_origin,
+                    node: binding.frame,
+                    origin: binding.frame_origin.clone(),
                     record,
                 });
             }
