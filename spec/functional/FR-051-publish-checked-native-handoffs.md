@@ -17,9 +17,13 @@ relationships:
 
 ## Description
 
-When a consumer requests an immutable native definition handoff, the compiler SHALL derive either `quire.checked-predicate/v1` or `quire.checked-temporal-subject/v1` from the exact admitted `quire.compiled-protocol/2` package and return canonical bounded bytes plus a constructor-private validated view.
+**RETIRED by QSL-303 (M-6d), which deletes `protocol_artifact::checked_predicate` and `protocol_artifact::temporal_subject`.** This description specified that when a consumer requested an immutable native definition handoff, the compiler derived either `quire.checked-predicate/v1` or `quire.checked-temporal-subject/v1` from the exact admitted `quire.compiled-protocol/2` package and returned canonical bounded bytes plus a constructor-private validated view. That surface is deleted for the same reason as FR-051-AC-1 (see Acceptance Criteria): the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted modules' own tests called them. This description is retired, not amended, since there is no successor module for it to describe.
 
-## Contract set and public API
+**Live: the production dependency graph (FR-051-AC-6).** The production dependency key `quire-contract-ir` resolves to the cycle-free `quire-contract-model` package as a normal production dependency; no `quire-contract-ir` package is in the production graph; and the historical revision `04eb6f849c03be23177d373549c6c272551f957d` (renamed `quire-contract-ir-historical`) sits outside the production graph, development-only for the retained code-generation fixtures. `tests/it/contract_model_architecture.rs:11`'s `production_graph_is_cycle_free_and_historical_ir_is_test_only` (tagged `TC-139`, `FR-051-AC-6`) and `docs/dependencies.md:12` establish this fact.
+
+## Contract set and public API (RETIRED by QSL-303 M-6d)
+
+**RETIRED by QSL-303 (M-6d), for the same reason as Description above.** This section specified the owner-published immutable schema bytes and lowercase SHA-256 digests for both contracts, and the Rust API surface below; both modules are deleted, and there is no successor for this section to describe. The block below is retained only as a historical record of the deleted API's shape.
 
 The owner SHALL publish immutable schema bytes and lowercase SHA-256 digests for
 both contracts. The Rust API SHALL expose:
@@ -39,7 +43,9 @@ protocol_artifact::temporal_subject::{SCHEMA_BYTES, SCHEMA_SHA256, Limits,
 content identity. Validated views expose borrowed/owned immutable fields with no
 public constructor and no evaluation callback.
 
-## Common closed envelope
+## Common closed envelope (RETIRED by QSL-303 M-6d)
+
+**RETIRED by QSL-303 (M-6d), for the same reason as Description above.** This section specified the closed field set, field order and content-identity derivation both deleted documents shared; there is no successor for it to describe. Retained below as a historical record.
 
 Both documents contain exactly, in canonical field order: `contract`,
 `identity`, `package`, `subject`, `source`, `clause`, `expression`, `bindings`,
@@ -62,7 +68,9 @@ identity. Canonical bytes are unique: object fields use the specified order,
 sets are sorted and distinct, numbers use the existing exact-number encoding,
 and no insignificant alternative encoding is accepted by `read`.
 
-## Predicate document
+## Predicate document (RETIRED by QSL-303 M-6d)
+
+**RETIRED by QSL-303 (M-6d), for the same reason as Description above.** This section specified the predicate document's own admitted shape and semantics; there is no successor for it to describe. Retained below as a historical record.
 
 The predicate document is admitted only for a constructor-private checked
 Boolean `holds(expr)` leaf, the exact optional activation guard of a temporal
@@ -73,7 +81,9 @@ argument/binder identities, required valuation bindings and the complete static
 definedness obligations discharged or left as explicit runtime requirements.
 It asserts no runtime truth and carries no result vocabulary.
 
-## Temporal-subject document
+## Temporal-subject document (RETIRED by QSL-303 M-6d)
+
+**RETIRED by QSL-303 (M-6d), for the same reason as Description above.** This section specified the temporal-subject document's own admitted shape and semantics; there is no successor for it to describe. Retained below as a historical record.
 
 The temporal document is admitted only for a checked temporal declaration from
 the v2 package. It additionally retains activation subject and trigger/capture
@@ -84,7 +94,9 @@ root. Its history boundary kind is exactly `execution-origin` or
 `history-cutoff` under `quire-specification/FR-293`. It asserts no observation,
 progress, closure, completeness or temporal result.
 
-## Admission, reading, and limits
+## Admission, reading, and limits (RETIRED by QSL-303 M-6d)
+
+**RETIRED by QSL-303 (M-6d), for the same reason as Description above.** This section specified derivation/reading revalidation, refusal conditions and resource limits for both deleted documents; there is no successor for it to describe. Retained below as a historical record.
 
 Derivation and reading SHALL revalidate every field against the independently
 admitted package and exact selection. The reader SHALL reject unknown,

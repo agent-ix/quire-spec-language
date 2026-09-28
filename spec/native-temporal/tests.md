@@ -18,7 +18,7 @@ graph's cycle-freedom, required by epic `tl-syntax#52`'s Contract Model
 substrate. FR-051-AC-1 through FR-051-AC-5 (the static checked-predicate and
 temporal-subject handoff boundary this matrix previously described under
 those ids) are retired by QSL-303 (M-6d), which deletes the handoff modules
-and their only test, `tests/it/compiled_protocol_v2.rs`. FR-052/FR-053 and
+and their tests, formerly in `tests/it/compiled_protocol_v2.rs`. FR-052/FR-053 and
 TC-140/TC-141 (the canonical formula-wide native temporal request/result
 owner boundary required by Contract IR FR-026) are retired by the same
 change, which deletes `protocol_artifact::native_temporal` and

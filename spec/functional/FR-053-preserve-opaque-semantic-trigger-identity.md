@@ -12,6 +12,8 @@ relationships:
 
 ## Description
 
+**RETIRED by QSL-303 (M-6d), which deletes `protocol_artifact::native_temporal` (FR-052) and its only test, `tests/it/native_temporal_owner.rs` (see Status below).**
+
 When a downstream integration submits an event-triggered native-temporal
 evaluation, the compiler SHALL retain the semantic trigger-event identity as
 exact opaque bytes through the canonical request, evaluation, result and strict

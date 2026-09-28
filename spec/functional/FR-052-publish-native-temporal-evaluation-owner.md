@@ -15,6 +15,8 @@ relationships:
 
 ## Description
 
+**RETIRED by QSL-303 (M-6d), which deletes `protocol_artifact::native_temporal::{request,result}` and its only test, `tests/it/native_temporal_owner.rs` (see Status below).**
+
 When a downstream bridge supplies one finite native evaluation input for an
 FR-051 checked temporal subject, the compiler SHALL publish canonical bounded
 request and result contracts whose strict readers rederive the complete input
