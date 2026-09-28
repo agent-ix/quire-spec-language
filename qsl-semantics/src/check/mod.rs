@@ -175,8 +175,8 @@ pub use checked_dispatch::{
 pub use field_refinement::check_field_refinement_obligation;
 pub use region::DeclarationRegions;
 pub use state_clause::{
-    AttemptDeclaration, CheckedStateClause, ClauseOperation, ProtocolClauseFamily,
-    StateClauseDeclaration,
+    AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
+    ProtocolClauseFamily, StateClauseDeclaration,
 };
 pub use type_form::TypeFormFault;
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
@@ -359,6 +359,9 @@ pub struct CheckedGraph {
     state_clauses: Vec<CheckedStateClause>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-115: every operation a state clause or attempt names, with its
+    /// frame node, one per (declaring type, operation name).
+    operation_frames: Vec<CheckedOperationFrame>,
     /// FR-096/QSL-309: each protocol's own attempts' declared name spans,
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
@@ -476,6 +479,29 @@ fn root(origin: Origin) -> Location {
         origin,
         path: Vec::new(),
     }
+}
+
+/// FR-115: one [`CheckedOperationFrame`] per distinct (declaring type,
+/// operation name) in `named`, in first-named order. Every clause and
+/// attempt naming one operation is bound to the same frame node (FR-105), so
+/// the first occurrence stands for all of them.
+fn operation_frames<'a>(
+    named: impl Iterator<Item = (&'a ClauseOperation, quire_exact::NodeKey)>,
+) -> Vec<CheckedOperationFrame> {
+    let mut frames: Vec<CheckedOperationFrame> = Vec::new();
+    for (operation, frame) in named {
+        let seen = frames.iter().any(|known| {
+            known.operation.declaring == operation.declaring
+                && known.operation.declaration.name() == operation.declaration.name()
+        });
+        if !seen {
+            frames.push(CheckedOperationFrame {
+                operation: operation.clone(),
+                frame,
+            });
+        }
+    }
+    frames
 }
 
 fn invalid_dispatch(location: Location, detail: InvalidDispatchDeclaration) -> CheckRefusal {
@@ -1382,6 +1408,21 @@ impl PackageDeclarations {
         // captured before `lowered_clauses` is consumed below.
         let lowered_clause_keys: Vec<quire_exact::NodeKey> =
             lowered_clauses.iter().map(|lowered| lowered.key).collect();
+        // FR-115: each operation a `pre`/`post` clause or an attempt names,
+        // with the frame node lowering bound it to (FR-105, FR-114).
+        let clause_frames =
+            state_clause_forms
+                .iter()
+                .zip(&lowered_clauses)
+                .filter_map(|(form, lowered)| {
+                    Some((form.operation.as_ref()?, lowered.frame.as_ref()?.0))
+                });
+        let attempt_frames = protocol_bindings
+            .iter()
+            .zip(&lowered_attempts)
+            .flat_map(|(bindings, lowered)| bindings.iter().zip(lowered))
+            .map(|(bound, lowered)| (&bound.operation, lowered.frame.0));
+        let operation_frames = operation_frames(clause_frames.chain(attempt_frames));
         let (semantic_graph, correspondence, identities, binders) = (
             lowered.graph,
             lowered.correspondence,
@@ -1570,6 +1611,7 @@ impl PackageDeclarations {
             model_selections,
             state_clauses,
             protocols: checked_protocols,
+            operation_frames,
             attempt_spans: regions.attempt_spans,
         })
     }
@@ -1744,6 +1786,55 @@ impl CheckedGraph {
     /// FR-113: the checked protocol declared `name`, or `None`.
     pub fn protocol(&self, name: &str) -> Option<&CheckedProtocol> {
         self.protocols.iter().find(|protocol| protocol.name == name)
+    }
+
+    /// FR-115: the frame of operation `operation` on object type `context`
+    /// (`M::T`, spelled as the unit spells a clause's context), and the
+    /// context type's identity. `operation` resolves in `context`'s
+    /// effective view exactly as FR-104's Resolution resolves a clause's
+    /// operation (`TypeEnvironment::operation`), so an inherited operation
+    /// yields its declaring type's frame. `None` when `context` names no
+    /// object type, `operation` resolves to no single operation, or no
+    /// clause or attempt of this unit names the operation (the package then
+    /// holds no frame node for it, FR-105).
+    pub fn operation_frame(
+        &self,
+        context: &str,
+        operation: &str,
+    ) -> Option<(quire_exact::EffectiveId, &CheckedOperationFrame)> {
+        let types = self.scope.types();
+        let context = types
+            .object_types()
+            .find(|object| object.name() == context)?
+            .key();
+        let crate::value::declaration::OperationLookup::Declared {
+            declaring,
+            operation,
+        } = types.operation(context, operation)
+        else {
+            return None;
+        };
+        self.operation_frames
+            .iter()
+            .find(|frame| {
+                frame.operation.declaring == declaring
+                    && frame.operation.declaration.name() == operation.name()
+            })
+            .map(|frame| (context, frame))
+    }
+
+    /// FR-115: the operation frame whose frame node identity is `frame`,
+    /// the lookup the S6a `ProtocolClause` frame arm resolves its key by.
+    /// Two operations share a frame node only when the node's content --
+    /// declaring type, `modifies`, `creates` and `deletes` -- is equal
+    /// (FR-105), so either one's effect is the same frame.
+    pub fn operation_frame_by_identity(
+        &self,
+        frame: quire_exact::NodeKey,
+    ) -> Option<&CheckedOperationFrame> {
+        self.operation_frames
+            .iter()
+            .find(|operation| operation.frame == frame)
     }
 
     /// FR-107: the checked state clause whose minted node identity is

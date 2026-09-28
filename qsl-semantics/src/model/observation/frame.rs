@@ -6,8 +6,12 @@
 //! runs. This module only builds its per-object input from the admitted
 //! wire documents -- each object's most-specific type and each declared
 //! field's [`DeclarationKey`] with its wire value -- once per population,
-//! in FR-106's population order, and maps the decision's refusal to an
-//! admission record.
+//! in FR-106's population order, and maps the decision's first finding.
+//! Inside a clause run ([`enforce`]) every finding is an admission refusal.
+//! In a `Frame` run ([`verdict`], FR-115) a change outside the frame is a
+//! violation carrying the evaluated frame witness, and only a finding that
+//! leaves the frame unevaluable (a declared delta that disagrees) is a
+//! refusal.
 
 use std::collections::BTreeMap;
 
@@ -16,13 +20,15 @@ use quire_exact::{EffectiveId, ObjectReference};
 use super::document::{find_declaration, raw_field, RawObject, RawPopulation};
 use super::helpers::object_reference;
 use super::{
-    fault, refuse, view_of, AdmissionFailure, AdmissionRecord, ModelView, RawValue, SelectedObject,
+    fault, refuse, view_of, AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange,
+    FrameVerdict, FrameWitness, ModelView, RawValue, SelectedObject,
 };
 use crate::model::domain_package::OperationEffect;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{decide_frame, FrameDecision, FrameObject};
 use crate::value::declaration::TypeEnvironment;
+use qsl_foundation::diagnostic::InternalFault;
 
 /// What check 11 reads besides the documents: the re-derived model views,
 /// the checked type environment, and the operation's frame.
@@ -133,50 +139,73 @@ fn wire_side<'a>(
     Ok(side)
 }
 
-/// `refusal` (from [`decide_frame`]) as an admission refusal naming
+/// `refusal` (from [`decide_frame`]) as an admission record naming
 /// `population`, and the object and field it names.
-fn admission_refusal(
+fn admission_record(
     refusal: &ModelRefusal,
     population: &str,
     pre: &WireSide<'_>,
-) -> AdmissionFailure {
+) -> AdmissionRecord {
     let record = AdmissionRecord::new(refusal.code, refusal.cause.as_str())
         .with("population", population.to_owned());
-    let record = match &refusal.cause {
+    match &refusal.cause {
         ModelRefusalCause::FrameCreateOutsideGrant { object, .. }
         | ModelRefusalCause::FrameTypeChanged { object, .. }
         | ModelRefusalCause::FrameDeleteOutsideGrant { object, .. } => {
             record.with("object", object.clone())
         }
-        ModelRefusalCause::FrameFieldWriteOutsideGrant { object, field } => {
-            let name = pre
-                .facts_of(object)
-                .and_then(|facts| facts.names.get(field).copied())
-                .unwrap_or(field.node.as_str());
-            record
-                .with("object", object.clone())
-                .with("field", name.to_owned())
-        }
+        ModelRefusalCause::FrameFieldWriteOutsideGrant { object, field } => record
+            .with("object", object.clone())
+            .with("field", field_name(pre, object, field).to_owned()),
         // The delta causes and a conformance-walk limit name no single
         // object or field: the record names the population alone.
         _ => record,
-    };
-    refuse(record)
+    }
 }
+
+/// `field`'s wire name on `object` in `pre`, or its declaration node when
+/// `pre` does not list it.
+fn field_name<'a>(pre: &'a WireSide<'_>, object: &str, field: &'a DeclarationKey) -> &'a str {
+    pre.facts_of(object)
+        .and_then(|facts| facts.names.get(field).copied())
+        .unwrap_or(field.node.as_str())
+}
+
+/// Where check 11 stopped short of the admitted delta.
+enum FrameStop<'a> {
+    /// A wire object check 6 should already have admitted did not resolve,
+    /// or a delta object's key was not a valid object identity.
+    Admission(AdmissionFailure),
+    /// [`decide_frame`]'s first finding, in `population`.
+    Decision {
+        refusal: ModelRefusal,
+        population: &'a str,
+        pre: WireSide<'a>,
+    },
+}
+
+impl From<AdmissionFailure> for FrameStop<'_> {
+    fn from(failure: AdmissionFailure) -> Self {
+        Self::Admission(failure)
+    }
+}
+
+/// The admitted `(created, deleted)` object references over the whole
+/// invocation.
+type AdmittedDelta = (Vec<ObjectReference>, Vec<ObjectReference>);
 
 /// FR-106 check 11: run [`decide_frame`] once per population, in the pre
 /// snapshot's population document order, then any population only in the
 /// post snapshot, then any population only `declared_created`/
 /// `declared_deleted` names (so 11.4 still checks it). A population missing
-/// from one side is an empty document there. Returns the admitted
-/// `(created, deleted)` object references over the whole invocation.
-pub(super) fn enforce(
-    context: &FrameContext<'_>,
-    pre_populations: &[RawPopulation],
-    post_populations: &[RawPopulation],
-    declared_created: &[SelectedObject],
-    declared_deleted: &[SelectedObject],
-) -> Result<(Vec<ObjectReference>, Vec<ObjectReference>), AdmissionFailure> {
+/// from one side is an empty document there. Stops at the first finding.
+fn run<'a>(
+    context: &FrameContext<'a>,
+    pre_populations: &'a [RawPopulation],
+    post_populations: &'a [RawPopulation],
+    declared_created: &'a [SelectedObject],
+    declared_deleted: &'a [SelectedObject],
+) -> Result<AdmittedDelta, FrameStop<'a>> {
     let mut order: Vec<&str> = Vec::new();
     let names = pre_populations
         .iter()
@@ -216,10 +245,18 @@ pub(super) fn enforce(
             declared_created: &population_created,
             declared_deleted: &population_deleted,
         };
-        let delta = decide_frame(&frame, &pre.frame, &post.frame, |_, left, right| {
+        let delta = match decide_frame(&frame, &pre.frame, &post.frame, |_, left, right| {
             raw_values_equal(left.copied(), right.copied())
-        })
-        .map_err(|refusal| admission_refusal(&refusal, name, &pre))?;
+        }) {
+            Ok(delta) => delta,
+            Err(refusal) => {
+                return Err(FrameStop::Decision {
+                    refusal,
+                    population: name,
+                    pre,
+                })
+            }
+        };
 
         for (keys, side, into) in [
             (&delta.created, &post, &mut created),
@@ -234,6 +271,127 @@ pub(super) fn enforce(
         }
     }
     Ok((created, deleted))
+}
+
+/// FR-106 check 11 inside a clause run: every finding is an admission
+/// refusal, since there the invocation is only input to the clause under
+/// test (FR-115 Description). Returns the admitted `(created, deleted)`.
+pub(super) fn enforce(
+    context: &FrameContext<'_>,
+    pre_populations: &[RawPopulation],
+    post_populations: &[RawPopulation],
+    declared_created: &[SelectedObject],
+    declared_deleted: &[SelectedObject],
+) -> Result<AdmittedDelta, AdmissionFailure> {
+    run(
+        context,
+        pre_populations,
+        post_populations,
+        declared_created,
+        declared_deleted,
+    )
+    .map_err(|stop| match stop {
+        FrameStop::Admission(failure) => failure,
+        FrameStop::Decision {
+            refusal,
+            population,
+            pre,
+        } => refuse(admission_record(&refusal, population, &pre)),
+    })
+}
+
+/// The three documents a Frame run's witness names.
+pub(super) struct WitnessDocuments<'a> {
+    pub(super) invocation: &'a DocumentRef,
+    pub(super) pre: &'a DocumentRef,
+    pub(super) post: &'a DocumentRef,
+}
+
+/// FR-106 check 11 as the thing under test (FR-115): a change outside the
+/// frame (steps 1 to 3) is [`FrameVerdict::Violation`] carrying the
+/// evaluated frame witness; any other finding, a declared delta that
+/// disagrees (step 4) among them, is [`FrameVerdict::Refused`], since the
+/// frame cannot be evaluated over that input.
+pub(super) fn verdict(
+    context: &FrameContext<'_>,
+    documents: &WitnessDocuments<'_>,
+    pre_populations: &[RawPopulation],
+    post_populations: &[RawPopulation],
+    declared_created: &[SelectedObject],
+    declared_deleted: &[SelectedObject],
+) -> Result<FrameVerdict, InternalFault> {
+    let stop = match run(
+        context,
+        pre_populations,
+        post_populations,
+        declared_created,
+        declared_deleted,
+    ) {
+        Ok(_) => return Ok(FrameVerdict::Holds),
+        Err(stop) => stop,
+    };
+    let (refusal, population, pre) = match stop {
+        FrameStop::Admission(AdmissionFailure::Refused(record)) => {
+            return Ok(FrameVerdict::Refused(record))
+        }
+        FrameStop::Admission(AdmissionFailure::Incomplete(_)) => {
+            return Err(InternalFault::new(
+                "observation-admission",
+                "frame-check-incomplete",
+            ))
+        }
+        FrameStop::Admission(AdmissionFailure::Fault(fault)) => return Err(fault),
+        FrameStop::Decision {
+            refusal,
+            population,
+            pre,
+        } => (refusal, population, pre),
+    };
+    let effect = context.effect;
+    let change = match &refusal.cause {
+        ModelRefusalCause::FrameFieldWriteOutsideGrant { object, field } => {
+            FrameChange::FieldWrite {
+                object: object.clone(),
+                field: field_name(&pre, object, field).to_owned(),
+                modifies: effect.modifies.clone(),
+            }
+        }
+        ModelRefusalCause::FrameCreateOutsideGrant { object, type_name } => FrameChange::Created {
+            object: object.clone(),
+            type_name: type_name.clone(),
+            creates: effect.creates.clone(),
+        },
+        ModelRefusalCause::FrameDeleteOutsideGrant { object, type_name } => FrameChange::Deleted {
+            object: object.clone(),
+            type_name: type_name.clone(),
+            deletes: effect.deletes.clone(),
+        },
+        ModelRefusalCause::FrameTypeChanged {
+            object,
+            pre_type,
+            post_type,
+        } => FrameChange::Retyped {
+            object: object.clone(),
+            pre_type: pre_type.clone(),
+            post_type: post_type.clone(),
+        },
+        // Step 4's delta disagreement and a conformance-walk limit: no
+        // change outside the frame was found, so nothing is violated.
+        _ => {
+            return Ok(FrameVerdict::Refused(admission_record(
+                &refusal, population, &pre,
+            )))
+        }
+    };
+    Ok(FrameVerdict::Violation(Box::new(FrameWitness {
+        code: refusal.code,
+        cause: refusal.cause.as_str(),
+        invocation: documents.invocation.clone(),
+        pre: documents.pre.clone(),
+        post: documents.post.clone(),
+        population: population.to_owned(),
+        change,
+    })))
 }
 
 fn raw_values_equal(left: Option<&RawValue>, right: Option<&RawValue>) -> bool {

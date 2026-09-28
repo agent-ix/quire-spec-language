@@ -33,7 +33,7 @@ use qsl_foundation::diagnostic::{Code, InternalFault};
 use quire_exact::{EffectiveId, ObjectId, ObjectReference, UniverseId, Value};
 
 use crate::model::accounting::ModelNormalizationLimits;
-use crate::model::domain_package::{DomainPackage, DomainPackageRef};
+use crate::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};
 use crate::model::intake::{admit_selections, read_records};
 use crate::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
@@ -793,51 +793,109 @@ fn check_model_any(
     }
 }
 
+/// The three documents FR-106 check 1 read for one invocation: the
+/// invocation, then its pre and post snapshots, in that order.
+struct InvocationDocuments {
+    invocation: document::ReadDocument,
+    pre: document::ReadDocument,
+    post: document::ReadDocument,
+}
+
+impl InvocationDocuments {
+    fn invocation(&self) -> Result<&document::InvocationDocument, AdmissionFailure> {
+        self.invocation
+            .as_invocation()
+            .ok_or_else(|| fault("expected-invocation-document"))
+    }
+
+    fn pre(&self) -> Result<&document::SnapshotDocument, AdmissionFailure> {
+        self.pre
+            .as_snapshot()
+            .ok_or_else(|| fault("expected-snapshot-document"))
+    }
+
+    fn post(&self) -> Result<&document::SnapshotDocument, AdmissionFailure> {
+        self.post
+            .as_snapshot()
+            .ok_or_else(|| fault("expected-snapshot-document"))
+    }
+}
+
+/// What FR-106 checks 1 and 3 to 10 admit from one invocation.
+struct InvocationAdmission {
+    documents: InvocationDocuments,
+    pre: document::AdmittedEnvironment,
+    post: document::AdmittedEnvironment,
+    self_reference: ObjectReference,
+    parameters: Vec<(String, Value)>,
+    result: Option<Value>,
+}
+
+impl InvocationAdmission {
+    /// Every document's read usage and both snapshots' admission usage.
+    fn usage(&self) -> AdmissionUsage {
+        self.documents
+            .invocation
+            .usage
+            .merged_with(self.documents.pre.usage)
+            .merged_with(self.documents.post.usage)
+            .merged_with(self.pre.usage)
+            .merged_with(self.post.usage)
+    }
+}
+
+/// FR-106 checks 1 and 3 to 10 over the invocation `selected` of
+/// `operation` on `context_view`'s type `context_name`. `self` is required
+/// in the post snapshot only when `post_self` (a postcondition, SR-750
+/// FND-006).
 #[allow(clippy::too_many_arguments)]
-fn admit_operation(
+fn admit_invocation_documents(
     views: &[ModelView],
     types: &TypeEnvironment,
     context_view: &ModelView,
     context_name: &str,
-    clause_identity: quire_exact::NodeKey,
-    kind: StateClauseKind,
-    operation: Option<&OperationFacts>,
+    operation: &OperationFacts,
+    post_self: bool,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
     limits: ObservationLimits,
-    ancestor_steps: u64,
-) -> Result<AdmittedObservations, AdmissionFailure> {
+) -> Result<InvocationAdmission, AdmissionFailure> {
     // Check 1: read every selected document -- the invocation, then its
     // pre and post snapshots, in that order -- before any of checks 2 to 5
     // read any of their content (SR-750 FND-005: this must not interleave
     // with check 4/5, which is what admission did before this fix).
-    let read = read_document(
+    let invocation_read = read_document(
         DocumentKind::Invocation,
         provisions.invocations,
         selected,
         limits,
     )?;
-    let invocation = read
-        .as_invocation()
-        .ok_or_else(|| fault("expected-invocation-document"))?;
+    let (pre_ref, post_ref) = {
+        let invocation = invocation_read
+            .as_invocation()
+            .ok_or_else(|| fault("expected-invocation-document"))?;
+        (invocation.pre.clone(), invocation.post.clone())
+    };
     let pre_read = read_document(
         DocumentKind::Snapshot,
         provisions.snapshots,
-        &invocation.pre,
+        &pre_ref,
         limits,
     )?;
     let post_read = read_document(
         DocumentKind::Snapshot,
         provisions.snapshots,
-        &invocation.post,
+        &post_ref,
         limits,
     )?;
-    let pre_snapshot = pre_read
-        .as_snapshot()
-        .ok_or_else(|| fault("expected-snapshot-document"))?;
-    let post_snapshot = post_read
-        .as_snapshot()
-        .ok_or_else(|| fault("expected-snapshot-document"))?;
+    let documents = InvocationDocuments {
+        invocation: invocation_read,
+        pre: pre_read,
+        post: post_read,
+    };
+    let invocation = documents.invocation()?;
+    let pre_snapshot = documents.pre()?;
+    let post_snapshot = documents.post()?;
 
     // Check 3: observation role (pre/post's own anchor is not applicable
     // to an invocation's snapshots).
@@ -856,7 +914,6 @@ fn admit_operation(
     check_model(context_view, &post_snapshot.model)?;
 
     // Check 5: operation.
-    let operation = operation.ok_or_else(|| fault("clause-declares-no-operation"))?;
     if invocation.context != context_name || invocation.operation != operation.declaration.name() {
         return Err(refuse(AdmissionRecord::new(
             Code::WrongSnapshot,
@@ -874,10 +931,7 @@ fn admit_operation(
     // a postcondition (SR-750 FND-006) -- a precondition of an operation
     // that deletes `self` must not wrongly refuse `wrong-role-mapping`
     // over `self`'s absence from post.
-    let post_self_population = match kind {
-        StateClauseKind::Postcondition => Some(self_object.population.as_str()),
-        StateClauseKind::Invariant | StateClauseKind::Precondition => None,
-    };
+    let post_self_population = post_self.then_some(self_object.population.as_str());
     let pre_values =
         document::admit_population_values(views, types, &pre_snapshot.populations, limits)?;
     let post_values =
@@ -913,7 +967,7 @@ fn admit_operation(
         &pre_admitted.environment,
         self_object,
     )?;
-    if kind == StateClauseKind::Postcondition {
+    if post_self {
         let _ = document::resolve_self(
             views,
             types,
@@ -939,6 +993,44 @@ fn admit_operation(
         &invocation.result,
     )?;
 
+    Ok(InvocationAdmission {
+        documents,
+        pre: pre_admitted,
+        post: post_admitted,
+        self_reference,
+        parameters,
+        result,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn admit_operation(
+    views: &[ModelView],
+    types: &TypeEnvironment,
+    context_view: &ModelView,
+    context_name: &str,
+    clause_identity: quire_exact::NodeKey,
+    kind: StateClauseKind,
+    operation: Option<&OperationFacts>,
+    provisions: &Provisions<'_>,
+    selected: &DocumentRef,
+    limits: ObservationLimits,
+    ancestor_steps: u64,
+) -> Result<AdmittedObservations, AdmissionFailure> {
+    let operation = operation.ok_or_else(|| fault("clause-declares-no-operation"))?;
+    let admitted = admit_invocation_documents(
+        views,
+        types,
+        context_view,
+        context_name,
+        operation,
+        kind == StateClauseKind::Postcondition,
+        provisions,
+        selected,
+        limits,
+    )?;
+    let invocation = admitted.documents.invocation()?;
+
     // Check 11: frame and delta.
     let frame_context = frame::FrameContext {
         views,
@@ -949,37 +1041,246 @@ fn admit_operation(
     };
     let (created, deleted) = frame::enforce(
         &frame_context,
-        &pre_snapshot.populations,
-        &post_snapshot.populations,
+        &admitted.documents.pre()?.populations,
+        &admitted.documents.post()?.populations,
         &invocation.created,
         &invocation.deleted,
     )?;
 
-    let usage = read
-        .usage
-        .merged_with(pre_read.usage)
-        .merged_with(post_read.usage)
-        .merged_with(pre_admitted.usage)
-        .merged_with(post_admitted.usage);
+    let usage = admitted.usage();
     Ok(AdmittedObservations {
         usage,
         clause: clause_identity,
         current: None,
         pre: Some(Observation {
-            identity: pre_read.identity,
-            environment: pre_admitted.environment,
-            populations: pre_admitted.completeness,
+            identity: admitted.documents.pre.identity,
+            environment: admitted.pre.environment,
+            populations: admitted.pre.completeness,
         }),
         post: Some(Observation {
-            identity: post_read.identity,
-            environment: post_admitted.environment,
-            populations: post_admitted.completeness,
+            identity: admitted.documents.post.identity,
+            environment: admitted.post.environment,
+            populations: admitted.post.completeness,
         }),
-        self_object: self_reference,
-        parameters,
-        result,
+        self_object: admitted.self_reference,
+        parameters: admitted.parameters,
+        result: admitted.result,
         created,
         deleted,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// FR-115: an operation frame run over one invocation
+// ---------------------------------------------------------------------------
+
+/// FR-115: the selected operation a `Frame` run admits its invocation
+/// against, read by the caller off its own checked graph
+/// (`check::CheckedGraph::operation_frame`), as [`ClauseFacts`] is.
+pub struct FrameFacts {
+    /// The context object type `T` of `M::T::op`.
+    pub context: EffectiveId,
+    /// The operation's `state`/`frame` node identity (FR-105).
+    pub frame: quire_exact::NodeKey,
+    /// The operation, resolved as FR-104 resolves a clause's.
+    pub operation: OperationFacts,
+}
+
+/// FR-115: one invocation admitted by FR-106's checks 1 and 3 to 10 for a
+/// `Frame` run, holding what check 11 reads. Check 11 itself runs at S6a,
+/// through [`Self::check_frame`], in the `ProtocolClause` `evaluate` arm.
+pub struct AdmittedInvocation<'t> {
+    /// FR-109 Outputs' admission usage over the three documents.
+    pub usage: AdmissionUsage,
+    /// The frame node identity the invocation was admitted for (the S6a
+    /// arm's mismatch check, as [`AdmittedObservations::clause`] is).
+    pub frame: quire_exact::NodeKey,
+    /// The invocation document's identity and digest.
+    pub invocation: DocumentRef,
+    /// The pre snapshot's identity and digest.
+    pub pre: DocumentRef,
+    /// The post snapshot's identity and digest.
+    pub post: DocumentRef,
+    views: Vec<ModelView>,
+    types: &'t TypeEnvironment,
+    context: EffectiveId,
+    ancestor_steps: u64,
+    documents: InvocationDocuments,
+}
+
+impl std::fmt::Debug for AdmittedInvocation<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdmittedInvocation")
+            .field("usage", &self.usage)
+            .field("frame", &self.frame)
+            .field("invocation", &self.invocation)
+            .field("pre", &self.pre)
+            .field("post", &self.post)
+            .finish_non_exhaustive()
+    }
+}
+
+/// FR-115: check 11's result as the thing under test.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FrameVerdict {
+    /// Nothing changed outside the frame, and the declared delta agrees.
+    Holds,
+    /// Check 11's steps 1 to 3 found a change outside the frame.
+    Violation(Box<FrameWitness>),
+    /// The frame cannot be evaluated over the invocation: check 11's step 4
+    /// found a declared delta that disagrees
+    /// (`population_delta_mismatch`/`delta-disagreement`), or the
+    /// conformance walk reached its ceiling.
+    Refused(AdmissionRecord),
+}
+
+/// FR-115: the evaluated frame witness, the counterexample a `Frame` run's
+/// violation carries (ADR-012 §12.2 Evaluate row).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FrameWitness {
+    /// The catalog code: `frame_violation`.
+    pub code: Code,
+    /// The catalog cause: `unauthorized-change`.
+    pub cause: &'static str,
+    /// The invocation.
+    pub invocation: DocumentRef,
+    /// The pre selection.
+    pub pre: DocumentRef,
+    /// The post selection.
+    pub post: DocumentRef,
+    /// The population the change is in.
+    pub population: String,
+    /// The change, with the frame permission it was checked against.
+    pub change: FrameChange,
+}
+
+/// FR-115: one change outside the frame, with the frame permission it was
+/// checked against.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FrameChange {
+    /// A surviving object's field changed, and reaches no `modifies` entry.
+    FieldWrite {
+        /// The object's key.
+        object: String,
+        /// The field's declared name.
+        field: String,
+        /// The frame's `modifies`.
+        modifies: Vec<DeclarationKey>,
+    },
+    /// An object was created whose type conforms to no `creates` entry.
+    Created {
+        /// The created object's key.
+        object: String,
+        /// Its most-specific type.
+        type_name: DeclarationKey,
+        /// The frame's `creates`.
+        creates: Vec<DeclarationKey>,
+    },
+    /// An object was deleted whose type conforms to no `deletes` entry.
+    Deleted {
+        /// The deleted object's key.
+        object: String,
+        /// Its most-specific type.
+        type_name: DeclarationKey,
+        /// The frame's `deletes`.
+        deletes: Vec<DeclarationKey>,
+    },
+    /// An object's most-specific type changed, which no frame permission
+    /// authorizes (FR-151's grants are `modifies`, `creates` and `deletes`).
+    Retyped {
+        /// The object's key.
+        object: String,
+        /// Its pre most-specific type.
+        pre_type: DeclarationKey,
+        /// Its post most-specific type.
+        post_type: DeclarationKey,
+    },
+}
+
+impl AdmittedInvocation<'_> {
+    /// FR-106 check 11 over this invocation with `effect`, the frame the
+    /// caller resolved from the compiled package (QSpec FR-013-AC-3: the
+    /// request carries no frame), in check 11's order, stopping at the
+    /// first finding.
+    pub fn check_frame(&self, effect: &OperationEffect) -> Result<FrameVerdict, InternalFault> {
+        let as_fault = |failure: AdmissionFailure| match failure {
+            AdmissionFailure::Fault(fault) => fault,
+            AdmissionFailure::Refused(_) | AdmissionFailure::Incomplete(_) => {
+                InternalFault::new("observation-admission", "admitted-invocation-unreadable")
+            }
+        };
+        let context_view = view_of(&self.views, self.context).ok_or_else(|| {
+            InternalFault::new("observation-admission", "unresolved-context-type")
+        })?;
+        let invocation = self.documents.invocation().map_err(as_fault)?;
+        let frame_context = frame::FrameContext {
+            views: &self.views,
+            types: self.types,
+            context_view,
+            ancestor_steps: self.ancestor_steps,
+            effect,
+        };
+        frame::verdict(
+            &frame_context,
+            &frame::WitnessDocuments {
+                invocation: &self.invocation,
+                pre: &self.pre,
+                post: &self.post,
+            },
+            &self.documents.pre().map_err(as_fault)?.populations,
+            &self.documents.post().map_err(as_fault)?.populations,
+            &invocation.created,
+            &invocation.deleted,
+        )
+    }
+}
+
+/// FR-115: admit the invocation `selected` for a `Frame` run of `frame`'s
+/// operation, by FR-106's checks 1 and 3 to 10. Check 4 compares each
+/// document's `model` to the model selection of the view `frame.context`
+/// resolves in (the alias `M` of `M::T::op`), and check 5 the invocation's
+/// `context` and `operation` to the selected ones. `self` is required in
+/// the pre snapshot only, since the operation may delete it.
+#[allow(clippy::too_many_arguments)]
+pub fn admit_frame_invocation<'t>(
+    model_selections: &[DomainPackageRef],
+    types: &'t TypeEnvironment,
+    frame: &FrameFacts,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    model_limits: ModelNormalizationLimits,
+    provisions: &Provisions<'_>,
+    selected: &DocumentRef,
+    limits: ObservationLimits,
+) -> Result<AdmittedInvocation<'t>, AdmissionFailure> {
+    let views = model_views(model_selections, packages, model_limits)?;
+    let context_view =
+        view_of(&views, frame.context).ok_or_else(|| fault("unresolved-context-type"))?;
+    let context_name = context_view
+        .type_name(frame.context)
+        .ok_or_else(|| fault("unresolved-context-name"))?
+        .to_owned();
+    let admitted = admit_invocation_documents(
+        &views,
+        types,
+        context_view,
+        &context_name,
+        &frame.operation,
+        false,
+        provisions,
+        selected,
+        limits,
+    )?;
+    Ok(AdmittedInvocation {
+        usage: admitted.usage(),
+        frame: frame.frame,
+        invocation: admitted.documents.invocation.identity.clone(),
+        pre: admitted.documents.pre.identity.clone(),
+        post: admitted.documents.post.identity.clone(),
+        views,
+        types,
+        context: frame.context,
+        ancestor_steps: model_limits.ancestor_steps,
+        documents: admitted.documents,
     })
 }
 
