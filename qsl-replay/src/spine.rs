@@ -456,6 +456,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `protocol {name}` resolves but is not checked or emitted yet \
                      (QSL-306)"
                 ),
+                ProtocolAnchorCause::Shadow { name, .. } => {
+                    format!("{message}: `{name}`")
+                }
             };
         }
         _ => {}
