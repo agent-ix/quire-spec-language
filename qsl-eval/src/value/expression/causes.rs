@@ -16,6 +16,7 @@ use quire_exact::ObjectReference;
 
 use qsl_semantics::check::WrongSnapshotCause;
 use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
+use qsl_semantics::model::observation::AdmissionRecord;
 
 /// The `precondition-false` payload (`native-diagnostics.md`): the called
 /// effective operation, the selected method's effective identity, the
@@ -165,6 +166,30 @@ impl CatalogCoded for ProtocolClauseUnsupported {
 
     fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
         Some(BTreeMap::from([("construct", self.construct().to_owned())]))
+    }
+}
+
+/// FR-115: `ProtocolClause`'s refusal when a `Frame` run's check 11 cannot
+/// evaluate the frame over the admitted invocation -- a declared delta that
+/// disagrees (`population_delta_mismatch`/`delta-disagreement`), or the
+/// conformance walk's ceiling. It carries FR-106's own admission record for
+/// the finding, whose code and cause are the catalog's. A change outside the
+/// frame is never this: it is a violation with a witness.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProtocolClauseFrameRefusal {
+    /// The finding's admission record.
+    pub(crate) record: AdmissionRecord,
+}
+
+impl CatalogCoded for ProtocolClauseFrameRefusal {
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new(self.record.code.as_str(), self.record.cause)
+    }
+
+    /// The record's own input path (`population`, and `object` or `field`
+    /// where the finding names one).
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(self.record.fields.clone())
     }
 }
 
