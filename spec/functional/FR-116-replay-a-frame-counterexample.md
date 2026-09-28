@@ -46,8 +46,12 @@ payload.
     and post snapshots in the request's byte provision by `sha256-jcs`
     digest;
   - `change`: the change the counterexample claims: an object reference and
-    a field name for a write, or an object reference and its type for a
-    creation or deletion.
+    a field name for a write, an object reference and its type for a
+    creation or deletion, or an object reference and its pre and post types
+    for a retyping (FR-115's four change kinds).
+- A check-time FR-115 frame witness decodes to the `change` it claims:
+  the witness's population and object key, and its field or types,
+  without the frame permission.
 - FR-098's package reference, byte provision and limits.
 
 ## Outputs
@@ -62,8 +66,9 @@ payload.
 
 - The executor SHALL recompile and check the package by FR-098's rules, in
   FR-098's order, before it reads the payload.
-- If the recompiled `package_id` differs from the request's, then the
-  executor SHALL refuse by FR-098's stale `package_id` rule.
+- If the recompiled `package_id` differs from the request's or the
+  envelope's, then the executor SHALL refuse by FR-098's stale `package_id`
+  rule.
 - The executor SHALL resolve `operation` in the recompiled package. If it
   names no operation with a frame node, then the executor SHALL refuse
   `missing_declaration`/`missing-name`. If the recompiled anchor or frame
@@ -117,6 +122,9 @@ payload.
 
 ## Status
 
-Specified under QSL-296 (QSL-21a). Not yet implemented; QSL-301 (QSL-21f)
-implements it. The IR witness decode waits on
-agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49.
+Specified under QSL-296 (QSL-21a). Implemented by QSL-301 (QSL-21f):
+`qsl_replay::replay_frame` over FR-098's request and a
+`WitnessEnvelope<FrameCounterexample>`, running FR-115's frame run through
+the same path as FR-109's `Frame` selection, verified by TC-515. The decode
+from IR's witness waits on agent-ix/quire-contract-ir#109 and
+agent-ix/quire-contract-codegen#49.
