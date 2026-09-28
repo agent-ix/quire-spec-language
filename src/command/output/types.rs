@@ -242,6 +242,7 @@ pub(super) enum SpineOrigin {
     Expression,
     TypeDeclaration { name: String },
     StateClause { clause: String, index: usize },
+    ProtocolAttempt { protocol: usize, attempt: usize },
 }
 
 /// FR-100's `outcome` member. `Refused`'s members follow the refusal

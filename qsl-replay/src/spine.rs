@@ -452,10 +452,6 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `receive` via `{receive_channel}` names a `send` via \
                      `{send_channel}`"
                 ),
-                ProtocolAnchorCause::Unimplemented { name, .. } => format!(
-                    "{message}: `protocol {name}` resolves but is not checked or emitted yet \
-                     (QSL-309, QSL-299)"
-                ),
                 ProtocolAnchorCause::Shadow { name, shadowed, .. } => {
                     let shadowed = match shadowed {
                         ShadowedDeclaration::ProfileAlias => "the unit's own profile alias",
@@ -469,6 +465,18 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     };
                     format!("{message}: `{name}` shadows {shadowed}")
                 }
+                ProtocolAnchorCause::MissingContract { entry, .. } => {
+                    format!("{message}: `{entry}` names no state clause of the unit")
+                }
+                ProtocolAnchorCause::WrongContractAnchor {
+                    entry,
+                    attempt_anchor,
+                    clause_anchor,
+                    ..
+                } => format!(
+                    "{message}: `{entry}` names `{clause_anchor}`, not the attempt's own anchor \
+                     `{attempt_anchor}`"
+                ),
             };
         }
         _ => {}
@@ -1213,17 +1221,20 @@ mod tests {
         assert_eq!(start, UNIT.rfind("true").unwrap());
     }
 
-    /// SR-761/SR-762 FND-001: a protocol whose anchors resolve, but whose
-    /// other content is garbage (an undeclared model type, an ill-typed
-    /// body), still refuses through the whole `compile` pipeline rather
-    /// than silently succeeding with the protocol just missing from the
-    /// emitted package -- the defect QSL-297's SR-753 FND-002 already fixed
-    /// once, reintroduced when `AssemblyCause::UnimplementedProtocol` was
-    /// replaced. FR-113 checks anchor resolution only; nothing else checks
-    /// a protocol's content yet, and nothing emits it (QSL-306).
+    /// SR-761/SR-762 FND-001, extended by QSL-309: a protocol naming an
+    /// undeclared model in its `attempt`'s own `on M::T::op` operation still
+    /// refuses through the whole `compile` pipeline rather than silently
+    /// succeeding with the protocol just missing from the emitted package --
+    /// the defect QSL-297's SR-753 FND-002 already fixed once, reintroduced
+    /// when `AssemblyCause::UnimplementedProtocol` was replaced. FR-114
+    /// (QSL-309) now resolves an attempt's own operation at assembly (E3),
+    /// mirroring a `pre`/`post` clause's own resolution, so this undeclared
+    /// model now refuses there rather than only at the check stage's own
+    /// FR-113 anchor pass -- an earlier, stronger catch of the same defect,
+    /// not a weaker one.
     #[trace("FR-113")]
     #[test]
-    fn a_protocol_with_unchecked_garbage_content_does_not_compile_silently() {
+    fn a_protocol_naming_an_undeclared_model_does_not_compile_silently() {
         let unit = "language \"ix:native\" edition \"1-draft\";\n\
             profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
             \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
@@ -1245,18 +1256,18 @@ mod tests {
             &DependencyInput::default(),
             SpineLimits::default(),
         )
-        .expect_err("a protocol with unchecked content must not compile to a package");
+        .expect_err("a protocol naming an undeclared model must not compile to a package");
         match refusal.as_ref() {
-            CompileRefusal::Check { refusals, .. } => {
+            CompileRefusal::Assembly { refusal, .. } => {
                 assert!(
-                    refusals.iter().any(|refusal| matches!(
-                        refusal.cause,
-                        qsl_semantics::check::CheckCause::ProtocolAnchor(_)
+                    refusal.errors.iter().any(|error| matches!(
+                        error.cause,
+                        qsl_semantics::check::AssemblyCause::UnresolvedTypeName { .. }
                     )),
-                    "{refusals:?}"
+                    "{refusal:?}"
                 );
             }
-            other => panic!("a Check refusal, got {other:?}"),
+            other => panic!("an Assembly refusal, got {other:?}"),
         }
     }
 

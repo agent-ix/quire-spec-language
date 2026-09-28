@@ -66,17 +66,6 @@ pub enum ProtocolAnchorCause {
         /// The anchor's reference span.
         span: Span,
     },
-    /// A protocol declaration whose anchors all resolve, but whose other
-    /// content (types, roles, operation names, binder types, block bodies)
-    /// has no checker yet, and which nothing emits (QSL-299): kept refused
-    /// rather than silently accepted with no diagnostic (QSL-306 tracks
-    /// completing protocol checking and emission).
-    Unimplemented {
-        /// The declared protocol name.
-        name: String,
-        /// The protocol's declared name span.
-        span: Span,
-    },
     /// FR-113 "Refusals": a record binder, a capture, a compensation
     /// trigger or a retry or recovery parameter names a model or profile
     /// alias, a native declaration of the package, or another binder
@@ -87,6 +76,31 @@ pub enum ProtocolAnchorCause {
         /// What the binder shadows.
         shadowed: ShadowedDeclaration,
         /// The shadowing binder's own span.
+        span: Span,
+    },
+    /// FR-114 "Behavior": an `attempt`'s `contracts` entry names no state
+    /// clause of the unit.
+    MissingContract {
+        /// The entry as written.
+        entry: String,
+        /// The entry's own span.
+        span: Span,
+    },
+    /// FR-114 "Behavior": an `attempt`'s `contracts` entry names an
+    /// invariant, or a `pre`/`post` clause anchored at a different
+    /// operation than the attempt's own (QSpec: "Listed state
+    /// pre/postcondition declarations must match this operation and its
+    /// invocation anchors").
+    WrongContractAnchor {
+        /// The entry as written.
+        entry: String,
+        /// The attempt's own anchor, `Context::operation`.
+        attempt_anchor: String,
+        /// The named clause's own anchor: `Context::operation` for a
+        /// `pre`/`post` clause anchored elsewhere, or just `Context` for an
+        /// invariant (which names no operation).
+        clause_anchor: String,
+        /// The entry's own span.
         span: Span,
     },
 }
@@ -136,18 +150,19 @@ impl ProtocolAnchorCause {
             | Self::Ambiguous { span, .. }
             | Self::WrongKind { span, .. }
             | Self::ChannelMismatch { span, .. }
-            | Self::Unimplemented { span, .. }
-            | Self::Shadow { span, .. } => *span,
+            | Self::Shadow { span, .. }
+            | Self::MissingContract { span, .. }
+            | Self::WrongContractAnchor { span, .. } => *span,
         }
     }
 
     /// This cause's catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::Missing { .. } => Code::MissingDeclaration,
+            Self::Missing { .. } | Self::MissingContract { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => Code::IllTyped,
-            Self::Unimplemented { .. } => Code::UnsupportedConstruct,
+            Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
         }
     }
 
@@ -156,10 +171,10 @@ impl ProtocolAnchorCause {
     /// protocol-specific catalog code exists).
     pub fn tag(&self) -> &'static str {
         match self {
-            Self::Missing { .. } => "missing-name",
+            Self::Missing { .. } | Self::MissingContract { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => "type-mismatch",
-            Self::Unimplemented { .. } => "not-yet-implemented",
+            Self::WrongContractAnchor { .. } => "wrong-anchor",
         }
     }
 }
@@ -199,6 +214,20 @@ pub enum Origin {
         clause: String,
         /// The clause's index among the package's state clauses.
         index: usize,
+    },
+    /// One protocol `attempt`'s own operation binding (FR-114, QSL-309), by
+    /// the protocol's index among the package's protocols and the
+    /// attempt's index among that protocol's own `attempts`, both in
+    /// source order. An `operation_anchor`/`frame` node names no position
+    /// of its own, so this names a real position of the unit (the
+    /// attempt's own declared name) to resolve its generated occurrence's
+    /// region, the same way `Origin::StateClause` does for a `pre`/`post`
+    /// clause's own anchor (FR-096).
+    ProtocolAttempt {
+        /// The protocol's index among the package's protocols.
+        protocol: usize,
+        /// The attempt's index among the protocol's own `attempts`.
+        attempt: usize,
     },
 }
 

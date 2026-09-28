@@ -45,7 +45,11 @@ use qsl_foundation::Span;
 use super::refusal::{
     AliasKind, CheckCause, CheckRefusal, Origin, ProtocolAnchorCause, ShadowedDeclaration,
 };
+use super::state_clause::{
+    AttemptDeclaration, ClauseOperation, PopulationDomain, StateClauseDeclaration,
+};
 use super::{Scope, Signatures};
+use crate::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 
 /// The identity of one static protocol node: its index into the
 /// declaration's own [`ProtocolDeclarationForm::declarations`] (FR-113
@@ -54,15 +58,65 @@ use super::{Scope, Signatures};
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ProtocolNodeId(pub usize);
 
+/// One protocol `attempt` FR-114's own S3 binding checked: its resolved
+/// operation (already resolved by the FR-091 assembler, `AttemptDeclaration`
+/// -- this only checks its `contracts` list against it) and each `contracts`
+/// entry's own index into the package's `state_clauses`, in list order.
+/// Everything S4 ([`super::lowering::Lowering::protocol_attempt`]) needs to
+/// mint the operation's anchor and frame node identity, and to name each
+/// contract's own checked identity.
+#[derive(Clone, Debug)]
+pub struct BoundAttempt {
+    /// The index into the owning `ProtocolDeclarationForm::declarations` of
+    /// this attempt's own static declaration.
+    pub declaration: usize,
+    /// The resolved operation `on M::T::op` names.
+    pub operation: ClauseOperation,
+    /// The population domain of the type declaring the operation.
+    pub frame_population: Option<PopulationDomain>,
+    /// Each `contracts` entry, resolved to the index of the unit's own
+    /// `state_clauses` it names, in source order.
+    pub contracts: Vec<usize>,
+}
+
+/// One protocol `attempt`, fully checked (FR-114 "Outputs", QSL-309): the
+/// identity of its operation's `state`/`operation_anchor` node and
+/// `state`/`frame` node (FR-105), and the identity of each state clause its
+/// `contracts` list names, in list order. The frame's own entries are never
+/// copied here (FR-114: "SHALL record the attempt's frame only by the
+/// frame node's identity, and SHALL NOT copy the frame's entries into the
+/// attempt"). `check::mod`'s own pipeline fills this in once S4 (lowering)
+/// mints the identities; [`check`] itself returns an empty list here (see
+/// its own `Vec<BoundAttempt>` return value for the S3-level binding).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAttempt {
+    /// The index into the owning `ProtocolDeclarationForm::declarations` of
+    /// this attempt's own static declaration.
+    pub declaration: usize,
+    /// The operation's `operation_anchor` node identity.
+    pub anchor: quire_exact::NodeKey,
+    /// The operation's `frame` node identity.
+    pub frame: quire_exact::NodeKey,
+    /// Each `contracts` entry's own checked state-clause identity, in list
+    /// order.
+    pub contracts: Vec<quire_exact::NodeKey>,
+}
+
 /// One protocol declaration FR-113 has checked: every scoped anchor's
 /// resolved target, in the same order as the form's own `scoped_anchors`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// `attempts` starts empty: [`check`] checks FR-114's `contracts` binding
+/// (its own `Vec<BoundAttempt>` return value) but mints no node identity,
+/// since that needs S4 (lowering); `check::mod`'s own pipeline fills
+/// `attempts` in once it does (QSL-309).
+#[derive(Clone, Debug)]
 pub struct CheckedProtocol {
     /// The declared protocol name.
     pub name: String,
     /// `resolved_anchors[i]` is the identity `scoped_anchors[i]` resolved
     /// to.
     pub resolved_anchors: Vec<ProtocolNodeId>,
+    /// Every `attempt`'s own fully checked binding, filled in after S4.
+    pub attempts: Vec<CheckedAttempt>,
 }
 
 /// A declaration scope, keyed the way FR-113 resolves a segment: the
@@ -111,23 +165,32 @@ fn admitted_kinds(site: AnchorSite) -> (&'static str, &'static [ProtocolNodeKind
     }
 }
 
-/// FR-113: the protocol node `protocol`'s scoped anchors resolve to, or the
-/// refusals below, in source position order (declaration-order duplicate
-/// refusals first at equal span, then binder-shadow refusals, then
-/// per-anchor refusals). `alias_names` (the unit's own `profile`/`model`
+/// FR-113: the protocol node `protocol`'s scoped anchors resolve to, and
+/// FR-114: each `attempt`'s own `contracts` list checked against its
+/// already-resolved operation (QSL-309) -- or the refusals below, in source
+/// position order (declaration-order duplicate refusals first at equal
+/// span, then binder-shadow refusals, then per-anchor refusals, then
+/// per-contract refusals). `alias_names` (the unit's own `profile`/`model`
 /// selection aliases), `native_names` (its `dimension` and `unit`
 /// declaration names), `scope` (the package's other native type
 /// declarations: `type`, `record`, `tuple` and `enum`) and `signatures`
 /// (its native function declarations) are the only package-wide state this
-/// checker reads, for FR-113 "Refusals" binder no-shadowing rule; every
-/// other check is over the protocol's own form.
+/// checker reads, for FR-113 "Refusals" binder no-shadowing rule;
+/// `attempts` (the assembler's own per-attempt operation resolution) and
+/// `state_clauses` (the unit's own checked state clauses, for FR-114's
+/// `contracts` check) are read for FR-114 alone; every other check is over
+/// the protocol's own form. Returns the checked protocol (its `attempts`
+/// empty: S4/lowering fills it in) alongside the S3-level `BoundAttempt`s
+/// `check::mod`'s own pipeline lowers next.
 pub fn check(
     protocol: &ProtocolDeclarationForm,
     alias_names: &BTreeMap<String, AliasKind>,
     native_names: &BTreeSet<String>,
     scope: &Scope,
     signatures: &Signatures,
-) -> Result<CheckedProtocol, Vec<CheckRefusal>> {
+    attempts: &[AttemptDeclaration],
+    state_clauses: &[StateClauseDeclaration],
+) -> Result<(CheckedProtocol, Vec<BoundAttempt>), Vec<CheckRefusal>> {
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
 
     // Every static node by (its scope, its name): the declaration
@@ -184,6 +247,10 @@ pub fn check(
         }
     }
 
+    let (bound_attempts, contract_refusals) =
+        bind_attempts(protocol, attempts, state_clauses, scope.types());
+    refusals.extend(contract_refusals);
+
     if !refusals.is_empty() {
         // FR-113 "Outputs": refusals in source position order. `sort_by_key`
         // is stable, so refusals at equal spans (the up-front duplicate
@@ -193,25 +260,103 @@ pub fn check(
         return Err(refusals.into_iter().map(|(_, refusal)| refusal).collect());
     }
 
-    Ok(CheckedProtocol {
-        name: protocol.name.name.clone(),
-        resolved_anchors: resolved,
-    })
+    Ok((
+        CheckedProtocol {
+            name: protocol.name.name.clone(),
+            resolved_anchors: resolved,
+            attempts: Vec::new(),
+        },
+        bound_attempts,
+    ))
 }
 
-/// FR-113 checks anchor resolution only: a protocol's types, roles, binder
-/// types and block bodies have no checker yet, and nothing emits a checked
-/// protocol (QSL-299). A protocol whose anchors all resolve is still kept
-/// refused, rather than silently accepted with no diagnostic and dropped
-/// from the emitted package (QSL-306 tracks completing protocol checking
-/// and emission; the caller pushes this refusal only when `check` above
-/// returns `Ok`, so a protocol with an anchor refusal is not refused
-/// twice).
-pub fn unimplemented(protocol: &ProtocolDeclarationForm) -> CheckRefusal {
-    refusal(ProtocolAnchorCause::Unimplemented {
-        name: protocol.name.name.clone(),
-        span: protocol.name.span,
-    })
+/// FR-114 "Behavior": each `attempt`'s already-resolved operation
+/// (`attempts`, the assembler's own `AttemptDeclaration`s, index-aligned
+/// with `protocol.attempts`) bound against its `contracts` list: an entry
+/// naming no state clause of the unit refuses `missing_declaration`/
+/// `missing-name` at the entry; one naming an invariant or a `pre`/`post`
+/// clause anchored at a different operation refuses `wrong_snapshot`/
+/// `wrong-anchor` at the entry, naming both anchors. An entry that resolves
+/// against a lookup ambiguous by name (two state clauses sharing a name)
+/// takes the first in source order, the same convention FR-113's own
+/// `by_scope_name` lookup follows for a protocol node.
+fn bind_attempts(
+    protocol: &ProtocolDeclarationForm,
+    attempts: &[AttemptDeclaration],
+    state_clauses: &[StateClauseDeclaration],
+    types: &TypeEnvironment,
+) -> (Vec<BoundAttempt>, Vec<(Span, CheckRefusal)>) {
+    let mut by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (index, clause) in state_clauses.iter().enumerate() {
+        by_name.entry(clause.name.as_str()).or_default().push(index);
+    }
+    let anchor_label = |declaring, operation: &str| -> String {
+        let context = types
+            .object_type(declaring)
+            .map(ObjectTypeDeclaration::name)
+            .unwrap_or("?");
+        format!("{context}::{operation}")
+    };
+
+    let mut refusals = Vec::new();
+    let mut bound = Vec::with_capacity(attempts.len());
+    for (index, attempt_decl) in attempts.iter().enumerate() {
+        let form = &protocol.attempts[index];
+        let attempt_anchor = anchor_label(
+            attempt_decl.operation.declaring,
+            attempt_decl.operation.declaration.name(),
+        );
+        let mut contracts = Vec::with_capacity(form.contracts.len());
+        for entry in &form.contracts {
+            let Some(indices) = by_name.get(entry.name.as_str()) else {
+                refusals.push((
+                    entry.span,
+                    refusal(ProtocolAnchorCause::MissingContract {
+                        entry: entry.name.clone(),
+                        span: entry.span,
+                    }),
+                ));
+                continue;
+            };
+            let clause_index = indices[0];
+            let clause = &state_clauses[clause_index];
+            let matches = clause
+                .operation
+                .as_ref()
+                .is_some_and(|clause_operation| *clause_operation == attempt_decl.operation);
+            if matches {
+                contracts.push(clause_index);
+                continue;
+            }
+            let clause_anchor = match &clause.operation {
+                Some(clause_operation) => anchor_label(
+                    clause_operation.declaring,
+                    clause_operation.declaration.name(),
+                ),
+                None => types
+                    .object_type(clause.context)
+                    .map(ObjectTypeDeclaration::name)
+                    .unwrap_or("?")
+                    .to_owned(),
+            };
+            refusals.push((
+                entry.span,
+                refusal(ProtocolAnchorCause::WrongContractAnchor {
+                    entry: entry.name.clone(),
+                    attempt_anchor: attempt_anchor.clone(),
+                    clause_anchor,
+                    span: entry.span,
+                }),
+            ));
+        }
+        bound.push(BoundAttempt {
+            declaration: attempt_decl.declaration,
+            operation: attempt_decl.operation.clone(),
+            frame_population: attempt_decl.frame_population,
+            contracts,
+        });
+    }
+    (bound, refusals)
 }
 
 /// Resolves one anchor's segments through nested scopes (FR-113
@@ -549,17 +694,16 @@ mod tests {
     }
 
     /// `super::check` called directly on the one protocol `declarations`
-    /// holds, bypassing `PackageDeclarations::check`'s whole-package pass
-    /// (and its FND-001 `Unimplemented` refusal, always added once anchor
-    /// resolution succeeds): this is the anchor-resolution algorithm's own
-    /// oracle, not the whole pipeline's.
-    fn resolve_protocol(
-        declarations: &str,
-    ) -> (
-        String,
-        ProtocolDeclarationForm,
-        Result<CheckedProtocol, Vec<CheckRefusal>>,
-    ) {
+    /// holds, bypassing `PackageDeclarations::check`'s whole-package pass:
+    /// this is the anchor-resolution algorithm's own oracle, not the whole
+    /// pipeline's. FR-114's own binding is bypassed too (empty `attempts`
+    /// and `state_clauses`), since this helper isolates FR-113 alone.
+    /// [`super::check`]'s own result, for [`resolve_protocol`]'s return type
+    /// (clippy's `type_complexity`: three levels of nesting is easier read
+    /// as one name than inline).
+    type CheckResult = Result<(CheckedProtocol, Vec<super::BoundAttempt>), Vec<CheckRefusal>>;
+
+    fn resolve_protocol(declarations: &str) -> (String, ProtocolDeclarationForm, CheckResult) {
         let (text, assembled) = assemble(declarations);
         let protocol = assembled.protocols[0].clone();
         let (scope, signatures) = empty_scope_and_signatures();
@@ -569,6 +713,8 @@ mod tests {
             &std::collections::BTreeSet::new(),
             &scope,
             &signatures,
+            &[],
+            &[],
         );
         (text, protocol, result)
     }
@@ -581,6 +727,15 @@ mod tests {
             Err(refusals) => (text, refusals),
             Ok(_) => panic!("{declarations}: checking refuses"),
         }
+    }
+
+    /// The full `PackageDeclarations::check` pipeline over `declarations`,
+    /// expecting it to succeed (QSL-309).
+    fn checks(declarations: &str) {
+        let (_, assembled) = assemble(declarations);
+        assembled
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"));
     }
 
     fn protocol_causes(refusals: &[CheckRefusal]) -> Vec<&ProtocolAnchorCause> {
@@ -690,7 +845,7 @@ mod tests {
     #[test]
     fn every_anchor_of_the_recovery_flow_fixture_resolves_to_its_named_node() {
         let (_, protocol, result) = resolve_protocol(&recovery_flow("Main::Committed", ""));
-        let checked = result.unwrap_or_else(|refusals| panic!("{refusals:?}"));
+        let (checked, _) = result.unwrap_or_else(|refusals| panic!("{refusals:?}"));
         assert_eq!(
             checked.resolved_anchors.len(),
             protocol.scoped_anchors.len()
@@ -747,7 +902,7 @@ mod tests {
              match event SeenO by R for Undo as (seen_outer: Boolean) { true }; \
              then sequence ThenO { } timeout sequence TimeoutO { }\n";
         let (_, protocol, result) = resolve_protocol(&recovery_flow("Main::Committed", inner));
-        let checked = result.unwrap_or_else(|refusals| panic!("{refusals:?}"));
+        let (checked, _) = result.unwrap_or_else(|refusals| panic!("{refusals:?}"));
 
         let outer_applied =
             declaration_id(&protocol, "Applied", ProtocolNodeKind::Effect, &["Main"]);
@@ -1150,30 +1305,82 @@ mod tests {
         ));
     }
 
-    /// SR-761/SR-762 FND-001: a protocol whose anchors all resolve is still
-    /// refused `unsupported_construct`/`not-yet-implemented`, naming the
-    /// protocol, since nothing checks its other content or emits it yet
-    /// (QSL-306) -- proving the full pipeline never silently accepts a
-    /// protocol, unlike the defect this replaces (SR-753 FND-002).
+    /// QSL-309: a protocol whose anchors (FR-113) and attempt bindings
+    /// (FR-114) both resolve now checks -- the placeholder refusal FR-113's
+    /// own Status text described (kept refused "since its other content has
+    /// no checker and nothing emits it yet") is lifted once this ticket's
+    /// binding lands: FR-113 and FR-114 are the only checks a protocol's own
+    /// content gets, so once both succeed nothing else can refuse it. A
+    /// broken binding still refuses -- see
+    /// `a_missing_contract_entry_refuses_naming_the_entry` and
+    /// `a_contract_entry_anchored_at_a_different_operation_refuses` below.
     #[trace("TC-511", "FR-113")]
     #[test]
-    fn a_protocol_whose_anchors_all_resolve_still_refuses_as_unimplemented() {
-        let source = recovery_flow("Main::Committed", "");
-        // The anchor-resolution algorithm itself succeeds...
-        let (_, _, result) = resolve_protocol(&source);
-        result.unwrap_or_else(|refusals| panic!("{refusals:?}"));
-        // ...but the full pipeline still refuses, since nothing else checks
-        // or emits this protocol yet.
-        let (_, refusals) = refusals(&source);
-        assert_eq!(refusals.len(), 1, "{refusals:?}");
-        match protocol_causes(&refusals)[0] {
-            ProtocolAnchorCause::Unimplemented { name, .. } => {
-                assert_eq!(name, "RecoveryFlow");
-            }
-            other => panic!("an Unimplemented cause, got {other:?}"),
+    fn a_protocol_whose_anchors_and_attempt_bindings_both_resolve_checks() {
+        checks(&recovery_flow("Main::Committed", ""));
+    }
+
+    /// FR-114-AC-3 (TC-513): a `contracts` entry naming no state clause of
+    /// the unit refuses `missing_declaration`/`missing-name` at the entry.
+    #[trace("TC-513", "FR-114-AC-3")]
+    #[test]
+    fn a_missing_contract_entry_refuses_naming_the_entry() {
+        let source = recovery_flow("Main::Committed", "").replacen(
+            "attempt Tried by R on M::Actor::op contracts []",
+            "attempt Tried by R on M::Actor::op contracts [Absent]",
+            1,
+        );
+        let (_, found) = refusals(&source);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].cause.code().as_str(), "missing_declaration");
+        assert_eq!(found[0].cause.cause(), Some("missing-name"));
+        match protocol_causes(&found)[0] {
+            ProtocolAnchorCause::MissingContract { entry, .. } => assert_eq!(entry, "Absent"),
+            other => panic!("a MissingContract cause, got {other:?}"),
         }
-        assert_eq!(refusals[0].cause.code().as_str(), "unsupported_construct");
-        assert_eq!(refusals[0].cause.cause(), Some("not-yet-implemented"));
+    }
+
+    /// FR-114-AC-3 (TC-513): a `contracts` entry naming an invariant (which
+    /// names no operation at all) refuses `wrong_snapshot`/`wrong-anchor`,
+    /// naming both the attempt's own anchor and the invariant's.
+    #[trace("TC-513", "FR-114-AC-3")]
+    #[test]
+    fn a_contract_entry_anchored_at_a_different_operation_refuses() {
+        let source = format!(
+            "invariant ParentOrder using v on M::Actor at current {{ true }}\n{}",
+            recovery_flow("Main::Committed", "").replacen(
+                "attempt Tried by R on M::Actor::op contracts []",
+                "attempt Tried by R on M::Actor::op contracts [ParentOrder]",
+                1,
+            )
+        );
+        let (_, found) = refusals(&source);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].cause.code().as_str(), "wrong_snapshot");
+        assert_eq!(found[0].cause.cause(), Some("wrong-anchor"));
+        match protocol_causes(&found)[0] {
+            ProtocolAnchorCause::WrongContractAnchor {
+                entry,
+                attempt_anchor,
+                clause_anchor,
+                ..
+            } => {
+                assert_eq!(entry, "ParentOrder");
+                assert_eq!(attempt_anchor, "M::Actor::op");
+                assert_eq!(clause_anchor, "M::Actor");
+            }
+            other => panic!("a WrongContractAnchor cause, got {other:?}"),
+        }
+    }
+
+    /// FR-114-AC-2: `contracts []` still binds the attempt's operation, with
+    /// an empty `contracts` list rather than a refusal (the same fixture
+    /// `a_protocol_whose_anchors_and_attempt_bindings_both_resolve_checks`
+    /// above uses).
+    #[trace("TC-513", "FR-114-AC-2")]
+    #[test]
+    fn an_empty_contracts_list_binds_with_no_refusal() {
+        checks(&recovery_flow("Main::Committed", ""));
     }
 
     /// The `Shadow` cause of `refusals`, expecting exactly one.
@@ -1544,14 +1751,18 @@ mod tests {
             .replacen("as (tried: Boolean)", "as (shared: Boolean)", 1);
         let combined = format!("{first}\n{second}");
         let (text, assembled) = assemble(&combined);
-        // Both protocols still refuse `unsupported_construct` (QSL-306:
-        // nothing emits a protocol yet), but neither refuses `Shadow`.
-        let refusals = assembled
+        // QSL-309: both protocols' anchors and attempt bindings resolve, so
+        // the whole package now checks (neither refuses `Shadow`, and
+        // nothing else about either protocol is left unchecked).
+        let checked = assembled
             .check(CheckingLimits::default())
-            .expect_err("still refused as unimplemented");
-        assert_eq!(refusals.len(), 2, "{text}: {refusals:?}");
-        for refusal in &refusals {
-            assert_eq!(refusal.cause.code().as_str(), "unsupported_construct");
-        }
+            .unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
+        assert_eq!(checked.protocols().len(), 2, "{text:?}");
+        let names: Vec<&str> = checked
+            .protocols()
+            .iter()
+            .map(|protocol| protocol.name.as_str())
+            .collect();
+        assert_eq!(names, ["RecoveryFlow", "RecoveryFlowTwo"]);
     }
 }

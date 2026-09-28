@@ -80,7 +80,9 @@ mod state;
 mod wire;
 
 pub use model::{AdmittedModel, ForeignView, ModelClause};
-pub(crate) use state::{AnchorInput, LoweredClause, StateClauseInput};
+pub(crate) use state::{
+    AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, StateClauseInput,
+};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
 /// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no

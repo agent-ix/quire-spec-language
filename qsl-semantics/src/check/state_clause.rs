@@ -492,7 +492,7 @@ impl CheckedStateClause {
 /// ADR-014 §4 classifies, FR-097) and its population domains, each keyed
 /// by its member object type's model node and its ordinal. The record's
 /// result is the clause's `Boolean`.
-fn record(
+pub(crate) fn record(
     roots: &[(NodeKey, &ValueType)],
     root_prefix: Option<NodeKey>,
     populations: &[(PopulationDomain, NodeKey)],

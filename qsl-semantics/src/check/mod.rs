@@ -112,7 +112,7 @@ pub(crate) use check::{Signature, Signatures};
 use facts::Definedness;
 use quire_exact::Identifier;
 
-use crate::family::FamilyContract;
+use crate::family::{ClassifyFailure, FamilyContract};
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
 use qsl_foundation::diagnostic::{Locus, StageFailure};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -193,7 +193,7 @@ pub use identity::{
     SumVariants,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
-pub use protocol_clause::{CheckedProtocol, ProtocolNodeId};
+pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
     InvalidDispatchDeclaration, KeyFault, Location, MeasureObligation, Obligation, Origin,
@@ -359,6 +359,10 @@ pub struct CheckedGraph {
     state_clauses: Vec<CheckedStateClause>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-096/QSL-309: each protocol's own attempts' declared name spans,
+    /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
+    /// resolves.
+    attempt_spans: Vec<Vec<qsl_foundation::Span>>,
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -1039,24 +1043,34 @@ impl PackageDeclarations {
         // through its nested control scopes (`check::protocol_clause`), and
         // its binders checked against the package's own aliases and native
         // declarations (`scope`, `signatures`) for the no-shadowing rule.
+        // FR-114 (QSL-309): each `attempt`'s own `contracts` list, bound
+        // against its already-resolved operation (`self.protocol_attempts`)
+        // and the unit's own checked state clauses (`state_clause_forms`).
         // Independent of every other declaration kind otherwise: a
-        // protocol's own content is checked from its own form alone.
+        // protocol's own content is checked from its own form alone. A
+        // protocol whose anchors and attempt bindings both succeed is no
+        // longer refused `unsupported_construct`/`not-yet-implemented`
+        // (QSL-309 lifts FR-113's own placeholder refusal for it; its other
+        // content -- roles, channels, requirements, compensation bodies --
+        // still has no checker of its own, QSL-299 tracks emission).
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
-        for protocol in &self.protocols {
+        let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
+        for (index, protocol) in self.protocols.iter().enumerate() {
+            let attempts = self
+                .protocol_attempts
+                .get(index)
+                .map_or(&[][..], Vec::as_slice);
             match protocol_clause::check(
                 protocol,
                 &self.alias_names,
                 &self.native_names,
                 &scope,
                 &signatures,
+                attempts,
+                &state_clause_forms,
             ) {
-                Ok(checked) => {
-                    // FR-113 checks only anchor resolution; the rest of a
-                    // protocol's content and its emission (QSL-299) have no
-                    // checker yet (QSL-306), so a protocol that resolves is
-                    // still refused rather than silently compiled with
-                    // unchecked content and dropped from the package.
-                    refusals.push(protocol_clause::unimplemented(protocol));
+                Ok((checked, bound)) => {
+                    protocol_bindings.push(bound);
                     checked_protocols.push(checked);
                 }
                 Err(protocol_refusals) => refusals.extend(protocol_refusals),
@@ -1168,7 +1182,24 @@ impl PackageDeclarations {
             .enumerate()
             .map(|(index, form)| clause_location(index, &form.name))
             .collect();
-        let anchors: Vec<lowering::AnchorInput<'_>> = state_clause_forms
+        // FR-114 (QSL-309): every protocol attempt's own real location
+        // (never `generated_location`), the same reason a clause's own
+        // `AnchorInput::location` must be real (FR-096).
+        let attempt_locations: Vec<Vec<Location>> = protocol_bindings
+            .iter()
+            .enumerate()
+            .map(|(protocol_index, bindings)| {
+                (0..bindings.len())
+                    .map(|attempt_index| {
+                        root(Origin::ProtocolAttempt {
+                            protocol: protocol_index,
+                            attempt: attempt_index,
+                        })
+                    })
+                    .collect()
+            })
+            .collect();
+        let mut anchors: Vec<lowering::AnchorInput<'_>> = state_clause_forms
             .iter()
             .enumerate()
             .filter_map(|(index, form)| {
@@ -1181,6 +1212,15 @@ impl PackageDeclarations {
                     })
             })
             .collect();
+        for (protocol_index, bindings) in protocol_bindings.iter().enumerate() {
+            for (attempt_index, bound) in bindings.iter().enumerate() {
+                anchors.push(lowering::AnchorInput {
+                    declaring: bound.operation.declaring,
+                    operation: &bound.operation.declaration,
+                    location: &attempt_locations[protocol_index][attempt_index],
+                });
+            }
+        }
         if let Err(refusal) = lowering.register_frame_occurrences(&anchors) {
             refusals.push(refusal);
         }
@@ -1210,6 +1250,39 @@ impl PackageDeclarations {
                 Ok(lowered) => lowered_clauses.push(lowered),
                 Err(refusal) => refusals.push(refusal),
             }
+        }
+        // Each contract entry's own checked identity (FR-114 "Outputs"),
+        // captured before `lowered_clauses` is consumed below.
+        let lowered_clause_keys: Vec<quire_exact::NodeKey> =
+            lowered_clauses.iter().map(|lowered| lowered.key).collect();
+        // FR-114 (QSL-309): each protocol's own attempts, bound (S3) to
+        // their operation and their `contracts` entries' own state-clause
+        // identities; lowered here to the operation's `operation_anchor`
+        // and `frame` node identity, reusing exactly the same
+        // `operation_anchor`/`frame_node`/`frame_occurrence` machinery a
+        // `pre`/`post` clause's own binding calls
+        // (`Lowering::protocol_attempt`) -- no second frame node concept.
+        let mut lowered_attempts: Vec<Vec<lowering::LoweredAttempt>> =
+            Vec::with_capacity(protocol_bindings.len());
+        for (protocol_index, bindings) in protocol_bindings.iter().enumerate() {
+            let mut protocol_lowered = Vec::with_capacity(bindings.len());
+            for (attempt_index, bound) in bindings.iter().enumerate() {
+                let location = &attempt_locations[protocol_index][attempt_index];
+                let input = lowering::AttemptInput {
+                    location,
+                    anchor: lowering::AnchorInput {
+                        declaring: bound.operation.declaring,
+                        operation: &bound.operation.declaration,
+                        location,
+                    },
+                    frame_population: bound.frame_population,
+                };
+                match lowering.protocol_attempt(&input) {
+                    Ok(lowered) => protocol_lowered.push(lowered),
+                    Err(refusal) => refusals.push(refusal),
+                }
+            }
+            lowered_attempts.push(protocol_lowered);
         }
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
@@ -1320,6 +1393,101 @@ impl PackageDeclarations {
                 })
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
+        // FR-114 "Requirements" (QSL-309): one `operation-contract` record
+        // per attempt's frame, keyed by the frame node's own occurrence --
+        // reusing `state_clause::record` so an attempt and a clause naming
+        // one operation always compute the exact same record content; the
+        // dedup below then treats the two as one, the same way two clauses
+        // naming one operation already do (FR-104-AC-5's rule extended to
+        // attempts, FR-114-AC-1: "exactly one operation-contract record for
+        // the frame").
+        for (protocol_index, bindings) in protocol_bindings.iter().enumerate() {
+            for (attempt_index, bound) in bindings.iter().enumerate() {
+                let lowered_attempt = &lowered_attempts[protocol_index][attempt_index];
+                let location = &attempt_locations[protocol_index][attempt_index];
+                let unkeyable = || {
+                    vec![CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                    }]
+                };
+                let receiver = ValueType::Reference(bound.operation.declaring);
+                let (frame, frame_origin) = lowered_attempt.frame.clone();
+                let mut roots: Vec<(quire_exact::NodeKey, &ValueType)> = vec![(frame, &receiver)];
+                roots.extend(
+                    bound
+                        .operation
+                        .declaration
+                        .result()
+                        .map(|result| (frame, result)),
+                );
+                roots.extend(
+                    bound
+                        .operation
+                        .declaration
+                        .parameters()
+                        .iter()
+                        .map(|(_, value_type)| (frame, value_type)),
+                );
+                let populations: Vec<(state_clause::PopulationDomain, quire_exact::NodeKey)> =
+                    bound
+                        .frame_population
+                        .zip(lowered_attempt.population_object)
+                        .into_iter()
+                        .collect();
+                let record = state_clause::record(
+                    &roots,
+                    Some(frame),
+                    &populations,
+                    lowered_attempt.boolean,
+                    scope.types(),
+                    limits.nodes(),
+                )
+                .map_err(|failure| match failure {
+                    ClassifyFailure::Limit(exceeded) => vec![CheckRefusal {
+                        location: location.clone(),
+                        cause: limit_cause(&exceeded),
+                    }],
+                    ClassifyFailure::Fault(fault) => vec![CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnclassifiedExtent(
+                            fault,
+                        ))),
+                    }],
+                })?;
+                match requirements.entry(OccurrenceKey::new(claims::wire(frame), frame_origin)) {
+                    std::collections::btree_map::Entry::Vacant(slot) => {
+                        slot.insert(record);
+                    }
+                    std::collections::btree_map::Entry::Occupied(existing)
+                        if *existing.get() == record => {}
+                    std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                }
+            }
+        }
+        // FR-114 "Outputs" (QSL-309): each protocol's own attempts, fully
+        // checked -- the identity of the operation's anchor and frame node,
+        // and each `contracts` entry's own checked state-clause identity.
+        for (protocol_index, bindings) in protocol_bindings.iter().enumerate() {
+            let attempts = bindings
+                .iter()
+                .enumerate()
+                .map(|(attempt_index, bound)| {
+                    let lowered_attempt = &lowered_attempts[protocol_index][attempt_index];
+                    protocol_clause::CheckedAttempt {
+                        declaration: bound.declaration,
+                        anchor: lowered_attempt.anchor,
+                        frame: lowered_attempt.frame.0,
+                        contracts: bound
+                            .contracts
+                            .iter()
+                            .map(|&index| lowered_clause_keys[index])
+                            .collect(),
+                    }
+                })
+                .collect();
+            checked_protocols[protocol_index].attempts = attempts;
+        }
         let functions = CheckedFunctions::new(
             drafts
                 .into_iter()
@@ -1353,6 +1521,7 @@ impl PackageDeclarations {
             model_selections,
             state_clauses,
             protocols: checked_protocols,
+            attempt_spans: regions.attempt_spans,
         })
     }
 }
