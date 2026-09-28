@@ -3,17 +3,12 @@
 //! against TC-458's `ConfigVersion` fixture package
 //! (`crate::model_operations`).
 //!
-//! **Scope note** (mirrors `model_operations.rs`'s own): `versionNumber` is
-//! typed as native `Integer`, not the bound `Int[0, 1000]` scalar FR-104-AC-1
-//! describes. FR-056's `value-type/v1` scalar reader (QSL-289) now exists
-//! and is verified end to end by `model_operations`'s own
-//! `bound_integer_value_type_admits_and_assembles`; the shared
-//! `ConfigVersion` fixture this file's tests use still substitutes the
-//! native `Integer` field, since switching it changes S3's own already-
-//! verified checking behavior for a bounded field -- a separate, larger
-//! follow-up, not this ticket's (QSL-277) or QSL-289's own scope. Every
-//! assertion below that would otherwise read `Int[0, 1000]` reads `Integer`
-//! instead.
+//! `versionNumber` is the package-declared bound `VersionNumber` scalar
+//! (`Int[0, 1000]`, FR-104-AC-1), declared by the shared `ConfigVersion`
+//! fixture ([`crate::model_operations::version_number_value_type`]) and read
+//! by FR-056's `value-type/v1` scalar reader (QSL-289). An out-of-bound
+//! `versionNumber` in a snapshot therefore refuses at admission (TC-465 rows
+//! 20 and 30).
 
 use std::collections::BTreeMap;
 
@@ -33,6 +28,7 @@ use crate::model_operations::{
     config_unit_with_body, config_version_document, config_version_document_with_operations,
     config_version_document_with_population, config_version_identity, empty_frame, operation,
     operation_parameter, subtype_document, subtype_document_with_two_member_population,
+    version_number_bound, version_number_identity,
 };
 use serde_json::json;
 
@@ -180,22 +176,19 @@ fn the_configversion_state_clauses_check() {
     assert_eq!(self_name, "self");
     assert_eq!(self_type, &ValueType::Reference(parent_order.context()));
 
-    // `self.versionNumber` is an `Attribute` node. Its type is `Integer`,
-    // this module's own stand-in for FR-104-AC-1's `Int[0, 1000]` -- the
-    // shared `ConfigVersion` fixture still substitutes it (see this file's
-    // own header note); the `value-type/v1` reader itself (QSL-289) exists
-    // and is verified elsewhere (`model_operations`'s
-    // `bound_integer_value_type_admits_and_assembles`). `self.parent` is an
-    // `Attribute` node of `Option<Reference<Config::ConfigVersion>>`.
+    // `self.versionNumber` is an `Attribute` node, typed `Int[0, 1000]`
+    // (FR-104-AC-1's bound `VersionNumber` scalar, not the native
+    // `Integer`). `self.parent` is an `Attribute` node of
+    // `Option<Reference<Config::ConfigVersion>>`.
     let attribute_types: Vec<&ValueType> = descendants(parent_order.body())
         .into_iter()
         .filter(|node| matches!(node.kind(), NodeKind::Attribute { .. }))
         .map(|node| node.value_type())
         .collect();
+    let version_number_type = version_number_bound();
     assert!(
-        attribute_types.contains(&&ValueType::Integer),
-        "self.versionNumber: Integer (shared ConfigVersion fixture stand-in for Int[0, 1000]): \
-         {attribute_types:?}"
+        attribute_types.contains(&&version_number_type),
+        "self.versionNumber: Int[0, 1000]: {attribute_types:?}"
     );
     let parent_type = ValueType::Option(Box::new(ValueType::Reference(parent_order.context())));
     assert!(
@@ -1787,7 +1780,12 @@ fn tc465_document_with_set_field() -> Vec<u8> {
     let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
     let config_version = "ix://example/config-version/ConfigVersion";
     let tags_identity = format!("{config_version}/tags");
-    envelope["types"][0]["fields"]
+    envelope["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["identity"] == config_version)
+        .expect("ConfigVersion is declared")["fields"]
         .as_array_mut()
         .expect("ConfigVersion declares fields")
         .push(json!({
@@ -2043,7 +2041,12 @@ fn tc465_document_with_sub_redefining_version_number() -> Vec<u8> {
     sub_type["fields"] = json!([{
         "identity": version,
         "name": "version",
-        "typeRef": "ix://quire/native/Integer",
+        // The same bound `VersionNumber` (`Int[0, 1000]`) that
+        // `ConfigVersion::versionNumber` declares, so this redefinition does
+        // not widen it and the package admits. A native `Integer` here would
+        // widen it and refuse `RedefinitionWidens` at assembly, which is
+        // covered in `type_environment_model.rs`, not here.
+        "typeRef": version_number_identity(),
         "presence": "required",
         "nullable": false,
         "defaultKind": "none",
@@ -2151,7 +2154,13 @@ fn tc465_document_with_archive_population() -> Vec<u8> {
 fn tc465_document_with_archive_population_and_narrow_frame() -> Vec<u8> {
     let document = tc465_document_with_archive_population();
     let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
-    envelope["types"][0]["operations"][0]["frame"]["modifies"] =
+    let config_version = "ix://example/config-version/ConfigVersion";
+    envelope["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["identity"] == config_version)
+        .expect("ConfigVersion is declared")["operations"][0]["frame"]["modifies"] =
         json!(["ix://example/config-version/ConfigVersion/versionNumber"]);
     serde_json::to_vec(&envelope).expect("valid JSON")
 }
@@ -3202,6 +3211,87 @@ fn tc465_row19_malspelled_integer_refuses_invalid_value() {
         None,
     );
     assert_tc465_refused(result, "invalid_runtime_input", "invalid-value");
+}
+
+/// Row 20 (check 6.5), part 1: `root.versionNumber` `"-1"`, below
+/// `VersionNumber`'s bound `Int[0, 1000]`, refuses `invalid-value` naming
+/// `root` and `versionNumber`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn tc465_row20_root_version_number_below_bound_refuses_invalid_value() {
+    let document = tc465_document();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            value["populations"][0]["objects"][0]["fields"]["versionNumber"] =
+                json!({"integer": "-1"});
+        },
+        None,
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "invalid-value");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("root")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("versionNumber")
+    );
+}
+
+/// Row 20 (check 6.5), part 2: `child.versionNumber` `"1001"`, above
+/// `VersionNumber`'s bound `Int[0, 1000]`, refuses `invalid-value` naming
+/// `child` and `versionNumber`.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn tc465_row20_child_version_number_above_bound_refuses_invalid_value() {
+    let document = tc465_document();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            value["populations"][0]["objects"][1]["fields"]["versionNumber"] =
+                json!({"integer": "1001"});
+        },
+        None,
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "invalid-value");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("child")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("versionNumber")
+    );
+}
+
+/// Row 30 (check 6.5 walk order): both `root.versionNumber` `"-1"` and
+/// `child.versionNumber` `"1001"` out of `VersionNumber`'s bound
+/// `Int[0, 1000]` at once -- check 6.5 walks objects in declared order, so
+/// only `root`'s violation is reported.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn tc465_row30_both_out_of_bound_refuses_at_root_first() {
+    let document = tc465_document();
+    let result = run_tc465_current(
+        &document,
+        |value| {
+            value["populations"][0]["objects"][0]["fields"]["versionNumber"] =
+                json!({"integer": "-1"});
+            value["populations"][0]["objects"][1]["fields"]["versionNumber"] =
+                json!({"integer": "1001"});
+        },
+        None,
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "invalid-value");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("root")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("versionNumber")
+    );
 }
 
 /// Row 21 (check 9): `self` `{config_history, ghost}`.

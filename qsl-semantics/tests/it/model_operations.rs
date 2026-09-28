@@ -8,29 +8,17 @@
 //! `assemble_with_models` already exercises for a model-bearing unit, built
 //! locally here since this crate does not depend on `qsl-package`.
 //!
-//! **Scope note, not a TC-458 requirement met by this file**: TC-458's own
-//! fixture text types `versionNumber` as a package-declared scalar value
-//! type (`VersionNumber`, integer `0..=1000`, "bound to `Int[0, 1000]`"),
-//! and its own FR-108 fixture file
-//! (`examples/config-version/model.semantic-ir.json`) does not exist yet --
-//! that file and the corpus it belongs to are FR-108/FR-105's own scope
-//! (QSL-279), not FR-102/FR-103's (QSL-276).
-//!
-//! `quire.meaning.model.value-type/v1` (`meaning::VALUE_TYPE`) now has a
-//! reader (`read_value_type`, `qsl-semantics/src/model/intake.rs`, QSL-289):
-//! [`bound_integer_value_type_admits_and_assembles`] below exercises it end
-//! to end through this same `admit_unit`/`PackageDeclarations::assemble`
-//! pipeline, over a small dedicated fixture, and is this crate's own real
-//! TC-458 coverage of the bound-scalar shape. The larger `ConfigVersion`
-//! fixture every other test in this file shares still types `versionNumber`
-//! (and, where AC-3 needs a second parameter type, `delta`) as the native
-//! `Integer`, not a bound `Int[0, 1000]` scalar -- not because the reader is
-//! missing, but because a bounded field is checked differently from an
-//! unbounded one downstream (FR-104's S3, FR-107's S6a, FR-108's replay all
-//! gain new bound-arithmetic checks a bounded field makes reachable);
-//! switching that shared fixture over is a separate, larger follow-up
-//! against those FRs' own already-merged test suites, not this file's or
-//! FR-102/FR-103's own scope.
+//! `versionNumber` is a package-declared bound integer scalar
+//! (`VersionNumber`, `Int[0, 1000]`), per TC-458's own fixture text, read
+//! through `quire.meaning.model.value-type/v1` (`meaning::VALUE_TYPE`,
+//! `read_value_type`, `qsl-semantics/src/model/intake.rs`, QSL-289) --
+//! [`version_number_value_type`] builds the shared `VersionNumber`
+//! construct/type pair every `ConfigVersion` fixture in this file uses.
+//! [`bound_integer_value_type_admits_and_assembles`] below exercises the
+//! same reader end to end over a second, dedicated fixture (a `Widget`
+//! object type with a `VersionNumber`-typed field), independent of
+//! `ConfigVersion`. AC-3's second parameter, `delta`, is typed by the same
+//! `VersionNumber` declaration and assembles to the same `Int[0, 1000]`.
 
 use std::collections::BTreeMap;
 
@@ -182,13 +170,81 @@ pub(super) fn config_version_identity(suffix: &str) -> String {
     format!("ix://{PACKAGE_IDENTITY}/ConfigVersion/{suffix}")
 }
 
+/// `VersionNumber`'s node identity, `ix://example/config-version/VersionNumber`.
+pub(super) fn version_number_identity() -> String {
+    format!("ix://{PACKAGE_IDENTITY}/VersionNumber")
+}
+
+/// The `ValueType` a `VersionNumber`-typed field or parameter assembles to:
+/// `Int[0, 1000]`.
+pub(super) fn version_number_bound() -> ValueType {
+    ValueType::Int(
+        IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64))
+            .expect("0 <= 1000 is a nonempty interval"),
+    )
+}
+
+/// `ix://example/config-version/VersionNumber`: the package-declared bound
+/// integer scalar (`Int[0, 1000]`) `versionNumber` is really typed as, per
+/// TC-458's own fixture text and the shape QSL-279's
+/// `examples/config-version/model.semantic-ir.json` corpus already declares.
+/// Returns the `value_type` construct/type pair (for `constructs`/`types`)
+/// and the type's own identity (`versionNumber`'s `typeRef`); QSL-289's
+/// `read_value_type` (`qsl-semantics/src/model/intake.rs`) is what admits
+/// this shape.
+pub(super) fn version_number_value_type() -> (Value, Value, String) {
+    let identity = version_number_identity();
+    // `agent-ix-semantic-ir`'s own `CONSTRAINT_MEMBERS` requires every
+    // constraint's `identity`/`appliesTo`/`diagnosticCode`/`origin` present
+    // (this module's own tests all route through the full
+    // `validate_with_semantic_ir` schema check, not just this reader's own
+    // hand-rolled one), unlike `intake.rs`'s own direct-reader unit tests.
+    // `appliesTo` names the native scalar the value type binds
+    // (`ix://quire/native/Integer`), not `VersionNumber`'s own identity:
+    // `agent-ix-semantic-ir`'s own applicability table (`rules.rs::applies_to`)
+    // only ever resolves a construct-kind node's own `kind`/`shape` to
+    // `"construct"`, never `"scalar"` (no `Shape` variant means "scalar" at
+    // this pinned rev) -- a constraint whose `appliesTo` named `VersionNumber`
+    // itself would refuse `CONSTRAINT_NOT_APPLICABLE` even though this is
+    // exactly the bound `VersionNumber` names. Naming the native scalar
+    // directly is what actually resolves to `Resolved::Native("integer")`,
+    // and is what `VALUE_TYPE`'s own meaning describes: "naming the value
+    // type and its bound native value type".
+    let constraint = |keyword: &str, value: i64| {
+        json!({
+            "identity": format!("{identity}/constraints/{keyword}"),
+            "keyword": keyword,
+            "operands": {"value": value},
+            "appliesTo": "ix://quire/native/Integer",
+            "diagnosticCode": format!("bound.{keyword}"),
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity.clone(),
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity.clone()],
+                }
+            },
+        })
+    };
+    let construct = wire_construct("value_type", meaning::VALUE_TYPE, json!({}));
+    let type_node = wire_type(
+        &identity,
+        "value_type",
+        json!({
+            "scalar": "integer",
+            "constraints": [constraint("min", 0), constraint("max", 1000)],
+        }),
+    );
+    (construct, type_node, identity)
+}
+
 /// The full `ConfigVersion` document: an object type with `versionNumber`
-/// (required `Integer`, standing in for TC-458's bound `VersionNumber`
-/// scalar -- see this module's own doc comment) and `parent` (optional,
-/// self-referencing), `attemptUpdate` as its one operation (`operation`
-/// supplies the whole operation node), a `config_history` population, and
-/// `extra_types`/`extra_constructs` for a sibling declaration (a relationship
-/// or a record value type) some tests need beside it.
+/// (required, the bound `VersionNumber` scalar -- [`version_number_value_type`])
+/// and `parent` (optional, self-referencing), `attemptUpdate` as its one
+/// operation (`operation` supplies the whole operation node), a
+/// `config_history` population, and `extra_types`/`extra_constructs` for a
+/// sibling declaration (a relationship or a record value type) some tests
+/// need beside it.
 pub(super) fn config_version_document(
     operation: Value,
     extra_constructs: Vec<Value>,
@@ -196,36 +252,42 @@ pub(super) fn config_version_document(
     relationships: Value,
 ) -> Vec<u8> {
     let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
+    let (version_number_construct, version_number_type, version_number) =
+        version_number_value_type();
     let mut constructs = vec![
         wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
         wire_construct("population", meaning::POPULATION, json!({})),
+        version_number_construct,
     ];
     constructs.extend(extra_constructs);
-    let mut types = vec![wire_type(
-        &config_version,
-        "object_type",
-        json!({
-            "supertypes": [],
-            "fields": [
-                wire_field(
-                    &config_version_identity("versionNumber"),
-                    "versionNumber",
-                    "ix://quire/native/Integer",
-                    "required",
-                    1,
-                ),
-                wire_field(
-                    &config_version_identity("parent"),
-                    "parent",
-                    &config_version,
-                    "optional",
-                    1,
-                ),
-            ],
-            "operations": [operation],
-            "relationships": relationships,
-        }),
-    )];
+    let mut types = vec![
+        version_number_type,
+        wire_type(
+            &config_version,
+            "object_type",
+            json!({
+                "supertypes": [],
+                "fields": [
+                    wire_field(
+                        &config_version_identity("versionNumber"),
+                        "versionNumber",
+                        &version_number,
+                        "required",
+                        1,
+                    ),
+                    wire_field(
+                        &config_version_identity("parent"),
+                        "parent",
+                        &config_version,
+                        "optional",
+                        1,
+                    ),
+                ],
+                "operations": [operation],
+                "relationships": relationships,
+            }),
+        ),
+    ];
     types.extend(extra_types);
     let population_identity = format!("ix://{PACKAGE_IDENTITY}/config_history");
     let population = json!({
@@ -468,35 +530,41 @@ pub(super) fn archive_population() -> Value {
 /// content still key two distinct `operation-contract` records).
 pub(super) fn config_version_document_with_operations(operations: Vec<Value>) -> Vec<u8> {
     let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
+    let (version_number_construct, version_number_type, version_number) =
+        version_number_value_type();
     let constructs = vec![
         wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
         wire_construct("population", meaning::POPULATION, json!({})),
+        version_number_construct,
     ];
-    let types = vec![wire_type(
-        &config_version,
-        "object_type",
-        json!({
-            "supertypes": [],
-            "fields": [
-                wire_field(
-                    &config_version_identity("versionNumber"),
-                    "versionNumber",
-                    "ix://quire/native/Integer",
-                    "required",
-                    1,
-                ),
-                wire_field(
-                    &config_version_identity("parent"),
-                    "parent",
-                    &config_version,
-                    "optional",
-                    1,
-                ),
-            ],
-            "operations": operations,
-            "relationships": [],
-        }),
-    )];
+    let types = vec![
+        version_number_type,
+        wire_type(
+            &config_version,
+            "object_type",
+            json!({
+                "supertypes": [],
+                "fields": [
+                    wire_field(
+                        &config_version_identity("versionNumber"),
+                        "versionNumber",
+                        &version_number,
+                        "required",
+                        1,
+                    ),
+                    wire_field(
+                        &config_version_identity("parent"),
+                        "parent",
+                        &config_version,
+                        "optional",
+                        1,
+                    ),
+                ],
+                "operations": operations,
+                "relationships": [],
+            }),
+        ),
+    ];
     let population_identity = format!("ix://{PACKAGE_IDENTITY}/config_history");
     let population = json!({
         "identity": population_identity.clone(),
@@ -526,9 +594,12 @@ pub(super) fn config_version_document_with_operations(operations: Vec<Value>) ->
 pub(super) fn subtype_document(operation: Value) -> Vec<u8> {
     let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
     let sub = format!("ix://{PACKAGE_IDENTITY}/Sub");
+    let (version_number_construct, version_number_type, version_number) =
+        version_number_value_type();
     let constructs = vec![
         wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
         wire_construct("population", meaning::POPULATION, json!({})),
+        version_number_construct,
     ];
     let config_version_type = wire_type(
         &config_version,
@@ -539,7 +610,7 @@ pub(super) fn subtype_document(operation: Value) -> Vec<u8> {
                 wire_field(
                     &config_version_identity("versionNumber"),
                     "versionNumber",
-                    "ix://quire/native/Integer",
+                    &version_number,
                     "required",
                     1,
                 ),
@@ -582,7 +653,7 @@ pub(super) fn subtype_document(operation: Value) -> Vec<u8> {
     });
     wire_envelope(
         json!(constructs),
-        json!([config_version_type, sub_type]),
+        json!([version_number_type, config_version_type, sub_type]),
         json!([population]),
     )
     .to_string()
@@ -596,9 +667,12 @@ pub(super) fn subtype_document(operation: Value) -> Vec<u8> {
 pub(super) fn subtype_document_with_two_member_population(operation: Value) -> Vec<u8> {
     let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
     let sub = format!("ix://{PACKAGE_IDENTITY}/Sub");
+    let (version_number_construct, version_number_type, version_number) =
+        version_number_value_type();
     let constructs = vec![
         wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
         wire_construct("population", meaning::POPULATION, json!({})),
+        version_number_construct,
     ];
     let config_version_type = wire_type(
         &config_version,
@@ -609,7 +683,7 @@ pub(super) fn subtype_document_with_two_member_population(operation: Value) -> V
                 wire_field(
                     &config_version_identity("versionNumber"),
                     "versionNumber",
-                    "ix://quire/native/Integer",
+                    &version_number,
                     "required",
                     1,
                 ),
@@ -655,7 +729,7 @@ pub(super) fn subtype_document_with_two_member_population(operation: Value) -> V
     });
     wire_envelope(
         json!(constructs),
-        json!([config_version_type, sub_type]),
+        json!([version_number_type, config_version_type, sub_type]),
         json!([population]),
     )
     .to_string()
@@ -810,10 +884,9 @@ fn admit_and_assemble(document: &[u8]) -> Result<PackageDeclarations, String> {
 }
 
 /// FR-103-AC-1 (TC-458 step 1): the `ConfigVersion` domain package admits.
-/// `Config::ConfigVersion` has `versionNumber: Integer` (required) and
-/// `parent: Reference<Config::ConfigVersion>` (optional -- see this module's
-/// scope note on the `Int[0, 1000]` substitution), and `attemptUpdate` has
-/// no parameters, result `Boolean`, and an effect whose `modifies` is
+/// `Config::ConfigVersion` has `versionNumber: Int[0, 1000]` (required) and
+/// `parent: Reference<Config::ConfigVersion>` (optional), and `attemptUpdate`
+/// has no parameters, result `Boolean`, and an effect whose `modifies` is
 /// exactly the `versionNumber` field key.
 #[trace("TC-458", "FR-103-AC-1")]
 #[test]
@@ -858,7 +931,7 @@ fn an_operation_and_its_frame_admit_and_assemble() {
         .iter()
         .find(|field| field.name() == "versionNumber")
         .expect("versionNumber is an attribute");
-    assert_eq!(version_number.value_type(), &ValueType::Integer);
+    assert_eq!(version_number.value_type(), &version_number_bound());
     assert_eq!(version_number.presence(), Presence::Required);
 
     let parent = declared
@@ -887,66 +960,26 @@ fn an_operation_and_its_frame_admit_and_assemble() {
     assert_eq!(operation.effect().deletes, Vec::new());
 }
 
-/// FR-103-AC-1's own bound-scalar half (this module's own scope note): not
-/// the shared `ConfigVersion` fixture every other test in this file uses,
-/// but a small dedicated one -- a package-declared `VersionNumber` value
-/// type, integer `0..=1000`, and an object type `Widget` with one required
-/// field of that type -- proving FR-056's `value-type/v1` scalar reader
-/// (QSL-289) all the way through this file's own `admit_unit`/
-/// `PackageDeclarations::assemble` pipeline: `Widget.num` assembles to
-/// `Int[0, 1000]`, not the native `Integer` this file's other tests
-/// substitute.
+/// FR-103-AC-1's own bound-scalar half, over a small dedicated fixture
+/// independent of `ConfigVersion`: the same package-declared `VersionNumber`
+/// value type ([`version_number_value_type`]) and an object type `Widget`
+/// with one required field of that type -- proving FR-056's `value-type/v1`
+/// scalar reader (QSL-289) all the way through this file's own
+/// `admit_unit`/`PackageDeclarations::assemble` pipeline with no other
+/// declaration beside it: `Widget.num` assembles to `Int[0, 1000]`.
 #[trace("TC-458", "FR-103-AC-1")]
 #[test]
 fn bound_integer_value_type_admits_and_assembles() {
-    let version_number = format!("ix://{PACKAGE_IDENTITY}/VersionNumber");
+    let (version_number_construct, version_number_type, version_number) =
+        version_number_value_type();
     let widget = format!("ix://{PACKAGE_IDENTITY}/Widget");
-    // `agent-ix-semantic-ir`'s own `CONSTRAINT_MEMBERS` requires every
-    // constraint's `identity`/`appliesTo`/`diagnosticCode`/`origin` present
-    // (this module's own tests all route through the full
-    // `validate_with_semantic_ir` schema check, not just this reader's own
-    // hand-rolled one), unlike `intake.rs`'s own direct-reader unit tests.
-    // `appliesTo` names the native scalar the value type binds
-    // (`ix://quire/native/Integer`), not `VersionNumber`'s own identity:
-    // `agent-ix-semantic-ir`'s own applicability table (`rules.rs::applies_to`)
-    // only ever resolves a construct-kind node's own `kind`/`shape` to
-    // `"construct"`, never `"scalar"` (no `Shape` variant means "scalar" at
-    // this pinned rev) -- a constraint whose `appliesTo` named `VersionNumber`
-    // itself would refuse `CONSTRAINT_NOT_APPLICABLE` even though this is
-    // exactly the bound `VersionNumber` names. Naming the native scalar
-    // directly is what actually resolves to `Resolved::Native("integer")`,
-    // and is what `VALUE_TYPE`'s own meaning describes: "naming the value
-    // type and its bound native value type".
-    let constraint = |keyword: &str, value: i64| {
-        json!({
-            "identity": format!("{version_number}/constraints/{keyword}"),
-            "keyword": keyword,
-            "operands": {"value": value},
-            "appliesTo": "ix://quire/native/Integer",
-            "diagnosticCode": format!("bound.{keyword}"),
-            "origin": {
-                "generated": {
-                    "generatorIdentity": version_number.clone(),
-                    "generatorVersion": "1.0.0",
-                    "inputIdentities": [version_number.clone()],
-                }
-            },
-        })
-    };
     let document = wire_envelope(
         json!([
             wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
-            wire_construct("value_type", meaning::VALUE_TYPE, json!({})),
+            version_number_construct,
         ]),
         json!([
-            wire_type(
-                &version_number,
-                "value_type",
-                json!({
-                    "scalar": "integer",
-                    "constraints": [constraint("min", 0), constraint("max", 1000)],
-                }),
-            ),
+            version_number_type,
             wire_type(
                 &widget,
                 "object_type",
@@ -993,12 +1026,7 @@ fn bound_integer_value_type_admits_and_assembles() {
         .iter()
         .find(|field| field.name() == "num")
         .expect("num is an attribute");
-    assert_eq!(
-        num.value_type(),
-        &ValueType::Int(
-            IntegerInterval::new(Integer::from(0_i64), Integer::from(1000_i64)).unwrap()
-        )
-    );
+    assert_eq!(num.value_type(), &version_number_bound());
     assert_eq!(num.presence(), Presence::Required);
 }
 
@@ -1252,22 +1280,26 @@ fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
     assert_eq!(refusals[0].cause.as_str(), "declaration-form");
 }
 
-/// FR-103-AC-3 (TC-458 step 3, part 2): a parameter typed `Integer` (this
-/// module's substitute for TC-458's bound `VersionNumber` scalar) admits it
-/// typed `Integer`, alongside `attemptUpdate`'s existing no-op frame.
+/// FR-103-AC-3 (TC-458 step 3, part 2): a parameter typed `VersionNumber`
+/// admits it typed the bound `Int[0, 1000]`, alongside `attemptUpdate`'s
+/// existing no-op frame.
 #[trace("TC-458", "FR-103-AC-3")]
 #[test]
-fn an_integer_typed_parameter_admits_and_is_typed_integer() {
+fn a_version_number_typed_parameter_admits_and_is_typed_bound_integer() {
+    // `config_version_document` already declares `VersionNumber`
+    // (`version_number_value_type`) for `versionNumber` itself; `delta`
+    // reuses that same declaration by identity rather than redeclaring it.
+    let version_number = version_number_identity();
     let document = config_version_document(
         attempt_update(
-            json!([parameter("delta", "ix://quire/native/Integer")]),
+            json!([parameter("delta", &version_number)]),
             json!({"modifies": [], "creates": [], "deletes": []}),
         ),
         Vec::new(),
         Vec::new(),
         json!([]),
     );
-    let declarations = admit_and_assemble(&document).expect("an Integer parameter admits");
+    let declarations = admit_and_assemble(&document).expect("a VersionNumber parameter admits");
     let (unit, packages) = config_unit(&document);
     let built = parse_and_build(&unit);
     let views = admit_unit(
@@ -1292,7 +1324,7 @@ fn an_integer_typed_parameter_admits_and_is_typed_integer() {
         .expect("attemptUpdate is declared");
     assert_eq!(
         operation.parameters(),
-        &[("delta".to_owned(), ValueType::Integer)]
+        &[("delta".to_owned(), version_number_bound())]
     );
 }
 
@@ -1364,6 +1396,8 @@ fn admission_is_deterministic_regardless_of_document_order() {
         "deletes": [],
     });
     let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
+    let (version_number_construct, version_number_type, version_number) =
+        version_number_value_type();
     let config_version_type = wire_type(
         &config_version,
         "object_type",
@@ -1373,7 +1407,7 @@ fn admission_is_deterministic_regardless_of_document_order() {
                 wire_field(
                     &config_version_identity("versionNumber"),
                     "versionNumber",
-                    "ix://quire/native/Integer",
+                    &version_number,
                     "required",
                     1,
                 ),
@@ -1392,6 +1426,7 @@ fn admission_is_deterministic_regardless_of_document_order() {
     let constructs = json!([
         wire_construct("object_type", meaning::OBJECT_TYPE, json!({})),
         wire_construct("population", meaning::POPULATION, json!({})),
+        version_number_construct,
     ]);
     let population_identity = format!("ix://{PACKAGE_IDENTITY}/config_history");
     let population = json!({
@@ -1410,14 +1445,18 @@ fn admission_is_deterministic_regardless_of_document_order() {
     });
     let forward = wire_envelope(
         constructs.clone(),
-        json!([config_version_type.clone(), audit_type.clone()]),
+        json!([
+            version_number_type.clone(),
+            config_version_type.clone(),
+            audit_type.clone()
+        ]),
         json!([population.clone()]),
     )
     .to_string()
     .into_bytes();
     let backward = wire_envelope(
         constructs,
-        json!([audit_type, config_version_type]),
+        json!([audit_type, config_version_type, version_number_type]),
         json!([population]),
     )
     .to_string()

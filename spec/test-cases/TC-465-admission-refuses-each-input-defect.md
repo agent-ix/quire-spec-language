@@ -45,7 +45,7 @@ mutated document except where the row says otherwise.
 | 17 | 6.2 | a package variant whose `ConfigVersion` has field `tags` typed a set of `ConfigVersion` | `unknown_required_feature`/`unsupported-feature` at `tags` |
 | 18 | 6.5 | `versionNumber` `{"boolean": true}` | `invalid_runtime_input`/`wrong-value-kind` |
 | 19 | 6.5 | `root.versionNumber` `"01"` | `invalid_runtime_input`/`invalid-value` at `root`, `versionNumber` |
-| 20 | 6.5 | `root.versionNumber` `"-1"`; then `child.versionNumber` `"1001"` | `invalid_runtime_input`/`invalid-value`, naming `root` then `child` and `versionNumber` -- Unverified: needs the shared `ConfigVersion` fixture switched from a native `Integer` `versionNumber` to the bound `VersionNumber` scalar so an out-of-range value has a domain to violate; FR-056's `value-type/v1` reader itself is QSL-289, already built and verified by TC-458's own dedicated bound-scalar test, not this row's own gap |
+| 20 | 6.5 | `root.versionNumber` `"-1"`; then `child.versionNumber` `"1001"` | `invalid_runtime_input`/`invalid-value`, naming `root` then `child` and `versionNumber` |
 | 21 | 9 | `self` `{config_history, ghost}` | `invalid_runtime_input`/`wrong-role-mapping` |
 | 22 | 10 | invocation `result` `null` | `invalid_runtime_input`/`missing-member` |
 | 23 | 7 | `complete: false` and `child.parent` naming `missing` | `Incomplete`, `incomplete_population`/`incomplete-scope`, no dangling record |
@@ -55,7 +55,7 @@ mutated document except where the row says otherwise.
 | 27 | 11.3 | a package whose `attemptUpdate` frame modifies only `parent`, with the changed-version invocation (post `child.versionNumber` 3) | `frame_violation`/`unauthorized-change`, naming `child` and `versionNumber` |
 | 28 | 11.4 | invocation `created: [{config_history, child}]` | `population_delta_mismatch`/`delta-disagreement` |
 | 29 | 1.3 over 1.6 | row 4's edit plus row 7's extra member, under the original digest | `stale_dependency`/`byte-digest-mismatch` |
-| 30 | 6.5 walk order | `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` together | `invalid_runtime_input`/`invalid-value` at `root` -- Unverified, same reason as row 20 |
+| 30 | 6.5 walk order | `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` together | `invalid_runtime_input`/`invalid-value` at `root` |
 | 31 | 11.2 over 11.3 | post deletes `root` and sets `child.parent` absent | `frame_violation`/`unauthorized-change` naming the deletion of `root` |
 | 32 | 6.1 | a package variant that adds object type `Note`, a member type of no population, and an object `n1` of type `Note` in `config_history` | `invalid_runtime_input`/`wrong-role-mapping` at `n1` |
 | 33 | 6.4 | `root` without its `parent` field | `invalid_runtime_input`/`missing-member` at `root`, `parent` |
