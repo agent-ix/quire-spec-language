@@ -779,6 +779,35 @@ pub(crate) fn emit_package(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
 ) -> Result<Emission, EmitRefusal> {
+    emit_package_inner(package, regions, |_| None)
+}
+
+/// As [`emit_package`], but lets a test force a specific node's wire
+/// encoding to fail in place of writing it, in graph order
+/// ([`emit_package_inner`]'s `nodes` step): the injectable failure point
+/// FR-105-AC-6 requires to prove that node emission is all-or-nothing
+/// (QSL-313). No non-test caller exists; this is `#[cfg(test)]`-only so it
+/// compiles into no non-test build, and `emit_package`/`emit_checked` never
+/// pass a `fault` that fires.
+#[cfg(test)]
+pub(crate) fn emit_package_with_fault(
+    package: &CheckedPackage,
+    regions: impl Fn(&Location) -> Option<SourceRegion>,
+    fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
+) -> Result<Emission, EmitRefusal> {
+    emit_package_inner(package, regions, fault)
+}
+
+/// The body shared by [`emit_package`] and [`emit_package_with_fault`].
+/// `fault` runs against each node's id, in graph order, just before that
+/// node would be written; every production call site is `emit_package`,
+/// which passes `|_| None`, so this behaves exactly as `emit_package`
+/// always has for every non-test caller.
+fn emit_package_inner(
+    package: &CheckedPackage,
+    regions: impl Fn(&Location) -> Option<SourceRegion>,
+    fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
+) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
     let mut recorded = recorded_occurrences(graph)?;
     let candidates: BTreeMap<CheckedNodeId, Candidate<'_>> = graph
@@ -804,7 +833,10 @@ pub(crate) fn emit_package(
     sources.insert(source_artifact(graph.source()));
     let nodes = order
         .iter()
-        .map(|candidate| candidate.wire_node())
+        .map(|candidate| match fault(&candidate.id) {
+            Some(refusal) => Err(refusal),
+            None => candidate.wire_node(),
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let laws: Vec<DefinitionReference> = order
         .iter()
