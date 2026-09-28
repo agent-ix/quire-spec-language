@@ -263,7 +263,7 @@ operational validation remains outside this audit-only plan.
 | TC-511 | S3 resolves scoped anchors through nested scopes and refuses a missing anchor or member | Unit | P1 | FR-113-AC-1, FR-113-AC-2, FR-113-AC-3 | 🚧 Planned; QSL-296 |
 | TC-512 | S3 refuses ambiguous, shadowing, wrong-kind and wrong-channel names, in builder order | Unit | P1 | FR-113-AC-4, FR-113-AC-5, FR-113-AC-6, FR-113-AC-7 | 🚧 Planned; QSL-296 |
 | TC-513 | S3 binds a protocol attempt to its operation's one anchor and frame | Integration | P1 | FR-114-AC-1, FR-114-AC-2, FR-114-AC-3, FR-114-AC-4 | 🚧 Planned; QSL-296; emitted-node assertions pending STD-111 |
-| TC-514 | The spine run entry checks an invocation against its operation frame | Integration | P1 | FR-115-AC-1, FR-115-AC-2, FR-115-AC-3, FR-115-AC-4, FR-115-AC-5 | 🚧 Planned; QSL-296 |
+| TC-514 | The spine run entry checks an invocation against its operation frame | Integration | P1 | FR-115-AC-1, FR-115-AC-2, FR-115-AC-3, FR-115-AC-4, FR-115-AC-5 | ✅ Passed locally; QSL-300 |
 | TC-515 | The replay facade replays a frame counterexample and keeps its identities | Integration | P1 | FR-116-AC-1, FR-116-AC-2, FR-116-AC-3, FR-116-AC-4, FR-116-AC-5 | 🚧 Planned; QSL-296 |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
@@ -662,7 +662,8 @@ anchor forms (FR-112), S3 anchor resolution through nested scopes with the
 missing, ambiguous and shadowing refusals (FR-113), a protocol attempt bound
 to its operation's one FR-105 frame node (FR-114), the `Frame` run selection
 and its `frame_violation` (FR-115), and frame counterexample replay (FR-116).
-TC-510 to TC-515 back every AC and are all `🚧 Planned`. TC-513's emitted-node
+TC-510 to TC-515 back every AC. TC-514 has passed locally (QSL-300); the rest
+are `🚧 Planned`. TC-513's emitted-node
 assertions wait on STD-111, as TC-462's do. FR-116's decode of a Kani frame
 witness waits on agent-ix/quire-contract-ir#109 and
 agent-ix/quire-contract-codegen#49; TC-515 drives a hand-built envelope.
