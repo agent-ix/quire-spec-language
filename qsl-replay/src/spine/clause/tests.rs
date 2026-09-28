@@ -3913,7 +3913,7 @@ fn s4_state_package_emission_is_stable_across_compiles() {
 }
 
 // ---------------------------------------------------------------------------
-// FR-105-AC-2/AC-4 remainder (QSL-308c/QSL-312): dependencies and
+// FR-105-AC-2/AC-4 remainder (QSL-312): dependencies and
 // occurrences beyond the frame, the state_clause `semantic_type`, the
 // condition-term shapes, and the rename/`<=`/duplicate/second-post/
 // Sub-anchor-sharing FR-105-AC-4 cases `s4_state_package_emission_is_
@@ -4124,21 +4124,27 @@ fn wire_node_id(key: NodeKey) -> serde_json::Value {
     })
 }
 
-/// The ordinals of `key`'s occurrences in role `role` (`claim`, `anchor`,
-/// `generated`), ascending, read from `CheckedGraph::occurrences` (ADR-013
-/// O-07): the in-process record `check` built.
-fn occurrence_ordinals(
-    graph: &qsl_semantics::check::CheckedGraph,
-    key: NodeKey,
-    role: &str,
-) -> Vec<u64> {
-    let mut ordinals: Vec<u64> = graph
+/// Every occurrence of `key` as a `(role, ordinal)` pair (`claim`, `anchor`,
+/// `generated`), sorted, read from `CheckedGraph::occurrences` (ADR-013
+/// O-07): the in-process record `check` built. Not filtered by role, so a
+/// stray occurrence in an unexpected role fails the comparison.
+fn occurrences_of(graph: &qsl_semantics::check::CheckedGraph, key: NodeKey) -> Vec<(String, u64)> {
+    let mut occurrences: Vec<(String, u64)> = graph
         .occurrences()
-        .filter(|(node, origin, _)| *node == key && origin.role().as_str() == role)
-        .map(|(_, origin, _)| origin.ordinal())
+        .filter(|(node, _, _)| *node == key)
+        .map(|(_, origin, _)| (origin.role().as_str().to_owned(), origin.ordinal()))
         .collect();
-    ordinals.sort_unstable();
+    occurrences.sort_unstable();
+    occurrences
+}
+
+/// The expected [`occurrences_of`] list for a node whose occurrences are
+/// all in `role`, at `ordinals`.
+fn occurrences_in(role: &str, ordinals: &[u64]) -> Vec<(String, u64)> {
     ordinals
+        .iter()
+        .map(|ordinal| (role.to_owned(), *ordinal))
+        .collect()
 }
 
 /// `values` sorted by their JSON text, for order-insensitive comparison.
@@ -4306,7 +4312,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
         declaration: config_version_node,
         name: quire_exact::Identifier::new("versionNumber").expect("valid identifier"),
     };
-    let field_read_key = graph
+    let field_read = graph
         .semantic_graph()
         .nodes()
         .find(|node| {
@@ -4317,12 +4323,31 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
                         if operation.member() == Some(&version_number_member)
                 )
         })
-        .expect("a versionNumber field-read expression node")
-        .key();
-    assert!(
-        emitted_dependencies_of(&compiled, field_read_key)
-            .contains(&wire_node_id(config_version_node)),
-        "the versionNumber field read depends on ConfigVersion through its member's declaration"
+        .expect("a versionNumber field-read expression node");
+    let qsl_semantics::check::SemanticTerm::Application { arguments, .. } = field_read.body()
+    else {
+        unreachable!("the find above matched an application body");
+    };
+    let [qsl_semantics::check::SemanticTerm::Reference { target: receiver }] = arguments.as_slice()
+    else {
+        panic!("the field read has one argument, a reference to its receiver, got {arguments:?}");
+    };
+    assert_eq!(
+        graph
+            .semantic_graph()
+            .node(receiver.0)
+            .map(qsl_semantics::check::SemanticNode::node_tag),
+        Some(qsl_semantics::check::NodeTag::Expression),
+        "the field read's receiver is the `deref(self)` expression node"
+    );
+    assert_eq!(
+        sorted_json(emitted_dependencies_of(&compiled, field_read.key())),
+        sorted_json(vec![
+            wire_node_id(config_version_node),
+            wire_node_id(receiver.0),
+        ]),
+        "the versionNumber field read depends on exactly ConfigVersion (its member's \
+         declaration) and its receiver expression node"
     );
 }
 
@@ -4340,26 +4365,25 @@ fn s4_state_clause_anchor_and_frame_occurrences_match_the_outputs_table() {
     let graph = compiled.package.graph();
     let anchor_key = single_state_node_key(graph, "operation_anchor");
     let frame_key = single_state_node_key(graph, "frame");
-    let occurrences_of = |key: NodeKey, role: &str| occurrence_ordinals(graph, key, role);
 
     for (node, kind) in state_clause_nodes(graph) {
         assert_eq!(
-            occurrences_of(node.key(), "claim"),
-            vec![0],
-            "{kind}'s state_clause node has exactly one claim occurrence, ordinal 0, since \
-             it is declared exactly once"
+            occurrences_of(graph, node.key()),
+            occurrences_in("claim", &[0]),
+            "{kind}'s state_clause node has exactly one occurrence, a claim at ordinal 0, \
+             since it is declared exactly once"
         );
     }
     assert_eq!(
-        occurrences_of(anchor_key, "anchor"),
-        vec![0],
-        "the operation_anchor has one anchor occurrence: one clause (VersionUnchanged) \
-         names attemptUpdate"
+        occurrences_of(graph, anchor_key),
+        occurrences_in("anchor", &[0]),
+        "the operation_anchor has exactly one occurrence, an anchor: one clause \
+         (VersionUnchanged) names attemptUpdate"
     );
     assert_eq!(
-        occurrences_of(frame_key, "generated"),
-        vec![0],
-        "the frame has one generated occurrence: one named operation (attemptUpdate)"
+        occurrences_of(graph, frame_key),
+        occurrences_in("generated", &[0]),
+        "the frame has exactly one occurrence, generated: one named operation (attemptUpdate)"
     );
 }
 
@@ -4693,12 +4717,12 @@ fn s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim() {
         "ParentOrder2 checks to ParentOrder's node"
     );
     assert_eq!(
-        occurrence_ordinals(base.package.graph(), parent_order, "claim"),
-        vec![0]
+        occurrences_of(base.package.graph(), parent_order),
+        occurrences_in("claim", &[0])
     );
     assert_eq!(
-        occurrence_ordinals(graph, parent_order, "claim"),
-        vec![0, 1],
+        occurrences_of(graph, parent_order),
+        occurrences_in("claim", &[0, 1]),
         "ParentOrder's node gains a second claim occurrence, ordinal 1"
     );
 }
@@ -4749,8 +4773,8 @@ fn s4_a_second_post_on_attempt_update_adds_one_clause_node_and_no_anchor_or_fram
         );
     }
     assert_eq!(
-        occurrence_ordinals(graph, anchor, "anchor"),
-        vec![0, 1],
+        occurrences_of(graph, anchor),
+        occurrences_in("anchor", &[0, 1]),
         "one anchor occurrence per clause naming attemptUpdate"
     );
 }
@@ -4838,8 +4862,8 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
     );
     assert_eq!(anchor_node.semantic_type(), Some(config_version_node));
     assert_eq!(
-        occurrence_ordinals(graph, anchor, "anchor"),
-        vec![0, 1, 2],
+        occurrences_of(graph, anchor),
+        occurrences_in("anchor", &[0, 1, 2]),
         "one anchor occurrence per clause naming attemptUpdate: VersionUnchanged, A and B"
     );
 }
