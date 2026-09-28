@@ -50,7 +50,7 @@ mod clause;
 pub use clause::{
     run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunProvenance,
     ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
-    ClauseRunStage, ExtractionOrigin,
+    ClauseRunStage, ExtractionOrigin, OperationName,
 };
 
 /// Why spine [`compile`] produced no checked package. Each

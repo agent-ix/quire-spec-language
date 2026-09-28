@@ -79,11 +79,30 @@ pub enum ClauseRunSelection {
     /// the compiled package (QSpec FR-013-AC-3).
     Frame {
         /// The operation `M::T::op`.
-        operation: qsl_eval::value::QualifiedName,
+        operation: OperationName,
         /// The `quire.state.invocation/v1` document, with its pre and post
         /// snapshots in the provision.
         invocation: DocumentRef,
     },
+}
+
+/// FR-115: the operation a `Frame` selection names, `M::T::op`: model
+/// alias `M`, object type `T` and operation `op`, as FR-104 spells a
+/// clause's operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationName {
+    /// The model alias `M`.
+    pub model: String,
+    /// The object type `T`.
+    pub object: String,
+    /// The operation `op`.
+    pub operation: String,
+}
+
+impl std::fmt::Display for OperationName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}::{}::{}", self.model, self.object, self.operation)
+    }
 }
 
 /// FR-109 Inputs' unit: the program source, or an I3 extracted source.
@@ -825,7 +844,7 @@ impl FrameRun<'_> {
 /// `ProtocolClause` S6a `evaluate` arm (FR-106's check 11).
 fn run_frame(
     run: &FrameRun<'_>,
-    operation: &qsl_eval::value::QualifiedName,
+    operation: &OperationName,
     invocation: &DocumentRef,
 ) -> ClauseRunReport {
     use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, FrameEvaluation};
@@ -835,10 +854,10 @@ fn run_frame(
     // FR-104's Resolution: `M::T::op` names an operation of `M::T`'s
     // effective view, and the package holds its frame node only when a
     // clause or attempt names it (FR-105).
-    let resolved = match operation.segments() {
-        [model, object, name] => graph.operation_frame(&format!("{model}::{object}"), name),
-        _ => None,
-    };
+    let resolved = graph.operation_frame(
+        &format!("{}::{}", operation.model, operation.object),
+        &operation.operation,
+    );
     let Some((context, operation_frame)) = resolved else {
         return run.report(
             ClauseDisposition::MissingName {

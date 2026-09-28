@@ -57,8 +57,7 @@ impl QualifiedName {
         Self::new(vec![name.into()])
     }
 
-    /// The name's segments, in order.
-    pub fn segments(&self) -> &[String] {
+    pub(crate) fn segments(&self) -> &[String] {
         &self.0
     }
 

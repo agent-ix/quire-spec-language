@@ -4,14 +4,16 @@
 //! frame modifies exactly `versionNumber` and creates and deletes nothing.
 
 use super::*;
-use crate::spine::{CallOutcome, CallRefusal};
+use crate::spine::{CallOutcome, CallRefusal, OperationName};
 use qsl_semantics::model::observation::{AdmissionFailure, AdmissionRecord, FrameChange};
 
-/// `Config::ConfigVersion::<operation>` as a `QualifiedName`.
-fn operation(name: &str) -> QualifiedName {
-    format!("Config::ConfigVersion::{name}")
-        .parse()
-        .expect("M::T::op is a qualified name")
+/// `Config::ConfigVersion::<name>`.
+fn operation(name: &str) -> OperationName {
+    OperationName {
+        model: "Config".to_owned(),
+        object: "ConfigVersion".to_owned(),
+        operation: name.to_owned(),
+    }
 }
 
 /// One `config_history` object: `key` at `version`, naming `parent` when
