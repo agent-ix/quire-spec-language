@@ -54,10 +54,13 @@ pub struct ClauseOperation {
 
 /// One protocol `attempt` the FR-091 assembler admitted (FR-114 "Behavior",
 /// QSL-309): its operation resolved exactly as a `pre`/`post` clause's own
-/// (FR-104), and each `contracts` entry checked against the unit's own
-/// state clauses -- both by the same assembler pass that resolves
+/// (FR-104), by the same assembler pass that resolves
 /// [`StateClauseDeclaration`]s, so an attempt's operation and a clause's
-/// operation naming the same `M::T::op` always agree on identity.
+/// operation naming the same `M::T::op` always agree on identity. The
+/// `contracts` list stays on the attempt's own S2 form
+/// (`qsl_forms::AttemptForm::contracts`, unresolved): checking it needs the
+/// unit's other state clauses, which are checked at S3, not the assembler
+/// (`check::protocol_clause` binds it, QSL-309).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttemptDeclaration {
     /// The index into the owning `ProtocolDeclarationForm::declarations` of
@@ -66,9 +69,11 @@ pub struct AttemptDeclaration {
     pub declaration: usize,
     /// The resolved operation `on M::T::op` names.
     pub operation: ClauseOperation,
-    /// Each `contracts` entry, resolved to the index of the unit's own
-    /// [`StateClauseDeclaration`] it names, in source order.
-    pub contracts: Vec<usize>,
+    /// The population domain of the type declaring the operation, resolved
+    /// the same way a state clause's own `frame_population` is
+    /// (FR-104 "Requirements"): `None` when the declaring type shares no
+    /// population.
+    pub frame_population: Option<PopulationDomain>,
 }
 
 /// One state clause the FR-091 assembler admitted (FR-104 "Inputs"): every
