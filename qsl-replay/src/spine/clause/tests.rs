@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, InputRefusal, QualifiedName};
 use qsl_semantics::family::FamilyOutcome;
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
@@ -1374,16 +1375,43 @@ fn config_version_population_identity() -> String {
     format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/config_history")
 }
 
+/// FR-108's own bound: `versionNumber` is `Int[0, 1000]`, a package-declared
+/// `VersionNumber` value type (FR-056's `value-type/v1` scalar reader,
+/// QSL-289), not the native `Integer` this fixture used before QSL-279 --
+/// the below-range and above-range corpus cases need a real domain bound to
+/// refuse against.
+fn version_number_type() -> String {
+    format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/VersionNumber")
+}
+
 /// The `test/config-version` domain package: `ConfigVersion` (`versionNumber:
-/// Integer`, `parent: Reference<ConfigVersion>?`), one operation
-/// `attemptUpdate` (`modifies [versionNumber, parent]`, no parameters,
-/// returns `Boolean`), one closed population `config_history`.
+/// VersionNumber` (`Int[0, 1000]`), `parent: Reference<ConfigVersion>?`),
+/// one operation `attemptUpdate` (FR-105-AC-1's own frame, `modifies
+/// [versionNumber]` only, no parameters, returns `Boolean`), one closed
+/// population `config_history`.
 fn config_version_domain_document() -> Vec<u8> {
     let config_version = config_version_type();
+    let version_number = version_number_type();
     let version_number_identity = format!("{config_version}/versionNumber");
     let parent_identity = format!("{config_version}/parent");
     let operation_identity = format!("{config_version}/attemptUpdate");
     let population = config_version_population_identity();
+    let bound = |keyword: &str, value: i64| {
+        json!({
+            "identity": format!("{version_number}/constraints/{keyword}"),
+            "keyword": keyword,
+            "operands": {"value": value},
+            "appliesTo": "ix://quire/native/Integer",
+            "diagnosticCode": format!("bound.{keyword}"),
+            "origin": {
+                "generated": {
+                    "generatorIdentity": version_number.clone(),
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [version_number.clone()],
+                }
+            },
+        })
+    };
     let envelope = json!({
         "contractVersion": "2.0.0",
         "source": {
@@ -1425,8 +1453,36 @@ fn config_version_domain_document() -> Vec<u8> {
                     "meaning": "quire.meaning.model.population/v1",
                 },
             },
+            {
+                "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "value_type"},
+                "moduleVersion": "1.0.0",
+                "manifestDigest": PLACEHOLDER_DIGEST,
+                "construct": {
+                    "identity": "none",
+                    "shape": "record",
+                    "members": {},
+                    "meaning": "quire.meaning.model.value-type/v1",
+                },
+            },
         ],
         "types": [
+            {
+                "identity": version_number.clone(),
+                "displayName": version_number.clone(),
+                "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "value_type"},
+                "roles": [],
+                "origin": {
+                    "generated": {
+                        "generatorIdentity": version_number.clone(),
+                        "generatorVersion": "1.0.0",
+                        "inputIdentities": [version_number.clone()],
+                    }
+                },
+                "extensions": [],
+                "unknownPolicy": "reject",
+                "scalar": "integer",
+                "constraints": [bound("min", 0), bound("max", 1000)],
+            },
             {
                 "identity": config_version,
                 "displayName": config_version,
@@ -1447,7 +1503,7 @@ fn config_version_domain_document() -> Vec<u8> {
                     {
                         "identity": version_number_identity,
                         "name": "versionNumber",
-                        "typeRef": "ix://quire/native/Integer",
+                        "typeRef": version_number,
                         "presence": "required",
                         "nullable": false,
                         "defaultKind": "none",
@@ -1497,8 +1553,10 @@ fn config_version_domain_document() -> Vec<u8> {
                                 "startColumn": 1,
                             },
                         },
+                        // FR-105-AC-1: `attemptUpdate`'s frame modifies
+                        // exactly `versionNumber`, never `parent`.
                         "frame": {
-                            "modifies": [version_number_identity, parent_identity],
+                            "modifies": [version_number_identity],
                             "creates": [],
                             "deletes": [],
                         },
@@ -1527,32 +1585,17 @@ fn config_version_domain_document() -> Vec<u8> {
 }
 
 /// The unit text selecting [`config_version_domain_document`] as model alias
-/// `Config`, plus `ParentOrder` (invariant).
+/// `Config`: FR-108's own `ParentOrder`, `NoCycle` and `VersionUnchanged`
+/// clauses, plus `sameIdentity` and `n`.
 ///
-/// **Pending QSL-279** (TC-466 Status; not this fix round's own finding): a
-/// postcondition of `attemptUpdate` (`VersionUnchanged`, or a
-/// `pre(..)`-reading clause for TC-466 step 2) cannot be added to this
-/// file's fixture. `evaluate_clause` is sealed to
-/// `qsl_package::checked::CheckedPackage` (`qsl-eval/src/value/expression/
-/// mod.rs:314`), reachable only through full compile-to-emit; reaching S5
-/// (`qsl_package::emit::emit_checked`) with any clause that uses the
-/// operation refuses `EmitRefusal::UnlocatedOccurrence` (`qsl-package/src/
-/// emit.rs:142`, "Source regions", emit.rs:35-42), because FR-105's own
-/// state-node emission is not implemented yet ("Today QSL emits no `state`
-/// node", `spec/functional/FR-105-emit-state-nodes.md`): a hand-authored
-/// domain-package operation's `origin.source` here is a synthetic
-/// `{sourceIdentity, path, startLine, startColumn}` (the same shape
-/// `qsl-semantics`' own TC-458 fixture uses, `model_operations.rs`'s
-/// `operation()`), never a byte source S1/S2 ever actually parsed, and
-/// `qsl-semantics`' own `tests/it` suite only checks through S3/S4
-/// (`PackageDeclarations::check`), never S5, so this gap is invisible
-/// there. Confirmed by removing each new clause one at a time:
-/// `ParentOrder` alone (no clause referencing `attemptUpdate`) compiles
-/// through `run_clause` cleanly; any postcondition of `attemptUpdate`
-/// reaches the same `UnlocatedOccurrence` refusal regardless of its body.
-/// QSL-279 ("A05-8: S4 state node emission and the ConfigVersion spine
-/// corpus, FR-105, FR-108") is the ticket that implements the missing
-/// emission this depends on.
+/// QSL-279 (FR-105) implements the `state`/`state_clause`,
+/// `state`/`operation_anchor` and `state`/`frame` emission a postcondition
+/// of `attemptUpdate` needs to reach S5: before it, any clause naming the
+/// operation refused `EmitRefusal::UnlocatedOccurrence` at S5
+/// (`qsl_package::emit::emit_checked`), because S4 emitted no `state` node
+/// at all ("Today QSL emits no `state` node",
+/// `spec/functional/FR-105-emit-state-nodes.md`). `VersionUnchanged` below
+/// is that postcondition, now reachable through `run_clause` end to end.
 fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let document = config_version_domain_document();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
@@ -1567,6 +1610,10 @@ fn config_version_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
          digest \"sha256-jcs:{digest}\";\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
          present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\
+         invariant NoCycle using v on Config::ConfigVersion at current {{ \
+         not reaches(self, self, parent) }}\n\
+         post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate {{ \
+         self.versionNumber = pre(self.versionNumber) }}\n\
          function sameIdentity using v(a: Config::ConfigVersion, b: Config::ConfigVersion): \
          Boolean pure {{ a = b }}\n\
          function n using v(a: Config::ConfigVersion): Integer pure {{ 1 }}\n"
@@ -2196,12 +2243,17 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     // (refusing at admission otherwise, never reaching evaluate), and
     // always admits every one of the clause's own declared parameters
     // (check 10) -- the same "broken invariant, not a document defect"
-    // shape `CheckedInvariant` above already is. This test file also has
-    // no compiled package with a precondition/postcondition clause to
-    // attempt it against in the first place: any clause on `attemptUpdate`
-    // fails `spine::compile` (SR-751 FND-003, deferred to QSL-279, a
-    // dependency this round does not touch), and `binds_result()`/`pre`/
-    // `post` are meaningful only for a precondition or postcondition.
+    // shape `CheckedInvariant` above already is. This test's own fixture
+    // (`compiled()`, `unit_and_packages()`) still has no precondition or
+    // postcondition to attempt it against -- `test/nodes` declares only
+    // `NoCycle`, an invariant. QSL-279 lifted the compile-time blocker this
+    // comment used to describe (SR-751 FND-003): `post VersionUnchanged` on
+    // `attemptUpdate` now compiles through `spine::compile`, in
+    // `config_version_compiled()` below, in this same file. Constructing
+    // `CallFailure::Fault` directly here rather than through
+    // `package.evaluate_clause` against that fixture is still the
+    // deliberate choice this test makes (disclosed above), not one forced
+    // by a compile-time gap any more.
     let call_failure_fault = qsl_foundation::diagnostic::InternalFault::new("call", "fault-kind");
     let disposition_from_call_failure = ClauseDisposition::EvaluateFault(call_failure_fault);
     assert_eq!(
@@ -2578,4 +2630,359 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
         })
     );
     assert!(report.provenance.documents.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// FR-105 (QSL-279): S4 state-node emission (TC-462, TC-463).
+// ---------------------------------------------------------------------------
+
+fn config_version_compiled() -> Compiled {
+    let (unit, packages) = config_version_unit_and_packages();
+    compile(
+        source(),
+        "clause-run-config-version.native",
+        unit.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("compile refused: {refusal:?}"))
+}
+
+/// `node`'s body, expecting a `quire.op.state.clause` application, and the
+/// `clause` its `state_clause` member names.
+fn state_clause_kind(node: &qsl_semantics::check::SemanticNode) -> &'static str {
+    let qsl_semantics::check::SemanticTerm::Application {
+        operator,
+        operation,
+        ..
+    } = node.body()
+    else {
+        panic!(
+            "state_clause body must be an application, got {:?}",
+            node.body()
+        );
+    };
+    assert_eq!(*operator, qsl_semantics::check::Operator::StateClause);
+    assert_eq!(operation.identity(), "quire.op.state.clause");
+    match operation.member() {
+        Some(qsl_semantics::value::Member::StateClause { clause }) => match clause {
+            qsl_forms::StateClauseKind::Invariant => "invariant",
+            qsl_forms::StateClauseKind::Precondition => "precondition",
+            qsl_forms::StateClauseKind::Postcondition => "postcondition",
+        },
+        other => panic!("state_clause member must be StateClause, got {other:?}"),
+    }
+}
+
+/// TC-462 (FR-105-AC-1, FR-105-AC-2): S4 emits exactly the `state` nodes
+/// FR-105's Outputs table describes for FR-108's unit: three `state_clause`
+/// nodes (`invariant`, `invariant`, `postcondition`), one `operation_anchor`
+/// (context `ConfigVersion`, operation `"attemptUpdate"`) and one `frame`
+/// (`modifies` exactly `versionNumber`, `creates`/`deletes` empty) -- and no
+/// `model`/`field_declaration`, `model`/`operation_declaration`,
+/// `state`/`snapshot` or `state`/`transition` node.
+#[trace("TC-462", "FR-105-AC-1")]
+#[trace("TC-462", "FR-105-AC-2")]
+#[test]
+fn s4_emits_exactly_the_fr_105_state_nodes() {
+    let compiled = config_version_compiled();
+    let graph = compiled.package.graph();
+    let state_nodes: Vec<&qsl_semantics::check::SemanticNode> = graph
+        .semantic_graph()
+        .nodes()
+        .filter(|node| node.node_tag() == qsl_semantics::check::NodeTag::State)
+        .collect();
+
+    let mut clause_kinds: Vec<&str> = state_nodes
+        .iter()
+        .filter(|node| node.semantic_form() == "state_clause")
+        .map(|node| state_clause_kind(node))
+        .collect();
+    clause_kinds.sort_unstable();
+    assert_eq!(clause_kinds, ["invariant", "invariant", "postcondition"]);
+
+    let anchors: Vec<_> = state_nodes
+        .iter()
+        .filter(|node| node.semantic_form() == "operation_anchor")
+        .collect();
+    assert_eq!(anchors.len(), 1, "{anchors:?}");
+    let qsl_semantics::check::SemanticTerm::Aggregate { members } = anchors[0].body() else {
+        panic!("operation_anchor body must be an aggregate");
+    };
+    let [context, operation, frame_ref] = members.as_slice() else {
+        panic!("operation_anchor has exactly 3 bindings, got {members:?}");
+    };
+    let qsl_semantics::check::SemanticTerm::Binding { name, value } = operation else {
+        panic!("operation_anchor's second member is a binding");
+    };
+    assert_eq!(name, "operation");
+    let qsl_semantics::check::SemanticTerm::Literal {
+        value: qsl_semantics::check::LiteralValue::Text(text),
+        ..
+    } = value.as_ref()
+    else {
+        panic!("operation's own value is a text literal");
+    };
+    assert_eq!(text, "attemptUpdate");
+    let qsl_semantics::check::SemanticTerm::Binding {
+        name: context_name,
+        value: context_value,
+    } = context
+    else {
+        panic!("operation_anchor's first member is a binding");
+    };
+    assert_eq!(context_name, "context");
+    let qsl_semantics::check::SemanticTerm::Reference {
+        target: context_ref,
+    } = context_value.as_ref()
+    else {
+        panic!("context's value is a reference");
+    };
+
+    // FND-005: find ConfigVersion's own `model`/`object_type` node
+    // independently of the anchor/frame chain above, through
+    // `resolve_declaration` -- the model correspondence FR-088-AC-2 built
+    // during checking, not a value this test derived from the emission
+    // path it is checking. If `context_ref`/`only.declaration()` above
+    // consistently named the wrong node (say, the population node), this
+    // lookup would still find the real one and the comparison below would
+    // catch the mismatch.
+    let expected_declaration = qsl_semantics::model::key::DeclarationKey {
+        package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
+        node: config_version_type(),
+    };
+    let config_version_node = graph
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::Model
+                && node.semantic_form() == "object_type"
+                && graph.resolve_declaration(node.key()) == Some(&expected_declaration)
+        })
+        .expect("ConfigVersion's own object_type node is in the graph")
+        .key();
+    assert_eq!(
+        context_ref.0, config_version_node,
+        "operation_anchor's context is ConfigVersion's own node, verified via resolve_declaration"
+    );
+
+    // TC-462 step 2: each invariant's own anchor argument (state_clause's
+    // second application argument) also names ConfigVersion directly --
+    // an invariant has no operation to anchor at, so lowering anchors it
+    // at its own context object type (`Lowering::state_clause`, the `None`
+    // arm).
+    for node in state_nodes
+        .iter()
+        .filter(|node| node.semantic_form() == "state_clause")
+        .filter(|node| state_clause_kind(node) == "invariant")
+    {
+        let qsl_semantics::check::SemanticTerm::Application { arguments, .. } = node.body() else {
+            panic!("state_clause body must be an application");
+        };
+        let [_, anchor_argument, _] = arguments.as_slice() else {
+            panic!("state_clause has exactly 3 arguments, got {arguments:?}");
+        };
+        let qsl_semantics::check::SemanticTerm::Reference { target } = anchor_argument else {
+            panic!("state_clause's anchor argument is a reference");
+        };
+        assert_eq!(
+            target.0, config_version_node,
+            "an invariant's anchor argument names ConfigVersion's own node"
+        );
+    }
+
+    let frames: Vec<_> = state_nodes
+        .iter()
+        .filter(|node| node.semantic_form() == "frame")
+        .collect();
+    assert_eq!(frames.len(), 1, "{frames:?}");
+    let qsl_semantics::check::SemanticTerm::Frame {
+        modifies,
+        creates,
+        deletes,
+    } = frames[0].body()
+    else {
+        panic!(
+            "frame body must be SemanticTerm::Frame, got {:?}",
+            frames[0].body()
+        );
+    };
+    assert!(creates.is_empty(), "{creates:?}");
+    assert!(deletes.is_empty(), "{deletes:?}");
+    let [only] = modifies.as_slice() else {
+        panic!("exactly one modifies entry, got {modifies:?}");
+    };
+    assert_eq!(only.name(), "versionNumber");
+    assert_eq!(
+        only.declaration().0,
+        context_ref.0,
+        "modifies names ConfigVersion's own node"
+    );
+    assert_eq!(
+        frames[0].semantic_type(),
+        Some(context_ref.0),
+        "the frame's own semantic_type is the declaring object type"
+    );
+    let qsl_semantics::check::SemanticTerm::Binding {
+        name: frame_name,
+        value: frame_value,
+    } = frame_ref
+    else {
+        panic!("operation_anchor's third member is a binding");
+    };
+    assert_eq!(frame_name, "frame");
+    let qsl_semantics::check::SemanticTerm::Reference {
+        target: frame_target,
+    } = frame_value.as_ref()
+    else {
+        panic!("frame's value is a reference");
+    };
+    assert_eq!(
+        frame_target.0,
+        frames[0].key(),
+        "the anchor's frame binding names the frame node"
+    );
+
+    // No model/field_declaration, model/operation_declaration,
+    // state/snapshot or state/transition node (ADR-012 §15.3/§15.4).
+    for node in graph.semantic_graph().nodes() {
+        assert_ne!(
+            (node.node_tag(), node.semantic_form()),
+            (qsl_semantics::check::NodeTag::Model, "field_declaration")
+        );
+        assert_ne!(
+            (node.node_tag(), node.semantic_form()),
+            (
+                qsl_semantics::check::NodeTag::Model,
+                "operation_declaration"
+            )
+        );
+        assert_ne!(
+            (node.node_tag(), node.semantic_form()),
+            (qsl_semantics::check::NodeTag::State, "snapshot")
+        );
+        assert_ne!(
+            (node.node_tag(), node.semantic_form()),
+            (qsl_semantics::check::NodeTag::State, "transition")
+        );
+    }
+}
+
+/// TC-462 (FR-105-AC-2): the `BodyNames` Frame dependency-walk arm
+/// (`qsl-package`'s generic emitter, `emit.rs`) actually lists the frame's
+/// `modifies` declaration among the emitted node's own `dependencies` --
+/// the graph-reading test above only sees the in-process `SemanticGraph`,
+/// so replacing that arm's body with `{}` would still pass every other
+/// test here while the emitted frame stopped naming ConfigVersion as a
+/// dependency, violating FR-340. This decodes `compiled.emitted.bytes()`
+/// directly, the one non-ignored assertion on the emitted wire.
+#[trace("TC-462", "FR-105-AC-2")]
+#[test]
+fn s4_emitted_frame_node_lists_configversion_in_dependencies() {
+    let compiled = config_version_compiled();
+    let graph = compiled.package.graph();
+    let expected_declaration = qsl_semantics::model::key::DeclarationKey {
+        package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
+        node: config_version_type(),
+    };
+    let config_version_node = graph
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::Model
+                && node.semantic_form() == "object_type"
+                && graph.resolve_declaration(node.key()) == Some(&expected_declaration)
+        })
+        .expect("ConfigVersion's own object_type node is in the graph")
+        .key();
+    let expected_id = json!({
+        "domain": quire_exact::NODE_KEY_DOMAIN,
+        "digest": config_version_node.to_string(),
+    });
+
+    let wire: serde_json::Value =
+        serde_json::from_slice(compiled.emitted.bytes()).expect("emitted bytes are JSON");
+    let nodes = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("semantic_graph.nodes is an array");
+    let frame = nodes
+        .iter()
+        .find(|node| node["body"]["term"] == "frame")
+        .expect("exactly one emitted frame node");
+    assert_eq!(
+        frame["body"]["modifies"],
+        json!([{"kind": "field", "declaration": expected_id, "name": "versionNumber"}]),
+        "the emitted frame body's modifies entry"
+    );
+    assert_eq!(frame["body"]["creates"], json!([]));
+    assert_eq!(frame["body"]["deletes"], json!([]));
+    assert!(
+        frame["dependencies"]
+            .as_array()
+            .expect("dependencies is an array")
+            .contains(&expected_id),
+        "the frame's own emitted dependencies must list ConfigVersion: {:?}",
+        frame["dependencies"]
+    );
+}
+
+/// TC-463 step 2 (FR-105-AC-4): compiling FR-108's unit twice gives
+/// identical bytes and the same `package_id`.
+#[trace("TC-463", "FR-105-AC-4")]
+#[test]
+fn s4_state_package_emission_is_stable_across_compiles() {
+    let first = config_version_compiled();
+    let second = config_version_compiled();
+    assert_eq!(
+        first.emitted.bytes(),
+        second.emitted.bytes(),
+        "compiling the same unit twice gives identical bytes"
+    );
+    assert_eq!(first.emitted.package_id(), second.emitted.package_id());
+}
+
+/// TC-463 step 1 (FR-105-AC-3): the emitted package reads back through
+/// QSL's I2 reader (`read_import_view`), including its frame step, with its
+/// recomputed `package_id` equal to the emitted one.
+///
+/// **Blocked, not a QSL-279 gap**: the pinned `quire-contract-model` rev
+/// (`48ab5dc`, this workspace's `Cargo.toml`) has no `state_clause` member
+/// of its own closed `ApplicationOperator` vocabulary
+/// (`checked_package/v2/vocabulary.rs`) yet -- STD-111 added it to QSpec's
+/// schema, but IR's own Rust reader has not absorbed that catalog bump (the
+/// same kind of bump STD-111's own PR made to `quire-verification-contracts`
+/// for the `state_clause` member kind). IR's pinned `BodyTerm` vocabulary
+/// already has a `frame` member (`vocabulary.rs:326`) and lists
+/// `state_clause`/`frame`/`operation_anchor` under `StateForm`; only the
+/// `ApplicationOperator` member is missing. Confirmed by running this test:
+/// the read refuses `invalid_semantic_graph` at the first `state_clause`
+/// node's `body`, because `"operator": "state_clause"` names no member of
+/// IR's pinned `ApplicationOperator` enum. This is IR's own implementation
+/// gap, in a separate pinned dependency this ticket does not own; QSL's own
+/// emission (asserted by `s4_emits_exactly_the_fr_105_state_nodes` above,
+/// TC-462) is unaffected. QSL-307 tracks bumping the `quire-contract-model`
+/// pin once its own vocabulary lands; remove this `#[ignore]` there.
+#[ignore = "QSL-307: blocked on quire-contract-model absorbing STD-111's state_clause/frame vocabulary (see doc comment)"]
+#[trace("TC-463", "FR-105-AC-3")]
+#[test]
+fn s4_state_package_reads_back_through_i2() {
+    let (_, packages) = config_version_unit_and_packages();
+    let first = config_version_compiled();
+
+    let emission = qsl_package::emit_checked(&first.package)
+        .unwrap_or_else(|refusal| panic!("emission refused: {refusal:?}"));
+    assert_eq!(emission.package().package_id(), first.emitted.package_id());
+    let library = LibraryName::new(CONFIG_VERSION_PACKAGE_IDENTITY.to_owned()).unwrap();
+    let mut admitted = qsl_package::AdmittedPackages::default();
+    let view = qsl_package::read_import_view(
+        &first.package,
+        &emission,
+        library,
+        "1.0.0",
+        &packages,
+        &mut admitted,
+    )
+    .unwrap_or_else(|refusal| panic!("I2 read refused: {refusal:?}"));
+    let _ = view;
 }

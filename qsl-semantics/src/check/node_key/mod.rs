@@ -369,6 +369,84 @@ pub enum SemanticTerm {
         /// The node's id in the dependency.
         node: WireNodeRef,
     },
+    /// A `state`/`frame` node's own body shape (QSpec FR-340): not a member
+    /// of the ordinary `SemanticTerm` union at all -- FR-340 scopes this
+    /// shape to validate only as a `state`/`frame` node's `body`, never
+    /// nested inside another term -- but carried as one more closed variant
+    /// here because [`SemanticNode::body`](super::SemanticNode::body) has
+    /// exactly one field for a node's body, whichever shape it holds. It
+    /// contains no `application`, so `node_key` always keys a frame node
+    /// through the FR-092 structural preimage, never the application one.
+    Frame {
+        /// Every field or relationship the operation may write, ascending
+        /// by (declaring node digest, field name) (FR-340).
+        modifies: Vec<FrameField>,
+        /// Every object type or process the operation may create, ascending
+        /// by node digest.
+        creates: Vec<NodeRef>,
+        /// Every object type or process the operation may delete, ascending
+        /// by node digest.
+        deletes: Vec<NodeRef>,
+    },
+}
+
+/// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340): a
+/// field this operation may write, named by its declaring node and the
+/// field's own name. The schema's `FrameModifiesEntry` union also admits a
+/// bare relationship entry (`{kind: "relationship", declaration}`); QSL's
+/// checker records no relationship modifies yet (FR-104's own scope is field
+/// effects only), so this type carries only the field form its one producer
+/// (the checker's own `frame_node` lowering step) ever builds -- adding
+/// relationship modifies later is a new constructor here, not a wire-shape
+/// change.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct FrameField {
+    declaration: NodeRef,
+    name: String,
+}
+
+impl FrameField {
+    /// `{kind: "field", declaration, name}`.
+    pub(crate) fn new(declaration: NodeKey, name: impl Into<String>) -> Self {
+        Self {
+            declaration: NodeRef(declaration),
+            name: name.into(),
+        }
+    }
+
+    /// The field's declaring node.
+    pub fn declaration(&self) -> NodeRef {
+        self.declaration
+    }
+
+    /// The field's own name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Serialize for FrameField {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(3))?;
+        map.serialize_entry("kind", "field")?;
+        map.serialize_entry("declaration", &self.declaration)?;
+        map.serialize_entry("name", &self.name)?;
+        map.end()
+    }
+}
+
+// Test-only, matching `LiteralValue`'s own pattern: QSpec's operation
+// vectors carry no frame body (a frame's modifies/creates/deletes are the
+// `node-identity-vectors.json` fixture's own, separate shape), so the
+// conformance decoder never needs one.
+#[cfg(test)]
+impl<'de> serde::Deserialize<'de> for FrameField {
+    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom(
+            "frame fields are not decoded from vectors",
+        ))
+    }
 }
 
 /// A dependency's `package_id` as a term writes it: a
@@ -459,6 +537,21 @@ impl SemanticTerm {
         Self::Literal {
             ty: NodeRef(ty),
             value,
+        }
+    }
+
+    /// `{term: "frame", modifies, creates, deletes}` (QSpec FR-340).
+    /// `creates` and `deletes` are each an ascending-by-digest list of
+    /// object type or process node keys.
+    pub(crate) fn frame(
+        modifies: Vec<FrameField>,
+        creates: Vec<NodeKey>,
+        deletes: Vec<NodeKey>,
+    ) -> Self {
+        Self::Frame {
+            modifies,
+            creates: creates.into_iter().map(NodeRef).collect(),
+            deletes: deletes.into_iter().map(NodeRef).collect(),
         }
     }
 }
@@ -570,6 +663,8 @@ pub enum Operator {
     ProtocolControl,
     /// `state_transition`.
     StateTransition,
+    /// `state_clause`.
+    StateClause,
     /// `claim`.
     Claim,
 }
@@ -596,6 +691,16 @@ impl Operator {
             Self::Temporal => "temporal",
             Self::ProtocolControl => "protocol_control",
             Self::StateTransition => "state_transition",
+            // Never reached today: a `state_clause` node is inserted
+            // directly with its own explicit `NodeTag::State`/
+            // `"state_clause"` (`Lowering::state_clause`, `check/lowering/
+            // state.rs`), not through the generic expression-application
+            // pipeline this function serves. The arm exists because
+            // `Operator` is one closed enum matched exhaustively here
+            // (FR-088-AC-4's own pattern): a variant added to it fails to
+            // compile until every match over it, including this one, names
+            // its own case.
+            Self::StateClause => "state_clause",
             Self::Claim => "claim",
         }
     }
@@ -1359,6 +1464,11 @@ enum PreimageTerm<'a> {
         package: PackageRef,
         node: WireNodeRef,
     },
+    Frame {
+        modifies: &'a [FrameField],
+        creates: &'a [NodeRef],
+        deletes: &'a [NodeRef],
+    },
 }
 
 impl SemanticTerm {
@@ -1391,6 +1501,18 @@ impl SemanticTerm {
             Self::Binding { value, .. } => value.for_each_key(visit),
             // A dependency's node is no key of this package.
             Self::DependencyReference { .. } => {}
+            Self::Frame {
+                modifies,
+                creates,
+                deletes,
+            } => {
+                for field in modifies {
+                    visit(field.declaration.0);
+                }
+                for reference in creates.iter().chain(deletes) {
+                    visit(reference.0);
+                }
+            }
         }
     }
 
@@ -1433,6 +1555,21 @@ impl SemanticTerm {
                 package: *package,
                 node: *node,
             },
+            Self::Frame {
+                modifies,
+                creates,
+                deletes,
+            } => Self::Frame {
+                modifies: modifies
+                    .iter()
+                    .map(|field| FrameField {
+                        declaration: NodeRef(map(field.declaration.0)),
+                        name: field.name.clone(),
+                    })
+                    .collect(),
+                creates: creates.iter().map(|node| NodeRef(map(node.0))).collect(),
+                deletes: deletes.iter().map(|node| NodeRef(map(node.0))).collect(),
+            },
         }
     }
 }
@@ -1466,6 +1603,8 @@ fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Membe
             declaration: map(declaration),
         },
         Member::ProfileOperator { operator } => Member::ProfileOperator { operator },
+        // No `declaration`: nothing for `map` to remap.
+        Member::StateClause { clause } => Member::StateClause { clause },
     }
 }
 
@@ -1576,6 +1715,25 @@ impl Walk<'_> {
                 PreimageTerm::DependencyReference {
                     package: *package,
                     node: *node,
+                },
+                false,
+            ),
+            // QSpec FR-340: a frame body holds no application, and its
+            // `modifies`/`creates`/`deletes` entries are plain `NodeRef`
+            // members, never `reference` terms -- so, unlike every other
+            // position above, group substitution does not apply here. A
+            // `state`/`frame` node is never part of a recursion group (only
+            // a function's own body can be), so this is a direct passthrough,
+            // not a gap in the group-reference rule.
+            SemanticTerm::Frame {
+                modifies,
+                creates,
+                deletes,
+            } => (
+                PreimageTerm::Frame {
+                    modifies,
+                    creates,
+                    deletes,
                 },
                 false,
             ),

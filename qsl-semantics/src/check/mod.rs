@@ -129,9 +129,10 @@ pub use lowering::{
     AdmittedModel, ForeignView, LockEvidence, ModelClause, NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::{
-    IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment, LiteralValue,
-    ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf,
-    OperationMode, Operator, Owner, PackageRef, SemanticTerm, SourceOwner, WireNodeRef,
+    FrameField, IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment,
+    LiteralValue, ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw,
+    OperationLeaf, OperationMode, Operator, Owner, PackageRef, SemanticTerm, SourceOwner,
+    WireNodeRef,
 };
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
@@ -1148,15 +1149,26 @@ impl PackageDeclarations {
         // FR-104 "Requirements" (SR-736 FND-008): mint every named
         // operation's frame occurrence up front, in ascending (declaring,
         // name) order, before any clause is lowered, so its ordinal never
-        // depends on which clause names it first.
+        // depends on which clause names it first. FR-105 (SR-751 round 2):
+        // each anchor still carries a real clause location (never
+        // `generated_location`), because `frame`/`operation_anchor` name no
+        // position of their own -- the operation is declared in the domain
+        // package, not the unit.
+        let clause_locations: Vec<Location> = state_clause_forms
+            .iter()
+            .enumerate()
+            .map(|(index, form)| clause_location(index, &form.name))
+            .collect();
         let anchors: Vec<lowering::AnchorInput<'_>> = state_clause_forms
             .iter()
-            .filter_map(|form| {
+            .enumerate()
+            .filter_map(|(index, form)| {
                 form.operation
                     .as_ref()
                     .map(|operation| lowering::AnchorInput {
                         declaring: operation.declaring,
                         operation: &operation.declaration,
+                        location: &clause_locations[index],
                     })
             })
             .collect();
@@ -1178,6 +1190,7 @@ impl PackageDeclarations {
                     .map(|operation| lowering::AnchorInput {
                         declaring: operation.declaring,
                         operation: &operation.declaration,
+                        location: &location,
                     }),
                 parameters: &typed.parameters,
                 body: &typed.body,

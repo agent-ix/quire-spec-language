@@ -57,7 +57,9 @@ enum Expected {
 
 fn expected(case: Case) -> Expected {
     match case {
-        Case::Healthy | Case::Absent | Case::Unchanged => Expected::Completed(true),
+        Case::Healthy | Case::Absent | Case::Unchanged | Case::BoundaryZero | Case::BoundaryMax => {
+            Expected::Completed(true)
+        }
         Case::Violating | Case::Cycle | Case::SelfLoop | Case::Distinct | Case::Changed => {
             Expected::Completed(false)
         }
@@ -71,6 +73,12 @@ fn expected(case: Case) -> Expected {
         },
         Case::ForbiddenParent => Expected::Validation {
             code: "frame_violation",
+            incomplete: false,
+        },
+        // FR-108 Behavior: the native corpus's own QSpec FR-180-AC-4
+        // boundary cases.
+        Case::BelowRange | Case::AboveRange => Expected::Validation {
+            code: "invalid_runtime_input",
             incomplete: false,
         },
         Case::MissingModel => Expected::MissingModel,

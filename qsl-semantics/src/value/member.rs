@@ -20,6 +20,7 @@
 
 use serde_json::{json, Value};
 
+use qsl_forms::StateClauseKind;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use quire_exact::Identifier;
 use quire_exact::NodeKey;
@@ -87,6 +88,16 @@ pub enum Member {
         /// The operator's own identifier, e.g. `"add"`.
         operator: Identifier,
     },
+    /// A `quire.op.state.clause` application's own clause kind (QSpec
+    /// STD-111, FR-341): the only difference between an invariant's,
+    /// precondition's and postcondition's spellings. Like
+    /// [`Self::ProfileOperator`], this variant carries no `declaration` --
+    /// the schema's shape is `{"kind": "state_clause", "clause": ...}`.
+    StateClause {
+        /// Invariant, precondition or postcondition -- an invalid kind is
+        /// unrepresentable, since [`StateClauseKind`] is itself a closed enum.
+        clause: StateClauseKind,
+    },
 }
 
 impl Member {
@@ -100,7 +111,7 @@ impl Member {
             | Self::RelationshipEnd { declaration, .. }
             | Self::Operation { declaration, .. }
             | Self::TypeArgument { declaration } => Some(*declaration),
-            Self::ProfileOperator { .. } => None,
+            Self::ProfileOperator { .. } | Self::StateClause { .. } => None,
         }
     }
 
@@ -160,7 +171,20 @@ impl Member {
                 "kind": "profile_operator",
                 "operator": operator.as_str(),
             }),
+            Self::StateClause { clause } => json!({
+                "kind": "state_clause",
+                "clause": state_clause_spelling(*clause),
+            }),
         }
+    }
+}
+
+/// FR-341's own three spellings of a [`StateClauseKind`].
+fn state_clause_spelling(clause: StateClauseKind) -> &'static str {
+    match clause {
+        StateClauseKind::Invariant => "invariant",
+        StateClauseKind::Precondition => "precondition",
+        StateClauseKind::Postcondition => "postcondition",
     }
 }
 
@@ -279,6 +303,23 @@ mod tests {
                 "declaration": {"domain": NODE_KEY_DOMAIN, "digest": node(6).to_string()},
             })
         );
+    }
+
+    /// FR-341's own catalog member shape (QSpec STD-111).
+    #[test]
+    fn state_clause_renders_the_schema_shape_with_no_declaration() {
+        let member = Member::StateClause {
+            clause: StateClauseKind::Invariant,
+        };
+        let wire = member.to_wire();
+        assert_eq!(
+            wire,
+            json!({
+                "kind": "state_clause",
+                "clause": "invariant",
+            })
+        );
+        assert_eq!(member.declaration(), None);
     }
 
     #[test]

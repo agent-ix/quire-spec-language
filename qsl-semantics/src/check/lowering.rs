@@ -3950,6 +3950,14 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
             SemanticTerm::Binding { value, .. } => terms.push(value),
             // A dependency's node is not a node of this graph.
             SemanticTerm::DependencyReference { .. } => {}
+            SemanticTerm::Frame {
+                modifies,
+                creates,
+                deletes,
+            } => {
+                named.extend(modifies.iter().map(|field| field.declaration().0));
+                named.extend(creates.iter().chain(deletes).map(|node| node.0));
+            }
         }
     }
     named
