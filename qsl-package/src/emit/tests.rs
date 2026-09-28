@@ -1946,19 +1946,21 @@ fn the_q_and_t_package_with_an_unplaced_occurrence_refuses() {
 
 /// QSL-313 (FR-105-AC-6): the injectable failure point AC-6 needs, proven
 /// generically over `emit_package`'s own node-emission loop -- the same loop
-/// FR-105's `state`/`frame` node goes through once a clause names one. A
-/// ConfigVersion/`attemptUpdate` frame fixture is QSL-308's own remaining
-/// work (`qsl-replay/src/spine/clause/tests.rs`'s TC-462/TC-463/TC-469
-/// corpus, a different file, per QSL-313's own description); this test does
-/// not depend on it and proves the mechanism any node -- frame included --
-/// goes through.
+/// FR-105's `state`/`frame` node goes through once a clause names one. This
+/// test's fixture holds three plain function nodes and no `state`/`frame`
+/// node, so it proves the mechanism, not AC-6's own frame-node claim; the
+/// frame-node case (a fault on the `frame` node of a ConfigVersion
+/// state-clause package) is `qsl-replay`'s
+/// `a_fault_on_the_frame_node_refuses_the_whole_config_version_package`
+/// (`qsl-replay/src/spine/clause/tests.rs`), which reuses this same seam
+/// through `qsl_package::emit_checked_with_fault`.
 ///
 /// When the fault fires on a node partway through the graph-order node
 /// list, the whole emission refuses and no later node is even attempted:
 /// `collect` on a `Result` iterator (`emit_package_inner`'s `nodes` step)
 /// stops at the first `Err`, so there is no `Emission` left half-built for a
 /// caller to read a partial node list out of.
-#[trace("TC-462", "FR-105-AC-6")]
+#[trace("TC-463", "FR-105-AC-6")]
 #[test]
 fn a_fault_injected_partway_through_node_emission_writes_nothing() {
     let package = package(vec![both(), nb(), h()]);
@@ -1973,8 +1975,8 @@ fn a_fault_injected_partway_through_node_emission_writes_nothing() {
     // Fault the node in the middle of the canonical graph order (never the
     // first or the last): a node before it must never appear in a written
     // package, and a node after it must never even be attempted.
-    let target = total as u32 / 2;
-    let attempts = std::cell::Cell::new(0u32);
+    let target = total / 2;
+    let attempts = std::cell::Cell::new(0usize);
     let fault_reason = "QSL-313 fault injection (test): forced encoding failure";
     let refusal = emit_package_with_fault(&package, whole_unit, |_id| {
         let seen = attempts.get();

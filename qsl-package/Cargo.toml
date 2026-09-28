@@ -7,6 +7,16 @@ rust-version = "1.98"
 license = "AGPL-3.0-or-later"
 description = "ADR-011 §6.1 layer 4: the S4 checked-package typestate, the quire.checked-package/v2 emitter and the I2 byte reader."
 
+[features]
+# QSL-313: `emit_checked_with_fault` and `checked_node_id_of`, the FR-105-AC-6
+# fault-injection seam, are public only under `test-support` (the same
+# pattern qsl-semantics uses, see its Cargo.toml), so a dependent crate's own
+# tests (qsl-replay) can reach them without shipping a test-only hook in the
+# production API. `tests/it/family_outcome_layering.rs`'s
+# `no_shipped_dependency_enables_test_support` refuses a normal or build
+# dependency that enables it.
+test-support = []
+
 # ADR-011 §6.1 layer 4 depends on "3, F, K; `quire-contract-model` for the
 # v2 wire contract" (X-7). The root crate's
 # `tests/it/family_outcome_layering.rs` (TC-390) asserts that this table

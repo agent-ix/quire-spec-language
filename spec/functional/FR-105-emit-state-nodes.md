@@ -132,7 +132,7 @@ source map (FR-095).
 | FR-105-AC-3 | The emitted package passes QSL's I2 read (`qsl-package` `checked_v2` reader), including its frame step, and its recomputed `package_id` equals the emitted one. | Test (TC-463), `#[ignore]`d: blocked on the pinned `quire-contract-model` crate absorbing STD-111's `state_clause` `ApplicationOperator` member; tracked by QSL-307 |
 | FR-105-AC-4 | Compiling the unit twice gives identical bytes. Renaming `ParentOrder` changes no node id; changing its `<` to `<=` changes its `state_clause` node id and the `package_id`; adding `ParentOrder2` with `ParentOrder`'s body adds no node and a second `claim` occurrence (ordinal 1) to `ParentOrder`'s node; adding a second `post` clause on `attemptUpdate` adds one `state_clause` node and no second anchor or frame. Over a package where `Sub` specializes `ConfigVersion`, `pre A ... on Config::ConfigVersion::attemptUpdate` and `pre B ... on Config::Sub::attemptUpdate` share one anchor whose context is `ConfigVersion`. | Test (TC-463); partial (QSL-279): the double-compile identity case is covered. The rename, `<=`, `ParentOrder2`, second-`post` and `Sub`-anchor-sharing cases are not yet tested; tracked by QSL-308 |
 | FR-105-AC-5 | `CheckedClauseKind`'s mapping is total over all seven variants: forward, each variant gives one (node pair, clause operation, kind member) triple and no two variants give the same triple; backward, each triple decodes to its variant; (`state`, `frame`) decodes to no variant; `StateTransition` gives (`state`, `transition`). A mutant that swaps two kind members, or deletes an arm, fails the test. | Test (TC-462); covered (QSL-279) |
-| FR-105-AC-6 | When the emitter cannot emit one of a clause's nodes (fault injected at the `frame` node), the compile refuses and emits no `state` node and no package bytes. | Not yet implemented: no fault-injection hook exists; tracked by QSL-308 |
+| FR-105-AC-6 | When the emitter cannot emit one of a clause's nodes (fault injected at the `frame` node), the compile refuses and emits no `state` node and no package bytes. | Test (TC-463 step 4); covered (QSL-313): `qsl-package`'s `a_fault_injected_partway_through_node_emission_writes_nothing` proves the all-or-nothing mechanism generically over the node-emission loop, and `qsl-replay`'s `a_fault_on_the_frame_node_refuses_the_whole_config_version_package` drives it at the ConfigVersion state clause's own `frame` node |
 
 ## Dependencies
 
@@ -160,4 +160,5 @@ their remainder (the condition terms, the rename/`<=`/`ParentOrder2`/
 second-`post`/`Sub`-anchor cases) tracked by QSL-308. AC-3 is blocked on
 the pinned `quire-contract-model` crate absorbing STD-111's `state_clause`
 vocabulary, tracked by QSL-307. AC-6 (fault-injected all-or-nothing
-emission) is not yet implemented, tracked by QSL-308.
+emission) is covered (QSL-313), by `qsl-package`'s generic mechanism test and
+`qsl-replay`'s frame-node test.

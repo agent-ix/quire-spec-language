@@ -782,20 +782,51 @@ pub(crate) fn emit_package(
     emit_package_inner(package, regions, |_| None)
 }
 
-/// As [`emit_package`], but lets a test force a specific node's wire
+/// As [`emit_package`], but lets a caller force a specific node's wire
 /// encoding to fail in place of writing it, in graph order
 /// ([`emit_package_inner`]'s `nodes` step): the injectable failure point
 /// FR-105-AC-6 requires to prove that node emission is all-or-nothing
-/// (QSL-313). No non-test caller exists; this is `#[cfg(test)]`-only so it
-/// compiles into no non-test build, and `emit_package`/`emit_checked` never
-/// pass a `fault` that fires.
-#[cfg(test)]
-pub(crate) fn emit_package_with_fault(
+/// (QSL-313). No non-test caller exists; this compiles into no non-test
+/// build (`#[cfg(any(test, feature = "test-support"))]`), and
+/// `emit_package`/`emit_checked` never pass a `fault` that fires. Only this
+/// module's own tests call it directly; a dependent crate's tests go through
+/// [`emit_checked_with_fault`], the `test-support`-gated public wrapper
+/// below, so a private `fn` is enough here.
+#[cfg(any(test, feature = "test-support"))]
+fn emit_package_with_fault(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
 ) -> Result<Emission, EmitRefusal> {
     emit_package_inner(package, regions, fault)
+}
+
+/// As [`emit_checked`], but lets a caller force a specific node's wire
+/// encoding to fail, by [`CheckedNodeId`] (QSL-313, FR-105-AC-6). Public only
+/// under `test-support`, so it never reaches a shipped build: a dependent
+/// crate's own tests (e.g. qsl-replay's frame-node fixtures) enable the
+/// feature only from a `[dev-dependencies]` edge, which
+/// `no_shipped_dependency_enables_test_support` checks.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn emit_checked_with_fault(
+    package: &CheckedPackage,
+    fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
+) -> Result<Emission, EmitRefusal> {
+    let graph = package.graph();
+    emit_package_with_fault(package, |location| graph.region(location), fault)
+}
+
+/// The [`CheckedNodeId`] [`emit_checked_with_fault`]'s `fault` closure
+/// receives for the graph node `key` names ([`node_id`]'s own conversion),
+/// so a dependent crate's test can target one specific node (e.g. a
+/// `frame` node found via [`qsl_semantics::check::SemanticNode::key`])
+/// without reimplementing the conversion. Public only under `test-support`
+/// (QSL-313); see [`emit_checked_with_fault`].
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn checked_node_id_of(key: NodeKey) -> CheckedNodeId {
+    node_id(key)
 }
 
 /// The body shared by [`emit_package`] and [`emit_package_with_fault`].

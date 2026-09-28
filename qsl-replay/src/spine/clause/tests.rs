@@ -2869,6 +2869,64 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
     }
 }
 
+/// TC-463 step 4 (FR-105-AC-6): a fault injected at the ConfigVersion state
+/// clause's own `frame` node refuses the whole compile and emits no `state`
+/// node and no package bytes -- AC-6's own frame-node claim. `qsl-package`'s
+/// generic mid-list fault test
+/// (`a_fault_injected_partway_through_node_emission_writes_nothing`) proves
+/// the same all-or-nothing mechanism, but only over three plain function
+/// nodes with no `state`/`frame` node; this test drives it over the real
+/// `frame` node of a compiled state-clause package (QSL-313). It reaches
+/// `qsl-package`'s `test-support`-gated seam
+/// (`emit_checked_with_fault`/`checked_node_id_of`) across the crate
+/// boundary, enabled only by this crate's own `[dev-dependencies]` edge
+/// (`qsl-replay/Cargo.toml`; `no_shipped_dependency_enables_test_support`
+/// checks no shipped dependency ever enables it).
+#[trace("TC-463", "FR-105-AC-6")]
+#[test]
+fn a_fault_on_the_frame_node_refuses_the_whole_config_version_package() {
+    let compiled = config_version_compiled();
+    let graph = compiled.package.graph();
+    let frame_key = graph
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::State
+                && node.semantic_form() == "frame"
+        })
+        .expect("exactly one frame node (asserted by s4_emits_exactly_the_fr_105_state_nodes)")
+        .key();
+    let frame_id = qsl_package::checked_node_id_of(frame_key);
+    let fault_reason = "QSL-313 fault injection (test): forced encoding failure at the frame node";
+
+    let refusal = qsl_package::emit_checked_with_fault(&compiled.package, |id| {
+        if *id == frame_id {
+            Some(qsl_package::EmitRefusal::Encoding {
+                reason: fault_reason.to_owned(),
+            })
+        } else {
+            None
+        }
+    })
+    .expect_err("a fault at the frame node refuses the whole package");
+
+    // The fault actually fired at the frame node, not some earlier,
+    // unrelated refusal the fixture happened to trip.
+    assert!(
+        matches!(&refusal, qsl_package::EmitRefusal::Encoding { reason } if reason == fault_reason),
+        "{refusal:?}"
+    );
+    // `EmitRefusal::Encoding` carries no package: every path from here to a
+    // built `Emission` (and therefore to an emitted `state` node or wire
+    // bytes) runs only after `emit_package_inner`'s `nodes` step has fully
+    // collected, which this fault stops before completing
+    // (`collect::<Result<Vec<_>, _>>()?` drops the partial `Vec` on the
+    // first `Err`). There is no partial `Emission`, no emitted `state` node
+    // and no package bytes for a caller to observe -- the all-or-nothing
+    // violation AC-6 guards against is unrepresentable by this function's
+    // own return type, not merely untested.
+}
+
 /// TC-462 (FR-105-AC-2): the `BodyNames` Frame dependency-walk arm
 /// (`qsl-package`'s generic emitter, `emit.rs`) actually lists the frame's
 /// `modifies` declaration among the emitted node's own `dependencies` --
