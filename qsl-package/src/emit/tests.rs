@@ -2760,3 +2760,149 @@ fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
     );
     assert_eq!(unplaced.code(), Code::UnsupportedProjection);
 }
+
+// ---------------------------------------------------------------------
+// QSL-309 (FR-114): a protocol `attempt`'s own `operation_anchor`/`frame`
+// nodes, all the way through emission. QSL-299 found emit.rs needs no new
+// code for this node shape, but that was confirmed only in the absence of
+// real FR-114 nodes; this exercises it with a real attempt and a real
+// `post` clause naming the same operation, so their frame occurrences and
+// `operation-contract` requirement record are expected to be shared
+// exactly once (FR-114-AC-1).
+// ---------------------------------------------------------------------
+
+/// `Config::ConfigVersion`, with a `versionNumber` field and an
+/// `attemptUpdate` operation whose effect frame modifies it: a real,
+/// non-trivial frame for a real attempt to bind against.
+fn config_version_model() -> qsl_semantics::model::intake::SelectedModel {
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::domain_package::{
+        DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
+        NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord, ValueTypeRef,
+    };
+    use qsl_semantics::model::key::DeclarationKey;
+    use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
+
+    let key = |name: &str| DeclarationKey {
+        package: "example/config-version".to_owned(),
+        node: format!("ix://example/config-version/{name}"),
+    };
+    let package = DomainPackage::new(
+        DomainPackageRef {
+            identity: "example/config-version".to_owned(),
+            version: "1".to_owned(),
+            digest: [0_u8; 32],
+        },
+        vec![
+            DomainPackageRecord::ObjectType(ObjectTypeRecord {
+                key: key("ConfigVersion"),
+                interface_features: None,
+                abstract_type: false,
+                supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: key("ConfigVersion/versionNumber"),
+                owner: key("ConfigVersion"),
+                value_type: ValueTypeRef::Native(NativeValueType::Integer),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: true,
+                },
+                presence: Presence::Required,
+                subsets: Vec::new(),
+                redefines: None,
+            }),
+            DomainPackageRecord::OperationMember(OperationMemberRecord {
+                key: key("ConfigVersion/attemptUpdate"),
+                owner: key("ConfigVersion"),
+                parameters: Vec::new(),
+                result: None,
+                effect: OperationEffect {
+                    modifies: vec![key("ConfigVersion/versionNumber")],
+                    creates: Vec::new(),
+                    deletes: Vec::new(),
+                },
+                own_postcondition_clauses: Vec::new(),
+                has_body: false,
+                redefines: None,
+            }),
+        ],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::UNLIMITED)
+    else {
+        panic!("the ConfigVersion fixture normalizes");
+    };
+    qsl_semantics::model::intake::SelectedModel {
+        alias: "Config".to_owned(),
+        span: SPAN,
+        view,
+    }
+}
+
+/// A unit declaring [`config_version_model`], a `post` clause and a
+/// protocol whose `run sequence` `attempt`s `Config::ConfigVersion::attemptUpdate`
+/// and names that same `post` clause in its `contracts` list.
+const ATTEMPT_FRAME_UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"quire.value.complete/v1\" version \"1\" digest \
+    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+    model Config = \"example/config-version\" version \"1\" digest \
+    \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
+    post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { true }\n\
+    protocol Flow using v over (input: Boolean) on origin {\n\
+    role R on Config::ConfigVersion;\n\
+    run sequence Main {\n\
+    attempt Update by R on Config::ConfigVersion::attemptUpdate contracts [VersionUnchanged] \
+    as (tried: Boolean) { true };\n\
+    }\n\
+    finish End as (outcome: Boolean) { true };\n\
+    }";
+
+/// TC-513/FR-114-AC-1: a protocol's `attempt`, bound to its operation's
+/// `operation_anchor`/`frame` nodes and to a `post` clause naming the same
+/// operation, goes through S1-S4, `CheckedPackage::link` and
+/// `emit_checked` with nothing omitted -- QSL-299's "emit.rs needs no new
+/// code" claim, now exercised against real nodes rather than their
+/// absence -- and the wire carries exactly one `operation_anchor` node and
+/// one `frame` node (FR-105's dedup: the clause and the attempt share one
+/// frame occurrence, not two).
+#[trace("TC-513", "FR-114-AC-1")]
+#[test]
+fn an_attempt_and_its_clause_share_one_frame_node_through_emission() {
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:qsl-309", "fixture", "fixture:1"),
+        "program.native",
+        ATTEMPT_FRAME_UNIT.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit");
+    assert_eq!(parsed.diagnostics(), []);
+    let raw = parsed.source().reference().clone();
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .expect("S2 builds the unit");
+    let graph = PackageDeclarations::assemble(raw, unit, vec![config_version_model()], Vec::new())
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    assert_eq!(emission.omitted, []);
+
+    // `config_version_model` is built directly from the Rust domain-package
+    // API (QSL-309's own test pattern, shared with
+    // `qsl_semantics::check::protocol_clause`'s tests), not from a real
+    // Semantic IR document, so there is no genuine document to hand a full
+    // I2 read as evidence for the model's declared digest; the node count
+    // below is this test's oracle instead, exercising the emitter's own
+    // node-shape handling end to end.
+    let wire = wire(&emission);
+    let matching = |semantic_form: &str| {
+        nodes(&wire)
+            .iter()
+            .filter(|node| node["semantic_form"] == semantic_form)
+            .count()
+    };
+    assert_eq!(matching("operation_anchor"), 1, "{:#?}", nodes(&wire));
+    assert_eq!(matching("frame"), 1, "{:#?}", nodes(&wire));
+}
