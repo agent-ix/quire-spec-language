@@ -117,14 +117,14 @@ accounting and caller limits may lower but not raise owner maxima.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-052-AC-1 | Future and pure-past request documents deterministically bind one FR-051 subject/instance/correspondence to every position, explicit leaf valuation, capture, origin, clock, four progress/closure axes and independent completeness fact, and strict-read to constructor-private views. | Test (TC-140) |
-| FR-052-AC-2 | Result production obtains truth, non-value, settlement and exact support only by evaluating `ValidatedRequest`; a caller cannot submit those fields, a leaf Boolean cannot stand in for the formula result, and strict reading re-evaluates before admitting bytes. | Test (TC-140) |
-| FR-052-AC-3 | Native future and O/H/Y/S/T discriminator vectors preserve FR-043 meaning, inclusive bounds, strong previous, origin versus cutoff, fixed-sample/event-position clocks, pending and every typed non-value without a Boolean fallback. | Test (TC-140) |
-| FR-052-AC-4 | Request and result identities change for every applicable semantic, contract, source, observation, limit or relation mutation, remain stable under declared set-order invariance, and reject cross-domain identity substitution. | Test (TC-140) |
-| FR-052-AC-5 | Four progress/closure axes, completeness, activation, execution, truth, settlement and support remain independently readable; impossible combinations and foreign/cross-wired owner references refuse without partial output. | Test (TC-140) |
-| FR-052-AC-6 | Original and corrected results preserve immutable bytes and exact direct predecessors; self, wrong-subject/instance/correspondence, unchanged-input, same/lower-revision and non-direct substitutions refuse. | Test (TC-140) |
-| FR-052-AC-7 | Unknown/duplicate/missing/reordered fields, trailing/noncanonical bytes, missing/duplicate/swapped/foreign valuations or positions, invalid order/history and exact-limit-plus-one inputs return one deterministic typed failure with no partial view or Boolean. | Test (TC-140) |
-| FR-052-AC-8 | The public surface imports no TL or Contract-IR vocabulary, accepts no parser/evaluator callback/plugin/network/trust flag, and exposes complete borrowed accessors needed for structural downstream comparison without JSON parsing. | Test (TC-140) |
+| FR-052-AC-1 | **RETIRED by QSL-303 (M-6d), which deletes `protocol_artifact::native_temporal::{request,result}` and `tests/it/native_temporal_owner.rs`.** Future and pure-past request documents deterministically bound one FR-051 subject/instance/correspondence to every position, explicit leaf valuation, capture, origin, clock, four progress/closure axes and independent completeness fact, and strict-read to constructor-private views. This criterion was satisfied while the module existed. With QSL-21d/e/f landed, the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted module's own tests called it. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. | Retired |
+| FR-052-AC-2 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-052-AC-1: result production obtained truth, non-value, settlement and exact support only by evaluating `ValidatedRequest`; a caller could not submit those fields, a leaf Boolean could not stand in for the formula result, and strict reading re-evaluated before admitting bytes. | Retired |
+| FR-052-AC-3 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-052-AC-1: native future and O/H/Y/S/T discriminator vectors preserved FR-043 meaning, inclusive bounds, strong previous, origin versus cutoff, fixed-sample/event-position clocks, pending and every typed non-value without a Boolean fallback. | Retired |
+| FR-052-AC-4 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-052-AC-1: request and result identities changed for every applicable semantic, contract, source, observation, limit or relation mutation, remained stable under declared set-order invariance, and rejected cross-domain identity substitution. | Retired |
+| FR-052-AC-5 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-052-AC-1: four progress/closure axes, completeness, activation, execution, truth, settlement and support remained independently readable; impossible combinations and foreign/cross-wired owner references refused without partial output. | Retired |
+| FR-052-AC-6 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-052-AC-1: original and corrected results preserved immutable bytes and exact direct predecessors; self, wrong-subject/instance/correspondence, unchanged-input, same/lower-revision and non-direct substitutions refused. | Retired |
+| FR-052-AC-7 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-052-AC-1: unknown/duplicate/missing/reordered fields, trailing/noncanonical bytes, missing/duplicate/swapped/foreign valuations or positions, invalid order/history and exact-limit-plus-one inputs returned one deterministic typed failure with no partial view or Boolean. | Retired |
+| FR-052-AC-8 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-052-AC-1: the public surface imported no TL or Contract-IR vocabulary, accepted no parser/evaluator callback/plugin/network/trust flag, and exposed complete borrowed accessors needed for structural downstream comparison without JSON parsing. | Retired |
 
 ## Dependencies
 
@@ -139,3 +139,10 @@ Implemented locally with both canonical schemas, bounded strict readers,
 formula-wide native evaluation, direct correction lineage and all eleven TC-140
 controls passing in the full serial Rust suite. Remaining work: #95. Review and
 merge precede Contract IR FR-026 consumption of the owner API.
+
+**Retired by QSL-303 (M-6d).** `protocol_artifact::native_temporal::{request,
+result}` and its only test, `tests/it/native_temporal_owner.rs`, are deleted:
+with QSL-21d/e/f (QSL-309/300/301) landed, the spine `ProtocolClause` path no
+longer needs this producer/consumer round trip, and nothing outside the
+deleted module's own tests called it. All acceptance criteria above are
+retired for the reason given at FR-052-AC-1.

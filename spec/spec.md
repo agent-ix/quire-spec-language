@@ -470,9 +470,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-048](functional/FR-048-preserve-native-choreography-semantics.md) | FR | Retrospective L6 choreography preservation and ecosystem handoff contract under #66 |
 | [FR-049](functional/FR-049-admit-composed-evaluation-inputs.md) | FR | Implemented exact admitted `/1` and `/2` composed-evaluation input and typed-outcome boundary; `/2` compensation expressions completed under #101 |
 | [FR-050](functional/FR-050-publish-authenticated-temporal-artifacts.md) | FR | Reviewed-scope draft of compiler #40's strict compiled-protocol v2 temporal selection extension |
-| [FR-051](functional/FR-051-publish-checked-native-handoffs.md) | FR | Implemented strict checked predicate and temporal subject owner handoffs for #90 |
-| [FR-052](functional/FR-052-publish-native-temporal-evaluation-owner.md) | FR | Implemented canonical native temporal request/result owner boundary for Contract IR FR-026; review/merge pending |
-| [FR-053](functional/FR-053-preserve-opaque-semantic-trigger-identity.md) | FR | Versioned opaque semantic-trigger identity bridge for Protocol FR-300 |
+| [FR-051](functional/FR-051-publish-checked-native-handoffs.md) | FR | Implemented strict checked predicate and temporal subject owner handoffs for #90; AC-1–AC-5 retired by QSL-303 (M-6d), which deletes the handoff modules and their test; AC-6 amended to the still-live production-dependency-graph fact its id already carried |
+| [FR-052](functional/FR-052-publish-native-temporal-evaluation-owner.md) | FR | **Retired by QSL-303 (M-6d)**, which deletes `protocol_artifact::native_temporal` and `tests/it/native_temporal_owner.rs`; the spine `ProtocolClause` path no longer needs this producer/consumer round trip |
+| [FR-053](functional/FR-053-preserve-opaque-semantic-trigger-identity.md) | FR | **Retired by QSL-303 (M-6d)**, for the same reason as FR-052 |
 | [FR-054](functional/FR-054-publish-control-temporal-activation-map.md) | FR | Planned immutable compiled-protocol v3 control-to-temporal activation mapping for QSpec FR-300 |
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
 | [FR-055](functional/FR-055-govern-complete-v1-lane.md) | FR | Implemented; audited in the complete-v1 test matrix |

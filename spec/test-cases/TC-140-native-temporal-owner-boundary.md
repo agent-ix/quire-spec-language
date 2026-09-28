@@ -9,29 +9,38 @@ relationships:
 
 ## Description
 
-Complete owner-boundary tests for both FR-052 contracts and every acceptance
-criterion. The executable Rust suite is `tests/native_temporal_owner.rs`; each
-test carries `TC-140` and criterion-level trace tags.
+**RETIRED by QSL-303 (M-6d).** Complete owner-boundary tests for both FR-052
+contracts and every acceptance criterion. The executable Rust suite was
+`tests/native_temporal_owner.rs`; each test carried `TC-140` and
+criterion-level trace tags. `protocol_artifact::native_temporal::{request,
+result}` and `tests/it/native_temporal_owner.rs` are deleted: with QSL-21d/e/f
+(QSL-309/300/301) landed, the spine `ProtocolClause` path no longer needs this
+producer/consumer round trip. FR-052's acceptance criteria this test case
+verified are retired for the same reason (see FR-052-AC-1). There is no
+successor test case.
 
 ## Test Procedure
 
-Construct future event-position and fixed-sample requests plus pure-past
-O/H/Y/S/T requests from real FR-051 checked subjects. Produce and strict-read
-requests, evaluate and strict-read results, then enumerate formula semantics,
-all independent axis/non-value combinations, identities, position/valuation
-bijections, direct corrections and every bounded dimension. Mutate every
-canonical field independently, replace a formula result with a leaf value, and
-run the existing FR-043 semantic discriminators through the new owner surface.
+**RETIRED by QSL-303 (M-6d).** ~~Construct future event-position and
+fixed-sample requests plus pure-past O/H/Y/S/T requests from real FR-051
+checked subjects. Produce and strict-read requests, evaluate and strict-read
+results, then enumerate formula semantics, all independent axis/non-value
+combinations, identities, position/valuation bijections, direct corrections
+and every bounded dimension. Mutate every canonical field independently,
+replace a formula result with a leaf value, and run the existing FR-043
+semantic discriminators through the new owner surface.~~
 
 ## Expected Results
 
-Only exact canonical requests and re-evaluated results yield constructor-private
-views. Future and past truth/support match FR-043; every invalid contract,
-identity, axis, population, correction or resource mutation returns one typed
-failure and no partial request, result or Boolean.
+**RETIRED by QSL-303 (M-6d).** ~~Only exact canonical requests and
+re-evaluated results yield constructor-private views. Future and past
+truth/support match FR-043; every invalid contract, identity, axis,
+population, correction or resource mutation returns one typed failure and no
+partial request, result or Boolean.~~
 
 ## Status
 
-All eleven traced controls pass locally with the full serial no-default-feature
-suite, strict Clippy and formatting. Remaining work: #95. Review and merge
-precede the Contract IR FR-026 consumer handoff.
+Retired by QSL-303 (M-6d): `tests/it/native_temporal_owner.rs` is deleted,
+and FR-052 (the requirement this test case verified) is retired in full.
+Previously: all eleven traced controls passed locally with the full serial
+no-default-feature suite, strict Clippy and formatting.
