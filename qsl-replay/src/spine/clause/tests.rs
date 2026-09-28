@@ -27,7 +27,7 @@ use qsl_semantics::model::observation::{
     ObservationLimits, Provisions, SelectedAnchor, SelectedObject,
 };
 use quire_exact::{
-    ChargePoint, EffectiveId, FieldValue, InjectedDenial, LimitKind, Meter, ObjectId,
+    ChargePoint, EffectiveId, FieldValue, InjectedDenial, LimitKind, Meter, NodeKey, ObjectId,
     ObjectReference, Outcome, UniverseId, Value,
 };
 use serde_json::json;
@@ -3903,6 +3903,489 @@ fn s4_state_package_emission_is_stable_across_compiles() {
         "compiling the same unit twice gives identical bytes"
     );
     assert_eq!(first.emitted.package_id(), second.emitted.package_id());
+}
+
+// ---------------------------------------------------------------------------
+// FR-105-AC-2/AC-4 remainder (QSL-308c/QSL-312): dependencies and
+// occurrences beyond the frame, the state_clause `semantic_type`, the
+// condition-term shapes, and the rename/`<=`/duplicate/second-post/
+// Sub-anchor-sharing FR-105-AC-4 cases `s4_state_package_emission_is_
+// stable_across_compiles` above does not cover.
+// ---------------------------------------------------------------------------
+
+/// ConfigVersion's own `model`/`object_type` node key, found the same way
+/// `s4_emits_exactly_the_fr_105_state_nodes` does (FND-005): through
+/// `resolve_declaration`, the model correspondence FR-088-AC-2 built during
+/// checking, independently of whatever anchor/frame/field-read this test
+/// is itself checking.
+fn config_version_node_key(graph: &qsl_semantics::check::CheckedGraph) -> NodeKey {
+    let expected_declaration = qsl_semantics::model::key::DeclarationKey {
+        package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
+        node: config_version_type(),
+    };
+    graph
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::Model
+                && node.semantic_form() == "object_type"
+                && graph.resolve_declaration(node.key()) == Some(&expected_declaration)
+        })
+        .expect("ConfigVersion's own object_type node is in the graph")
+        .key()
+}
+
+/// The single `Boolean` scalar type node: `Lowering::scalar` dedups
+/// identical content to one key, so every `Boolean`-typed expression in the
+/// unit -- including a `state_clause`'s own `semantic_type` (FR-105's
+/// Outputs table) -- shares this one node.
+fn boolean_scalar_type_node_key(graph: &qsl_semantics::check::CheckedGraph) -> NodeKey {
+    graph
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::ScalarType
+                && node.semantic_form() == "boolean"
+        })
+        .expect("the Boolean scalar type node is in the graph")
+        .key()
+}
+
+/// Every `state`/`state_clause` node of `graph`, each paired with its
+/// FR-105 clause kind ([`state_clause_kind`]).
+fn state_clause_nodes(
+    graph: &qsl_semantics::check::CheckedGraph,
+) -> Vec<(&qsl_semantics::check::SemanticNode, &'static str)> {
+    graph
+        .semantic_graph()
+        .nodes()
+        .filter(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::State
+                && node.semantic_form() == "state_clause"
+        })
+        .map(|node| (node, state_clause_kind(node)))
+        .collect()
+}
+
+/// `node`'s condition term: a `state_clause` body's 3rd application
+/// argument (FR-105's Outputs table: `aggregate` of parameters, a
+/// `reference` to the anchor, then the condition).
+fn state_clause_condition(
+    node: &qsl_semantics::check::SemanticNode,
+) -> &qsl_semantics::check::SemanticTerm {
+    let qsl_semantics::check::SemanticTerm::Application { arguments, .. } = node.body() else {
+        panic!("state_clause body must be an application");
+    };
+    let [_, _, condition] = arguments.as_slice() else {
+        panic!("state_clause has exactly 3 arguments, got {arguments:?}");
+    };
+    condition
+}
+
+/// Depth-first search of `term` for the first application whose `operator`
+/// is `operator` -- e.g. the `quire.op.state.pre`/`quire.op.model.
+/// reaches_field` subterm FR-105-AC-2 requires, nested inside the
+/// equality/negation the clause's own condition wraps it in.
+fn find_application_by_operator(
+    term: &qsl_semantics::check::SemanticTerm,
+    operator: qsl_semantics::check::Operator,
+) -> Option<&qsl_semantics::check::SemanticTerm> {
+    match term {
+        qsl_semantics::check::SemanticTerm::Application {
+            operator: found,
+            arguments,
+            ..
+        } => {
+            if *found == operator {
+                return Some(term);
+            }
+            arguments
+                .iter()
+                .find_map(|argument| find_application_by_operator(argument, operator))
+        }
+        qsl_semantics::check::SemanticTerm::Aggregate { members } => members
+            .iter()
+            .find_map(|member| find_application_by_operator(member, operator)),
+        qsl_semantics::check::SemanticTerm::Binding { value, .. } => {
+            find_application_by_operator(value, operator)
+        }
+        _ => None,
+    }
+}
+
+/// Depth-first search of `term` for the first `quire.op.record.project`
+/// field-read application naming `field_name`, returning the `Member::
+/// Field` its operation carries -- the shape a `deref(self).f` read has
+/// (FR-093).
+fn find_field_read_member<'a>(
+    term: &'a qsl_semantics::check::SemanticTerm,
+    field_name: &str,
+) -> Option<&'a qsl_semantics::value::Member> {
+    match term {
+        qsl_semantics::check::SemanticTerm::Application {
+            operator,
+            operation,
+            arguments,
+            ..
+        } => {
+            if *operator == qsl_semantics::check::Operator::Query {
+                if let Some(member @ qsl_semantics::value::Member::Field { name, .. }) =
+                    operation.member()
+                {
+                    if name.as_str() == field_name {
+                        return Some(member);
+                    }
+                }
+            }
+            arguments
+                .iter()
+                .find_map(|argument| find_field_read_member(argument, field_name))
+        }
+        qsl_semantics::check::SemanticTerm::Aggregate { members } => members
+            .iter()
+            .find_map(|member| find_field_read_member(member, field_name)),
+        qsl_semantics::check::SemanticTerm::Binding { value, .. } => {
+            find_field_read_member(value, field_name)
+        }
+        _ => None,
+    }
+}
+
+/// `key`'s own `dependencies` array, read from `compiled`'s emitted wire
+/// bytes (the only place FR-105-AC-2's `dependencies` rule is observable --
+/// `BodyNames`/`Candidate::of` in `qsl-package`'s generic emitter compute
+/// them at emission time, never as an in-process `CheckedGraph` API).
+fn emitted_dependencies_of(compiled: &Compiled, key: NodeKey) -> Vec<serde_json::Value> {
+    let wire: serde_json::Value =
+        serde_json::from_slice(compiled.emitted.bytes()).expect("emitted bytes are JSON");
+    let nodes = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("semantic_graph.nodes is an array");
+    let id = json!({
+        "domain": quire_exact::NODE_KEY_DOMAIN,
+        "digest": key.to_string(),
+    });
+    nodes
+        .iter()
+        .find(|node| node["node_id"] == id)
+        .unwrap_or_else(|| panic!("node {key} is in the emitted wire"))["dependencies"]
+        .as_array()
+        .expect("dependencies is an array")
+        .clone()
+}
+
+/// TC-462 (FR-105-AC-2): each `state`/`state_clause` and `state`/
+/// `operation_anchor` node's own `dependencies`, beyond the frame's own
+/// (which `s4_emitted_frame_node_lists_configversion_in_dependencies`
+/// already covers). `VersionUnchanged`'s `dependencies` name ConfigVersion
+/// (from its condition's field read of `versionNumber`) and no
+/// `dependency_reference` (FR-093-AC-12: this unit supplies no dependency
+/// package, so every dependency here is local, but a caller who broke
+/// `BodyNames`' `DependencyReference` arm to emit one as a dependency
+/// anyway is exactly the mutation this assertion would need to make it
+/// fail were one present). The `operation_anchor`'s `dependencies` are
+/// exactly its two `reference` bindings: ConfigVersion (`context`) and the
+/// frame (`frame`) -- its `operation` binding is a text literal, which
+/// contributes no dependency.
+#[trace("TC-462", "FR-105-AC-2")]
+#[test]
+fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
+    let compiled = config_version_compiled();
+    let graph = compiled.package.graph();
+    let config_version_node = config_version_node_key(graph);
+
+    let anchor_key = graph
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::State
+                && node.semantic_form() == "operation_anchor"
+        })
+        .expect("exactly one operation_anchor node (s4_emits_exactly_the_fr_105_state_nodes)")
+        .key();
+    let frame_key = graph
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::State
+                && node.semantic_form() == "frame"
+        })
+        .expect("exactly one frame node")
+        .key();
+    let version_unchanged_key = state_clause_nodes(graph)
+        .into_iter()
+        .find(|(_, kind)| *kind == "postcondition")
+        .expect("exactly one postcondition state_clause node")
+        .0
+        .key();
+
+    let config_version_id = json!({
+        "domain": quire_exact::NODE_KEY_DOMAIN,
+        "digest": config_version_node.to_string(),
+    });
+    let frame_id = json!({
+        "domain": quire_exact::NODE_KEY_DOMAIN,
+        "digest": frame_key.to_string(),
+    });
+
+    let version_unchanged_dependencies = emitted_dependencies_of(&compiled, version_unchanged_key);
+    assert!(
+        version_unchanged_dependencies.contains(&config_version_id),
+        "VersionUnchanged's own dependencies must name ConfigVersion (its condition's field \
+         read): {version_unchanged_dependencies:?}"
+    );
+    assert!(
+        !version_unchanged_dependencies
+            .iter()
+            .any(|dependency| dependency["kind"] == "dependency_reference"),
+        "no dependency of a local-only unit is ever a dependency_reference (FR-093-AC-12)"
+    );
+
+    let mut anchor_dependencies = emitted_dependencies_of(&compiled, anchor_key);
+    anchor_dependencies.sort_by_key(ToString::to_string);
+    let mut expected = vec![config_version_id, frame_id];
+    expected.sort_by_key(ToString::to_string);
+    assert_eq!(
+        anchor_dependencies, expected,
+        "the operation_anchor's own dependencies are exactly its two reference bindings: \
+         ConfigVersion (context) and the frame"
+    );
+}
+
+/// TC-462 (FR-105-AC-2): `state_clause` occurrences are `claim` kind
+/// (ordinal 0, since `ParentOrder`, `NoCycle` and `VersionUnchanged` are
+/// each declared once); the `operation_anchor` has one `anchor` occurrence;
+/// the `frame` has one `generated` occurrence -- the Outputs table's
+/// occurrence column for all three node kinds, read from `CheckedGraph::
+/// occurrences` (ADR-013 O-07), the in-process record `check` itself built,
+/// not re-derived from the emission path under test.
+#[trace("TC-462", "FR-105-AC-2")]
+#[test]
+fn s4_state_clause_anchor_and_frame_occurrences_match_the_outputs_table() {
+    let compiled = config_version_compiled();
+    let graph = compiled.package.graph();
+
+    let anchor_key = graph
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::State
+                && node.semantic_form() == "operation_anchor"
+        })
+        .expect("exactly one operation_anchor node")
+        .key();
+    let frame_key = graph
+        .semantic_graph()
+        .nodes()
+        .find(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::State
+                && node.semantic_form() == "frame"
+        })
+        .expect("exactly one frame node")
+        .key();
+
+    let occurrences_of = |key: NodeKey, role: &str| -> Vec<u64> {
+        let mut ordinals: Vec<u64> = graph
+            .occurrences()
+            .filter(|(node, origin, _)| *node == key && origin.role().as_str() == role)
+            .map(|(_, origin, _)| origin.ordinal())
+            .collect();
+        ordinals.sort_unstable();
+        ordinals
+    };
+
+    for (node, kind) in state_clause_nodes(graph) {
+        assert_eq!(
+            occurrences_of(node.key(), "claim"),
+            vec![0],
+            "{kind}'s state_clause node has exactly one claim occurrence, ordinal 0, since \
+             it is declared exactly once"
+        );
+    }
+    assert_eq!(
+        occurrences_of(anchor_key, "anchor"),
+        vec![0],
+        "the operation_anchor has one anchor occurrence: one clause (VersionUnchanged) \
+         names attemptUpdate"
+    );
+    assert_eq!(
+        occurrences_of(frame_key, "generated"),
+        vec![0],
+        "the frame has one generated occurrence: one named operation (attemptUpdate)"
+    );
+}
+
+/// TC-462 (FR-105-AC-2): a `state_clause` node's own `semantic_type` is the
+/// `Boolean` scalar type node -- the Outputs table's `state_clause` row,
+/// untested before this (only the frame's `semantic_type` was covered).
+#[trace("TC-462", "FR-105-AC-2")]
+#[test]
+fn s4_state_clause_semantic_type_is_the_boolean_scalar_type_node() {
+    let compiled = config_version_compiled();
+    let graph = compiled.package.graph();
+    let boolean = boolean_scalar_type_node_key(graph);
+
+    for (node, kind) in state_clause_nodes(graph) {
+        assert_eq!(
+            node.semantic_type(),
+            Some(boolean),
+            "{kind}'s state_clause node's own semantic_type is the Boolean scalar type node"
+        );
+    }
+}
+
+/// TC-462 (FR-105-AC-2): `VersionUnchanged`'s condition
+/// (`self.versionNumber = pre(self.versionNumber)`) holds a
+/// `quire.op.state.pre` application over the field read of
+/// `versionNumber`: `pre`'s single argument is `deref(self).versionNumber`,
+/// whose member is `{kind: "field", declaration: <ConfigVersion node>,
+/// name: "versionNumber"}` (FR-105's condition-lowering rule, FR-093).
+#[trace("TC-462", "FR-105-AC-2")]
+#[test]
+fn s4_version_unchanged_condition_holds_a_pre_application_over_the_versionnumber_field_read() {
+    let compiled = config_version_compiled();
+    let graph = compiled.package.graph();
+    let config_version_node = config_version_node_key(graph);
+
+    let (version_unchanged, _) = state_clause_nodes(graph)
+        .into_iter()
+        .find(|(_, kind)| *kind == "postcondition")
+        .expect("exactly one postcondition state_clause node");
+    let condition = state_clause_condition(version_unchanged);
+
+    let pre_application =
+        find_application_by_operator(condition, qsl_semantics::check::Operator::Pre)
+            .unwrap_or_else(|| panic!("condition holds a quire.op.state.pre application: {condition:?}"));
+    let qsl_semantics::check::SemanticTerm::Application {
+        operation,
+        arguments,
+        ..
+    } = pre_application
+    else {
+        unreachable!("find_application_by_operator only returns an Application");
+    };
+    assert_eq!(operation.identity(), "quire.op.state.pre");
+    let [pre_operand] = arguments.as_slice() else {
+        panic!("quire.op.state.pre takes exactly one argument, got {arguments:?}");
+    };
+
+    let qsl_semantics::check::SemanticTerm::Application {
+        operator: field_read_operator,
+        operation: field_read_operation,
+        ..
+    } = pre_operand
+    else {
+        panic!("pre's own operand is the versionNumber field read, got {pre_operand:?}");
+    };
+    assert_eq!(*field_read_operator, qsl_semantics::check::Operator::Query);
+    assert_eq!(field_read_operation.identity(), "quire.op.record.project");
+    assert_eq!(
+        field_read_operation.member(),
+        Some(&qsl_semantics::value::Member::Field {
+            declaration: config_version_node,
+            name: quire_exact::Identifier::new("versionNumber").expect("valid identifier"),
+        }),
+        "pre's own operand is deref(self).versionNumber"
+    );
+}
+
+/// TC-462 (FR-105-AC-2): `NoCycle`'s condition (`not reaches(self, self,
+/// parent)`) holds a `quire.op.model.reaches_field` application whose
+/// member is `{kind: "field", declaration: <ConfigVersion node>, name:
+/// "parent"}` -- FR-105's `reaches(a, b, edge)` lowering rule.
+#[trace("TC-462", "FR-105-AC-2")]
+#[test]
+fn s4_no_cycle_condition_holds_a_reaches_field_application_naming_parent() {
+    let compiled = config_version_compiled();
+    let graph = compiled.package.graph();
+    let config_version_node = config_version_node_key(graph);
+
+    let (no_cycle, _) = state_clause_nodes(graph)
+        .into_iter()
+        .find(|(node, kind)| {
+            *kind == "invariant"
+                && find_application_by_operator(
+                    state_clause_condition(node),
+                    qsl_semantics::check::Operator::Reaches,
+                )
+                .is_some()
+        })
+        .expect("NoCycle is the invariant whose condition holds a reaches application");
+    let condition = state_clause_condition(no_cycle);
+
+    let reaches_application =
+        find_application_by_operator(condition, qsl_semantics::check::Operator::Reaches)
+            .expect("already found above");
+    let qsl_semantics::check::SemanticTerm::Application { operation, .. } = reaches_application
+    else {
+        unreachable!("find_application_by_operator only returns an Application");
+    };
+    assert_eq!(operation.identity(), "quire.op.model.reaches_field");
+    assert_eq!(
+        operation.member(),
+        Some(&qsl_semantics::value::Member::Field {
+            declaration: config_version_node,
+            name: quire_exact::Identifier::new("parent").expect("valid identifier"),
+        }),
+        "reaches(self, self, parent)'s member names ConfigVersion's own parent field"
+    );
+}
+
+/// TC-462 (FR-105-AC-2): `ParentOrder`'s `self.parent` field read carries
+/// the same `Member` shape as `NoCycle`'s `reaches_field` member -- both
+/// name ConfigVersion's `parent` field by the same (declaration, name)
+/// pair, compared directly with `assert_eq` on the `Member` values
+/// themselves (not field-by-field), proving they are identical rather than
+/// merely equal-looking.
+#[trace("TC-462", "FR-105-AC-2")]
+#[test]
+fn s4_parent_order_self_parent_read_shares_no_cycles_member_shape() {
+    let compiled = config_version_compiled();
+    let graph = compiled.package.graph();
+
+    let (parent_order, _) = state_clause_nodes(graph)
+        .into_iter()
+        .find(|(node, kind)| {
+            *kind == "invariant"
+                && find_application_by_operator(
+                    state_clause_condition(node),
+                    qsl_semantics::check::Operator::Reaches,
+                )
+                .is_none()
+        })
+        .expect("ParentOrder is the invariant whose condition holds no reaches application");
+    let (no_cycle, _) = state_clause_nodes(graph)
+        .into_iter()
+        .find(|(node, kind)| {
+            *kind == "invariant"
+                && find_application_by_operator(
+                    state_clause_condition(node),
+                    qsl_semantics::check::Operator::Reaches,
+                )
+                .is_some()
+        })
+        .expect("NoCycle is the invariant whose condition holds a reaches application");
+
+    let parent_order_member =
+        find_field_read_member(state_clause_condition(parent_order), "parent")
+            .expect("ParentOrder's condition reads self.parent");
+
+    let qsl_semantics::check::SemanticTerm::Application { operation, .. } =
+        find_application_by_operator(
+            state_clause_condition(no_cycle),
+            qsl_semantics::check::Operator::Reaches,
+        )
+        .expect("NoCycle holds a reaches application")
+    else {
+        unreachable!("find_application_by_operator only returns an Application");
+    };
+    let no_cycle_member = operation.member().expect("reaches_field carries a member");
+
+    assert_eq!(
+        parent_order_member, no_cycle_member,
+        "ParentOrder's self.parent field read and NoCycle's reaches_field member name the \
+         same (declaration, name) pair"
+    );
 }
 
 /// TC-463 step 1 (FR-105-AC-3): the emitted package reads back through
