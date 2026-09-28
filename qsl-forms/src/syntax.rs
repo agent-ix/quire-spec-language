@@ -1289,6 +1289,67 @@ pub struct ProtocolNodeDeclaration {
     pub channel: Option<String>,
 }
 
+/// A binder's syntactic role (FR-113 "Refusals": a record binder, a
+/// capture, a compensation trigger and a retry or recovery parameter all
+/// share the one no-shadowing rule, QSpec `shared-grammar.md`: "the same
+/// no-shadowing rule applies to binders and captures").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BinderKind {
+    /// The protocol's own `over (p)` input parameter, visible everywhere in
+    /// the protocol (FR-113 "Refusals"; composed lane: `BinderKind::Input`).
+    Input,
+    /// The protocol's own `activation on each (p) [when (...)]` parameter,
+    /// when written (`on origin` binds nothing); visible everywhere in the
+    /// protocol (FR-113 "Refusals").
+    ActivationParameter,
+    /// The `as (x: T)` of an event node (`send`, `receive`, `attempt`,
+    /// `effect` or `event`), a `commit`, a `finish` or a `compensate`
+    /// declaration's own bound parameter.
+    RecordBinder,
+    /// A `capture p = e;`, at the protocol's top level or inside a
+    /// `compensate` declaration.
+    Capture,
+    /// A `compensate` declaration's `activate first (p)` trigger parameter.
+    Trigger,
+    /// One of a `compensate` declaration's `retry (a, b)` parameters.
+    RetryParameter,
+    /// A `compensate` declaration's `recover (p)` parameter.
+    RecoveryParameter,
+}
+
+/// One binder FR-113's no-shadowing rule checks: its own declared name and
+/// the scope it is visible in. `scope` follows the same convention
+/// [`ScopedAnchorForm::scope`] and [`ProtocolNodeDeclaration::scope`] do:
+/// the named controls enclosing the binder, outermost first, empty at the
+/// protocol's top level. A binder inside a `compensate` declaration is
+/// scoped by that declaration's own name (the same way a structural
+/// control's children are scoped by its name); the `compensate`
+/// declaration's own record binder is scoped one level shallower, at the
+/// empty top-level scope its own declaration lives in (FR-113-AC-5: a
+/// nested `capture` shadows it).
+///
+/// `scope` locates a binder for FR-114's later binding pass; it plays no
+/// part in FR-113's own no-shadowing check. QSpec `shared-grammar.md`
+/// requires every binder "unique in their enclosing declaration" -- the
+/// checked protocol as a whole, not any one lexical scope inside it -- so
+/// the check (`qsl-semantics`' `shadow_refusals`) treats every binder name
+/// in the protocol as one flat namespace: a `finish` binder may shadow a
+/// `run`-tree binder, two different `compensate` declarations' binders of
+/// one name collide, and sibling `case`/`branch` binders of one name
+/// collide, the same as the composed lane's own `DuplicateBinder` checker
+/// (`src/linking/composed/scopes.rs`). Only a *different* protocol
+/// declaration is a separate "enclosing declaration": two protocols may
+/// reuse a binder name (FR-113 "Refusals").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BinderForm {
+    /// The binder's syntactic role.
+    pub kind: BinderKind,
+    /// The declared name and its span.
+    pub name: DeclaredName,
+    /// The named controls enclosing the binder, outermost first.
+    pub scope: Vec<ScopeName>,
+}
+
 /// `protocol Name using p over (params) activation { ... run Control
 /// Finish }` (FR-112 "Outputs", ADR-012 §12.2). S2 builds the scoped
 /// anchors and the declaration collection FR-113 resolves them against; the
@@ -1304,6 +1365,9 @@ pub struct ProtocolDeclarationForm {
     /// Every static node the declaration's scopes declare directly, in
     /// source order (FR-113 Inputs).
     pub declarations: Vec<ProtocolNodeDeclaration>,
+    /// Every binder the declaration holds, in source order (FR-113
+    /// "Refusals" binder no-shadowing rule; QSL-306).
+    pub binders: Vec<BinderForm>,
 }
 
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form

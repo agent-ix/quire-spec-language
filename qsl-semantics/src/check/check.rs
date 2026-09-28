@@ -280,6 +280,22 @@ pub struct PackageDeclarations {
     pub enums: Vec<EnumBinding>,
     /// `type Name = T;` aliases, which create no declaration identity.
     pub aliases: Vec<(String, ValueType)>,
+    /// The unit's own `profile p = ...;` and `model M = ...;` selection
+    /// aliases (FR-091), each with which kind it is, independent of
+    /// whether the model's domain package admitted (FR-113 "Refusals"
+    /// binder no-shadowing rule reads this: a binder naming one of these
+    /// refuses regardless of what its `model` declaration eventually
+    /// resolves to).
+    pub alias_names: std::collections::BTreeMap<String, super::refusal::AliasKind>,
+    /// The unit's own `dimension` and `unit` declaration names (FR-091
+    /// "Dimension form"/"Unit form"), independent of `Scope::named_types`
+    /// (composites, enums, object types and aliases only) and
+    /// `Signatures::declares` (functions and predicates): FR-113 "Refusals"
+    /// binder no-shadowing rule reads this too, so a binder naming a
+    /// declared dimension or unit refuses the same way as one naming any
+    /// other native declaration (QSpec `shared-grammar.md`: "Native
+    /// declaration names are unique within the linked package").
+    pub native_names: std::collections::BTreeSet<String>,
     /// Qualified names of imported model operations, predicates and clauses.
     pub model_operations: Vec<String>,
     /// Function declarations in declaration order.
@@ -355,6 +371,8 @@ impl PackageDeclarations {
             types: TypeEnvironment::default(),
             enums: Vec::new(),
             aliases: Vec::new(),
+            alias_names: std::collections::BTreeMap::new(),
+            native_names: std::collections::BTreeSet::new(),
             model_operations: Vec::new(),
             functions: Vec::new(),
             ieee_profile: None,

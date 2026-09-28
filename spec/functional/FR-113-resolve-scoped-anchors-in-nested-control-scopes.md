@@ -72,10 +72,17 @@ unresolved or ambiguous scope fails before S4, with no partial substitute.
   decides in that scope on that name SHALL also refuse
   `ambiguous_declaration`/`ambiguous-name` at the anchor, naming both
   declarations. No source order or first match picks one.
-- If a node record binder (the `as (x: T)` of an event node), a capture, a
-  compensation trigger or a retry or recovery parameter has the name of a
-  model or profile alias, a native declaration of the package, or another
-  binder visible where it is declared, then the checker SHALL refuse
+- Every node record binder (the `as (x: T)` of an event node, a `commit`, a
+  `finish` or a `compensate` declaration), capture, the protocol's own
+  `over (p)` input parameter, its `activation on each (p)` parameter, and
+  every compensation trigger, retry or recovery parameter, SHALL be unique
+  across the whole checked protocol declaration (QSpec
+  `shared-grammar.md`: binders "are unique in their enclosing declaration"
+  -- the protocol as a whole, not merely the lexical scope, sequence,
+  choice, parallel, repeat, case, branch, await or compensate declaration
+  each one is written in). If a binder has the name of a model or profile
+  alias, a native declaration of the package, or another binder visible
+  anywhere else in the protocol, then the checker SHALL refuse
   `ambiguous_declaration`/`ambiguous-name` at that binder, naming the
   declaration it would shadow (QSpec `shared-grammar.md`: binders "cannot
   shadow aliases, native declarations or another visible binding", and "the
@@ -136,10 +143,15 @@ unresolved or ambiguous scope fails before S4, with no partial substitute.
 
 Specified under QSL-296 (QSL-21a). QSL-298 (QSL-21c) implements anchor
 resolution: nested-scope resolution, missing and ambiguous refusals, and
-the wrong-kind and channel-mismatch refusals of every site. Binder
-no-shadowing (the shadowing clause of "Refusals" and its AC-5, and the
-shadowing half of AC-6) is not yet implemented; QSL-306 tracks it, and also
-FR-114's check half. A protocol whose anchors all resolve is still refused
-`unsupported_construct`/`not-yet-implemented`, since its other content has
-no checker and nothing emits it yet (QSL-299), until QSL-306 completes
-protocol checking and emission.
+the wrong-kind and channel-mismatch refusals of every site. QSL-306
+implements binder no-shadowing (the shadowing clause of "Refusals", AC-5
+and the shadowing half of AC-6), enforced protocol-wide (QSpec
+`shared-grammar.md`: binders are "unique in their enclosing declaration"),
+over a further S2 extension (`qsl_forms::protocol_clause::BinderForm`) that
+walks every binder position FR-112 itself does not capture, including the
+protocol's own `over (p)` input and `activation on each (p)` parameters.
+FR-114's binding half remains open: QSL-309 (binding) and QSL-299
+(emission) complete it. A protocol whose anchors and binders all resolve is
+still refused `unsupported_construct`/`not-yet-implemented`, since its
+other content has no checker and nothing emits it yet (QSL-299), until
+those tickets complete protocol checking and emission.

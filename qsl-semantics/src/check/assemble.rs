@@ -45,6 +45,7 @@ use quire_exact::{
 use super::check::{EnumBinding, PackageDeclarations, ResolvedSignature};
 use super::lowering::{strongly_connected, AdmittedModel};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
+use super::refusal::AliasKind;
 use super::state_clause::{population_of, ClauseOperation, StateClauseDeclaration};
 use super::type_form::{
     parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
@@ -1557,6 +1558,23 @@ impl PackageDeclarations {
             .iter()
             .zip(resolved)
             .filter_map(|(alias, value_type)| Some((alias.name.name.clone(), value_type?)))
+            .collect();
+        package.alias_names = selections
+            .profiles
+            .iter()
+            .map(|profile| (profile.alias.clone(), AliasKind::Profile))
+            .chain(
+                selections
+                    .models
+                    .iter()
+                    .map(|model| (model.alias.clone(), AliasKind::Model)),
+            )
+            .collect();
+        package.native_names = unit
+            .dimensions
+            .iter()
+            .map(|dimension| dimension.name.name.clone())
+            .chain(unit.units.iter().map(|quantity| quantity.name.name.clone()))
             .collect();
         for (index, signature) in signatures.into_iter().enumerate() {
             package.resolved_signatures.insert(index, signature);

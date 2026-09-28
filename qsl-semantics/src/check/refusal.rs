@@ -77,6 +77,54 @@ pub enum ProtocolAnchorCause {
         /// The protocol's declared name span.
         span: Span,
     },
+    /// FR-113 "Refusals": a record binder, a capture, a compensation
+    /// trigger or a retry or recovery parameter names a model or profile
+    /// alias, a native declaration of the package, or another binder
+    /// visible where it is declared.
+    Shadow {
+        /// The shadowing binder's own name.
+        name: String,
+        /// What the binder shadows.
+        shadowed: ShadowedDeclaration,
+        /// The shadowing binder's own span.
+        span: Span,
+    },
+}
+
+/// Which selection alias a [`ShadowedDeclaration::ProfileAlias`] or
+/// [`ShadowedDeclaration::ModelAlias`] names (FR-091: `profile p = ...;` and
+/// `model M = ...;`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum AliasKind {
+    /// A `profile p = ...;` selection alias.
+    Profile,
+    /// A `model M = ...;` selection alias.
+    Model,
+}
+
+/// What a binder shadows (FR-113 "Refusals"): named as the checker holds
+/// it. FR-113 says "naming the declaration it would shadow", and AC-5 says
+/// "naming the alias" -- a consumer needs the *kind* of the shadowed
+/// declaration, not just that one exists (SR-765 FND-005). The first five
+/// variants live outside the protocol form this checker reads (a
+/// package-wide alias or native declaration), so none of them carry a
+/// span; only [`Self::Binder`] does.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ShadowedDeclaration {
+    /// The unit's own `profile p = ...;` selection alias.
+    ProfileAlias,
+    /// The unit's own `model M = ...;` selection alias.
+    ModelAlias,
+    /// A native `function` or `predicate` declaration of the package.
+    Function,
+    /// A native `type`, `record`, `tuple` or `enum` declaration of the
+    /// package.
+    Type,
+    /// A native `dimension` or `unit` declaration of the package.
+    Quantity,
+    /// Another binder visible where the shadowing binder is declared, by
+    /// that binder's own span.
+    Binder(Span),
 }
 
 impl ProtocolAnchorCause {
@@ -88,7 +136,8 @@ impl ProtocolAnchorCause {
             | Self::Ambiguous { span, .. }
             | Self::WrongKind { span, .. }
             | Self::ChannelMismatch { span, .. }
-            | Self::Unimplemented { span, .. } => *span,
+            | Self::Unimplemented { span, .. }
+            | Self::Shadow { span, .. } => *span,
         }
     }
 
@@ -96,7 +145,7 @@ impl ProtocolAnchorCause {
     pub fn code(&self) -> Code {
         match self {
             Self::Missing { .. } => Code::MissingDeclaration,
-            Self::Ambiguous { .. } => Code::AmbiguousDeclaration,
+            Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => Code::IllTyped,
             Self::Unimplemented { .. } => Code::UnsupportedConstruct,
         }
@@ -108,7 +157,7 @@ impl ProtocolAnchorCause {
     pub fn tag(&self) -> &'static str {
         match self {
             Self::Missing { .. } => "missing-name",
-            Self::Ambiguous { .. } => "ambiguous-name",
+            Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => "type-mismatch",
             Self::Unimplemented { .. } => "not-yet-implemented",
         }

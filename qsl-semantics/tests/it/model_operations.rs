@@ -1524,3 +1524,34 @@ fn admission_is_deterministic_regardless_of_document_order() {
     assert_eq!(resolved.creates, Vec::new());
     assert_eq!(resolved.deletes, Vec::new());
 }
+
+/// SR-766 FND-001: `PackageDeclarations::alias_names`'s model-alias half
+/// (assembled from `selections.models` -- the `.chain(selections.models
+/// ...)` line -- not just `selections.profiles`), which FR-113's binder
+/// no-shadowing rule (QSL-306) reads to refuse a binder naming a model
+/// alias the same way it refuses one naming a profile alias. Every other
+/// shadowing test in `qsl-semantics::check::protocol_clause` only ever
+/// exercises the profile-alias half (a fixture's own `v`), since that
+/// module's own `assemble` test helper admits no real domain package;
+/// deleting the model-alias half of `alias_names`'s assembly would leave
+/// every one of those green while this one goes red.
+#[trace("SR-766", "FR-113")]
+#[test]
+fn a_models_own_alias_is_recorded_in_the_packages_alias_names() {
+    let document = config_version_document(
+        attempt_update(
+            json!([]),
+            json!({"modifies": [], "creates": [], "deletes": []}),
+        ),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    );
+    let declarations = admit_and_assemble(&document).expect("the fixture admits and assembles");
+    assert_eq!(
+        declarations.alias_names.get("Config"),
+        Some(&qsl_semantics::check::AliasKind::Model),
+        "{:?}",
+        declarations.alias_names
+    );
+}

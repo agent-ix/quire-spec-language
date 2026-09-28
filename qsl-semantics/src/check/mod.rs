@@ -194,9 +194,9 @@ pub use identity::{
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use protocol_clause::{CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
+    AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
     InvalidDispatchDeclaration, KeyFault, Location, MeasureObligation, Obligation, Origin,
-    ProtocolAnchorCause, ProvedInterval, StageLimitCause, WrongSnapshotCause,
+    ProtocolAnchorCause, ProvedInterval, ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
 };
 
 /// How a standalone expression is checked.
@@ -1035,12 +1035,20 @@ impl PackageDeclarations {
             return Err(refusals);
         }
         // FR-113: each protocol declaration's scoped anchors, resolved
-        // through its nested control scopes (`check::protocol_clause`).
-        // Independent of every other declaration kind: a protocol is
-        // checked from its own form alone.
+        // through its nested control scopes (`check::protocol_clause`), and
+        // its binders checked against the package's own aliases and native
+        // declarations (`scope`, `signatures`) for the no-shadowing rule.
+        // Independent of every other declaration kind otherwise: a
+        // protocol's own content is checked from its own form alone.
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
         for protocol in &self.protocols {
-            match protocol_clause::check(protocol) {
+            match protocol_clause::check(
+                protocol,
+                &self.alias_names,
+                &self.native_names,
+                &scope,
+                &signatures,
+            ) {
                 Ok(checked) => {
                     // FR-113 checks only anchor resolution; the rest of a
                     // protocol's content and its emission (QSL-299) have no
