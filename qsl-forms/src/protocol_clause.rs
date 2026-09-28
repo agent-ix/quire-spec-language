@@ -23,8 +23,8 @@ use super::syntax::{
     ScopedAnchorForm, StateClauseForm, StateClauseKind, UsingAlias,
 };
 use super::value::{
-    declared_name, expression, has_token, items, name_form, nodes_of, only, production_node,
-    spelled, text, tokens_of, type_form, unexpected, Item,
+    declared_name, expression, has_token, items, name_form, nodes_of, only, production_node, text,
+    tokens_of, type_form, unexpected, Item,
 };
 
 /// The protocol form's output collections and its nesting-depth limit,
@@ -288,9 +288,11 @@ impl Collector<'_> {
         let block = only(items, Production::Block, node)?;
         let block_items = super::value::items(cst, block);
         let expression = only(&block_items, Production::Expression, block)?;
-        let constant = match spelled(cst, expression)?.as_str() {
-            "true" => Some(true),
-            "false" => Some(false),
+        // A bare Boolean literal is exactly one significant token, `true`
+        // or `false`; `(true)` or `true and true` is not.
+        let constant = match super::value::significant_tokens(cst, expression)[..] {
+            [token] if token.spelling() == b"true" => Some(true),
+            [token] if token.spelling() == b"false" => Some(false),
             _ => None,
         };
         self.bodies.push(ProtocolBodyForm {

@@ -106,22 +106,27 @@ pub(crate) fn text(token: &CstToken, node: &CstNode) -> Result<String, FormsFail
 /// no separator: a qualified name `M::T`, a signed integer `-2`, a
 /// rounding mode `nearest-even`.
 pub(crate) fn spelled(cst: &LosslessCst, node: &CstNode) -> Result<String, FormsFailure> {
+    let mut spelling = String::new();
+    for token in significant_tokens(cst, node) {
+        spelling.push_str(&text(token, node)?);
+    }
+    Ok(spelling)
+}
+
+/// Every significant token inside `node`'s span, in source order (trivia
+/// such as whitespace and comments excluded).
+pub(crate) fn significant_tokens<'c>(cst: &'c LosslessCst, node: &CstNode) -> Vec<&'c CstToken> {
     let span = node.span();
     let first = cst
         .tokens()
         .partition_point(|token| token.span().start < span.start);
-    let mut spelling = String::new();
-    for token in cst
-        .tokens()
+    cst.tokens()
         .get(first..)
         .unwrap_or_default()
         .iter()
         .take_while(|token| token.span().end <= span.end)
         .filter(|token| token.class() == TokenClass::Token)
-    {
-        spelling.push_str(&text(token, node)?);
-    }
-    Ok(spelling)
+        .collect()
 }
 
 /// An integer literal's value.
