@@ -43,7 +43,11 @@ use crate::spine::{
     compile, CompileRefusal, Compiled, DependencyInput, DependencyInputRefusal, SpineLimits,
     SuppliedLibrary,
 };
-use crate::witness::{DecodeRefusal, ReplaySource};
+use crate::witness::{DecodeRefusal, FrameOperation, ReplaySource};
+use qsl_semantics::model::observation::AdmissionFailure;
+
+mod frame;
+pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
 /// The S1 limit a request names that is above this executor's reader
 /// limit (ADR-013 O-26: "a limit above the reader limit").
@@ -160,6 +164,24 @@ pub enum ReplayRefusal {
         /// The recompiled package that declares it.
         package: PackageId,
     },
+    /// FR-116: a frame counterexample's operation names no operation
+    /// frame of the recompiled package.
+    #[error("missing_declaration/missing-name: package {} holds no operation frame {operation}", .package.hex())]
+    UnknownOperation {
+        /// The payload's operation.
+        operation: FrameOperation,
+        /// The recompiled package it was looked up in.
+        package: PackageId,
+    },
+    /// FR-116: a frame counterexample's anchor, frame or occurrence
+    /// identity is not the recompiled package's. Refused before any
+    /// admission.
+    #[error("stale_dependency/revision-mismatch: {0}")]
+    FrameIdentity(Box<FrameIdentityMismatch>),
+    /// FR-116: FR-106 admission of the frame counterexample's invocation
+    /// failed, with its own record.
+    #[error(transparent)]
+    Admission(AdmissionFailure),
     /// An executor or S6a invariant broke.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
@@ -180,7 +202,14 @@ impl ReplayRefusal {
             }
             Self::DependencySelections(_) => Code::InvalidPackage,
             Self::DependencyInput(refusal) => refusal.code(),
-            Self::UnknownFunction { .. } => Code::MissingDeclaration,
+            Self::UnknownFunction { .. } | Self::UnknownOperation { .. } => {
+                Code::MissingDeclaration
+            }
+            Self::FrameIdentity(_) => Code::StaleDependency,
+            Self::Admission(
+                AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
+            ) => record.code,
+            Self::Admission(AdmissionFailure::Fault(_)) => Code::RuntimeInvariant,
             Self::UnknownParameter(_)
             | Self::DuplicateArgument(_)
             | Self::UnboundParameter(_)
@@ -422,13 +451,7 @@ fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
         .check_unit_owner(&labels(source))
         .map_err(ReplayRefusal::DependencyInput)?;
     let bytes = provided(source)?;
-    let packages = package_input(
-        request
-            .byte_provision()
-            .entries()
-            .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
-            .map(|(_, bytes)| bytes),
-    );
+    let packages = domain_packages(request);
     // Rule 4: the recompile.
     let compiled = compile(
         labels(source),
@@ -478,6 +501,19 @@ fn recompile(request: &ReplayRequest) -> Result<Compiled, ReplayRefusal> {
         }
     }
     Ok(compiled)
+}
+
+/// I1's package input: every entry the byte provision carries under a
+/// `sha256-jcs` digest (QC-1). A state document there is keyed by its raw
+/// bytes' digest, which no model selection names.
+fn domain_packages(request: &ReplayRequest) -> std::collections::BTreeMap<[u8; 32], Vec<u8>> {
+    package_input(
+        request
+            .byte_provision()
+            .entries()
+            .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
+            .map(|(_, bytes)| bytes),
+    )
 }
 
 /// The one `quire.source.bytes/v1` source `references` names (ADR-015 D-4
@@ -653,18 +689,44 @@ fn wire_id(key: NodeKey) -> WireNodeId {
 
 /// The replay's charges: what `meter` consumed of each counter.
 fn consumed(meter: &Meter) -> ScalarLimits {
-    ScalarLimits {
-        integer_bits: meter.consumed(LimitKind::IntegerBits),
-        decimal_digits: meter.consumed(LimitKind::DecimalDigits),
-        scale_expansion: meter.consumed(LimitKind::ScaleExpansion),
-        text_input_bytes: meter.consumed(LimitKind::TextInputBytes),
-        text_scalars: meter.consumed(LimitKind::TextScalars),
-        normalized_scalars: meter.consumed(LimitKind::NormalizedScalars),
-        unit_edges: meter.consumed(LimitKind::UnitEdges),
-        value_occurrences: meter.consumed(LimitKind::ValueOccurrences),
-        work_units: meter.consumed(LimitKind::WorkUnits),
-        result_units: meter.consumed(LimitKind::ResultUnits),
+    charges(
+        LimitKind::ALL
+            .iter()
+            .map(|kind| (*kind, meter.consumed(*kind))),
+    )
+}
+
+/// Per-counter consumed totals as a replay result's charges: one
+/// [`ScalarLimits`] member per [`LimitKind`], zero where none is given.
+fn charges(consumed: impl IntoIterator<Item = (LimitKind, u64)>) -> ScalarLimits {
+    let mut charges = ScalarLimits {
+        integer_bits: 0,
+        decimal_digits: 0,
+        scale_expansion: 0,
+        text_input_bytes: 0,
+        text_scalars: 0,
+        normalized_scalars: 0,
+        unit_edges: 0,
+        value_occurrences: 0,
+        work_units: 0,
+        result_units: 0,
+    };
+    for (kind, amount) in consumed {
+        let counter = match kind {
+            LimitKind::IntegerBits => &mut charges.integer_bits,
+            LimitKind::DecimalDigits => &mut charges.decimal_digits,
+            LimitKind::ScaleExpansion => &mut charges.scale_expansion,
+            LimitKind::TextInputBytes => &mut charges.text_input_bytes,
+            LimitKind::TextScalars => &mut charges.text_scalars,
+            LimitKind::NormalizedScalars => &mut charges.normalized_scalars,
+            LimitKind::UnitEdges => &mut charges.unit_edges,
+            LimitKind::ValueOccurrences => &mut charges.value_occurrences,
+            LimitKind::WorkUnits => &mut charges.work_units,
+            LimitKind::ResultUnits => &mut charges.result_units,
+        };
+        *counter = amount;
     }
+    charges
 }
 
 #[cfg(test)]

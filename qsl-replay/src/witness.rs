@@ -324,6 +324,10 @@ pub trait FamilyPayload: Clone + fmt::Debug + Eq {}
 pub struct NoPayload;
 impl FamilyPayload for NoPayload {}
 
+// FR-116: the `ProtocolClause` family's own payload, a frame counterexample.
+mod frame;
+pub use frame::{ClaimedChange, FrameCounterexample, FrameOperation};
+
 /// FR-070/ADR-013 O-25: the typed counterexample/witness envelope, generic
 /// over its family-owned payload `P` (the extension point FR-070-AC-5
 /// requires). Every field below is one of ADR-013 O-25's own listed

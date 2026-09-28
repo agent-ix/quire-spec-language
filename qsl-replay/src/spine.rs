@@ -52,6 +52,8 @@ pub use clause::{
     ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
     ClauseRunStage, ExtractionOrigin, OperationName,
 };
+// FR-116: FR-115's frame run, shared with the frame replay (`crate::execute`).
+pub(crate) use clause::{check_frame, resolve_frame, FrameRun, UnitProvenance};
 
 /// Why spine [`compile`] produced no checked package. Each
 /// variant is the stage that refused, with its typed cause and, where the

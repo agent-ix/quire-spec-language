@@ -99,16 +99,30 @@ pub(crate) struct AttemptInput<'a> {
     pub(crate) frame_population: Option<PopulationDomain>,
 }
 
+/// The nodes lowering binds one named operation to (FR-105): its
+/// `operation_anchor` node, its `frame` node and the `Origin` of the frame's
+/// own `generated` occurrence (FR-104). One per (declaring object type,
+/// operation name): every clause and attempt naming the operation gets the
+/// same three back, and the occurrence stays distinct even from another
+/// operation whose frame node holds equal content (FR-104-AC-5).
+#[derive(Clone, Debug)]
+pub(crate) struct OperationBinding {
+    /// The `operation_anchor` node.
+    pub(crate) anchor: NodeKey,
+    /// The `frame` node.
+    pub(crate) frame: NodeKey,
+    /// The `Origin` of the frame node's own `generated` occurrence.
+    pub(crate) frame_origin: Origin,
+}
+
 /// One protocol `attempt`'s lowered keys (FR-114 "Outputs").
 pub(crate) struct LoweredAttempt {
-    /// The `operation_anchor` node: the identity FR-114 records the
-    /// attempt's operation by.
-    pub(crate) anchor: NodeKey,
-    /// The `frame` node of the same operation, and the `Origin` of its own
-    /// occurrence (shared with every clause or attempt naming the same
-    /// operation, FR-104-AC-5/FR-114 "Behavior": "SHALL NOT copy the
+    /// The operation's anchor and frame nodes and the frame's occurrence:
+    /// the anchor is the identity FR-114 records the attempt's operation
+    /// by, and the frame is shared with every clause or attempt naming the
+    /// same operation (FR-104-AC-5/FR-114 "Behavior": "SHALL NOT copy the
     /// frame's entries into the attempt").
-    pub(crate) frame: (NodeKey, Origin),
+    pub(crate) binding: OperationBinding,
     /// The model node of `AttemptInput::frame_population`'s own object
     /// type, when the declaring type shares a population.
     pub(crate) population_object: Option<NodeKey>,
@@ -124,12 +138,9 @@ pub(crate) struct LoweredClause {
     pub(crate) key: NodeKey,
     /// Each parameter's `value`/`parameter` node, in slot order.
     pub(crate) parameters: Vec<NodeKey>,
-    /// The `frame` node of the operation a `pre` or `post` clause names,
-    /// and the `Origin` of its own occurrence: one per named operation,
-    /// shared by every clause that names it, distinct even from another
-    /// operation whose frame node happens to hold equal content
-    /// (FR-104-AC-5).
-    pub(crate) frame: Option<(NodeKey, Origin)>,
+    /// The anchor and frame nodes of the operation a `pre` or `post` clause
+    /// names, and the frame's occurrence; `None` for an invariant.
+    pub(crate) binding: Option<OperationBinding>,
     /// The `Boolean` scalar type node: the clause's semantic type.
     pub(crate) boolean: NodeKey,
     /// The model object type node of each of `population_types`, in order.
@@ -170,12 +181,12 @@ impl Lowering<'_> {
         };
         let condition = self.expression(clause.body, &mut binders)?;
         let boolean = self.type_node(&ValueType::Boolean, location)?;
-        let (anchor, frame) = match &clause.anchor {
+        let (anchor, binding) = match &clause.anchor {
             None => (self.object_node(clause.context, location)?, None),
             Some(anchor) => {
-                let (anchor, frame, frame_origin) = self.operation_anchor(anchor, location)?;
-                self.record(anchor, OccurrenceRole::Anchor, location.clone());
-                (anchor, Some((frame, frame_origin)))
+                let binding = self.operation_anchor(anchor, location)?;
+                self.record(binding.anchor, OccurrenceRole::Anchor, location.clone());
+                (binding.anchor, Some(binding))
             }
         };
         // FR-341: a `state_clause` node's body is a `quire.op.state.clause`
@@ -219,7 +230,7 @@ impl Lowering<'_> {
         Ok(LoweredClause {
             key,
             parameters,
-            frame,
+            binding,
             boolean,
             population_objects,
         })
@@ -235,8 +246,12 @@ impl Lowering<'_> {
         &mut self,
         input: &AttemptInput<'_>,
     ) -> Result<LoweredAttempt, CheckRefusal> {
-        let (anchor, frame, frame_origin) = self.operation_anchor(&input.anchor, input.location)?;
-        self.record(anchor, OccurrenceRole::Anchor, input.location.clone());
+        let binding = self.operation_anchor(&input.anchor, input.location)?;
+        self.record(
+            binding.anchor,
+            OccurrenceRole::Anchor,
+            input.location.clone(),
+        );
         // SR-770 FND-002: the attempt's own record names these two nodes
         // (its population domain's object type and its result type), but no
         // node of the attempt does -- unlike a clause, whose `state_clause`
@@ -254,8 +269,7 @@ impl Lowering<'_> {
         let boolean = self.type_node(&ValueType::Boolean, input.location)?;
         self.record(boolean, OccurrenceRole::Type, input.location.clone());
         Ok(LoweredAttempt {
-            anchor,
-            frame: (frame, frame_origin),
+            binding,
             population_object,
             boolean,
         })
@@ -270,7 +284,7 @@ impl Lowering<'_> {
         &mut self,
         anchor: &AnchorInput<'_>,
         location: &Location,
-    ) -> Result<(NodeKey, NodeKey, Origin), CheckRefusal> {
+    ) -> Result<OperationBinding, CheckRefusal> {
         let (declaring, frame) = self.frame_node(anchor, location)?;
         let frame_origin =
             self.frame_occurrence(anchor.declaring, anchor.operation.name(), frame, location)?;
@@ -289,7 +303,11 @@ impl Lowering<'_> {
                 ],
             },
         )?;
-        Ok((anchor, frame, frame_origin))
+        Ok(OperationBinding {
+            anchor,
+            frame,
+            frame_origin,
+        })
     }
 
     /// `anchor`'s declaring object type node and its `frame` node: content-

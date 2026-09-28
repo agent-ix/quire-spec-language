@@ -81,7 +81,7 @@ mod wire;
 
 pub use model::{AdmittedModel, ForeignView, ModelClause};
 pub(crate) use state::{
-    AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, StateClauseInput,
+    AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, OperationBinding, StateClauseInput,
 };
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the

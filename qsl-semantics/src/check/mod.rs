@@ -483,13 +483,14 @@ fn root(origin: Origin) -> Location {
 
 /// FR-115: one [`CheckedOperationFrame`] per distinct (declaring type,
 /// operation name) in `named`, in first-named order. Every clause and
-/// attempt naming one operation is bound to the same frame node (FR-105), so
-/// the first occurrence stands for all of them.
+/// attempt naming one operation is bound to the same anchor and frame node
+/// and the same frame occurrence (FR-105, FR-104-AC-5), so the first
+/// occurrence stands for all of them.
 fn operation_frames<'a>(
-    named: impl Iterator<Item = (&'a ClauseOperation, quire_exact::NodeKey)>,
+    named: impl Iterator<Item = (&'a ClauseOperation, &'a lowering::OperationBinding)>,
 ) -> Vec<CheckedOperationFrame> {
     let mut frames: Vec<CheckedOperationFrame> = Vec::new();
-    for (operation, frame) in named {
+    for (operation, binding) in named {
         let seen = frames.iter().any(|known| {
             known.operation.declaring == operation.declaring
                 && known.operation.declaration.name() == operation.declaration.name()
@@ -497,7 +498,9 @@ fn operation_frames<'a>(
         if !seen {
             frames.push(CheckedOperationFrame {
                 operation: operation.clone(),
-                frame,
+                anchor: binding.anchor,
+                frame: binding.frame,
+                frame_origin: binding.frame_origin.clone(),
             });
         }
     }
@@ -1415,13 +1418,13 @@ impl PackageDeclarations {
                 .iter()
                 .zip(&lowered_clauses)
                 .filter_map(|(form, lowered)| {
-                    Some((form.operation.as_ref()?, lowered.frame.as_ref()?.0))
+                    Some((form.operation.as_ref()?, lowered.binding.as_ref()?))
                 });
         let attempt_frames = protocol_bindings
             .iter()
             .zip(&lowered_attempts)
             .flat_map(|(bindings, lowered)| bindings.iter().zip(lowered))
-            .map(|(bound, lowered)| (&bound.operation, lowered.frame.0));
+            .map(|(bound, lowered)| (&bound.operation, &lowered.binding));
         let operation_frames = operation_frames(clause_frames.chain(attempt_frames));
         let (semantic_graph, correspondence, identities, binders) = (
             lowered.graph,
@@ -1538,7 +1541,11 @@ impl PackageDeclarations {
                         cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
                     }]
                 };
-                let (frame, frame_origin) = lowered_attempt.frame.clone();
+                let lowering::OperationBinding {
+                    anchor,
+                    frame,
+                    frame_origin,
+                } = lowered_attempt.binding.clone();
                 let populations: Vec<(state_clause::PopulationDomain, quire_exact::NodeKey)> =
                     bound
                         .frame_population
@@ -1571,7 +1578,7 @@ impl PackageDeclarations {
                     .ok_or_else(unkeyable)?;
                 attempts.push(protocol_clause::CheckedAttempt {
                     declaration: bound.declaration,
-                    anchor: lowered_attempt.anchor,
+                    anchor,
                     frame,
                     contracts,
                 });

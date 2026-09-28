@@ -4915,3 +4915,4 @@ fn s4_state_package_reads_back_through_i2() {
 }
 
 mod frame;
+mod frame_replay;
