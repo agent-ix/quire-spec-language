@@ -48,7 +48,8 @@ payload.
   - `change`: the change the counterexample claims: an object reference and
     a field name for a write, an object reference and its type for a
     creation or deletion, or an object reference and its pre and post types
-    for a retyping (FR-115's four change kinds).
+    for a retyping (the four change kinds of FR-106's check 11, which
+    FR-115 runs).
 - A check-time FR-115 frame witness decodes to the `change` it claims:
   the witness's population and object key, and its field or types,
   without the frame permission.

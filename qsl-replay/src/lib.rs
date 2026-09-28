@@ -70,7 +70,9 @@ pub use witness::{
 };
 // FR-116: the FR-106 document, object and FR-115 frame witness types a
 // frame counterexample and its replay result carry, re-exported so CG can
-// name and build them through this crate alone (ADR-011 FB-05).
+// name and build them through this crate (ADR-011 FB-05). The node and
+// occurrence identities also need `qsl_foundation`'s `WireNodeId` and
+// `quire_exact`'s `Origin` and `Identifier`, as `WitnessPacket` already did.
 pub use qsl_semantics::model::key::DeclarationKey;
 pub use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, SelectedObject,

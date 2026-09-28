@@ -4,7 +4,7 @@
 //!
 //! It recompiles the request's package by FR-098's rules ([`recompile`]),
 //! resolves the payload's operation in the recompiled package, refuses a
-//! payload whose anchor, frame or occurrence identity is not the recompiled
+//! payload whose frame, occurrence or anchor identity is not the recompiled
 //! one before any admission, then runs FR-115's frame run -- the very
 //! `check_frame` that `run_clause`'s `Frame` selection runs (FR-109) --
 //! over the invocation, admitted by FR-106 from the byte provision, and
@@ -356,20 +356,20 @@ fn operation_name(operation: &FrameOperation) -> Option<OperationName> {
     })
 }
 
-/// FR-116: the payload's anchor, frame and occurrence identities, each
+/// FR-116: the payload's frame, occurrence and anchor identities, each
 /// against the recompiled one, in that order. No identity is recovered
 /// from a display name.
+///
+/// The frame goes first because the other two are derived from it: the
+/// occurrence key is (frame node, origin), and the `operation_anchor` node's
+/// content references the frame node, so a changed frame changes both. A
+/// payload produced from a package whose frame differs is then refused
+/// naming the two frame identities (FR-116-AC-3), not the anchors that
+/// changed only because the frame did.
 fn check_identities(
     payload: &FrameCounterexample,
     recompiled: &CheckedOperationFrame,
 ) -> Result<(), Box<FrameIdentityMismatch>> {
-    let anchor = wire_id(recompiled.anchor());
-    if anchor != payload.anchor {
-        return Err(Box::new(FrameIdentityMismatch::Anchor {
-            payload: payload.anchor,
-            recompiled: anchor,
-        }));
-    }
     let frame = wire_id(recompiled.frame());
     if frame != payload.frame {
         return Err(Box::new(FrameIdentityMismatch::Frame {
@@ -382,6 +382,13 @@ fn check_identities(
         return Err(Box::new(FrameIdentityMismatch::Occurrence {
             payload: payload.occurrence.clone(),
             recompiled: occurrence,
+        }));
+    }
+    let anchor = wire_id(recompiled.anchor());
+    if anchor != payload.anchor {
+        return Err(Box::new(FrameIdentityMismatch::Anchor {
+            payload: payload.anchor,
+            recompiled: anchor,
         }));
     }
     Ok(())

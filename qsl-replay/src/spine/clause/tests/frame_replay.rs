@@ -519,28 +519,33 @@ fn a_disagreeing_declared_delta_is_inconclusive_with_no_value() {
     assert!(result.found().is_none());
 }
 
-/// TC-515 step 3 (FR-116-AC-3): a frame node identity taken from a package
-/// whose `attemptUpdate` frame also modifies `parent` refuses
+/// TC-515 step 3 (FR-116-AC-3): an envelope whose identities are taken from
+/// a package whose `attemptUpdate` frame also modifies `parent` refuses
 /// `stale_dependency`/`revision-mismatch` naming both frame identities --
 /// before admission: the pre snapshot is also missing from the provision,
-/// and admission would have refused that first.
+/// and admission would have refused that first. All three identities come
+/// from that package, as a real producer would emit them: its anchor
+/// differs too, since the anchor node references the frame node, and the
+/// refusal still names the frames.
 #[trace("TC-515", "FR-116-AC-3")]
 #[test]
 fn a_stale_frame_identity_refuses_before_admission() {
     let other = parent_modifying_unit();
-    let (_, other_frame, other_occurrence) = identities(&other);
-    let mut recompiled_frame = None;
+    let (other_anchor, other_frame, other_occurrence) = identities(&other);
+    let mut recompiled = None;
     let input = forbidden_parent_change();
     let pre = input.pre.clone();
     let case = case_with(input, child_change("parent"), |wire, payload| {
-        recompiled_frame = Some(payload.frame);
+        recompiled = Some((payload.anchor, payload.frame));
+        payload.anchor = other_anchor;
         payload.frame = other_frame;
         payload.occurrence = other_occurrence;
         let pre_hex = DigestRecord::mint(DigestDomain::Sha256Jcs, pre.digest).hex();
         wire.byte_provision.retain(|(_, hex, _)| *hex != pre_hex);
     });
-    let recompiled_frame = recompiled_frame.unwrap();
+    let (recompiled_anchor, recompiled_frame) = recompiled.unwrap();
     assert_ne!(other_frame, recompiled_frame);
+    assert_ne!(other_anchor, recompiled_anchor);
     let refusal = replay(case).unwrap_err();
     assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
     assert!(
@@ -635,6 +640,30 @@ fn a_source_edit_refuses_by_the_stale_package_rule() {
             &refusal,
             ReplayRefusal::PackageIdMismatch { requested, recompiled }
                 if *requested == original && !recompiled.matches(&original)
+        ),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
+}
+
+/// FR-116 Behavior: a request whose `package_id` is the recompiled one but
+/// an envelope produced from another package refuses by FR-098's stale
+/// `package_id` rule, naming the envelope's.
+#[trace("TC-515", "FR-116-AC-3")]
+#[test]
+fn a_stale_envelope_package_id_refuses_by_the_stale_package_rule() {
+    let case = case(forbidden_parent_change(), child_change("parent"));
+    let other = package_digest(parent_modifying_unit().compiled.emitted.package_id());
+    let current = case.unit.compiled.emitted.package_id();
+    assert!(!current.matches(&other));
+    let payload = case.envelope.family_payload().clone();
+    let envelope = envelope(&case.unit.bytes, other, witness_source(), payload);
+    let refusal = replay_frame(case.wire, &envelope).unwrap_err();
+    assert!(
+        matches!(
+            &refusal,
+            ReplayRefusal::PackageIdMismatch { requested, recompiled }
+                if *requested == other && *recompiled == current
         ),
         "{refusal:?}"
     );
@@ -787,6 +816,8 @@ fn a_check_time_frame_violation_replays_to_the_same_witness() {
         panic!("expected FrameViolation, got {:?}", report.disposition);
     };
     let claimed = ClaimedChange::of_witness(witness);
+    // The decode names the object by the witness's population and key.
+    assert_eq!(claimed, child_change("parent"));
 
     let result = replay(case(input, claimed.clone())).expect("the replay settles");
     assert_eq!(
