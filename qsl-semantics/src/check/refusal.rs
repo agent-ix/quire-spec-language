@@ -66,17 +66,6 @@ pub enum ProtocolAnchorCause {
         /// The anchor's reference span.
         span: Span,
     },
-    /// A protocol declaration whose anchors all resolve, but whose other
-    /// content (types, roles, operation names, binder types, block bodies)
-    /// has no checker yet, and which nothing emits (QSL-299): kept refused
-    /// rather than silently accepted with no diagnostic (QSL-306 tracks
-    /// completing protocol checking and emission).
-    Unimplemented {
-        /// The declared protocol name.
-        name: String,
-        /// The protocol's declared name span.
-        span: Span,
-    },
     /// FR-113 "Refusals": a record binder, a capture, a compensation
     /// trigger or a retry or recovery parameter names a model or profile
     /// alias, a native declaration of the package, or another binder
@@ -89,6 +78,100 @@ pub enum ProtocolAnchorCause {
         /// The shadowing binder's own span.
         span: Span,
     },
+    /// FR-114 "Behavior": an `attempt`'s `contracts` entry names no state
+    /// clause of the unit.
+    MissingContract {
+        /// The entry as written.
+        entry: String,
+        /// The entry's own span.
+        span: Span,
+    },
+    /// FR-114 "Behavior": an `attempt`'s `contracts` entry names an
+    /// invariant, or a `pre`/`post` clause anchored at a different
+    /// operation than the attempt's own (QSpec: "Listed state
+    /// pre/postcondition declarations must match this operation and its
+    /// invocation anchors").
+    WrongContractAnchor {
+        /// The entry as written.
+        entry: String,
+        /// The attempt's own anchor, `Context::operation`.
+        attempt_anchor: String,
+        /// The named clause's own anchor: `Context::operation` for a
+        /// `pre`/`post` clause anchored elsewhere, or just `Context` for an
+        /// invariant (which names no operation).
+        clause_anchor: String,
+        /// The entry's own span.
+        span: Span,
+    },
+    /// QSL-309: a protocol whose anchors, binders and attempt bindings all
+    /// check, but which holds a construct no checker reads yet (a node kind
+    /// other than `sequence`, `attempt` and `finish`, a channel, a
+    /// relationship, a requirement, a capture, an `activation on each`, a
+    /// replicated role, a `related by` clause, or a body other than a bare
+    /// Boolean literal). Refused rather than compiled with unchecked content
+    /// and silently missing from the emitted package (SR-753 FND-002,
+    /// SR-761 FND-001, SR-770 FND-001).
+    Unimplemented {
+        /// The declared protocol name.
+        name: String,
+        /// The construct's own keyword, e.g. `"channel"` or `"send"`.
+        construct: &'static str,
+        /// The construct's own span: the earliest such construct in the
+        /// protocol.
+        span: Span,
+    },
+    /// QSL-309: the protocol's `using` alias names no profile selection of
+    /// the unit.
+    MissingProfile {
+        /// The alias as written.
+        alias: String,
+        /// The alias's own span.
+        span: Span,
+    },
+    /// QSL-309: a role's `on`/`each` object type names no object type of
+    /// the package.
+    MissingRoleType {
+        /// The role's declared name.
+        role: String,
+        /// The object type as written.
+        context: String,
+        /// The object type's own span.
+        span: Span,
+    },
+    /// QSL-309: an `attempt`'s `by` role names no role of the protocol.
+    MissingRole {
+        /// The role as written.
+        role: String,
+        /// The role reference's own span.
+        span: Span,
+    },
+    /// QSL-309: a binder's declared type does not resolve against the
+    /// package scope.
+    BinderType {
+        /// The binder's declared name.
+        binder: String,
+        /// Why the type did not resolve.
+        fault: super::type_form::TypeFormFault,
+        /// The span of the type form (or nested argument form) at fault.
+        span: Span,
+    },
+}
+
+/// The catalog code and tag a [`ProtocolAnchorCause::BinderType`] refuses
+/// with: the same classes `type_form::TypeFormError`'s own refusal uses
+/// (a missing or ambiguous name, else a type mismatch).
+fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code, &'static str) {
+    use super::type_form::TypeFormFault as F;
+    match fault {
+        F::MissingName(_) => (Code::MissingDeclaration, "missing-name"),
+        F::AmbiguousName(_) => (Code::AmbiguousDeclaration, "ambiguous-name"),
+        F::Malformed
+        | F::EmptyInterval
+        | F::DenominatorBelowOne
+        | F::MalformedDecimal
+        | F::EmptyTextBounds
+        | F::EmptyCardinality => (Code::IllTyped, "type-mismatch"),
+    }
 }
 
 /// Which selection alias a [`ShadowedDeclaration::ProfileAlias`] or
@@ -136,18 +219,30 @@ impl ProtocolAnchorCause {
             | Self::Ambiguous { span, .. }
             | Self::WrongKind { span, .. }
             | Self::ChannelMismatch { span, .. }
+            | Self::Shadow { span, .. }
+            | Self::MissingContract { span, .. }
+            | Self::WrongContractAnchor { span, .. }
             | Self::Unimplemented { span, .. }
-            | Self::Shadow { span, .. } => *span,
+            | Self::MissingProfile { span, .. }
+            | Self::MissingRoleType { span, .. }
+            | Self::MissingRole { span, .. }
+            | Self::BinderType { span, .. } => *span,
         }
     }
 
     /// This cause's catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::Missing { .. } => Code::MissingDeclaration,
+            Self::Missing { .. }
+            | Self::MissingContract { .. }
+            | Self::MissingProfile { .. }
+            | Self::MissingRoleType { .. }
+            | Self::MissingRole { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => Code::IllTyped,
+            Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
             Self::Unimplemented { .. } => Code::UnsupportedConstruct,
+            Self::BinderType { fault, .. } => type_fault_class(fault).0,
         }
     }
 
@@ -156,10 +251,16 @@ impl ProtocolAnchorCause {
     /// protocol-specific catalog code exists).
     pub fn tag(&self) -> &'static str {
         match self {
-            Self::Missing { .. } => "missing-name",
+            Self::Missing { .. }
+            | Self::MissingContract { .. }
+            | Self::MissingProfile { .. }
+            | Self::MissingRoleType { .. }
+            | Self::MissingRole { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } => "type-mismatch",
+            Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
+            Self::BinderType { fault, .. } => type_fault_class(fault).1,
         }
     }
 }
@@ -199,6 +300,20 @@ pub enum Origin {
         clause: String,
         /// The clause's index among the package's state clauses.
         index: usize,
+    },
+    /// One protocol `attempt`'s own operation binding (FR-114, QSL-309), by
+    /// the protocol's index among the package's protocols and the
+    /// attempt's index among that protocol's own `attempts`, both in
+    /// source order. An `operation_anchor`/`frame` node names no position
+    /// of its own, so this names a real position of the unit (the
+    /// attempt's own declared name) to resolve its generated occurrence's
+    /// region, the same way `Origin::StateClause` does for a `pre`/`post`
+    /// clause's own anchor (FR-096).
+    ProtocolAttempt {
+        /// The protocol's index among the package's protocols.
+        protocol: usize,
+        /// The attempt's index among the protocol's own `attempts`.
+        attempt: usize,
     },
 }
 

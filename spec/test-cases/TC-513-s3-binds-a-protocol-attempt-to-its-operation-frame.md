@@ -22,7 +22,9 @@ Use the ConfigVersion package (TC-458) and the FR-104-AC-1 unit
 operation of FR-104-AC-8 and a `pre ProbePre ... on
 Config::ConfigVersion::probe`. Add a protocol whose `run` holds
 `attempt Update by R on Config::ConfigVersion::attemptUpdate contracts
-[VersionUnchanged] as (updated: Boolean) { updated };`.
+[VersionUnchanged] as (updated: Boolean) { true };`. Its role is `role R on
+Config::ConfigVersion;`, and every other body in the protocol is a bare
+Boolean literal, so that FR-113 Status's content check passes.
 
 1. Check and compile the unit; read the checked attempt, the package's
    anchor and frame nodes for `attemptUpdate`, and the requirement records.

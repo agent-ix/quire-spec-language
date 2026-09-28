@@ -26,6 +26,7 @@ use crate::check::family::OccurrenceRole;
 use crate::check::ir::Node;
 use crate::check::node_key::{FrameField, NodeRef, NodeTag, Operation, Operator, SemanticTerm};
 use crate::check::refusal::{CheckRefusal, KeyFault, Location};
+use crate::check::state_clause::PopulationDomain;
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::member_identity_name;
 use crate::model::key::DeclarationKey;
@@ -74,6 +75,47 @@ pub(crate) struct StateClauseInput<'a> {
     /// The object types whose model nodes name the clause's population
     /// domains.
     pub(crate) population_types: &'a [EffectiveId],
+}
+
+/// One protocol `attempt` naming an operation (FR-114, QSL-309), as
+/// lowering reads it: no application node of its own, unlike a
+/// `state_clause` -- only the operation's anchor and frame identity, by
+/// FR-105's shared one-anchor/one-frame-node-per-operation shape (the same
+/// `operation_anchor`/`frame_node`/`frame_occurrence` helpers a `pre`/`post`
+/// clause's own binding calls).
+pub(crate) struct AttemptInput<'a> {
+    /// A real location of this attempt (never [`generated_location`]): the
+    /// `operation_anchor` node's own `Anchor` occurrence is recorded here
+    /// (FR-096 needs a real position to resolve its region).
+    ///
+    /// [`generated_location`]: super::generated_location
+    pub(crate) location: &'a Location,
+    /// The operation `on M::T::op` names.
+    pub(crate) anchor: AnchorInput<'a>,
+    /// The population domain of the type declaring the operation, resolved
+    /// the same way a state clause's own `frame_population` is (FR-104
+    /// "Requirements"), for the attempt's own `operation-contract` Frame
+    /// record (FR-114 "Requirements", reusing `state_clause::record`).
+    pub(crate) frame_population: Option<PopulationDomain>,
+}
+
+/// One protocol `attempt`'s lowered keys (FR-114 "Outputs").
+pub(crate) struct LoweredAttempt {
+    /// The `operation_anchor` node: the identity FR-114 records the
+    /// attempt's operation by.
+    pub(crate) anchor: NodeKey,
+    /// The `frame` node of the same operation, and the `Origin` of its own
+    /// occurrence (shared with every clause or attempt naming the same
+    /// operation, FR-104-AC-5/FR-114 "Behavior": "SHALL NOT copy the
+    /// frame's entries into the attempt").
+    pub(crate) frame: (NodeKey, Origin),
+    /// The model node of `AttemptInput::frame_population`'s own object
+    /// type, when the declaring type shares a population.
+    pub(crate) population_object: Option<NodeKey>,
+    /// The `Boolean` scalar type node: the attempt's own `operation-contract`
+    /// record's result type (`state_clause::record`'s own `boolean`
+    /// parameter).
+    pub(crate) boolean: NodeKey,
 }
 
 /// A lowered state clause's keys.
@@ -180,6 +222,42 @@ impl Lowering<'_> {
             frame,
             boolean,
             population_objects,
+        })
+    }
+
+    /// FR-114 (QSL-309): bind a protocol `attempt` to its operation's own
+    /// `operation_anchor` and `frame` node, reusing exactly the machinery a
+    /// `pre`/`post` clause's own binding calls -- no second frame node
+    /// concept. Records the same `Anchor` occurrence `state_clause` records
+    /// for a clause naming an operation, at `input.location`, and a `Type`
+    /// occurrence of each type node the attempt's own record names.
+    pub(crate) fn protocol_attempt(
+        &mut self,
+        input: &AttemptInput<'_>,
+    ) -> Result<LoweredAttempt, CheckRefusal> {
+        let (anchor, frame, frame_origin) = self.operation_anchor(&input.anchor, input.location)?;
+        self.record(anchor, OccurrenceRole::Anchor, input.location.clone());
+        // SR-770 FND-002: the attempt's own record names these two nodes
+        // (its population domain's object type and its result type), but no
+        // node of the attempt does -- unlike a clause, whose `state_clause`
+        // node names its `Boolean` -- so neither is reachable for a
+        // generated occurrence to be placed under. Each gets a `Type`
+        // occurrence at the attempt itself instead, the same role a clause
+        // parameter's type node records.
+        let population_object = input
+            .frame_population
+            .map(|domain| self.object_node(domain.object, input.location))
+            .transpose()?;
+        if let Some(object) = population_object {
+            self.record(object, OccurrenceRole::Type, input.location.clone());
+        }
+        let boolean = self.type_node(&ValueType::Boolean, input.location)?;
+        self.record(boolean, OccurrenceRole::Type, input.location.clone());
+        Ok(LoweredAttempt {
+            anchor,
+            frame: (frame, frame_origin),
+            population_object,
+            boolean,
         })
     }
 

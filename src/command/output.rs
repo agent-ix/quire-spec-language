@@ -365,6 +365,12 @@ fn spine_origin(origin: &qsl_semantics::check::Origin) -> types::SpineOrigin {
                 index: *index,
             }
         }
+        qsl_semantics::check::Origin::ProtocolAttempt { protocol, attempt } => {
+            types::SpineOrigin::ProtocolAttempt {
+                protocol: *protocol,
+                attempt: *attempt,
+            }
+        }
     }
 }
 

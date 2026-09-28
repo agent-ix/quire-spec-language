@@ -80,7 +80,9 @@ mod state;
 mod wire;
 
 pub use model::{AdmittedModel, ForeignView, ModelClause};
-pub(crate) use state::{AnchorInput, LoweredClause, StateClauseInput};
+pub(crate) use state::{
+    AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, StateClauseInput,
+};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
 /// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no
@@ -3974,11 +3976,17 @@ fn enclosing_declarations(
 ) -> BTreeMap<NodeKey, Location> {
     let mut anchors: BTreeMap<NodeKey, Location> = BTreeMap::new();
     for (key, _, location) in occurrences.iter() {
-        // Only a function body or measure, or a state clause body (FR-104),
-        // resolves to a region (FR-096).
+        // Only a function body or measure, a state clause body (FR-104),
+        // or a protocol attempt's own declared name (FR-114, QSL-309: an
+        // operation named only by an attempt has no clause to place its
+        // anchor-named nodes under, SR-770 FND-002) resolves to a region
+        // (FR-096).
         if !matches!(
             location.origin,
-            Origin::Body { .. } | Origin::Measure { .. } | Origin::StateClause { .. }
+            Origin::Body { .. }
+                | Origin::Measure { .. }
+                | Origin::StateClause { .. }
+                | Origin::ProtocolAttempt { .. }
         ) {
             continue;
         }

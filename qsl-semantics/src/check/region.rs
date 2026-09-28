@@ -34,6 +34,7 @@ fn resolve<'s>(
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     clause_spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     type_spans: &BTreeMap<String, Span>,
+    attempt_span: impl Fn(usize, usize) -> Option<Span>,
     location: &Location,
 ) -> Option<SourceRegion> {
     let span = match &location.origin {
@@ -41,7 +42,12 @@ fn resolve<'s>(
         Origin::StateClause { index, .. } => clause_spans(*index)?.body.at(&location.path)?,
         Origin::Measure { index, .. } => spans(*index)?.measure.as_ref()?.at(&location.path)?,
         Origin::TypeDeclaration { name } if location.path.is_empty() => *type_spans.get(name)?,
-        Origin::TypeDeclaration { .. } | Origin::Expression => return None,
+        Origin::ProtocolAttempt { protocol, attempt } if location.path.is_empty() => {
+            attempt_span(*protocol, *attempt)?
+        }
+        Origin::TypeDeclaration { .. } | Origin::ProtocolAttempt { .. } | Origin::Expression => {
+            return None
+        }
     };
     region(source, embedding, span)
 }
@@ -80,7 +86,27 @@ impl PackageDeclarations {
             |index| self.functions.get(index)?.spans(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             &self.declared_type_spans,
+            |protocol, attempt| self.attempt_span(protocol, attempt),
             location,
+        )
+    }
+
+    /// The declared name span of protocol `protocol`'s attempt `attempt`
+    /// (QSL-309): the position `Origin::ProtocolAttempt` names, since an
+    /// `operation_anchor`/`frame` node carries no position of its own.
+    fn attempt_span(&self, protocol: usize, attempt: usize) -> Option<Span> {
+        let declaration = self
+            .protocol_attempts
+            .get(protocol)?
+            .get(attempt)?
+            .declaration;
+        Some(
+            self.protocols
+                .get(protocol)?
+                .declarations
+                .get(declaration)?
+                .name
+                .span,
         )
     }
 
@@ -103,6 +129,11 @@ pub struct DeclarationRegions {
     /// Each state clause's form spans, by its index in source order.
     clause_spans: Vec<DeclarationSpans>,
     type_spans: BTreeMap<String, Span>,
+    /// Each protocol's own attempts' declared name spans (QSL-309),
+    /// index-aligned with the package's own `protocols`/`protocol_attempts`.
+    /// `pub(super)`: `check::mod`'s own pipeline copies it onto the final
+    /// `CheckedGraph`, which needs the same table `Self::region` reads.
+    pub(super) attempt_spans: Vec<Vec<Option<Span>>>,
 }
 
 impl DeclarationRegions {
@@ -115,6 +146,7 @@ impl DeclarationRegions {
             |index| self.spans.get(index)?.as_ref(),
             |index| self.clause_spans.get(index),
             &self.type_spans,
+            |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
             location,
         )
     }
@@ -161,6 +193,17 @@ impl PackageDeclarations {
                 .map(|clause| clause.spans.clone())
                 .collect(),
             type_spans: self.declared_type_spans.clone(),
+            // SR-770 FND-007: `None` for an attempt whose declaration index
+            // names no declaration of its protocol (a hand-built form, never
+            // one S2 built), so its region is simply unresolved instead of
+            // a panic in library code.
+            attempt_spans: (0..self.protocols.len())
+                .map(|protocol| {
+                    (0..self.protocol_attempts.get(protocol).map_or(0, Vec::len))
+                        .map(|attempt| self.attempt_span(protocol, attempt))
+                        .collect()
+                })
+                .collect(),
         }
     }
 }
@@ -176,6 +219,7 @@ impl CheckedGraph {
             |index| self.form_spans.get(index)?.as_ref(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             &self.type_spans,
+            |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
             location,
         )
     }

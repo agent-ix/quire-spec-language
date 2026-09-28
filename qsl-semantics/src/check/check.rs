@@ -359,6 +359,11 @@ pub struct PackageDeclarations {
     /// carrying its own scoped anchors and declaration collection for
     /// FR-113's checker to resolve.
     pub protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
+    /// FR-114: each protocol's own `attempt`s, resolved by the FR-091
+    /// assembler (QSL-309), index-aligned with [`Self::protocols`]; each
+    /// inner list is in the same order as its protocol's own
+    /// `ProtocolDeclarationForm::attempts`.
+    pub protocol_attempts: Vec<Vec<super::state_clause::AttemptDeclaration>>,
 }
 
 impl PackageDeclarations {
@@ -389,6 +394,7 @@ impl PackageDeclarations {
             function_selections: BTreeMap::new(),
             state_clauses: Vec::new(),
             protocols: Vec::new(),
+            protocol_attempts: Vec::new(),
         }
     }
 

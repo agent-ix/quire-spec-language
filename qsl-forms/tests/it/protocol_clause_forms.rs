@@ -6,10 +6,10 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, AnchorSite, BinderForm, BinderKind, DeclarationForm, Expression, ExpressionSpans,
-    FormsCause, FormsFailure, FormsLimits, ParsedUnit, ProtocolDeclarationForm,
-    ProtocolNodeDeclaration, ProtocolNodeKind, ScopedAnchorForm, SpanId, StateClauseForm,
-    StateClauseKind,
+    build_unit, AnchorSite, BinderForm, BinderKind, BuiltinType, DeclarationForm, Expression,
+    ExpressionSpans, FormsCause, FormsFailure, FormsLimits, ParsedUnit, ProtocolConstructKind,
+    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, ScopedAnchorForm, SpanId,
+    StateClauseForm, StateClauseKind, TypeFormHead,
 };
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::{SourceIdentity, Span};
@@ -336,6 +336,148 @@ fn s2_builds_every_binder_position_in_source_order() {
         starts, sorted,
         "binders are not in source order: {starts:?}"
     );
+}
+
+/// FR-114 "Inputs" (QSL-309): the attempt's own `on M::T::op` operation
+/// name and `contracts [...]` list are captured into `ProtocolDeclarationForm
+/// ::attempts`, alongside its `ProtocolNodeKind::Attempt` declaration, with
+/// no name resolved yet (the assembler's job, FR-114 "Behavior"). Naming
+/// `declaration` by index rather than only asserting "one attempt form
+/// exists" catches a mutation that pushes the wrong declaration's index.
+#[trace("TC-513")]
+#[test]
+fn s2_captures_an_attempts_operation_name_and_contracts_list() {
+    let source = recovery_flow("Main::Committed", true, "").replacen(
+        "attempt Tried by R on Config::ConfigVersion::attemptUpdate contracts []",
+        "attempt Tried by R on Config::ConfigVersion::attemptUpdate \
+         contracts [VersionUnchanged, AnotherClause]",
+        1,
+    );
+    let (_, unit) = build(&source);
+    let form = protocol_form(unit.forms()[0].form());
+    assert_eq!(form.attempts.len(), 1, "{:?}", form.attempts);
+    let attempt = &form.attempts[0];
+    assert_eq!(attempt.context.name, "Config::ConfigVersion");
+    assert_eq!(attempt.operation.name, "attemptUpdate");
+    assert_eq!(attempt.role.name, "R");
+    let contract_names: Vec<&str> = attempt
+        .contracts
+        .iter()
+        .map(|name| name.name.as_str())
+        .collect();
+    assert_eq!(contract_names, ["VersionUnchanged", "AnotherClause"]);
+
+    let declaration = &form.declarations[attempt.declaration];
+    assert_eq!(declaration.kind, ProtocolNodeKind::Attempt);
+    assert_eq!(declaration.name.name, "Tried");
+}
+
+/// QSL-309 (SR-770 FND-001/FND-008): S2 records what S3 needs to decide
+/// whether it checks a protocol in full -- the `using` alias, each role,
+/// each binder's declared type, each body block (whether it is a bare
+/// Boolean literal) and every other construct by kind, in source order --
+/// and reads an attempt's role after `by` and its `contracts` only between
+/// the brackets, so the `related by` identifier and the role never become
+/// contract entries.
+#[trace("TC-513")]
+#[test]
+fn s2_records_the_parts_s3_reads_to_decide_coverage() {
+    let source = "protocol Covered using v over (input: Boolean) \
+         on each (activated: Boolean) when (true) {\n\
+         capture logged: Boolean = input;\n\
+         role R on Config::ConfigVersion;\n\
+         role W each Config::ConfigVersion from R max 2 lifetime workflow;\n\
+         channel C from R to W carries Boolean ordering unordered delivery at-most-once \
+         capacity 1 overflow reject;\n\
+         requires temporal T;\n\
+         run sequence Main {\n\
+         attempt Tried by W on Config::ConfigVersion::attemptUpdate contracts [Kept] \
+         as (tried: Config::ConfigVersion) related by rel (true, true) { tried };\n\
+         }\n\
+         finish End as (outcome: Boolean) { false };\n\
+         }";
+    let (text, unit) = build(source);
+    let form = protocol_form(unit.forms()[0].form());
+    let at = |span: Span| &text[span.start..span.end];
+
+    assert_eq!(form.using.alias, "v");
+    assert_eq!(at(form.using.span), "v");
+    let roles: Vec<(&str, &str)> = form
+        .roles
+        .iter()
+        .map(|role| (role.name.name.as_str(), role.context.name.as_str()))
+        .collect();
+    assert_eq!(
+        roles,
+        [
+            ("R", "Config::ConfigVersion"),
+            ("W", "Config::ConfigVersion")
+        ]
+    );
+
+    let constructs: Vec<ProtocolConstructKind> = form
+        .constructs
+        .iter()
+        .map(|construct| construct.kind)
+        .collect();
+    assert_eq!(
+        constructs,
+        [
+            ProtocolConstructKind::ActivationEach,
+            ProtocolConstructKind::Capture,
+            ProtocolConstructKind::ReplicatedRole,
+            ProtocolConstructKind::Channel,
+            ProtocolConstructKind::Requirement,
+            ProtocolConstructKind::Related,
+        ]
+    );
+    assert!(at(form.constructs[3].span).starts_with("channel C"));
+    assert!(at(form.constructs[5].span).starts_with("related by rel"));
+
+    let bodies: Vec<(&str, Option<bool>)> = form
+        .bodies
+        .iter()
+        .map(|body| (at(body.span), body.constant))
+        .collect();
+    assert_eq!(bodies, [("tried", None), ("false", Some(false))]);
+    assert_eq!(
+        form.declarations[form.bodies[0].owner].kind,
+        ProtocolNodeKind::Attempt
+    );
+    assert_eq!(
+        form.declarations[form.bodies[1].owner].kind,
+        ProtocolNodeKind::Finish
+    );
+
+    let [attempt] = form.attempts.as_slice() else {
+        panic!("one attempt: {:?}", form.attempts);
+    };
+    assert_eq!(attempt.role.name, "W");
+    assert_eq!(at(attempt.role.span), "W");
+    let contracts: Vec<&str> = attempt.contracts.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(contracts, ["Kept"]);
+
+    let tried = binder(form, "tried", BinderKind::RecordBinder, &["Main"]);
+    assert_eq!(
+        tried.value_type.head,
+        TypeFormHead::Name("Config::ConfigVersion".to_owned())
+    );
+    let input = binder(form, "input", BinderKind::Input, &[]);
+    assert_eq!(
+        input.value_type.head,
+        TypeFormHead::Builtin(BuiltinType::Boolean)
+    );
+}
+
+/// FR-114-AC-2 (QSL-309): `contracts []` still builds an `AttemptForm`, with
+/// an empty `contracts` list rather than none at all.
+#[trace("TC-513")]
+#[test]
+fn s2_admits_an_empty_contracts_list() {
+    let (_, unit) = build(&recovery_flow("Main::Committed", true, ""));
+    let form = protocol_form(unit.forms()[0].form());
+    assert_eq!(form.attempts.len(), 1, "{:?}", form.attempts);
+    assert!(form.attempts[0].contracts.is_empty());
 }
 
 #[trace("TC-510", "FR-112-AC-2")]

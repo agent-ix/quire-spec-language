@@ -427,7 +427,11 @@ fn each_assembler_cause_has_its_catalog_code() {
 /// rather than refusing it -- resolving its scoped anchors is
 /// `check::protocol_clause`'s job at S3, not the assembler's at E3, so a
 /// protocol with an anchor naming no declaration (`effect Applied of
-/// Missing`) still assembles.
+/// Missing`) still assembles. No `attempt` here: QSL-309 (FR-114) resolves
+/// an attempt's own operation at assembly time, so an attempt naming an
+/// unadmitted model (this fixture declares no `model M = ...;`) would
+/// refuse there instead -- `an_attempt_naming_an_unadmitted_model_refuses_
+/// at_assembly` below covers that.
 #[trace("TC-510", "FR-112")]
 #[test]
 fn a_protocol_declaration_assembles_leaving_anchor_resolution_to_s3() {
@@ -435,7 +439,6 @@ fn a_protocol_declaration_assembles_leaving_anchor_resolution_to_s3() {
         "protocol Flow using v over (input: M::Input) on origin {\n\
          role R on M::Actor;\n\
          run sequence Main {\n\
-         attempt Tried by R on M::Actor::act contracts [] as (tried: M::Attempt) { true };\n\
          effect Applied of Missing as (applied: M::Effect) { true };\n\
          }\n\
          finish End as (outcome: Boolean) { true };\n\
@@ -444,6 +447,31 @@ fn a_protocol_declaration_assembles_leaving_anchor_resolution_to_s3() {
     let package = assembled.unwrap_or_else(|refusal| panic!("{refusal:?}"));
     assert_eq!(package.protocols.len(), 1);
     assert_eq!(package.protocols[0].name.name, "Flow");
+}
+
+/// QSL-309 (FR-114 "Behavior"): unlike FR-113's own anchor resolution
+/// (deferred to S3, above), an `attempt`'s `on M::T::op` operation is
+/// resolved by the FR-091 assembler itself, mirroring a `pre`/`post`
+/// clause's own resolution (FR-104) -- so a context naming no admitted
+/// model refuses `missing_declaration`/`missing-name` at assembly, the same
+/// way an unresolved state-clause context does.
+#[trace("TC-513", "FR-114")]
+#[test]
+fn an_attempt_naming_an_unadmitted_model_refuses_at_assembly() {
+    let (_, errors) = errors(
+        "protocol Flow using v over (input: M::Input) on origin {\n\
+         role R on M::Actor;\n\
+         run sequence Main {\n\
+         attempt Tried by R on M::Actor::act contracts [] as (tried: Boolean) { true };\n\
+         }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }",
+    );
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    match &errors[0].cause {
+        AssemblyCause::UnresolvedTypeName { name } => assert_eq!(name, "M::Actor"),
+        other => panic!("an UnresolvedTypeName cause, got {other:?}"),
+    }
 }
 
 /// FR-104 "Resolution" (TC-460 row 1's shape, over a unit with no `model`

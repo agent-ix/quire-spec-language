@@ -43,7 +43,7 @@ pub enum BuiltinType {
 }
 
 /// A [`TypeForm`]'s head.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeFormHead {
     /// A builtin keyword type.
     Builtin(BuiltinType),
@@ -74,7 +74,7 @@ pub enum TypeFormHead {
 /// become kernel values. `check` resolves a type form to the kernel
 /// `ValueType` at E3 (ADR-013 O-14/C-26), and declaration identity is
 /// minted over that resolved type, never over this spelling.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeForm {
     /// The type's head.
     pub head: TypeFormHead,
@@ -1348,17 +1348,134 @@ pub struct BinderForm {
     pub name: DeclaredName,
     /// The named controls enclosing the binder, outermost first.
     pub scope: Vec<ScopeName>,
+    /// The binder's declared type (`x: T`'s `T`), as spelled: S3 resolves
+    /// it against the package scope (QSL-309).
+    pub value_type: TypeForm,
+}
+
+/// One `role R on M::T;` or `role R each M::T from ...;` declaration of a
+/// protocol (QSL-309): its declared name and the object type it is `on`
+/// (or replicated `each` over), spelled and unresolved.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoleForm {
+    /// The declared role name and its span.
+    pub name: DeclaredName,
+    /// The `M::T` object type the role is `on` or `each`, as spelled.
+    pub context: NameForm,
+}
+
+/// A part of a protocol declaration that is neither a static node (a
+/// [`ProtocolNodeDeclaration`]), a binder, a role, nor an attempt's own
+/// operation and `contracts` list (QSL-309). S2 records only that it is
+/// present and where, so S3 can tell a protocol it checks in full from one
+/// holding content it does not check yet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProtocolConstructKind {
+    /// A `capture p = e;` at the protocol's top level.
+    Capture,
+    /// An `activation on each (p) [when (...)]` (rather than `on origin`).
+    ActivationEach,
+    /// A replicated `role R each M::T from ... max N lifetime ...;`.
+    ReplicatedRole,
+    /// A `relationship r = M::R;` declaration.
+    Relationship,
+    /// A `channel C from R to R carries T ...;` declaration.
+    Channel,
+    /// A `requires temporal T;` requirement.
+    Requirement,
+    /// A `related by r (e, e)` clause of an event node.
+    Related,
+}
+
+impl ProtocolConstructKind {
+    /// The construct's own keyword phrase, for a refusal naming it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Capture => "capture",
+            Self::ActivationEach => "activation on each",
+            Self::ReplicatedRole => "role each",
+            Self::Relationship => "relationship",
+            Self::Channel => "channel",
+            Self::Requirement => "requires temporal",
+            Self::Related => "related by",
+        }
+    }
+}
+
+/// One [`ProtocolConstructKind`] occurrence and its span.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProtocolConstructForm {
+    /// Which construct this is.
+    pub kind: ProtocolConstructKind,
+    /// The construct's own span.
+    pub span: Span,
+}
+
+/// The `{ e }` body block of an event node, a `commit`, a `check` or the
+/// `finish` node (QSL-309), recorded by the index of the static declaration
+/// that owns it. `constant` is `Some(b)` exactly when the body is the bare
+/// Boolean literal `b` (`{ true }` or `{ false }`), `None` for any other
+/// body; S2 builds no expression tree for it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProtocolBodyForm {
+    /// The index into [`ProtocolDeclarationForm::declarations`] of the node
+    /// that owns this body.
+    pub owner: usize,
+    /// The literal the body consists of, when it is a bare Boolean literal.
+    pub constant: Option<bool>,
+    /// The span of the body's expression.
+    pub span: Span,
+}
+
+/// One `attempt`'s `on M::T::op` operation name and `contracts [...]` list
+/// (FR-114 "Inputs"), captured alongside its own `ProtocolNodeKind::Attempt`
+/// static declaration. S2 keeps the context and operation member spelled
+/// and unresolved, the same contract [`StateClauseForm::operation`] keeps
+/// (FR-102): the assembler resolves the operation (FR-114 "Behavior",
+/// mirroring FR-104's own resolution of a state clause's operation), and S3
+/// checks each `contracts` entry against the resolved anchor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttemptForm {
+    /// The index into [`ProtocolDeclarationForm::declarations`] of this
+    /// attempt's own static declaration (`ProtocolNodeKind::Attempt`), so a
+    /// later stage locates the declaration this operation and these
+    /// contracts belong to without a second name lookup.
+    pub declaration: usize,
+    /// The role the attempt is performed `by`, as spelled.
+    pub role: DeclaredName,
+    /// The `M::T` context of `on M::T::op`, as spelled.
+    pub context: NameForm,
+    /// The operation member name `op`, as spelled.
+    pub operation: DeclaredName,
+    /// The `contracts [...]` list, in source order; empty when written
+    /// `contracts []`.
+    pub contracts: Vec<DeclaredName>,
 }
 
 /// `protocol Name using p over (params) activation { ... run Control
 /// Finish }` (FR-112 "Outputs", ADR-012 §12.2). S2 builds the scoped
-/// anchors and the declaration collection FR-113 resolves them against; the
-/// declaration's roles, channels (as top-level declarations) and
-/// requirements beyond these are not read at this stage.
+/// anchors and the declaration collection FR-113 resolves them against,
+/// and (QSL-309) the parts S3 needs to tell a protocol it checks in full
+/// from one it does not: the `using` alias, the roles, each body block, and
+/// every other construct present ([`Self::constructs`]).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolDeclarationForm {
     /// The declared protocol name.
     pub name: DeclaredName,
+    /// The profile alias the protocol is written `using`.
+    pub using: UsingAlias,
+    /// Every role declaration, in source order.
+    pub roles: Vec<RoleForm>,
+    /// Every body block of an event node, `commit`, `check` or `finish`, in
+    /// source order. Bodies inside a `compensate` template, a `case`'s
+    /// `when`, a `repeat`'s blocks or a `choice`'s visibility are not
+    /// recorded: each of those constructs is itself a static declaration S3
+    /// reads by kind.
+    pub bodies: Vec<ProtocolBodyForm>,
+    /// Every capture, `activation on each`, replicated role,
+    /// relationship, channel, requirement and `related by` clause, in
+    /// source order.
+    pub constructs: Vec<ProtocolConstructForm>,
     /// Every scoped anchor the declaration holds, in source order of their
     /// references (FR-112-AC-1).
     pub scoped_anchors: Vec<ScopedAnchorForm>,
@@ -1368,6 +1485,9 @@ pub struct ProtocolDeclarationForm {
     /// Every binder the declaration holds, in source order (FR-113
     /// "Refusals" binder no-shadowing rule; QSL-306).
     pub binders: Vec<BinderForm>,
+    /// Every `attempt`'s operation name and `contracts` list, in source
+    /// order (FR-114 "Inputs"; QSL-309).
+    pub attempts: Vec<AttemptForm>,
 }
 
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form

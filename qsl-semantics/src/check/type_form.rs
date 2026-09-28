@@ -49,7 +49,7 @@ impl TypeNames for Scope {
 }
 
 /// Why a type form did not resolve.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TypeFormFault {
     /// The qualified name binds no type.
     MissingName(String),

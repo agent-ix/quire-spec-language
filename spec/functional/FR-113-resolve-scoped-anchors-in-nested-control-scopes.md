@@ -150,8 +150,28 @@ and the shadowing half of AC-6), enforced protocol-wide (QSpec
 over a further S2 extension (`qsl_forms::protocol_clause::BinderForm`) that
 walks every binder position FR-112 itself does not capture, including the
 protocol's own `over (p)` input and `activation on each (p)` parameters.
-FR-114's binding half remains open: QSL-309 (binding) and QSL-299
-(emission) complete it. A protocol whose anchors and binders all resolve is
-still refused `unsupported_construct`/`not-yet-implemented`, since its
-other content has no checker and nothing emits it yet (QSL-299), until
-those tickets complete protocol checking and emission.
+QSL-309 implements FR-114's attempt binding. A protocol whose anchors,
+binders and attempt bindings all resolve is then checked for the rest of
+its content. It checks and compiles only when it consists of a `using`
+profile alias, roles written `role R on M::T`, a `run` tree of `sequence`
+controls and `attempt` nodes, and a `finish` node, with every body a bare
+Boolean literal. In that case the `using` alias, each role's object type,
+each attempt's `by` role and each binder's declared type are resolved, and
+two roles of one name refuse `ambiguous_declaration`/`ambiguous-name` at
+each. Such a protocol compiles, but nothing emits the protocol itself: the
+package holds no node for its name, roles, `run` tree or `finish`. Only
+each attempt's operation anchor, frame and frame record reach the package
+(FR-114, ADR-012 §12.2 Package row). Any
+other construct is still refused `unsupported_construct`/
+`not-yet-implemented` at the earliest occurrence, because no checker reads
+it yet:
+
+- the node kinds `send`, `receive`, `effect`, `event`, `commit`, `check`,
+  `choice`/`case`, `parallel`/`branch`, `repeat`, `await` and `compensate`;
+- channels, relationships, `requires temporal` requirements, captures,
+  `activation on each`, replicated roles (`role R each ...`) and
+  `related by` clauses;
+- any body other than a bare Boolean literal.
+
+This means every protocol that holds an anchor site (all of them are in
+refused node kinds) still refuses, whether or not its anchors resolve.

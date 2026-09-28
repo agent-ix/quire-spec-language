@@ -46,7 +46,9 @@ use super::check::{EnumBinding, PackageDeclarations, ResolvedSignature};
 use super::lowering::{strongly_connected, AdmittedModel};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::refusal::AliasKind;
-use super::state_clause::{population_of, ClauseOperation, StateClauseDeclaration};
+use super::state_clause::{
+    population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
+};
 use super::type_form::{
     parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
@@ -1542,13 +1544,28 @@ impl PackageDeclarations {
         let mut type_spans = object_spans;
         type_spans.extend(declared_type_spans.clone());
         let types = admit_types(declarations, &object_types, &type_spans)?;
+        // SR-770 FND-006: both resolved before either refuses, so a unit
+        // with a bad state clause and a bad attempt reports both in one
+        // refusal (clause errors first, then attempt errors).
         let state_clauses = state_clauses(
             unit.state_clauses,
             &selections.profiles,
             &object_names,
             &types,
             &admitted,
-        )?;
+        );
+        let protocol_attempts =
+            protocol_attempts(&unit.protocols, &object_names, &types, &admitted);
+        let (state_clauses, protocol_attempts) = match (state_clauses, protocol_attempts) {
+            (Ok(clauses), Ok(attempts)) => (clauses, attempts),
+            (clauses, attempts) => {
+                let mut errors = Vec::new();
+                for refusal in [clauses.err(), attempts.err()].into_iter().flatten() {
+                    errors.extend(refusal.errors);
+                }
+                return refuse(errors);
+            }
+        };
 
         let mut package = PackageDeclarations::new(source);
         package.types = types;
@@ -1588,6 +1605,7 @@ impl PackageDeclarations {
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
         package.protocols = unit.protocols;
+        package.protocol_attempts = protocol_attempts;
         package.declared_type_spans = declared_type_spans;
         package.imports = qualified;
         Ok(package)
@@ -1714,6 +1732,96 @@ fn state_clauses(
     }
     if errors.is_empty() {
         Ok(clauses)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-114 "Behavior": each protocol's `attempt`s' operations, resolved
+/// exactly as [`state_clauses`] resolves a `pre`/`post` clause's operation
+/// (`types.operation`) and its frame population (`population_of`). The
+/// `contracts` list is checked later, at S3 (`check::protocol_clause`),
+/// against the unit's own checked state clauses -- unlike a state clause's
+/// own operation, which the assembler alone resolves, an attempt's
+/// `contracts` entries name *other declarations of the same unit* (FR-114
+/// "Behavior"'s `missing_declaration`/`wrong_snapshot` refusals), so
+/// checking them here would fail the whole package at E3 over one
+/// protocol's own defect rather than refusing that protocol alone at S3,
+/// the same way FR-113's own anchor and binder refusals do (QSL-309).
+fn protocol_attempts(
+    protocols: &[qsl_forms::ProtocolDeclarationForm],
+    object_names: &BTreeMap<String, EffectiveId>,
+    types: &TypeEnvironment,
+    models: &[AdmittedModel],
+) -> Result<Vec<Vec<AttemptDeclaration>>, AssemblyRefusal> {
+    let mut errors = Vec::new();
+    let mut resolved = Vec::with_capacity(protocols.len());
+    for protocol in protocols {
+        let mut attempts = Vec::with_capacity(protocol.attempts.len());
+        for attempt in &protocol.attempts {
+            let error = |cause, span| AssemblyError { cause, span };
+            let context = object_names.get(&attempt.context.name).copied();
+            let Some(context) = context else {
+                errors.push(error(
+                    AssemblyCause::UnresolvedTypeName {
+                        name: attempt.context.name.clone(),
+                    },
+                    attempt.context.span,
+                ));
+                continue;
+            };
+            let operation = match types.operation(context, &attempt.operation.name) {
+                OperationLookup::Declared {
+                    declaring,
+                    operation,
+                } => ClauseOperation {
+                    declaring,
+                    declaration: operation.clone(),
+                },
+                OperationLookup::Missing => {
+                    errors.push(error(
+                        AssemblyCause::UnresolvedOperation {
+                            context: attempt.context.name.clone(),
+                            operation: attempt.operation.name.clone(),
+                        },
+                        attempt.operation.span,
+                    ));
+                    continue;
+                }
+                OperationLookup::Ambiguous(_) => {
+                    errors.push(error(
+                        AssemblyCause::AmbiguousOperation {
+                            context: attempt.context.name.clone(),
+                            operation: attempt.operation.name.clone(),
+                        },
+                        attempt.operation.span,
+                    ));
+                    continue;
+                }
+            };
+            let frame_population = match population_of(models, operation.declaring, types) {
+                Ok(domain) => domain,
+                Err(populations) => {
+                    errors.push(error(
+                        AssemblyCause::AmbiguousPopulation {
+                            context: attempt.context.name.clone(),
+                            populations,
+                        },
+                        attempt.context.span,
+                    ));
+                    continue;
+                }
+            };
+            attempts.push(AttemptDeclaration {
+                declaration: attempt.declaration,
+                operation,
+                frame_population,
+            });
+        }
+        resolved.push(attempts);
+    }
+    if errors.is_empty() {
+        Ok(resolved)
     } else {
         refuse(errors)
     }

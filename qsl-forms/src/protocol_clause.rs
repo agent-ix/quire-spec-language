@@ -17,19 +17,20 @@ use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
 use super::dispatch::{Construct, FormsFailure, FormsLimits};
 use super::spans::DeclarationSpans;
 use super::syntax::{
-    AnchorForm, AnchorSegment, AnchorSite, BinderForm, BinderKind, DeclarationForm, DeclaredName,
-    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, ScopeName,
+    AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind, DeclarationForm,
+    DeclaredName, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
+    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RoleForm, ScopeName,
     ScopedAnchorForm, StateClauseForm, StateClauseKind, UsingAlias,
 };
 use super::value::{
-    declared_name, expression, items, name_form, nodes_of, only, production_node, text, tokens_of,
-    unexpected, Item,
+    declared_name, expression, has_token, items, name_form, nodes_of, only, production_node, text,
+    tokens_of, type_form, unexpected, Item,
 };
 
-/// The protocol form's three output collections and its nesting-depth
-/// limit, threaded together through every S2 control-tree walk function
-/// (FR-113 Inputs/Outputs): one struct rather than three `&mut Vec`
-/// parameters plus `FormsLimits`, so a new output needs one field added
+/// The protocol form's output collections and its nesting-depth limit,
+/// threaded together through every S2 control-tree walk function (FR-113
+/// Inputs/Outputs): one struct rather than one `&mut Vec` parameter per
+/// collection plus `FormsLimits`, so a new output needs one field added
 /// here, not a new parameter at every call site (SR-765 FND-008).
 struct Collector<'a> {
     /// FR-112's scoped anchors, in source order of their references.
@@ -39,6 +40,14 @@ struct Collector<'a> {
     declarations: &'a mut Vec<ProtocolNodeDeclaration>,
     /// FR-113's binder collection, in source order.
     binders: &'a mut Vec<BinderForm>,
+    /// FR-114's attempt operation/contracts collection, in source order
+    /// (QSL-309).
+    attempts: &'a mut Vec<AttemptForm>,
+    /// Every event node, `commit` and `check` body block (QSL-309).
+    bodies: &'a mut Vec<ProtocolBodyForm>,
+    /// Every `related by` clause of an event node (QSL-309), alongside the
+    /// protocol's top-level constructs.
+    constructs: &'a mut Vec<ProtocolConstructForm>,
     /// The S2 nesting-depth bound `control_anchors` charges `depth`
     /// against.
     limits: FormsLimits,
@@ -115,26 +124,47 @@ pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
 /// scoped anchors, in source order of their references: the `for` and
 /// `commit` references of every top-level `compensate` declaration (empty
 /// scope), then the references the `run` control tree holds, each with the
-/// names of its enclosing named controls. Every other part of the
-/// declaration (roles, channels, requirements, the control tree's own
-/// shape) is read only to walk past it: FR-112 gives this stage no reason
-/// to keep it.
+/// names of its enclosing named controls. QSL-309 adds what S3 needs to
+/// decide whether it checks the protocol in full: the `using` alias, each
+/// role, each binder's declared type, each body block (whether it is a bare
+/// Boolean literal) and every other construct present, by kind and span.
 pub(crate) fn protocol_declaration(
     construct: Construct<'_>,
 ) -> Result<DeclarationForm, FormsFailure> {
     let cst = construct.cst;
+    let limits = construct.limits;
     let node = production_node(construct)?;
     let clause_items = items(cst, node);
     let name = declared_name(&clause_items, node)?;
+    // `protocol Name using p ...`: the protocol's own name and its `using`
+    // alias are its only two direct identifier tokens (the `over`
+    // parameter, the activation and every body part are nested nodes).
+    let [_, alias] = tokens_of(&clause_items, TokenKind::Identifier)[..] else {
+        return Err(unexpected(node));
+    };
+    let using = UsingAlias {
+        alias: text(alias, node)?,
+        span: alias.span(),
+    };
 
     let mut scoped_anchors = Vec::new();
     let mut declarations = Vec::new();
     let mut binders = Vec::new();
+    let mut attempts = Vec::new();
+    let mut roles = Vec::new();
+    let mut bodies = Vec::new();
+    let mut constructs = Vec::new();
     // The protocol's own `over (p)` input parameter (FR-113 "Refusals"
     // binder no-shadowing rule): visible everywhere in the protocol, at the
     // empty top-level scope (composed lane: `BinderKind::Input`).
     let input = only(&clause_items, Production::Parameter, node)?;
-    binders.push(parameter_binder(cst, input, BinderKind::Input, &[])?);
+    binders.push(parameter_binder(
+        cst,
+        input,
+        BinderKind::Input,
+        &[],
+        limits,
+    )?);
     // The protocol's own `activation on each (p) [when (...)]` parameter,
     // when written: `on origin` binds nothing, so this is only sometimes
     // present.
@@ -142,48 +172,136 @@ pub(crate) fn protocol_declaration(
     let activation_items = items(cst, activation);
     if let Some(&activation_parameter) = nodes_of(&activation_items, Production::Parameter).first()
     {
+        constructs.push(ProtocolConstructForm {
+            kind: ProtocolConstructKind::ActivationEach,
+            span: activation.span(),
+        });
         binders.push(parameter_binder(
             cst,
             activation_parameter,
             BinderKind::ActivationParameter,
             &[],
+            limits,
         )?);
     }
     // The protocol's own top-level captures (FR-113 "Refusals" binder
     // no-shadowing rule): written before the declaration's roles, at the
     // empty top-level scope every other top-level binder shares.
     for capture in nodes_of(&clause_items, Production::Capture) {
-        binders.push(capture_binder(cst, capture, &[])?);
+        constructs.push(ProtocolConstructForm {
+            kind: ProtocolConstructKind::Capture,
+            span: capture.span(),
+        });
+        binders.push(capture_binder(cst, capture, &[], limits)?);
+    }
+    for role in nodes_of(&clause_items, Production::Role) {
+        let role_items = items(cst, role);
+        let context = only(&role_items, Production::QualifiedName, role)?;
+        roles.push(RoleForm {
+            name: declared_name(&role_items, role)?,
+            context: name_form(cst, context)?,
+        });
+        if has_token(&role_items, b"each") {
+            constructs.push(ProtocolConstructForm {
+                kind: ProtocolConstructKind::ReplicatedRole,
+                span: role.span(),
+            });
+        }
+    }
+    for (production, kind) in [
+        (
+            Production::Relationship,
+            ProtocolConstructKind::Relationship,
+        ),
+        (Production::Channel, ProtocolConstructKind::Channel),
+        (
+            Production::ProtocolRequirement,
+            ProtocolConstructKind::Requirement,
+        ),
+    ] {
+        for part in nodes_of(&clause_items, production) {
+            constructs.push(ProtocolConstructForm {
+                kind,
+                span: part.span(),
+            });
+        }
     }
     {
         let mut collector = Collector {
             anchors: &mut scoped_anchors,
             declarations: &mut declarations,
             binders: &mut binders,
-            limits: construct.limits,
+            attempts: &mut attempts,
+            bodies: &mut bodies,
+            constructs: &mut constructs,
+            limits,
         };
         for compensation in nodes_of(&clause_items, Production::Compensation) {
             compensation_anchors(cst, compensation, &mut collector)?;
         }
         let run = only(&clause_items, Production::Control, node)?;
         control_anchors(cst, run, &mut Vec::new(), &mut collector, 1)?;
+        let finish = only(&clause_items, Production::Finish, node)?;
+        let finish_items = items(cst, finish);
+        let owner = collector.declarations.len();
+        collector.declarations.push(ProtocolNodeDeclaration {
+            kind: ProtocolNodeKind::Finish,
+            name: declared_name(&finish_items, finish)?,
+            scope: Vec::new(),
+            channel: None,
+        });
+        collector
+            .binders
+            .push(record_binder(cst, &finish_items, finish, &[], limits)?);
+        collector.body(cst, &finish_items, finish, owner)?;
     }
-    let finish = only(&clause_items, Production::Finish, node)?;
-    let finish_items = items(cst, finish);
-    declarations.push(ProtocolNodeDeclaration {
-        kind: ProtocolNodeKind::Finish,
-        name: declared_name(&finish_items, finish)?,
-        scope: Vec::new(),
-        channel: None,
-    });
-    binders.push(record_binder(cst, &finish_items, finish, &[])?);
+    // Top-level parts are pushed by production above, `related by` clauses
+    // during the control-tree walk: sort once so both lists read in true
+    // source order.
+    constructs.sort_by_key(|construct| construct.span.start);
+    bodies.sort_by_key(|body| body.span.start);
 
     Ok(DeclarationForm::Protocol(ProtocolDeclarationForm {
         name,
+        using,
+        roles,
+        bodies,
+        constructs,
         scoped_anchors,
         declarations,
         binders,
+        attempts,
     }))
+}
+
+impl Collector<'_> {
+    /// Records the one `{ e }` body block directly among `items`, owned by
+    /// declaration `owner` (QSL-309): whether it is a bare Boolean literal,
+    /// and its span. No expression tree is built.
+    fn body(
+        &mut self,
+        cst: &LosslessCst,
+        items: &[Item<'_>],
+        node: &CstNode,
+        owner: usize,
+    ) -> Result<(), FormsFailure> {
+        let block = only(items, Production::Block, node)?;
+        let block_items = super::value::items(cst, block);
+        let expression = only(&block_items, Production::Expression, block)?;
+        // A bare Boolean literal is exactly one significant token, `true`
+        // or `false`; `(true)` or `true and true` is not.
+        let constant = match super::value::significant_tokens(cst, expression)[..] {
+            [token] if token.spelling() == b"true" => Some(true),
+            [token] if token.spelling() == b"false" => Some(false),
+            _ => None,
+        };
+        self.bodies.push(ProtocolBodyForm {
+            owner,
+            constant,
+            span: expression.span(),
+        });
+        Ok(())
+    }
 }
 
 /// The one `as (x: T)` bound parameter directly among `items` (FR-113
@@ -195,9 +313,10 @@ fn record_binder(
     items: &[Item<'_>],
     node: &CstNode,
     scope: &[ScopeName],
+    limits: FormsLimits,
 ) -> Result<BinderForm, FormsFailure> {
     let parameter = only(items, Production::Parameter, node)?;
-    parameter_binder(cst, parameter, BinderKind::RecordBinder, scope)
+    parameter_binder(cst, parameter, BinderKind::RecordBinder, scope, limits)
 }
 
 /// One `capture p = e;`'s own parameter, scoped at `scope` (FR-113
@@ -206,26 +325,34 @@ fn capture_binder(
     cst: &LosslessCst,
     node: &CstNode,
     scope: &[ScopeName],
+    limits: FormsLimits,
 ) -> Result<BinderForm, FormsFailure> {
     let capture_items = items(cst, node);
     let parameter = only(&capture_items, Production::Parameter, node)?;
-    parameter_binder(cst, parameter, BinderKind::Capture, scope)
+    parameter_binder(cst, parameter, BinderKind::Capture, scope, limits)
 }
 
 /// One `Parameter` node's own declared name as a binder of `kind`, scoped
 /// at `scope`: a `Parameter` (`ident : ParameterType`) names itself with
-/// its one identifier token, the same shape [`declared_name`] reads.
+/// its one identifier token, the same shape [`declared_name`] reads, and
+/// declares its type with its `ParameterType`'s one `TypeReference`, the
+/// same shape a function parameter's is read with.
 fn parameter_binder(
     cst: &LosslessCst,
     parameter: &CstNode,
     kind: BinderKind,
     scope: &[ScopeName],
+    limits: FormsLimits,
 ) -> Result<BinderForm, FormsFailure> {
     let parameter_items = items(cst, parameter);
+    let declared = only(&parameter_items, Production::ParameterType, parameter)?;
+    let declared_items = items(cst, declared);
+    let reference = only(&declared_items, Production::TypeReference, declared)?;
     Ok(BinderForm {
         kind,
         name: declared_name(&parameter_items, parameter)?,
         scope: scope.to_vec(),
+        value_type: type_form(cst, reference, limits)?,
     })
 }
 
@@ -289,9 +416,14 @@ fn compensation_anchors(
     let [own, trigger, retry_first, retry_second, recover] = parameters.as_slice() else {
         return Err(unexpected(node));
     };
-    collector
-        .binders
-        .push(parameter_binder(cst, own, BinderKind::RecordBinder, &[])?);
+    let limits = collector.limits;
+    collector.binders.push(parameter_binder(
+        cst,
+        own,
+        BinderKind::RecordBinder,
+        &[],
+        limits,
+    )?);
     let inner_scope = vec![ScopeName {
         name: name.name,
         span: name.span,
@@ -301,27 +433,31 @@ fn compensation_anchors(
         trigger,
         BinderKind::Trigger,
         &inner_scope,
+        limits,
     )?];
     for capture in nodes_of(&compensation_items, Production::Capture) {
-        inner_binders.push(capture_binder(cst, capture, &inner_scope)?);
+        inner_binders.push(capture_binder(cst, capture, &inner_scope, limits)?);
     }
     inner_binders.push(parameter_binder(
         cst,
         retry_first,
         BinderKind::RetryParameter,
         &inner_scope,
+        limits,
     )?);
     inner_binders.push(parameter_binder(
         cst,
         retry_second,
         BinderKind::RetryParameter,
         &inner_scope,
+        limits,
     )?);
     inner_binders.push(parameter_binder(
         cst,
         recover,
         BinderKind::RecoveryParameter,
         &inner_scope,
+        limits,
     )?);
     inner_binders.sort_by_key(|binder| binder.name.span.start);
     collector.binders.extend(inner_binders);
@@ -453,24 +589,30 @@ fn control_anchors(
         Production::Check => {
             let check_items = items(cst, matched);
             let name = declared_name(&check_items, matched)?;
+            let owner = collector.declarations.len();
             declare(collector.declarations, ProtocolNodeKind::Check, name, scope);
             // `check` holds no `NodeReference` and encloses no further
             // control (FR-112 "Behavior": "No other position yields one").
-            Ok(())
+            collector.body(cst, &check_items, matched, owner)
         }
         Production::Commit => {
             let commit_items = items(cst, matched);
             let name = declared_name(&commit_items, matched)?;
+            let owner = collector.declarations.len();
             declare(
                 collector.declarations,
                 ProtocolNodeKind::Commit,
                 name,
                 scope,
             );
-            collector
-                .binders
-                .push(record_binder(cst, &commit_items, matched, scope)?);
-            Ok(())
+            collector.binders.push(record_binder(
+                cst,
+                &commit_items,
+                matched,
+                scope,
+                collector.limits,
+            )?);
+            collector.body(cst, &commit_items, matched, owner)
         }
         _ => Err(unexpected(matched)),
     }
@@ -638,6 +780,7 @@ fn event_node_anchors(
         }
         _ => None,
     };
+    let declaration_index = collector.declarations.len();
     collector.declarations.push(ProtocolNodeDeclaration {
         kind,
         name,
@@ -645,10 +788,32 @@ fn event_node_anchors(
         channel: channel.clone(),
     });
     // Every event node kind (`send` and `attempt` included) carries its own
-    // `as (x: T)` record binder (FR-113 "Refusals").
-    collector
-        .binders
-        .push(record_binder(cst, &event_items, node, scope)?);
+    // `as (x: T)` record binder (FR-113 "Refusals"), its own body block and
+    // zero or more `related by` clauses (QSL-309).
+    collector.binders.push(record_binder(
+        cst,
+        &event_items,
+        node,
+        scope,
+        collector.limits,
+    )?);
+    collector.body(cst, &event_items, node, declaration_index)?;
+    for related in nodes_of(&event_items, Production::Related) {
+        collector.constructs.push(ProtocolConstructForm {
+            kind: ProtocolConstructKind::Related,
+            span: related.span(),
+        });
+    }
+    // `attempt`'s own `on M::T::op` operation name and `contracts [...]`
+    // list (FR-114 "Inputs"): kept spelled and unresolved here, the same
+    // contract `state_clause`'s own `operation` capture keeps (FR-102) --
+    // the assembler resolves the operation, mirroring FR-104's resolution
+    // of a state clause's own operation.
+    if kind == ProtocolNodeKind::Attempt {
+        collector
+            .attempts
+            .push(attempt_form(cst, &event_items, node, declaration_index)?);
+    }
     let Some(site) = site else {
         return Ok(());
     };
@@ -670,6 +835,76 @@ fn event_node_anchors(
             .push(scoped_anchor(cst, reference, site, scope, owner_channel)?);
     }
     Ok(())
+}
+
+/// An `attempt`'s own `on M::T::op` operation name and `contracts [...]`
+/// list (FR-114 "Inputs"), read from the attempt event node's own
+/// `event_items`: the operation's `M::T` context and `op` member from its
+/// `OperationName` child node (the same shape [`state_clause`] reads); the
+/// role from the identifier token right after the `by` keyword; and every
+/// `contracts` entry from the identifier tokens between the `[` after
+/// `contracts` and its `]` (SR-770 FND-008: read by delimiters, not by
+/// position, so an identifier the attempt production gains elsewhere never
+/// becomes a contract entry).
+fn attempt_form(
+    cst: &LosslessCst,
+    event_items: &[Item<'_>],
+    node: &CstNode,
+    declaration_index: usize,
+) -> Result<AttemptForm, FormsFailure> {
+    let declared = |token: &qsl_cst::CstToken| -> Result<DeclaredName, FormsFailure> {
+        Ok(DeclaredName {
+            name: text(token, node)?,
+            span: token.span(),
+        })
+    };
+    let tokens: Vec<&qsl_cst::CstToken> = event_items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Token(token) => Some(*token),
+            Item::Node(_) => None,
+        })
+        .collect();
+    let role = tokens
+        .iter()
+        .position(|token| token.spelling() == b"by")
+        .and_then(|at| tokens.get(at + 1))
+        .filter(|token| token.kind() == TokenKind::Identifier)
+        .ok_or_else(|| unexpected(node))?;
+    let role = declared(role)?;
+    let open = tokens
+        .iter()
+        .position(|token| token.spelling() == b"contracts")
+        .filter(|&at| tokens.get(at + 1).is_some_and(|t| t.spelling() == b"["))
+        .ok_or_else(|| unexpected(node))?
+        + 2;
+    let contracts = tokens
+        .get(open..)
+        .unwrap_or_default()
+        .iter()
+        .take_while(|token| token.spelling() != b"]")
+        .filter(|token| token.kind() == TokenKind::Identifier)
+        .map(|token| declared(token))
+        .collect::<Result<Vec<_>, FormsFailure>>()?;
+    let operation_name = only(event_items, Production::OperationName, node)?;
+    let operation_items = items(cst, operation_name);
+    let type_name = only(&operation_items, Production::TypeName, operation_name)?;
+    let context = name_form(cst, type_name)?;
+    let member = tokens_of(&operation_items, TokenKind::Identifier)
+        .first()
+        .copied()
+        .ok_or_else(|| unexpected(operation_name))?;
+    let operation = DeclaredName {
+        name: text(member, operation_name)?,
+        span: member.span(),
+    };
+    Ok(AttemptForm {
+        declaration: declaration_index,
+        role,
+        context,
+        operation,
+        contracts,
+    })
 }
 
 /// One `ScopedAnchorForm` from a `NodeReference` CST node: its segments
