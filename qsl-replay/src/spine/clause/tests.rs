@@ -2444,6 +2444,307 @@ fn tc466_step1_parent_order_over_admitted_snapshots() {
 }
 
 // ---------------------------------------------------------------------------
+// TC-466 step 1's `VersionUnchanged` sub-case and step 2's three
+// postcondition terms (FR-107-AC-1, AC-2): both need a real
+// `attemptUpdate` invocation (pre and post snapshots plus an invocation
+// document), unlike step 1's `ParentOrder`/`NoCycle` invariants above,
+// which run over one `current` snapshot.
+// ---------------------------------------------------------------------------
+
+/// A pre/post snapshot for an `attemptUpdate` invocation: the same
+/// `root`/`child` shape [`config_version_snapshot`] builds for `current`,
+/// tagged `observation` (`"pre"`/`"post"`) instead of always `"current"`,
+/// and with no `anchor` member -- FR-106's own Snapshot member set makes
+/// `anchor` optional, and only a `current` snapshot carries one.
+fn config_version_invocation_snapshot(
+    label: &DocumentRef,
+    model_digest_hex: &str,
+    observation: &str,
+    root_version: i64,
+    child_version: i64,
+) -> Vec<u8> {
+    let population = config_version_population_identity();
+    let config_version = config_version_type();
+    let objects = vec![
+        json!({
+            "key": "root", "type": config_version,
+            "fields": {"versionNumber": {"integer": root_version.to_string()}, "parent": {"absent": {}}},
+        }),
+        json!({
+            "key": "child", "type": config_version,
+            "fields": {
+                "versionNumber": {"integer": child_version.to_string()},
+                "parent": {"present": {"reference": {"population": population, "key": "root"}}},
+            },
+        }),
+    ];
+    let value = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {
+            "authority": label.authority, "identity": label.identity,
+            "revision_namespace": label.revision_namespace, "revision": label.revision,
+        },
+        "observation": observation,
+        "model": {
+            "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
+            "digest": format!("sha256-jcs:{model_digest_hex}"),
+        },
+        "populations": [{"population": population, "complete": true, "objects": objects}],
+    });
+    value.to_string().into_bytes()
+}
+
+/// An invocation document naming `attemptUpdate` on `ConfigVersion`, self
+/// `self_key`, `pre_ref`/`post_ref` as its pre/post snapshots, no
+/// parameters, boolean `result`, and an empty `created`/`deleted` -- FR-105's
+/// own frame modifies only `versionNumber`, never creates or deletes.
+fn config_version_invocation_bytes(
+    label: &DocumentRef,
+    model_digest_hex: &str,
+    pre_ref: &DocumentRef,
+    post_ref: &DocumentRef,
+    self_key: &str,
+) -> Vec<u8> {
+    let population = config_version_population_identity();
+    let identity_json = |label: &DocumentRef| {
+        json!({
+            "authority": label.authority, "identity": label.identity,
+            "revision_namespace": label.revision_namespace, "revision": label.revision,
+        })
+    };
+    let value = json!({
+        "format": "quire.state.invocation/v1",
+        "identity": identity_json(label),
+        "model": {
+            "identity": CONFIG_VERSION_PACKAGE_IDENTITY, "version": "1.0.0",
+            "digest": format!("sha256-jcs:{model_digest_hex}"),
+        },
+        "context": config_version_type(),
+        "operation": "attemptUpdate",
+        "self": {"population": population, "key": self_key},
+        "pre": {
+            "identity": identity_json(pre_ref),
+            "digest": format!("sha256-jcs:{}", hex(&pre_ref.digest)),
+        },
+        "post": {
+            "identity": identity_json(post_ref),
+            "digest": format!("sha256-jcs:{}", hex(&post_ref.digest)),
+        },
+        "parameters": {},
+        "result": {"boolean": true},
+        "created": [],
+        "deleted": [],
+    });
+    value.to_string().into_bytes()
+}
+
+/// A `ClauseSelection` naming `clause_name` (a precondition/postcondition)
+/// over the invocation at `label`.
+fn config_version_invocation_selection(clause_name: &str, label: DocumentRef) -> ClauseSelection {
+    ClauseSelection {
+        name: clause_name.to_owned(),
+        input: ClauseSelectionInput::Invocation { invocation: label },
+    }
+}
+
+/// Runs `clause_name` (a precondition/postcondition of `attemptUpdate`),
+/// built by `request_builder`, over one invocation: `root` at
+/// `root_version` (no parent, unchanged across pre/post), `child` moving
+/// from `pre_child_version` to `post_child_version`, self `self_key`,
+/// through `run_clause` end to end (genuine FR-106 admission, then S6a).
+fn run_config_version_invocation(
+    request_builder: fn(ClauseRunSelection) -> ClauseRunRequest,
+    clause_name: &str,
+    root_version: i64,
+    pre_child_version: i64,
+    post_child_version: i64,
+    self_key: &str,
+) -> ClauseDisposition {
+    let model_digest_hex = config_version_model_digest_hex();
+
+    let pre_label = config_version_document_ref("invocation-pre");
+    let pre_bytes = config_version_invocation_snapshot(
+        &pre_label,
+        &model_digest_hex,
+        "pre",
+        root_version,
+        pre_child_version,
+    );
+    let pre_digest = document_digest(&pre_bytes);
+    let pre_label = DocumentRef {
+        digest: pre_digest,
+        ..pre_label
+    };
+
+    let post_label = config_version_document_ref("invocation-post");
+    let post_bytes = config_version_invocation_snapshot(
+        &post_label,
+        &model_digest_hex,
+        "post",
+        root_version,
+        post_child_version,
+    );
+    let post_digest = document_digest(&post_bytes);
+    let post_label = DocumentRef {
+        digest: post_digest,
+        ..post_label
+    };
+
+    let invocation_label = config_version_document_ref("invocation");
+    let invocation_bytes = config_version_invocation_bytes(
+        &invocation_label,
+        &model_digest_hex,
+        &pre_label,
+        &post_label,
+        self_key,
+    );
+    let invocation_digest = document_digest(&invocation_bytes);
+    let invocation_label = DocumentRef {
+        digest: invocation_digest,
+        ..invocation_label
+    };
+
+    let selection = config_version_invocation_selection(clause_name, invocation_label);
+    let mut request = request_builder(ClauseRunSelection::Clause(selection));
+    request.snapshots.insert(pre_digest, pre_bytes);
+    request.snapshots.insert(post_digest, post_bytes);
+    request
+        .invocations
+        .insert(invocation_digest, invocation_bytes);
+    run_clause(request)
+        .expect("a well-formed request always reports")
+        .disposition
+}
+
+/// TC-466 step 1 (FR-107-AC-1): `VersionUnchanged` over an `attemptUpdate`
+/// invocation -- `Completed(true)` when `self.versionNumber` does not
+/// change across pre and post (unchanged-version), `Completed(false)` when
+/// it does (changed-version).
+#[trace("TC-466", "FR-107-AC-1")]
+#[test]
+fn tc466_step1_version_unchanged_over_an_invocation() {
+    assert!(
+        boolean_disposition(&run_config_version_invocation(
+            config_version_request,
+            "VersionUnchanged",
+            1,
+            2,
+            2,
+            "child",
+        )),
+        "unchanged-version: child.versionNumber is 2 in both pre and post"
+    );
+    assert!(
+        !boolean_disposition(&run_config_version_invocation(
+            config_version_request,
+            "VersionUnchanged",
+            1,
+            2,
+            3,
+            "child",
+        )),
+        "changed-version: child.versionNumber moves from 2 (pre) to 3 (post)"
+    );
+}
+
+/// `config_version_unit_and_packages`'s domain package, with a distinct
+/// unit adding the three FR-107-AC-2 postcondition clauses over
+/// `attemptUpdate` -- a separate unit rather than extra clauses on that
+/// other one, because `s4_emits_exactly_the_fr_105_state_nodes` (TC-462,
+/// below) counts that other unit's own emitted `state_clause` nodes
+/// exactly.
+fn config_version_step2_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
+    let (base_unit, packages) = config_version_unit_and_packages();
+    let unit = format!(
+        "{base_unit}\
+         post PreVersionIsTwo using v on Config::ConfigVersion::attemptUpdate {{ \
+         pre(self.versionNumber) = 2 }}\n\
+         post PostVersionIsThree using v on Config::ConfigVersion::attemptUpdate {{ \
+         self.versionNumber = 3 }}\n\
+         post PreParentVersionIsOne using v on Config::ConfigVersion::attemptUpdate {{ \
+         pre(present(self.parent) implies deref(value(self.parent)).versionNumber = 1) }}\n"
+    );
+    (unit, packages)
+}
+
+fn config_version_step2_request(selection: ClauseRunSelection) -> ClauseRunRequest {
+    let (unit, packages) = config_version_step2_unit_and_packages();
+    ClauseRunRequest {
+        source: ClauseRunSource::Program {
+            identity: source(),
+            path: "clause-run-config-version-step2.native".to_owned(),
+            bytes: unit.into_bytes(),
+        },
+        packages,
+        dependencies: DependencyInput::default(),
+        snapshots: BTreeMap::new(),
+        invocations: BTreeMap::new(),
+        selection,
+        expected_package_id: None,
+        limits: SpineLimits::default(),
+        observation_limits: ObservationLimits::default(),
+        model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        accounting: default_accounting(1_000_000),
+    }
+}
+
+/// TC-466 step 2 (FR-107-AC-2): over changed-version, `pre(self.versionNumber)`
+/// evaluates to 2.
+#[trace("TC-466", "FR-107-AC-2")]
+#[test]
+fn tc466_step2_pre_version_number_is_two() {
+    assert!(
+        boolean_disposition(&run_config_version_invocation(
+            config_version_step2_request,
+            "PreVersionIsTwo",
+            1,
+            2,
+            3,
+            "child",
+        )),
+        "pre(self.versionNumber) = 2 over the changed-version invocation"
+    );
+}
+
+/// TC-466 step 2 (FR-107-AC-2): over changed-version, `self.versionNumber`
+/// evaluates to 3 in the post state.
+#[trace("TC-466", "FR-107-AC-2")]
+#[test]
+fn tc466_step2_post_version_number_is_three() {
+    assert!(
+        boolean_disposition(&run_config_version_invocation(
+            config_version_step2_request,
+            "PostVersionIsThree",
+            1,
+            2,
+            3,
+            "child",
+        )),
+        "self.versionNumber = 3 over the changed-version invocation"
+    );
+}
+
+/// TC-466 step 2 (FR-107-AC-2): over the same changed-version invocation,
+/// `pre(present(self.parent) implies deref(value(self.parent)).versionNumber
+/// = 1)` is `Completed(true)` -- self (`child`)'s `parent` is present in
+/// pre, naming `root` at version 1.
+#[trace("TC-466", "FR-107-AC-2")]
+#[test]
+fn tc466_step2_pre_parent_implies_version_one() {
+    assert!(
+        boolean_disposition(&run_config_version_invocation(
+            config_version_step2_request,
+            "PreParentVersionIsOne",
+            1,
+            2,
+            3,
+            "child",
+        )),
+        "pre(present(self.parent) implies deref(value(self.parent)).versionNumber = 1)"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // FR-109-AC-6: an I3 extracted source (QSL-295).
 // ---------------------------------------------------------------------------
 
