@@ -156,7 +156,11 @@ mod tests {
         .expect("the fixture unit compiles");
         assert_eq!(site.package_id, compiled.emitted.package_id().record());
 
-        let callable = compiled.package.graph().callable("f").expect("f is callable");
+        let callable = compiled
+            .package
+            .graph()
+            .callable("f")
+            .expect("f is callable");
         let expected: Vec<_> = compiled
             .package
             .graph()
