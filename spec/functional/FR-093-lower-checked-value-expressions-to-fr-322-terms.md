@@ -73,9 +73,12 @@ Nodes are content-addressed: two checked expressions that lower to the same
 body, type and form are one node. Each source occurrence of a node is its own
 occurrence entry, keyed (node id, role, ordinal) (ADR-013 O-07). Ordinals per
 (node id, role) follow insertion order: the order `check` records them in, not
-a sort by region. A binder's declaration occurrence is recorded before its
-reads, so it is always ordinal 0 of that sequence even when its region starts
-at the same byte as its first read.
+a sort by region. Each binder's own site is recorded before that binder's
+reads, even when its region starts at the same byte as its first read.
+Content-addressing means two binders can share one parameter node: when they
+do, the node's occurrences follow one sequence in lowering order, so a later
+binder's own site is not necessarily ordinal 0 -- only the first-recorded
+occurrence in the whole shared sequence is.
 
 - an expression's region is an `expression` occurrence;
 - a binder's site (a parameter's `name: T`, a `let` name, a query binder) is

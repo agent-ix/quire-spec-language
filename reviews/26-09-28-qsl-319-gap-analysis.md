@@ -54,3 +54,17 @@ parameters.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The FR-341-AC-10 role assertion only covers function parameters (`both(a, b)`). FR-341 is QSpec's state-clause body requirement, and its parameter nodes are `self`, `result` and the operation parameters of a `pre`/`post`/invariant clause, lowered by `state_clause` in `lowering/state.rs`. No test asserts role `expression` on those, or on let, query or fold binder parameters. All of them go through the same `parameter()` call, so the risk is low. But a future change that records a clause parameter somewhere else (for example the `anchor` recorded beside it at state.rs:188) would not be caught. Fix: in the existing state-clause emission test (TC-462/TC-463 in qsl-replay spine clause tests), add one assertion that every `value`/`parameter` node's occurrences have role `expression`. | qsl-package/src/emit/tests.rs:1722-1740; qsl-semantics/src/check/lowering/state.rs:160-172 |
+
+## New findings (disposition pass 1)
+
+Reviewed at agent-ix/quire-spec-language@9dd43d1d278dfd0f9b8782b4a7cdb6d7f82f2af3 (fix commit 9dd43d1d).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | The new `s4_emits_exactly_the_fr_105_state_nodes` doc comment and inline comment say the assertion covers "the clauses' `self`, `result` and operation parameters". The ConfigVersion fixture's `attemptUpdate` declares `"params": []`, so no operation-parameter node is built. The assertion covers `self` (the invariants and the post) and `result` (the post), plus the unit's function parameters `a`/`b`. Operation parameters go through the same `parameter()` call in the `state.rs:160-162` loop, so no code path is left untested. The comment overstates coverage. Fix: drop "and operation parameters" from both comments, or add an operation parameter to the fixture. | qsl-replay/src/spine/clause/tests.rs:3597-3600; qsl-replay/src/spine/clause/tests.rs:3788-3793; qsl-replay/src/spine/clause/tests.rs:1428 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9dd43d1d: `s4_emits_exactly_the_fr_105_state_nodes` (TC-462, now also traced to FR-341-AC-10) iterates every `value`/`parameter` node of the real ConfigVersion compile (`compiled.package.graph()`) and asserts that every one of its `graph.occurrences()` entries has role `expression`, with at least one entry per node. State-clause `self`/`result` go through `parameter()` in state.rs:162, so reverting lowering.rs:2169 to `Anchor` makes the assertion fail on their ordinal-0 entry. `make ci` at 9dd43d1d passes it. |

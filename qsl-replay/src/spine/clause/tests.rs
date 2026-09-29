@@ -3595,9 +3595,10 @@ fn state_clause_kind(node: &qsl_semantics::check::SemanticNode) -> &'static str 
 /// (`modifies` exactly `versionNumber`, `creates`/`deletes` empty) -- and no
 /// `model`/`field_declaration`, `model`/`operation_declaration`,
 /// `state`/`snapshot` or `state`/`transition` node. Also QSpec FR-341-AC-10:
-/// every `value`/`parameter` node this compile builds (the clauses' `self`,
-/// `result` and operation parameters) has an occurrence with role
-/// `expression`.
+/// every `value`/`parameter` node this compile builds (the clauses' `self`
+/// and `result`; this fixture's `attemptUpdate` binds no operation
+/// parameters, but they go through the same `parameter()` call) has an
+/// occurrence with role `expression`.
 #[trace("TC-462", "FR-105-AC-1")]
 #[trace("TC-462", "FR-105-AC-2")]
 #[trace("TC-462", "FR-341-AC-10")]
