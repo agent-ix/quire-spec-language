@@ -408,15 +408,7 @@ fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() 
     let projection = lower_for(&native, TARGET, LoweringLimits::default()).unwrap();
     assert_eq!(output.stdout, projection.bytes());
     let consumer = backend_ir::BoundPackage::from_json_bytes(&output.stdout).unwrap();
-    let generated = quire_contract_codegen::generate_bound_oracles(
-        &consumer,
-        quire_contract_codegen::AttestationContext {
-            // Synthetic generator context only; no attestation claim.
-            record_digest: &"0".repeat(64),
-            candidate_revision: &"0".repeat(40),
-        },
-    )
-    .unwrap();
+    let generated = quire_contract_codegen::generate_bound_oracles(&consumer).unwrap();
     let quire_contract_codegen::BoundOracleGeneration::Generated(generated) = generated else {
         panic!("numeric comparison must produce an executable oracle");
     };
@@ -433,10 +425,6 @@ fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() 
     assert_eq!(
         generated_clause.identity().clause().as_str(),
         "population_rule"
-    );
-    assert_eq!(
-        generated_clause.expression_digest(),
-        bound_clause.expression_digest()
     );
     let syntax = syn::parse_file(&generated_clause.bundle().rust.contents).unwrap();
     let function = syntax.items.iter().find_map(|item| match item {
@@ -508,10 +496,6 @@ fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() 
             minimum_accepted_cases: 1,
             minimum_rejected_cases: 0,
             maximum_discarded_cases: 0,
-            attestation: quire_contract_codegen::AttestationContext {
-                record_digest: &"0".repeat(64),
-                candidate_revision: quire_contract_codegen::IR_CANDIDATE_REVISION,
-            },
         },
     )
     .unwrap();
@@ -540,16 +524,9 @@ fn actual_command_exports_selected_bytes_and_backend_generates_numeric_oracle() 
         postcondition: bound_clause.expression(),
         proof_id: "it-010-plain-integer",
         subject_path: "crate::subject",
-        backend_version: quire_contract_codegen::KANI_BACKEND_VERSION,
-        backend_executable_sha256:
-            "7f143a251d11c7e6e232bbf2cbccf56f9ce66a5f0107eeb3008698e6715f55d9",
         unwind: 2,
         solver: quire_contract_codegen::KaniSolver::Cadical,
         dependencies: &[],
-        attestation: quire_contract_codegen::AttestationContext {
-            record_digest: &"0".repeat(64),
-            candidate_revision: quire_contract_codegen::IR_CANDIDATE_REVISION,
-        },
     })
     .unwrap();
     syn::parse_file(&kani.rust.contents).expect("generated integer Kani adapter is Rust");

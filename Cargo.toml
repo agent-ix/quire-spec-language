@@ -101,8 +101,17 @@ xtask = { path = "xtask" }
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
 quire-exact = { path = "quire-exact", features = ["test-support"] }
-quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "5e2a6a994d2107f36294078ad202467a4c66bb75" }
-quire-contract-ir-historical = { package = "quire-contract-ir", git = "https://github.com/agent-ix/quire-contract-ir", rev = "04eb6f849c03be23177d373549c6c272551f957d" }
+quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "041115733520e63d49f47641761a89365f3c58fb" }
+# QSL-327: bumped in lockstep with quire-contract-codegen's own internal
+# quire-contract-ir pin (see quire-contract-codegen's Cargo.toml) -- CG's
+# generation functions take this crate's `BoundPackage`/`ClauseRef`/etc. by
+# concrete type, not a published/versioned artifact, so a caller that feeds
+# CG's functions a `BoundPackage` built from a *different* pinned rev of the
+# same package gets two distinct, non-unifying Rust types (E0308), even
+# though both call it "quire-contract-model" v0.1.0. This alias must track
+# whatever quire-contract-codegen pins internally, not an independently
+# chosen "older" revision.
+quire-contract-ir-historical = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "37c34de8c119d368369cb70abd74dbe0bc254bfd" }
 # TC-251's signature scanner (`tests/it/name_resolution_confinement.rs`)
 # walks a parameter/return type's own AST directly (an exact path-segment
 # match, `syn::visit::Visit`) rather than text-matching a `Debug`-formatted

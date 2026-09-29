@@ -142,15 +142,7 @@ fn run_cases() {
         consumer.digest().to_string(),
         projection.bound().digest().to_string()
     );
-    let generated = codegen::generate_bound_oracles(
-        &consumer,
-        codegen::AttestationContext {
-            // Explicit synthetic context: generation bodies are not sealed attestations.
-            record_digest: &"0".repeat(64),
-            candidate_revision: &"0".repeat(40),
-        },
-    )
-    .unwrap();
+    let generated = codegen::generate_bound_oracles(&consumer).unwrap();
     let codegen::BoundOracleGeneration::Generated(generated_clauses) = &generated else {
         panic!("complete executable population required")
     };
@@ -162,10 +154,6 @@ fn run_cases() {
             values: &[0, 1, 2, 3, 4, 5, 6, 7],
         },
         campaign: codegen::StrategyCampaign::Broad,
-        attestation: codegen::AttestationContext {
-            record_digest: &"0".repeat(64),
-            candidate_revision: &"0".repeat(40),
-        },
     })
     .unwrap();
     let root = tempfile::tempdir().unwrap();
@@ -468,14 +456,33 @@ fn main() {{
             },
         );
         let report: Value = serde_json::from_slice(&report.to_json_bytes().unwrap()).unwrap();
-        // Preserve the downstream capability boundary: this named fixture can
-        // qualify LLVM 3.1.0, but the reusable pinned reader has not adopted it.
+        // QSL-327: the previous downstream capability boundary here was CG's
+        // `analyze_bound_coverage` rejecting every LLVM JSON export whose version
+        // was not exactly "3.0.1" (paired with cargo-llvm-cov 0.9.0); CG's current
+        // pin dropped that exact-version pin (`vacuity.rs::parse_llvm_coverage`
+        // now only checks `export.kind`), so this fixture's real LLVM 3.1.0 export
+        // now parses. The boundary that remains is structural, not a version gap:
+        // `analyze_bound_coverage` only knows about the bound-oracle clause files
+        // in its own bundle, so it now reaches its "every `src/generated/` file the
+        // LLVM export touches must be one of those declared clause files" check --
+        // and this fixture's `source_root` also contains `strategy.rust.path`
+        // (`generate_i64_strategy`'s own `src/generated/...` output, driving the
+        // proptest population above), which `analyze_bound_coverage` has no way to
+        // declare as expected (its `artifacts` input is defined as exactly the
+        // bound-oracle bundle's own artifact count, `check_artifacts` in CG's
+        // `bound_coverage.rs`). So this assertion now documents that boundary
+        // instead: passing a strategy-generated file alongside bound-oracle files
+        // in the same measured package is foreign to this analyzer, not that its
+        // LLVM version is unsupported.
         assert_eq!(
-            report["state"], "unsupported",
+            report["state"], "invalid_input",
             "update the qualification when the backend changes: {report}"
         );
-        assert_eq!(report["diagnostics"][0]["code"], "unsupported_profile");
+        assert_eq!(
+            report["diagnostics"][0]["code"],
+            "foreign_generated_file"
+        );
         let message = report["diagnostics"][0]["message"].as_str().unwrap();
-        assert!(message.contains("3.0.1") && message.contains("3.1.0"));
+        assert!(message.contains("foreign generated source"));
     }
 }
