@@ -47,9 +47,16 @@ pub enum CallSiteRefusal {
     /// `qsl_replay::spine`, which this facade does not expose.
     #[error("the source did not compile: {0}")]
     Compile(String),
-    /// `function` names no function of the compiled package.
-    #[error("{0} names no function of the compiled package")]
-    UnknownFunction(QualifiedName),
+    /// `selection` names no function of the compiled `package`. Never a
+    /// bare `QualifiedName` (FR-088-AC-6, TC-258): paired with the package
+    /// it was looked up in, mirroring `ReplayRefusal::UnknownFunction`.
+    #[error("missing_declaration/missing-name: package {} declares no function {selection}", .package.hex())]
+    UnknownFunction {
+        /// The name `call_site` was given.
+        selection: QualifiedName,
+        /// The compiled package's own `package_id`.
+        package: DigestRecord,
+    },
     /// The compiled package's own function node for `function` is not
     /// itself a function node, or its parameter count does not match its
     /// checked signature -- a broken invariant.
@@ -78,8 +85,14 @@ pub fn call_site(
         spine::SpineLimits::default(),
     )
     .map_err(|refusal| Box::new(CallSiteRefusal::Compile(refusal.to_string())))?;
+    let package_id = compiled.emitted.package_id().record();
 
-    let unknown = || Box::new(CallSiteRefusal::UnknownFunction(function.clone()));
+    let unknown = || {
+        Box::new(CallSiteRefusal::UnknownFunction {
+            selection: function.clone(),
+            package: package_id,
+        })
+    };
     let [segment] = function.segments() else {
         return Err(unknown());
     };
@@ -108,7 +121,7 @@ pub fn call_site(
     }
 
     Ok(CallSite {
-        package_id: compiled.emitted.package_id().record(),
+        package_id,
         parameters: parameters
             .iter()
             .map(|key| WireNodeId::from_digest(*key.as_bytes()))
@@ -183,6 +196,6 @@ mod tests {
         let source = SourceIdentity::new("a", "u", "git", "1");
         let refusal = call_site(source, "unit.native", UNIT.as_bytes(), &name("nope"))
             .expect_err("nope names no function of the compiled package");
-        assert!(matches!(*refusal, CallSiteRefusal::UnknownFunction(_)));
+        assert!(matches!(*refusal, CallSiteRefusal::UnknownFunction { .. }));
     }
 }
