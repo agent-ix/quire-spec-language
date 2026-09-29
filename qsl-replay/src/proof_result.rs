@@ -95,11 +95,11 @@ pub enum InconclusiveCause {
 }
 
 /// One FR-331 terminal record's result value (ADR-013 O-16 proof column).
-/// Exactly the eight wire values FR-331's `results` vocabulary admits, with
-/// `Proved` distinguishing a vacuous run (zero SUCCESS checks) from an
-/// ordinary one by its own field rather than by a second tag, so the
-/// category-mapping reader can tell them apart without inspecting anything
-/// but this value.
+/// FR-331's `results` vocabulary admits eight wire values; this type names
+/// seven, with `Proved` distinguishing a vacuous run (zero SUCCESS checks,
+/// FR-331-AC-8's `inconclusive`) from an ordinary one by its own field
+/// rather than by a second tag, so the category-mapping reader can tell
+/// them apart without inspecting anything but this value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum TerminalValue {
     /// A Kani run whose obligation completed with `success_checks` SUCCESS
