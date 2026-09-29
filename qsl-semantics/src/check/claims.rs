@@ -669,8 +669,23 @@ pub(crate) fn key_claims(
     binders: &BTreeMap<BinderSite, NodeKey>,
 ) -> Result<BTreeMap<OccurrenceKey, RequirementRecord>, KeyFault> {
     let unkeyable = || KeyFault::UnkeyableRequirements;
+    // FR-341-AC-10: a `value`/`parameter` node's own occurrence carries role
+    // `expression` too, recorded at the same [`Location`] as the binder
+    // form that introduces it (a binder name has no [`Expression::children`]
+    // index of its own to be located at). That occurrence never represents
+    // a scalar application or a guard condition -- `binders` names exactly
+    // which (node, location) pairs are a binder's own declaration site, so
+    // they are excluded here rather than left to collide with the
+    // enclosing form's own occurrence at that location.
+    let own_declarations: BTreeSet<(NodeKey, &Location)> = binders
+        .iter()
+        .map(|(site, key)| (*key, &site.binder))
+        .collect();
     let mut at: BTreeMap<&Location, Vec<(NodeKey, Origin)>> = BTreeMap::new();
     for (node, origin, location) in occurrences.iter_role(OccurrenceRole::Expression) {
+        if own_declarations.contains(&(node, location)) {
+            continue;
+        }
         at.entry(location).or_default().push((node, origin));
     }
     let application = |key: NodeKey| match graph.node(key).map(|node| node.body()) {

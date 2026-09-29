@@ -71,14 +71,20 @@ the binder that bound the slot (FR-092), and has no node of its own.
 
 Nodes are content-addressed: two checked expressions that lower to the same
 body, type and form are one node. Each source occurrence of a node is its own
-occurrence entry, keyed (node id, role, ordinal) (ADR-013 O-07), with
-ordinals per (node id, role) in order of (source document identity, region
-start, region end):
+occurrence entry, keyed (node id, role, ordinal) (ADR-013 O-07). Ordinals per
+(node id, role) follow insertion order: the order `check` records them in, not
+a sort by region. Each binder's own site is recorded before that binder's
+reads, even when its region starts at the same byte as its first read.
+Content-addressing means two binders can share one parameter node: when they
+do, the node's occurrences follow one sequence in lowering order, so a later
+binder's own site is not necessarily ordinal 0 -- only the first-recorded
+occurrence in the whole shared sequence is.
 
 - an expression's region is an `expression` occurrence;
 - a binder's site (a parameter's `name: T`, a `let` name, a query binder) is
-  an `anchor` occurrence of its parameter node, which carries no
-  `declaration` (FR-092), and each read of it is an `expression` occurrence;
+  an `expression` occurrence of its parameter node (QSpec FR-341-AC-10),
+  which carries no `declaration` (FR-092), and each read of it is also an
+  `expression` occurrence, in the same ordinal sequence;
 - a type form's region is a `type` occurrence of its type node;
 - a declared record, tuple or enum has one `declaration` occurrence, at its
   declared name, so its node carries its `declaration` (FR-322);
@@ -687,7 +693,7 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
 | FR-093-AC-6 | A text equality whose package lock evidence supplies the text-profile definition carries law `text_profile` with that `DefinitionRef` and mode `text_profile` equal to the operands' profile. The same source, lowered with no text-profile definition in the lock evidence, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node. | Test (TC-415) |
 | FR-093-AC-7 | For every node of a checked package holding `both`, `nb`, `h`, `f` and `t`, the key recomputed from the node as the v2 emission arm writes it (the FR-322 application-node rule, or FR-092's structural-node rule) equals the node's `node_id`. The `package` crate's non-test code names no `SemanticTerm` constructor and no key function. For a package holding the recursive `f` of FR-092 vectors G4 to G6, the three members carry the `recursion_group` label `0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50`, their graph order is G5, G4, G6, and the keys recomputed from that graph order are G4 to G6. | Test (TC-416) |
 | FR-093-AC-8 | In functions over a `Population<M::Order>[3]` parameter `p` and a `Reference<M::Order>` parameter `r` (FR-094 vectors E4 to E9), and in a clause function (FR-094) that holds a dispatched call (QSpec FR-151, QSpec TC-196 D06), a checked `Attribute`, `AllInstances`, `Lookup` and `Dispatch` node each lowers to the operation, member, mode and arguments its row gives, and a `Lookup` with `absent empty` carries mode `absence` = `empty`. | Test (TC-415) |
-| FR-093-AC-9 | Every node of the checked package of AC-7 has at least one occurrence: `a`'s parameter node has an `anchor` occurrence over `a: Boolean` and one `expression` occurrence per read, and the `Integer` and text scalar nodes that type P1's body literals have a `generated` occurrence. | Test (TC-416) |
+| FR-093-AC-9 | Every node of the checked package of AC-7 has at least one occurrence: `a`'s parameter node has an `expression` occurrence over `a: Boolean` (QSpec FR-341-AC-10) and one `expression` occurrence per read, and the `Integer` and text scalar nodes that type P1's body literals have a `generated` occurrence. | Test (TC-416) |
 | FR-093-AC-10 | With lock evidence that selects the text definition the Recursive text-leaf vectors name, `eq`, `has`, `eqa` and `eqo` of those vectors check with no refusal. Their `a = b`, `contains(s, b)`, `x = y` and `a = b` nodes key to E14, E15, E16 and E17 with those vectors' preimage bytes, whose leaves are the lists the vectors give, and the type, group and parameter nodes they name key to T13, T14, G16 to G21, S4, S5 and P10 to P16. Declaring `B` before `A` gives the same keys. | Test (TC-415) |
 | FR-093-AC-11 | Structural equality over `record R { t?: Text[0, 64; nfc]; }` and over `record S { t: Option<Text[0, 64; nfc]>; }` each carries one leaf, path `field:t`, `inner`; over `record W { t: Text[0, 64; nfc]; }` one leaf, path `field:t`. Structural equality and `contains` over FR-092's recursive `List`, which reaches no `Text` type, carry no leaves. Structural equality over `record Tree2 { label: Text[0, 8; binary-utf8]; kids: Sequence<Tree2>[0, 3]; }` carries `field:label`, then `field:kids`, `inner`, `recursion:0`; over `record Two { x: Node; y: Node; }` it carries `field:x`, `field:label`; `field:x`, `field:next`, `inner`, `recursion:1`; `field:y`, `field:label`; `field:y`, `field:next`, `inner`, `recursion:1`. `eq` of the Recursive text-leaf vectors, lowered with lock evidence that supplies no text-profile definition, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node; lowered with a node limit (`CheckingLimits`) that admits every node of its package but not also its two leaves, it stops with `stage_limit_exceeded`/`node-count-exceeded` at the node limit's bound, and yields no node. | Test (TC-415) |
 | FR-093-AC-12 | For every node of the checked package of AC-7, of the package of the recursive `f` and of a package holding `record Tree { kids: Sequence<Tree>[0, 3]; }`, the emitted `dependencies` equal the list that rules 1 to 5 of Node dependencies rebuild from the node as written. In ascending digest order, E1 lists P2 and P1; F2 `both` lists P2, P1 and E1; E2 lists L1, F2 and P1; T1, L1 and P1 list none. In the package of the recursive `f`, T4 `Int[0, 9]` lists T2, G4 lists G5 and P4, G5 lists L1, E11 and G6, and G6 lists G4 and E13. In the `Tree` package, G7 lists G9, G8 lists G7 and G9 lists G8. | Test (TC-416) |

@@ -1667,9 +1667,10 @@ const SPINE_TEXT: &str = "language \"ix:native\" edition \"1-draft\";\n\
 /// `emit_checked`, and I2 reads the bytes back Verified with nothing
 /// omitted: `both`'s `value`/`parameter` nodes are written (IR-280). The
 /// record's `declaration` occurrence is placed at its declared name, each
-/// parameter's occurrences at regions of `both`, and every occurrence at a
-/// region of the unit.
-#[trace("FR-091-AC-10", "FR-096-AC-1", "TC-426")]
+/// parameter's occurrences at regions of `both`, every occurrence at a
+/// region of the unit, and (FR-341-AC-10) every occurrence of a
+/// `value`/`parameter` node has role `expression`.
+#[trace("FR-091-AC-10", "FR-096-AC-1", "FR-341-AC-10", "TC-426")]
 #[test]
 fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let parsed = qsl_cst::parse(
@@ -1732,6 +1733,10 @@ fn source_text_compiles_through_the_spine_and_reads_back_verified() {
             .iter()
             .filter(|entry| entry["node_id"] == parameter["node_id"])
         {
+            assert_eq!(
+                entry["role"], "expression",
+                "FR-341-AC-10: {parameter}'s occurrence has role expression: {entry}"
+            );
             for region in entry["regions"].as_array().unwrap() {
                 let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
                 let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();

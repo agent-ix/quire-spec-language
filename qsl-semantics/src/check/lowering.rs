@@ -2166,7 +2166,7 @@ impl<'a> Lowering<'a> {
                 ],
             },
         )?;
-        self.record(key, OccurrenceRole::Anchor, location.clone());
+        self.record(key, OccurrenceRole::Expression, location.clone());
         Ok(key)
     }
 
