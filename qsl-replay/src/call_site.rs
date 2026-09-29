@@ -142,7 +142,6 @@ mod tests {
     use crate::identity::QualifiedName;
     use crate::request::{ReplayRequestWire, StageLimits, StateEnvironment};
     use crate::witness::{CanonicalAssignment, ReplaySource};
-    use crate::ReplayRefusal;
 
     /// The TC-452 fixture unit `F`: one function `f` of one parameter `x`.
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -269,10 +268,7 @@ mod tests {
         );
         let result = crate::replay(request);
         assert!(
-            !matches!(
-                result,
-                Err(ReplayRefusal::UnknownParameter(_) | ReplayRefusal::UnboundParameter(_))
-            ),
+            result.is_ok(),
             "call_site's node id for x must be the one replay accepts: {result:?}"
         );
     }
@@ -283,8 +279,16 @@ mod tests {
     #[test]
     fn call_site_refuses_an_unknown_function_name() {
         let source = SourceIdentity::new("a", "u", "git", "1");
+        let compiled = call_site(source.clone(), "unit.native", UNIT.as_bytes(), &name("f"))
+            .expect("f names a real function of the compiled unit");
         let refusal = call_site(source, "unit.native", UNIT.as_bytes(), &name("nope"))
             .expect_err("nope names no function of the compiled package");
-        assert!(matches!(*refusal, CallSiteRefusal::UnknownFunction { .. }));
+        match *refusal {
+            CallSiteRefusal::UnknownFunction { selection, package } => {
+                assert_eq!(selection, name("nope"));
+                assert_eq!(package, compiled.package_id);
+            }
+            other => panic!("expected UnknownFunction, got {other:?}"),
+        }
     }
 }
