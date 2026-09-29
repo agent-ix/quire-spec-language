@@ -3594,9 +3594,13 @@ fn state_clause_kind(node: &qsl_semantics::check::SemanticNode) -> &'static str 
 /// (context `ConfigVersion`, operation `"attemptUpdate"`) and one `frame`
 /// (`modifies` exactly `versionNumber`, `creates`/`deletes` empty) -- and no
 /// `model`/`field_declaration`, `model`/`operation_declaration`,
-/// `state`/`snapshot` or `state`/`transition` node.
+/// `state`/`snapshot` or `state`/`transition` node. Also QSpec FR-341-AC-10:
+/// every `value`/`parameter` node this compile builds (the clauses' `self`,
+/// `result` and operation parameters) has an occurrence with role
+/// `expression`.
 #[trace("TC-462", "FR-105-AC-1")]
 #[trace("TC-462", "FR-105-AC-2")]
+#[trace("TC-462", "FR-341-AC-10")]
 #[test]
 fn s4_emits_exactly_the_fr_105_state_nodes() {
     let compiled = config_version_compiled();
@@ -3779,6 +3783,38 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
             (node.node_tag(), node.semantic_form()),
             (qsl_semantics::check::NodeTag::State, "transition")
         );
+    }
+
+    // QSpec FR-341-AC-10 (QSL-319): a state clause's own `self`, `result`
+    // and operation-parameter nodes are `value`/`parameter` nodes like any
+    // other binder, so their own occurrence also carries role `expression`,
+    // not `anchor` -- the function-parameter case is covered by
+    // `qsl-package`'s `source_text_compiles_through_the_spine_and_reads_back_verified`;
+    // this is the state-clause side of the same requirement.
+    let parameter_nodes: Vec<_> = graph
+        .semantic_graph()
+        .nodes()
+        .filter(|node| {
+            node.node_tag() == qsl_semantics::check::NodeTag::Value
+                && node.semantic_form() == "parameter"
+        })
+        .collect();
+    assert!(
+        !parameter_nodes.is_empty(),
+        "ConfigVersion's clauses bind self, result and operation parameters"
+    );
+    for node in &parameter_nodes {
+        let key = node.key();
+        let mut placed = 0;
+        for (_, origin, _) in graph.occurrences().filter(|(id, _, _)| *id == key) {
+            assert_eq!(
+                origin.role().as_str(),
+                "expression",
+                "FR-341-AC-10: {key:?}'s occurrence has role expression"
+            );
+            placed += 1;
+        }
+        assert!(placed > 0, "{key:?} has at least one recorded occurrence");
     }
 }
 
