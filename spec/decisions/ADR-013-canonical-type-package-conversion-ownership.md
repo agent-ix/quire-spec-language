@@ -1051,7 +1051,7 @@ lane D converges.
 | Clause kind | `syntax::ClauseKind` | O-10 |
 | Names | native-v1 use of `ir::SymbolName` | O-11 |
 | Spans | native-v1 use of IR `SourceSpan`; the native-v1 `LocatedSpan` rendering of the F-hosted native `Diagnostic`. The native-v1 lane admits source through the F `Source` and `SourceIdentity` and lexes with the spine's `qsl-cst` lexer: it has no source type of its own, so there is no lane-private source type to split off (FR-001) | O-12 |
-| Outcomes | runtime `ExecutionOutcome`/`EvaluationOutcome`, state `EvaluationOutcome`, simulation `Outcome` | O-16 |
+| Outcomes | runtime `ExecutionOutcome`/`EvaluationOutcome`, state `EvaluationOutcome`, the lane-D simulation `Outcome` before convergence. `qsl_eval::simulation::Outcome` is not lane-private: it is the converged S6a-layer outcome, mapped by `Outcome::category()` (ADR-014 §7, ADR-016 FP-4) | O-16 |
 | Diagnostics | `Box<Diagnostic>` 45-variant `Code` | O-17 |
 | Budgets | `artifact-work/1`, `temporal-work/1`, `evaluation-work/1`, `native-ref-cost/1-draft` | O-21 |
 

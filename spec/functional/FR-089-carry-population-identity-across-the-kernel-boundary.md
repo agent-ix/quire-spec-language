@@ -173,3 +173,8 @@ QSL-131) this Slice records rather than resolves.
 `ObjectEnvironment::with_population` is the interim guard: it refuses to
 record a second, unequal binding under an id already bound, rather than
 silently letting the later admission overwrite the earlier one.
+
+Decided by [ADR-016](../decisions/ADR-016-state-model-finite-execution-mapping.md)
+ID-5: the preimage gains `members`, the RFC 8785 digest of the admitted
+member set, and the unequal re-record becomes an internal fault. The declared
+maximum needs no member. Remaining work: ADR-016 G-3 (QSL-68, #120).

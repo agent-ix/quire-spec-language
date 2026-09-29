@@ -33,7 +33,10 @@ analyses, SR-474 to SR-481) is in
 Amended 2026-09-26 by QSL-273 (A05-3): §15 maps state clauses, frames,
 operation anchors and observations onto this contract. It is the state share
 of the #220 (QSL-19) mapping that §14.1 hands to #120, #121 and #164, and it
-is the design FR-102 to FR-109 implement.
+is the design FR-102 to FR-109 implement. The rest of the #220 mapping (the
+model graph, the static/runtime boundary, identity across phases, finite
+exploration and the owner of each gap) is
+[ADR-016](ADR-016-state-model-finite-execution-mapping.md).
 
 ## Context
 
