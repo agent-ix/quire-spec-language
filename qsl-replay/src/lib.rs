@@ -27,6 +27,7 @@
 #![forbid(unsafe_code)]
 
 mod bounds;
+mod call_site;
 mod execute;
 mod identity;
 mod proof_result;
@@ -36,6 +37,7 @@ pub mod spine;
 mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
+pub use call_site::{call_site, CallSite, CallSiteRefusal};
 pub use execute::{
     replay, replay_frame, DependencySelectionsCause, FrameIdentityMismatch, FrameReplayResult,
     LimitAboveReader, ReplayRefusal,
@@ -55,6 +57,21 @@ pub use proof_result::{
 // their constructors' inputs (`qsl_foundation`'s `RawSourceRef`, `Revision`
 // and `InvalidProvenance`) are not re-exported, and CG builds neither type.
 pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
+// QSL-317: the kernel identity and digest types a `ReplayRequestWire`'s
+// members are built from -- `quire_exact`'s identifier and value-accounting
+// limits, and `qsl_foundation`'s node id and digest-record vocabulary --
+// re-exported so CG, which reaches QSL only through this crate (ADR-011
+// FB-05), builds one without its own direct dependency on `quire-exact` or
+// `qsl-foundation`. Unlike the occurrence key and source region above, this
+// re-export does add constructors CG can now call directly:
+// `DigestRecord::mint`, `WireNodeId::from_digest`/`from_hex`,
+// `SourceIdentity::new` and `Identifier::new` among them. None is a
+// T-12-governed constructor (ADR-011 §3 FB-05), so no rule is broken; CG
+// needs exactly these to build the request `call_site` (QSL-317) and
+// `replay` (FR-098) read.
+pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
+pub use qsl_foundation::SourceIdentity;
+pub use quire_exact::{Identifier, ScalarLimits};
 pub use request::{
     ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
     ReplayRequestWire, StageLimits, StateEnvironment,

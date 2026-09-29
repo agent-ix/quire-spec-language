@@ -550,6 +550,30 @@ struct Selected {
     types: Vec<ValueType>,
 }
 
+/// `callable`'s own parameter node keys, checked against its own declared
+/// signature: the node lookup [`select`] and [`crate::call_site::call_site`]
+/// each need to turn a `CallableFunction` into the parameter node ids a
+/// `CanonicalAssignment` or a witness transcript names (ADR-013 O-25, C-11).
+/// Shared so the two entries cannot silently drift apart (SR-780 FND-002).
+pub(crate) fn callable_parameter_keys(
+    package: &CheckedPackage,
+    callable: &qsl_semantics::check::CallableFunction<'_>,
+) -> Result<Vec<NodeKey>, InternalFault> {
+    let parameters = package
+        .graph()
+        .semantic_graph()
+        .node(callable.identity)
+        .and_then(|node| node.function_parameters())
+        .ok_or_else(|| InternalFault::new("replay", "callable-identity-is-a-function-node"))?;
+    if parameters.len() != callable.parameters.len() {
+        return Err(InternalFault::new(
+            "replay",
+            "function-node-parameters-match-signature",
+        ));
+    }
+    Ok(parameters)
+}
+
 /// OQ-5: resolve `name` by name lookup in the recompiled package's
 /// declarations -- the one name lookup after the check stage (R-06).
 /// Complete-V1 declares no qualified names, so only a one-segment name
@@ -579,23 +603,9 @@ fn select(compiled: &Compiled, name: &QualifiedName) -> Result<Selected, ReplayR
         .iter()
         .map(|(_, value_type)| value_type.clone())
         .collect();
-    let parameters = package
-        .graph()
-        .semantic_graph()
-        .node(callable.identity)
-        .and_then(|node| node.function_parameters())
-        .ok_or(ReplayRefusal::Fault(InternalFault::new(
-            "replay",
-            "callable-identity-is-a-function-node",
-        )))?;
+    let parameters = callable_parameter_keys(package, &callable).map_err(ReplayRefusal::Fault)?;
     let name =
         qsl_eval::value::QualifiedName::unqualified(segment.as_str()).map_err(|_| unknown())?;
-    if parameters.len() != types.len() {
-        return Err(ReplayRefusal::Fault(InternalFault::new(
-            "replay",
-            "function-node-parameters-match-signature",
-        )));
-    }
     Ok(Selected {
         name,
         parameters,
