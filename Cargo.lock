@@ -1558,7 +1558,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?rev=48ab5dc29213c3975a5fe8f04ecbb3d1c2b345bb#48ab5dc29213c3975a5fe8f04ecbb3d1c2b345bb"
+source = "git+https://github.com/agent-ix/quire-contract-ir?rev=2a286437f6926dbefa9963dae196b22912114dc1#2a286437f6926dbefa9963dae196b22912114dc1"
 dependencies = [
  "jsonschema 0.17.1",
  "quire-verification-contracts",
@@ -1640,7 +1640,7 @@ dependencies = [
 [[package]]
 name = "quire-verification-contracts"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-verification-contracts?rev=61f4a44d76d51cc53b2dfe7ed10aba7b23cfa6ef#61f4a44d76d51cc53b2dfe7ed10aba7b23cfa6ef"
+source = "git+https://github.com/agent-ix/quire-verification-contracts?rev=4c49706d5db3ba77f96088ddcbb2635046246e32#4c49706d5db3ba77f96088ddcbb2635046246e32"
 dependencies = [
  "chrono",
  "jsonschema 0.55.1",

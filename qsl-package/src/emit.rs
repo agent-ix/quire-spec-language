@@ -497,6 +497,12 @@ fn nominal_owner(owner: &NodeOwner) -> NominalOwner {
         },
         NodeOwner::Model(subject) => NominalOwner::Model {
             identity: subject.identity.as_str().into(),
+            // `quire_semantics::value::NodeOwner::Model` (this crate's own
+            // I04 nominal-declaration owner) carries no domain package
+            // version -- nothing in this crate constructs this arm today
+            // (no enum/dimension/unit declaration is model-owned yet), so
+            // there is no real version to plumb through here.
+            version: "".into(),
             node: subject.node.as_str().into(),
         },
     }
