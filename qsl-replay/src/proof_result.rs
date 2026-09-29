@@ -87,29 +87,26 @@ pub enum UnavailabilityCause {
 }
 
 /// FR-331's `inconclusive` cause. `KaniVacuousProof` is the O-16 vacuity
-/// row: a `Proved` run with zero SUCCESS checks in the obligation.
+/// row: a Kani proof run whose obligation completed with zero SUCCESS
+/// checks (FR-331-AC-8) -- its own wire tag, `inconclusive`, never `proved`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum InconclusiveCause {
-    /// A `Proved` run with zero SUCCESS checks in the obligation.
+    /// A Kani proof run whose obligation completed with zero SUCCESS checks.
     KaniVacuousProof,
 }
 
 /// One FR-331 terminal record's result value (ADR-013 O-16 proof column).
-/// FR-331's `results` vocabulary admits eight wire values; this type names
-/// seven, with `Proved` distinguishing a vacuous run (zero SUCCESS checks,
-/// FR-331-AC-8's `inconclusive`) from an ordinary one by its own field
-/// rather than by a second tag, so the category-mapping reader can tell
-/// them apart without inspecting anything but this value.
+/// Exactly the eight wire values FR-331's `results` vocabulary admits:
+/// `proved`, `refuted`, `tested`, `inconclusive`, `unsupported`, `declined`,
+/// `incomplete`, `failed`. A Kani proof run with zero SUCCESS checks is
+/// `Inconclusive` from construction (FR-331-AC-8) -- never `Proved` with a
+/// zero count, so the category-mapping reader never has to inspect anything
+/// but the outer tag to tell the two apart.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum TerminalValue {
-    /// A Kani run whose obligation completed with `success_checks` SUCCESS
-    /// checks. Zero is vacuous (maps to `inconclusive`); at least one is an
-    /// ordinary proof (maps to `success`).
-    Proved {
-        /// The count of SUCCESS checks the obligation completed with. Zero
-        /// marks a vacuous proof.
-        success_checks: u32,
-    },
+    /// A backend result of `proved`: a Kani run whose obligation completed
+    /// with at least one SUCCESS check.
+    Proved,
     /// A backend result of `tested`: `success` category, but never promoted
     /// to `proved` and never counted as proof evidence.
     Tested,
@@ -122,6 +119,9 @@ pub enum TerminalValue {
     Unsupported(UnavailabilityCause),
     /// A backend result of `incomplete`.
     Incomplete(IncompleteCause),
+    /// A backend result of `inconclusive`, with its typed cause
+    /// (FR-331-AC-8: currently always a vacuous Kani proof).
+    Inconclusive(InconclusiveCause),
     /// A backend result of `failed`: the tool itself failed.
     Failed,
 }
@@ -133,12 +133,12 @@ impl TerminalValue {
     /// Behavior: "one exhaustive function with no `_` fallback arm").
     pub fn category(self) -> ProofCategory {
         match self {
-            Self::Proved { success_checks: 0 } => ProofCategory::Inconclusive,
-            Self::Proved { .. } | Self::Tested => ProofCategory::Success,
+            Self::Proved | Self::Tested => ProofCategory::Success,
             Self::Refuted => ProofCategory::Violation,
             Self::Declined(_) => ProofCategory::Refusal,
             Self::Unsupported(_) => ProofCategory::Unsupported,
             Self::Incomplete(_) => ProofCategory::Incomplete,
+            Self::Inconclusive(_) => ProofCategory::Inconclusive,
             Self::Failed => ProofCategory::InternalFailure,
         }
     }
@@ -146,7 +146,7 @@ impl TerminalValue {
     /// The typed cause of a vacuous proof, if this value is one.
     pub fn vacuous_proof_cause(self) -> Option<InconclusiveCause> {
         match self {
-            Self::Proved { success_checks: 0 } => Some(InconclusiveCause::KaniVacuousProof),
+            Self::Inconclusive(cause) => Some(cause),
             _ => None,
         }
     }
@@ -232,11 +232,11 @@ impl ProofResultEnvelope {
     }
 
     /// FR-069 Behavior's typed vacuous-proof cause: `Some(KaniVacuousProof)`
-    /// when this envelope's category is `Inconclusive` because the run was a
-    /// vacuous `Proved` (zero SUCCESS checks); `None` for every other
-    /// category. Reachable directly here, so a consumer that reads
-    /// `category() == Inconclusive` never has to re-derive the cause by
-    /// re-counting SUCCESS checks against [`Self::record`] itself.
+    /// when this envelope's record value is `TerminalValue::Inconclusive`
+    /// because the run was a vacuous Kani proof (zero SUCCESS checks);
+    /// `None` for every other category. Reachable directly here, so a
+    /// consumer that reads `category() == Inconclusive` never has to
+    /// re-derive the cause by re-inspecting [`Self::record`] itself.
     pub fn inconclusive_cause(&self) -> Option<InconclusiveCause> {
         self.inconclusive_cause
     }
@@ -393,19 +393,16 @@ mod tests {
 
     /// FR-069-AC-1 (TC-177): every FR-331 wire value maps to its exact
     /// O-16 category, `proved`/`tested` stay distinct within `success`, and
-    /// a vacuous `Proved` (zero SUCCESS checks) maps to `inconclusive`, not
-    /// `success` -- distinguished from an ordinary `Proved` only by the
-    /// SUCCESS-check count, not by a different outer tag.
+    /// a vacuous Kani run is its own wire tag, `Inconclusive`, which maps to
+    /// `inconclusive` -- never `Proved` with a zero SUCCESS-check count
+    /// (FR-331-AC-8).
     #[trace("TC-177", "FR-069-AC-1")]
     #[test]
     fn tc_177_every_fr331_value_maps_to_its_exact_category() {
         let cases = [
+            (TerminalValue::Proved, ProofCategory::Success),
             (
-                TerminalValue::Proved { success_checks: 1 },
-                ProofCategory::Success,
-            ),
-            (
-                TerminalValue::Proved { success_checks: 0 },
+                TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof),
                 ProofCategory::Inconclusive,
             ),
             (TerminalValue::Tested, ProofCategory::Success),
@@ -444,18 +441,14 @@ mod tests {
         }
         // `tested` never gets rewritten to `proved`, despite sharing a
         // category with it.
-        assert_eq!(
-            envelopes[0].record().value(),
-            TerminalValue::Proved { success_checks: 1 }
-        );
+        assert_eq!(envelopes[0].record().value(), TerminalValue::Proved);
         assert_eq!(envelopes[2].record().value(), TerminalValue::Tested);
         assert_ne!(envelopes[0].record().value(), envelopes[2].record().value());
-        // Step 4: an ordinary and a vacuous `Proved` record take different
-        // categories, showing the reader inspects the SUCCESS-check count
-        // and not merely the outer `Proved` tag.
+        // Step 4: `Proved` and `Inconclusive` are distinct wire tags that
+        // take different categories, not one tag distinguished by a field.
         assert_ne!(envelopes[0].category(), envelopes[1].category());
 
-        // B4: the vacuous `Proved` envelope carries the typed cause, and no
+        // B4: the vacuous-proof envelope carries the typed cause, and no
         // other envelope does.
         assert_eq!(envelopes[0].inconclusive_cause(), None);
         assert_eq!(
@@ -475,8 +468,8 @@ mod tests {
     #[test]
     fn all_categories_are_exactly_the_ones_terminal_value_produces() {
         let mut produced: Vec<ProofCategory> = vec![
-            TerminalValue::Proved { success_checks: 1 }.category(),
-            TerminalValue::Proved { success_checks: 0 }.category(),
+            TerminalValue::Proved.category(),
+            TerminalValue::Inconclusive(InconclusiveCause::KaniVacuousProof).category(),
             TerminalValue::Tested.category(),
             TerminalValue::Refuted.category(),
             TerminalValue::Declined(ProofRefusalCause::Refused).category(),
@@ -545,7 +538,7 @@ mod tests {
     #[test]
     fn tc_179_round_trip_preserves_backend_tool_pin_and_dispositions() {
         let items = vec![
-            TerminalRecord::new("a", TerminalValue::Proved { success_checks: 3 }),
+            TerminalRecord::new("a", TerminalValue::Proved),
             TerminalRecord::new("b", TerminalValue::Refuted),
         ];
         let original = source(items);
