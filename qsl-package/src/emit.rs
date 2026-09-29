@@ -497,11 +497,14 @@ fn nominal_owner(owner: &NodeOwner) -> NominalOwner {
         },
         NodeOwner::Model(subject) => NominalOwner::Model {
             identity: subject.identity.as_str().into(),
-            // `quire_semantics::value::NodeOwner::Model` (this crate's own
-            // I04 nominal-declaration owner) carries no domain package
-            // version -- nothing in this crate constructs this arm today
-            // (no enum/dimension/unit declaration is model-owned yet), so
-            // there is no real version to plumb through here.
+            // `qsl_semantics::value::NodeOwner::Model` carries no domain
+            // package version to plumb through here, so this is a
+            // placeholder. A `Model`-owned nominal node can be built today
+            // (a model-owned `EnumDeclarationPreimage` reaches this arm),
+            // but `owner_is_locked` (below) treats every non-`Source` owner
+            // as `UnlockedOwner` and drops that node before `wire_node`
+            // runs on it, so this empty string never reaches emitted
+            // bytes.
             version: "".into(),
             node: subject.node.as_str().into(),
         },

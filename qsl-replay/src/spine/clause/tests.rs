@@ -4925,10 +4925,10 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
 /// unconditional refusal of the operator (`ill_typed`/`operator-ineligible`
 /// at the `reaches` node's own `body.arguments[0]`, confirmed by running
 /// this test against `2a28643`), in a separate pinned dependency this ticket
-/// does not own. Remove this `#[ignore]` once IR implements the
-/// `reference_edge` check (no QSL-side workaround exists: the wire shape is
-/// already correct, IR just refuses any use of the operator).
-#[ignore = "blocked on quire-contract-model implementing the reaches_field reference_edge check (see doc comment); not the STD-111 gap QSL-307 was filed against"]
+/// does not own. This is tracked as IR-370. Remove this `#[ignore]` once IR
+/// implements the `reference_edge` check (no QSL-side workaround exists: the
+/// wire shape is already correct, IR just refuses any use of the operator).
+#[ignore = "blocked on IR-370: quire-contract-model implementing the reaches_field reference_edge check (see doc comment); not the STD-111 gap QSL-307 was filed against"]
 #[trace("TC-463", "FR-105-AC-3")]
 #[test]
 fn s4_state_package_reads_back_through_i2() {

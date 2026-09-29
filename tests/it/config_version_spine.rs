@@ -892,25 +892,21 @@ fn tc_469_step_6_package_id_is_pinned_across_every_case() {
 }
 
 /// FR-108-AC-6's other half: the emitted package bytes admit through QSpec
-/// I04 `read`. Blocked on QSL-315, re-scoped 2026-09-28: the pinned
-/// `quire-contract-model` reader's `frame_eligibility`
-/// (`crates/quire-contract-model/src/checked_package/v2/mod.rs:1535-1560`)
-/// admits a `modifies` entry only against a `Relation(Relationship)` or
-/// `Model(FieldDeclaration)` node -- never against the object-type node QSL
-/// names a modified field's owner by. `FrameField`'s wire shape is not the
-/// defect: stripping it to a bare `NodeRef` still points at the object-type
-/// node and the reader still refuses (`InvalidModelBinding`), and it would
-/// additionally collapse two same-object modified fields into one identical
-/// entry. This repo's own FR-105 (`spec/functional/FR-105-emit-state-nodes.md:31-48`)
-/// already names the `(object type, member name)` frame-entry wire shape as
-/// "QSpec changes that STD-111 carries" -- so the fix is the pinned reader's
-/// `frame_eligibility` gate catching up to QSpec's STD-111 vocabulary, not
-/// QSL minting a new `field_declaration` model node to satisfy a reader that
-/// hasn't. Routed to the Contract IR & Codegen team (quire-contract-ir).
-/// Un-ignore once the reader accepts the shape FR-105 already emits.
+/// I04 `read`. QSL-315 (the `frame_eligibility` gate rejecting `FrameField`'s
+/// wire shape) is fixed by the `quire-contract-ir` pin bump this PR carries:
+/// run with `--ignored` at this bump, the read now gets past the frame step.
+/// It still refuses, but at a different, later node: node 8's body is a
+/// `quire.op.model.reaches_field` application, and IR's own
+/// `checked_package/v2/operations.rs::check_operands` refuses every
+/// `reaches` application outright (`ill_typed`/`operator-ineligible`) because
+/// its `OperationConstraintKind::ReferenceEdge` arm is unconditional. This is
+/// the same IR-370 gap as TC-463 (`qsl-replay/src/spine/clause/tests.rs`), in
+/// a separate pinned dependency this ticket does not own. No QSL-side
+/// workaround exists. Un-ignore once IR implements the `reference_edge`
+/// check.
 #[trace("TC-469", "FR-108-AC-6")]
 #[test]
-#[ignore = "QSL-315: FrameField's modifies wire shape is rejected by the pinned quire-contract-model I04 reader"]
+#[ignore = "blocked on IR-370: quire-contract-model implementing the reaches_field reference_edge check (see doc comment); QSL-315's frame_eligibility gap is fixed by this PR's pin bump"]
 fn tc_469_step_6_the_emitted_package_admits_via_i04() {
     let unit = spine::unit_text();
     let compiled = qsl_replay::spine::compile(
