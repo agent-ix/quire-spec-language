@@ -78,3 +78,10 @@ it, so it is not a finding.
 | --- | --- | --- | --- |
 | FND-001 | medium | The new comment on the `version: ""` placeholder states the wrong invariant and names the wrong crate. It says nothing in this crate constructs the `Model` arm, because no enum/dimension/unit declaration is model-owned yet. In fact a model-owned `EnumDeclarationPreimage` can be built through the public `from_json`, and `tests/it/text_enum_identity.rs:552-553` builds one. The real guard is `owner_is_locked` (emit.rs:515-525), which omits every non-`Source` owner as `UnlockedOwner` before `wire_node` runs. The comment also says `quire_semantics::value::NodeOwner` and "this crate's own", but the type is `qsl_semantics::value::NodeOwner`, in qsl-semantics. The risk: when model owners become lockable, the empty string ships silently. QSpec's `ModelOwner.version` is `Nonempty`, and IR hashes it into the node id. Fix: rewrite the comment to name `owner_is_locked`/`UnlockedOwner` as the guard and fix the crate path. Optionally add a `debug_assert!` or test that ties the placeholder to that omission. | qsl-package/src/emit.rs:498-507; qsl-package/src/emit.rs:515-525; qsl-package/src/emit.rs:544 |
 | FND-002 | low | TC-463's new `#[ignore]` reason and doc comment describe the IR gap but do not name its tracking ticket, IR-370. The old reason named QSL-307. Without the id, nobody can grep for the un-ignore trigger when IR-370 lands. Fix: put IR-370 in the `#[ignore = ...]` string. | qsl-replay/src/spine/clause/tests.rs:4913-4931 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 926873eb: the comment now names `qsl_semantics::value::NodeOwner::Model`, says a model-owned nominal node can be built, and names `owner_is_locked` / `UnlockedOwner` as the guard. Verified: `owner_is_locked` matches only `NodeOwner::Source` equal to the unit's source, `omissions` drops the node, `emit_package_inner` calls `wire_node` only on kept candidates, and `nominal_preimage` (the only caller of `nominal_owner`) is called only from `wire_node`. |
+| FND-002 | fixed | 926873eb: the TC-463 `#[ignore]` reason and doc comment now name IR-370. |
