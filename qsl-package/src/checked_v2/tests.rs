@@ -2306,9 +2306,7 @@ fn nodes_source_map(nodes: &[Value]) -> Value {
 /// a self-typed scalar type `T` and a `model`/`object_type` `O`, typed by
 /// `T`, and a `state`/`frame` naming `O` as its only `dependencies` entry.
 /// `frame_body` supplies the frame's own `modifies`/`creates`/`deletes`.
-fn frame_fixture(
-    frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec<Value>),
-) -> Value {
+fn frame_fixture(frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec<Value>)) -> Value {
     let type_ref = node_ref("pkg::T");
     let object_ref = node_ref("pkg::O");
     let (modifies, creates, deletes) = frame_body(&object_ref);
