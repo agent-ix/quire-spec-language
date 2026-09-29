@@ -62,8 +62,13 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 // limits, and `qsl_foundation`'s node id and digest-record vocabulary --
 // re-exported so CG, which reaches QSL only through this crate (ADR-011
 // FB-05), builds one without its own direct dependency on `quire-exact` or
-// `qsl-foundation`. Read-only, like the occurrence key and source region
-// above: no constructor this crate does not already carry is added.
+// `qsl-foundation`. Unlike the occurrence key and source region above, this
+// re-export does add constructors CG can now call directly:
+// `DigestRecord::mint`, `WireNodeId::from_digest`/`from_hex`,
+// `SourceIdentity::new` and `Identifier::new` among them. None is a
+// T-12-governed constructor (ADR-011 §3 FB-05), so no rule is broken; CG
+// needs exactly these to build the request `call_site` (QSL-317) and
+// `replay` (FR-098) read.
 pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, ScalarLimits};
