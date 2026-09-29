@@ -478,10 +478,7 @@ fn main() {{
             report["state"], "invalid_input",
             "update the qualification when the backend changes: {report}"
         );
-        assert_eq!(
-            report["diagnostics"][0]["code"],
-            "foreign_generated_file"
-        );
+        assert_eq!(report["diagnostics"][0]["code"], "foreign_generated_file");
         let message = report["diagnostics"][0]["message"].as_str().unwrap();
         assert!(message.contains("foreign generated source"));
     }
