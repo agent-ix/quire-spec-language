@@ -132,7 +132,7 @@ See [native-runtime-inputs.md](docs/native-runtime-inputs.md) for the contract.
 typed values, finite reference closure, operation captures, population deltas
 and immutable frames. Its constructor-private context retains the checked
 package and immutable input; failed reports retain located defects and fresh
-budget usage. Task-013 is qualified at 45ed1b4 by SR-097 with 35 public API tests.
+budget usage. Task-013 is qualified by SR-097 with 35 public API tests.
 See [the review](reviews/26-09-09-native-runtime-validation.md) for scope and evidence.
 
 `runtime::evaluate` executes the original native AST over a borrowed validated
@@ -156,7 +156,7 @@ validation establishes input conditions before predicate execution.
 models, authored clauses, resolutions, runtime obligations and projection
 dispositions with separate byte and native static identities. Serde owns JSON
 encoding, with independently measured derivation/canonical/output passes.
-Task-016 is qualified at c195950 / SR-111, with fixed canonical/artifact vectors,
+Task-016 is qualified by SR-111, with fixed canonical/artifact vectors,
 complete correspondence/capture controls, static dependency mutations and
 runtime-independent identity checks. `NativePackage::read_verified` now verifies
 selected bytes, closed JSON and external bindings, then repeats actual
@@ -213,12 +213,11 @@ The [ConfigVersion example](examples/config-version/README.md) supplies the name
 parent-order, cycle, identity and recorded-update workflow, with 13 native and
 Markdown request sets and explicit refused/incomplete cases.
 
-Rust 1.98.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
-native CLI needs no Node or JVM. Default native commands need no optional features;
+The native CLI needs no Node or JVM. Default native commands need no optional features;
 the Quire consumer is enabled explicitly with `quire-extraction`.
 Use `--target-dir target` where a machine config points Cargo outside the checkout.
 
-Backend parity additionally requires Rust 1.98.1's `llvm-tools-preview` component
+Backend parity additionally requires Rust's `llvm-tools-preview` component
 and cargo-llvm-cov 0.9.0. Missing tools fail the test. Run the named LC04 parity
 gate with `cargo test --locked --offline --target-dir target -j 1 --test it
 native_backend::generated_proptest_and_old_profile_activation_match_reference
@@ -236,11 +235,12 @@ cargo run --locked --target-dir target -- parse agent-ix test:parent fixture fix
 cargo run --locked --target-dir target -- format agent-ix test:value-format fixture fixture:1 tests/fixtures/value-format.native
 ```
 
-Run the full local gate with `make ci`: formatting, clippy and `cargo test`
-under both no-default-features and `--all-features`, a clean
-no-default-features build, `fixture-audit self-test`, and the parse example
-above — the exact commands `.github/workflows/ci.yml` runs, mirrored so a
-contributor never needs to run them by hand. See `Makefile` for each step.
+Run the full local gate with `make ci`: the committed-binary and index-completeness
+checks, formatting, clippy and `cargo test` under default features and
+`--all-features`, a clean no-default-features build with `fixture-audit self-test`
+and the parse example above, `cargo doc`, `seam-probe`, `string-edge`,
+`route-lint`, `cargo-deny-bans` and `arch-lint-canonical-encoder`. See `Makefile`
+for each step.
 
 Run these checks locally while the repository stabilizes. Hosted CI exposes
 only `workflow_dispatch` and has a ten-minute job timeout. Pushing commits or
@@ -356,14 +356,12 @@ The [requirements index](spec/spec.md) covers LC01–LC05 through discrete Quoin
 catalog artifacts. [Authoring status](docs/spec-workflow.md) records the exact
 skills, validation results and outstanding review work. These requirements are
 drafts; the completed native readiness reviews and local results are recorded
-in the authoring status. The owner adopted specification PR8 at
-`e897f810a7356d4ce8fd19026221ebda7b65596f` for internal LC02 implementation.
+in the authoring status. The owner adopted specification PR8 for internal LC02 implementation.
 [LC02's test matrix](spec/model-linking/tests.md) records qualified linking and
 planned type checking. The new
 [formal linker API](docs/formal-environment-linking.md) owns the exact parsed
 source and borrows immutable models; CLI parse/format still perform syntax work
-only. Accepted Contract IR ADR-0054 at
-`690bde7f2dc58662cf9ff0595c2c0e3b17107c6f` closes #54 and removes the former
+only. Accepted Contract IR ADR-0054 closes #54 and removes the former
 Filament-reader prerequisite: generic compilation uses the existing public
 DeclarationEnvironment/check_expression and executable binder APIs. A concrete
 archetype projection is specified only for a clause that needs its semantics.
