@@ -892,23 +892,22 @@ fn tc_469_step_6_package_id_is_pinned_across_every_case() {
 }
 
 /// FR-108-AC-6's other half: the emitted package bytes admit through QSpec
-/// I04 `read`. Blocked on QSL-315: `qsl-semantics`' `FrameField` (a
-/// `state`/`frame` node body's `modifies` entry) wraps its node reference in
-/// `{kind: "field", declaration, name}`, but the pinned `quire-contract-model`
-/// reader (`crates/quire-contract-model/src/checked_package/v2/mod.rs`'s
-/// `validate_frame_body`/`visit_node_refs`) validates every `modifies`/
-/// `creates`/`deletes` entry identically as a bare `{domain, digest}` node
-/// reference (`common.rs::visit_reference`'s `CheckedNodeId::deserialize`),
-/// so any unit whose operation declares a non-empty `modifies` frame --
-/// including FR-108's own `attemptUpdate` -- refuses `InvalidSemanticGraph`
-/// at `/semantic_graph/nodes/N/body/modifies/<i>`. This is a genuine
-/// `qsl-semantics`/`qsl-package` emitter bug (confirmed by reading the
-/// pinned reader and reproducing the refusal live), not a STD-111 vocabulary
-/// gap and not a fixture defect in this ticket's own files: fixing it means
-/// changing `SemanticTerm::Frame`'s wire shape (`NodeKey`/`PackageId`
-/// input) for every unit with a `modifies` frame across the whole repo, so
-/// it needs its own review and its own PR rather than riding in on QSL-314's
-/// test-corpus change. Un-ignore once QSL-315 lands.
+/// I04 `read`. Blocked on QSL-315, re-scoped 2026-09-28: the pinned
+/// `quire-contract-model` reader's `frame_eligibility`
+/// (`crates/quire-contract-model/src/checked_package/v2/mod.rs:1535-1560`)
+/// admits a `modifies` entry only against a `Relation(Relationship)` or
+/// `Model(FieldDeclaration)` node -- never against the object-type node QSL
+/// names a modified field's owner by. `FrameField`'s wire shape is not the
+/// defect: stripping it to a bare `NodeRef` still points at the object-type
+/// node and the reader still refuses (`InvalidModelBinding`), and it would
+/// additionally collapse two same-object modified fields into one identical
+/// entry. This repo's own FR-105 (`spec/functional/FR-105-emit-state-nodes.md:31-48`)
+/// already names the `(object type, member name)` frame-entry wire shape as
+/// "QSpec changes that STD-111 carries" -- so the fix is the pinned reader's
+/// `frame_eligibility` gate catching up to QSpec's STD-111 vocabulary, not
+/// QSL minting a new `field_declaration` model node to satisfy a reader that
+/// hasn't. Routed to the Contract IR & Codegen team (quire-contract-ir).
+/// Un-ignore once the reader accepts the shape FR-105 already emits.
 #[trace("TC-469", "FR-108-AC-6")]
 #[test]
 #[ignore = "QSL-315: FrameField's modifies wire shape is rejected by the pinned quire-contract-model I04 reader"]
