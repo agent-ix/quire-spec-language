@@ -41,15 +41,17 @@ Inputs this record builds on:
 - **AD-016** (QSpec, accepted): the seven-arrow extension path, the Shared-type
   strategy table and Owner decisions 1–6. The `quire-exact` kernel lives in the
   QSL repository (Owner decision 2); `quire.checked-package/v2` is the only QSL
-  → Contract IR seam; replay places the packet in IR, reconstruction in CG and
+  → Contract IR seam; replay places the packet in IR (amended by QC-29, OQ-H
+  ruling: the packet is QSL's `WitnessEnvelope`), reconstruction in CG and
   the executor at QSL complete-V1 `value::expression::CheckedPackage::call`
   (Owner decision 3); renames of `CanonicalDigest`, `DeclarationKey` and
   `CheckedPackage` are deferred until the owner asks (Owner decision 6). This
-  record proposes no rename. Eight cells of this record differ from accepted
+  record proposes no rename. Nine cells of this record differ from accepted
   AD-016 text. They are AD-016 amendments: QC-13 to QC-17 (OQ-3 ruling),
   QC-20, the Packet row's `ReplaySource`, QC-21, the kernel row's
   `PopulationId` (O-13 Population row, QSL-172), and QC-22, the kernel row's
-  reference, quantity and enum component shapes (OQ-B to OQ-F rulings). The affected implementation
+  reference, quantity and enum component shapes (OQ-B to OQ-F rulings), and
+  QC-29, the Packet owner (OQ-H ruling). The affected implementation
   waits for them (§7). The replay executor key, which AD-016 arrow 7 names as
   `function: &str`, is a typed `QualifiedName` (OQ-5 ruling), which keeps arrow
   7 unchanged.
@@ -890,6 +892,17 @@ refusals carry the packet's obligation identity as provenance, not placeholder
 strings. The FR-351 record's deciding element is a kernel `Value`; its value
 path names members by O-06 member identity, never by collection position.
 
+`decode`'s input and output types, `WitnessBinding` and `WitnessValue` (with
+`WitnessValueType`), are QSL's and live in `qsl-replay` next to `Witness`
+(OQ-H). `decode` is a `Witness` method, and a QSL method that took or returned
+an IR type would need a QSL → IR dependency, the reverse of the IR → QSL edge
+OQ-H relies on. IR defines all three today in its `src/kani/witness.rs`
+(IR FR-039), beside the `Witness` copy it deletes, and deletes them with it;
+CG builds bindings from `KaniObligationIdentity.arguments` against QSL's
+types. `qsl-replay` has no dependency on IR. It does not yet define these
+types: today's `Witness::decode` takes parameter names and returns `i64`s.
+Remaining work: QSL-322.
+
 Envelope invariant (#231): the counterexample envelope stores the backend
 witness as its admitted transcript only. Every other witness fact the envelope
 exposes is derived from that transcript, so an envelope cannot disagree with its
@@ -958,7 +971,7 @@ mutant is allow-listed (ADR-012 §5.3).
 | C-06 | IR `ClauseKind` (6) → RT observation kind | RT | Each of the six kinds maps to an RT kind or refuses with a typed cause; none is dropped | RT test over all six IR kinds that fixes RT's mapping table (RT work, no ticket, §7); `cargo mutants` on the mapping functions |
 | C-07 | v2 literal ↔ kernel `Value` | QSL emitter, kernel | v2 literal → `Value` is total over the closed `value_kind` set. `Value` → literal is total over the values that have a `value_kind`; any other value refuses with a typed cause. Exact round trip on that set | Round trip of every `value_kind` in the v2 positive fixtures and QSpec complete-value vectors (#213 S-1) |
 | C-08 | kernel `Outcome` → FR-323 disposition | QSL executor | Category-preserving (O-16) | One adverse test per O-16 evaluation row (#213 S-1) |
-| C-09 | `KaniOutcomeKind` → QSL `TerminalValue` | IR | One exhaustive map, O-16 proof column; a vacuous `Proved` maps to `Inconclusive` with cause `kani_vacuous_proof` | IR test enumerating all ten kinds against O-16, plus a run mutation of the map (a vacuous `Proved` stays `Proved`) that turns C-09 red; `cargo mutants` on the mapping functions. Remaining work: agent-ix/quire-contract-ir#146 |
+| C-09 | `KaniOutcomeKind` → QSL `TerminalValue` | IR | One exhaustive map, O-16 proof column. A vacuous Kani proof maps to `Proved { success_checks: 0 }`, which keeps its check count; `TerminalValue` has no separate vacuous variant, and `TerminalValue::category` puts `Proved { success_checks: 0 }` in the `Inconclusive` category with cause `kani_vacuous_proof` (`TerminalValue::vacuous_proof_cause`) | IR test enumerating all ten kinds against O-16, plus a run mutation of the map that loses the check count (a vacuous proof mapped to `Proved { success_checks: 1 }`, so its category becomes `Success`) and turns C-09 red; `cargo mutants` on the mapping functions. Remaining work: agent-ix/quire-contract-ir#146 |
 | C-10 | Kani run output → transcript → `Witness` | CG backend adapter (parser), QSL `Witness::parse` (admission) | Stores the selected, trimmed assertion block; cover and unwinding refuse | QSL FR-070 admission tests; #231 byte-for-byte envelope round trip |
 | C-11 | `ReplaySource` + bindings → reconstructed arguments keyed by `WireNodeId` | QSL `Witness::decode`, CG | `Witness` decodes its transcript; `Input` carries the canonical assignments. Lossless widening; join by parameter `WireNodeId`; mismatch refuses. The `replay` facade converts the ids to `NodeKey`s at E9 (O-04) | AD-016 seed counterexample vector; CG widening test at `i64::MIN` and `i64::MAX` (agent-ix/quire-contract-codegen#50) |
 | C-12 | Packet + #231 envelope members → FR-323 replay request | CG | Copies every O-25 member and the envelope's state environment and accounting limits, and the S1 to S4 stage limits copied from the proving run; invents none (O-26) | CG contract test (agent-ix/quire-contract-codegen#50); #231 round trip of the request type |
@@ -998,7 +1011,7 @@ flowchart LR
   IRP -->|C-05 From| IRN[IR forms]
   IRN -->|C-19 and C-20| CG[CG oracle and harness]
   CG --> K[Kani run]
-  K -->|C-09 and C-10| PKT[IR packet with ReplaySource]
+  K -->|C-09 and C-10| PKT[QSL WitnessEnvelope with ReplaySource]
   PKT -->|C-11 and C-12 plus 231 envelope| REQ[FR-323 replay request]
   REQ -->|C-13 digest inputs and key lookup| EXE[QSL executor]
   EXE -->|C-08| RES[replay result with FR-351 record]
@@ -1129,6 +1142,7 @@ open, because each names its contract owner (QSpec) and the blocked work.
 | QC-26 | FR-322, for quantity types (FR-094): a `scalar_type`/`compound_unit` type node for a compound-unit quantity, anonymous, self-typed, with one `{unit, exponent}` term per root unit in `quire.value.compound-unit/v1` order, whose family is `quantity`, so a compound quantity has a `result_type`; the `same_dimension` constraint over a compound unit, which has no `dimension_node_id`; and that a declared unit's quantity type is the unit's nominal node itself. `type_pinned_modes` lists `quantity` for the `rounding` mode, and a QSL quantity type pins `exact`, because its magnitude is an exact rational with no numeric domain. `quire.op.quantity.convert` therefore carries `rounding` = `exact` (FR-093). QSL asks QSpec to state which mode a quantity type pins. The checked-package-v2 README states that compound-unit values are not graph nodes; this row asks for a node for the compound-unit type. | QSL-156 A4b keys by the QSL proposal now; IR's reading of quantity types |
 | QC-28 | `quire.native.diagnostics/v1` `stage_limit_exceeded`: the cause for each of IR's checked-package reader limits `Edges`, `Occurrences` and `Diagnostics` (FR-096-OQ-1). Answered by STD-95: revision `1-draft.7` adds `edge-count-exceeded`, `occurrence-count-exceeded` and `diagnostic-count-exceeded` (and `token-count-exceeded` for S1's token ceiling). | #213 S-5b's I2 limit conversion |
 | QC-27 | FR-322 `dependencies` for every node kind (FR-093 "Node dependencies"): FR-322 fixes the list for an application node (the unique digest-ascending reference targets and member declarations of its body), for a nominal enum, dimension or unit node (its preimage joins) and, through FR-340, for a frame node (its entries). QSL asks QSpec to state the rule for every other node: the unique digest-ascending targets of each `reference` in the wire body at any depth, plus a `bounded_domain` node's `semantic_type`, the type it bounds; a literal's `type`, an application's `result_type` and every other node's `semantic_type` are type annotations, and a reference to a recursion-group member counts by the member's `node_id`, `group_reference` being a preimage-only spelling. `positive-operation-identities.json`, `positive-control-operations.json`, `positive-clause-operations.json` and `positive-nominal-identities.json` follow this rule at every node. `positive-all-families.json` departs from it at three nodes: the `expression`/`reference` node `eeee…` and the `correspondence`/`source_locus` node `7070…`, whose bodies reference `dddd…`, and the `bounded_domain`/`integer_range` node `cccc…`, whose `semantic_type` is `aaaa…`, each carry `dependencies: []`. QSL asks QSpec to correct those three lists, and to state whether an application's join counts a `dependency_reference` (QC-10), which QSL lists nowhere. Until QSpec states the rule, `package_id` depends on the writer's choice for these nodes. The `dependency_reference` half is answered (ADR-015 D-5, QSpec FR-322-AC-36): the term enters the referencing node's preimage and is never listed in its `dependencies`. | QSL-6 S1b writes `dependencies` by this rule (FR-093-AC-12); v2 readers that join a non-application node's `dependencies` |
+| QC-29 | AD-016 amendment (OQ-H ruling): the Replay-ownership Packet row, the `Owner \| Packet: IR` cell and Owner decision 3's "replay places the packet in IR" name QSL `qsl-replay` `WitnessEnvelope` (FR-070) as the packet's owner. IR defines no packet, `Witness` or `ReplaySource` of its own and names QSL's (O-25). | #231 (QSL `WitnessEnvelope`); IR deletion of its copies (TK-04) |
 
 Questions for #209:
 
@@ -1199,7 +1213,7 @@ Codegen lead ruled this; IR PR #202 records the same fact in IR's AD-001.
 
 | ID | Question | Ruling | Reason | Reopen if |
 | --- | --- | --- | --- | --- |
-| OQ-H | Which repository owns the witness, the replay source, the counterexample envelope, the FR-331 terminal record and the obligation identity type? | QSL, in `qsl-replay`: `Witness`, `ReplaySource`, `WitnessEnvelope`, `TerminalValue`, `TerminalRecord` and `ObligationIdentity` (O-24, O-25, O-26). IR deletes its copies and names QSL's; IR keeps `KaniOutcome` and maps it into `TerminalValue` (C-09). CG uses QSL's `ObligationIdentity` directly and keeps the Kani transcript parser in its backend adapter (C-10). | The same concepts were defined in QSL, IR and CG. IR's root crate already depends on QSL, so consolidating on QSL adds no dependency edge, and it avoids cross-repository conversion code that would be rewritten once ownership settled. QSL already builds every one of these types (FR-069 to FR-072). | IR's root crate stops depending on QSL (ADR-011 OBS-029 plans that removal), so naming `qsl-replay` types would add the edge back. |
+| OQ-H | Which repository owns the witness, the replay source, the counterexample envelope, the FR-331 terminal record and the obligation identity type? | QSL, in `qsl-replay`: `Witness`, its `decode` input and output types `WitnessBinding`, `WitnessValue` and `WitnessValueType`, `ReplaySource`, `WitnessEnvelope`, `TerminalValue`, `TerminalRecord`, `ProofResultEnvelope`, `ObligationIdentity`, `ReplayRequest` and `ReplayResult` (O-24, O-25, O-26, O-27). IR deletes its copies and names QSL's; the AD-016 Packet owner amendment is QC-29; IR keeps `KaniOutcome` and maps it into `TerminalValue` (C-09). CG uses QSL's `ObligationIdentity` directly and keeps the Kani transcript parser in its backend adapter (C-10). | The same concepts were defined in QSL, IR and CG. IR's root crate already depends on QSL, so consolidating on QSL adds no dependency edge, and it avoids cross-repository conversion code that would be rewritten once ownership settled. QSL already builds every one of these types (FR-069 to FR-072) except the three `decode` types, which QSL-322 adds (O-25). | IR's root crate stops depending on QSL (ADR-011 OBS-029 plans that removal), so naming `qsl-replay` types would add the edge back. |
 
 Tickets to open at #212. Each row is one proposed ticket. Where an ADR-011
 row or an existing QSpec issue already covers the work, no second ticket is
@@ -1306,7 +1320,8 @@ Tickets and work in progress routed to #211 by ADR-010 §7.2 to §7.4 and §8:
   amendments QC-13 to QC-17 and QC-20, and QC-18 and QC-19. They are filed as
   TK-06 to TK-10, and QC-7 and QC-20 join the TK-10 amendment PR. Work that
   waits on them is listed in §7 and §8. QC-21 and QC-22 amend the AD-016
-  kernel row further, and QC-23 adds one FR-201 domain; QC-22 and QC-23 have no filed QSpec ticket yet. The owner questions
+  kernel row further, QC-29 amends AD-016's Packet owner (OQ-H), and QC-23
+  adds one FR-201 domain; QC-22, QC-23 and QC-29 have no filed QSpec ticket yet. The owner questions
   OQ-1 to OQ-5 are ruled (2026-09-19), and OQ-A to OQ-F (2026-09-22).
 - ADR-012 §13.2 questions 1 to 4 are answered in OQ-5, O-10, O-17, O-14 and
   O-19; O-20's owner row is decided in #222 (ADR-014 §4). The nine ADR-011 questions to
