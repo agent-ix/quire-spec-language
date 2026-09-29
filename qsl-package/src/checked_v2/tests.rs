@@ -1984,10 +1984,11 @@ fn frame_node_index(package: &Value) -> usize {
     index
 }
 
-/// QSpec's `frame_mutations` spelling of a frame member (a bare hex digest
-/// per entry) as `state`/`frame` wire entries (`{domain, digest}`). `name`
-/// is the vector's own name, named in the panic message when an entry is not
-/// the plain-digest shape this vector schema version publishes.
+/// QSpec's `frame_mutations` spelling of `dependencies`/`creates`/`deletes`
+/// (a bare hex digest per entry) as `state`/`frame` wire node-key entries
+/// (`{domain, digest}`). `name` is the vector's own name, named in the panic
+/// message when an entry is not the plain-digest shape this vector schema
+/// version publishes.
 fn frame_entries(name: &str, digests: &[Value]) -> Value {
     Value::Array(
         digests
@@ -1997,6 +1998,42 @@ fn frame_entries(name: &str, digests: &[Value]) -> Value {
                     panic!("{name}: frame_mutations entry is not a plain digest string: {digest}")
                 });
                 json!({"domain": NODE_DOMAIN, "digest": digest})
+            })
+            .collect(),
+    )
+}
+
+/// QSpec's `frame_mutations` spelling of `modifies` (STD-111's 30-vector
+/// shape: each entry a `{declaration, kind}` object, `kind: "field"` also
+/// carrying `name`) as `state`/`frame` `modifies` wire entries (`{kind,
+/// declaration: {domain, digest}, [name]}`, `frame.rs`'s `ModifiesEntry`
+/// shape). `name` is the vector's own name, named in the panic message when
+/// an entry does not carry this schema version's `declaration`/`kind`
+/// members.
+fn modifies_entries(name: &str, entries: &[Value]) -> Value {
+    Value::Array(
+        entries
+            .iter()
+            .map(|entry| {
+                let declaration = entry["declaration"].as_str().unwrap_or_else(|| {
+                    panic!("{name}: frame_mutations modifies entry has no string declaration: {entry}")
+                });
+                let kind = entry["kind"].as_str().unwrap_or_else(|| {
+                    panic!("{name}: frame_mutations modifies entry has no string kind: {entry}")
+                });
+                let declaration = json!({"domain": NODE_DOMAIN, "digest": declaration});
+                match kind {
+                    "field" => {
+                        let field_name = entry["name"].as_str().unwrap_or_else(|| {
+                            panic!(
+                                "{name}: frame_mutations modifies field entry has no string name: {entry}"
+                            )
+                        });
+                        modifies_field(&declaration, field_name)
+                    }
+                    "relationship" => modifies_relationship(&declaration),
+                    other => panic!("{name}: frame_mutations modifies entry has unmapped kind {other}"),
+                }
             })
             .collect(),
     )
@@ -2088,7 +2125,7 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
                 mutation["dependencies"].as_array().expect("dependencies"),
             );
             node["body"]["modifies"] =
-                frame_entries(name, mutation["modifies"].as_array().expect("modifies"));
+                modifies_entries(name, mutation["modifies"].as_array().expect("modifies"));
             node["body"]["creates"] =
                 frame_entries(name, mutation["creates"].as_array().expect("creates"));
             node["body"]["deletes"] =
@@ -2138,10 +2175,10 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
     );
 }
 
-/// A `model`/`field_declaration` or `model`/`object_type` node (FR-340's
-/// `modifies`- and `creates`/`deletes`-eligible model member kinds), typed by
-/// `type_ref`, with the minimal valid empty-`aggregate` body real fixtures
-/// use for either form.
+/// A `model`/`object_type` node (FR-340's `creates`/`deletes`-eligible, and
+/// -- as a `modifies` field entry's `declaration` -- `modifies`-eligible,
+/// model member kind), typed by `type_ref`, with the minimal valid
+/// empty-`aggregate` body real fixtures use.
 fn model_node(label: &str, form: &str, qualified_name: &str, type_ref: &Value) -> Value {
     json!({
         "node_id": node_ref(label),
@@ -2161,6 +2198,19 @@ fn model_graph_node(label: &str, form: &str, qualified_name: &str, type_ref: &Va
     node
 }
 
+/// A `state`/`frame` `modifies` entry naming a `relation`/`relationship`
+/// node (STD-111's `{kind: "relationship", declaration}` shape).
+fn modifies_relationship(declaration: &Value) -> Value {
+    json!({"kind": "relationship", "declaration": declaration})
+}
+
+/// A `state`/`frame` `modifies` entry naming a field of `declaration`, a
+/// `model`/`object_type` or `model`/`record_value_type` node (STD-111's
+/// `{kind: "field", declaration, name}` shape).
+fn modifies_field(declaration: &Value, name: &str) -> Value {
+    json!({"kind": "field", "declaration": declaration, "name": name})
+}
+
 /// A `state`/`frame` node whose `dependencies` and body members are given
 /// verbatim.
 fn frame_node(
@@ -2178,7 +2228,10 @@ fn frame_node(
         "semantic_form": "frame",
         "semantic_type": type_ref,
         "dependencies": dependencies,
-        "occurrences": [{"role": "declaration", "ordinal": 0}],
+        // A `state`/`frame` node's own closed occurrence vocabulary is
+        // `generated` (`structural.rs`'s `Frame => CheckedOccurrenceRole::
+        // Generated`), not `declaration`.
+        "occurrences": [{"role": "generated", "ordinal": 0}],
         "body": {
             "term": "frame",
             "modifies": modifies,
@@ -2189,12 +2242,15 @@ fn frame_node(
 }
 
 /// A source-map entry for the node whose `node_id.digest` is `digest`'s own
-/// declaration occurrence. Takes the digest directly (never a label re-hashed
-/// through [`node_ref`]) so it names exactly the node a caller already built.
-fn source_map_entry_for_digest(digest: &str) -> Value {
+/// occurrence of `role` (a `state`/`frame` node's own closed occurrence
+/// vocabulary is `generated`, not `declaration`; every other node kind these
+/// fixtures build uses `declaration`). Takes the digest directly (never a
+/// label re-hashed through [`node_ref`]) so it names exactly the node a
+/// caller already built.
+fn source_map_entry_for_digest(digest: &str, role: &str) -> Value {
     json!({
         "node_id": {"domain": NODE_DOMAIN, "digest": digest},
-        "role": "declaration",
+        "role": role,
         "ordinal": 0,
         "regions": [{"source": source_ref("src"), "start": 0, "end": 1}],
     })
@@ -2237,35 +2293,34 @@ fn nodes_source_map(nodes: &[Value]) -> Value {
     Value::Array(
         nodes
             .iter()
-            .map(|node| source_map_entry_for_digest(node["node_id"]["digest"].as_str().unwrap()))
+            .map(|node| {
+                let digest = node["node_id"]["digest"].as_str().unwrap();
+                let role = node["occurrences"][0]["role"].as_str().unwrap();
+                source_map_entry_for_digest(digest, role)
+            })
             .collect(),
     )
 }
 
 /// A minimal, always-run (no `QSPEC_DIR` needed) FR-340 frame-body package:
-/// a self-typed scalar type `T`, a `model`/`field_declaration` `F` and a
-/// `model`/`object_type` `O`, both typed by `T`, and a `state`/`frame`
-/// naming both as `dependencies`. `frame_body` supplies the frame's own
-/// `modifies`/`creates`/`deletes`.
-fn frame_fixture(
-    frame_body: impl FnOnce(&Value, &Value) -> (Vec<Value>, Vec<Value>, Vec<Value>),
-) -> Value {
+/// a self-typed scalar type `T` and a `model`/`object_type` `O`, typed by
+/// `T`, and a `state`/`frame` naming `O` as its only `dependencies` entry.
+/// `frame_body` supplies the frame's own `modifies`/`creates`/`deletes`.
+fn frame_fixture(frame_body: impl FnOnce(&Value) -> (Vec<Value>, Vec<Value>, Vec<Value>)) -> Value {
     let type_ref = node_ref("pkg::T");
-    let field_ref = node_ref("pkg::F");
     let object_ref = node_ref("pkg::O");
-    let (modifies, creates, deletes) = frame_body(&field_ref, &object_ref);
+    let (modifies, creates, deletes) = frame_body(&object_ref);
     let type_node = graph_node("pkg::T", "T");
-    let field_node = model_graph_node("pkg::F", "field_declaration", "F", &type_ref);
     let object_node = model_graph_node("pkg::O", "object_type", "O", &type_ref);
     let frame = frame_node(
         "pkg::Frame",
         &object_ref,
-        vec![field_ref.clone(), object_ref.clone()],
+        vec![object_ref.clone()],
         modifies,
         creates,
         deletes,
     );
-    valid_envelope_over(vec![type_node, field_node, object_node, frame])
+    valid_envelope_over(vec![type_node, object_node, frame])
 }
 
 fn read_frame_fixture(envelope: &Value) -> Read {
@@ -2275,13 +2330,18 @@ fn read_frame_fixture(envelope: &Value) -> Read {
 
 /// FR-340: a `state`/`frame` node whose `modifies`/`creates`/`deletes`
 /// entries are eligible members of their own declared `dependencies` (a
-/// `field_declaration` in `modifies`, an `object_type` in `creates`) is
-/// admitted through QSL's whole I2 read.
+/// `field` entry naming an `object_type` in `modifies`, and the same
+/// `object_type` in `creates`) is admitted through QSL's whole I2 read.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn frame_body_membership_against_dependencies_is_admitted() {
-    let envelope =
-        frame_fixture(|field, object| (vec![field.clone()], vec![object.clone()], vec![]));
+    let envelope = frame_fixture(|object| {
+        (
+            vec![modifies_field(object, "value")],
+            vec![object.clone()],
+            vec![],
+        )
+    });
     let outcome = read_frame_fixture(&envelope);
     assert!(
         matches!(outcome, Read::Verified { .. }),
@@ -2312,7 +2372,7 @@ fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
         "pkg::Frame",
         &object_ref,
         vec![object_ref.clone()],
-        vec![node_ref("pkg::F")],
+        vec![modifies_field(&node_ref("pkg::F"), "value")],
         vec![],
         vec![],
     );
@@ -2332,9 +2392,10 @@ fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
     }
 }
 
-/// FR-340: an entry naming a declared dependency whose node kind the member
-/// does not admit (a `model`/`object_type` node in `modifies`, which only a
-/// `relationship` or `field_declaration` admits) refuses
+/// FR-340: a `modifies` entry claiming the `relationship` kind for a
+/// declared dependency whose node kind that kind does not admit (a
+/// `model`/`object_type` node, which `relationship` never admits -- only a
+/// `relation`/`relationship` node) refuses
 /// `invalid_model_binding`/`malformed-declaration`, located at the offending
 /// entry, and this crate's own `V2ReadRefusal::code()` maps that to
 /// `Code::InvalidModelBinding`.
@@ -2342,10 +2403,11 @@ fn frame_entry_outside_dependencies_refuses_as_missing_declaration() {
 #[test]
 fn frame_entry_of_an_ineligible_kind_refuses_as_invalid_model_binding() {
     let object_digest = hex("pkg::O");
-    let envelope = frame_fixture(|_field, object| {
-        // `object` (`model`/`object_type`) is declared, but `object_type` is
-        // eligible only for `creates`/`deletes`, never `modifies`.
-        (vec![object.clone()], vec![], vec![])
+    let envelope = frame_fixture(|object| {
+        // `object` (`model`/`object_type`) is declared, but a `relationship`
+        // kind entry admits only a `relation`/`relationship` node, never
+        // `model`/`object_type`.
+        (vec![modifies_relationship(object)], vec![], vec![])
     });
     let outcome = read_frame_fixture(&envelope);
     match &outcome {

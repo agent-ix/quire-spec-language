@@ -4910,24 +4910,25 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
 /// QSL's I2 reader (`read_import_view`), including its frame step, with its
 /// recomputed `package_id` equal to the emitted one.
 ///
-/// **Blocked, not a QSL-279 gap**: the pinned `quire-contract-model` rev
-/// (`48ab5dc`, this workspace's `Cargo.toml`) has no `state_clause` member
-/// of its own closed `ApplicationOperator` vocabulary
-/// (`checked_package/v2/vocabulary.rs`) yet -- STD-111 added it to QSpec's
-/// schema, but IR's own Rust reader has not absorbed that catalog bump (the
-/// same kind of bump STD-111's own PR made to `quire-verification-contracts`
-/// for the `state_clause` member kind). IR's pinned `BodyTerm` vocabulary
-/// already has a `frame` member (`vocabulary.rs:326`) and lists
-/// `state_clause`/`frame`/`operation_anchor` under `StateForm`; only the
-/// `ApplicationOperator` member is missing. Confirmed by running this test:
-/// the read refuses `invalid_semantic_graph` at the first `state_clause`
-/// node's `body`, because `"operator": "state_clause"` names no member of
-/// IR's pinned `ApplicationOperator` enum. This is IR's own implementation
-/// gap, in a separate pinned dependency this ticket does not own; QSL's own
-/// emission (asserted by `s4_emits_exactly_the_fr_105_state_nodes` above,
-/// TC-462) is unaffected. QSL-307 tracks bumping the `quire-contract-model`
-/// pin once its own vocabulary lands; remove this `#[ignore]` there.
-#[ignore = "QSL-307: blocked on quire-contract-model absorbing STD-111's state_clause/frame vocabulary (see doc comment)"]
+/// **Still blocked, a different gap than the one QSL-307 was filed against**:
+/// the pin bump to `2a28643` (IR-89) does absorb STD-111's `state_clause`
+/// member of the closed `ApplicationOperator` vocabulary -- the read no
+/// longer refuses `invalid_semantic_graph` at the `state_clause` node's
+/// `body` for that reason. But `ParentOrder`'s cycle-safety predicate lowers
+/// to a `reaches` (`quire.op.model.reaches_field`) application, and IR's own
+/// `checked_package/v2/operations.rs::check_operands` refuses every
+/// `reaches` application outright: its `OperationConstraintKind::
+/// ReferenceEdge` arm is `return ineligible(indices.first().copied())`, with
+/// the comment "The reference edge a `reaches_field` application requires is
+/// not decided by this reader, so an operation constrained by it is refused
+/// rather than admitted unchecked." This is IR's own, currently
+/// unconditional refusal of the operator (`ill_typed`/`operator-ineligible`
+/// at the `reaches` node's own `body.arguments[0]`, confirmed by running
+/// this test against `2a28643`), in a separate pinned dependency this ticket
+/// does not own. This is tracked as IR-370. Remove this `#[ignore]` once IR
+/// implements the `reference_edge` check (no QSL-side workaround exists: the
+/// wire shape is already correct, IR just refuses any use of the operator).
+#[ignore = "blocked on IR-370: quire-contract-model implementing the reaches_field reference_edge check (see doc comment); not the STD-111 gap QSL-307 was filed against"]
 #[trace("TC-463", "FR-105-AC-3")]
 #[test]
 fn s4_state_package_reads_back_through_i2() {

@@ -52,9 +52,10 @@ Tag the tests `#[trace("TC-463", "FR-105-AC-n")]`.
 Partial (QSL-279). Step 2's double-compile identity case is covered by
 `s4_state_package_emission_is_stable_across_compiles`. Step 1
 (`s4_state_package_reads_back_through_i2`) is implemented but `#[ignore]`d:
-it reproduces `invalid_semantic_graph` because the pinned
-`quire-contract-model` crate's `ApplicationOperator` vocabulary has not yet
-absorbed STD-111's `state_clause` member; tracked by QSL-307. QSL-312 covers
+it now reproduces `ill_typed`/`operator-ineligible` because the pinned
+`quire-contract-model` crate refuses every `quire.op.model.reaches_field`
+application outright, its reference-edge constraint not yet decided by that
+reader; tracked by IR-370. QSL-312 covers
 the rest of step 2 (`s4_renaming_parent_order_changes_no_node_id`,
 `s4_changing_parent_orders_comparison_changes_its_node_id_and_the_package_id`,
 `s4_parent_order2_with_parent_orders_body_adds_no_node_and_a_second_claim`,
