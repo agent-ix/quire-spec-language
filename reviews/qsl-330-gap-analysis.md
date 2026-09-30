@@ -78,3 +78,16 @@ they do not verify.
   14, unchanged except for how they build `OperationName`.
 - Semantic review: run inline for FR-115-AC-4 and the TK-1 criteria, with
   mutation checks M1, M3 and M5 (red) and M2 (survives; SR-816 FND-001).
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | af8acf1d: FR-115-AC-6 was added (inherited selection, and per-alias resolution over two packages), with TC-514 step 6. `an_inherited_operation_selects_its_declaring_frame_through_the_resolver` and the new `each_model_alias_resolves_its_own_packages_object_type` are tagged `#[trace("TC-514", "FR-115-AC-6")]`, and each verifies what AC-6 states. |
+| FND-002 | fixed | af8acf1d: FR-115-AC-4 and TC-514 step 4 now name `Nope::ConfigVersion::attemptUpdate` (unbound alias) and `Config::Missing::attemptUpdate` (undeclared type). Expected result: "four times". The existing AC-4 tag on `an_unresolved_model_alias_or_object_type_refuses_at_select` is now honest. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The fix round appended `QSL-330` to TC-514's status cell in `spec/tests.md` ("✅ Passed locally; QSL-300, QSL-330"). That records which ticket touched the row. It is provenance tracking: git history and Linear already hold it, and nothing reads it. The coder followed the column's existing convention, but extending a tracking record is still the antipattern (no provenance or ticket ledgers in repo files). Fix: drop the `, QSL-330` append. The column-wide convention (every row carries ticket ids) is surfaced to the team leader as a separate repo-level cleanup. | spec/tests.md:266 |
