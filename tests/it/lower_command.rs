@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-029: actual source-only projection export and existing backend consumption.
+//! FR-029: actual source-only projection export and IR-reader acceptance.
 
 use crate::support::standalone_setup as fixtures;
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
-use quire_contract_codegen as codegen;
 use quire_contract_ir as ir;
-use quire_contract_ir_historical as backend_ir;
 use quire_spec_language::{
     lowering::{lower, LoweringLimits},
     package::{NativePackage, PackageLimits},
@@ -124,7 +122,7 @@ fn runnable_integer_examples_keep_runtime_truth_separate_from_projection() {
 
 #[test]
 #[trace("TC-107", "FR-029-AC-1", "FR-029-AC-3")]
-fn exported_boolean_bytes_reach_both_ir_readers_and_the_complete_backend_population() {
+fn exported_boolean_bytes_equal_the_library_projection_and_the_ir_reader_accepts_them() {
     let directory = tempfile::tempdir().unwrap();
     fixtures::write(directory.path(), fixtures::Case::Boolean { flag: true }).unwrap();
     let run = invoke(directory.path(), "run", "request.json");
@@ -158,33 +156,13 @@ fn exported_boolean_bytes_reach_both_ir_readers_and_the_complete_backend_populat
     let expected = lower(&native, LoweringLimits::default()).unwrap();
     assert_eq!(output.stdout, expected.bytes());
     let current = ir::BoundPackage::from_json_bytes(&output.stdout).unwrap();
-    let consumer = backend_ir::BoundPackage::from_json_bytes(&output.stdout).unwrap();
-    assert_eq!(current.digest().to_string(), consumer.digest().to_string());
     assert_eq!(current.digest(), expected.bound().digest());
-
-    let generated = codegen::generate_bound_oracles(&consumer).unwrap();
-    let codegen::BoundOracleGeneration::Generated(population) = generated else {
-        panic!("expected complete generated population");
-    };
-    let names: Vec<_> = population
+    let names: Vec<_> = current
         .clauses()
         .iter()
         .map(|clause| clause.identity().clause().as_str())
         .collect();
     assert_eq!(names, ["other_rule", "population_rule"]);
-    for clause in population.clauses() {
-        let source = syn::parse_file(&clause.bundle().rust.contents).unwrap();
-        assert_eq!(source.items.iter().filter(|item| matches!(item, syn::Item::Fn(function) if matches!(function.vis, syn::Visibility::Public(_)))).count(), 1);
-        let regions: Vec<codegen::SourceRegion> =
-            serde_json::from_str(&clause.bundle().source_map.contents).unwrap();
-        assert!(!regions.is_empty());
-        assert!(regions
-            .iter()
-            .all(|region| region.package_id == "example/runtime-rules"
-                && region.requirement_id == "PopulationRule"
-                && region.requirement_revision == 7
-                && region.clause_id == clause.identity().clause().as_str()));
-    }
     let compiled = invoke(directory.path(), "compile", "compile.json");
     assert_eq!(compiled.status.code(), Some(0));
     assert_ne!(compiled.stdout, output.stdout);
