@@ -328,7 +328,7 @@ acceptance; neither test set establishes complete compiler #35/#40.
 | FR-057 | FR-057-AC-6 | TC-155 | ✅ Passed locally (`qsl-route/tests/it/routing.rs`, QSL-46) |
 | FR-057 | FR-057-AC-7 | TC-153 | 🚧 Planned; #213 |
 | FR-057 | FR-057-AC-8 | TC-155 | ✅ Passed locally (`qsl-route/tests/it/routing.rs`, QSL-46) |
-| FR-057 | FR-057-AC-10 | TC-153 | 🚧 Planned; #213, #217, #191, #192 |
+| FR-057 | FR-057-AC-10 | TC-153 | 🚧 Planned; #213, #217 (the #191 and #192 gates request no kind, ADR-017 RF-1) |
 | FR-057 | FR-057-AC-11 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
 | FR-040 | FR-040-AC-1 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
 | FR-040 | FR-040-AC-2 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
