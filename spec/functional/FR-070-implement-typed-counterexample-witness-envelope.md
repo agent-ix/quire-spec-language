@@ -18,7 +18,7 @@ relationships:
 
 QSL SHALL implement a typed counterexample/witness envelope, defined in the
 layer-6 `replay` module and part of its public API (ADR-011 FB-05; ADR-013
-O-25), that stores the IR `Witness`'s admitted transcript as its one stored
+O-25), that stores QSL's `Witness`'s admitted transcript as its one stored
 fact and derives every other witness fact (`harness_symbol`,
 `check`/`check_text`, `concrete_values`, `decode`) from that transcript on
 every call, never as a second, independently-stored copy (ADR-013 QC-13; the
@@ -35,17 +35,19 @@ selections; the `run_limits` and declared domains; the `backend` member
 refused at reconstruction; none is optional or defaulted.
 
 This requirement builds the common envelope only. It does not add any
-family-specific payload (that is #186's), and it does not implement
-`Witness::parse`'s admission rule itself (IR PR #139 and
-agent-ix/quire-contract-ir#144 own admission; this envelope's constructor
-requires an already-admitted `Witness`).
+family-specific payload (that is #186's). `qsl-replay` owns `Witness`,
+`ReplaySource` and `WitnessEnvelope` (ADR-013 OQ-H) and implements
+`Witness::parse`'s admission rule; this envelope's constructor requires an
+already-admitted `Witness`. CG builds the envelope from its backend run, and
+its backend adapter parses the backend output into the transcript `parse`
+admits.
 
 ## Inputs
 
-- An IR `CounterexamplePacket{source: ReplaySource}` and its O-25 members
+- A `WitnessPacket` carrying `source: ReplaySource` and its O-25 members
   (obligation identity, occurrence key, package reference, profile
-  selections, bounds, backend, trace position).
-- An already-admitted IR `Witness` (admitted through `Witness::parse`) for
+  selections, bounds, backend, trace position), built by CG.
+- An already-admitted QSL `Witness` (admitted through `Witness::parse`) for
   the `ReplaySource::Witness` arm, or canonical assignments for the
   `ReplaySource::Input` arm.
 
@@ -122,9 +124,8 @@ requires an already-admitted `Witness`).
 
 - **Upstream**: [US-010](../usecase/US-010-carry-a-proof-witness-or-replay-outcome-without-a-shadow-type.md);
   ADR-013 O-25 (witness/counterexample carrier), QC-13 (transcript-only
-  storage), QC-6/QC-8 (FR-331 `counterexamples` shape); IR `Witness`
-  (`src/kani/witness.rs`, IR PR #139, merged at `954c2f2`) and its admission
-  rule (agent-ix/quire-contract-ir#144); QSpec
+  storage), QC-6/QC-8 (FR-331 `counterexamples` shape), OQ-H (`qsl-replay`
+  owns `Witness`, its admission rule and its `decode` types); QSpec
   [FR-331](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/interfaces/FR-331-backend-provider-envelope.md)
   AC-9 (`counterexamples` entry shape) and
   [FR-351](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-351-separating-witness-record.md)

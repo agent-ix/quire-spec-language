@@ -32,7 +32,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType};
 
 use crate::bounds::MAX_ENCODED_BYTES;
-use crate::identity::{QualifiedName, RawSourceRef};
+use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
 use crate::proof_result::{ProofCategory, ToolPin};
 use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits};
 use crate::result::{
@@ -144,9 +144,15 @@ pub enum ReplayRefusal {
     #[error("invalid_runtime_input: parameter {0} has no argument")]
     UnboundParameter(WireNodeId),
     /// The backend witness does not decode against the selected function's
-    /// parameters.
-    #[error("the witness does not decode: {0}")]
-    Witness(DecodeRefusal),
+    /// parameters. Carries the obligation the request replays (ADR-013
+    /// O-25), so a caller replaying many obligations knows which failed.
+    #[error("the witness for obligation {obligation} does not decode: {refusal}")]
+    Witness {
+        /// The request's originating counterexample identity.
+        obligation: ObligationIdentity,
+        /// The decode's cause.
+        refusal: DecodeRefusal,
+    },
     /// An argument refused admission as `WrongValueKind`: its value is not
     /// of the parameter's declared type, whether that is found before the
     /// call (an integer bound to a Boolean parameter, a Boolean to an
@@ -216,7 +222,7 @@ impl ReplayRefusal {
             Self::UnknownParameter(_)
             | Self::DuplicateArgument(_)
             | Self::UnboundParameter(_)
-            | Self::Witness(_)
+            | Self::Witness { .. }
             | Self::NotAPredicate { .. } => Code::InvalidRuntimeInput,
             Self::Input(refusal) => refusal.code(),
             Self::Fault(_) => Code::RuntimeInvariant,
@@ -264,7 +270,12 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
     let compiled = recompile(&request)?;
     let package = &compiled.package;
     let call = select(&compiled, request.selected_function())?;
-    let arguments = arguments(package, &call, request.source())?;
+    let arguments = arguments(
+        package,
+        &call,
+        request.source(),
+        request.originating_counterexample_identity(),
+    )?;
     let mut meter = Meter::new(request.accounting_limits());
     let evaluation = package
         .call(
@@ -624,6 +635,7 @@ fn arguments(
     package: &CheckedPackage,
     call: &Selected,
     source: &ReplaySource,
+    obligation: ObligationIdentity,
 ) -> Result<Vec<Value>, ReplayRefusal> {
     let values = match source {
         ReplaySource::Input(assignments) => {
@@ -663,7 +675,12 @@ fn arguments(
                     })
                 })
                 .collect::<Result<Vec<_>, ReplayRefusal>>()?;
-            witness.decode(&bindings).map_err(ReplayRefusal::Witness)?
+            witness
+                .decode(&bindings)
+                .map_err(|refusal| ReplayRefusal::Witness {
+                    obligation,
+                    refusal,
+                })?
         }
     };
     values

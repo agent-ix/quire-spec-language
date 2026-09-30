@@ -218,7 +218,7 @@ fn tc_444_an_input_counterexample_replays_and_agrees() {
 /// FR-098-AC-2: a backend witness binds `x` by its parameter node id and
 /// settles `reproduced-with-evaluated-witness` with its FR-351 record; a
 /// transcript with no entry for `x`, or with an entry naming no parameter,
-/// refuses with the decode's cause.
+/// refuses with the decode's cause and the request's obligation identity.
 #[trace("TC-444", "FR-098-AC-2")]
 #[test]
 fn tc_444_a_witness_decodes_by_parameter_node_id() {
@@ -245,14 +245,31 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
 
     let refused = replay(witness(String::new())).unwrap_err();
     assert!(
-        matches!(refused, ReplayRefusal::Witness(DecodeRefusal::Missing(missing)) if missing == x),
+        matches!(
+            refused,
+            ReplayRefusal::Witness { refusal: DecodeRefusal::Missing(missing), .. } if missing == x
+        ),
         "expected a missing entry, got {refused:?}"
     );
     let refused = replay(witness("x=8".to_owned())).unwrap_err();
     assert!(
-        matches!(&refused, ReplayRefusal::Witness(DecodeRefusal::Unbound(name)) if name == "x"),
+        matches!(
+            &refused,
+            ReplayRefusal::Witness { refusal: DecodeRefusal::Unbound(name), .. } if name == "x"
+        ),
         "expected an unbound entry, got {refused:?}"
     );
+
+    // The decode refusal names the obligation the request replays, so a
+    // batch of replays reports which one failed.
+    let mut wire = witness(String::new());
+    wire.originating_counterexample_identity = [7; 32];
+    let refused = replay(wire).unwrap_err();
+    let ReplayRefusal::Witness { obligation, .. } = &refused else {
+        panic!("expected a witness refusal, got {refused:?}");
+    };
+    assert_eq!(*obligation, crate::ObligationIdentity::from_digest([7; 32]));
+    assert!(refused.to_string().contains(&obligation.to_string()));
 }
 
 /// FR-098-AC-5: a replay that disagrees -- `small(3)` holds -- settles

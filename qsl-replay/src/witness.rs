@@ -119,25 +119,30 @@ impl Witness {
     /// parsed -- an entry whose text does not parse still appears here,
     /// unlike [`Self::concrete_values`], so [`Self::decode`] can tell "no
     /// entry names this parameter" apart from "an entry names it but its
-    /// value is malformed".
-    fn raw_bindings(&self) -> Vec<(&str, &str)> {
+    /// value is malformed". An entry that is not a `name=value` pair is its
+    /// own `Err`, so decode can refuse it rather than drop it.
+    fn raw_bindings(&self) -> Vec<Result<(&str, &str), &str>> {
         self.fields()
             .values
             .split(';')
             .filter(|entry| !entry.is_empty())
-            .filter_map(|entry| entry.split_once('='))
+            .map(|entry| entry.split_once('=').ok_or(entry))
             .collect()
     }
 
     /// The transcript's concrete `(name, value)` bindings, recomputed from
     /// the stored transcript on every call, read without a schema: an entry
-    /// whose text does not parse as an integer is skipped here, where
+    /// that is not a `name=value` pair, or whose value does not parse as an
+    /// integer, is skipped here, where
     /// [`Self::decode`] reads each entry as its binding's declared type and
     /// refuses a malformed one.
     pub fn concrete_values(&self) -> Vec<(String, i64)> {
         self.raw_bindings()
             .into_iter()
-            .filter_map(|(name, value)| Some((name.to_owned(), value.parse().ok()?)))
+            .filter_map(|entry| {
+                let (name, value) = entry.ok()?;
+                Some((name.to_owned(), value.parse().ok()?))
+            })
             .collect()
     }
 
@@ -148,11 +153,16 @@ impl Witness {
     /// and its text is read as the binding's declared
     /// [`WitnessValueType`]. Refuses with [`DecodeRefusal::Missing`] when a
     /// binding's parameter has no entry, [`DecodeRefusal::Duplicate`] when
-    /// it has more than one, [`DecodeRefusal::Unbound`] when an entry names
-    /// no binding's parameter, and [`DecodeRefusal::Malformed`] when an
+    /// it has more than one, [`DecodeRefusal::MalformedEntry`] when an entry
+    /// is not a `name=value` pair, [`DecodeRefusal::Unbound`] when an entry
+    /// names no binding's parameter, and [`DecodeRefusal::Malformed`] when an
     /// entry's text is not a value of the binding's type.
     pub fn decode(&self, bindings: &[WitnessBinding]) -> Result<Vec<WitnessValue>, DecodeRefusal> {
-        let entries = self.raw_bindings();
+        let entries = self
+            .raw_bindings()
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|entry| DecodeRefusal::MalformedEntry(entry.to_owned()))?;
         let names: Vec<String> = bindings
             .iter()
             .map(|binding| binding.parameter.to_string())
@@ -246,6 +256,9 @@ pub enum DecodeRefusal {
     /// A transcript entry names no binding's parameter.
     #[error("witness entry {0:?} names no bound parameter")]
     Unbound(String),
+    /// A transcript entry is not a `name=value` pair.
+    #[error("witness entry {0:?} is not a name=value pair")]
+    MalformedEntry(String),
     /// A transcript entry's text is not a value of its binding's type.
     #[error("witness entry for parameter {parameter} is not a {value_type:?} value: {text:?}")]
     Malformed {
@@ -637,7 +650,8 @@ mod witness_tests {
 
     /// FR-098-AC-4: each join failure refuses with its own typed variant --
     /// a parameter with no entry, a parameter with two, an entry naming no
-    /// bound parameter, and an entry whose text is not a value of its
+    /// bound parameter, an entry that is not a `name=value` pair, and an
+    /// entry whose text is not a value of its
     /// binding's type (`2` for a Boolean, non-decimal text and a value past
     /// `i64::MAX` for an integer).
     #[trace("TC-444", "FR-098-AC-4")]
@@ -662,6 +676,10 @@ mod witness_tests {
         assert_eq!(
             decode(format!("{x}=1;{b}=0"), &[integer(x)]),
             Err(DecodeRefusal::Unbound(b.to_string()))
+        );
+        assert_eq!(
+            decode(format!("{x}=1;junk"), &[integer(x)]),
+            Err(DecodeRefusal::MalformedEntry("junk".to_owned()))
         );
         assert_eq!(
             decode(format!("{b}=2"), &[boolean(b)]),

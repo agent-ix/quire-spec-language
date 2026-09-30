@@ -12,10 +12,11 @@
 //! - O-07's occurrence key and O-12's source region have their canonical
 //!   home in `qsl_foundation::source::provenance` (#213 S-4, QSL-159);
 //!   this crate carries them from there.
-//! - [`ObligationIdentity`] (O-09) is canonical here (ADR-013 OQ-H): IR and
-//!   CG name this type directly. CG computes its digest (AD-016 arrow 5);
-//!   QSL only ever carries the digest CG mints, never hashes one itself,
-//!   mirroring `quire_exact`'s own opaque digest identities.
+//! - [`ObligationIdentity`] (O-09) is canonical here (ADR-013 OQ-H): CG
+//!   names this type directly; IR names no QSL type. CG computes its digest
+//!   (AD-016 arrow 5); QSL only ever carries the digest CG mints, never
+//!   hashes one itself, mirroring `quire_exact`'s own opaque digest
+//!   identities.
 //!
 //! [`QualifiedName`] moves to its ADR-013-assigned home once that ticket
 //! lands; until then it exists here, once, so the four envelope types have a

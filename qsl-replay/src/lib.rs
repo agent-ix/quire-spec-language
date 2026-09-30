@@ -20,8 +20,8 @@
 //! O-07's occurrence key and O-12's source region are
 //! `qsl_foundation::source::provenance`'s (#213 S-4, QSL-159), and this
 //! crate re-exports them for CG. O-09's obligation identity is this crate's
-//! own, the canonical type ADR-013 OQ-H assigns here, which IR and CG name
-//! directly. O-11's `QualifiedName` is still `identity`'s own minimal
+//! own, the canonical type ADR-013 OQ-H assigns here, which CG names
+//! directly; IR names no QSL type. O-11's `QualifiedName` is still `identity`'s own minimal
 //! version, with the shape ADR-013 specifies; `identity` names the ticket
 //! that absorbs it.
 
