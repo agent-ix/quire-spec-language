@@ -34,9 +34,10 @@ their `sha256-jcs` digest.
    snapshot for `ReachesTarget` with `PreCall { snapshot, self: a,
    parameters: {target: a} }`; the same selection for `VersionUnchanged`;
    with a snapshot that says `post`; with no `target`; with `target`
-   naming `ghost`; over the unit with a second population `archive`, with
-   `target` naming `a1` in an `archive` marked `complete: false`; with the
-   snapshot
+   naming `ghost`; over the package variant where `Sub` specializes
+   `ConfigVersion` and a second population `archive` has member type `Sub`
+   (TC-465's `archive` fixture), with `target` naming `a1` in an `archive`
+   listed with no objects and marked `complete: false`; with the snapshot
    marked `complete: false`.
 
 Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.

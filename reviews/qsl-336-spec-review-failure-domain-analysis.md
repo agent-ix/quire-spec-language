@@ -57,6 +57,14 @@ member's reading is unstated.
 | --- | --- | --- | --- |
 | FND-008 | low | Check 10 now refuses a dangling reference parameter only when the key is absent from a *complete* population, and the required-population rule (population of `self`, then populations named by object fields) does not include a population a parameter names. So a parameter naming a key in an unmarked population that no field reaches is neither refused nor `Incomplete`. A clause that only compares it (`reaches(self, target, parent)` never dereferences `target`) evaluates `false`, and replay settles `reproduced`. Add every population a parameter reference names to the required populations, so check 7 returns `Incomplete` for it. | spec/functional/FR-106-admit-snapshots-and-invocations.md:157-159, 246-252 |
 
+
+## New findings (disposition pass 5)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | FR-106-AC-8's new case adds "a second population `archive` of `ConfigVersion` objects" to the `probe` unit. Two unbounded populations whose member type is `ConfigVersion` make every clause on `ConfigVersion` refuse `ambiguous_declaration`/`ambiguous-name` at S3 (FR-104's context-population rule, FR-104-AC-5), so `ReachesTarget` never compiles and the case cannot reach admission. TC-465 hit the same trap and declares `archive`'s member type as `Sub` for that reason (TC-465 notes under row 43). Declare `archive` over `Sub` with `a1` a `Sub` object, in FR-106-AC-8 and TC-464 step 5. | spec/functional/FR-106-admit-snapshots-and-invocations.md:306; spec/test-cases/TC-464-snapshots-and-invocations-admit.md:37-39 |
+| FND-010 | low | Check 7 now reads reference-valued parameters to find required populations, but check 10 validates parameters later. A parameter reference naming a population the package does not declare becomes a required population "absent from its snapshot", so admission returns `Incomplete` where check 10's value rule would refuse it. State that only a parameter reference to a declared population of the package makes it required (or that check 10's value check on reference parameters runs first). | spec/functional/FR-106-admit-snapshots-and-invocations.md:157-162, 229 |
+
 ## Dispositions
 
 | FND | outcome | sha/reason |
@@ -68,3 +76,4 @@ member's reading is unstated.
 | FND-005 | fixed | 0a72b19a |
 | FND-006 | fixed | 82e69a12 |
 | FND-007 | fixed | 82e69a12 |
+| FND-008 | fixed | 0bedd077 |
