@@ -3,16 +3,6 @@
 version = 4
 
 [[package]]
-name = "agent-ix-baseline-producer"
-version = "0.0.0"
-source = "git+https://github.com/agent-ix/filament-core-data?rev=a6fe662542770e6acbec4917cfe1772b349ee414#a6fe662542770e6acbec4917cfe1772b349ee414"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "agent-ix-extraction-frontend"
 version = "0.0.0"
 source = "git+https://github.com/agent-ix/filament-core-data?rev=033e228408dd7b9f815800583af28e49c4e601a9#033e228408dd7b9f815800583af28e49c4e601a9"
@@ -498,14 +488,6 @@ name = "email_address"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "engineering-assurance"
-version = "0.3.1"
-source = "git+https://github.com/agent-ix/engineering-assurance?rev=712f4ff76c2b1e01d26d10efd97a0eef0235defa#712f4ff76c2b1e01d26d10efd97a0eef0235defa"
 dependencies = [
  "serde",
 ]
@@ -1418,7 +1400,7 @@ dependencies = [
  "qsl-foundation 0.1.0",
  "qsl-package 0.1.0",
  "qsl-semantics 0.1.0",
- "quire-canonical",
+ "quire-canonical 0.3.0",
  "quire-exact 0.1.0",
  "serde_json",
  "sha2",
@@ -1467,7 +1449,7 @@ dependencies = [
  "qsl-foundation 0.1.0",
  "qsl-package 0.1.0",
  "qsl-semantics 0.1.0",
- "quire-canonical",
+ "quire-canonical 0.3.0",
  "quire-exact 0.1.0",
  "serde",
  "serde_json",
@@ -1484,7 +1466,7 @@ dependencies = [
  "qsl-foundation 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
  "qsl-package 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
  "qsl-semantics 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
- "quire-canonical",
+ "quire-canonical 0.1.0",
  "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
  "serde",
  "thiserror",
@@ -1579,7 +1561,7 @@ dependencies = [
  "qsl-forms 0.1.0",
  "qsl-foundation 0.1.0",
  "qsl-semantics 0.1.0",
- "quire-canonical",
+ "quire-canonical 0.3.0",
  "quire-contract-model 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=2a286437f6926dbefa9963dae196b22912114dc1)",
  "quire-exact 0.1.0",
  "serde",
@@ -1596,7 +1578,7 @@ dependencies = [
  "qsl-attrs 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
  "qsl-foundation 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
  "qsl-semantics 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
- "quire-canonical",
+ "quire-canonical 0.1.0",
  "quire-contract-model 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=48ab5dc29213c3975a5fe8f04ecbb3d1c2b345bb)",
  "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
  "serde",
@@ -1610,7 +1592,7 @@ source = "git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650
 dependencies = [
  "qsl-foundation 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
  "qsl-semantics 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
- "quire-canonical",
+ "quire-canonical 0.1.0",
  "quire-contract-model 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=7b1ec7a19f031dcea433293a25af57f0bb6a14f8)",
  "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
  "serde",
@@ -1630,7 +1612,7 @@ dependencies = [
  "qsl-package 0.1.0",
  "qsl-semantics 0.1.0",
  "qsl-source",
- "quire-canonical",
+ "quire-canonical 0.3.0",
  "quire-exact 0.1.0",
  "serde_json",
  "thiserror",
@@ -1693,7 +1675,7 @@ dependencies = [
  "qsl-cst 0.1.0",
  "qsl-forms 0.1.0",
  "qsl-foundation 0.1.0",
- "quire-canonical",
+ "quire-canonical 0.3.0",
  "quire-exact 0.1.0",
  "serde",
  "serde_json",
@@ -1713,7 +1695,7 @@ dependencies = [
  "qsl-attrs 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
  "qsl-forms 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
  "qsl-foundation 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
- "quire-canonical",
+ "quire-canonical 0.1.0",
  "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
  "serde",
  "serde_json",
@@ -1730,7 +1712,7 @@ dependencies = [
  "agent-ix-semantic-ir 0.0.0 (git+https://github.com/agent-ix/filament-core-data?rev=1572ba4ba8fad0e94e9a0b19a569f82a5181b488)",
  "qsl-forms 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
  "qsl-foundation 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
- "quire-canonical",
+ "quire-canonical 0.1.0",
  "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
  "serde",
  "serde_json",
@@ -1763,9 +1745,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "quire-canonical"
+version = "0.3.0"
+source = "git+https://github.com/agent-ix/quire-canonical?tag=quire-canonical-v0.3.0#1d73f93f6b8139f10eb5bd5082a0b877958344fa"
+dependencies = [
+ "ryu-js",
+ "serde",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "quire-contract-codegen"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-codegen?rev=041115733520e63d49f47641761a89365f3c58fb#041115733520e63d49f47641761a89365f3c58fb"
+source = "git+https://github.com/agent-ix/quire-contract-codegen?rev=c9856b0f465d9f40c425f8fca1d829463e473b79#c9856b0f465d9f40c425f8fca1d829463e473b79"
 dependencies = [
  "qsl-replay 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=1a368fa40412fa6fe475bdb2b294dd61a5498bff)",
  "quire-contract-ir",
@@ -1778,42 +1771,19 @@ dependencies = [
 [[package]]
 name = "quire-contract-ir"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?rev=37c34de8c119d368369cb70abd74dbe0bc254bfd#37c34de8c119d368369cb70abd74dbe0bc254bfd"
+source = "git+https://github.com/agent-ix/quire-contract-ir?rev=a7e019a6d941170d252752e83af99eace7dfca76#a7e019a6d941170d252752e83af99eace7dfca76"
 dependencies = [
- "quire-contract-model 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=37c34de8c119d368369cb70abd74dbe0bc254bfd)",
- "quire-mltl",
- "quire-observation",
- "quire-protocol",
+ "quire-contract-model 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=a7e019a6d941170d252752e83af99eace7dfca76)",
  "quire-spec-language 0.2.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
  "serde",
  "serde_json",
- "serde_stacker",
- "sha2",
- "stacker",
  "thiserror",
- "tl-mltl",
- "tl-syntax",
 ]
 
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
 source = "git+https://github.com/agent-ix/quire-contract-ir?rev=2a286437f6926dbefa9963dae196b22912114dc1#2a286437f6926dbefa9963dae196b22912114dc1"
-dependencies = [
- "jsonschema 0.17.1",
- "quire-verification-contracts 0.1.0 (git+https://github.com/agent-ix/quire-verification-contracts?rev=4c49706d5db3ba77f96088ddcbb2635046246e32)",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "serde_stacker",
- "sha2",
- "stacker",
-]
-
-[[package]]
-name = "quire-contract-model"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?rev=37c34de8c119d368369cb70abd74dbe0bc254bfd#37c34de8c119d368369cb70abd74dbe0bc254bfd"
 dependencies = [
  "jsonschema 0.17.1",
  "quire-verification-contracts 0.1.0 (git+https://github.com/agent-ix/quire-verification-contracts?rev=4c49706d5db3ba77f96088ddcbb2635046246e32)",
@@ -1847,6 +1817,21 @@ source = "git+https://github.com/agent-ix/quire-contract-ir?rev=7b1ec7a19f031dce
 dependencies = [
  "jsonschema 0.17.1",
  "quire-verification-contracts 0.1.0 (git+https://github.com/agent-ix/quire-verification-contracts?rev=61f4a44d76d51cc53b2dfe7ed10aba7b23cfa6ef)",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "serde_stacker",
+ "sha2",
+ "stacker",
+]
+
+[[package]]
+name = "quire-contract-model"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-contract-ir?rev=a7e019a6d941170d252752e83af99eace7dfca76#a7e019a6d941170d252752e83af99eace7dfca76"
+dependencies = [
+ "jsonschema 0.17.1",
+ "quire-verification-contracts 0.1.0 (git+https://github.com/agent-ix/quire-verification-contracts?rev=4c49706d5db3ba77f96088ddcbb2635046246e32)",
  "serde",
  "serde_json",
  "serde_path_to_error",
@@ -1903,47 +1888,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quire-mltl"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-mltl?rev=128929b2e3868861677c6a748e2973e6476c74c3#128929b2e3868861677c6a748e2973e6476c74c3"
-dependencies = [
- "quire-observation",
- "serde",
- "serde_json",
- "sha2",
- "tl-mltl",
- "tl-syntax",
-]
-
-[[package]]
-name = "quire-observation"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-observation?rev=2bdeb833a330bfa777c19eb4c28c423f856f3ba6#2bdeb833a330bfa777c19eb4c28c423f856f3ba6"
-dependencies = [
- "agent-ix-baseline-producer",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "quire-protocol"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-protocol?rev=035fed1a4903dac5d5ef8c08b80195d3f11dadde#035fed1a4903dac5d5ef8c08b80195d3f11dadde"
-dependencies = [
- "engineering-assurance",
- "jsonschema 0.17.1",
- "qsl-foundation 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
- "quire-observation",
- "quire-spec-language 0.2.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
- "quire-verification-contracts 0.1.0 (git+https://github.com/agent-ix/quire-verification-contracts?rev=da8d7272051b1cf02768ec459539551414fd6c21)",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "quire-rs"
 version = "0.46.0"
 source = "git+https://github.com/agent-ix/quire-rs?rev=2823a93bd3797c970c1d389afae9b893dea6f232#2823a93bd3797c970c1d389afae9b893dea6f232"
@@ -1983,10 +1927,10 @@ dependencies = [
  "qsl-route",
  "qsl-semantics 0.1.0",
  "qsl-source",
- "quire-canonical",
+ "quire-canonical 0.3.0",
  "quire-contract-codegen",
  "quire-contract-model 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=2a286437f6926dbefa9963dae196b22912114dc1)",
- "quire-contract-model 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=37c34de8c119d368369cb70abd74dbe0bc254bfd)",
+ "quire-contract-model 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=a7e019a6d941170d252752e83af99eace7dfca76)",
  "quire-exact 0.1.0",
  "serde",
  "serde_json",
@@ -2014,7 +1958,7 @@ dependencies = [
  "qsl-package 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
  "qsl-replay 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
  "qsl-semantics 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
- "quire-canonical",
+ "quire-canonical 0.1.0",
  "quire-contract-model 0.1.0 (git+https://github.com/agent-ix/quire-contract-ir?rev=7b1ec7a19f031dcea433293a25af57f0bb6a14f8)",
  "quire-exact 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?rev=9395be4268e650ca2753204d6d306c9cd7b453ec)",
  "serde",
@@ -2045,23 +1989,6 @@ dependencies = [
 name = "quire-verification-contracts"
 version = "0.1.0"
 source = "git+https://github.com/agent-ix/quire-verification-contracts?rev=61f4a44d76d51cc53b2dfe7ed10aba7b23cfa6ef#61f4a44d76d51cc53b2dfe7ed10aba7b23cfa6ef"
-dependencies = [
- "chrono",
- "jsonschema 0.55.1",
- "regress",
- "schemars",
- "serde",
- "serde_json",
- "serde_json_canonicalizer",
- "sha2",
- "thiserror",
- "typify",
-]
-
-[[package]]
-name = "quire-verification-contracts"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-verification-contracts?rev=da8d7272051b1cf02768ec459539551414fd6c21#da8d7272051b1cf02768ec459539551414fd6c21"
 dependencies = [
  "chrono",
  "jsonschema 0.55.1",
@@ -2632,27 +2559,6 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
-
-[[package]]
-name = "tl-mltl"
-version = "0.3.0"
-source = "git+https://github.com/agent-ix/tl-mltl?rev=452f013a3168512603d427bce3360bc14c1175a6#452f013a3168512603d427bce3360bc14c1175a6"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
- "tl-syntax",
-]
-
-[[package]]
-name = "tl-syntax"
-version = "0.3.0"
-source = "git+https://github.com/agent-ix/tl-syntax?rev=4a5614193d21e5ae99950ae683b04ba0ec931358#4a5614193d21e5ae99950ae683b04ba0ec931358"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
-]
 
 [[package]]
 name = "toml"

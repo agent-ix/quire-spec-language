@@ -28,8 +28,8 @@ use quire_spec_language::{
 use serde_json::Value;
 use sha2::Digest as _;
 
-const CODEGEN_REVISION: &str = "041115733520e63d49f47641761a89365f3c58fb";
-const IR_REVISION: &str = "37c34de8c119d368369cb70abd74dbe0bc254bfd";
+const CODEGEN_REVISION: &str = "c9856b0f465d9f40c425f8fca1d829463e473b79";
+const IR_REVISION: &str = "a7e019a6d941170d252752e83af99eace7dfca76";
 const KANI_SHA256: &str = "7f143a251d11c7e6e232bbf2cbccf56f9ce66a5f0107eeb3008698e6715f55d9";
 const DOMAIN: std::ops::RangeInclusive<i64> = 0..=1000;
 const CORPUS: [i64; 4] = [-1, 0, 1000, 1001];

@@ -103,7 +103,7 @@ ci-all-features:
 # resolves, not that its object code is produced.
 ci-clean-build:
 	cargo build --locked --workspace --no-default-features --target-dir target/clean
-	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir target/clean
+	cargo check --locked --manifest-path Cargo.toml --lib --no-default-features --features handoff-writer --target-dir target/clean
 	cargo run --locked --no-default-features --bin fixture-audit -- self-test
 	cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
 

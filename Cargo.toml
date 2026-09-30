@@ -5,7 +5,7 @@ resolver = "2"
 [workspace.dependencies]
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation, pinned once for
 # every crate that encodes an identity (QSL-194).
-quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", rev = "0143a2b76be9a51941e95ee2613f2d5608d756fe" }
+quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", tag = "quire-canonical-v0.3.0" }
 
 [package]
 name = "quire-spec-language"
@@ -101,7 +101,7 @@ xtask = { path = "xtask" }
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
 quire-exact = { path = "quire-exact", features = ["test-support"] }
-quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "041115733520e63d49f47641761a89365f3c58fb" }
+quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", rev = "c9856b0f465d9f40c425f8fca1d829463e473b79" }
 # QSL-327: bumped in lockstep with quire-contract-codegen's own internal
 # quire-contract-ir pin (see quire-contract-codegen's Cargo.toml) -- CG's
 # generation functions take this crate's `BoundPackage`/`ClauseRef`/etc. by
@@ -111,7 +111,7 @@ quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-cod
 # though both call it "quire-contract-model" v0.1.0. This alias must track
 # whatever quire-contract-codegen pins internally, not an independently
 # chosen "older" revision.
-quire-contract-ir-historical = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "37c34de8c119d368369cb70abd74dbe0bc254bfd" }
+quire-contract-ir-historical = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "a7e019a6d941170d252752e83af99eace7dfca76" }
 # TC-251's signature scanner (`tests/it/name_resolution_confinement.rs`)
 # walks a parameter/return type's own AST directly (an exact path-segment
 # match, `syn::visit::Visit`) rather than text-matching a `Debug`-formatted
