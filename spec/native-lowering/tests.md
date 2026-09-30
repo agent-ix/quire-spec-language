@@ -24,7 +24,7 @@ compiler's lowering with the code generator; that repository also owns
 | FR-009 | FR-009-AC-2 | TC-093 | ✅ Tested |
 | FR-009 | FR-009-AC-3 | TC-092 | ✅ Tested |
 | FR-009 | FR-009-AC-4 | TC-092 | ✅ Tested |
-| FR-009 | FR-009-AC-5 | — | External: verified by [quire-integration TC-094](ix://agent-ix/quire-integration/TC-094) |
+| FR-009 | FR-009-AC-5 | — | 🚧 No local test; verified by [quire-integration TC-094](ix://agent-ix/quire-integration/TC-094) |
 | FR-009 | FR-009-AC-6 | TC-093 | ✅ Tested |
 | FR-009 | FR-009-AC-7 | TC-093 | ✅ Tested |
 | FR-033 | FR-033-AC-1 | TC-111 | ✅ Tested |
