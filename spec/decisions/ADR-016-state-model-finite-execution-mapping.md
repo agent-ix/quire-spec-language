@@ -177,11 +177,10 @@ untrusted data, recorded as found.
   the native `runtime`, `model_source` and `native_model` modules through
   `examples/config-version/fixtures.rs:6-15`.
 
-**Pinned blockers.** The package `quire-contract-model` is locked at
-`2a28643`. TC-463 step 1 (`qsl-replay/src/spine/clause/tests.rs:4931`) and
-TC-469 step 6 (`tests/it/config_version_spine.rs:910`) are `#[ignore]` on
-IR-370, because that reader refuses every `quire.op.model.reaches_field`
-application. Linear shows IR-370 Done; the pin has not moved. IR `lower`
+**IR dependencies.** QSL consumes IR-370's checked-package reader, which
+decides the reference edge of a `quire.op.model.reaches_field` application.
+TC-463 step 1 (`s4_state_package_reads_back_through_i2`) and TC-469 step 6
+(`tc_469_step_6_the_emitted_package_admits_via_i04`) run and pass. IR `lower`
 returns no form for a `state` node. Gate QSL-20 (#219, ARCH-G3) is Backlog.
 
 ## Decision
@@ -427,7 +426,7 @@ analysis, not by a test.
 
 | ID | Requirement |
 | --- | --- |
-| PI-1 | `quire-contract-model` is locked at `2a28643`. A dedicated pin-bump PR under QSL-67 moves only `quire-contract-model` to a revision with IR-370 and un-ignores TC-463 step 1 and TC-469 step 6; those two tests passing is its oracle. Until then, FR-105-AC-3 and FR-108-AC-6's I04 `read` half stay pending, and no other state-node emission test is ignored or weakened. |
+| PI-1 | `quire-contract-model`'s checked-package reader decides the reference edge of `quire.op.model.reaches_field` (IR-370). TC-463 step 1 and TC-469 step 6 run and pass, backing FR-105-AC-3 and FR-108-AC-6's I04 `read` half; no state-node emission test is ignored or weakened. |
 | PI-2 | FCD `agent-ix-extraction-frontend` and `agent-ix-semantic-ir` are consumed at their exact git revisions through `model::intake` only (ADR-011 §7.1). A change to intake shapes is a filament-core-data ticket. |
 | PI-3 | QSpec contracts selected by this family: diagnostics catalog `1-draft.8`, sampler `quire.simulation.sampler/v1` `1-draft.1`, QSpec FR-181's typed canonical form, STD-111's state node rules. Each is selected by exact revision and refused otherwise (ADR-013 R-08). |
 | PI-4 | The current-head lane (#215, QI `heads/`) is informational: a drift report. The gate for a pin-bump PR is `make ci` (ADR-013 O-23). |
@@ -491,11 +490,10 @@ function, not by the matrix status in `spec/tests.md`.
 
 ## Open dependencies
 
-1. IR-370 and the `quire-contract-model` pin bump (PI-1).
-2. IR admission of `state` nodes and a CG `operation-contract` arm (PI-5).
+1. IR admission of `state` nodes and a CG `operation-contract` arm (PI-5).
    Neither has a ticket; the team lead files them. Neither blocks G-1 to
    G-10.
-3. Linear has QSL-20 blocking QSL-19, but this record claims no proof
+2. Linear has QSL-20 blocking QSL-19, but this record claims no proof
    evidence (§6). The edge is the team lead's to relax.
 
 ## Alternatives Considered
