@@ -731,6 +731,10 @@ fn an_envelope_occurrence_other_than_the_frame_occurrence_refuses_before_recompi
         "{refusal:?}"
     );
     assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
+    let message = refusal.to_string();
+    assert!(message.starts_with("stale_dependency/revision-mismatch"));
+    assert!(message.contains(&format!("{other:?}")), "{message}");
+    assert!(message.contains(&format!("{occurrence:?}")), "{message}");
 }
 
 /// TC-515 step 3 (FR-116-AC-3): a source edit that changes the

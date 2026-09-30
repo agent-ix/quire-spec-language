@@ -69,10 +69,13 @@ payload.
 
 ## Behavior
 
+- The executor SHALL decode the request by FR-098's rules first, refusing
+  by FR-098's decode refusals.
 - If the envelope's `clause_node` differs from the payload's `frame`, or its
   `occurrence_key` from the payload's `occurrence`, then the executor SHALL
-  refuse `stale_dependency`/`revision-mismatch` before it recompiles,
-  naming the envelope's and the payload's identity.
+  refuse `stale_dependency`/`revision-mismatch` after the request decodes
+  and before it recompiles, naming the envelope's and the payload's
+  identity.
 - The executor SHALL recompile and check the package by FR-098's rules, in
   FR-098's order, before it resolves the payload's operation.
 - If the recompiled `package_id` differs from the request's or the
@@ -132,7 +135,7 @@ payload.
 
 ## Status
 
-Specified under QSL-296 (QSL-21a). Implemented by QSL-301 (QSL-21f):
+Specified under QSL-296 (QSL-21a). Implemented by
 `qsl_replay::replay_frame` over FR-098's request and a
 `WitnessEnvelope<FrameCounterexample>`, running FR-115's frame run through
 the same path as FR-109's `Frame` selection, verified by TC-515. The decode
