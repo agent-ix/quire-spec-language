@@ -28,8 +28,8 @@ use quire_spec_language::{
 use serde_json::Value;
 use sha2::Digest as _;
 
-const CODEGEN_REVISION: &str = "5e2a6a994d2107f36294078ad202467a4c66bb75";
-const IR_REVISION: &str = "04eb6f849c03be23177d373549c6c272551f957d";
+const CODEGEN_REVISION: &str = "c9856b0f465d9f40c425f8fca1d829463e473b79";
+const IR_REVISION: &str = "a7e019a6d941170d252752e83af99eace7dfca76";
 const KANI_SHA256: &str = "7f143a251d11c7e6e232bbf2cbccf56f9ce66a5f0107eeb3008698e6715f55d9";
 const DOMAIN: std::ops::RangeInclusive<i64> = 0..=1000;
 const CORPUS: [i64; 4] = [-1, 0, 1000, 1001];
@@ -276,13 +276,6 @@ fn native_verdict(
     report.truth()
 }
 
-fn attestation() -> codegen::AttestationContext<'static> {
-    codegen::AttestationContext {
-        record_digest: "0000000000000000000000000000000000000000000000000000000000000000",
-        candidate_revision: codegen::IR_CANDIDATE_REVISION,
-    }
-}
-
 fn public_function(source: &str) -> syn::ItemFn {
     let syntax = syn::parse_file(source).unwrap();
     let function = syntax.items.into_iter().find_map(|item| match item {
@@ -384,7 +377,7 @@ impl OracleExecutable {
 fn generated_oracle(
     bound: &backend_ir::BoundPackage,
 ) -> (&backend_ir::BoundClause, codegen::GeneratedBoundOracles) {
-    let generated = codegen::generate_bound_oracles(bound, attestation()).unwrap();
+    let generated = codegen::generate_bound_oracles(bound).unwrap();
     let codegen::BoundOracleGeneration::Generated(generated) = generated else {
         panic!("ConfigVersion has one executable state comparison")
     };
@@ -509,9 +502,7 @@ fn locked_backend_graph_has_one_reviewed_ir_and_pinned_kani() {
     assert!(lock.contains(&format!("rev={CODEGEN_REVISION}")));
     assert_eq!(lock.matches("name = \"quire-contract-ir\"").count(), 1);
     assert!(lock.contains(&format!("rev={IR_REVISION}")));
-    assert_eq!(codegen::IR_CANDIDATE_REVISION, IR_REVISION);
     assert_eq!(codegen::RUNTIME_REVISION.len(), 40);
-    assert_eq!(codegen::KANI_BACKEND_VERSION, "0.67.0");
     let version = Command::new("cargo")
         .args(["kani", "--version"])
         .output()
@@ -553,10 +544,6 @@ fn compiled_state_oracle_and_native_execute_agree_on_complete_corpus() {
         .iter()
         .find(|clause| clause.identity() == bound_clause.identity())
         .unwrap();
-    assert_eq!(
-        generated_clause.expression_digest(),
-        bound_clause.expression_digest()
-    );
     let map: Vec<codegen::SourceRegion> =
         serde_json::from_str(&generated_clause.bundle().source_map.contents).unwrap();
     assert!(map.iter().all(|region| {
@@ -624,7 +611,6 @@ fn generated_proptest_populations_execute_in_domain_with_zero_discards() {
             minimum_accepted_cases: 1,
             minimum_rejected_cases: 0,
             maximum_discarded_cases: 0,
-            attestation: attestation(),
         })
         .unwrap();
         fs::write(
@@ -799,12 +785,9 @@ fn config_kani_bundle(clause: &backend_ir::BoundClause) -> codegen::KaniArtifact
         postcondition: clause.expression(),
         proof_id: "it-010-config-version",
         subject_path: "crate::subject",
-        backend_version: codegen::KANI_BACKEND_VERSION,
-        backend_executable_sha256: KANI_SHA256,
         unwind: 2,
         solver: codegen::KaniSolver::Cadical,
         dependencies: &[],
-        attestation: attestation(),
     })
     .unwrap()
 }
@@ -822,7 +805,12 @@ fn execute_kani(bundle: &codegen::KaniArtifactBundle, subject: &str) -> std::pro
     fs::write(
         directory.path().join("Cargo.toml"),
         format!(
-            "[package]\nname = \"configversion-kani\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[dependencies]\nquire-contract-runtime = {{ git = \"https://github.com/agent-ix/quire-contract-runtime\", rev = \"{}\" }}\n\n[workspace]\n",
+            // QSL-327: quire-contract-runtime's own `#[cfg(kani)]` internal
+            // proof harness (`verification/kani.rs`) unconditionally imports
+            // `crate::exact`, so a `cargo kani` build of any consumer crate
+            // needs the "exact" feature enabled on quire-contract-runtime,
+            // regardless of what the generated oracle itself needs.
+            "[package]\nname = \"configversion-kani\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[dependencies]\nquire-contract-runtime = {{ git = \"https://github.com/agent-ix/quire-contract-runtime\", rev = \"{}\", features = [\"exact\"] }}\n\n[workspace]\n",
             codegen::RUNTIME_REVISION
         ),
     )
@@ -885,9 +873,6 @@ fn pinned_kani_proves_identity_and_counterexample_replays_natively() {
     assert_eq!(graph.proof_id, "it-010-config-version");
     assert_eq!(graph.requirement_id, "VersionUnchanged");
     assert_eq!(graph.requirement_revision, 1);
-    assert_eq!(graph.adapter_profile, codegen::KANI_ADAPTER_PROFILE);
-    assert_eq!(graph.backend_version, "0.67.0");
-    assert_eq!(graph.backend_executable_sha256, KANI_SHA256);
     assert!(graph.dependencies.is_empty());
     assert_eq!(graph.subject_arguments.len(), 1);
     assert_eq!(graph.subject_results.len(), 1);

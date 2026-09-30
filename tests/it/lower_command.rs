@@ -162,15 +162,7 @@ fn exported_boolean_bytes_reach_both_ir_readers_and_the_complete_backend_populat
     assert_eq!(current.digest().to_string(), consumer.digest().to_string());
     assert_eq!(current.digest(), expected.bound().digest());
 
-    let generated = codegen::generate_bound_oracles(
-        &consumer,
-        codegen::AttestationContext {
-            // Synthetic generator context only; this test makes no attestation claim.
-            record_digest: &"0".repeat(64),
-            candidate_revision: &"0".repeat(40),
-        },
-    )
-    .unwrap();
+    let generated = codegen::generate_bound_oracles(&consumer).unwrap();
     let codegen::BoundOracleGeneration::Generated(population) = generated else {
         panic!("expected complete generated population");
     };

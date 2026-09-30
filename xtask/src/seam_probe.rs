@@ -335,6 +335,12 @@ fn enclosing_item_name(source: &str, line: u32) -> Option<String> {
 /// probe's own RUSTFLAGS churn out of the shared target dir without also
 /// planting a second, redundant build tree in every worktree that already
 /// sets its own `CARGO_TARGET_DIR` (PR #434 review, LOW-5).
+///
+/// `#[string_edge]` (QSL-327): the `package == "quire-spec-language"` branch
+/// below picks how to name the package to `cargo build` (IR-428's duplicate
+/// resolved copy makes a bare `-p quire-spec-language` ambiguous), the same
+/// class of unmarked literal-branch gate `xtask string-edge` exists to find.
+#[string_edge]
 fn build_and_collect_e0004(
     workspace_root: &Path,
     package: &str,
@@ -345,15 +351,21 @@ fn build_and_collect_e0004(
         _ => PathBuf::from("target/seam-probe"),
     };
     let mut command = Command::new("cargo");
-    command.current_dir(workspace_root).args([
-        "build",
-        "--offline",
-        "-p",
-        package,
-        "--lib",
-        "--message-format=json",
-        "--target-dir",
-    ]);
+    command.current_dir(workspace_root);
+    command.args(["build", "--offline"]);
+    if package == "quire-spec-language" {
+        // IR-428: CG's own dev-dependency graph resolves a second copy of
+        // this package at a different revision, so a bare `-p
+        // quire-spec-language` is ambiguous (two candidates share the
+        // name). `--manifest-path` names this workspace's own root package
+        // directly and needs no disambiguation (Makefile's `ci-clean-build`
+        // target hit the same thing; QSL-327).
+        command.arg("--manifest-path");
+        command.arg(workspace_root.join("Cargo.toml"));
+    } else {
+        command.args(["-p", package]);
+    }
+    command.args(["--lib", "--message-format=json", "--target-dir"]);
     command.arg(&target_dir);
     if !rustflags.is_empty() {
         command.env("RUSTFLAGS", rustflags);
