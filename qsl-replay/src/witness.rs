@@ -199,6 +199,7 @@ pub enum WitnessValueType {
 
 impl WitnessValueType {
     /// `text` as a value of this type, or `None` when it is not one.
+    #[qsl_attrs::string_edge]
     fn read(self, text: &str) -> Option<WitnessValue> {
         match self {
             Self::Boolean => match text {
