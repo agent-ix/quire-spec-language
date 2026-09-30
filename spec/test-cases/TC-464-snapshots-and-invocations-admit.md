@@ -34,7 +34,9 @@ their `sha256-jcs` digest.
    snapshot for `ReachesTarget` with `PreCall { snapshot, self: a,
    parameters: {target: a} }`; the same selection for `VersionUnchanged`;
    with a snapshot that says `post`; with no `target`; with `target`
-   naming `ghost`; with the snapshot
+   naming `ghost`; over the unit with a second population `archive`, with
+   `target` naming `a1` in an `archive` marked `complete: false`; with the
+   snapshot
    marked `complete: false`.
 
 Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
@@ -55,6 +57,7 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
   `missing-member`; `dangling_reference`/
   `absent-target-in-complete-population` naming `ghost` and
   `config_history`; `Incomplete` with `incomplete_population`/
+  `incomplete-scope` naming `archive`; `Incomplete` with `incomplete_population`/
   `incomplete-scope`.
 
 ## Status

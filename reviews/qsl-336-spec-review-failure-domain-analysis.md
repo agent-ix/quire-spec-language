@@ -50,6 +50,13 @@ member's reading is unstated.
 | FND-006 | medium | Check 10, extended to `PreCall`, does not say a reference parameter must name an object of the snapshot. The code refuses a dangling reference parameter for an invocation (`dangling_reference`, resolved against the pre snapshot, `qsl-semantics/src/model/observation.rs:981-994`), but the spec never states it, and the new `PreCall` admission is written from the spec. Failure: a `PreCall` with `target` naming a key absent from the complete snapshot admits; `reaches(self, target, parent)` never meets it and returns `false`; the replay settles `reproduced` on a counterexample no real call could produce. State in check 10 that a reference parameter resolves in the pre snapshot (the `PreCall` snapshot) and a key absent from its complete population refuses `dangling_reference`, and add a case to FR-106-AC-8 / TC-464 step 5. | spec/functional/FR-106-admit-snapshots-and-invocations.md:238-246 |
 | FND-007 | low | A `PreCall`'s `self` and `parameters` sit in the payload, outside any digest, and FR-122's Outputs retain only the documents admission read. So a `PreCall` result cannot show which values it reproduced (`target` `a`). Retain the observation's `self` and parameters, or the payload's observation, in the result. | spec/functional/FR-122-replay-a-state-clause-counterexample.md:100-108 |
 
+
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | Check 10 now refuses a dangling reference parameter only when the key is absent from a *complete* population, and the required-population rule (population of `self`, then populations named by object fields) does not include a population a parameter names. So a parameter naming a key in an unmarked population that no field reaches is neither refused nor `Incomplete`. A clause that only compares it (`reaches(self, target, parent)` never dereferences `target`) evaluates `false`, and replay settles `reproduced`. Add every population a parameter reference names to the required populations, so check 7 returns `Incomplete` for it. | spec/functional/FR-106-admit-snapshots-and-invocations.md:157-159, 246-252 |
+
 ## Dispositions
 
 | FND | outcome | sha/reason |
@@ -59,3 +66,5 @@ member's reading is unstated.
 | FND-003 | fixed | cf00f646 |
 | FND-004 | fixed | 0a72b19a |
 | FND-005 | fixed | 0a72b19a |
+| FND-006 | fixed | 82e69a12 |
+| FND-007 | fixed | 82e69a12 |

@@ -66,3 +66,6 @@ AC-2 depends on it.
 | --- | --- | --- |
 | FND-001 | fixed | cf00f646 |
 | FND-002 | fixed | cf00f646 |
+| FND-003 | fixed | 82e69a12 |
+| FND-004 | fixed | 82e69a12 |
+| FND-005 | fixed | 82e69a12 |
