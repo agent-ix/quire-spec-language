@@ -17,7 +17,7 @@ non-ecosystem crate resolved to two sources), reports exactly one finding
 naming both sources for an ecosystem repository resolved to two distinct
 sources whether or not its two packages share one crate name, treats a
 path/workspace-member package (no `source` field) as its own distinct source,
-reports a real duplicate against QSL's real root `Cargo.lock`, and reports no
+reports no duplicate against QSL's real root `Cargo.lock`, and reports no
 duplicate against the current-head lane's own, separately converged
 `Cargo.lock`. Scope: FR-061-AC-1 through FR-061-AC-4.
 
@@ -56,22 +56,17 @@ duplicate against the current-head lane's own, separately converged
   fixture also reports exactly one finding, for the shared repository, naming
   both sources -- a different crate name is not, by itself, a different
   component.
-- Step 5: against the real root `Cargo.lock`, the check reports the IR
-  repository as a duplicate: `quire-contract-ir` (consumed directly) and
-  `quire-contract-model` (IR's own workspace member, consumed through the
-  `quire-contract-ir-historical` dev-alias) are the same repository at two
-  different revisions; `arch-lint duplicate-revisions --lockfile Cargo.lock`
-  exits `1`. This is a real, pre-existing double pin the R2 repository rule
-  newly detects; this requirement does not remediate it. Against the
-  current-head lane's own `Cargo.lock`, the check reports no duplicate: the
-  lane's `[patch]` table converges every QSL/IR/RT node in its graph to one
+- Step 5: against the real root `Cargo.lock`, the check reports no duplicate
+  and `arch-lint duplicate-revisions --lockfile Cargo.lock` exits `0`; `make
+  ci` runs it. Against the current-head lane's own `Cargo.lock`, the check
+  reports no duplicate: the lane's `[patch]` table converges every QSL/IR/RT node in its graph to one
   revision per repository, and `arch-lint-duplicate-revisions-lane` exits `0`.
 
 ## Metadata
 
 - Priority: P1
 - Target Integration: `tools/arch-lint/duplicate_revisions.rs`
-- Automation: Automated Rust unit tests plus one manual real-data run (step 5)
+- Automation: Automated Rust unit tests; step 5 runs in `make ci` (root lock) and `make arch-lint-duplicate-revisions-lane` (lane lock)
 
 ## Dependencies
 

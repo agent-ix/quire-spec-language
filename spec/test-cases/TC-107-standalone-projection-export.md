@@ -8,12 +8,12 @@ relationships:
 ---
 ## Description
 
-Integration, P1: exercise the actual lower binary and existing IR/backend consumers.
+Integration, P1: exercise the actual lower binary and the IR reader.
 
 ## Test Procedure
 
-Export a source-only Boolean fixture; compare exact library bytes and read with
-both pinned IR consumers before generating the full backend oracle population.
+Export a source-only Boolean fixture; compare exact library bytes and read them
+with the IR reader, checking the package digest and every authored clause.
 Make a later clause numeric, inspect refusal provenance, and retry valid input.
 Mutate request format, fields, selected source and file count; run existing commands.
 Require catalogued codes and command-specific lower arity errors before file I/O.

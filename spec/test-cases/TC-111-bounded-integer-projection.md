@@ -8,15 +8,16 @@ relationships:
 ---
 ## Description
 
-Integration, P1: execute native checking/lowering, both pinned IR readers and
-the actual command over independently selected bounded-integer expressions.
+Integration, P1: execute native checking/lowering, the IR reader and the actual
+command over independently selected bounded-integer expressions.
 
 ## Test Procedure
 
 Inspect reconstructed declarations, expression trees, source loci, observations
 and definedness. Exercise guarded arithmetic, target selection, unsupported
 whole populations and exact limits. Compare actual command bytes to the public
-library and verify the current backend's explicit numeric refusal.
+library, read them with the IR reader and verify the explicit refusal of
+unsupported clauses.
 Exercise invalid output directories and later file-write errors in both fixture
 paths, then retry with a fresh directory.
 

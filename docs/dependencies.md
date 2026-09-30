@@ -10,13 +10,14 @@ qualifies against (`quire.value.text.unicode-17.0.0/v1` and the rest of
 by identity and revision, not held as local content.
 
 FR-051 changes the production dependency key `quire-contract-ir` to select the
-cycle-free `quire-contract-model` package, initially at
-`53cc03c639e2e26528132d34d96dc56449df78e8`, retaining its declared
-`MIT OR Apache-2.0` grant. The compatibility `quire-contract-ir` package at
-`04eb6f849c03be23177d373549c6c272551f957d` is now explicitly named
-`quire-contract-ir-historical` and is development-only for the already retained
-code-generation fixtures. No source is copied, and the production graph does
-not contain that compatibility package.
+`quire-contract-model` package, under its declared grant. QSL's resolved
+dependency graph is cycle-free and `Cargo.lock` holds one copy of each
+first-party crate; `arch-lint duplicate-revisions` (FR-061) verifies this in
+`make ci`, and `arch-lint direction` (FR-059) checks the graph across the
+four repositories when given their checkouts. QSL-334 removed the
+`quire-contract-codegen` development dependency and its compatibility IR
+alias; the tests that composed QSL with the code generator live in
+`agent-ix/quire-integration`.
 
 QSL-6 (M-4) bumps the same key to `dbb2e22d577b56fed5c27e81e584370acdf02512`
 (origin/main at the time of the bump), the first revision to carry
@@ -51,22 +52,6 @@ whose checked-package reader reports an RFC 6901 pointer on its refusals and
 limits and the contract version it read on an unknown-version refusal. The
 bump adds one package, `serde_path_to_error` 0.1.20 (MIT OR Apache-2.0), a
 dependency of IR's reader.
-
-LC04 adds qualification-only codegen `240fad84a9565ab723ba9844e18faea4e5d96f66`
-and its IR `04eb6f849c03be23177d373549c6c272551f957d`, both MIT OR Apache-2.0.
-The latter has a dev-only alias for the existing consumer's exact wire reader;
-production IR remains `690bde7`. Generated Rust retains codegen's MIT/Apache
-notices and compiles against its runtime `8a4d02b9ff4633cf6d02fd8bdf6ee1b11ad76354`
-(MIT OR Apache-2.0). Syn 2.0.119 (MIT OR Apache-2.0), already resolved transitively,
-is directly selected for Rust syntax inspection in the qualification driver.
-New driver code is Rust under AGPL-3.0-or-later. No producer source is copied.
-The isolated generated-package fixture now pins proptest 1.5.0 with only its
-`std` feature to compile codegen's generated strategy for `boolean-oracle/v1`.
-Its separate 25-package lock is qualification-only. Cargo metadata reports
-AGPL-3.0-only for the fixture, MIT for libm, the stated MIT/Apache alternatives
-for the remaining registry packages, Unicode-3.0 additionally for unicode-ident,
-the existing LLVM-exception alternatives for wasi, and BSD-2-Clause additionally
-for zerocopy/zerocopy-derive. No dependency enters the production crate graph.
 
 The lock now selects 248 packages including this crate, optional and target-specific
 dependencies. Cargo metadata

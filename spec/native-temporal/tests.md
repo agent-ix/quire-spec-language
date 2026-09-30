@@ -48,11 +48,10 @@ obligation and the blocked emission half are recorded on compiler
 [#38](https://github.com/agent-ix/quire-spec-language/issues/38).
 
 Status values are set from local runs only; hosted workflows remain
-manual-dispatch. The 42 live controls are `tests/composed_temporal_evaluation.rs`
+manual-dispatch. The 41 live controls are `tests/composed_temporal_evaluation.rs`
 (14), `tests/composed_temporal_activation.rs` (11), `tests/composed_temporal_limits.rs`
 (7) and `tests/composed_temporal_mapping.rs` (7), `tests/composed_temporal_mapping_v2.rs`
-(2), plus one control on `tests/it/contract_model_architecture.rs` for
-FR-051-AC-6; all pass under
+(2); all pass under
 `cargo test --locked --no-default-features -j 1 -- --test-threads=1`, with
 `cargo fmt --all -- --check` and Clippy clean under both the minimal and the
 `quire-extraction` lanes. The formula-wide owner suite `tests/native_temporal_owner.rs`

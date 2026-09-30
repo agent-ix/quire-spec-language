@@ -37,27 +37,23 @@ formula document bytes are cross-wired against the other's selection, and
 trigger and anchor handles remain invalid predicate selections.~~
 
 **FR-051-AC-6 stays live**, amended to the production-dependency-graph fact:
-`tests/it/contract_model_architecture.rs`'s
-`production_graph_is_cycle_free_and_historical_ir_is_test_only`, tagged
-`#[trace("TC-139", "FR-051-AC-6")]`, runs `cargo metadata --locked --offline`
-and confirms the production dependency key `quire-contract-ir` selects the
-cycle-free `quire-contract-model` package as a normal production dependency,
-and that the compatibility `quire-contract-ir-historical` package never enters
-the resolved production graph.
+`arch-lint duplicate-revisions --lockfile Cargo.lock` (FR-061), run by
+`make ci`, confirms that `Cargo.lock` holds one copy of each first-party
+crate, so no dependency of QSL resolves a second QSL copy and the graph is
+cycle-free; the production dependency key `quire-contract-ir` resolves to the
+`quire-contract-model` package.
 
 ## Expected Results
 
 FR-051-AC-1 through FR-051-AC-5 (retired): no longer applicable; the surface
 they described does not exist.
 
-FR-051-AC-6 (live): `cargo metadata --locked --offline` resolves
-`quire-contract-ir` to the `quire-contract-model` package as a normal
-dependency, and no package on the production graph resolves to the historical
-`quire-contract-ir` revision.
+FR-051-AC-6 (live): `arch-lint duplicate-revisions --lockfile Cargo.lock`
+exits 0 in `make ci`.
 
 ## Status
 
 Passing for `quire-spec-language#90`; activation-guard coverage extended by
 `quire-spec-language#98`. FR-051-AC-1 through FR-051-AC-5 retired by QSL-303
 (M-6d); FR-051-AC-6 amended to the still-live cycle-free production-graph
-check, passing under `tests/it/contract_model_architecture.rs`.
+check, which `make ci` runs as `arch-lint duplicate-revisions` (QSL-334).

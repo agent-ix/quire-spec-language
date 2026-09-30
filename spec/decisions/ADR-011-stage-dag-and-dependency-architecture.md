@@ -7,7 +7,7 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/AD-016
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/IT-010
+  - target: ix://agent-ix/quire-integration/IT-010
     type: relates_to
   - target: ix://agent-ix/quire-spec-language/ADR-012
     type: relates_to

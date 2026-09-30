@@ -3,7 +3,7 @@ id: ADR-010
 title: "Observed QSL and backend architecture baseline (ARCH-00)"
 type: ADR
 relationships:
-  - target: ix://agent-ix/quire-spec-language/IT-010
+  - target: ix://agent-ix/quire-integration/IT-010
     type: relates_to
   - target: ix://agent-ix/quire-spec-language/ADR-009
     type: relates_to

@@ -68,8 +68,7 @@ fn parse_document(bytes: &[u8]) -> PackageDocument {
 /// (`crates/extraction-frontend/fixtures` in the pinned
 /// `agent-ix/filament-core-data` checkout), via `cargo metadata`'s
 /// `manifest_path` for that package -- the same shell-out-and-parse pattern
-/// `tools/arch-lint/metadata.rs` and `tests/contract_model_architecture.rs`
-/// already use. Memoized: every test below that needs it calls this, and
+/// `tools/arch-lint/metadata.rs` already uses. Memoized: every test below that needs it calls this, and
 /// `cargo metadata` is not free.
 fn fcd_fixtures_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();

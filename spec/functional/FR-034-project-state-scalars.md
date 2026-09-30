@@ -52,6 +52,7 @@ The compiler shall preserve linked field identity, model digest, source coordina
 The compiler shall count every traversed native node, including field receivers and pre/group wrappers, against the existing lowering limits.
 The compiler shall charge one unit of existing lowering node work before generating or inspecting each fresh field-alias candidate, including colliding candidates, while alias reuse adds no candidate work and candidate search adds no AST depth.
 If a receiver is not self wrapped only in groups or pre, or a field is nonprimitive, then the compiler shall refuse the complete projection.
+If a clause contains an object-presence or graph-reachability expression, then the compiler shall refuse the complete projection with that clause and the expression's authored source span before IR binding.
 The compiler shall preserve the existing Boolean and integer target contracts.
 The standalone lower command shall accept the explicit state-scalar-ir/v1 target and emit its exact IR bytes.
 When inputs are requested, the materializer shall accept only a context validated against the projection's exact in-memory checked package and selected authored clause.
@@ -76,6 +77,7 @@ as materialization invariants.
 | FR-034-AC-3 | Direct state and captured Boolean/integer parameters retain their values and observations; another checked package is rejected, and only the selected clause's inputs are returned. | Test |
 | FR-034-AC-4 | Unsupported receivers, nonprimitive fields and later unsupported clauses refuse atomically; exact and insufficient lowering/materialization budgets, cancellation and fresh retries behave as specified. | Test |
 | FR-034-AC-5 | The actual standalone command exports the new target bytes for the concrete update fixture; prior targets retain their field/pre refusals and default behavior. | Test |
+| FR-034-AC-6 | ConfigVersion's object-presence and graph-reachability clauses refuse as unsupported with the offending clause and an authored span covering the refused expression, with no upstream IR diagnostic and no artifact. | Test |
 
 ## Dependencies
 

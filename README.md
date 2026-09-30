@@ -183,17 +183,13 @@ invocation and object provenance. For the concrete update example, run
 `quire-spec lower <unchanged-version/compile.json> --target state-scalar-ir/v1`.
 This binds `self.versionNumber = pre(self.versionNumber)` with separate pre/post
 inputs; native population and frame validation still precedes materialization.
-IT-010 runs the ConfigVersion state comparison through compiled generated Rust,
-all four generated strategy populations and cargo-kani 0.67.0, and checks the
-shared bounded corpus against `runtime::execute`. Values outside `0..=1000`
-produce no Boolean oracle verdict, while object/graph expressions refuse at the
-earliest source-owned boundary without a substitute IR expression.
-The LC04 backend qualification uses pinned existing codegen and actual generated
-Rust. Its named `boolean-oracle/v1` fixture compiles a generated proptest strategy,
-checks every Boolean assignment against native evaluation and compares LLVM 3.1.0
-source probes with native implication events. The pinned reusable coverage reader
-still explicitly refuses LLVM 3.1.0; that downstream capability is not inferred
-from the fixture-specific check. See [Plan-008](plan/Plan-008-native-lowering/plan.md).
+Object/graph expressions refuse at the earliest source-owned boundary without a
+substitute IR expression. Tests that compose these projections with the code
+generator (generated Rust, strategies, Kani and native parity:
+[IT-008](ix://agent-ix/quire-integration/IT-008),
+[IT-010](ix://agent-ix/quire-integration/IT-010) and
+[TC-094](ix://agent-ix/quire-integration/TC-094)) live in
+`agent-ix/quire-integration`. See [Plan-008](plan/Plan-008-native-lowering/plan.md).
 
 CLI command and source identity/revision labels must be UTF-8; invalid encoding
 returns usage exit 20. File operands remain OS paths. JSON paths are display text,
@@ -217,14 +213,6 @@ Rust 1.98.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
 native CLI needs no Node or JVM. Default native commands need no optional features;
 the Quire consumer is enabled explicitly with `quire-extraction`.
 Use `--target-dir target` where a machine config points Cargo outside the checkout.
-
-Backend parity additionally requires Rust 1.98.1's `llvm-tools-preview` component
-and cargo-llvm-cov 0.9.0. Missing tools fail the test. Run the named LC04 parity
-gate with `cargo test --locked --offline --target-dir target -j 1 --test it
-native_backend::generated_proptest_and_old_profile_activation_match_reference
--- --exact --test-threads=1`. The fixture verifies generated truth and activation
-for `boolean-oracle/v1` while also requiring the pinned reusable reader to retain
-its explicit LLVM 3.1.0 refusal.
 
 On the shared desktop, run Cargo phases one at a time with `nice -n 10` and
 `-j 1`, and run tests with `-- --test-threads=1`. Check for competing builds

@@ -67,9 +67,7 @@ This check flags two *different* ecosystem crate names resolving to the same
 repository at different revisions exactly as it flags one crate name at two
 revisions: `quire-contract-ir` (consumed at one revision) and
 `quire-contract-model` (IR's own workspace member, consumed at a different
-revision, for example through QSL's `quire-contract-ir-historical` dev-alias)
-are the IR repository twice, and are reported (#249 review R2; see Status for
-what this means for QSL's own real `Cargo.lock`).
+revision) are the IR repository twice, and are reported (#249 review R2).
 
 ### Scope: the current-head lane's own lock too
 
@@ -78,9 +76,7 @@ separate `Cargo.lock`, independent of QSL's root one. That lock is in scope
 for this requirement too (#249 review R3): the Makefile SHALL provide a
 target that runs this check over the lane's own lockfile, and the lane's own
 dependency graph SHALL be arranged (via its `[patch]` table) so that lock
-converges on one revision per ecosystem repository. This requirement does not
-require QSL's own root lock to converge; see Status for that lock's real,
-current outcome under the R2 repository rule.
+converges on one revision per ecosystem repository.
 
 ## Acceptance Criteria
 
@@ -89,7 +85,7 @@ current outcome under the R2 repository rule.
 | FR-061-AC-1 | `Cargo.lock` parsing recovers each `[[package]]` stanza's name, version and source. | Test (TC-158) |
 | FR-061-AC-2 | A lockfile with one source per ecosystem repository reports no duplicate; a non-ecosystem crate name (for example `serde`) resolved to two sources is not reported. | Test (TC-158) |
 | FR-061-AC-3 | A lockfile with two packages classifying to the same ecosystem repository -- whether they share one crate name or not -- resolved to two distinct sources reports exactly one duplicate finding, naming both sources. | Test (TC-158) |
-| FR-061-AC-4 | Run against QSL's real root `Cargo.lock`, the check reports the IR repository as a duplicate: `quire-contract-ir` (consumed directly) and `quire-contract-model` (IR's own workspace member, consumed through the `quire-contract-ir-historical` dev-alias) are the same repository at two different revisions. Run against the current-head lane's own `Cargo.lock` (`integration/current-head/Cargo.lock`), the check reports no duplicate. | Test (TC-158) |
+| FR-061-AC-4 | Run against QSL's real root `Cargo.lock` (`make arch-lint-duplicate-revisions`, part of `make ci`), the check reports no duplicate. Run against the current-head lane's own `Cargo.lock` (`integration/current-head/Cargo.lock`), the check reports no duplicate. | Test (TC-158) |
 
 ## Dependencies
 
@@ -106,13 +102,10 @@ Specified and implemented under
 (`tools/arch-lint/duplicate_revisions.rs`), keyed on repository (via the
 shared `graph::classify`) rather than crate name since #249 review R2.
 
-Run against QSL's real root `Cargo.lock`, the check now reports the IR
-repository as a duplicate (`quire-contract-ir` vs. `quire-contract-model`,
-FR-061-AC-4): `arch-lint duplicate-revisions --lockfile Cargo.lock` exits 1.
-This is a real, pre-existing double-pin the R2 repository rule newly detects;
-this requirement does not remediate it (`make arch-lint`'s own comment records
-this; remaining work tracked as #211/#213-adjacent architecture debt, not
-resolved here).
+Run against QSL's real root `Cargo.lock`, the check reports no duplicate
+(FR-061-AC-4) and runs in `make ci`. QSL-334 removed the
+`quire-contract-codegen` development dependency whose graph resolved second
+copies of QSL and IR crates.
 
 Run against the current-head lane's own `Cargo.lock`
 (`make arch-lint-duplicate-revisions-lane`), the check reports no duplicate:
