@@ -175,7 +175,7 @@ application in its body is one claim of its own, its value validity
 | Operation precondition, postcondition or invariant | `operation-contract` |
 | Frame obligation (`modifies`, `creates`, `deletes`) | `operation-contract` |
 | Replay of one finite execution | `finite-replay` |
-| Refinement between two operation contracts or state models (the relation-family refinement gates, [#191](https://github.com/agent-ix/quire-spec-language/issues/191) and [#192](https://github.com/agent-ix/quire-spec-language/issues/192)) | `operation-contract`, one claim per clause implication |
+| Refinement between two operation contracts or state models (a proof route no V1 ticket owns; the [#191](https://github.com/agent-ix/quire-spec-language/issues/191) and [#192](https://github.com/agent-ix/quire-spec-language/issues/192) corpus gates are test gates that request no kind, ADR-017 RF-1) | `operation-contract`, one claim per clause implication |
 | Abstraction relation (quire-specification FR-353) | none; it is a premise of the `operation-contract` claim it binds |
 | Temporal requirement under a finite-trace or infinite-trace profile | `temporal-satisfaction` |
 | Refinement between two protocols | `refinement` |
@@ -359,7 +359,7 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-6 | Given settled dispositions in which one item is `unsupported` for an empty candidate set and one is `supported`, routing routes only the `supported` item. The `unsupported` item gets no target and no artifact, and is not turned into a refusal or a hold. The other item routes without delay. | Test (TC-155) |
 | FR-057-AC-7 | The QSL source tree defines one type carrying capability-kind labels, and no other type parses or emits an FR-290 label. | Test (TC-153) |
 | FR-057-AC-8 | A backend registration advertising an absent or unknown kind or an unknown mode is refused with `invalid_capability` and its cause, keyed by backend identity; the refused registration contributes nothing, and any registration already held under that identity stands. A registration repeating an already-held identity with an equal descriptor is not refused; with an unequal descriptor, every registration of that identity -- the one already held and the new one -- is refused `invalid_capability`/`duplicate-backend` and the held registration is withdrawn (FR-075-AC-4, FR-075-AC-7). Candidate sets, their order, and the routing of `supported` items are identical under every registration order; two capable backends with no named backend yield two candidates, never a chosen one. | Test (TC-155) |
-| FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item; an expression nested in a clause adds no kind; a scalar operation application in a `Value` function body requests `value-validity` once per occurrence (FR-062-AC-13); a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153, TC-160) |
+| FR-057-AC-10 | Each claim form in this requirement's claim-form table requests exactly its listed kind, one kind per item, except the row for refinement between two operation contracts or state models, whose proof route no V1 ticket owns (ADR-017 RF-1); an expression nested in a clause adds no kind; a scalar operation application in a `Value` function body requests `value-validity` once per occurrence (FR-062-AC-13); a `case` exhaustiveness obligation and an abstraction relation request none. | Test (TC-153, TC-160) |
 | FR-057-AC-11 | Each kind is applicable to exactly the family this requirement's applicability table gives it. A required `operation-contract` request on a state declaration is admitted; a `finite-replay` request on a state declaration is an inapplicable capability naming the state family, and its declaration's body still reaches its family checker. | Test (TC-115) |
 
 ## Dependencies
@@ -381,8 +381,9 @@ checker's definition permissions. Their ownership is decided in #211.
 - #213 implements the canonical `Capability` value type, the admission rules
   and the removal of backend reading from `requests::report`. #185 implements
   registration, candidate sets and routing over that type. FR-057-AC-10 also
-  needs function application (#217), the refinement gates (#191, #192) and the
-  abstraction relation (quire-specification FR-353) in QSL.
+  needs function application (#217) and the abstraction relation
+  (quire-specification FR-353) in QSL. The refinement gates (#191, #192)
+  request no kind (ADR-017 RF-1), so AC-10 does not wait on them.
   FR-057-AC-1 to AC-5, AC-7 and AC-10 have no #222 prerequisite; only `requires-bound` and the
   `unbounded-extent` case are #222's.
 - Where this requirement abbreviates FR-290 (diagnostic payloads, report

@@ -35,7 +35,7 @@ FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7 and FR-057-AC-10.
 7. Check one of each claim form in FR-057's claim-form table: a function
    application clause, a clause with a nested `case` expression and function
    application, an operation precondition, postcondition and invariant, a frame
-   obligation, a contract refinement gate, an operation bound by an abstraction
+   obligation, an operation bound by an abstraction
    relation, a finite replay, a temporal requirement, a protocol refinement, a
    `global-conformance` claim, an exhaustive `case` and a non-exhaustive
    `case`.
@@ -57,8 +57,9 @@ FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7 and FR-057-AC-10.
 - Step 6: exactly one type, the canonical `Capability`, parses or emits a
   label.
 - Step 7: each item records exactly one kind: `value-validity` (twice),
-  `operation-contract` (for each of the three clauses, the frame obligation,
-  the refinement gate's implications and the bound operation's clauses),
+  `operation-contract` (for each of the three clauses, the frame obligation
+  and the bound operation's clauses; the operation-contract refinement row is
+  outside V1, ADR-017 RF-1),
   `finite-replay`, `temporal-satisfaction`, `refinement` and
   `global-conformance`. The abstraction relation and the exhaustive `case`
   record no kind. The non-exhaustive `case` refuses as

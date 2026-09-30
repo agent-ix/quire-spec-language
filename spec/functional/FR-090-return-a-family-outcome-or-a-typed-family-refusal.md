@@ -242,9 +242,8 @@ S6a's input type SHALL admit no `Relation` declaration: the S6a family kind
 has no `Relation` variant (ADR-012 §2, §3). `Relation` implements no
 `ReferenceEvaluation` hook. The abstraction relation has no FR-057
 capability kind (ADR-012 §7.2), so no backend proves it and no counterexample
-of it exists. The refinement gates' claims have kind `operation-contract`,
-one per clause implication (FR-057); their clauses reach S6a as clause
-expressions through `CheckedPackage::evaluate`, not as a `Relation`
+of it exists. The refinement gates are test gates that request no kind
+(ADR-017 RF-1); their cases reach S6a as clause runs, not as a `Relation`
 declaration. No path produces an S6a evaluation of a `Relation` declaration,
 so `FamilyOutcome` has no arm for "the family does not run here". This is the
 precise statement of FR-062-AC-6's non-native evaluability.
