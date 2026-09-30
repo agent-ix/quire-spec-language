@@ -72,11 +72,12 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   FR-105), which tells apart two declarations that share one node, and its
   `obligation_identity` is the O-09 obligation identity of that clause's
   `operation-contract` record (FR-104 "Requirements"), which CG mints.
-- Of the envelope, the executor reads the `package_id`, `clause_node`, `occurrence_key` and the `ReplaySource`
-  variant, which selects the result's arm. It takes the observation only
-  from the payload's documents: the `ReplaySource`'s transcript or `Input`
-  assignments bind nothing, since a state clause has no parameters for
-  them to bind. The envelope's `obligation_identity` and
+- Of the envelope, the executor reads the `package_id`, `clause_node`,
+  `occurrence_key` and the `ReplaySource` variant, which selects the
+  result's arm. Every value the clause reads (`self`, the operation's
+  parameters and its result, and the objects of each observation) comes
+  from the admitted documents, so the `ReplaySource`'s transcript or
+  `Input` assignments bind nothing. The envelope's `obligation_identity` and
   `selected_function` are CG's members; the executor reads neither and the
   result carries neither.
 - FR-098's package reference, byte provision and limits: the request's
@@ -97,10 +98,11 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   the identity and digest of every document admission read, the evaluated
   value when there is one, the evaluation charges and the executor's
   toolchain pin.
-- A `Witness`-arm result that reproduces carries the FR-351 record FR-098
-  gives a Boolean verdict (FR-072, FR-098-AC-2): the evaluated Boolean as
-  its deciding element, index 0, an empty value path and no trace
-  position. An `Input`-arm result carries the evaluated value and no
+- A `Witness`-arm result with an evaluated value carries the FR-351 record
+  FR-098 gives a Boolean verdict (FR-072, FR-098-AC-2): the evaluated
+  Boolean as its deciding element, index 0, an empty value path and no
+  trace position. This holds for a result that reproduces (`false`) and
+  for one that settles `inconclusive`, `Verdicts` (`true`). An `Input`-arm result carries the evaluated value and no
   FR-351 record. A result with no value carries neither (FR-072).
 
 ## Behavior
@@ -166,7 +168,7 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-122-AC-1 | Over FR-108's ConfigVersion unit, an envelope for `VersionUnchanged` whose observation is the changed-version invocation settles `reproduced-with-evaluated-witness`, and the same payload on an `Input`-arm envelope settles `reproduced-without-witness`. An envelope for `ParentOrder` whose observation is violating-parent's current snapshot (anchor `handler validate`, self `child`) settles `reproduced-with-evaluated-witness`. Each result holds the source digest, the `package_id`, the payload's `clause`, the envelope's `clause_node` and `occurrence_key`, and the identity and digest of every document admission read: the invocation and both snapshots, or the one current snapshot. Each `Witness`-arm result's FR-351 record holds `false` as its deciding element, index 0, an empty value path and no trace position; the `Input`-arm result holds `false` and no FR-351 record. | Test (TC-517) |
-| FR-122-AC-2 | The `VersionUnchanged` envelope over the unchanged-version invocation, and the `ParentOrder` envelope over healthy-parent's snapshot, each settle `inconclusive`, `Verdicts`, holding `violation` and `success`. The `ParentOrder` violating-parent envelope replayed with the request's `quire.value.accounting/v1` evaluation budget at zero settles `inconclusive`, `NoValue`. | Test (TC-517) |
+| FR-122-AC-2 | The `VersionUnchanged` envelope over the unchanged-version invocation, and the `ParentOrder` envelope over healthy-parent's snapshot, each settle `inconclusive`, `Verdicts`, holding `violation` and `success` and an FR-351 record with `true` as its deciding element. The `ParentOrder` violating-parent envelope replayed with the request's `quire.value.accounting/v1` evaluation budget at zero settles `inconclusive`, `NoValue`. | Test (TC-517) |
 | FR-122-AC-3 | Stale identity: the changed-version `VersionUnchanged` envelope whose `clause_node` names `ParentOrder`'s node refuses `stale_dependency`/`revision-mismatch` naming the envelope's and the recompiled node identity, and names the nodes the same way when its `occurrence_key` is also at ordinal 1; with only its `occurrence_key` at ordinal 1 it refuses the same way naming both occurrences; none admits a document (its invocation absent from the byte provision changes none of these refusals). A source edit that changes the `package_id` refuses by FR-098's stale `package_id` rule. A `clause` naming `Absent`, and one naming the function `sameIdentity`, each refuse `missing_declaration`/`missing-name`. | Test (TC-517) |
 | FR-122-AC-4 | Precondition: over TC-466 step 3's `probe` unit (precondition `ReachesTarget`, `reaches(self, target, parent)`, over the chain `a -> b -> c`), an envelope whose observation is the `probe` invocation with `self` `a` and `target` `a` settles `reproduced-with-evaluated-witness`, holding the invocation and both snapshots; with `target` `c` it settles `inconclusive`, `Verdicts`. | Test (TC-517) |
 | FR-122-AC-5 | Admission refusals settle no result: the `VersionUnchanged` envelope over the forbidden-parent-change invocation refuses with FR-106's `frame_violation`/`unauthorized-change` record naming `child` and `parent`; the changed-version envelope with its pre snapshot absent from the byte provision refuses with FR-106's `unavailable_observation` record; with its invocation bytes edited under the same digest it refuses `stale_dependency`/`byte-digest-mismatch`; a `VersionUnchanged` envelope whose observation is `Current` over healthy-parent's snapshot refuses `wrong_snapshot`/`wrong-observation`. | Test (TC-517) |

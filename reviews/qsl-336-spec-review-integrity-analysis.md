@@ -30,3 +30,9 @@ Structurally complete. One traceability gap in the frontmatter.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The `relationships` block omits FR-100, FR-104, FR-105 and FR-108, which Behavior (FR-100's internal failures, line 125) and Dependencies (lines 149-157) rely on. A graph query for FR-108's or FR-104's dependents misses FR-122. Add `depends_on` edges. | spec/functional/FR-122-replay-a-state-clause-counterexample.md:5-23 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | cf00f646 |

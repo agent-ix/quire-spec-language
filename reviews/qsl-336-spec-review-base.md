@@ -50,3 +50,10 @@ AC-2 depends on it.
 | --- | --- | --- | --- |
 | FND-001 | medium | Behavior never says which limit charges the FR-107 evaluation meter or bounds FR-106 admission. Inputs says only "FR-098's ... limits", but FR-098's request carries S1-S4 stage limits and separate accounting limits, and FR-109's run takes `work_units` and `ObservationLimits`. AC-2 requires the zero "request's `quire.value.accounting/v1` evaluation budget" to give `NoValue`: an implementer who feeds S3's `work_units` (as FR-109's `work_units` naming invites) refuses at recompile instead, and one who uses FR-109's default meter completes `false`. State that the evaluation meter is built from the request's accounting limits and admission runs under default `ObservationLimits` (FR-116's implementation does both). | spec/functional/FR-122-replay-a-state-clause-counterexample.md:68-73, 110-112, 137 |
 | FND-002 | low | "the executor does not compare the envelope's witness transcript with those documents" states what is not done; the preceding sentence already states the agreement basis. Per state-what-is, drop the negative clause (or fold it into FND-003 of SR-827 by stating what the executor reads from the source arm). | spec/functional/FR-122-replay-a-state-clause-counterexample.md:116-118 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | cf00f646 |
+| FND-002 | fixed | cf00f646 |

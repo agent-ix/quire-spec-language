@@ -30,3 +30,9 @@ Conforms, with one compound condition whose response is under-specified.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | Compound trigger: "If the node identity differs ..., or its `claim` occurrence key differs ..., then ... refuse ... naming the envelope's and the recompiled identity". When both differ (the usual case, since an `OccurrenceKey` carries its node id) it does not say which is checked first or which pair is named. PR #538's FR-116 check orders the node first. AC-3 changes one at a time, so either order passes. State the order: node, then occurrence. | spec/functional/FR-122-replay-a-state-clause-counterexample.md:96-101 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | cf00f646 |

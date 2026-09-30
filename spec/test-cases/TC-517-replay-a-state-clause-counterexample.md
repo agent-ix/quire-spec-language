@@ -60,7 +60,8 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
   result holds the source digest, `package_id`, the payload's `clause`, the
   envelope's `clause_node` and `occurrence_key`, and the identities and digests of the
   invocation and both snapshots, or of the one current snapshot.
-- Step 2: `inconclusive`, `Verdicts` (`violation`, `success`) twice;
+- Step 2: `inconclusive`, `Verdicts` (`violation`, `success`) twice, each
+  with an FR-351 record whose deciding element is `true`;
   `inconclusive`, `NoValue`.
 - Step 3: `stale_dependency`/`revision-mismatch` naming the envelope's and
   the recompiled clause node, then both occurrences, then both clause
