@@ -448,12 +448,13 @@ pub struct ClauseRunReport {
 }
 
 /// The `DocumentRef`s a selection names, in read order (before any are
-/// necessarily admitted): `Current`'s snapshot, `Invocation`'s invocation,
-/// or `Function`'s current snapshot.
+/// necessarily admitted): `Current`'s or `PreCall`'s snapshot,
+/// `Invocation`'s invocation, or `Function`'s current snapshot.
 fn selection_documents(selection: &ClauseRunSelection) -> Vec<DocumentRef> {
     match selection {
         ClauseRunSelection::Clause(clause) => match &clause.input {
-            ClauseSelectionInput::Current { snapshot, .. } => vec![snapshot.clone()],
+            ClauseSelectionInput::Current { snapshot, .. }
+            | ClauseSelectionInput::PreCall { snapshot, .. } => vec![snapshot.clone()],
             ClauseSelectionInput::Invocation { invocation } => vec![invocation.clone()],
         },
         ClauseRunSelection::Function { snapshot, .. } => vec![snapshot.clone()],

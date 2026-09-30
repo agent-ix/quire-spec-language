@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 
 use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::{Code, InternalFault};
-use quire_exact::{EffectiveId, ObjectId, ObjectReference, UniverseId, Value};
+use quire_exact::{EffectiveId, Identifier, ObjectId, ObjectReference, UniverseId, Value};
 
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackage, DomainPackageRef, OperationEffect};
@@ -181,11 +181,54 @@ pub enum ClauseSelectionInput {
         /// The selected self object.
         self_object: SelectedObject,
     },
+    /// A precondition's pre-call observation: the operation's pre state,
+    /// the self object and the parameter values, before the operation
+    /// runs. It has no post snapshot, result or delta.
+    PreCall {
+        /// The pre snapshot document.
+        snapshot: DocumentRef,
+        /// The selected self object.
+        self_object: SelectedObject,
+        /// Each declared parameter's value, by parameter name.
+        parameters: BTreeMap<Identifier, SnapshotValue>,
+    },
     /// A precondition's or postcondition's invocation document.
     Invocation {
         /// The invocation document.
         invocation: DocumentRef,
     },
+}
+
+impl ClauseSelectionInput {
+    /// Which of the three observation forms this input is.
+    pub fn form(&self) -> ObservationForm {
+        match self {
+            Self::Current { .. } => ObservationForm::Current,
+            Self::PreCall { .. } => ObservationForm::PreCall,
+            Self::Invocation { .. } => ObservationForm::Invocation,
+        }
+    }
+}
+
+/// The form of a [`ClauseSelectionInput`], without its documents.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ObservationForm {
+    /// A current snapshot, its anchor and the self object.
+    Current,
+    /// A pre snapshot, the self object and the parameters.
+    PreCall,
+    /// An invocation document.
+    Invocation,
+}
+
+impl std::fmt::Display for ObservationForm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Current => "current",
+            Self::PreCall => "pre-call",
+            Self::Invocation => "invocation",
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -315,16 +358,17 @@ pub struct AdmittedObservations {
     pub clause: quire_exact::NodeKey,
     /// The current observation (invariant only).
     pub current: Option<Observation>,
-    /// The pre observation (precondition/postcondition only).
+    /// The pre observation: an invocation's pre snapshot, or a pre-call
+    /// observation's one snapshot.
     pub pre: Option<Observation>,
-    /// The post observation (postcondition only, present alongside `pre`
-    /// for a precondition too, since FR-106 admits both invocation
-    /// snapshots).
+    /// The post observation: present for an invocation, whose two
+    /// snapshots FR-106 admits for a precondition as for a postcondition;
+    /// absent for a current or a pre-call observation.
     pub post: Option<Observation>,
     /// The selected self object's reference.
     pub self_object: ObjectReference,
-    /// The invocation's parameter values, by declared name (empty for an
-    /// invariant).
+    /// The parameter values of an invocation or a pre-call observation, in
+    /// declared order (empty for an invariant).
     pub parameters: Vec<(String, Value)>,
     /// The invocation's result value, or `None` for an operation with no
     /// result (empty for an invariant).
@@ -339,50 +383,54 @@ pub struct AdmittedObservations {
 // Raw value grammar (FR-106 "Document forms")
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
-enum RawValue {
+/// One value in FR-106's snapshot value form ("Document forms"): an object
+/// field's value in a snapshot, a parameter or result of an invocation, or
+/// a parameter of a `PreCall` selection. An integer keeps its FR-038
+/// decimal spelling; admission checks it against the declared type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SnapshotValue {
+    /// `{"boolean": true|false}`.
     Boolean(bool),
+    /// `{"integer": "<decimal>"}`.
     Integer(String),
+    /// `{"absent": {}}`.
     Absent,
-    Present(Box<RawValue>),
-    Reference(RawRef),
-    Sequence(Vec<RawValue>),
-}
-
-#[derive(Clone, Debug)]
-struct RawRef {
-    population: String,
-    key: String,
+    /// `{"present": <value>}`.
+    Present(Box<SnapshotValue>),
+    /// `{"reference": {"population": ..., "key": ...}}`.
+    Reference(SelectedObject),
+    /// `{"sequence": [<value>, ...]}`.
+    Sequence(Vec<SnapshotValue>),
 }
 
 /// Read one FR-106 value form from `json`, or `None` when it is not one of
 /// the six tagged shapes: a wire-reading edge (ADR-012 §9), converting the
-/// value's tag to a closed [`RawValue`] variant once, here.
+/// value's tag to a closed [`SnapshotValue`] variant once, here.
 #[qsl_attrs::string_edge]
-fn read_raw_value(json: &serde_json::Value) -> Option<RawValue> {
+fn read_raw_value(json: &serde_json::Value) -> Option<SnapshotValue> {
     let object = json.as_object()?;
     if object.len() != 1 {
         return None;
     }
     let (tag, payload) = object.iter().next()?;
     match tag.as_str() {
-        "boolean" => Some(RawValue::Boolean(payload.as_bool()?)),
-        "integer" => Some(RawValue::Integer(payload.as_str()?.to_owned())),
+        "boolean" => Some(SnapshotValue::Boolean(payload.as_bool()?)),
+        "integer" => Some(SnapshotValue::Integer(payload.as_str()?.to_owned())),
         // FR-106 line 107 spells this tag's payload `{}`, not any value
         // (SR-750 FND-013): an object with any member, or a non-object
         // payload, is not this shape at all.
         "absent" => {
             if payload.as_object().is_some_and(serde_json::Map::is_empty) {
-                Some(RawValue::Absent)
+                Some(SnapshotValue::Absent)
             } else {
                 None
             }
         }
-        "present" => Some(RawValue::Present(Box::new(read_raw_value(payload)?))),
+        "present" => Some(SnapshotValue::Present(Box::new(read_raw_value(payload)?))),
         "reference" => {
             let population = payload.get("population")?.as_str()?.to_owned();
             let key = payload.get("key")?.as_str()?.to_owned();
-            Some(RawValue::Reference(RawRef { population, key }))
+            Some(SnapshotValue::Reference(SelectedObject { population, key }))
         }
         "sequence" => {
             let items = payload.as_array()?;
@@ -390,7 +438,7 @@ fn read_raw_value(json: &serde_json::Value) -> Option<RawValue> {
             for item in items {
                 sequence.push(read_raw_value(item)?);
             }
-            Some(RawValue::Sequence(sequence))
+            Some(SnapshotValue::Sequence(sequence))
         }
         _ => None,
     }
@@ -588,11 +636,20 @@ pub fn admit_observations(
     // Check 2: selection form.
     match (clause.kind, &selection.input) {
         (StateClauseKind::Invariant, ClauseSelectionInput::Current { .. })
+        | (StateClauseKind::Precondition, ClauseSelectionInput::PreCall { .. })
         | (
             StateClauseKind::Precondition | StateClauseKind::Postcondition,
             ClauseSelectionInput::Invocation { .. },
         ) => {}
-        _ => {
+        (
+            StateClauseKind::Precondition | StateClauseKind::Postcondition,
+            ClauseSelectionInput::Current { .. },
+        )
+        | (
+            StateClauseKind::Invariant | StateClauseKind::Postcondition,
+            ClauseSelectionInput::PreCall { .. },
+        )
+        | (StateClauseKind::Invariant, ClauseSelectionInput::Invocation { .. }) => {
             return Err(refuse(AdmissionRecord::new(
                 Code::WrongSnapshot,
                 "wrong-observation",
@@ -623,6 +680,28 @@ pub fn admit_observations(
             snapshot,
             anchor,
             self_object,
+            limits,
+        ),
+        ClauseSelectionInput::PreCall {
+            snapshot,
+            self_object,
+            parameters,
+        } => admit_pre_call(
+            &PreCallContext {
+                views: &views,
+                types,
+                context_view,
+                context_name: &context_name,
+                clause: clause.identity,
+                operation: clause
+                    .operation
+                    .as_ref()
+                    .ok_or_else(|| fault("clause-declares-no-operation"))?,
+            },
+            provisions,
+            snapshot,
+            self_object,
+            parameters,
             limits,
         ),
         ClauseSelectionInput::Invocation { invocation } => admit_operation(
@@ -940,11 +1019,13 @@ fn admit_invocation_documents(
         &pre_snapshot.populations,
         &pre_values.completeness,
         Some(&self_object.population),
+        &document::parameter_populations(views, &invocation.parameters),
     )?;
     document::check_population_completeness(
         &post_snapshot.populations,
         &post_values.completeness,
         post_self_population,
+        &[],
     )?;
     document::check_population_closure(
         &pre_snapshot.populations,
@@ -985,11 +1066,14 @@ fn admit_invocation_documents(
     // (check 8's closure rule, SR-771 FND-001).
     let mut parameter_references = document::References::over(views, &pre_snapshot.populations);
     let mut result_references = document::References::over(views, &post_snapshot.populations);
-    let (parameters, result) = document::admit_parameters_and_result(
+    let parameters = document::admit_parameters(
         &mut parameter_references,
-        &mut result_references,
         &operation.declaration,
         &invocation.parameters,
+    )?;
+    let result = document::admit_result(
+        &mut result_references,
+        &operation.declaration,
         &invocation.result,
     )?;
 
@@ -1000,6 +1084,110 @@ fn admit_invocation_documents(
         self_reference,
         parameters,
         result,
+    })
+}
+
+/// What a `PreCall` admission reads about the selected precondition.
+struct PreCallContext<'a> {
+    views: &'a [ModelView],
+    types: &'a TypeEnvironment,
+    context_view: &'a ModelView,
+    context_name: &'a str,
+    clause: quire_exact::NodeKey,
+    operation: &'a OperationFacts,
+}
+
+/// FR-106 checks 1, 3, 4 and 6 to 10 over a `PreCall` selection: the one
+/// pre snapshot, the self object and the parameters. Check 5 names an
+/// invocation's operation, and check 11 compares a pre and a post
+/// snapshot; a pre-call observation has neither, so neither runs.
+fn admit_pre_call(
+    context: &PreCallContext<'_>,
+    provisions: &Provisions<'_>,
+    selected: &DocumentRef,
+    self_object: &SelectedObject,
+    parameters: &BTreeMap<Identifier, SnapshotValue>,
+    limits: ObservationLimits,
+) -> Result<AdmittedObservations, AdmissionFailure> {
+    // Check 1.
+    let read = read_document(
+        DocumentKind::Snapshot,
+        provisions.snapshots,
+        selected,
+        limits,
+    )?;
+    let snapshot = read
+        .as_snapshot()
+        .ok_or_else(|| fault("expected-snapshot-document"))?;
+
+    // Check 3: observation role.
+    if snapshot.observation != document::ObservationRole::Pre {
+        return Err(refuse(AdmissionRecord::new(
+            Code::WrongSnapshot,
+            "wrong-observation",
+        )));
+    }
+
+    // Check 4: model.
+    check_model(context.context_view, &snapshot.model)?;
+
+    // Checks 6 to 8, with every declared population a reference parameter
+    // names required alongside `self`'s.
+    let parameters: Vec<(String, SnapshotValue)> = parameters
+        .iter()
+        .map(|(name, value)| (name.as_str().to_owned(), value.clone()))
+        .collect();
+    let values = document::admit_population_values(
+        context.views,
+        context.types,
+        &snapshot.populations,
+        limits,
+    )?;
+    document::check_population_completeness(
+        &snapshot.populations,
+        &values.completeness,
+        Some(&self_object.population),
+        &document::parameter_populations(context.views, &parameters),
+    )?;
+    document::check_population_closure(
+        &snapshot.populations,
+        &values.completeness,
+        &values.keys_by_population,
+    )?;
+    let admitted = document::finish_populations(context.types, values)?;
+
+    // Check 9: self.
+    let self_reference = document::resolve_self(
+        context.views,
+        context.types,
+        context.context_view,
+        context.context_name,
+        &admitted.environment,
+        self_object,
+    )?;
+
+    // Check 10: parameters, resolved against the pre snapshot. A pre-call
+    // observation carries no result.
+    let mut references = document::References::over(context.views, &snapshot.populations);
+    let parameters =
+        document::admit_parameters(&mut references, &context.operation.declaration, &parameters)?;
+
+    let usage = read.usage.merged_with(admitted.usage);
+    Ok(AdmittedObservations {
+        usage,
+        clause: context.clause,
+        current: None,
+        pre: Some(Observation {
+            identity: read.identity,
+            environment: admitted.environment,
+            populations: admitted.completeness,
+        }),
+        post: None,
+        self_object: self_reference,
+        parameters,
+        result: None,
+        created: Vec::new(),
+        deleted: Vec::new(),
     })
 }
 

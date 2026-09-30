@@ -484,14 +484,20 @@ impl CheckedPackageEvaluation for CheckedPackage {
         if declaration.identity() != observations.clause {
             return Err(InputRefusal::ObservationsMismatch.into());
         }
+        // The clause's own observation: the current snapshot of an
+        // invariant, an invocation's post snapshot, or, for a precondition
+        // observed before its call, the one pre snapshot. A precondition
+        // reads every model read in `pre` (FR-104), so its own observation
+        // is never read apart from `pre` either way.
         let current = observations
             .current
             .as_ref()
             .or(observations.post.as_ref())
+            .or(observations.pre.as_ref())
             .ok_or_else(|| {
                 CallFailure::Fault(InternalFault::new(
                     "S6a",
-                    "clause-observations-missing-current-or-post",
+                    "clause-observations-missing-an-observation",
                 ))
             })?;
         let pre_environment = observations

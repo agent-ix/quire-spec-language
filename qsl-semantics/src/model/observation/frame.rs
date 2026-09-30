@@ -21,7 +21,7 @@ use super::document::{find_declaration, raw_field, RawObject, RawPopulation};
 use super::helpers::object_reference;
 use super::{
     fault, refuse, view_of, AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange,
-    FrameVerdict, FrameWitness, ModelView, RawValue, SelectedObject,
+    FrameVerdict, FrameWitness, ModelView, SelectedObject, SnapshotValue,
 };
 use crate::model::domain_package::OperationEffect;
 use crate::model::key::DeclarationKey;
@@ -56,7 +56,7 @@ struct WireFacts<'a> {
 /// One population's objects on one side, in document order:
 /// `frame[i]` and `facts[i]` describe the same object.
 struct WireSide<'a> {
-    frame: Vec<FrameObject<'a, &'a RawValue>>,
+    frame: Vec<FrameObject<'a, &'a SnapshotValue>>,
     facts: Vec<WireFacts<'a>>,
 }
 
@@ -75,7 +75,7 @@ impl WireSide<'_> {
 fn wire_object<'a>(
     context: &FrameContext<'a>,
     object: &'a RawObject,
-) -> Result<(FrameObject<'a, &'a RawValue>, WireFacts<'a>), AdmissionFailure> {
+) -> Result<(FrameObject<'a, &'a SnapshotValue>, WireFacts<'a>), AdmissionFailure> {
     let (view, type_identity) = find_declaration(context.views, object.type_identity.as_str())
         .ok_or_else(|| fault("frame-object-type-unresolved"))?;
     let effective_type = *view
@@ -408,7 +408,7 @@ pub(super) fn verdict(
     })))
 }
 
-fn raw_values_equal(left: Option<&RawValue>, right: Option<&RawValue>) -> bool {
+fn raw_values_equal(left: Option<&SnapshotValue>, right: Option<&SnapshotValue>) -> bool {
     match (left, right) {
         (None, None) => true,
         (Some(left), Some(right)) => raw_value_eq(left, right),
@@ -416,8 +416,8 @@ fn raw_values_equal(left: Option<&RawValue>, right: Option<&RawValue>) -> bool {
     }
 }
 
-fn raw_value_eq(left: &RawValue, right: &RawValue) -> bool {
-    use RawValue::{Absent, Boolean, Integer, Present, Reference, Sequence};
+fn raw_value_eq(left: &SnapshotValue, right: &SnapshotValue) -> bool {
+    use SnapshotValue::{Absent, Boolean, Integer, Present, Reference, Sequence};
     match (left, right) {
         (Boolean(a), Boolean(b)) => a == b,
         (Integer(a), Integer(b)) => a == b,

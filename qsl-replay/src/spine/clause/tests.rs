@@ -2276,7 +2276,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     // (SR-751 FND-008 round 2, disclosed, not attempted): every
     // `CallFailure::Fault` `evaluate_clause` can itself construct
     // (`qsl-eval/src/value/expression/mod.rs:456,475,486`,
-    // "clause-observations-missing-current-or-post"/
+    // "clause-observations-missing-an-observation"/
     // "postcondition-result-missing"/"clause-parameter-not-admitted") is
     // unreachable once admission has actually succeeded: FR-106's
     // `admit_operation` unconditionally sets both `pre` and `post` on
