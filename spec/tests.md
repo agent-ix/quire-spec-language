@@ -266,6 +266,7 @@ operational validation remains outside this audit-only plan.
 | TC-514 | The spine run entry checks an invocation against its operation frame | Integration | P1 | FR-115-AC-1, FR-115-AC-2, FR-115-AC-3, FR-115-AC-4, FR-115-AC-5, FR-115-AC-6 | ✅ Passed locally; QSL-300 |
 | TC-515 | The replay facade replays a frame counterexample and keeps its identities | Integration | P1 | FR-116-AC-1, FR-116-AC-2, FR-116-AC-3, FR-116-AC-4, FR-116-AC-5 | ✅ Passed locally; QSL-301 |
 | TC-516 | call_site names a function's parameters by declared identity, matching what replay accepts | Unit | P1 | FR-121-AC-1, FR-121-AC-2 | ✅ Passed locally; QSL-317 |
+| TC-517 | The replay facade replays a state-clause counterexample and keeps its identities | Integration | P1 | FR-122-AC-1, FR-122-AC-2, FR-122-AC-3, FR-122-AC-4, FR-122-AC-5, FR-122-AC-6 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
