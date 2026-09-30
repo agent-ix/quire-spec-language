@@ -41,7 +41,7 @@ exploration and the owner of each gap) is
 Amended 2026-09-29 by QSL-18 (ARCH-41, #221). §16 maps sum types and `case`
 onto this contract, following QSpec's merged design (AD-015, FR-143,
 FR-146). It corrects the `SumCase` diagnostics in §3 and §12.1, and the S6a
-sentence in §2. SC-Q1 is open for the ADR-013 owner.
+sentence in §2. SC-Q1 is ruled: option (a) (ADR-013 OQ-I, 2026-09-29).
 
 ## Context
 
@@ -934,7 +934,7 @@ where it differs from this table. In particular:
 - the Diagnostics row needs no new catalog code (§16.5);
 - construction has no S2 form (§16.2);
 - `SumCase` has no S6a declaration kind (§16.6);
-- the kernel shape is SC-Q1.
+- the kernel shape is SC-Q1, option (a) (ADR-013 OQ-I).
 
 Normative input: agent-ix/quire-specification#115 (spelling, FR-143 and FR-146
 at `1-draft.4`). The capability kind of a sum/case proof claim is the one
@@ -1523,7 +1523,7 @@ the enum node, despite its name. Its variant list is `SumVariant{name}`
 (`:414`), which has no payload, and it maps to the kernel
 `ValueType::Enum(EnumShape)` at `to_kernel_value_type` (`:578`). #187 adds a
 separate union variant and leaves the enum path unchanged. How the union
-type reaches the kernel is SC-Q1 (§16.11).
+type reaches the kernel is SC-Q1, ruled option (a) (§16.11, ADR-013 OQ-I).
 
 **Round-trip requirements owned by #187.** #187 carries each of these as an
 acceptance criterion with a test.
@@ -1733,15 +1733,15 @@ reopens #221.
 | `qsl-semantics` | new `check/sum_case.rs`; `check/mod.rs` (the module and the family wiring); new `check/call_target.rs`, a `check`-core module declared in `check/mod.rs`, holding the call-target seam function and the resolved-target enum (§16.2); `check/assemble.rs` (the `Union` arm); `check/identity.rs` (the union `CheckedTypeNode` variant and its `to_kernel_value_type` arm); `check/check/typing.rs` (the `Case` arm, and the `Call` and `Name` arms per §16.2); `check/check.rs` (the scope member index, so the seam function can see union members); `check/ir.rs` (the `NodeKind` variants and children); `check/checked_dispatch.rs` (its FR-151 `Expression` rewrite gets a forced `Case` arm, which renames inside the scrutinee and the arm bodies but never renames an arm binder); `check/family.rs` (forced `Expression` walk arms only; `Application` is unchanged, §16.2); the forced `NodeKind` arms in `check/lowering.rs`, `check/lowering/*`, `check/claims.rs`, `check/facts.rs` and `check/observation.rs`; `check/refusal.rs` (the boxed `SumCaseCause` arm); `check/region.rs` (the locus arm); `check/node_key/mod.rs` and `value/member.rs` (wire vocabulary, with the §16.10 proposed spelling); `value/declaration.rs` (the union in the type environment, in `check_recursion`, and in the collection element rule of §16.4) | S3 family module, seam code and compile-forced arms |
 | `qsl-package` | `emit.rs` (`BodyNames::of` arms); any forced arm in `emit/*` | S4 arm |
 | `qsl-eval` | new `value/expression/sum_case.rs`; `value/expression/evaluate.rs` (the `Machine::apply` arms); `value/expression/mod.rs` (union argument admission, SC-R3) | S6a arms and admission |
-| `quire-exact` | only as SC-Q1 rules: the union value shape and its admission, equality and key arms (`value.rs`, `equality.rs`, `key.rs`; the key arm yields no key, §16.4) | kernel value |
+| `quire-exact` | per SC-Q1 option (a) (ADR-013 OQ-I): the union value shape and its admission, equality and key arms (`value.rs`, `equality.rs`, `key.rs`; the key arm yields no key, §16.4) | kernel value |
 | `qsl-replay`, root crate | only compile-forced arms (part 2), for example value conversions in `qsl-replay/src/execute.rs` and `spine/call.rs` | compile-forced |
 | docs | `docs/family-migration-recipe.md` is amended by this PR (§16.6), not by #187 | none for #187 |
 
-If SC-Q1 is ruled (a) and unions join the record and tuple composites in the
-type environment, every exhaustive match over the composite shape gets a
-forced arm under part 2. Those matches are in `family/requirements.rs`,
-`check/lowering.rs`, `qsl-eval` `evaluate.rs` and `qsl-package`
-`emit/extent_agreement.rs`.
+SC-Q1 is ruled (a) (ADR-013 OQ-I): unions join the record and tuple
+composites in the type environment, so every exhaustive match over the
+composite shape gets a forced arm under part 2. Those matches are in
+`family/requirements.rs`, `check/lowering.rs`, `qsl-eval` `evaluate.rs` and
+`qsl-package` `emit/extent_agreement.rs`.
 
 **Excluded.** #187 changes no `StateModel`, `TemporalTrace`,
 `ProtocolClause` or `Relation` family module:
@@ -1862,25 +1862,23 @@ decode. If QSpec merges a different spelling, the affected node ids change.
 That is allowed while prerelease: there are no users and no compatibility
 treatment (§16.9).
 
-### 16.11 Owner question
+### 16.11 Owner ruling
 
-| ID | Question | Options | Recommendation |
+| ID | Question | Options | Ruling |
 | --- | --- | --- | --- |
-| SC-Q1 | How does the union type reach the kernel? ADR-013 O-14 says "the kernel `ValueType` gains one sum shape whose variants are opaque `VariantId` digests". The kernel implemented that sum shape as the enum-only `EnumShape` (`quire-exact/src/value.rs:87`). QSpec accepted AD-015 after ADR-013, and FR-143-AC-13 admits recursive unions (`Tree`). An inline shape that holds each member's payload `ValueType`s cannot represent a recursive union. The kernel already solves this for records and tuples: `ValueType::Composite(NodeKey)` (`value.rs:175-206`) with `Value::Composite(CompositeValue { declaration: NodeKey, slots })` (`value.rs:767`). | (a) The union type is `ValueType::Composite(union node key)`, and its member list lives in the layer-3 type environment, as for records. `Value` gains one union variant carrying the union node key, the active member's `VariantId` and the payload values. The key lets admission check SC-R3's foreign-union case, as `CompositeValue.declaration` does for records. (b) An inline sum shape per O-14, with union recursion refused until the kernel gains named-type indirection. That contradicts FR-143-AC-13. | (a). It admits FR-143-AC-13 and reuses the record precedent. It changes no `ValueType` variant, so RT and CG get compile-forced arms for the new `Value` variant only. It reopens one O-14 cell ("The kernel `ValueType` gains one sum shape"). ADR-013's Status lets a #209, #210, #222 or #229 decision reopen a cell. #221 is not in that list, so whether this #210-line mapping may reopen the cell is the ADR-013 owner's call, as is the ruling itself. |
+| SC-Q1 | How does the union type reach the kernel? ADR-013 O-14 says "the kernel `ValueType` gains one sum shape whose variants are opaque `VariantId` digests". The kernel implemented that sum shape as the enum-only `EnumShape` (`quire-exact/src/value.rs:87`). QSpec accepted AD-015 after ADR-013, and FR-143-AC-13 admits recursive unions (`Tree`). An inline shape that holds each member's payload `ValueType`s cannot represent a recursive union. The kernel already solves this for records and tuples: `ValueType::Composite(NodeKey)` (`value.rs:175-206`) with `Value::Composite(CompositeValue { declaration: NodeKey, slots })` (`value.rs:767`). | (a) The union type is `ValueType::Composite(union node key)`, and its member list lives in the layer-3 type environment, as for records. `Value` gains one union variant carrying the union node key, the active member's `VariantId` and the payload values. The key lets admission check SC-R3's foreign-union case, as `CompositeValue.declaration` does for records. (b) An inline sum shape per O-14, with union recursion refused until the kernel gains named-type indirection. That contradicts FR-143-AC-13. | (a), ruled by the ADR-013 owner on 2026-09-29 (ADR-013 §8 OQ-I). O-14's original "inline sum shape" decision predates QSpec's acceptance of AD-015/FR-143-AC-13 (recursive unions), which an inline shape cannot represent — this is not a preference between two working designs, (b) is incompatible with an accepted spec requirement that postdates the original decision. Option (a) reuses the kernel's existing record/tuple precedent, so it introduces no new kernel invariant, and the blast radius is compile-forced arms for one new `Value` variant in RT and CG, nothing else. The ruling authorizes #221 to reopen the O-14 cell it amends (ADR-013 Status, OQ-I). |
 
-
-These parts of §16 depend on SC-Q1's answer. Each is written for option (a)
-and changes with the ruling:
+These parts of §16 are written for option (a), now settled:
 
 - SC-R3's foreign-union admission check, which needs the union node key in
   the value;
 - the §16.4 S6a row's argument admission and the §16.7 `quire-exact` row;
-- whether unions join the type environment's composites, which decides the
-  shared `check_recursion` graph (§16.4) and the extra forced composite-shape
-  arms (§16.7);
+- unions join the type environment's composites, which decides the shared
+  `check_recursion` graph (§16.4) and the extra forced composite-shape arms
+  (§16.7);
 - the kernel key arm of §16.4's collection row.
 
-Nothing else in §16 depends on it.
+Nothing else in §16 depended on it.
 
 ## Consequences
 
