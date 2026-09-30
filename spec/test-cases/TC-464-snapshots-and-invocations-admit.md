@@ -13,7 +13,7 @@ relationships:
 Verify the positive read and admission of FR-106's documents, digest
 stability, and that admission reads nothing ambient.
 
-Scope: FR-106-AC-1, FR-106-AC-2, FR-106-AC-6.
+Scope: FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8.
 
 ## Test Procedure
 
@@ -30,6 +30,15 @@ their `sha256-jcs` digest.
    (`child` 3), `result` `{"boolean": true}`.
 4. Repeat steps 1 and 3 in a process whose working directory is an empty
    temporary directory.
+5. Over TC-466 step 3's `probe` unit, admit the chain `a -> b -> c` pre
+   snapshot for `ReachesTarget` with `PreCall { snapshot, self: a,
+   parameters: {target: a} }`; the same selection for `VersionUnchanged`;
+   with a snapshot that says `post`; with no `target`; with `target`
+   naming `ghost`; over the package variant where `Sub` specializes
+   `ConfigVersion` and a second population `archive` has member type `Sub`
+   (TC-465's `archive` fixture), with `target` naming `a1` in an `archive`
+   listed with no objects and marked `complete: false`; with the snapshot
+   marked `complete: false`.
 
 Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
 
@@ -43,6 +52,14 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
 - Step 3: distinct pre and post observations, `self` `child` in both,
   `result` true, no parameters, empty created and deleted.
 - Step 4: equal results to steps 1 and 3.
+- Step 5: one pre observation, `self` `a`, `target` naming `a`, no post
+  observation, result or delta, and no frame check run;
+  `wrong_snapshot`/`wrong-observation` twice; `invalid_runtime_input`/
+  `missing-member`; `dangling_reference`/
+  `absent-target-in-complete-population` naming `ghost` and
+  `config_history`; `Incomplete` with `incomplete_population`/
+  `incomplete-scope` naming `archive`; `Incomplete` with `incomplete_population`/
+  `incomplete-scope`.
 
 ## Status
 

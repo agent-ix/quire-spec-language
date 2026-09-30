@@ -56,9 +56,11 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
 ## Outputs
 
 - An `AdmittedObservations` value: for an invariant, one current observation,
-  its anchor and the self object; for a precondition or postcondition, the
-  pre and post observations, the self object, the parameter values, the
-  result value or none, and the admitted invocation delta. Each observation
+  its anchor and the self object; for a precondition selected by `PreCall`,
+  the pre observation, the self object and the parameter values; for a
+  precondition or postcondition selected by `Invocation`, the pre and post
+  observations, the self object, the parameter values, the result value or
+  none, and the admitted invocation delta. Each observation
   holds its `PopulationBinding`s and an `ObjectEnvironment` with every field
   value of every object, and keeps its document identity and digest.
 - Or an `AdmissionFailure`: `Refused(RefusalRecord)` or
@@ -132,9 +134,16 @@ Invocation, format `quire.state.invocation/v1`:
   `{population, key}` object references.
 
 `ClauseSelection` names the clause by its `QualifiedName` and one
-observation: `Current { snapshot: DocumentRef, anchor, self: ObjectRef }` or
+observation: `Current { snapshot: DocumentRef, anchor, self: ObjectRef }`,
+`PreCall { snapshot: DocumentRef, self: ObjectRef, parameters }` or
 `Invocation { invocation: DocumentRef }`, where `DocumentRef` is the four
-FR-001 labels and the `sha256-jcs` digest, and `anchor` is `{kind, name}`.
+FR-001 labels and the `sha256-jcs` digest, `anchor` is `{kind, name}`, and
+`parameters` maps each declared parameter name to a value in the snapshot
+value form, as an invocation's `parameters` member does. `PreCall` is the
+observation of a call before the operation runs: the snapshot is the
+operation's pre state, and a precondition reads only that state, `self` and
+the parameters (FR-104, FR-107), so it has no post snapshot, result or
+delta.
 
 ## Behavior
 
@@ -145,12 +154,17 @@ document order, objects in document order within a population, and fields in
 the object type's declared field order, and it reports the first failing
 object and field.
 
-A **required population** is the population holding `self`, and, repeatedly,
-every population named by a `reference` value in any field of any object of a
-required population, in the observations the clause reads.
+A **required population** is the population holding `self`, every
+declared population of the package that a reference-valued parameter names
+(of an invocation or a `PreCall` selection, in the pre snapshot), and,
+repeatedly, every population named by a `reference` value in any field of
+any object of a required population, in the observations the clause reads.
+A required population absent from its snapshot is not marked `complete`. A
+parameter reference naming no declared population makes no population
+required; check 10 settles it.
 
-1. Read check. For each selected document (the snapshot, or the invocation and
-   then its `pre` and `post` snapshots):
+1. Read check. For each selected document (the snapshot of `Current` or
+   `PreCall`, or the invocation and then its `pre` and `post` snapshots):
    1. If no document is in its provision under the selected digest, then
       admission SHALL return `Incomplete` with `unavailable_observation`/
       `missing-required-artifact` (missing observation evidence is
@@ -180,11 +194,12 @@ required population, in the observations the clause reads.
    8. If the four labels differ from the selection's, then admission SHALL
       refuse `stale_dependency`/`revision-mismatch`, naming both.
 2. Selection form check. If `Current` selects a precondition or postcondition,
-   or `Invocation` an invariant, then admission SHALL refuse
-   `wrong_snapshot`/`wrong-observation`.
+   `PreCall` selects an invariant or a postcondition, or `Invocation` an
+   invariant, then admission SHALL refuse `wrong_snapshot`/
+   `wrong-observation`.
 3. Observation role and anchor check. If the current snapshot does not say
-   `current`, or an invocation's `pre` or `post` snapshot does not say `pre`
-   or `post`, then admission SHALL refuse `wrong_snapshot`/
+   `current`, a `PreCall` snapshot does not say `pre`, or an invocation's
+   `pre` or `post` snapshot does not say `pre` or `post`, then admission SHALL refuse `wrong_snapshot`/
    `wrong-observation`. If the current snapshot's `anchor` differs from the
    selection's, then admission SHALL refuse `wrong_snapshot`/`wrong-anchor`,
    naming both.
@@ -225,14 +240,23 @@ required population, in the observations the clause reads.
    snapshot, from the pre snapshot, or (for a postcondition) from the post
    snapshot, then admission SHALL refuse `invalid_runtime_input`/
    `wrong-role-mapping`.
-10. Parameters and result check. If an invocation's `parameters` lack a declared
+10. Parameters and result check. If an invocation's or a `PreCall`
+    selection's `parameters` lack a declared
     parameter or hold an undeclared one, then admission SHALL refuse
     `invalid_runtime_input`/`missing-member` or `unknown-member`; if a value
     does not fit its declared type, `wrong-value-kind` or `invalid-value`, by
     check 6's value rule. If the result member is `null` for an
     operation that declares a result, or a value for one that declares none,
     then admission SHALL refuse `invalid_runtime_input`/`missing-member` or
-    `unknown-member`.
+    `unknown-member`. A `PreCall` selection carries no result. A reference
+    value resolves against the pre snapshot's objects for a parameter (the
+    `PreCall` snapshot, or the invocation's `pre`) and against the post
+    snapshot's for a result. If one names a key absent from its complete
+    population, or names a population that snapshot does not list (a
+    population the package does not declare included), then
+    admission SHALL refuse `dangling_reference`/
+    `absent-target-in-complete-population`, naming it and its population
+    (check 8's closure rule).
 11. Frame and delta check. For an invocation, admission SHALL run the frame
     check (`enforce_frame` through `admit_invocation`, with the operation's
     `OperationEffect`, FR-103) once per population, in the pre snapshot's
@@ -283,6 +307,7 @@ required population, in the observations the clause reads.
 | FR-106-AC-5 | The forbidden-parent-change invocation (post sets `child.parent` absent) refuses `frame_violation`/`unauthorized-change` naming `child` and `parent`. A package whose `attemptUpdate` frame modifies only `parent`, with an invocation that changes only `versionNumber`, refuses `frame_violation`/`unauthorized-change` naming `versionNumber` (a scalar field). An invocation declaring `created: [child]` refuses `population_delta_mismatch`/`delta-disagreement`. A post snapshot that adds a population `archive` absent from the pre snapshot, holding `a1`, refuses `frame_violation`/`unauthorized-change` naming the creation of `a1` (the pre side is an empty document). | Test (TC-465) |
 | FR-106-AC-6 | Running admission twice over the same inputs gives equal results, and admission builds its result without reading the filesystem (the provisions are in-memory maps; a test with no files on disk passes). | Test (TC-464) |
 | FR-106-AC-7 | Multi-defect documents report the first defect by the order above: bytes edited under their original digest that also add an unknown member refuse `byte-digest-mismatch`; a snapshot with `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` refuses `invalid-value` at `root`; an invocation whose post both deletes `root` and changes `child.parent` refuses the deletion; over a package where `Sub` specializes `ConfigVersion`, an invocation whose post changes `child`'s type to `Sub` and deletes `root` refuses the type change, naming `child`; an invocation whose pre and post list `archive` before `config_history`, with a change outside the frame in each, refuses naming the `archive` object; a snapshot whose `revision_namespace` and `revision` are both blank refuses `invalid_source_identity`/`blank-label` with `label` `revision_namespace`. | Test (TC-465) |
+| FR-106-AC-8 | Over TC-466 step 3's `probe` unit, `PreCall { snapshot, self: a, parameters: {target: a} }` over the chain `a -> b -> c` pre snapshot, selected for `ReachesTarget`, admits one pre observation, `self` `a`, the parameter `target` naming `a`, no post observation, result or delta, and runs no frame check. The same selection for `VersionUnchanged` refuses `wrong_snapshot`/`wrong-observation`; with a snapshot that says `post` it refuses `wrong_snapshot`/`wrong-observation`; with no `target` it refuses `invalid_runtime_input`/`missing-member`; with `target` naming `ghost`, absent from the complete `config_history`, it refuses `dangling_reference`/`absent-target-in-complete-population`; over the same unit in a package variant where `Sub` specializes `ConfigVersion` and a second population `archive` has member type `Sub` (so `config_history` stays the one population covering `ReachesTarget`), `target` naming `a1` in `archive`, which the snapshot lists with no objects and marks `complete: false`, and which no field of `a`, `b` or `c` reaches, returns `Incomplete` with `incomplete_population`/`incomplete-scope` naming `archive`; with its snapshot marked `complete: false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope`. | Test (TC-464) |
 
 ## Dependencies
 
@@ -291,3 +316,6 @@ required population, in the observations the clause reads.
   digest-first order), FR-038 (integer spelling).
 - QSpec FR-153 and `state-contract.md` (anchors, completeness and closure),
   `native-diagnostics.md` revision `1-draft.8` (every code and cause above).
+- QSpec frames a precondition over an invocation (QSpec FR-046, FR-208).
+  `PreCall` is QSL's form for a precondition observed before the operation
+  runs, with no post state; a QSpec alignment picks it up there.
