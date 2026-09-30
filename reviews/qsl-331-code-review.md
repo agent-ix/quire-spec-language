@@ -54,3 +54,9 @@ test checks the typed fields but not the rendered message.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The occurrence test asserts the typed `EnvelopeOccurrence{envelope, payload}` and the code, but not that the rendered refusal names both occurrences, as the clause-node test does for frame nodes (lines 694-697). If the `#[error]` string on `EnvelopeOccurrence` (frame.rs:61) dropped `{payload:?}`, the test would still pass, although FR-116-AC-6 requires the refusal to name both. Fix: assert that the message contains both `{:?}` renderings. | qsl-replay/src/spine/clause/tests/frame_replay.rs:733; qsl-replay/src/execute/frame.rs:61 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bfe0fcb1 |
