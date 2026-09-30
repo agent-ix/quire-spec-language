@@ -316,6 +316,10 @@ pub struct PackageDeclarations {
     /// `check` keys each such declaration's model node and records it in the
     /// model correspondence, whose only writer it is.
     pub models: Vec<super::lowering::AdmittedModel>,
+    /// FR-115: the domain package selection each admitted `model M = ...;`
+    /// declaration binds to its alias `M`, the table
+    /// [`super::CheckedGraph::resolve_operation`] resolves a model alias in.
+    pub model_aliases: BTreeMap<String, crate::model::domain_package::DomainPackageRef>,
     /// FR-094: the owner and clause kind of each clause function, keyed by
     /// index into [`Self::functions`]. A function with an entry is keyed
     /// with its declaration's `ModelOwner`; every other function is a
@@ -384,6 +388,7 @@ impl PackageDeclarations {
             dispatch_operations: Vec::new(),
             dispatch_tables: Vec::new(),
             models: Vec::new(),
+            model_aliases: BTreeMap::new(),
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),

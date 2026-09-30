@@ -1158,6 +1158,7 @@ impl PackageDeclarations {
         // Each `model` declaration's admitted domain package, and its
         // object types by name.
         let mut admitted = Vec::with_capacity(selections.models.len());
+        let mut model_aliases = BTreeMap::new();
         let mut object_types = Vec::new();
         let mut object_spans = BTreeMap::new();
         for selection in &selections.models {
@@ -1179,6 +1180,10 @@ impl PackageDeclarations {
                 }
                 Err(refused) => errors.extend(refused),
             }
+            model_aliases.insert(
+                selection.alias.clone(),
+                model.view.domain_package().model_selection.clone(),
+            );
             admitted.push(AdmittedModel::from_view(&model.view));
         }
         let object_names: BTreeMap<String, EffectiveId> = object_types
@@ -1570,6 +1575,7 @@ impl PackageDeclarations {
         let mut package = PackageDeclarations::new(source);
         package.types = types;
         package.models = admitted;
+        package.model_aliases = model_aliases;
         package.aliases = unit
             .aliases
             .iter()

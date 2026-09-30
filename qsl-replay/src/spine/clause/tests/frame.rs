@@ -6,13 +6,19 @@
 use super::*;
 use crate::spine::{CallOutcome, CallRefusal, OperationName};
 use qsl_semantics::model::observation::{AdmissionFailure, AdmissionRecord, FrameChange};
+use quire_exact::Identifier;
+
+/// `text` as an identifier.
+pub(super) fn identifier(text: &str) -> Identifier {
+    Identifier::new(text).expect("an identifier")
+}
 
 /// `Config::ConfigVersion::<name>`.
 fn operation(name: &str) -> OperationName {
     OperationName {
-        model: "Config".to_owned(),
-        object: "ConfigVersion".to_owned(),
-        operation: name.to_owned(),
+        model: identifier("Config"),
+        object: identifier("ConfigVersion"),
+        operation: identifier(name),
     }
 }
 
@@ -523,4 +529,89 @@ fn a_frame_run_is_deterministic() {
         second.usage.admission_consumed
     );
     assert!(first.usage.admission_consumed.document_bytes > 0);
+}
+
+/// TC-514 step 4 (FR-115-AC-4): `Frame` on `Nope::ConfigVersion::attemptUpdate`,
+/// whose alias no `model` declaration binds, and on
+/// `Config::Missing::attemptUpdate`, whose type the selected package does
+/// not declare, each refuse `select`, `missing_declaration`/`missing-name`.
+#[trace("TC-514", "FR-115-AC-4")]
+#[test]
+fn an_unresolved_model_alias_or_object_type_refuses_at_select() {
+    for (model, object, name) in [
+        (
+            "Nope",
+            "ConfigVersion",
+            "Nope::ConfigVersion::attemptUpdate",
+        ),
+        ("Config", "Missing", "Config::Missing::attemptUpdate"),
+    ] {
+        let mut input = changed_version();
+        input.request.selection = ClauseRunSelection::Frame {
+            operation: OperationName {
+                model: identifier(model),
+                object: identifier(object),
+                operation: identifier("attemptUpdate"),
+            },
+            invocation: input.invocation,
+        };
+        let report = run_clause(input.request).expect("reports");
+        let ClauseDisposition::MissingName { name: reported } = &report.disposition else {
+            panic!("expected MissingName, got {:?}", report.disposition);
+        };
+        assert_eq!(reported, name);
+        assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
+        assert_eq!(
+            report.exit_code(),
+            qsl_foundation::diagnostic::Code::MissingDeclaration.exit_code()
+        );
+    }
+}
+
+/// TC-514 step 4 (FR-115-AC-4, ADR-017 PF-3): over a package where `Sub`
+/// specializes `ConfigVersion` and declares no operation, the resolver
+/// takes `Config::Sub::attemptUpdate` to the `Config` selection and `Sub`'s
+/// declaration key, and that selection picks `ConfigVersion`'s frame, the
+/// operation's declaring type, with `Sub` as the context.
+#[trace("TC-514", "FR-115-AC-4")]
+#[test]
+fn an_inherited_operation_selects_its_declaring_frame_through_the_resolver() {
+    let (unit, packages) =
+        config_version_unit_and_packages_for(config_version_domain_document_with_sub());
+    let compiled = compile_config_version_unit(&unit, &packages);
+    let graph = compiled.package.graph();
+    let resolve = |object: &str| {
+        graph
+            .resolve_operation(
+                &identifier("Config"),
+                &identifier(object),
+                &identifier("attemptUpdate"),
+            )
+            .unwrap_or_else(|| panic!("Config::{object} resolves"))
+    };
+    let via_sub = resolve("Sub");
+    let via_config_version = resolve("ConfigVersion");
+
+    let [selection] = graph.model_selections() else {
+        panic!("one model selection: {:?}", graph.model_selections());
+    };
+    assert_eq!(via_sub.package(), selection);
+    assert_eq!(
+        via_sub.object(),
+        &qsl_semantics::model::key::DeclarationKey {
+            package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
+            node: format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub"),
+        }
+    );
+    assert_eq!(via_sub.operation().as_str(), "attemptUpdate");
+
+    let (sub, sub_frame) = graph
+        .operation_frame(&via_sub)
+        .expect("Sub inherits attemptUpdate's frame");
+    let (config_version, declaring_frame) = graph
+        .operation_frame(&via_config_version)
+        .expect("ConfigVersion declares attemptUpdate");
+    assert_ne!(sub, config_version, "the context is Sub itself");
+    assert_eq!(sub_frame, declaring_frame);
+    assert_eq!(sub_frame.operation().declaring, config_version);
 }

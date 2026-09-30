@@ -26,7 +26,7 @@ use qsl_semantics::model::observation::{
     ClauseSelectionInput, DocumentRef, FrameFacts, FrameWitness, ObservationLimits, OperationFacts,
     Provisions,
 };
-use quire_exact::{Meter, NodeKey, ScalarLimits, Value, ValueType};
+use quire_exact::{Identifier, Meter, NodeKey, ScalarLimits, Value, ValueType};
 
 use super::call::{convert_call_failure, convert_outcome, select};
 pub use super::call::{CallOutcome, CallValue, RunRefusal};
@@ -88,20 +88,27 @@ pub enum ClauseRunSelection {
 
 /// FR-115: the operation a `Frame` selection names, `M::T::op`: model
 /// alias `M`, object type `T` and operation `op`, as FR-104 spells a
-/// clause's operation.
+/// clause's operation. [`CheckedGraph::resolve_operation`] resolves it once
+/// against the compiled package.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationName {
     /// The model alias `M`.
-    pub model: String,
+    pub model: Identifier,
     /// The object type `T`.
-    pub object: String,
+    pub object: Identifier,
     /// The operation `op`.
-    pub operation: String,
+    pub operation: Identifier,
 }
 
 impl std::fmt::Display for OperationName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}::{}::{}", self.model, self.object, self.operation)
+        write!(
+            f,
+            "{}::{}::{}",
+            self.model.as_str(),
+            self.object.as_str(),
+            self.operation.as_str()
+        )
     }
 }
 
@@ -876,10 +883,11 @@ fn run_frame(
     check_frame(run, context, operation_frame, invocation)
 }
 
-/// FR-104's Resolution of a `Frame` selection: `M::T::op` names an
-/// operation of `M::T`'s effective view, and the package holds its frame
-/// node only when a clause or attempt names it (FR-105). `None` when it
-/// names none.
+/// FR-104's Resolution of a `Frame` selection: `M` and `T` resolve to a
+/// domain package and one of its object types, `op` names an operation of
+/// that type's effective view, and the package holds its frame node only
+/// when a clause or attempt names it (FR-105). `None` when any step
+/// resolves nothing.
 pub(crate) fn resolve_frame<'g>(
     graph: &'g CheckedGraph,
     operation: &OperationName,
@@ -887,10 +895,9 @@ pub(crate) fn resolve_frame<'g>(
     quire_exact::EffectiveId,
     &'g qsl_semantics::check::CheckedOperationFrame,
 )> {
-    graph.operation_frame(
-        &format!("{}::{}", operation.model, operation.object),
-        &operation.operation,
-    )
+    let selection =
+        graph.resolve_operation(&operation.model, &operation.object, &operation.operation)?;
+    graph.operation_frame(&selection)
 }
 
 /// FR-115 over a resolved operation frame: admit `invocation` by FR-106's

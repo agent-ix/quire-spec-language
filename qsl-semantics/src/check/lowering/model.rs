@@ -109,6 +109,20 @@ impl AdmittedModel {
         &self.selection
     }
 
+    /// Every object type of this package: its declaration key and its
+    /// effective identity.
+    pub(crate) fn object_types(&self) -> impl Iterator<Item = (&DeclarationKey, EffectiveId)> {
+        self.types
+            .iter()
+            .filter(|(_, key)| {
+                matches!(
+                    self.records.get(*key),
+                    Some(DomainPackageRecord::ObjectType(_))
+                )
+            })
+            .map(|(id, key)| (key, *id))
+    }
+
     /// The record `key` names in this package.
     pub(super) fn record(&self, key: &DeclarationKey) -> Option<&DomainPackageRecord> {
         self.records.get(key)
