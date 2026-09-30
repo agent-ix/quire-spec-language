@@ -843,12 +843,8 @@ fn record_locked_artifacts(
 
 /// FR-108-AC-6 (TC-469 step 6), its package_id half: the expected table
 /// pins the FR-108 unit's `package_id` (the one spine `compile` emits for
-/// it), and every case's report carries exactly that value. This half needs
-/// no STD-111 wire spellings and runs today; the I04 `read` half is a
-/// separate, currently-`#[ignore]`d test below, blocked on IR-370 (the
-/// pinned `quire-contract-model` reader's `reaches_field`/`ReferenceEdge`
-/// gap), not on STD-111. QSL-315's earlier `modifies` frame-entry rejection
-/// is fixed by the `quire-contract-ir` pin bump to `2a28643`.
+/// it), and every case's report carries exactly that value. The I04 `read`
+/// half is the separate test below.
 #[trace("TC-469", "FR-108-AC-6")]
 #[test]
 fn tc_469_step_6_package_id_is_pinned_across_every_case() {
@@ -893,21 +889,11 @@ fn tc_469_step_6_package_id_is_pinned_across_every_case() {
 }
 
 /// FR-108-AC-6's other half: the emitted package bytes admit through QSpec
-/// I04 `read`. QSL-315 (the `frame_eligibility` gate rejecting `FrameField`'s
-/// wire shape) is fixed by the `quire-contract-ir` pin bump this PR carries:
-/// run with `--ignored` at this bump, the read now gets past the frame step.
-/// It still refuses, but at a different, later node: node 8's body is a
-/// `quire.op.model.reaches_field` application, and IR's own
-/// `checked_package/v2/operations.rs::check_operands` refuses every
-/// `reaches` application outright (`ill_typed`/`operator-ineligible`) because
-/// its `OperationConstraintKind::ReferenceEdge` arm is unconditional. This is
-/// the same IR-370 gap as TC-463 (`qsl-replay/src/spine/clause/tests.rs`), in
-/// a separate pinned dependency this ticket does not own. No QSL-side
-/// workaround exists. Un-ignore once IR implements the `reference_edge`
-/// check.
+/// I04 `read`, including the frame step and node 8's
+/// `quire.op.model.reaches_field` application, whose reference edge the
+/// reader checks.
 #[trace("TC-469", "FR-108-AC-6")]
 #[test]
-#[ignore = "blocked on IR-370: quire-contract-model implementing the reaches_field reference_edge check (see doc comment); QSL-315's frame_eligibility gap is fixed by this PR's pin bump"]
 fn tc_469_step_6_the_emitted_package_admits_via_i04() {
     let unit = spine::unit_text();
     let compiled = qsl_replay::spine::compile(

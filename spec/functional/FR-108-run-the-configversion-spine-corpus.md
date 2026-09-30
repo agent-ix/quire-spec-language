@@ -128,7 +128,7 @@ the same two objects through `sameIdentity`, over the same snapshot data
 | FR-108-AC-3 | below-range and above-range refuse at admission in both paths with `invalid_runtime_input`, and both name the object (`root`, `child`) and the field `versionNumber`; boundary-zero and boundary-max complete with `true` in both (QSpec FR-180-AC-4, QSL's share). | Test (TC-469) |
 | FR-108-AC-4 | Generating the corpus twice gives identical files, and running it twice gives identical reports; each report's provenance names the source digest, `package_id`, the domain package's `sha256-jcs` digest, every observation's identity and digest, the selection and the limits, so the case is fixed by its inputs (QSpec FR-180-AC-5). A run whose request carries the `package_id` that spine `compile` emits for the unit gives the same report (FR-032-AC-4's package half). | Test (TC-469) |
 | FR-108-AC-5 | With `quire-extraction`, the Markdown run of each case gives the direct run's disposition, a different source identity and digest, and the extraction's original identity and digest in its provenance. | Test (TC-469) |
-| FR-108-AC-6 | Every case's report agrees on the unit's `package_id` (the one spine `compile` emits for the FR-108 unit and package, independently re-derived and compared against every case's report); the emitted package bytes admit through QSpec I04 `read` (QSpec FR-180's reference verdict contract). | Test (TC-469); the package_id half is implemented, the I04 `read` half is pending IR-370 |
+| FR-108-AC-6 | Every case's report agrees on the unit's `package_id` (the one spine `compile` emits for the FR-108 unit and package, independently re-derived and compared against every case's report); the emitted package bytes admit through QSpec I04 `read` (QSpec FR-180's reference verdict contract). | Test (TC-469) |
 
 ## Dependencies
 
@@ -140,15 +140,11 @@ the same two objects through `sameIdentity`, over the same snapshot data
 - STD-111 (QSpec), which FR-105 names, for the emitted package's `state`
   bodies, frame entries and `reaches_field` member; AC-1 to AC-6's
   `package_id` half run over the in-process `CheckedPackage` and need none of
-  it. AC-6's I04 `read` half instead waits on IR-370 (`quire-contract-model`'s
-  `reaches_field`/`ReferenceEdge` reader gap), not on STD-111.
+  it. AC-6's I04 `read` half needs `quire-contract-model`'s
+  `reaches_field` reference-edge check.
 
 ## Status
 
-Specified under QSL-273. AC-1 to AC-5, and AC-6's `package_id`-agreement
-half, are implemented (QSL-314). AC-6's I04 `read` half is pending IR-370:
-the pinned `quire-contract-model` reader unconditionally refuses any
-`reaches_field` application (`ill_typed`/`operator-ineligible`), which the
-FR-108 unit's `ParentOrder` cycle predicate lowers to. QSL-315's earlier
-`modifies` frame-entry rejection is fixed by the `quire-contract-ir` pin
-bump to `2a28643`.
+Specified under QSL-273. AC-1 to AC-6 are implemented. AC-6's I04 `read`
+half admits the emitted package, including the `reaches_field` application
+the FR-108 unit's `ParentOrder` cycle predicate lowers to.

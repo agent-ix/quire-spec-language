@@ -145,9 +145,9 @@ QSL-314 (FR-105, FR-112 to FR-116):
   (`qsl-replay/src/execute/frame.rs:167-395`).
 - Requirement records: one `operation-contract` record per clause and per
   frame, keyed by the frame's occurrence (`check/mod.rs:1452-1572`).
-- Tests: TC-462, TC-514 and TC-515 pass locally. TC-463 is partial: its
-  step 1 (the I2 read-back) is `#[ignore]`d until QSL's quire-contract-ir pin
-  moves past IR-370, which is Done in IR. `spec/tests.md` still lists TC-510
+- Tests: TC-462, TC-463, TC-514 and TC-515 pass locally; TC-463 step 1 (the
+  I2 read-back) passes through IR-370's `reaches_field` reference-edge check.
+  `spec/tests.md` still lists TC-510
   to TC-513 as planned although traced tests for them exist; this record
   cites them only as specified.
 - SEAM-3 handoffs to IR are deleted (QSL-303, M-6d). `src/protocol_artifact`
@@ -687,7 +687,7 @@ There is no totality check.
 
 | Mapping | Types and owners | Conversions | Version effect | Failure oracle | Tests | Tickets |
 | --- | --- | --- | --- | --- | --- | --- |
-| Protocol/frame | PF-1; `check`, `package`, `qsl-replay` | ADR-013 C-02, C-03, C-11, C-13, C-14 | PF-6 | stale ids refuse `revision-mismatch` (PF-3, PF-4); `frame_violation`/`unauthorized-change` | TC-462, TC-514, TC-515 pass; TC-463 partial; TC-510 to TC-513 specified; each TK adds its own (§6) | TK-1 to TK-4 |
+| Protocol/frame | PF-1; `check`, `package`, `qsl-replay` | ADR-013 C-02, C-03, C-11, C-13, C-14 | PF-6 | stale ids refuse `revision-mismatch` (PF-3, PF-4); `frame_violation`/`unauthorized-change` | TC-462, TC-463, TC-514, TC-515 pass; TC-510 to TC-513 specified; each TK adds its own (§6) | TK-1 to TK-4 |
 | Refinement | `xtask refinement`; spine `run_clause` and `compile`; `ClauseDisposition`, `CompileRefusal` | disposition → class and compile result → class (RF-2) | RF-6 | RF-2 and RF-3 tables; RF-5 seed and controls | RF-5 | #191; #192 after Q-5 |
 | Abstraction relation | AR-2, AR-3; `check` core; layer-4 export | checked relation → v2 node (Q-2); export → driver → CG | AR-4 relation revision | AR-3 and AR-4 refusals | AR-7 | #198 slices; Q-1, Q-2 |
 
@@ -746,7 +746,7 @@ These are proposed; the team lead files them.
 | TK-1 | G-1: retype `qsl_replay::spine::OperationName` to (model alias `Identifier`, object `Identifier`, operation `Identifier`); add one resolver in `check` from it to (object `DeclarationKey`, operation `Identifier`), the `DeclarationKey` carrying its domain package, refusing `missing_declaration`/`missing-name` when the alias or type does not resolve; make `CheckedGraph::operation_frame` take its output; update `resolve_frame`, its two entry paths, `execute/frame.rs::operation_name` and the test at `spine/clause/tests/frame_replay.rs:85` | an inherited operation selects its declaring frame through the resolver; a formatted string no longer type-checks as a selection; TC-514 and TC-515 pass unchanged | QSL |
 | TK-2 | G-2: `replay_frame` checks the envelope's `clause_node` and `occurrence_key` against the payload; the frame envelope's members as PF-4 states; amend FR-116 | a frame envelope whose `clause_node` or `occurrence_key` differs from the payload refuses `stale_dependency`/`revision-mismatch` naming both, before recompiling; TC-515 extended | QSL |
 | TK-3 | G-3: delete `check::identity::{Frame, FrameSubjects, ResolvedFrameSubjects}`; re-home TC-248 onto `CheckedOperationFrame` and `OperationEffect` subject resolution (FR-088-AC-2); correct the stale `model/intake.rs:17-23` module doc | TC-248 passes against the live types; FR-088-AC-2 stays backed | QSL |
-| TK-4 | Move QSL's quire-contract-ir pin past IR-370 and remove TC-463 step 1's `#[ignore]` (FR-105-AC-3) | TC-463 step 1 runs and passes | QSL |
+| TK-4 | Consume IR-370's `reaches_field` reference-edge check; TC-463 step 1 and TC-469 step 6 run without `#[ignore]` (FR-105-AC-3, FR-108-AC-6) | TC-463 step 1 and TC-469 step 6 pass | QSL |
 | Q-1 | Surface spelling of the QSpec FR-353 abstraction relation in the shared grammar | QSpec | QSpec |
 | Q-2 | `quire.checked-package/v2` node for the abstraction relation, carrying AR-2's keys and values | QSpec | QSpec |
 | Q-3 | QSpec FR-290 claim-form row: remove "(a relation-family refinement gate)"; re-trace V1-TOOL-011 and V1-TOOL-012 from QSpec FR-177 and TC-208 to the #191 and #192 gate tests | QSpec | QSpec |
