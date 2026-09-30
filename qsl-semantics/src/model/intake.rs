@@ -15,20 +15,23 @@
 //! table (FR-208), never by `kind.name`/`kind.module` directly.
 //!
 //! **This reader binds only what QSpec admits and refuses everything else.**
-//! It never invents a value and never drops data. Three shapes FCD emits
+//! It never invents a value and never drops data. Two shapes FCD emits
 //! today are still FCD gaps: bare-string core kinds (`"scalar"`/`"alias"`/...)
-//! declared directly in `types[]`, FCD's own identity form
+//! declared directly in `types[]`, and FCD's own identity form
 //! (`ix://<pkg>/type/<id>`, `ix://<pkg>/field/<Owner>-<name>`) rather than
-//! QSpec's (`ix://<pkg>/<id>`, `<owner>/<name>`), and a non-empty operation
-//! `frame`. This reader refuses all three rather than working around them.
-//! A type's inline `relationships[]` (model-complete.md's Relationships
-//! row: each end names an object type or a process, carries a role and a
-//! multiplicity, and `direction` is the full source-to-target/
-//! target-to-source/bidirectional/undirected vocabulary) was a fourth gap
-//! -- FCD's old `verb`/`category`/`composite` shape carried neither a role
-//! nor that direction vocabulary -- fixed upstream by FCD #199/#200's
-//! `sourceEnd`/`targetEnd`/`role`/`direction` shape, so this reader now
-//! reads it rather than refusing it.
+//! QSpec's (`ix://<pkg>/<id>`, `<owner>/<name>`). This reader refuses both
+//! rather than working around them. A type's inline `relationships[]`
+//! (model-complete.md's Relationships row: each end names an object type or
+//! a process, carries a role and a multiplicity, and `direction` is the full
+//! source-to-target/target-to-source/bidirectional/undirected vocabulary)
+//! was a third gap -- FCD's old `verb`/`category`/`composite` shape carried
+//! neither a role nor that direction vocabulary -- fixed upstream by FCD
+//! #199/#200's `sourceEnd`/`targetEnd`/`role`/`direction` shape, so this
+//! reader now reads it rather than refusing it. A non-empty operation
+//! `frame` was a fourth gap, fixed by this reader's own FR-103/QSL-273
+//! `resolve_pending_frames`/`resolve_frame_array`, which classifies each
+//! `modifies`/`creates`/`deletes` entry into an [`OperationEffect`] rather
+//! than refusing the frame outright.
 #![allow(
     clippy::result_large_err,
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"

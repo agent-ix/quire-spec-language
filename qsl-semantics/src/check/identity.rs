@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-013 O-08 to O-11, O-14 and C-26 (FR-088, QSL-158 S-3b): frame and
-//! clause identity, clause kind, qualified names and checked type
-//! descriptors. FR-088's own scope note applies throughout: this module
-//! builds the identity and resolution shapes S-3b owns; it does not build
-//! `KaniObligationIdentity` (CG conformance work, FR-088-CON-1), FR-340's
-//! frame semantics (#210, FR-088-CON-2), the occurrence-key-keyed source map
-//! (S-4, FR-088-CON-3) or the `replay` facade's E9 lookup (FR-088-CON-4).
+//! ADR-013 O-04, O-09 to O-11, O-14 and C-26 (FR-088, QSL-158 S-3b): model
+//! correspondence, clause identity, clause kind, qualified names and checked
+//! type descriptors. Frame identity (the former O-08) lived here as a third,
+//! dead representation nothing but its own test read; ADR-017 §6 TK-3
+//! deleted it -- the two live frame representations are
+//! `super::state_clause::CheckedOperationFrame` (what S6a compares) and
+//! `SemanticTerm::Frame` (what S4 emits and keys). FR-088's own scope note
+//! applies throughout: this module builds the identity and resolution shapes
+//! S-3b owns; it does not build `KaniObligationIdentity` (CG conformance
+//! work, FR-088-CON-1), FR-340's frame semantics (#210, FR-088-CON-2), the
+//! occurrence-key-keyed source map (S-4, FR-088-CON-3) or the `replay`
+//! facade's E9 lookup (FR-088-CON-4).
 //!
 //! # Naming: `CheckedClauseKind`, not `ClauseKind`
 //!
@@ -245,11 +250,12 @@ impl CheckedClauseKind {
 }
 
 // ---------------------------------------------------------------------
-// O-04/O-08: model correspondence and frame identity
+// O-04: model correspondence
 // ---------------------------------------------------------------------
 
 /// ADR-013 O-04: the checked-node-id -> domain-declaration correspondence
-/// the S3 checker records as it processes a package. [`FrameSubjects::resolve`]
+/// the S3 checker records as it processes a package.
+/// [`CheckedGraph::resolve_declaration`](super::CheckedGraph::resolve_declaration)
 /// (FR-088-AC-2) reads it and nothing else: no consumer re-derives a
 /// `NodeKey`'s `DeclarationKey` by searching source or a collection whose
 /// order no declaration defines (R-05).
@@ -276,78 +282,6 @@ impl ModelCorrespondence {
     /// re-derived by another means (R-05).
     pub fn resolve(&self, node: NodeKey) -> Option<&DeclarationKey> {
         self.entries.get(&node)
-    }
-}
-
-/// ADR-013 O-08: one frame's FR-340 subject sets, each a set of checked
-/// `relation`/`model` node keys. This module builds only the identity and
-/// the resolution step below (FR-088-CON-2); FR-340's own frame semantics
-/// are #210's.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct FrameSubjects {
-    /// Field members and relations this frame's operation writes.
-    pub modifies: BTreeSet<NodeKey>,
-    /// Objects this frame's operation creates.
-    pub creates: BTreeSet<NodeKey>,
-    /// Objects this frame's operation deletes.
-    pub deletes: BTreeSet<NodeKey>,
-}
-
-/// [`FrameSubjects`], resolved to `DeclarationKey`s through a
-/// [`ModelCorrespondence`]. A subject key absent from the correspondence
-/// resolves to `None` in place, rather than failing the whole resolution or
-/// falling back to a search (FR-088-AC-2).
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ResolvedFrameSubjects {
-    /// [`FrameSubjects::modifies`], each resolved.
-    pub modifies: Vec<(NodeKey, Option<DeclarationKey>)>,
-    /// [`FrameSubjects::creates`], each resolved.
-    pub creates: Vec<(NodeKey, Option<DeclarationKey>)>,
-    /// [`FrameSubjects::deletes`], each resolved.
-    pub deletes: Vec<(NodeKey, Option<DeclarationKey>)>,
-}
-
-impl FrameSubjects {
-    /// Resolve every subject node key in all three sets to its
-    /// `DeclarationKey`, reading only `correspondence` (ADR-013 O-04).
-    pub fn resolve(&self, correspondence: &ModelCorrespondence) -> ResolvedFrameSubjects {
-        let resolve_set = |set: &BTreeSet<NodeKey>| {
-            set.iter()
-                .map(|node| (*node, correspondence.resolve(*node).cloned()))
-                .collect()
-        };
-        ResolvedFrameSubjects {
-            modifies: resolve_set(&self.modifies),
-            creates: resolve_set(&self.creates),
-            deletes: resolve_set(&self.deletes),
-        }
-    }
-}
-
-/// ADR-013 O-08: a frame's identity is the checked node id of the `state`
-/// node with `semantic_form: "frame"`, carrying its own FR-340 subject
-/// sets.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Frame {
-    node: NodeKey,
-    subjects: FrameSubjects,
-}
-
-impl Frame {
-    /// Name a frame by its `state` node's own checked node id and its
-    /// declared subject sets.
-    pub fn new(node: NodeKey, subjects: FrameSubjects) -> Self {
-        Self { node, subjects }
-    }
-
-    /// This frame's identity: the checked node id of its `state` node.
-    pub fn node(&self) -> NodeKey {
-        self.node
-    }
-
-    /// This frame's declared `modifies`/`creates`/`deletes` sets.
-    pub fn subjects(&self) -> &FrameSubjects {
-        &self.subjects
     }
 }
 
@@ -750,75 +684,6 @@ mod tests {
             CheckedClauseKind::from_triple(("not-a-real-node-tag", None), "not-a-real-wire", None),
             None
         );
-    }
-
-    // -- O-08: frame identity ----------------------------------------------
-
-    /// TC-248: a frame's identity is its `state` node's own checked node
-    /// id; its subject sets resolve to `DeclarationKey`s only by reading
-    /// the recorded model correspondence, and a subject removed from that
-    /// correspondence resolves to `None` rather than being re-derived by
-    /// any other means. See `super::super::tests` (`check/mod.rs`) for the
-    /// companion test that builds this same correspondence through a real
-    /// `PackageDeclarations::check` run rather than the hand-built one
-    /// below (PR #300 review finding 1) -- this unit test is retained for
-    /// the frame-subject *resolution mechanics* themselves, which have no
-    /// real source syntax to check from yet (FR-340 frame semantics are
-    /// #210's, FR-088-CON-2).
-    #[trace("TC-248", "FR-088-AC-2")]
-    #[test]
-    fn frame_subjects_resolve_only_through_the_recorded_correspondence() {
-        let modifies_node = node_key(1);
-        let creates_node = node_key(2);
-        let modifies_decl = DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "Order.status".to_owned(),
-        };
-        let creates_decl = DeclarationKey {
-            package: "test/orders".to_owned(),
-            node: "Order".to_owned(),
-        };
-
-        let mut correspondence = ModelCorrespondence::default();
-        correspondence.record(modifies_node, modifies_decl.clone());
-        correspondence.record(creates_node, creates_decl.clone());
-
-        let frame_node = node_key(3);
-        let mut subjects = FrameSubjects::default();
-        subjects.modifies.insert(modifies_node);
-        subjects.creates.insert(creates_node);
-        let frame = Frame::new(frame_node, subjects);
-
-        // Step 2: the frame's own identity is the state node's checked node id.
-        assert_eq!(frame.node(), frame_node);
-
-        // Step 3: every subject resolves to its DeclarationKey.
-        let resolved = frame.subjects().resolve(&correspondence);
-        assert_eq!(
-            resolved.modifies,
-            vec![(modifies_node, Some(modifies_decl.clone()))]
-        );
-        assert_eq!(
-            resolved.creates,
-            vec![(creates_node, Some(creates_decl.clone()))]
-        );
-        assert!(resolved.deletes.is_empty());
-
-        // Step 4 (adverse): a correspondence rebuilt without the
-        // `modifies` entry (simulating a stale/incomplete correspondence)
-        // resolves that subject to `None`; `resolve` has no other source to
-        // fall back to.
-        let mut stale = ModelCorrespondence::default();
-        stale.record(creates_node, creates_decl.clone());
-        let resolved_stale = frame.subjects().resolve(&stale);
-        assert_eq!(resolved_stale.modifies, vec![(modifies_node, None)]);
-
-        // Step 5: a freshly rebuilt correspondence with every entry
-        // reproduces exactly step 3's resolution.
-        let mut rebuilt = ModelCorrespondence::default();
-        rebuilt.record(modifies_node, modifies_decl);
-        rebuilt.record(creates_node, creates_decl);
-        assert_eq!(frame.subjects().resolve(&rebuilt), resolved);
     }
 
     // -- O-09 (clause half): clause identity and the occurrence key -------

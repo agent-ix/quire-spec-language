@@ -745,3 +745,94 @@ pub(crate) fn clause_records(
     }
     Ok(keyed)
 }
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use quire_exact::Role;
+
+    use super::*;
+    use crate::check::identity::ModelCorrespondence;
+    use crate::model::domain_package::OperationEffect;
+
+    fn node_key(fill: u8) -> NodeKey {
+        let mut bytes = [0_u8; 32];
+        bytes[31] = fill;
+        NodeKey::from_digest(bytes)
+    }
+
+    fn declaration_key(node: &str) -> DeclarationKey {
+        DeclarationKey {
+            package: "test/orders".to_owned(),
+            node: node.to_owned(),
+        }
+    }
+
+    /// TC-248 (FR-088-AC-2), re-homed onto the live frame representations
+    /// (ADR-017 §6 TK-3) from the retired `check::identity::{Frame,
+    /// FrameSubjects, ResolvedFrameSubjects}` -- a third, dead frame
+    /// representation only its own test ever read. The two live
+    /// representations split the old test's two claims:
+    ///
+    /// - A [`CheckedOperationFrame`]'s own identity node (its `anchor`)
+    ///   resolves to a `DeclarationKey` only by reading the recorded
+    ///   [`ModelCorrespondence`] -- never re-derived by name or by any other
+    ///   means -- and a node absent from that correspondence resolves to
+    ///   `None` rather than falling back to a search (R-05).
+    /// - The frame's declared subjects ([`OperationEffect`]'s `modifies`/
+    ///   `creates`/`deletes`) are read straight off the operation's own
+    ///   declaration, carried unchanged from the domain package (FR-151):
+    ///   they are already `DeclarationKey`s, never re-resolved through the
+    ///   correspondence at all. See `qsl_replay::spine::clause::tests` for
+    ///   the companion real-checker coverage of `resolve_declaration`
+    ///   against a genuine `PackageDeclarations::check` run.
+    #[trace("TC-248", "FR-088-AC-2")]
+    #[test]
+    fn frame_subjects_resolve_only_through_the_recorded_correspondence() {
+        let modifies_decl = declaration_key("Order.status");
+        let creates_decl = declaration_key("Order");
+        let context_decl = declaration_key("Order");
+
+        let effect = OperationEffect {
+            modifies: vec![modifies_decl.clone()],
+            creates: vec![creates_decl.clone()],
+            deletes: Vec::new(),
+        };
+        let operation = ClauseOperation {
+            declaring: EffectiveId::from_digest([9_u8; 32]),
+            declaration: OperationDeclaration::new("ship", Vec::new(), None, effect),
+        };
+        let frame = CheckedOperationFrame {
+            operation,
+            anchor: node_key(1),
+            frame: node_key(2),
+            frame_origin: Origin::new(Role::new("state"), 0),
+        };
+
+        // Step 2: the frame's declared subjects are read straight off the
+        // operation's own effect, unchanged from the domain package --
+        // never re-derived from `anchor`/`frame` or any node search.
+        let declared = frame.operation().declaration.effect();
+        assert_eq!(declared.modifies, vec![modifies_decl.clone()]);
+        assert_eq!(declared.creates, vec![creates_decl.clone()]);
+        assert!(declared.deletes.is_empty());
+
+        // Step 3: the frame's own anchor node resolves to its
+        // DeclarationKey only by reading the recorded correspondence.
+        let mut correspondence = ModelCorrespondence::default();
+        correspondence.record(frame.anchor(), context_decl.clone());
+        assert_eq!(correspondence.resolve(frame.anchor()), Some(&context_decl));
+
+        // Step 4 (adverse): a correspondence rebuilt without that entry
+        // (simulating a stale/incomplete correspondence) resolves the same
+        // node to `None`; `resolve` has no other source to fall back to.
+        let stale = ModelCorrespondence::default();
+        assert_eq!(stale.resolve(frame.anchor()), None);
+
+        // Step 5: a freshly rebuilt correspondence with the entry
+        // reproduces exactly step 3's resolution.
+        let mut rebuilt = ModelCorrespondence::default();
+        rebuilt.record(frame.anchor(), context_decl.clone());
+        assert_eq!(rebuilt.resolve(frame.anchor()), Some(&context_decl));
+    }
+}
