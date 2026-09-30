@@ -55,11 +55,18 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   holds:
   - `clause`: the state clause's declared name, as FR-106's
     `ClauseSelection` names it;
-  - `observation`: exactly one of FR-106's two selection inputs:
-    - `Invocation { invocation }` for a precondition or postcondition: the
-      `DocumentRef` (FR-106) of a `quire.state.invocation/v1` document. It
-      names the self object, the parameters and result, and a `pre` and a
-      `post` snapshot, each by identity and `sha256-jcs` digest;
+  - `observation`: exactly one of FR-106's selection inputs, by the
+    clause's kind:
+    - `PreCall { snapshot, self, parameters }` for a precondition: the
+      `DocumentRef` of a `quire.state.snapshot/v1` document whose
+      `observation` is `pre`, the operation's pre state; the self object
+      (`{population, key}`); and each declared parameter's value in the
+      snapshot value form. A violated precondition means the operation
+      never ran, so the observation holds no post state;
+    - `Invocation { invocation }` for a postcondition: the `DocumentRef`
+      (FR-106) of a `quire.state.invocation/v1` document. It names the self
+      object, the parameters and result, and a `pre` and a `post` snapshot,
+      each by identity and `sha256-jcs` digest;
     - `Current { snapshot, anchor, self }` for an invariant: the
       `DocumentRef` of a `quire.state.snapshot/v1` document whose
       `observation` is `current`, the initialization or handler anchor
@@ -76,18 +83,19 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   `occurrence_key` and the `ReplaySource` variant, which selects the
   result's arm. Every value the clause reads (`self`, the operation's
   parameters and its result, and the objects of each observation) comes
-  from the admitted documents, so the `ReplaySource`'s transcript or
+  from the payload's admitted observation, so the `ReplaySource`'s transcript or
   `Input` assignments bind nothing. The envelope's `obligation_identity` and
   `selected_function` are CG's members; the executor reads neither and the
   result carries neither.
 - FR-098's package reference, byte provision and limits: the request's
   `quire.value.accounting/v1` limits build the evaluation meter, and its
   stage limits bound the recompile as FR-098 states. Every document the
-  observation names (the invocation and both its snapshots, or the current
-  snapshot) is a `sha256-jcs` entry of the byte provision. Each snapshot
-  holds every object of each population the clause requires, with every
-  declared field, and marks that population `complete` (FR-106 checks 6
-  and 7).
+  observation names (the invocation and both its snapshots, or the one
+  snapshot of `PreCall` or `Current`) is a `sha256-jcs` entry of the byte
+  provision. Each object in a snapshot carries every declared field
+  (FR-106 check 6). A snapshot marks a population `complete` only when it
+  holds every object of that population; CG marks a population it cannot
+  bound as not complete, or emits no counterexample.
 
 ## Outputs
 
@@ -130,12 +138,16 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   (`clause`, `observation`), reading every document only from the byte
   provision by its `sha256-jcs` digest, under FR-106's default
   `ObservationLimits` (no `quire.value.accounting/v1` counter names an
-  admission limit). For an `Invocation` observation,
-  admission runs FR-106's frame and delta check (check 11) over the pre and
-  post snapshots.
+  admission limit). For an `Invocation` observation, admission runs
+  FR-106's frame and delta check (check 11) over the pre and post
+  snapshots; a `PreCall` observation has no post snapshot and admission
+  runs no frame check.
 - If admission fails, refused or incomplete, then the executor SHALL refuse
   with a `ReplayRefusal` holding FR-106's record, and SHALL evaluate
-  nothing.
+  nothing. An observation whose required population is not marked
+  `complete` is FR-106's `Incomplete` (`incomplete_population`/
+  `incomplete-scope`, check 7), so it refuses this way with that record and
+  settles no result.
 - The executor SHALL evaluate the admitted clause once by FR-107, with a
   fresh evaluation meter built from the request's
   `quire.value.accounting/v1` limits, and compare verdicts as FR-072 does. The counterexample refuted the clause, so the
@@ -170,9 +182,9 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
 | FR-122-AC-1 | Over FR-108's ConfigVersion unit, an envelope for `VersionUnchanged` whose observation is the changed-version invocation settles `reproduced-with-evaluated-witness`, and the same payload on an `Input`-arm envelope settles `reproduced-without-witness`. An envelope for `ParentOrder` whose observation is violating-parent's current snapshot (anchor `handler validate`, self `child`) settles `reproduced-with-evaluated-witness`. Each result holds the source digest, the `package_id`, the payload's `clause`, the envelope's `clause_node` and `occurrence_key`, and the identity and digest of every document admission read: the invocation and both snapshots, or the one current snapshot. Each `Witness`-arm result's FR-351 record holds `false` as its deciding element, index 0, an empty value path and no trace position; the `Input`-arm result holds `false` and no FR-351 record. | Test (TC-517) |
 | FR-122-AC-2 | The `VersionUnchanged` envelope over the unchanged-version invocation, and the `ParentOrder` envelope over healthy-parent's snapshot, each settle `inconclusive`, `Verdicts`, holding `violation` and `success` and an FR-351 record with `true` as its deciding element. The `ParentOrder` violating-parent envelope replayed with the request's `quire.value.accounting/v1` evaluation budget at zero settles `inconclusive`, `NoValue`. | Test (TC-517) |
 | FR-122-AC-3 | Stale identity: the changed-version `VersionUnchanged` envelope whose `clause_node` names `ParentOrder`'s node refuses `stale_dependency`/`revision-mismatch` naming the envelope's and the recompiled node identity, and names the nodes the same way when its `occurrence_key` is also at ordinal 1; with only its `occurrence_key` at ordinal 1 it refuses the same way naming both occurrences; none admits a document (its invocation absent from the byte provision changes none of these refusals). A source edit that changes the `package_id` refuses by FR-098's stale `package_id` rule. A `clause` naming `Absent`, and one naming the function `sameIdentity`, each refuse `missing_declaration`/`missing-name`. | Test (TC-517) |
-| FR-122-AC-4 | Precondition: over TC-466 step 3's `probe` unit (precondition `ReachesTarget`, `reaches(self, target, parent)`, over the chain `a -> b -> c`), an envelope whose observation is the `probe` invocation with `self` `a` and `target` `a` settles `reproduced-with-evaluated-witness`, holding the invocation and both snapshots; with `target` `c` it settles `inconclusive`, `Verdicts`. | Test (TC-517) |
-| FR-122-AC-5 | Admission refusals settle no result: the `VersionUnchanged` envelope over the forbidden-parent-change invocation refuses with FR-106's `frame_violation`/`unauthorized-change` record naming `child` and `parent`; the changed-version envelope with its pre snapshot absent from the byte provision refuses with FR-106's `unavailable_observation` record; with its invocation bytes edited under the same digest it refuses `stale_dependency`/`byte-digest-mismatch`; a `VersionUnchanged` envelope whose observation is `Current` over healthy-parent's snapshot refuses `wrong_snapshot`/`wrong-observation`. | Test (TC-517) |
-| FR-122-AC-6 | Replaying one envelope twice gives equal results. `StateClauseCounterexample` implements `FamilyPayload`, the envelope carries it as its generic parameter with no string-keyed field, and its `observation` is a sum of the `Invocation` and `Current` inputs, so a payload holds exactly one. | Test (TC-517) |
+| FR-122-AC-4 | Precondition: over TC-466 step 3's `probe` unit (precondition `ReachesTarget`, `reaches(self, target, parent)`, over the chain `a -> b -> c`), an envelope whose observation is `PreCall` over the chain's pre snapshot with `self` `a` and `target` `a` settles `reproduced-with-evaluated-witness`, holding that one snapshot's identity and digest and no post snapshot; with `target` `c` it settles `inconclusive`, `Verdicts`. A `PreCall` observation for `VersionUnchanged` refuses `wrong_snapshot`/`wrong-observation`. | Test (TC-517) |
+| FR-122-AC-5 | Admission refusals settle no result: the `VersionUnchanged` envelope over the forbidden-parent-change invocation refuses with FR-106's `frame_violation`/`unauthorized-change` record naming `child` and `parent`; the changed-version envelope with its pre snapshot absent from the byte provision refuses with FR-106's `unavailable_observation` record; with its invocation bytes edited under the same digest it refuses `stale_dependency`/`byte-digest-mismatch`; a `VersionUnchanged` envelope whose observation is `Current` over healthy-parent's snapshot refuses `wrong_snapshot`/`wrong-observation`; the `ParentOrder` envelope over incomplete-population's snapshot (`complete: false`) refuses with FR-106's `Incomplete` `incomplete_population`/`incomplete-scope` record. | Test (TC-517) |
+| FR-122-AC-6 | Replaying one envelope twice gives equal results. `StateClauseCounterexample` implements `FamilyPayload`, the envelope carries it as its generic parameter with no string-keyed field, and its `observation` is a sum of the `PreCall`, `Invocation` and `Current` inputs, so a payload holds exactly one. | Test (TC-517) |
 
 ## Dependencies
 

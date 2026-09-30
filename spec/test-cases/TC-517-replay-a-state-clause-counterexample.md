@@ -12,7 +12,7 @@ relationships:
 
 Verify replay of a `WitnessEnvelope<StateClauseCounterexample>`: a clause
 that evaluates `false` reproduces, a clause that holds or completes no value
-is inconclusive, a precondition replays over its invocation, a stale
+is inconclusive, a precondition replays over its pre state alone, a stale
 envelope identity refuses before admission, and an admission failure
 settles no result.
 
@@ -27,7 +27,7 @@ clause node and `claim` occurrence for the envelope from the compiled
 package, with the unit's source, the domain package and FR-108's
 observation documents in the byte provision. For step 4, compile TC-466
 step 3's `probe` unit (precondition `ReachesTarget`) and use its chain
-`a -> b -> c` invocation documents.
+`a -> b -> c` pre snapshot with a `PreCall` observation.
 
 1. `VersionUnchanged` over changed-version, on a `Witness`-arm and on an
    `Input`-arm envelope; `ParentOrder` over violating-parent.
@@ -40,12 +40,14 @@ step 3's `probe` unit (precondition `ReachesTarget`) and use its chain
    provision;
    with a source edit that changes the `package_id`; with `clause` naming
    `Absent`; with `clause` naming `sameIdentity`.
-4. `ReachesTarget` over the `probe` invocation with `self` `a`, `target`
-   `a`; with `self` `a`, `target` `c`.
+4. `ReachesTarget` with `PreCall` over the chain's pre snapshot, `self`
+   `a`, `target` `a`; with `self` `a`, `target` `c`; a `PreCall`
+   observation for `VersionUnchanged`.
 5. `VersionUnchanged` over forbidden-parent-change; over changed-version
    with its pre snapshot removed from the provision; over changed-version
    with its invocation bytes edited under the same digest; with a `Current`
-   observation over healthy-parent's snapshot.
+   observation over healthy-parent's snapshot; `ParentOrder` over
+   incomplete-population's snapshot.
 6. Step 1's `VersionUnchanged` envelope twice.
 
 Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
@@ -69,12 +71,15 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
   three refusals with the invocation removed;
   FR-098's stale `package_id` refusal; `missing_declaration`/`missing-name`
   twice.
-- Step 4: `reproduced-with-evaluated-witness`, holding the invocation and
-  both snapshots; `inconclusive`, `Verdicts` (`violation`, `success`).
+- Step 4: `reproduced-with-evaluated-witness`, holding the one pre
+  snapshot's identity and digest and no post snapshot; `inconclusive`,
+  `Verdicts` (`violation`, `success`); `wrong_snapshot`/
+  `wrong-observation`.
 - Step 5: `ReplayRefusal`s holding `frame_violation`/`unauthorized-change`
   (naming `child` and `parent`), `unavailable_observation`,
-  `stale_dependency`/`byte-digest-mismatch` and `wrong_snapshot`/
-  `wrong-observation`. None settles a result.
+  `stale_dependency`/`byte-digest-mismatch`, `wrong_snapshot`/
+  `wrong-observation` and `Incomplete` `incomplete_population`/
+  `incomplete-scope`. None settles a result.
 - Step 6: equal results. `StateClauseCounterexample: FamilyPayload`
   compiles, the envelope has no string-keyed field, and a payload's
-  `observation` is one of `Invocation` or `Current`.
+  `observation` is one of `PreCall`, `Invocation` or `Current`.
