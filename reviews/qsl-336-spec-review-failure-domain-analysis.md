@@ -86,3 +86,4 @@ member's reading is unstated.
 | FND-008 | fixed | 0bedd077 |
 | FND-009 | fixed | 9ac01b61 |
 | FND-010 | fixed | 9ac01b61 |
+| FND-011 | fixed | 504d1bd1 |
