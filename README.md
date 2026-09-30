@@ -363,8 +363,8 @@ remain modules and use the existing model/IR authorities. No second domain model
 backend binder or Markdown expression parser is created here.
 
 New implementation and newly authored implementation fixtures use
-[AGPL-3.0-or-later](LICENSE). [Dependency inventory](docs/dependencies.md) preserves
-third-party grants. [License decision](LICENSE-DECISION.md) records owner approval
+[AGPL-3.0-or-later](LICENSE); dependencies keep their own declared grants.
+[License decision](LICENSE-DECISION.md) records owner approval
 and deferred standard-artifact terms. No public release is authorized.
 
 Private tracking: [LC01](https://github.com/agent-ix/quire-spec-language/issues/2),
