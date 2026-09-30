@@ -243,7 +243,13 @@ required population, in the observations the clause reads.
     check 6's value rule. If the result member is `null` for an
     operation that declares a result, or a value for one that declares none,
     then admission SHALL refuse `invalid_runtime_input`/`missing-member` or
-    `unknown-member`. A `PreCall` selection carries no result.
+    `unknown-member`. A `PreCall` selection carries no result. A reference
+    value resolves against the pre snapshot's objects for a parameter (the
+    `PreCall` snapshot, or the invocation's `pre`) and against the post
+    snapshot's for a result. If one names a key absent from its complete
+    population, then admission SHALL refuse `dangling_reference`/
+    `absent-target-in-complete-population`, naming it and its population
+    (check 8's closure rule).
 11. Frame and delta check. For an invocation, admission SHALL run the frame
     check (`enforce_frame` through `admit_invocation`, with the operation's
     `OperationEffect`, FR-103) once per population, in the pre snapshot's
@@ -294,7 +300,7 @@ required population, in the observations the clause reads.
 | FR-106-AC-5 | The forbidden-parent-change invocation (post sets `child.parent` absent) refuses `frame_violation`/`unauthorized-change` naming `child` and `parent`. A package whose `attemptUpdate` frame modifies only `parent`, with an invocation that changes only `versionNumber`, refuses `frame_violation`/`unauthorized-change` naming `versionNumber` (a scalar field). An invocation declaring `created: [child]` refuses `population_delta_mismatch`/`delta-disagreement`. A post snapshot that adds a population `archive` absent from the pre snapshot, holding `a1`, refuses `frame_violation`/`unauthorized-change` naming the creation of `a1` (the pre side is an empty document). | Test (TC-465) |
 | FR-106-AC-6 | Running admission twice over the same inputs gives equal results, and admission builds its result without reading the filesystem (the provisions are in-memory maps; a test with no files on disk passes). | Test (TC-464) |
 | FR-106-AC-7 | Multi-defect documents report the first defect by the order above: bytes edited under their original digest that also add an unknown member refuse `byte-digest-mismatch`; a snapshot with `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` refuses `invalid-value` at `root`; an invocation whose post both deletes `root` and changes `child.parent` refuses the deletion; over a package where `Sub` specializes `ConfigVersion`, an invocation whose post changes `child`'s type to `Sub` and deletes `root` refuses the type change, naming `child`; an invocation whose pre and post list `archive` before `config_history`, with a change outside the frame in each, refuses naming the `archive` object; a snapshot whose `revision_namespace` and `revision` are both blank refuses `invalid_source_identity`/`blank-label` with `label` `revision_namespace`. | Test (TC-465) |
-| FR-106-AC-8 | Over TC-466 step 3's `probe` unit, `PreCall { snapshot, self: a, parameters: {target: a} }` over the chain `a -> b -> c` pre snapshot, selected for `ReachesTarget`, admits one pre observation, `self` `a`, the parameter `target` naming `a`, no post observation, result or delta, and runs no frame check. The same selection for `VersionUnchanged` refuses `wrong_snapshot`/`wrong-observation`; with a snapshot that says `post` it refuses `wrong_snapshot`/`wrong-observation`; with no `target` it refuses `invalid_runtime_input`/`missing-member`; with its snapshot marked `complete: false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope`. | Test (TC-464) |
+| FR-106-AC-8 | Over TC-466 step 3's `probe` unit, `PreCall { snapshot, self: a, parameters: {target: a} }` over the chain `a -> b -> c` pre snapshot, selected for `ReachesTarget`, admits one pre observation, `self` `a`, the parameter `target` naming `a`, no post observation, result or delta, and runs no frame check. The same selection for `VersionUnchanged` refuses `wrong_snapshot`/`wrong-observation`; with a snapshot that says `post` it refuses `wrong_snapshot`/`wrong-observation`; with no `target` it refuses `invalid_runtime_input`/`missing-member`; with `target` naming `ghost`, absent from the complete `config_history`, it refuses `dangling_reference`/`absent-target-in-complete-population`; with its snapshot marked `complete: false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope`. | Test (TC-464) |
 
 ## Dependencies
 
@@ -303,3 +309,6 @@ required population, in the observations the clause reads.
   digest-first order), FR-038 (integer spelling).
 - QSpec FR-153 and `state-contract.md` (anchors, completeness and closure),
   `native-diagnostics.md` revision `1-draft.8` (every code and cause above).
+- QSpec frames a precondition over an invocation (QSpec FR-046, FR-208).
+  `PreCall` is QSL's form for a precondition observed before the operation
+  runs, with no post state; a QSpec alignment picks it up there.

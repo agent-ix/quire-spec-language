@@ -33,7 +33,8 @@ their `sha256-jcs` digest.
 5. Over TC-466 step 3's `probe` unit, admit the chain `a -> b -> c` pre
    snapshot for `ReachesTarget` with `PreCall { snapshot, self: a,
    parameters: {target: a} }`; the same selection for `VersionUnchanged`;
-   with a snapshot that says `post`; with no `target`; with the snapshot
+   with a snapshot that says `post`; with no `target`; with `target`
+   naming `ghost`; with the snapshot
    marked `complete: false`.
 
 Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
@@ -51,7 +52,9 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
 - Step 5: one pre observation, `self` `a`, `target` naming `a`, no post
   observation, result or delta, and no frame check run;
   `wrong_snapshot`/`wrong-observation` twice; `invalid_runtime_input`/
-  `missing-member`; `Incomplete` with `incomplete_population`/
+  `missing-member`; `dangling_reference`/
+  `absent-target-in-complete-population` naming `ghost` and
+  `config_history`; `Incomplete` with `incomplete_population`/
   `incomplete-scope`.
 
 ## Status

@@ -42,6 +42,14 @@ member's reading is unstated.
 | FND-004 | medium | The FND-003 fix justifies ignoring the transcript and `Input` assignments with "since a state clause has no parameters for them to bind". That is false for preconditions and postconditions: FR-104/FR-105 build the clause node over `self`, `result` and the operation's parameters, FR-107 evaluates each operation parameter to its admitted value, and AC-4's `ReachesTarget` reads `probe`'s parameter `target`. The behaviour (bind nothing from the source arm) is right; the reason contradicts FR-107 and invites reading parameterized operations as out of scope. Reword: every value the clause reads (`self`, the operation's parameters and result) comes from the admitted documents, so the source arm binds nothing. | spec/functional/FR-122-replay-a-state-clause-counterexample.md:76-79 |
 | FND-005 | low | The FR-351 record is stated only for a `Witness`-arm result "that reproduces" and for a result with no value. A `Witness`-arm `inconclusive`/`Verdicts` result has a value (`true`) and its record presence is unstated; FR-098/FR-116's code attaches the record whenever a value exists. State it (the record accompanies the value on the `Witness` arm). | spec/functional/FR-122-replay-a-state-clause-counterexample.md:100-104 |
 
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | Check 10, extended to `PreCall`, does not say a reference parameter must name an object of the snapshot. The code refuses a dangling reference parameter for an invocation (`dangling_reference`, resolved against the pre snapshot, `qsl-semantics/src/model/observation.rs:981-994`), but the spec never states it, and the new `PreCall` admission is written from the spec. Failure: a `PreCall` with `target` naming a key absent from the complete snapshot admits; `reaches(self, target, parent)` never meets it and returns `false`; the replay settles `reproduced` on a counterexample no real call could produce. State in check 10 that a reference parameter resolves in the pre snapshot (the `PreCall` snapshot) and a key absent from its complete population refuses `dangling_reference`, and add a case to FR-106-AC-8 / TC-464 step 5. | spec/functional/FR-106-admit-snapshots-and-invocations.md:238-246 |
+| FND-007 | low | A `PreCall`'s `self` and `parameters` sit in the payload, outside any digest, and FR-122's Outputs retain only the documents admission read. So a `PreCall` result cannot show which values it reproduced (`target` `a`). Retain the observation's `self` and parameters, or the payload's observation, in the result. | spec/functional/FR-122-replay-a-state-clause-counterexample.md:100-108 |
+
 ## Dispositions
 
 | FND | outcome | sha/reason |
@@ -49,3 +57,5 @@ member's reading is unstated.
 | FND-001 | fixed | cf00f646 |
 | FND-002 | fixed | cf00f646 |
 | FND-003 | fixed | cf00f646 |
+| FND-004 | fixed | 0a72b19a |
+| FND-005 | fixed | 0a72b19a |

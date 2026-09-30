@@ -41,12 +41,15 @@ step 3's `probe` unit (precondition `ReachesTarget`) and use its chain
    with a source edit that changes the `package_id`; with `clause` naming
    `Absent`; with `clause` naming `sameIdentity`.
 4. `ReachesTarget` with `PreCall` over the chain's pre snapshot, `self`
-   `a`, `target` `a`; with `self` `a`, `target` `c`; a `PreCall`
-   observation for `VersionUnchanged`.
+   `a`, `target` `a`; with `self` `a`, `target` `c`. Form mismatches, each
+   once with its documents in the provision and once without:
+   `ReachesTarget` with an `Invocation` observation over the `probe`
+   invocation; `VersionUnchanged` with a `PreCall` observation;
+   `VersionUnchanged` with a `Current` observation over healthy-parent's
+   snapshot.
 5. `VersionUnchanged` over forbidden-parent-change; over changed-version
    with its pre snapshot removed from the provision; over changed-version
-   with its invocation bytes edited under the same digest; with a `Current`
-   observation over healthy-parent's snapshot; `ParentOrder` over
+   with its invocation bytes edited under the same digest; `ParentOrder` over
    incomplete-population's snapshot.
 6. Step 1's `VersionUnchanged` envelope twice.
 
@@ -72,13 +75,14 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
   FR-098's stale `package_id` refusal; `missing_declaration`/`missing-name`
   twice.
 - Step 4: `reproduced-with-evaluated-witness`, holding the one pre
-  snapshot's identity and digest and no post snapshot; `inconclusive`,
-  `Verdicts` (`violation`, `success`); `wrong_snapshot`/
-  `wrong-observation`.
+  snapshot's identity and digest, no post snapshot, and `self` `a` and
+  `target` `a`; `inconclusive`, `Verdicts` (`violation`, `success`); each
+  form mismatch refuses `wrong_snapshot`/`wrong-observation` naming the
+  clause kind and the form, with no admission, with and without its
+  documents.
 - Step 5: `ReplayRefusal`s holding `frame_violation`/`unauthorized-change`
   (naming `child` and `parent`), `unavailable_observation`,
-  `stale_dependency`/`byte-digest-mismatch`, `wrong_snapshot`/
-  `wrong-observation` and `Incomplete` `incomplete_population`/
+  `stale_dependency`/`byte-digest-mismatch` and `Incomplete` `incomplete_population`/
   `incomplete-scope`. None settles a result.
 - Step 6: equal results. `StateClauseCounterexample: FamilyPayload`
   compiles, the envelope has no string-keyed field, and a payload's
