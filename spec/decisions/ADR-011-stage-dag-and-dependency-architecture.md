@@ -940,7 +940,7 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 
 | Edge | Target | Owning change |
 |---|---|---|
-| IR root → QSL (normal and dev) | **Removed** in the IR change that lands predicate and temporal admission over the v2 value, expression and temporal nodes at v2 intake, with #218 and #223 (M-6d). | agent-ix/quire-contract-ir#141; #218, #223 |
+| IR root → QSL (normal and dev) | **Removed.** Neither IR manifest (the root crate or `quire-contract-model`) declares a QSL dependency (FB-05). | IR |
 | QSL → CG (dev), QSL → IR historical (dev) | **Removed** with SEAM-4 | M-6c, with `lower` and `lowering` (owner ruling 2026-09-24) |
 | QSL tests → RT (fixture crate, IT-010 generated crates) | **Removed** with SEAM-4 | M-6c, with `lower` and `lowering` (owner ruling 2026-09-24) |
 | RT `qsl-agreement` → QSL (dev) | **Removed.** The agreement suite is retargeted to `quire-exact` against QSpec vectors (AD-016). | RT, after X-1 (Tickets to open at #212) |
@@ -1119,7 +1119,7 @@ The approved crate extractions are X-1 to X-10.
 | OBS-015 | Forbidden bypass FB-03. The `protocol_artifact` reads that feed `state` and `temporal` are deleted in the PRs that land the replacement evaluators over checked forms (#220, #222; M-6c). |
 | OBS-016 | The §6.1 layers are an exhaustive, ordered allow-list. `diagnostic` is foundation, `model` is below `check` (M-2), `temporal` imports no wire module, and the remaining S1 two-cycles leave with SEAM-1. |
 | OBS-028 | IR holds the packet and witness only. CG reconstructs. QSL S6a executes. A stubbed executor is not evidence (FB-07, §2.3). |
-| OBS-029 | The IR root → QSL edge is removed by the IR change that lands v2 predicate and temporal admission, with #218 and #223 (§7.1, FB-05, M-6d). |
+| OBS-029 | The IR root → QSL edge is removed: neither IR manifest (the root crate or `quire-contract-model`) declares a QSL dependency (§7.1, FB-05). |
 | OBS-030 | `CheckedPackage::call` on `qsl_package::CheckedPackage`, through the layer-5 `CheckedPackageEvaluation` trait (§4, as amended by QSL-182), is the S6a entry. The CG replay adapter wires it, first in the skeleton spine and then in #217. |
 | OBS-031 | QI owns the current-head `heads/` workspace (AD-016). #215 implements it and also checks QSL's own lock for duplicate revisions (§7.1). The pin-versus-head rule is a #211 secondary; the pin is ADR-013 T-9's `RevisionPin`. |
 | OBS-036 | The replay executor is QSL S6a (`CheckedPackage::call` on `qsl_package::CheckedPackage` through `CheckedPackageEvaluation`, §4 as amended by QSL-182; AD-016 arrow 7). agent-ix/quire-contract-ir#140 is the implementing change: it amends FR-031 Behavior and AC-3 and removes `replay_with_native_runtime`. IR PR #138 rewrites only FR-031's Status section and does not settle this. FR-031-AC-3 gets its own coverage row, discharged by the QSL replay crossing test (§7.1), after agent-ix/quire-contract-ir#145 removes the stub tags. Remaining work: agent-ix/quire-contract-ir#146. |
@@ -1393,7 +1393,7 @@ sections it names.
 | T-2 | The skeleton spine (§1.1) as a tracked ticket. QSL #243 lands the layer-6 `replay` facade (ADR-013 TK-01), and agent-ix/quire-contract-codegen#87 lands the replay adapter. Each family's implementation ticket then widens `replay` for that family. | QSL #243 and agent-ix/quire-contract-codegen#87, with QSL M-4 |
 | T-3 | Add the lane deletions M-6c to M-6e, native `run` included, to the exit criteria of the implementation tickets that land each replacement: #217, #120, #121, #164, #170, #175, #187, #188, #189, #191, #192, #198, #214 and #218 | QSL (issue text for those tickets) |
 | T-4 | Ruled 2026-09-19: #216 is evaluated per lane, the producer lane at #216 and the other lanes at #219 and #224 (§7.3). Remaining: amend the issue text. | #205 coordinator, at the #212 consolidation: QSL #216, #219, #224 |
-| T-5 | Confirm that agent-ix/quire-contract-ir#141 (v2 intake admission of value, expression and temporal nodes) also removes the IR root → QSL edge | agent-ix/quire-contract-ir#141, with #218 and #223 |
+| T-5 | none: the IR root → QSL edge is removed, and neither IR manifest (the root crate or `quire-contract-model`) declares a QSL dependency (§7.1, OBS-029) | none |
 | T-6 | Record X-1 `quire-exact` extraction as #213 S-1, with its kernel gate under §2.3 and the blocking edge from the AD-016 amendment (TK-10, QC-15) | QSL #213 and RT |
 | T-7 | M-2 (`model` below `check`) and QSL-165 (`semantic_value`) with the #205 edge M-2 → #214 | QSL |
 | T-8 | M-4 (S4 v2 emitter and I2 reader) | QSL, before #216 |
